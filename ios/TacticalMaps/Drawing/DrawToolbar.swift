@@ -11,6 +11,8 @@ struct DrawToolbar: View {
             HStack(spacing: 10) {
                 Label(kind.displayName, systemImage: kind.sfSymbol)
                     .font(.caption.weight(.bold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Color(red: 1, green: 0.65, blue: 0.18), in: Capsule())
@@ -19,6 +21,7 @@ struct DrawToolbar: View {
                 Text("\(session.inProgressCoordinates.count) pt\(session.inProgressCoordinates.count == 1 ? "" : "s")")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.8))
+                    .fixedSize(horizontal: true, vertical: false)
 
                 Spacer()
 
