@@ -137,12 +137,12 @@ struct WaypointEditSheet: View {
                         Button(role: .destructive) {
                             showDeleteConfirm = true
                         } label: {
-                            Label("Delete waypoint", systemImage: "trash")
+                            Label("Delete symbol", systemImage: "trash")
                         }
                     }
                 }
             }
-            .navigationTitle(original == nil ? "New Waypoint" : "Edit Waypoint")
+            .navigationTitle(original == nil ? "New Symbol" : "Edit Symbol")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -154,7 +154,7 @@ struct WaypointEditSheet: View {
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .alert("Delete waypoint?",
+            .alert("Delete symbol?",
                    isPresented: $showDeleteConfirm) {
                 Button("Delete", role: .destructive) {
                     if let wp = original { waypointStore.remove(wp) }

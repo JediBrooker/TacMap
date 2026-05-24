@@ -19,7 +19,7 @@ struct HamburgerMenu: View {
                 }
             }
             Section("Layers & data") {
-                Button { onWaypoints() } label: { Label("Waypoints", systemImage: "mappin.and.ellipse") }
+                Button { onWaypoints() } label: { Label("Symbology", systemImage: "mappin.and.ellipse") }
                 Button { onDrawings()  } label: { Label("Drawings",  systemImage: "scribble.variable") }
                 Button { onLayers()    } label: { Label("Layers",    systemImage: "square.3.stack.3d") }
             }

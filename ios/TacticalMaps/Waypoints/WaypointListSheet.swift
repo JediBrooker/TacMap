@@ -15,9 +15,9 @@ struct WaypointListSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Waypoints (\(waypointStore.waypoints.count))") {
+                Section("Symbology (\(waypointStore.waypoints.count))") {
                     if waypointStore.waypoints.isEmpty {
-                        Text("No waypoints yet. Pan the crosshair to a feature and tap “Add at Crosshair” below.")
+                        Text("No symbols yet. Pan the crosshair to a feature and tap “Add at Crosshair” below.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -50,11 +50,11 @@ struct WaypointListSheet: View {
                         Label("Add at Crosshair", systemImage: "plus.circle.fill")
                     }
                 } footer: {
-                    Text("Swipe right on a waypoint to fly to it; swipe left to delete.")
+                    Text("Swipe right on a symbol to fly to it; swipe left to delete.")
                         .font(.caption2)
                 }
             }
-            .navigationTitle("Waypoints")
+            .navigationTitle("Symbology")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }

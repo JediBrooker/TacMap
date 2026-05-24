@@ -14,7 +14,7 @@ struct LayersSheet: View {
         NavigationStack {
             Form {
                 Section("Overlays") {
-                    Toggle("Waypoints",     isOn: $visibility.waypointsVisible)
+                    Toggle("Symbology",     isOn: $visibility.waypointsVisible)
                     Toggle("Drawings",      isOn: $visibility.drawingsVisible)
                     Toggle("User Location", isOn: $visibility.userLocationVisible)
                 }

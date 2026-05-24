@@ -66,9 +66,9 @@ final class WaypointStore: ObservableObject {
             Waypoint(name: "En Inf Sect",  latitude: 37.7730, longitude: -122.4140, elevation: 1620,
                      kind: .military(.init(affiliation: .hostile, echelon: .section, function: .infantry))),
             Waypoint(name: "Med Post",     latitude: 37.7760, longitude: -122.4180, elevation: 1700,
-                     kind: .military(.init(affiliation: .neutral, echelon: .squad,   function: .medical))),
+                     kind: .military(.init(affiliation: .neutral, echelon: .section, function: .medical))),
             Waypoint(name: "Unk Contact",  latitude: 37.7700, longitude: -122.4090, elevation: 1500,
-                     kind: .military(.init(affiliation: .unknown, echelon: .squad,   function: .unspecified))),
+                     kind: .military(.init(affiliation: .unknown, echelon: .section, function: .unspecified))),
             Waypoint(name: "FUP CHARLIE",  latitude: 37.7770, longitude: -122.4200, elevation: 1500,
                      kind: .controlMeasure(.formUpPoint))
         ]

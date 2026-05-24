@@ -57,14 +57,13 @@ enum SymbolAffiliation: String, Codable, Hashable, CaseIterable {
 // MARK: - Echelon
 
 enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
-    case team, squad, section, platoon
+    case team, section, platoon
     case company, battalion, regiment
     case brigade, division, corps
 
     var displayName: String {
         switch self {
         case .team:      return "Team / Crew"
-        case .squad:     return "Squad"
         case .section:   return "Section"
         case .platoon:   return "Platoon"
         case .company:   return "Company"
@@ -80,8 +79,7 @@ enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
     var glyph: String {
         switch self {
         case .team:      return "Ø"
-        case .squad:     return "●"
-        case .section:   return "●●"
+        case .section:   return "●"
         case .platoon:   return "●●●"
         case .company:   return "I"
         case .battalion: return "II"
@@ -336,14 +334,14 @@ struct MilitarySymbolView: View {
             path.move(to:    CGPoint(x: frame.maxX, y: frame.minY))
             path.addLine(to: CGPoint(x: frame.minX, y: frame.maxY))
         case .hostile:
-            // Frame is rotated 45°; X in local coords becomes + in screen coords.
+            // Diagonal X drawn in screen coords, with endpoints at the four
+            // mid-edge points of the diamond so the X stays inside the frame.
             let cx = frame.midX, cy = frame.midY
-            let r  = frame.width / 2
-            let inset = r * sqrt(2) / 2
-            path.move(to:    CGPoint(x: cx - inset, y: cy))
-            path.addLine(to: CGPoint(x: cx + inset, y: cy))
-            path.move(to:    CGPoint(x: cx,         y: cy - inset))
-            path.addLine(to: CGPoint(x: cx,         y: cy + inset))
+            let h  = frame.width / 4   // half of inscribed-square side
+            path.move(to:    CGPoint(x: cx - h, y: cy - h))
+            path.addLine(to: CGPoint(x: cx + h, y: cy + h))
+            path.move(to:    CGPoint(x: cx + h, y: cy - h))
+            path.addLine(to: CGPoint(x: cx - h, y: cy + h))
         case .unknown:
             // Inside a quatrefoil, draw the X across the inscribed square.
             let inscribe = frame.insetBy(dx: frame.width * 0.18, dy: frame.height * 0.18)
@@ -418,17 +416,19 @@ struct MilitarySymbolView: View {
 
         switch echelon {
         case .team:
-            // Small diagonal slash through the top-right corner of the frame.
-            // Drawn into the echelon rect so it sits above the frame.
-            var p = Path()
-            let len = rect.height * 0.75
-            p.move(to:    CGPoint(x: cx - len/2, y: cy + len/3))
-            p.addLine(to: CGPoint(x: cx + len/2, y: cy - len/3))
-            ctx.stroke(p, with: ink, lineWidth: 2)
-        case .squad:
-            drawDots(count: 1, ctx: ctx, cx: cx, cy: cy, radius: 2.2, spacing: 0, ink: ink)
+            // APP-6 Team/Crew (Ø): small open circle with a diagonal slash
+            // passing through it, centred above the frame.
+            let r = rect.height * 0.35
+            let ring = Path(ellipseIn: CGRect(x: cx - r, y: cy - r,
+                                              width: r * 2, height: r * 2))
+            ctx.stroke(ring, with: ink, lineWidth: 1.5)
+            var slash = Path()
+            let s = r * 1.2
+            slash.move(to:    CGPoint(x: cx - s, y: cy + s))
+            slash.addLine(to: CGPoint(x: cx + s, y: cy - s))
+            ctx.stroke(slash, with: ink, lineWidth: 1.5)
         case .section:
-            drawDots(count: 2, ctx: ctx, cx: cx, cy: cy, radius: 2, spacing: 7, ink: ink)
+            drawDots(count: 1, ctx: ctx, cx: cx, cy: cy, radius: 2.2, spacing: 0, ink: ink)
         case .platoon:
             drawDots(count: 3, ctx: ctx, cx: cx, cy: cy, radius: 2, spacing: 6, ink: ink)
         case .company:
