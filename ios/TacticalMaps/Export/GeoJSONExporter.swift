@@ -129,24 +129,67 @@ enum GeoJSONExporter {
 
     private static func markerColor(for kind: WaypointKind) -> String {
         switch kind {
+        // Field markers
         case .generic:     return "#FFD700"  // yellow
         case .camp:        return "#3CB371"  // green
         case .water:       return "#1E90FF"  // blue
         case .observation: return "#FF8C00"  // orange
         case .dropZone:    return "#FFD700"  // yellow
         case .hazard:      return "#DC143C"  // crimson
+
+        // Friendly (APP-6 blue)
+        case .friendlySection, .friendlyPlatoon, .friendlyCompany,
+             .friendlyRegiment, .friendlyBrigade:
+            return "#1F75FE"
+
+        // Enemy (APP-6 red)
+        case .enemySection, .enemyPlatoon, .enemyCompany,
+             .enemyRegiment, .enemyBrigade:
+            return "#E03434"
+
+        // Tactical control measures (black)
+        case .axisOfAssault, .supportByFire, .attackByFire,
+             .formUpPoint, .rvPoint, .axp, .lz:
+            return "#1A1A1A"
         }
     }
 
     private static func markerSymbol(for kind: WaypointKind) -> String {
         // Mapbox Maki icon names (used by geojson.io for marker glyphs).
+        // For NATO-style markers there's no perfect Maki equivalent; we pick
+        // the closest existing symbol so the marker renders in third-party
+        // tools instead of falling back to the default pin.
         switch kind {
+        // Field markers
         case .generic:     return "marker"
         case .camp:        return "campsite"
         case .water:       return "drinking-water"
         case .observation: return "observation-tower"
         case .dropZone:    return "airport"
         case .hazard:      return "danger"
+
+        // Friendly
+        case .friendlySection:  return "circle-stroked"
+        case .friendlyPlatoon:  return "circle"
+        case .friendlyCompany:  return "square"
+        case .friendlyRegiment: return "square-stroked"
+        case .friendlyBrigade:  return "cross"
+
+        // Enemy
+        case .enemySection:     return "circle-stroked"
+        case .enemyPlatoon:     return "circle"
+        case .enemyCompany:     return "square"
+        case .enemyRegiment:    return "square-stroked"
+        case .enemyBrigade:     return "cross"
+
+        // Tactical
+        case .axisOfAssault:    return "arrow"
+        case .supportByFire:    return "scope"
+        case .attackByFire:     return "fire-station"
+        case .formUpPoint:      return "square-stroked"
+        case .rvPoint:          return "rally"
+        case .axp:              return "hospital"
+        case .lz:               return "heliport"
         }
     }
 
