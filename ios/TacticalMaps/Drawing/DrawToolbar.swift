@@ -18,6 +18,8 @@ struct DrawToolbar: View {
                     .background(Color(red: 1, green: 0.65, blue: 0.18), in: Capsule())
                     .foregroundStyle(.black)
 
+                colorSwatchMenu
+
                 Text("\(session.inProgressCoordinates.count) pt\(session.inProgressCoordinates.count == 1 ? "" : "s")")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.8))
@@ -66,5 +68,39 @@ struct DrawToolbar: View {
             .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))
         }
+    }
+
+    /// Tappable circle showing the current stroke colour. Tapping opens a
+    /// menu of the 12 palette swatches.
+    private var colorSwatchMenu: some View {
+        Menu {
+            ForEach(DrawingPalette.swatches) { swatch in
+                Button {
+                    session.strokeColorHex = swatch.hex
+                } label: {
+                    Label {
+                        Text(swatch.name)
+                    } icon: {
+                        // Filled tinted circle so the menu reads as a palette
+                        Image(systemName: session.strokeColorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
+                              ? "largecircle.fill.circle"
+                              : "circle.fill")
+                            .foregroundStyle(swatch.color)
+                    }
+                }
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color(hex: session.strokeColorHex))
+                    .frame(width: 22, height: 22)
+                Circle()
+                    .stroke(.white.opacity(0.85), lineWidth: 1.5)
+                    .frame(width: 22, height: 22)
+            }
+            .accessibilityLabel("Drawing colour")
+            .accessibilityValue(DrawingPalette.swatch(forHex: session.strokeColorHex)?.name ?? session.strokeColorHex)
+        }
+        .buttonStyle(.plain)
     }
 }

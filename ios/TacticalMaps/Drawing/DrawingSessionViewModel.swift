@@ -11,6 +11,10 @@ final class DrawingSessionViewModel: ObservableObject {
     @Published private(set) var activeKind: DrawingKind? = nil
     @Published private(set) var inProgressCoordinates: [Coordinate2D] = []
 
+    /// User-selected stroke / fill colour for the in-progress drawing.
+    /// Persists across sessions until the user picks something else.
+    @Published var strokeColorHex: String = DrawingPalette.default.hex
+
     var isDrawing: Bool { activeKind != nil }
 
     var canFinish: Bool {
@@ -54,6 +58,14 @@ final class DrawingSessionViewModel: ObservableObject {
               inProgressCoordinates.count >= kind.minimumVertices else {
             return nil
         }
-        return DrawingShape(kind: kind, coordinates: inProgressCoordinates)
+        let style = DrawingStyle(
+            strokeColorHex: strokeColorHex,
+            fillColorHex:   strokeColorHex   // polygons fill with same hue
+        )
+        return DrawingShape(
+            kind: kind,
+            coordinates: inProgressCoordinates,
+            style: style
+        )
     }
 }
