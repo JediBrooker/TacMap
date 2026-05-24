@@ -63,7 +63,9 @@ struct LayersSheet: View {
                         Image(systemName: "globe.americas.fill")
                         Text("Apple Satellite")
                         Spacer()
-                        Text("Always shown beneath the PDF overlay")
+                        Text(mapVM.mapSource is PDFMapSource
+                             ? "Hidden while PDF is loaded"
+                             : "Active")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
