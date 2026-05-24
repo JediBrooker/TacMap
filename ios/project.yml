@@ -1,0 +1,58 @@
+name: TacticalMaps
+options:
+  bundleIdPrefix: com.tacticalmaps
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+packages:
+  # Vendored locally with a 4-line Xcode-26 compiler-inference fix in
+  # mgrs-ios/utm/UTM.swift (the upstream UTM formulae are single expressions
+  # that exceed Swift 6's type-checker budget). See docs/ARCHITECTURE.md.
+  mgrs-ios:
+    path: Vendor/mgrs-ios
+
+targets:
+  TacticalMaps:
+    type: application
+    platform: iOS
+    sources:
+      - path: TacticalMaps
+        excludes:
+          - "**/.DS_Store"
+    resources:
+      - path: ../samples
+        optional: true
+    info:
+      path: TacticalMaps/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: TacticalMaps
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIRequiredDeviceCapabilities: [armv7]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSLocationWhenInUseUsageDescription: TacticalMaps shows your live position on the map and reads it as an MGRS grid reference.
+        NSLocationAlwaysAndWhenInUseUsageDescription: TacticalMaps tracks your route and may continue logging when the app is backgrounded.
+        UIBackgroundModes: [location]
+        ITSAppUsesNonExemptEncryption: false
+        # Surface the app's Documents folder in the Files app so the user can
+        # drop GeoPDFs into TacticalMaps from Files → "On My iPhone".
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tacticalmaps.app
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_PREVIEWS: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: TacticalMaps/Resources/Info.plist
+    dependencies:
+      - package: mgrs-ios
+        product: MGRS

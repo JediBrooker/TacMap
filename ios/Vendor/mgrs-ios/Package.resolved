@@ -1,0 +1,33 @@
+{
+  "originHash" : "c2ad76cf4954d9c5e51e8478dd43a70fd0086087415cc762ba9c5e5bca7a2e6b",
+  "pins" : [
+    {
+      "identity" : "color-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ngageoint/color-ios",
+      "state" : {
+        "revision" : "1c588dafaf599a32d9adc29880264281dfbf286f",
+        "version" : "2.0.0"
+      }
+    },
+    {
+      "identity" : "grid-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ngageoint/grid-ios",
+      "state" : {
+        "revision" : "9370e0042a6c78588486d345ab1133f450889508",
+        "version" : "2.0.0"
+      }
+    },
+    {
+      "identity" : "simple-features-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ngageoint/simple-features-ios",
+      "state" : {
+        "revision" : "615127133c83122077dcf71daa53a9a93f05a347",
+        "version" : "5.0.0"
+      }
+    }
+  ],
+  "version" : 3
+}
