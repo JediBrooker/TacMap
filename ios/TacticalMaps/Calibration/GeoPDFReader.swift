@@ -348,26 +348,53 @@ enum GeoPDFReader {
                           height: maxPY - minPY)
         }()
 
-        // Projection. We decode three cases:
-        //   LL / LongLat — CTM gives (longitude, latitude) in degrees.
-        //   UT          — CTM gives (easting, northing) UTM metres; need Zone + Hemi.
-        //   TC          — Transverse Mercator. ADF/AUSLIG topo sheets use this
-        //                with CentralMeridian aligned to a UTM zone (e.g. 153°E = zone 56).
-        //                We read the /Display sub-dict for the UTM zone/hemi.
+        // Projection. We now handle the full set:
+        //   LL / LongLat — geographic.
+        //   UT          — UTM (zone + hemisphere).
+        //   TC          — Transverse Mercator (arbitrary central meridian).
+        //   LC          — Lambert Conformal Conic (two standard parallels).
+        // Parameters are read directly from /Projection; /Display is consulted
+        // for the UTM shortcut (lets TC PDFs whose CentralMeridian matches a
+        // standard UTM zone reuse the NGA UTM helper).
         var projectionType = "LL"
         var utmZone: Int = 0
         var utmHemiName = "N"
+        var centralMeridian: Double = 0
+        var originLatitude:  Double = 0
+        var falseEasting:    Double = 0
+        var falseNorthing:   Double = 0
+        var scaleFactor:     Double = 1.0
+        var stdParallel1:    Double = 0
+        var stdParallel2:    Double = 0
+        var datumCode:       String = "WE"
+
+        // Read a Double that may be encoded as PDF number, PDF string, or via
+        // dictName fallback.
+        func dictReal(_ dict: CGPDFDictionaryRef, _ key: String) -> Double? {
+            var n: CGPDFReal = 0
+            if CGPDFDictionaryGetNumber(dict, key, &n) { return Double(n) }
+            if let s = dictString(dict, key) { return Double(s) }
+            return nil
+        }
 
         var projDict: CGPDFDictionaryRef?
         if CGPDFDictionaryGetDictionary(entryDict, "Projection", &projDict),
            let pDict = projDict {
             if let t = dictName(pDict, "ProjectionType") { projectionType = t }
-            if let z = dictInt(pDict, "Zone")  { utmZone = z }
-            if let h = dictName(pDict, "Hemisphere")  { utmHemiName = h.uppercased() }
+            if let z = dictInt(pDict,  "Zone")                { utmZone        = z }
+            if let h = dictName(pDict, "Hemisphere")          { utmHemiName    = h.uppercased() }
+            if let v = dictReal(pDict, "CentralMeridian")     { centralMeridian = v }
+            if let v = dictReal(pDict, "OriginLatitude")      { originLatitude  = v }
+            if let v = dictReal(pDict, "FalseEasting")        { falseEasting    = v }
+            if let v = dictReal(pDict, "FalseNorthing")       { falseNorthing   = v }
+            if let v = dictReal(pDict, "ScaleFactor")         { scaleFactor     = v }
+            if let v = dictReal(pDict, "StandardParallelOne") { stdParallel1    = v }
+            if let v = dictReal(pDict, "StandardParallelTwo") { stdParallel2    = v }
+            if let d = dictName(pDict, "Datum")               { datumCode       = d.uppercased() }
         }
 
         // /Display dict often carries the easy-to-use UTM mapping (Zone, Hemi)
-        // even when the main /Projection is TC. Prefer Display values if set.
+        // even when the main /Projection is TC. Prefer Display values when set.
         var displayDict: CGPDFDictionaryRef?
         if CGPDFDictionaryGetDictionary(entryDict, "Display", &displayDict),
            let dDict = displayDict {
@@ -393,35 +420,75 @@ enum GeoPDFReader {
         var lats: [Double] = []
         var lons: [Double] = []
 
-        NSLog("[GeoPDF] dispatching projection='\(projectionType)' utmZone=\(utmZone) utmHemi=\(utmHemiName)")
-        switch projectionType {
-        case "LL", "LongLat":
-            // (x, y) is (longitude, latitude) in degrees.
-            lons = projected.map { $0.x }
-            lats = projected.map { $0.y }
+        // Build a Projection from what we parsed and dispatch.
+        let ellipsoid = Ellipsoid.forDatumCode(datumCode)
+        let projection: Projection? = {
+            switch projectionType {
+            case "LL", "LongLat":
+                return .longLat
 
-        case "UT", "TC":
-            // UT — CTM gives UTM easting/northing directly.
-            // TC — Transverse Mercator. For ADF/AUSLIG sheets the TC parameters
-            //      match a standard UTM zone (e.g. CentralMeridian=153° → zone
-            //      56), so we round-trip via NGA UTM using the Display zone/hemi.
-            guard utmZone > 0 else {
-                NSLog("[GeoPDF] \(projectionType) projection but no UTM Zone — crop only")
-                return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
-            }
-            let hemisphere: Hemisphere = (utmHemiName == "S") ? .SOUTH : .NORTH
-            for (idx, pt) in projected.enumerated() {
-                let utm = UTM(utmZone, hemisphere, pt.x, pt.y)
-                let gp = utm.toPoint()
-                NSLog("[GeoPDF] UTM corner \(idx): E=\(pt.x) N=\(pt.y) -> lat=\(gp.latitude) lon=\(gp.longitude)")
-                lats.append(gp.latitude)
-                lons.append(gp.longitude)
-            }
-            NSLog("[GeoPDF] LGIDict \(projectionType) zone=\(utmZone)\(utmHemiName) — decoded \(lats.count) Neatline points")
+            case "UT":
+                guard utmZone > 0 else { return nil }
+                let h: Hemisphere = (utmHemiName == "S") ? .SOUTH : .NORTH
+                return .utm(zone: utmZone, hemisphere: h, ellipsoid: ellipsoid)
 
-        default:
+            case "TC":
+                // Prefer the UTM shortcut when /Display gave us a zone AND the
+                // TC parameters match a UTM zone (FE 500000, FN 10000000 for
+                // south or 0 for north, k0 0.9996, central meridian = zone
+                // central). For ADF/AUSLIG PDFs this hits.
+                let cmMatchesZone = utmZone > 0 &&
+                    abs(centralMeridian - (Double(utmZone) * 6 - 183)) < 0.01
+                let isStandardUTM = cmMatchesZone &&
+                    abs(falseEasting - 500_000) < 0.5 &&
+                    abs(scaleFactor - 0.9996) < 1e-4
+                if isStandardUTM {
+                    let h: Hemisphere = (utmHemiName == "S") ? .SOUTH : .NORTH
+                    return .utm(zone: utmZone, hemisphere: h, ellipsoid: ellipsoid)
+                }
+                // Otherwise solve the general TM directly with the LGIDict params.
+                return .transverseMercator(
+                    centralMeridian: centralMeridian,
+                    originLatitude:  originLatitude,
+                    falseEasting:    falseEasting,
+                    falseNorthing:   falseNorthing,
+                    scaleFactor:     scaleFactor == 0 ? 1.0 : scaleFactor,
+                    ellipsoid:       ellipsoid
+                )
+
+            case "LC":
+                // LCC needs two standard parallels. Some encodings omit
+                // StandardParallelTwo for the "1SP" variant — treat as p2==p1.
+                let p2 = stdParallel2 != 0 ? stdParallel2 : stdParallel1
+                return .lambertConformalConic(
+                    stdParallel1:    stdParallel1,
+                    stdParallel2:    p2,
+                    originLatitude:  originLatitude,
+                    centralMeridian: centralMeridian,
+                    falseEasting:    falseEasting,
+                    falseNorthing:   falseNorthing,
+                    ellipsoid:       ellipsoid
+                )
+
+            default:
+                return nil
+            }
+        }()
+
+        guard let proj = projection else {
             NSLog("[GeoPDF] LGIDict projection='\(projectionType)' not supported — crop only")
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
+        }
+
+        NSLog("[GeoPDF] dispatching projection=\(proj) datum=\(datumCode) (\(projected.count) corners)")
+        for (idx, pt) in projected.enumerated() {
+            guard let g = proj.inverse(easting: pt.x, northing: pt.y) else {
+                NSLog("[GeoPDF] corner \(idx) inverse failed (E=\(pt.x), N=\(pt.y))")
+                return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
+            }
+            NSLog("[GeoPDF] corner \(idx): E=\(pt.x) N=\(pt.y) -> lat=\(g.lat) lon=\(g.lon)")
+            lats.append(g.lat)
+            lons.append(g.lon)
         }
 
         guard let minLon = lons.min(), let maxLon = lons.max(),
