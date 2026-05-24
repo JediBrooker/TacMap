@@ -55,10 +55,17 @@ enum GeoJSONExporter {
             "marker-color": markerColor(for: wp.kind),
             "marker-symbol": markerSymbol(for: wp.kind),
             // namespaced metadata
-            "tacticalmaps:category": "waypoint",
-            "tacticalmaps:kind":     wp.kind.rawValue,
+            "tacticalmaps:category": kindCategory(wp.kind),
+            "tacticalmaps:kind":     kindDescriptor(wp.kind),
             "tacticalmaps:created_at": ISO8601DateFormatter().string(from: wp.createdAt)
         ]
+        // Carry the structured APP-6C spec verbatim for round-tripping into
+        // other tools that may want to re-render the symbol.
+        if let spec = wp.kind.militarySpec {
+            props["tacticalmaps:affiliation"] = spec.affiliation.rawValue
+            props["tacticalmaps:echelon"]     = spec.echelon.rawValue
+            props["tacticalmaps:function"]    = spec.function.rawValue
+        }
         if let n = wp.notes     { props["description"] = n }     // simplestyle uses "description"
         if let e = wp.elevation { props["tacticalmaps:elevation_m"] = e }
 
@@ -129,55 +136,57 @@ enum GeoJSONExporter {
 
     private static func markerColor(for kind: WaypointKind) -> String {
         switch kind {
-        case .generic:     return "#FFD700"  // yellow
-
-        // Friendly (APP-6 friend medium-intensity cyan)
-        case .friendlySection, .friendlyPlatoon, .friendlyCompany,
-             .friendlyRegiment, .friendlyBrigade:
-            return "#80E0FF"
-
-        // Enemy (APP-6 hostile medium-intensity red)
-        case .enemySection, .enemyPlatoon, .enemyCompany,
-             .enemyRegiment, .enemyBrigade:
-            return "#FF8080"
-
-        // Tactical control measures (black)
-        case .axisOfAssault, .supportByFire, .attackByFire,
-             .formUpPoint, .rvPoint, .axp, .lz:
-            return "#1A1A1A"
+        case .generic:                  return "#FFD700"
+        case .military(let spec):       return spec.affiliation.fillHex
+        case .controlMeasure:           return "#1A1A1A"
         }
     }
 
     private static func markerSymbol(for kind: WaypointKind) -> String {
-        // Mapbox Maki icon names (used by geojson.io for marker glyphs).
-        // For NATO-style markers there's no perfect Maki equivalent; we pick
-        // the closest existing symbol so the marker renders in third-party
-        // tools instead of falling back to the default pin.
         switch kind {
-        case .generic:          return "marker"
+        case .generic:                  return "marker"
+        case .military(let spec):       return makiSymbol(for: spec)
+        case .controlMeasure(let m):    return makiSymbol(for: m)
+        }
+    }
 
-        // Friendly infantry — echelon implied by name
-        case .friendlySection:  return "square"
-        case .friendlyPlatoon:  return "square"
-        case .friendlyCompany:  return "square"
-        case .friendlyRegiment: return "square"
-        case .friendlyBrigade:  return "square"
+    /// Closest Mapbox Maki icon for a military spec. There's no real
+    /// APP-6 equivalent in Maki so this is a best-effort hint for tools
+    /// like geojson.io.
+    private static func makiSymbol(for spec: MilitarySymbolSpec) -> String {
+        switch spec.affiliation {
+        case .friend:  return "square"
+        case .hostile: return "square-stroked"
+        case .neutral: return "square"
+        case .unknown: return "circle"
+        }
+    }
 
-        // Enemy infantry — echelon implied by name
-        case .enemySection:     return "square-stroked"
-        case .enemyPlatoon:     return "square-stroked"
-        case .enemyCompany:     return "square-stroked"
-        case .enemyRegiment:    return "square-stroked"
-        case .enemyBrigade:     return "square-stroked"
+    private static func makiSymbol(for m: TacticalControlMeasure) -> String {
+        switch m {
+        case .axisOfAssault: return "arrow"
+        case .supportByFire: return "scope"
+        case .attackByFire:  return "fire-station"
+        case .formUpPoint:   return "square-stroked"
+        case .rvPoint:       return "rally"
+        case .axp:           return "hospital"
+        case .lz:            return "heliport"
+        }
+    }
 
-        // Tactical control measures
-        case .axisOfAssault:    return "arrow"
-        case .supportByFire:    return "scope"
-        case .attackByFire:     return "fire-station"
-        case .formUpPoint:      return "square-stroked"
-        case .rvPoint:          return "rally"
-        case .axp:              return "hospital"
-        case .lz:               return "heliport"
+    private static func kindCategory(_ kind: WaypointKind) -> String {
+        switch kind {
+        case .generic:        return "generic"
+        case .military:       return "military"
+        case .controlMeasure: return "controlMeasure"
+        }
+    }
+
+    private static func kindDescriptor(_ kind: WaypointKind) -> String {
+        switch kind {
+        case .generic:                return "generic"
+        case .military(let spec):     return "\(spec.affiliation.rawValue).\(spec.function.rawValue).\(spec.echelon.rawValue)"
+        case .controlMeasure(let m):  return m.rawValue
         }
     }
 

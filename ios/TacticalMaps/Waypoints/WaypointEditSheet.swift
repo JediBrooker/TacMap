@@ -2,8 +2,8 @@ import SwiftUI
 import CoreLocation
 
 /// Edit (or create) a single waypoint. Reachable by tapping any row in
-/// `WaypointListSheet`. Lets the user rename, change icon, edit notes /
-/// elevation, and delete.
+/// `WaypointListSheet`. Lets the user rename, change category & APP-6C
+/// symbol selection, edit notes / elevation, and delete.
 struct WaypointEditSheet: View {
     @ObservedObject var waypointStore: WaypointStore
     /// nil = creating a brand-new waypoint at `defaultCoordinate`.
@@ -12,7 +12,13 @@ struct WaypointEditSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
-    @State private var kind: WaypointKind = .generic
+    @State private var category: KindCategory = .military
+    // Military
+    @State private var affiliation: SymbolAffiliation = .friend
+    @State private var echelon:     SymbolEchelon     = .platoon
+    @State private var function:    SymbolFunction    = .infantry
+    // Control measure
+    @State private var control:     TacticalControlMeasure = .formUpPoint
     @State private var notes: String = ""
     @State private var elevationText: String = ""
     @State private var showDeleteConfirm = false
@@ -25,9 +31,20 @@ struct WaypointEditSheet: View {
         self.defaultCoordinate = defaultCoordinate
         if let wp = original {
             _name          = State(initialValue: wp.name)
-            _kind          = State(initialValue: wp.kind)
             _notes         = State(initialValue: wp.notes ?? "")
             _elevationText = State(initialValue: wp.elevation.map { String(Int($0)) } ?? "")
+            switch wp.kind {
+            case .generic:
+                _category = State(initialValue: .generic)
+            case .military(let spec):
+                _category    = State(initialValue: .military)
+                _affiliation = State(initialValue: spec.affiliation)
+                _echelon     = State(initialValue: spec.echelon)
+                _function    = State(initialValue: spec.function)
+            case .controlMeasure(let m):
+                _category = State(initialValue: .controlMeasure)
+                _control  = State(initialValue: m)
+            }
         }
     }
 
@@ -35,27 +52,62 @@ struct WaypointEditSheet: View {
         NavigationStack {
             Form {
                 Section("Name") {
-                    TextField("e.g. Camp Alpha", text: $name)
+                    TextField("e.g. 1 Pl, A Coy", text: $name)
                         .autocorrectionDisabled()
                 }
 
+                // Live preview of the current symbol selection
                 Section {
-                    NavigationLink {
-                        WaypointKindPicker(selection: $kind)
-                    } label: {
-                        HStack {
-                            WaypointKindIcon(kind: kind, size: 32)
-                                .frame(width: 36)
-                            Text(kind.displayName)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.85)
-                            Spacer()
-                            Text(kind.category.displayName)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                    HStack {
+                        Spacer()
+                        WaypointKindIcon(kind: currentKind, size: 64)
+                            .frame(width: 80, height: 80)
+                        Spacer()
+                    }
+                    .listRowBackground(Color(.systemGroupedBackground))
+                } header: { Text("Preview") }
+
+                Section("Type") {
+                    Picker("Category", selection: $category) {
+                        ForEach(KindCategory.allCases, id: \.self) { c in
+                            Text(c.displayName).tag(c)
                         }
                     }
-                } header: { Text("Symbol") }
+                    .pickerStyle(.segmented)
+                }
+
+                switch category {
+                case .generic:
+                    EmptyView()
+
+                case .military:
+                    Section("Military Unit (APP-6C)") {
+                        Picker("Affiliation", selection: $affiliation) {
+                            ForEach(SymbolAffiliation.allCases, id: \.self) { a in
+                                Text(a.displayName).tag(a)
+                            }
+                        }
+                        Picker("Echelon", selection: $echelon) {
+                            ForEach(SymbolEchelon.allCases, id: \.self) { e in
+                                Text(e.displayName).tag(e)
+                            }
+                        }
+                        Picker("Function / Branch", selection: $function) {
+                            ForEach(SymbolFunction.allCases, id: \.self) { f in
+                                Text(f.displayName).tag(f)
+                            }
+                        }
+                    }
+
+                case .controlMeasure:
+                    Section("Tactical Control Measure") {
+                        Picker("Measure", selection: $control) {
+                            ForEach(TacticalControlMeasure.allCases, id: \.self) { m in
+                                Text(m.displayName).tag(m)
+                            }
+                        }
+                    }
+                }
 
                 Section("Notes") {
                     TextField("Optional", text: $notes, axis: .vertical)
@@ -115,19 +167,30 @@ struct WaypointEditSheet: View {
         }
     }
 
+    /// Current kind derived from the live editor state.
+    private var currentKind: WaypointKind {
+        switch category {
+        case .generic:        return .generic
+        case .military:       return .military(.init(affiliation: affiliation,
+                                                     echelon: echelon,
+                                                     function: function))
+        case .controlMeasure: return .controlMeasure(control)
+        }
+    }
+
     private var locationCoordinate: CLLocationCoordinate2D {
         original?.coordinate ?? defaultCoordinate
     }
 
     private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName  = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedElevation = Double(elevationText.trimmingCharacters(in: .whitespaces))
 
         if let existing = original {
             var updated = existing
             updated.name      = trimmedName
-            updated.kind      = kind
+            updated.kind      = currentKind
             updated.notes     = trimmedNotes.isEmpty ? nil : trimmedNotes
             updated.elevation = parsedElevation
             waypointStore.update(updated)
@@ -137,7 +200,7 @@ struct WaypointEditSheet: View {
                 notes:     trimmedNotes.isEmpty ? nil : trimmedNotes,
                 coordinate: defaultCoordinate,
                 elevation: parsedElevation,
-                kind:      kind
+                kind:      currentKind
             )
             waypointStore.add(new)
         }
@@ -145,39 +208,15 @@ struct WaypointEditSheet: View {
     }
 }
 
-/// Grouped picker for `WaypointKind`. Pushed from `WaypointEditSheet`.
-private struct WaypointKindPicker: View {
-    @Binding var selection: WaypointKind
-    @Environment(\.dismiss) private var dismiss
+/// Top-level category in the edit sheet picker.
+private enum KindCategory: String, CaseIterable, Hashable {
+    case generic, military, controlMeasure
 
-    var body: some View {
-        List {
-            ForEach(WaypointCategory.allCases, id: \.self) { category in
-                Section(category.displayName) {
-                    ForEach(category.kinds, id: \.self) { kind in
-                        Button {
-                            selection = kind
-                            dismiss()
-                        } label: {
-                            HStack {
-                                WaypointKindIcon(kind: kind, size: 36)
-                                    .frame(width: 40)
-                                Text(kind.displayName)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(2)
-                                    .minimumScaleFactor(0.85)
-                                Spacer()
-                                if kind == selection {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    var displayName: String {
+        switch self {
+        case .generic:        return "Generic"
+        case .military:       return "Military"
+        case .controlMeasure: return "Control"
         }
-        .navigationTitle("Symbol")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

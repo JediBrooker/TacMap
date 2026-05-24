@@ -52,16 +52,25 @@ final class WaypointStore: ObservableObject {
         }
     }
 
-    /// Seed the demo waypoints so a first run shows real APP-6 symbology
-    /// rather than an empty map. Two friendly platoons opposing two enemy
-    /// sections, plus a tactical control measure.
+    /// Seed the demo waypoints so a first run shows real APP-6C symbology
+    /// rather than an empty map. Mix of friendly infantry, hostile armour,
+    /// a neutral medical post, an unknown contact, and a control measure.
     private func seedDemoIfEmpty() {
         waypoints = [
-            Waypoint(name: "1 Pl, A Coy",  latitude: 37.7820, longitude: -122.4310, elevation: 2345, kind: .friendlyPlatoon),
-            Waypoint(name: "2 Pl, A Coy",  latitude: 37.7750, longitude: -122.4250, elevation: 1856, kind: .friendlyPlatoon),
-            Waypoint(name: "En Sect (S)",  latitude: 37.7790, longitude: -122.4080, elevation: 2120, kind: .enemySection),
-            Waypoint(name: "En Sect (N)",  latitude: 37.7730, longitude: -122.4140, elevation: 1620, kind: .enemySection),
-            Waypoint(name: "FUP CHARLIE",  latitude: 37.7770, longitude: -122.4200, elevation: 1500, kind: .formUpPoint)
+            Waypoint(name: "1 Pl, A Coy",  latitude: 37.7820, longitude: -122.4310, elevation: 2345,
+                     kind: .military(.init(affiliation: .friend,  echelon: .platoon, function: .infantry))),
+            Waypoint(name: "2 Pl, A Coy",  latitude: 37.7750, longitude: -122.4250, elevation: 1856,
+                     kind: .military(.init(affiliation: .friend,  echelon: .platoon, function: .infantry))),
+            Waypoint(name: "En Armd Sect", latitude: 37.7790, longitude: -122.4080, elevation: 2120,
+                     kind: .military(.init(affiliation: .hostile, echelon: .section, function: .armour))),
+            Waypoint(name: "En Inf Sect",  latitude: 37.7730, longitude: -122.4140, elevation: 1620,
+                     kind: .military(.init(affiliation: .hostile, echelon: .section, function: .infantry))),
+            Waypoint(name: "Med Post",     latitude: 37.7760, longitude: -122.4180, elevation: 1700,
+                     kind: .military(.init(affiliation: .neutral, echelon: .squad,   function: .medical))),
+            Waypoint(name: "Unk Contact",  latitude: 37.7700, longitude: -122.4090, elevation: 1500,
+                     kind: .military(.init(affiliation: .unknown, echelon: .squad,   function: .unspecified))),
+            Waypoint(name: "FUP CHARLIE",  latitude: 37.7770, longitude: -122.4200, elevation: 1500,
+                     kind: .controlMeasure(.formUpPoint))
         ]
         persist()
     }

@@ -55,19 +55,109 @@ struct Waypoint: Identifiable, Codable, Hashable {
     }
 }
 
-/// All waypoint kinds, grouped by category. Order within each category is the
-/// order shown in the picker.
-enum WaypointKind: String, Codable, CaseIterable, Hashable {
-    // MARK: Generic
+/// What a waypoint represents. Three top-level cases:
+///   - `.generic`            : plain field marker
+///   - `.military(spec)`     : APP-6C unit symbol (affiliation × echelon × function)
+///   - `.controlMeasure(…)`  : tactical point-symbol control measure (FUP, RV, LZ, etc.)
+enum WaypointKind: Hashable, Codable {
     case generic
+    case military(MilitarySymbolSpec)
+    case controlMeasure(TacticalControlMeasure)
 
-    // MARK: Friendly Infantry (APP-6 friend frame: blue rectangle, infantry X)
-    case friendlySection, friendlyPlatoon, friendlyCompany, friendlyRegiment, friendlyBrigade
+    // MARK: Tagged Codable
 
-    // MARK: Enemy Infantry (APP-6 hostile frame: red diamond, infantry X)
-    case enemySection, enemyPlatoon, enemyCompany, enemyRegiment, enemyBrigade
+    private enum CodingKeys: String, CodingKey { case type, spec, control }
 
-    // MARK: Tactical control measures (black)
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try c.decode(String.self, forKey: .type)
+        switch type {
+        case "generic":
+            self = .generic
+        case "military":
+            self = .military(try c.decode(MilitarySymbolSpec.self, forKey: .spec))
+        case "controlMeasure":
+            self = .controlMeasure(try c.decode(TacticalControlMeasure.self, forKey: .control))
+        default:
+            self = .generic   // safe fallback for old/unknown persisted data
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .generic:
+            try c.encode("generic", forKey: .type)
+        case .military(let spec):
+            try c.encode("military", forKey: .type)
+            try c.encode(spec, forKey: .spec)
+        case .controlMeasure(let m):
+            try c.encode("controlMeasure", forKey: .type)
+            try c.encode(m, forKey: .control)
+        }
+    }
+
+    // MARK: Display
+
+    /// Short, human-friendly summary.
+    var displayName: String {
+        switch self {
+        case .generic:                return "Waypoint"
+        case .military(let spec):
+            // e.g. "Friendly Infantry Platoon"
+            let prefix = spec.affiliation.displayName
+            let role   = spec.function == .unspecified ? "" : spec.function.displayName + " "
+            return "\(prefix) \(role)\(spec.echelon.displayName)"
+        case .controlMeasure(let m):  return m.displayName
+        }
+    }
+
+    /// Two-line category label used in the edit sheet.
+    var categoryDisplayName: String {
+        switch self {
+        case .generic:         return "Field Marker"
+        case .military:        return "Military Unit (APP-6C)"
+        case .controlMeasure:  return "Tactical Control Measure"
+        }
+    }
+
+    // MARK: Symbol accessors
+
+    /// Non-nil for military kinds — used by the map and picker icon view.
+    var militarySpec: MilitarySymbolSpec? {
+        if case .military(let s) = self { return s }
+        return nil
+    }
+
+    /// Tactical control measure (if any).
+    var controlMeasure: TacticalControlMeasure? {
+        if case .controlMeasure(let m) = self { return m }
+        return nil
+    }
+
+    /// SF Symbol fallback for kinds without a custom drawing
+    /// (generic + tactical control measures).
+    var sfSymbol: String {
+        switch self {
+        case .generic:                  return "mappin"
+        case .military:                 return "shield.fill"   // unused once militarySpec is wired
+        case .controlMeasure(let m):    return m.sfSymbol
+        }
+    }
+
+    /// Tint used when the kind falls back to an SF Symbol pin.
+    var tint: Color {
+        switch self {
+        case .generic:        return .yellow
+        case .military:       return .blue
+        case .controlMeasure: return .black
+        }
+    }
+}
+
+// MARK: - Tactical control measures (point-symbol subset of APP-6C)
+
+enum TacticalControlMeasure: String, Codable, Hashable, CaseIterable {
     case axisOfAssault          // arrow showing direction of advance
     case supportByFire          // SBF position
     case attackByFire           // ABF position
@@ -76,120 +166,27 @@ enum WaypointKind: String, Codable, CaseIterable, Hashable {
     case axp                    // Ambulance Exchange Point
     case lz                     // Landing Zone
 
-    // MARK: - Display
-
     var displayName: String {
         switch self {
-        case .generic:           return "Waypoint"
-
-        case .friendlySection:   return "Friendly Infantry — Section"
-        case .friendlyPlatoon:   return "Friendly Infantry — Platoon"
-        case .friendlyCompany:   return "Friendly Infantry — Company"
-        case .friendlyRegiment:  return "Friendly Infantry — Regiment"
-        case .friendlyBrigade:   return "Friendly Infantry — Brigade"
-
-        case .enemySection:      return "Enemy Infantry — Section"
-        case .enemyPlatoon:      return "Enemy Infantry — Platoon"
-        case .enemyCompany:      return "Enemy Infantry — Company"
-        case .enemyRegiment:     return "Enemy Infantry — Regiment"
-        case .enemyBrigade:      return "Enemy Infantry — Brigade"
-
-        case .axisOfAssault:     return "Axis of Assault"
-        case .supportByFire:     return "Support by Fire (SBF)"
-        case .attackByFire:      return "Attack by Fire (ABF)"
-        case .formUpPoint:       return "Form Up Point (FUP)"
-        case .rvPoint:           return "Rendezvous (RV)"
-        case .axp:               return "Ambulance Exchange (AXP)"
-        case .lz:                return "Landing Zone (LZ)"
+        case .axisOfAssault: return "Axis of Assault"
+        case .supportByFire: return "Support by Fire (SBF)"
+        case .attackByFire:  return "Attack by Fire (ABF)"
+        case .formUpPoint:   return "Form Up Point (FUP)"
+        case .rvPoint:       return "Rendezvous (RV)"
+        case .axp:           return "Ambulance Exchange (AXP)"
+        case .lz:            return "Landing Zone (LZ)"
         }
     }
 
-    var category: WaypointCategory {
-        switch self {
-        case .generic:
-            return .field
-        case .friendlySection, .friendlyPlatoon, .friendlyCompany,
-             .friendlyRegiment, .friendlyBrigade:
-            return .friendly
-        case .enemySection, .enemyPlatoon, .enemyCompany,
-             .enemyRegiment, .enemyBrigade:
-            return .enemy
-        case .axisOfAssault, .supportByFire, .attackByFire,
-             .formUpPoint, .rvPoint, .axp, .lz:
-            return .tactical
-        }
-    }
-
-    /// Returns the APP-6 symbol spec for friendly/enemy unit kinds, or nil
-    /// for kinds that aren't drawn as a NATO unit symbol.
-    var militarySpec: MilitarySymbolSpec? {
-        switch self {
-        case .friendlySection:   return .init(affiliation: .friend,  echelon: .section)
-        case .friendlyPlatoon:   return .init(affiliation: .friend,  echelon: .platoon)
-        case .friendlyCompany:   return .init(affiliation: .friend,  echelon: .company)
-        case .friendlyRegiment:  return .init(affiliation: .friend,  echelon: .regiment)
-        case .friendlyBrigade:   return .init(affiliation: .friend,  echelon: .brigade)
-
-        case .enemySection:      return .init(affiliation: .hostile, echelon: .section)
-        case .enemyPlatoon:      return .init(affiliation: .hostile, echelon: .platoon)
-        case .enemyCompany:      return .init(affiliation: .hostile, echelon: .company)
-        case .enemyRegiment:     return .init(affiliation: .hostile, echelon: .regiment)
-        case .enemyBrigade:      return .init(affiliation: .hostile, echelon: .brigade)
-
-        default: return nil
-        }
-    }
-
-    /// SF Symbol used as the fallback marker glyph for kinds that don't have
-    /// a custom APP-6 drawing (generic waypoint, tactical control measures).
     var sfSymbol: String {
         switch self {
-        case .generic:           return "mappin"
-
-        // The military kinds use militarySpec for their real symbology,
-        // but we keep an SF Symbol fallback for any code path that still
-        // calls into this getter (the MapKit annotation now bypasses it).
-        case .friendlySection, .friendlyPlatoon, .friendlyCompany,
-             .friendlyRegiment, .friendlyBrigade:
-            return "shield.fill"
-        case .enemySection, .enemyPlatoon, .enemyCompany,
-             .enemyRegiment, .enemyBrigade:
-            return "xmark.shield.fill"
-
-        case .axisOfAssault:     return "arrow.up.right.circle.fill"
-        case .supportByFire:     return "scope"
-        case .attackByFire:      return "flame.fill"
-        case .formUpPoint:       return "square.stack.fill"
-        case .rvPoint:           return "person.3.fill"
-        case .axp:               return "cross.case.fill"
-        case .lz:                return "h.square.fill"
+        case .axisOfAssault: return "arrow.up.right.circle.fill"
+        case .supportByFire: return "scope"
+        case .attackByFire:  return "flame.fill"
+        case .formUpPoint:   return "square.stack.fill"
+        case .rvPoint:       return "person.3.fill"
+        case .axp:           return "cross.case.fill"
+        case .lz:            return "h.square.fill"
         }
-    }
-
-    /// Marker pin tint (used only by kinds without a `militarySpec`).
-    var tint: Color {
-        switch category {
-        case .field:    return .yellow
-        case .friendly: return .blue   // unused once militarySpec is wired
-        case .enemy:    return .red    // unused once militarySpec is wired
-        case .tactical: return .black
-        }
-    }
-}
-
-enum WaypointCategory: String, CaseIterable, Hashable {
-    case field, friendly, enemy, tactical
-
-    var displayName: String {
-        switch self {
-        case .field:    return "Field Markers"
-        case .friendly: return "Friendly Units (NATO APP-6)"
-        case .enemy:    return "Enemy Units (NATO APP-6)"
-        case .tactical: return "Tactical Control Measures"
-        }
-    }
-
-    var kinds: [WaypointKind] {
-        WaypointKind.allCases.filter { $0.category == self }
     }
 }
