@@ -103,17 +103,19 @@ final class LockedSizeAnnotationView: MKAnnotationView {
         }
     }
 
-    /// Whenever MapKit relayouts us, re-pin the inner image view to
-    /// the locked size and re-centre it. This catches any code path
-    /// that mutated bounds outside our setter (the layer-level KVO
-    /// would also bypass our override).
+    /// Re-pin the inner image view to the locked size on every layout
+    /// pass — catches any code path that mutated bounds via a route
+    /// the setter doesn't see (layer-level KVO bypasses).
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let lockedSize else { return }
         symbolImageView.frame = CGRect(origin: .zero, size: lockedSize)
-        symbolImageView.center = CGPoint(
-            x: bounds.midX,
-            y: bounds.midY
-        )
+        symbolImageView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        // Same defence at the CALayer level — any 3D transform with
+        // scale gets reset to identity.
+        let t = layer.transform
+        if abs(t.m11 - 1) > 0.001 || abs(t.m22 - 1) > 0.001 || abs(t.m33 - 1) > 0.001 {
+            layer.transform = CATransform3DIdentity
+        }
     }
 }

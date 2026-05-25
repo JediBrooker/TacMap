@@ -21,20 +21,30 @@ struct TacticalControlMeasureSymbolView: View {
     static let haloPadding: CGFloat = 6
 
     var body: some View {
-        Image("AppSymbols/\(measure.assetName)")
-            .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
-            .foregroundStyle(.black)
-            .frame(width: size, height: size)
-            // Three stacked white shadows build up an outer glow without
-            // washing out the silhouette. Radius 2 gives ~4pt visible
-            // halo width, which clears the symbol on satellite imagery.
-            .shadow(color: .white, radius: 2)
-            .shadow(color: .white, radius: 2)
-            .shadow(color: .white, radius: 1)
-            .padding(Self.haloPadding)
-            .rotationEffect(.degrees(rotation))
+        // The rotation lives inside a fixed-size frame so the produced
+        // bitmap is always `size+2*haloPadding` square — independent
+        // of rotation angle. (Without the outer frame, `.rotationEffect`
+        // grows the view's intrinsic size at non-square-multiple
+        // angles, producing different-sized images per rotation —
+        // which downstream looked like the map was scaling the symbol.)
+        let canvas = size + 2 * Self.haloPadding
+        return ZStack {
+            Image("AppSymbols/\(measure.assetName)")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.black)
+                .frame(width: size, height: size)
+                // Three stacked white shadows build up an outer glow
+                // without washing out the silhouette. Radius 2 gives
+                // ~4pt visible halo width, which clears the symbol on
+                // satellite imagery.
+                .shadow(color: .white, radius: 2)
+                .shadow(color: .white, radius: 2)
+                .shadow(color: .white, radius: 1)
+                .rotationEffect(.degrees(rotation))
+        }
+        .frame(width: canvas, height: canvas)
     }
 }
 
