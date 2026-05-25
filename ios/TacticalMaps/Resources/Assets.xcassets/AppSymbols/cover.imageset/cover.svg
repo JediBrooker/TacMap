@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
-<polyline fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="90.83,59.55 111.72,60"/>
-<polyline fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="110.68,58.87 111.72,60 110.68,61.13"/>
-<text x="8.28" y="59.84" font-family="Helvetica" font-size="15" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="#000" transform="rotate(0,8.28,59.84)">C</text>
-<text x="8.31" y="60" font-family="Helvetica" font-size="15" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="#000" transform="rotate(0,8.31,60)">C</text>
-</svg>
