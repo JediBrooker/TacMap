@@ -481,7 +481,16 @@ struct MapContainerView: UIViewRepresentable {
                         ?? MKAnnotationView(annotation: wp, reuseIdentifier: id)
                     view.annotation = wp
                     view.image = MilitarySymbolRenderer.image(for: spec)
-                    // Anchor centre of the frame on the coordinate.
+                    view.centerOffset = .zero
+                    view.canShowCallout = true
+                    return view
+                }
+                if let measure = wp.waypoint.kind.controlMeasure {
+                    let id = "waypoint-control-measure"
+                    let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
+                        ?? MKAnnotationView(annotation: wp, reuseIdentifier: id)
+                    view.annotation = wp
+                    view.image = TacticalControlMeasureRenderer.image(for: measure)
                     view.centerOffset = .zero
                     view.canShowCallout = true
                     return view
