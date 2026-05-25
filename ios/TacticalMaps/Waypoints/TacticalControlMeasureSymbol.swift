@@ -40,23 +40,35 @@ struct TacticalControlMeasureSymbolView: View {
 
 @MainActor
 enum TacticalControlMeasureRenderer {
+    /// Canonical render size before user scale is applied. The actual
+    /// pixel dimensions of the produced UIImage are
+    /// `baseSize * scale + 2 * haloPadding` square.
+    static let baseSize: CGFloat = 64
+
     private struct Key: Hashable {
         let measure: TacticalControlMeasure
         let rotationCentideg: Int   // 0..35999, 1/100 of a degree
+        let scaleCentipct: Int      // scale * 100, rounded
     }
     private static var cache: [Key: UIImage] = [:]
 
     static func image(for measure: TacticalControlMeasure,
                       rotation: Double = 0,
-                      size: CGFloat = 64) -> UIImage? {
+                      scale: Double = 1.0) -> UIImage? {
         let normalized = ((rotation.truncatingRemainder(dividingBy: 360)) + 360)
             .truncatingRemainder(dividingBy: 360)
-        let key = Key(measure: measure,
-                      rotationCentideg: Int((normalized * 100).rounded()))
+        let clampedScale = max(0.25, min(scale, 4.0))
+        let key = Key(
+            measure: measure,
+            rotationCentideg: Int((normalized * 100).rounded()),
+            scaleCentipct: Int((clampedScale * 100).rounded())
+        )
         if let cached = cache[key] { return cached }
-        let view = TacticalControlMeasureSymbolView(measure: measure,
-                                                    rotation: normalized,
-                                                    size: size)
+        let view = TacticalControlMeasureSymbolView(
+            measure: measure,
+            rotation: normalized,
+            size: baseSize * clampedScale
+        )
         let renderer = ImageRenderer(content: view)
         renderer.scale = UIScreen.main.scale
         let img = renderer.uiImage

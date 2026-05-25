@@ -17,6 +17,10 @@ struct Waypoint: Identifiable, Codable, Hashable {
     /// tactical control measures whose orientation conveys direction
     /// (axis of advance, ambush, attack-by-fire, etc.). Ignored otherwise.
     var rotation: Double
+    /// Multiplier on the symbol's default render size. 1.0 = canonical
+    /// (~64pt on screen). Range surfaced in the UI is 0.5–2.5×. Only
+    /// applied to tactical control measures.
+    var scale: Double
     var createdAt: Date
 
     init(id: UUID = UUID(),
@@ -27,6 +31,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
          elevation: Double? = nil,
          kind: WaypointKind = .generic,
          rotation: Double = 0,
+         scale: Double = 1.0,
          createdAt: Date = .now) {
         self.id = id
         self.name = name
@@ -36,6 +41,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
         self.elevation = elevation
         self.kind = kind
         self.rotation = rotation
+        self.scale = scale
         self.createdAt = createdAt
     }
 
@@ -47,11 +53,12 @@ struct Waypoint: Identifiable, Codable, Hashable {
          elevation: Double? = nil,
          kind: WaypointKind = .generic,
          rotation: Double = 0,
+         scale: Double = 1.0,
          createdAt: Date = .now) {
         self.init(id: id, name: name, notes: notes,
                   latitude: coordinate.latitude, longitude: coordinate.longitude,
                   elevation: elevation, kind: kind, rotation: rotation,
-                  createdAt: createdAt)
+                  scale: scale, createdAt: createdAt)
     }
 
     var coordinate: CLLocationCoordinate2D {
@@ -65,7 +72,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
     // MARK: Codable (custom to allow back-compat with files that pre-date `rotation`)
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, notes, latitude, longitude, elevation, kind, rotation, createdAt
+        case id, name, notes, latitude, longitude, elevation, kind, rotation, scale, createdAt
     }
 
     init(from decoder: Decoder) throws {
@@ -78,6 +85,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
         self.elevation = try c.decodeIfPresent(Double.self, forKey: .elevation)
         self.kind = try c.decode(WaypointKind.self, forKey: .kind)
         self.rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
+        self.scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? 1.0
         self.createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
 
@@ -91,6 +99,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
         try c.encodeIfPresent(elevation, forKey: .elevation)
         try c.encode(kind, forKey: .kind)
         try c.encode(rotation, forKey: .rotation)
+        try c.encode(scale, forKey: .scale)
         try c.encode(createdAt, forKey: .createdAt)
     }
 }

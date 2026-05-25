@@ -64,21 +64,6 @@ struct MapContainerView: UIViewRepresentable {
         mv.addGestureRecognizer(tap)
         context.coordinator.tapGesture = tap
 
-        // Long-press over a tactical-control-measure waypoint enters
-        // "drag-to-rotate" mode: the annotation's image follows the
-        // finger angle relative to the symbol centre. See
-        // Coordinator.handleSymbolLongPress.
-        let longPress = UILongPressGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handleSymbolLongPress(_:))
-        )
-        longPress.minimumPressDuration = 0.4
-        // Once the press fires, allow the finger to wander as far as
-        // needed — the user is dragging an angle, not holding still.
-        longPress.allowableMovement = .greatestFiniteMagnitude
-        longPress.delegate = context.coordinator
-        mv.addGestureRecognizer(longPress)
-
         // Programmatic camera moves.
         context.coordinator.cameraRequestSink = mapVM.cameraRequests.sink { region in
             mv.setRegion(region, animated: true)
@@ -120,6 +105,14 @@ struct MapContainerView: UIViewRepresentable {
                                     visibility: visibility)
         // Sync calibration markers + clear when not calibrating.
         context.coordinator.syncCalibrationMarkers()
+        // Mirror MapVM's selection state onto MKMapView. When ContentView
+        // dismisses the floating controls card (sets the ID to nil), we
+        // tell MapKit to deselect the annotation so the user can re-tap
+        // it later to bring the card back.
+        if mapVM.selectedControlMeasureWaypointID == nil
+            && !mv.selectedAnnotations.isEmpty {
+            context.coordinator.deselectAll(on: mv)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -162,16 +155,9 @@ struct MapContainerView: UIViewRepresentable {
 
         private var nextRegionChangeIsUserDriven = false
 
-        // MARK: Long-press rotation gesture state
-
-        /// Set on long-press .began when the user grabs a control-measure
-        /// waypoint; nil otherwise. Carries the bits we need for live
-        /// rotation without having to look the annotation back up by ID
-        /// on every .changed frame.
-        private var rotatingAnnotation: WaypointAnnotation?
-        private var rotatingView: MKAnnotationView?
-        private var rotatingMeasure: TacticalControlMeasure?
-        private let rotationHaptic = UIImpactFeedbackGenerator(style: .medium)
+        /// Light haptic fired when the user selects a control-measure
+        /// waypoint to open the rotate / resize controls card.
+        private let selectionHaptic = UIImpactFeedbackGenerator(style: .light)
 
         init(mapVM: MapViewModel,
              waypointStore: WaypointStore,
@@ -243,104 +229,41 @@ struct MapContainerView: UIViewRepresentable {
 
         // MARK: Drawing tap
 
-        // MARK: Long-press to rotate a tactical control measure
+        // MARK: Annotation selection → floating controls
 
-        /// Long-press grabs the symbol; subsequent finger movement rotates
-        /// it in place around its centre. 0° = north (up), increasing
-        /// clockwise so it matches `WaypointEditSheet`'s slider semantics
-        /// and the rendered SwiftUI `rotationEffect`.
-        @objc func handleSymbolLongPress(_ g: UILongPressGestureRecognizer) {
-            guard let mv = g.view as? MKMapView else { return }
-            let touch = g.location(in: mv)
-
-            switch g.state {
-            case .began:
-                // Find a control-measure annotation whose rendered view
-                // contains the touch. Iterate in reverse so symbols drawn
-                // on top win when they overlap.
-                let candidates = mv.annotations.compactMap { $0 as? WaypointAnnotation }
-                for ann in candidates.reversed() {
-                    guard case .controlMeasure(let measure) = ann.waypoint.kind,
-                          let view = mv.view(for: ann) else { continue }
-                    // view.frame is in the annotation container's coords;
-                    // convert the touch into the same space.
-                    let local = view.superview.map { mv.convert(touch, to: $0) } ?? touch
-                    guard view.frame.contains(local) else { continue }
-                    rotatingAnnotation = ann
-                    rotatingView = view
-                    rotatingMeasure = measure
-                    rotationHaptic.prepare()
-                    rotationHaptic.impactOccurred()
-                    // Visual cue: nudge the symbol up slightly so it feels
-                    // "lifted" off the map while the user rotates it.
-                    UIView.animate(withDuration: 0.12) {
-                        view.transform = CGAffineTransform(scaleX: 1.12, y: 1.12)
-                    }
-                    // Stop the map from panning under the finger while
-                    // we're rotating; restored on .ended.
-                    mv.isScrollEnabled = false
-                    break
-                }
-
-            case .changed:
-                applyLiveRotation(touchInMap: touch, mapView: mv)
-
-            case .ended, .cancelled, .failed:
-                defer { endRotationGesture(on: mv) }
-                guard let ann = rotatingAnnotation else { return }
-                let finalDeg = angleFromCentre(touchInMap: touch,
-                                               annotation: ann,
-                                               mapView: mv)
-                // Persist via the store. The published change triggers
-                // updateUIView → refresh, which removes / re-adds this
-                // annotation with the new rotation baked in.
-                if let wp = waypointStore.waypoints.first(where: { $0.id == ann.waypoint.id }) {
-                    var updated = wp
-                    updated.rotation = finalDeg
-                    waypointStore.update(updated)
-                }
-
-            default:
-                break
+        /// When the user taps a tactical-control-measure waypoint, publish
+        /// its ID on the VM so `ContentView` can show the rotate / resize
+        /// controls card. Tapping other annotation kinds does nothing
+        /// special (they have no per-symbol transforms to tune).
+        func mapView(_ mv: MKMapView, didSelect view: MKAnnotationView) {
+            guard let wp = view.annotation as? WaypointAnnotation,
+                  case .controlMeasure = wp.waypoint.kind else { return }
+            selectionHaptic.prepare()
+            selectionHaptic.impactOccurred()
+            // Update on the main runloop so this published change doesn't
+            // collide with the in-progress delegate callback.
+            DispatchQueue.main.async { [weak self] in
+                self?.mapVM.selectedControlMeasureWaypointID = wp.waypoint.id
             }
         }
 
-        /// Update the annotation view's image to reflect the current
-        /// finger angle. No store write — that happens once on .ended.
-        private func applyLiveRotation(touchInMap touch: CGPoint, mapView mv: MKMapView) {
-            guard let ann = rotatingAnnotation,
-                  let view = rotatingView,
-                  let measure = rotatingMeasure else { return }
-            let deg = angleFromCentre(touchInMap: touch, annotation: ann, mapView: mv)
-            view.image = TacticalControlMeasureRenderer.image(for: measure, rotation: deg)
-        }
-
-        /// Angle in degrees from the annotation's centre to `touch`,
-        /// normalised to [0, 360) and oriented so 0° points north (up).
-        private func angleFromCentre(touchInMap touch: CGPoint,
-                                     annotation ann: WaypointAnnotation,
-                                     mapView mv: MKMapView) -> Double {
-            let centre = mv.convert(ann.coordinate, toPointTo: mv)
-            let dx = Double(touch.x - centre.x)
-            let dy = Double(touch.y - centre.y)
-            // atan2 gives angle from +x axis; UIKit y grows downward, so
-            // adding 90° rotates the reference axis so 0° = up (north).
-            var deg = atan2(dy, dx) * 180 / .pi + 90
-            deg = deg.truncatingRemainder(dividingBy: 360)
-            if deg < 0 { deg += 360 }
-            return deg
-        }
-
-        private func endRotationGesture(on mv: MKMapView) {
-            if let view = rotatingView {
-                UIView.animate(withDuration: 0.12) {
-                    view.transform = .identity
+        func mapView(_ mv: MKMapView, didDeselect view: MKAnnotationView) {
+            guard let wp = view.annotation as? WaypointAnnotation,
+                  case .controlMeasure = wp.waypoint.kind else { return }
+            DispatchQueue.main.async { [weak self] in
+                // Clear only if it's still us; otherwise we'd race with a
+                // freshly-selected sibling annotation.
+                if self?.mapVM.selectedControlMeasureWaypointID == wp.waypoint.id {
+                    self?.mapVM.selectedControlMeasureWaypointID = nil
                 }
             }
-            mv.isScrollEnabled = true
-            rotatingAnnotation = nil
-            rotatingView = nil
-            rotatingMeasure = nil
+        }
+
+        /// Programmatic deselection used when the controls card is dismissed.
+        func deselectAll(on mv: MKMapView) {
+            for ann in mv.selectedAnnotations {
+                mv.deselectAnnotation(ann, animated: false)
+            }
         }
 
         @objc func handleTap(_ tap: UITapGestureRecognizer) {
@@ -602,9 +525,13 @@ struct MapContainerView: UIViewRepresentable {
                     view.annotation = wp
                     view.image = TacticalControlMeasureRenderer.image(
                         for: measure,
-                        rotation: wp.waypoint.rotation)
+                        rotation: wp.waypoint.rotation,
+                        scale: wp.waypoint.scale)
                     view.centerOffset = .zero
-                    view.canShowCallout = true
+                    // Disable the native callout — we drive selection via
+                    // mapView(_:didSelect:) and show our own floating
+                    // rotate / resize controls instead.
+                    view.canShowCallout = false
                     return view
                 }
                 let id = "waypoint"

@@ -42,6 +42,19 @@ struct ContentView: View {
                         .onTapGesture { drawingsPanelOpen = false }
                 }
 
+                // Same pattern for the symbol controls card. Tapping the
+                // map background dismisses; taps on the card or other HUD
+                // controls still pass through because they're rendered
+                // above this layer.
+                if mapVM.selectedControlMeasureWaypointID != nil {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            mapVM.selectedControlMeasureWaypointID = nil
+                        }
+                }
+
                 // Crosshair: always visible (except while drawing — taps go
                 // to vertex placement and the crosshair would compete with
                 // the tap-target markers).
@@ -135,18 +148,33 @@ struct ContentView: View {
                         .padding(.horizontal, 12)
                         .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
                     } else {
-                        // Anchor the centre-on-location pill to the very
-                        // bottom edge of the screen, sitting beside the
-                        // "Legal" / Apple-Maps attribution logo. We offset
-                        // past the safe area (the home-indicator gesture
-                        // zone is still respected because the pill clears
-                        // it horizontally — it's a tap target, not a swipe).
+                        // Floating rotate / resize controls for the
+                        // currently-tapped tactical control measure. Sits
+                        // above the centre pill so the pill never gets
+                        // covered when the card is open.
+                        if let id = mapVM.selectedControlMeasureWaypointID {
+                            SymbolControlsCard(
+                                waypointStore: waypointStore,
+                                waypointID: id,
+                                onDismiss: { mapVM.selectedControlMeasureWaypointID = nil }
+                            )
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 8)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                        // Sit the centre-on-location pill in line with the
+                        // MKMapView "Legal" attribution chip (~12pt above
+                        // the screen bottom). We offset past the safe area
+                        // — the home-indicator gesture zone still works
+                        // because the pill is a tap target, not a swipe.
                         CentreButton {
                             mapVM.centreOnUser(locationService.lastLocation)
                         }
-                        .offset(y: geo.safeAreaInsets.bottom - 4)
+                        .offset(y: max(geo.safeAreaInsets.bottom - 12, 0))
                     }
                 }
+                .animation(.easeInOut(duration: 0.18),
+                           value: mapVM.selectedControlMeasureWaypointID)
                 // HUD sits flush below the dynamic island. We let it bleed slightly
                 // into the safe-area region by using a small negative-ish padding,
                 // ignoring the safe area entirely on the top edge — the box's

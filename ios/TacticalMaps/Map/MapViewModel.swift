@@ -25,6 +25,11 @@ final class MapViewModel: ObservableObject {
     /// cleared to nil only when the centre changes by more than ~10m.
     @Published var centreElevation: Double? = nil
 
+    /// ID of the currently-selected tactical-control-measure waypoint, set
+    /// by the map's `didSelect` delegate. Drives the floating rotate /
+    /// resize controls card in `ContentView`. nil = no selection.
+    @Published var selectedControlMeasureWaypointID: UUID? = nil
+
     // MARK: - Camera signal channels
 
     let cameraRequests     = PassthroughSubject<MKCoordinateRegion, Never>()

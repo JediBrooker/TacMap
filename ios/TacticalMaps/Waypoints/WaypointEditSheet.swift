@@ -21,6 +21,7 @@ struct WaypointEditSheet: View {
     // Control measure
     @State private var control:     TacticalControlMeasure = .assemblyArea
     @State private var rotation:    Double                 = 0
+    @State private var scale:       Double                 = 1.0
     @State private var notes: String = ""
     @State private var elevationText: String = ""
     @State private var showDeleteConfirm = false
@@ -36,6 +37,7 @@ struct WaypointEditSheet: View {
             _notes         = State(initialValue: wp.notes ?? "")
             _elevationText = State(initialValue: wp.elevation.map { String(Int($0)) } ?? "")
             _rotation      = State(initialValue: wp.rotation)
+            _scale         = State(initialValue: wp.scale)
             switch wp.kind {
             case .generic:
                 _category = State(initialValue: .generic)
@@ -65,9 +67,9 @@ struct WaypointEditSheet: View {
                     HStack {
                         Spacer()
                         WaypointKindIcon(kind: currentKind,
-                                         size: 64,
+                                         size: 64 * previewScale,
                                          rotation: previewRotation)
-                            .frame(width: 80, height: 80)
+                            .frame(width: 100, height: 100)
                             .padding(.vertical, 8)
                         Spacer()
                     }
@@ -139,6 +141,32 @@ struct WaypointEditSheet: View {
                         }
                     } header: { Text("Orientation") } footer: {
                         Text("Rotate the symbol to indicate direction (e.g. axis of advance, ambush facing).")
+                            .font(.caption2)
+                    }
+                    Section {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Size")
+                                Spacer()
+                                Text(String(format: "%.2f×", scale))
+                                    .font(.subheadline.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            Slider(value: $scale, in: 0.5...2.5, step: 0.05)
+                            HStack {
+                                Button("Reset") { scale = 1.0 }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                Spacer()
+                                ForEach([0.75, 1.0, 1.5, 2.0], id: \.self) { s in
+                                    Button(String(format: "%g×", s)) { scale = s }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                }
+                            }
+                        }
+                    } header: { Text("Size") } footer: {
+                        Text("Default is 1×. Larger sizes make the symbol easier to read at smaller zoom levels.")
                             .font(.caption2)
                     }
                 }
@@ -219,6 +247,14 @@ struct WaypointEditSheet: View {
         category == .controlMeasure ? rotation : 0
     }
 
+    /// Scale applied to the live preview. Clamped to a reasonable
+    /// display range (0.6×–1.4×) so the preview never overflows
+    /// the picker cell — the persisted value can still be 0.5×–2.5×.
+    private var previewScale: CGFloat {
+        guard category == .controlMeasure else { return 1.0 }
+        return CGFloat(min(max(scale, 0.6), 1.4))
+    }
+
     private var locationCoordinate: CLLocationCoordinate2D {
         original?.coordinate ?? defaultCoordinate
     }
@@ -228,9 +264,11 @@ struct WaypointEditSheet: View {
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedElevation = Double(elevationText.trimmingCharacters(in: .whitespaces))
 
-        // Persist rotation only for control measures; reset to 0 otherwise
-        // so a user who flips category doesn't carry over a stale value.
+        // Persist rotation + scale only for control measures; reset to
+        // defaults otherwise so a user who flips category doesn't carry
+        // over stale values.
         let persistedRotation = category == .controlMeasure ? rotation : 0
+        let persistedScale    = category == .controlMeasure ? scale    : 1.0
 
         if let existing = original {
             var updated = existing
@@ -239,6 +277,7 @@ struct WaypointEditSheet: View {
             updated.notes     = trimmedNotes.isEmpty ? nil : trimmedNotes
             updated.elevation = parsedElevation
             updated.rotation  = persistedRotation
+            updated.scale     = persistedScale
             waypointStore.update(updated)
         } else {
             let new = Waypoint(
@@ -247,7 +286,8 @@ struct WaypointEditSheet: View {
                 coordinate: defaultCoordinate,
                 elevation: parsedElevation,
                 kind:      currentKind,
-                rotation:  persistedRotation
+                rotation:  persistedRotation,
+                scale:     persistedScale
             )
             waypointStore.add(new)
         }
