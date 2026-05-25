@@ -95,7 +95,7 @@ enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
 
 enum SymbolFunction: String, Codable, Hashable, CaseIterable {
     // ---- Combat arms ----
-    case infantry, armour, mechInfantry, recce, cavalry
+    case infantry, armour, mechInfantry, mechInfantryWheeled, recce, cavalry
     case artillery, airDefence, antiTank, mortar, missile
     // ---- Combat support ----
     case engineer, bridging, signal, electronicRanging, electronicWarfare
@@ -120,6 +120,7 @@ enum SymbolFunction: String, Codable, Hashable, CaseIterable {
         case .infantry:           return "Infantry"
         case .armour:             return "Armour"
         case .mechInfantry:       return "Mechanised Infantry"
+        case .mechInfantryWheeled: return "Mechanised Infantry (Wheeled APC)"
         case .recce:              return "Reconnaissance"
         case .cavalry:            return "Cavalry"
         case .artillery:          return "Artillery"
@@ -356,6 +357,10 @@ struct MilitarySymbolView: View {
         case .mechInfantry:
             drawArmourCapsule(ctx: ctx, in: glyphRect)
             drawInfantryX(ctx: ctx, affiliation: affiliation, frame: glyphRect)
+        case .mechInfantryWheeled:
+            drawArmourCapsule(ctx: ctx, in: glyphRect)
+            drawInfantryX(ctx: ctx, affiliation: affiliation, frame: glyphRect)
+            drawWheels(ctx: ctx, in: glyphRect)
         case .recce:                 drawRecceSlash(ctx: ctx, in: glyphRect)
         case .cavalry:
             drawArmourCapsule(ctx: ctx, in: glyphRect)
@@ -508,13 +513,13 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Single flat horizontal line through the centre — APP-6 Supply
-    /// glyph ("side view of a road").
+    /// Single flat horizontal line through the centre, spanning the FULL
+    /// width of the frame (edge-to-edge). APP-6 Supply glyph — "side view
+    /// of a road".
     private func drawSupplyLine(ctx: GraphicsContext, in rect: CGRect) {
-        let inset = rect.width * 0.18
         var p = Path()
-        p.move(to:    CGPoint(x: rect.minX + inset, y: rect.midY))
-        p.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.midY))
+        p.move(to:    CGPoint(x: rect.minX, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
@@ -542,16 +547,21 @@ struct MilitarySymbolView: View {
         ctx.fill(right, with: .color(.black))
     }
 
-    /// Protective dome — single arc spanning the frame width, concave down.
+    /// Protective dome — single arc whose endpoints sit at the bottom-left
+    /// and bottom-right corners of the frame, peaking near the top centre.
+    /// APP-6 Air Defence glyph.
     private func drawAirDefenceDome(ctx: GraphicsContext, in rect: CGRect) {
-        let domeW = rect.width * 0.78
-        let domeH = rect.height * 0.65
-        let cx = rect.midX
-        let baseY = rect.midY + domeH * 0.25
+        // Base endpoints AT the corners of the frame.
+        let leftEnd  = CGPoint(x: rect.minX, y: rect.maxY)
+        let rightEnd = CGPoint(x: rect.maxX, y: rect.maxY)
+        // Control point well above the top edge — pulls the quadratic
+        // bezier high so the apex of the dome sits just below the top of
+        // the frame instead of sagging in the middle.
+        let control  = CGPoint(x: rect.midX,
+                               y: rect.minY - rect.height * 0.35)
         var p = Path()
-        p.move(to: CGPoint(x: cx - domeW / 2, y: baseY))
-        p.addQuadCurve(to: CGPoint(x: cx + domeW / 2, y: baseY),
-                       control: CGPoint(x: cx, y: baseY - domeH))
+        p.move(to: leftEnd)
+        p.addQuadCurve(to: rightEnd, control: control)
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
@@ -912,6 +922,21 @@ struct MilitarySymbolView: View {
         tri.addLine(to: CGPoint(x: rect.midX + 5, y: cy))
         tri.closeSubpath()
         ctx.stroke(tri, with: .color(.black), lineWidth: 1.5)
+    }
+
+    /// Three small open circles in a row along the bottom inside edge of
+    /// the frame, representing the wheels of a wheeled APC. Used for
+    /// Mechanised Infantry (Wheeled APC).
+    private func drawWheels(ctx: GraphicsContext, in rect: CGRect) {
+        let r       = rect.height * 0.07
+        let cy      = rect.maxY - r - 2
+        let spacing = rect.width * 0.18
+        for dx in [-spacing, 0, spacing] {
+            let cx = rect.midX + dx
+            let wheel = Path(ellipseIn: CGRect(x: cx - r, y: cy - r,
+                                               width: r * 2, height: r * 2))
+            ctx.stroke(wheel, with: .color(.black), lineWidth: 1.2)
+        }
     }
 
     private func drawLetter(ctx: GraphicsContext, letter: String, in rect: CGRect) {
