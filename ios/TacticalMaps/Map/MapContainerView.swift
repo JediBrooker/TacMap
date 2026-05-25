@@ -726,27 +726,16 @@ struct MapContainerView: UIViewRepresentable {
                 // teardrop MKMarker pin with an SF Symbol glyph.
                 if let spec = wp.waypoint.kind.militarySpec {
                     let id = "waypoint-military"
-                    // Use LockedSizeAnnotationView so the symbol — and
-                    // especially its small echelon indicator (size dots /
-                    // bars above the frame) — gets the same white halo
-                    // treatment as tactical control measures. Military
-                    // symbols stay at a fixed pixel size on screen
-                    // (no zoom tracking) — we just pass scale 1.0 once
-                    // at creation; the symbol won't be re-scaled on
-                    // subsequent camera changes because
-                    // `applyZoomScaleToControlMeasures` filters for
-                    // the .controlMeasure kind.
-                    let view: LockedSizeAnnotationView
-                    if let reused = mv.dequeueReusableAnnotationView(withIdentifier: id)
-                        as? LockedSizeAnnotationView {
-                        view = reused
-                        view.annotation = wp
-                    } else {
-                        view = LockedSizeAnnotationView(annotation: wp,
-                                                        reuseIdentifier: id)
-                    }
-                    view.setSymbolImage(MilitarySymbolRenderer.image(for: spec))
-                    view.applyZoomScale(1.0)
+                    // Military symbols use a plain MKAnnotationView (no
+                    // halo, no enlarged bounds). The user explicitly
+                    // didn't want the entire unit graphic to glow —
+                    // adding a CALayer shadow to the whole image was
+                    // too much. Future work could halo only the
+                    // echelon indicator above the frame.
+                    let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
+                        ?? MKAnnotationView(annotation: wp, reuseIdentifier: id)
+                    view.annotation = wp
+                    view.image = MilitarySymbolRenderer.image(for: spec)
                     view.centerOffset = .zero
                     view.canShowCallout = false
                     view.isDraggable = true
