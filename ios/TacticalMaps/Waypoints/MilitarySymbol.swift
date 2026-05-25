@@ -375,18 +375,18 @@ struct MilitarySymbolView: View {
         case .mortar:                drawMortarArrow(ctx: ctx, in: glyphRect)
 
         case .engineer:              drawEngineerBridge(ctx: ctx, in: glyphRect)
-        case .bridging:              drawBridging(ctx: ctx, in: glyphRect)
+        case .bridging:              drawAsset(ctx: ctx, named: "AppSymbols/bridging", in: glyphRect)
         case .signal:                drawSignalLightning(ctx: ctx, in: glyphRect)
         case .electronicWarfare:     drawLetter(ctx: ctx, letter: "EW",  in: glyphRect)
-        case .radar:                 drawRadar(ctx: ctx, in: glyphRect)
-        case .cbrn:                  drawCBRN(ctx: ctx, in: glyphRect)
+        case .radar:                 drawAsset(ctx: ctx, named: "AppSymbols/radar", in: glyphRect)
+        case .cbrn:                  drawAsset(ctx: ctx, named: "AppSymbols/cbrn", in: glyphRect)
         case .aviation:              drawRotorBladesBowtie(ctx: ctx, in: glyphRect)
-        case .aviationFixed:         drawFixedWing(ctx: ctx, in: glyphRect)
+        case .aviationFixed:         drawAsset(ctx: ctx, named: "AppSymbols/aviation_fixed", in: glyphRect)
         case .uav:                   drawUAV(ctx: ctx, in: glyphRect)
 
         case .medical:               drawMedicalCross(ctx: ctx, in: glyphRect)
         case .logistics:             drawSupplyLine(ctx: ctx, in: glyphRect)
-        case .maintenance:           drawMaintenance(ctx: ctx, in: glyphRect)
+        case .maintenance:           drawAsset(ctx: ctx, named: "AppSymbols/maintenance", in: glyphRect)
         case .ammunition:            drawAmmunition(ctx: ctx, in: glyphRect)
         case .transportation:        drawWheel(ctx: ctx, in: glyphRect)
 
@@ -787,6 +787,23 @@ struct MilitarySymbolView: View {
                                                width: r * 2, height: r * 2))
             ctx.stroke(wheel, with: .color(.black), lineWidth: 1.2)
         }
+    }
+
+    /// Render a bundled SVG asset (from AppSymbols) into the glyph rect.
+    /// Asset is template-rendering so the black silhouette is preserved
+    /// against the affiliation frame fill.
+    private func drawAsset(ctx: GraphicsContext, named: String, in rect: CGRect) {
+        let img = ctx.resolve(Image(named).renderingMode(.template))
+        // Letterbox the asset inside the glyph rect, preserving aspect.
+        let src = img.size                       // intrinsic size (from SVG)
+        guard src.width > 0, src.height > 0 else { return }
+        let scale = min(rect.width / src.width, rect.height / src.height)
+        let w = src.width * scale
+        let h = src.height * scale
+        let dst = CGRect(x: rect.midX - w / 2,
+                         y: rect.midY - h / 2,
+                         width: w, height: h)
+        ctx.draw(img, in: dst)
     }
 
     private func drawLetter(ctx: GraphicsContext, letter: String, in rect: CGRect) {
