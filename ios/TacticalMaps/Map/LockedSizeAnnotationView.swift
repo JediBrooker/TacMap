@@ -123,20 +123,38 @@ final class LockedSizeAnnotationView: MKAnnotationView {
     func applyZoomScale(_ scale: CGFloat) {
         let safe = max(scale, 0.01)
         self.transform = CGAffineTransform(scaleX: safe, y: safe)
-        // Three halo layers stacked under the symbol. Each contributes
-        // a Gaussian-blurred white shadow; together they accumulate
-        // enough alpha to read as a solid white outline against busy
-        // satellite imagery (one or two layers were too faint).
+        // Halo shrinks as the symbol grows. Visible on-screen halo
+        // width = baseHalo / sqrt(scale) with a 1pt floor — so the
+        // halo never quite disappears, but a 10× symbol gets a ~2pt
+        // halo while a 1× symbol gets ~6pt. (Earlier we kept halo
+        // CONSTANT on screen, which made large symbols look like
+        // they had thick fuzzy outlines.)
         //
-        // Layer-space radius is counter-scaled so the on-screen halo
-        // width stays at ~`onScreenHaloPt` regardless of how much the
-        // symbol has been transform-scaled. Clamped above 1pt because
-        // Core Animation's Gaussian blur falls below its visible
-        // threshold under that.
-        let onScreenHaloPt: CGFloat = 5.0
+        // Layer-space radius = visible / scale, because the layer is
+        // about to be transform-scaled by `scale`.
+        let baseHalo: CGFloat = 6.0
+        let onScreenHaloPt = max(1.5, baseHalo / sqrt(safe))
         let layerRadius = max(1.0, onScreenHaloPt / safe)
         haloLayer1.layer.shadowRadius = layerRadius
         haloLayer2.layer.shadowRadius = layerRadius
         haloLayer3.layer.shadowRadius = layerRadius
+    }
+
+    // MARK: Hit testing
+
+    /// Only the actual symbol image accepts touches — the 40pt
+    /// shadow slack around it is NOT a valid hit target. Otherwise
+    /// when MapKit hit-tests a large symbol (e.g. the user has set
+    /// it to 10× via the size slider), the inflated bounds swallow
+    /// taps meant for smaller neighbouring annotations.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if symbolImageView.frame.contains(point) {
+            return super.hitTest(point, with: event)
+        }
+        return nil
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        symbolImageView.frame.contains(point)
     }
 }
