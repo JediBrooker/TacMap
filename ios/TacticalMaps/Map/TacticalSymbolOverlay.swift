@@ -25,16 +25,42 @@ struct TacticalSymbolOverlay: View {
             if visibility.waypointsVisible {
                 ForEach(waypointStore.waypoints, id: \.id) { wp in
                     if let pos = mapVM.waypointScreenPositions[wp.id] {
+                        let size = bubbleSize(for: wp)
                         SymbolBubble(
                             waypoint: wp,
                             zoomScale: mapVM.zoomScaleFactor,
                             store: waypointStore,
                             mapVM: mapVM
                         )
-                        .position(x: pos.x, y: pos.y)
+                        // `.position(x:y:)` would expand the bubble's
+                        // frame to fill the entire overlay (its hit-
+                        // test region becomes the whole screen),
+                        // causing the click-hijack bug. `.offset` only
+                        // shifts the rendering — frame stays at the
+                        // bubble's intrinsic size, so the hit area
+                        // matches the visible symbol exactly. We
+                        // offset from the ZStack's top-left to the
+                        // bubble's top-left (centre minus half-size).
+                        .frame(width: size, height: size)
+                        .offset(x: pos.x - size / 2,
+                                y: pos.y - size / 2)
                     }
                 }
             }
+        }
+    }
+
+    /// Bubble intrinsic size per waypoint kind, mirroring the
+    /// `glyph` switch inside `SymbolBubble`. Used by the overlay to
+    /// compute the offset that centres the bubble at its map position.
+    private func bubbleSize(for wp: Waypoint) -> CGFloat {
+        switch wp.kind {
+        case .controlMeasure:
+            return max(8, 64 * CGFloat(wp.scale) * mapVM.zoomScaleFactor)
+        case .military:
+            return 44
+        case .generic:
+            return 34
         }
     }
 }
