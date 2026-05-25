@@ -158,15 +158,17 @@ struct ContentView: View {
                             .padding(.bottom, 8)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
-                        // Sit the centre-on-location pill in line with the
-                        // MKMapView "Legal" attribution chip (~12pt above
-                        // the screen bottom). We offset past the safe area
-                        // — the home-indicator gesture zone still works
-                        // because the pill is a tap target, not a swipe.
+                        // Vertically centre the pill on the MKMapView
+                        // "Maps / Legal" attribution chip. The chip's
+                        // centre is ~52pt above the screen bottom; with
+                        // a ~40pt pill height, the pill's bottom needs
+                        // to sit ~32pt above the screen bottom. With
+                        // a 34pt bottom safe-area inset, that means
+                        // offsetting by ~2pt past the safe area.
                         CentreButton {
                             mapVM.centreOnUser(locationService.lastLocation)
                         }
-                        .offset(y: max(geo.safeAreaInsets.bottom - 12, 0))
+                        .offset(y: max(geo.safeAreaInsets.bottom - 32, 0))
                     }
                 }
                 .animation(.easeInOut(duration: 0.18),

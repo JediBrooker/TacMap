@@ -272,12 +272,16 @@ struct MapContainerView: UIViewRepresentable {
         /// the absolute size up or down for any individual symbol.
         private func applyZoomScaleToControlMeasures(in mv: MKMapView) {
             let scaleFactor = currentZoomScaleFactor(for: mv)
+            let oversample = TacticalControlMeasureRenderer.bitmapOversample
             for ann in mv.annotations.compactMap({ $0 as? WaypointAnnotation }) {
                 guard case .controlMeasure = ann.waypoint.kind,
                       let view = mv.view(for: ann) as? LockedSizeAnnotationView
                 else { continue }
                 let s = CGFloat(ann.waypoint.scale) * scaleFactor
-                view.applyZoomScale(s)
+                // Bitmap is rendered at `oversample`× the logical size so
+                // it stays crisp under upscaling. Divide the transform
+                // back down so on-screen display matches the logical size.
+                view.applyZoomScale(s / oversample)
             }
         }
 
@@ -764,7 +768,8 @@ struct MapContainerView: UIViewRepresentable {
                     // change fires applyZoomScaleToControlMeasures.
                     let initialScale = CGFloat(wp.waypoint.scale)
                         * currentZoomScaleFactor(for: mv)
-                    view.applyZoomScale(initialScale)
+                    view.applyZoomScale(initialScale
+                        / TacticalControlMeasureRenderer.bitmapOversample)
                     view.centerOffset = .zero
                     // Disable the native callout — we drive selection via
                     // mapView(_:didSelect:) and show our own floating

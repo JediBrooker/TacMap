@@ -31,9 +31,28 @@ struct TacticalControlMeasureSymbolView: View {
 
 @MainActor
 enum TacticalControlMeasureRenderer {
-    /// Canonical symbol size in points. Symbol scaling at runtime
-    /// happens via the annotation view's transform.
-    static let baseSize: CGFloat = 64
+    /// Canonical display size: a 1× scale symbol appears at this
+    /// point size on screen. Used by MapViewModel default-scale math
+    /// and by the annotation view's transform-scale calculation.
+    static let logicalBaseSize: CGFloat = 64
+
+    /// The SwiftUI view (and therefore the produced bitmap) is
+    /// rendered at this point size — 3× the logical size, so when
+    /// the bitmap is later transform-scaled up to large symbols
+    /// (waypoint.scale × zoomScale = 5× → 320pt on screen) the GPU
+    /// has enough source pixels to avoid the smudge that bilinear
+    /// upsampling from a tiny bitmap produces.
+    static let bitmapBaseSize: CGFloat = 192
+
+    /// Backwards-compat alias — the old name still works for code
+    /// that uses the canonical 1× display size.
+    static let baseSize: CGFloat = logicalBaseSize
+
+    /// Ratio of bitmap-render-size to logical-display-size. The
+    /// annotation view divides its transform-scale by this so the
+    /// on-screen display stays at `logicalBaseSize × waypoint.scale
+    /// × zoomScale` even though the bitmap is 3× bigger.
+    static let bitmapOversample: CGFloat = bitmapBaseSize / logicalBaseSize
 
     private struct Key: Hashable {
         let measure: TacticalControlMeasure
@@ -53,7 +72,7 @@ enum TacticalControlMeasureRenderer {
         let view = TacticalControlMeasureSymbolView(
             measure: measure,
             rotation: normalized,
-            size: baseSize
+            size: bitmapBaseSize
         )
         let renderer = ImageRenderer(content: view)
         renderer.scale = UIScreen.main.scale
