@@ -73,7 +73,10 @@ struct SymbolControlsCard: View {
                 resetTo: 0
             )
 
-            // Size row.
+            // Size row. Range goes up to 6× so the user can grow the
+            // symbol enough to be readable on satellite imagery at wide
+            // zoom levels (a 1× form-up point is ~64pt and disappears
+            // visually against city blocks from 1km altitude).
             sliderRow(
                 icon: "arrow.up.left.and.arrow.down.right.circle",
                 title: "Size",
@@ -86,7 +89,7 @@ struct SymbolControlsCard: View {
                         waypointStore.update(updated)
                     }
                 ),
-                range: 0.5...2.5,
+                range: 0.5...6.0,
                 step: 0.05,
                 resetTo: 1.0
             )

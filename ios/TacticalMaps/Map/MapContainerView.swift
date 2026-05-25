@@ -635,10 +635,26 @@ struct MapContainerView: UIViewRepresentable {
                     let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
                         ?? MKAnnotationView(annotation: wp, reuseIdentifier: id)
                     view.annotation = wp
-                    view.image = TacticalControlMeasureRenderer.image(
+                    let img = TacticalControlMeasureRenderer.image(
                         for: measure,
                         rotation: wp.waypoint.rotation,
                         scale: wp.waypoint.scale)
+                    view.image = img
+                    // PIN THE VIEW TO THE IMAGE'S POINT SIZE.
+                    //
+                    // MKAnnotationView normally auto-sizes from the image,
+                    // but on iOS 18 satellite maps we were seeing the
+                    // symbol grow as the user zoomed in — the layer's
+                    // default `contentsGravity = .resize` was stretching
+                    // the image to whatever bounds MapKit assigned during
+                    // its internal re-layout passes. Lock bounds to the
+                    // image size and set gravity to `.center` so the
+                    // image is drawn at its native pixel size regardless
+                    // of zoom or view reuse.
+                    if let imgSize = img?.size {
+                        view.bounds = CGRect(origin: .zero, size: imgSize)
+                    }
+                    view.layer.contentsGravity = .center
                     view.centerOffset = .zero
                     // Disable the native callout — we drive selection via
                     // mapView(_:didSelect:) and show our own floating

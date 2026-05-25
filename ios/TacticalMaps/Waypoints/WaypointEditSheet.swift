@@ -152,13 +152,13 @@ struct WaypointEditSheet: View {
                                     .font(.subheadline.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
-                            Slider(value: $scale, in: 0.5...2.5, step: 0.05)
+                            Slider(value: $scale, in: 0.5...6.0, step: 0.05)
                             HStack {
                                 Button("Reset") { scale = 1.0 }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
                                 Spacer()
-                                ForEach([0.75, 1.0, 1.5, 2.0], id: \.self) { s in
+                                ForEach([1.0, 2.0, 3.0, 4.0, 6.0], id: \.self) { s in
                                     Button(String(format: "%g×", s)) { scale = s }
                                         .buttonStyle(.bordered)
                                         .controlSize(.small)
@@ -166,7 +166,7 @@ struct WaypointEditSheet: View {
                             }
                         }
                     } header: { Text("Size") } footer: {
-                        Text("Default is 1×. Larger sizes make the symbol easier to read at smaller zoom levels.")
+                        Text("Default is 1×. Larger sizes make the symbol easier to read at wide zoom levels.")
                             .font(.caption2)
                     }
                 }
