@@ -3,39 +3,39 @@ import UIKit
 
 /// Renders a `TacticalControlMeasure` from the bundled PNG / SVG asset
 /// under `Assets.xcassets/AppSymbols/`. Pure black symbol on a
-/// transparent background.
-///
-/// **No halo is baked in.** The white outer glow used to make symbols
-/// pop on satellite imagery is applied live by `LockedSizeAnnotationView`
-/// as a `CALayer` shadow, so its on-screen width can shrink
-/// independently as the symbol is transform-scaled up — the user
-/// wanted the halo to get *relatively* smaller as the symbol grows
-/// (rather than thickening 1:1 with it).
-///
-/// On non-map surfaces (the picker preview), the symbol just sits on
-/// a white card, where a halo would be invisible anyway.
+/// transparent background with a single thin white shadow baked in
+/// so the symbol reads against any basemap (satellite, terrain, dark
+/// PDF). The halo is intentionally small (~2pt visible width at 1×)
+/// so it doesn't dominate when the symbol is transform-scaled up by
+/// the map's zoom-tracking logic.
 struct TacticalControlMeasureSymbolView: View {
     let measure: TacticalControlMeasure
     /// Clockwise rotation in degrees. 0 = canonical orientation.
     var rotation: Double = 0
     var size: CGFloat = 56
+    /// Extra room reserved around the symbol so the halo isn't clipped
+    /// by the rendered bitmap's bounds. The annotation-view-size math
+    /// in `LockedSizeAnnotationView.setSymbolImage` keys off the
+    /// image's reported size, so this padding feeds straight through.
+    static let haloPadding: CGFloat = 3
 
     var body: some View {
-        // Fixed-size canvas so `ImageRenderer` produces the same point
-        // dimensions regardless of rotation angle. Without the outer
-        // .frame, .rotationEffect at non-square angles grows the
-        // intrinsic size to the rotated bbox, breaking downstream
-        // assumptions about image size.
-        ZStack {
+        let canvas = size + 2 * Self.haloPadding
+        return ZStack {
             Image("AppSymbols/\(measure.assetName)")
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(.black)
                 .frame(width: size, height: size)
+                // Single low-radius shadow — visible enough to outline
+                // the silhouette on any background, gentle enough that
+                // when the symbol is scaled 5× by the map's zoom-tracking
+                // transform the halo doesn't read as a thick fuzz.
+                .shadow(color: .white, radius: 1.5)
                 .rotationEffect(.degrees(rotation))
         }
-        .frame(width: size, height: size)
+        .frame(width: canvas, height: canvas)
     }
 }
 
