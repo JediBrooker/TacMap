@@ -89,8 +89,8 @@ struct SymbolControlsCard: View {
                         waypointStore.update(updated)
                     }
                 ),
-                range: 0.5...6.0,
-                step: 0.05,
+                range: 0.1...20.0,
+                step: 0.1,
                 resetTo: 1.0
             )
         }

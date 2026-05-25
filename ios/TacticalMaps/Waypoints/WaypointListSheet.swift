@@ -65,7 +65,8 @@ struct WaypointListSheet: View {
                 WaypointEditSheet(
                     waypointStore: waypointStore,
                     original: nil,
-                    defaultCoordinate: coord
+                    defaultCoordinate: coord,
+                    defaultScale: mapVM.defaultControlMeasureScale
                 )
             }
         }

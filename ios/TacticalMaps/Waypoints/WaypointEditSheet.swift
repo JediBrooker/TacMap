@@ -28,7 +28,8 @@ struct WaypointEditSheet: View {
 
     init(waypointStore: WaypointStore,
          original: Waypoint? = nil,
-         defaultCoordinate: CLLocationCoordinate2D = .init(latitude: 0, longitude: 0)) {
+         defaultCoordinate: CLLocationCoordinate2D = .init(latitude: 0, longitude: 0),
+         defaultScale: Double = 1.0) {
         self.waypointStore = waypointStore
         self.original = original
         self.defaultCoordinate = defaultCoordinate
@@ -51,6 +52,11 @@ struct WaypointEditSheet: View {
                 _category = State(initialValue: .controlMeasure)
                 _control  = State(initialValue: m)
             }
+        } else {
+            // New tactical control measure: start at the zoom-appropriate
+            // scale so the symbol enters at ~10% of screen height at the
+            // current zoom level.
+            _scale = State(initialValue: defaultScale)
         }
     }
 
@@ -152,13 +158,13 @@ struct WaypointEditSheet: View {
                                     .font(.subheadline.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
-                            Slider(value: $scale, in: 0.5...6.0, step: 0.05)
+                            Slider(value: $scale, in: 0.1...20.0, step: 0.1)
                             HStack {
                                 Button("Reset") { scale = 1.0 }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
                                 Spacer()
-                                ForEach([1.0, 2.0, 3.0, 4.0, 6.0], id: \.self) { s in
+                                ForEach([0.5, 1.0, 2.0, 5.0, 10.0], id: \.self) { s in
                                     Button(String(format: "%g×", s)) { scale = s }
                                         .buttonStyle(.bordered)
                                         .controlSize(.small)
@@ -166,7 +172,7 @@ struct WaypointEditSheet: View {
                             }
                         }
                     } header: { Text("Size") } footer: {
-                        Text("Default is 1×. Larger sizes make the symbol easier to read at wide zoom levels.")
+                        Text("Scale multiplier on the symbol's geographic footprint. The symbol shrinks when the map zooms out and grows when it zooms in.")
                             .font(.caption2)
                     }
                 }

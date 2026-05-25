@@ -50,34 +50,32 @@ struct TacticalControlMeasureSymbolView: View {
 
 @MainActor
 enum TacticalControlMeasureRenderer {
-    /// Canonical render size before user scale is applied. The actual
-    /// pixel dimensions of the produced UIImage are
-    /// `baseSize * scale + 2 * haloPadding` square.
+    /// Canonical render size of every produced UIImage. All per-waypoint
+    /// size variation (and all zoom-driven scaling) is applied via the
+    /// annotation view's `transform` at render time — the renderer here
+    /// always returns a base-size bitmap so the cache only ever holds
+    /// (measure × rotation) variants, not (measure × rotation × scale).
     static let baseSize: CGFloat = 64
 
     private struct Key: Hashable {
         let measure: TacticalControlMeasure
         let rotationCentideg: Int   // 0..35999, 1/100 of a degree
-        let scaleCentipct: Int      // scale * 100, rounded
     }
     private static var cache: [Key: UIImage] = [:]
 
     static func image(for measure: TacticalControlMeasure,
-                      rotation: Double = 0,
-                      scale: Double = 1.0) -> UIImage? {
+                      rotation: Double = 0) -> UIImage? {
         let normalized = ((rotation.truncatingRemainder(dividingBy: 360)) + 360)
             .truncatingRemainder(dividingBy: 360)
-        let clampedScale = max(0.25, min(scale, 4.0))
         let key = Key(
             measure: measure,
-            rotationCentideg: Int((normalized * 100).rounded()),
-            scaleCentipct: Int((clampedScale * 100).rounded())
+            rotationCentideg: Int((normalized * 100).rounded())
         )
         if let cached = cache[key] { return cached }
         let view = TacticalControlMeasureSymbolView(
             measure: measure,
             rotation: normalized,
-            size: baseSize * clampedScale
+            size: baseSize
         )
         let renderer = ImageRenderer(content: view)
         renderer.scale = UIScreen.main.scale

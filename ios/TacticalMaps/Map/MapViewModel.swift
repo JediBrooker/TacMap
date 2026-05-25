@@ -30,6 +30,32 @@ final class MapViewModel: ObservableObject {
     /// resize controls card in `ContentView`. nil = no selection.
     @Published var selectedControlMeasureWaypointID: UUID? = nil
 
+    /// Current map metres-per-point (the smaller number is more zoomed in).
+    /// Updated by `MapContainerView.Coordinator` whenever the camera
+    /// changes. Drives `defaultControlMeasureScale` so newly-placed
+    /// tactical symbols enter at a screen-relative size that matches
+    /// the current zoom level.
+    @Published var currentMetresPerPoint: Double = 1.0
+
+    /// The waypoint scale value that, applied to a newly-placed tactical
+    /// control measure, makes the symbol render at roughly 10% of the
+    /// screen height at the *current* zoom level. The symbol then keeps
+    /// its geographic footprint as the user zooms in / out (so its
+    /// on-screen size scales naturally with the map).
+    ///
+    /// Math: the renderer always produces a 76pt-wide bitmap (baseSize 64
+    /// + 2*haloPadding 6). The annotation view's transform scale is
+    /// `waypoint.scale * zoomScale` where `zoomScale = 1.0 / metresPerPoint`
+    /// (referenceMetresPerPoint = 1.0). We want final pixel width ≈ 80pt
+    /// (≈10% of an 800pt screen), so:
+    ///   80 = 76 * waypoint.scale * (1.0 / metresPerPoint)
+    ///   waypoint.scale = (80 / 76) * metresPerPoint ≈ 1.05 * metresPerPoint
+    var defaultControlMeasureScale: Double {
+        let raw = 1.05 * currentMetresPerPoint
+        // Clamp to the slider range so the default is always editable.
+        return max(0.1, min(raw, 20.0))
+    }
+
     // MARK: - Camera signal channels
 
     let cameraRequests     = PassthroughSubject<MKCoordinateRegion, Never>()

@@ -243,6 +243,7 @@ struct MapContainerView: UIViewRepresentable {
             nextRegionChangeIsUserDriven = false
             mapVM.mapRegionDidChange(mv.region, animated: animated, byUser: byUser)
             mapVM.mapCameraDidChange(heading: mv.camera.heading)
+            mapVM.currentMetresPerPoint = metresPerPoint(in: mv)
             pdfImageView?.updateFrame(in: mv)
             applyZoomScaleToControlMeasures(in: mv)
         }
@@ -252,6 +253,7 @@ struct MapContainerView: UIViewRepresentable {
         /// the PDF image view glued to its geographic bounds in real time.
         func mapViewDidChangeVisibleRegion(_ mv: MKMapView) {
             mapVM.mapCameraDidChange(heading: mv.camera.heading)
+            mapVM.currentMetresPerPoint = metresPerPoint(in: mv)
             pdfImageView?.updateFrame(in: mv)
             applyZoomScaleToControlMeasures(in: mv)
         }
@@ -274,30 +276,41 @@ struct MapContainerView: UIViewRepresentable {
                 guard case .controlMeasure = ann.waypoint.kind,
                       let view = mv.view(for: ann) as? LockedSizeAnnotationView
                 else { continue }
+                // Final on-screen scale = waypoint.scale × zoom factor.
+                // The renderer always produces a base-size (76pt) image
+                // — all sizing is done here via the view's transform
+                // so we don't double-apply waypoint.scale.
                 let s = CGFloat(ann.waypoint.scale) * scaleFactor
                 view.applyZoomScale(s)
             }
         }
 
         /// Convert the current map region into a unit scale where
-        /// `1.0` ≈ a "natural" reference zoom (~50 metres across the
-        /// shorter screen dimension). Clamped to [0.05, 8.0] so the
-        /// symbol stays visible at extremes.
-        private func currentZoomScaleFactor(for mv: MKMapView) -> CGFloat {
-            // 111_000 m per degree of latitude is a good enough
-            // approximation for symbol-size purposes (the cos(lat)
-            // correction for longitude is irrelevant since we only
-            // use one delta).
+        /// `1.0` corresponds to the reference zoom (1 metre per point).
+        /// Halve metresPerPoint (zoom in) → scale 2.0. Double it (zoom
+        /// out) → scale 0.5. Clamped to [0.005, 50] so symbols stay
+        /// visible from "single building" zoom all the way out to a
+        /// continental view.
+        func currentZoomScaleFactor(for mv: MKMapView) -> CGFloat {
+            let mpp = metresPerPoint(in: mv)
+            let raw = referenceMetresPerPoint / mpp
+            return CGFloat(max(0.005, min(raw, 50.0)))
+        }
+
+        /// Pure metres-per-point at the current camera, no clamping.
+        /// Used by `defaultScaleForNewSymbol` to size new symbols
+        /// relative to the screen at placement time.
+        func metresPerPoint(in mv: MKMapView) -> Double {
+            // 111_000 m / degree latitude — close enough for sizing.
             let latDeltaMetres = mv.region.span.latitudeDelta * 111_000
             let viewHeight = max(Double(mv.bounds.height), 1)
-            let metresPerPoint = latDeltaMetres / viewHeight
-            // Reference: at 0.5 m/pt (a typical "city block" zoom),
-            // scale = 1.0. Halve metresPerPoint (zoom in) → scale 2.0.
-            // Double metresPerPoint (zoom out) → scale 0.5.
-            let referenceMetresPerPoint = 0.5
-            let raw = referenceMetresPerPoint / metresPerPoint
-            return CGFloat(max(0.05, min(raw, 8.0)))
+            return latDeltaMetres / viewHeight
         }
+
+        /// Reference zoom where `waypoint.scale = 1.0` renders at the
+        /// symbol's base point size. Lower = bigger symbols at all
+        /// zooms; higher = smaller.
+        private let referenceMetresPerPoint: Double = 1.0
 
         // MARK: Drawing tap
 
@@ -693,8 +706,7 @@ struct MapContainerView: UIViewRepresentable {
                     }
                     let img = TacticalControlMeasureRenderer.image(
                         for: measure,
-                        rotation: wp.waypoint.rotation,
-                        scale: wp.waypoint.scale)
+                        rotation: wp.waypoint.rotation)
                     view.setSymbolImage(img)
                     // Apply the current zoom-derived scale immediately so
                     // the symbol enters at the right size — otherwise it
