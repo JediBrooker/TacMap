@@ -19,11 +19,14 @@ import UIKit
 /// in the centre.
 final class LockedSizeAnnotationView: MKAnnotationView {
 
-    /// No shadow slack — the annotation view's bounds match the image
-    /// exactly so MapKit's hit-test uses the actual symbol area as
-    /// the tap target. The halo renders outside bounds via
-    /// `masksToBounds = false` on every layer in the chain.
-    private static let shadowSlack: CGFloat = 0
+    /// Room around the image inside the annotation view's bounds so
+    /// the CALayer halo isn't clipped by MapKit's internal annotation
+    /// container (which DOES clip child shadows regardless of how
+    /// many `masksToBounds = false` calls we walk up the parent
+    /// chain). Hit-testing is constrained back to just the image
+    /// area via `point(inside:with:)` so the slack doesn't steal
+    /// taps from neighbouring annotations.
+    private static let shadowSlack: CGFloat = 40
 
     /// We render the symbol image *four* times, stacked. The bottom
     /// three carry the white halo (a single CALayer shadow is too
@@ -46,6 +49,7 @@ final class LockedSizeAnnotationView: MKAnnotationView {
         iv.contentMode = .center
         iv.autoresizingMask = []
         iv.clipsToBounds = false
+        iv.isUserInteractionEnabled = false
         iv.layer.shadowColor = UIColor.white.cgColor
         iv.layer.shadowOpacity = 1.0
         iv.layer.shadowOffset = .zero
@@ -164,20 +168,22 @@ final class LockedSizeAnnotationView: MKAnnotationView {
         }
     }
 
-    // MARK: Render outside bounds
+    // MARK: Hit testing
 
-    /// Whenever MapKit attaches us to its annotation container, walk
-    /// up the parent chain and set `masksToBounds = false` so our
-    /// halo (which extends past our own bounds) doesn't get clipped.
-    override func didMoveToSuperview() {
-        super.didMoveToSuperview()
-        var v: UIView? = superview
-        var hops = 0
-        while let s = v, hops < 4 {
-            s.clipsToBounds = false
-            s.layer.masksToBounds = false
-            v = s.superview
-            hops += 1
-        }
+    /// Limit the tappable area to just the symbol image — the 40pt
+    /// shadow slack around the image is visual room for the halo,
+    /// NOT a tap target. Without this, MapKit's annotation hit-test
+    /// uses the inflated bounds and a large symbol's slack swallows
+    /// taps meant for nearby smaller annotations.
+    ///
+    /// Both `hitTest` and `point(inside:)` are overridden because
+    /// MapKit's annotation tap recognizer may use either path.
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        symbolImageView.frame.contains(point)
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard symbolImageView.frame.contains(point) else { return nil }
+        return self
     }
 }

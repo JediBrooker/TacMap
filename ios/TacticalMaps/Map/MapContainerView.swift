@@ -726,16 +726,29 @@ struct MapContainerView: UIViewRepresentable {
                 // teardrop MKMarker pin with an SF Symbol glyph.
                 if let spec = wp.waypoint.kind.militarySpec {
                     let id = "waypoint-military"
-                    let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
-                        ?? MKAnnotationView(annotation: wp, reuseIdentifier: id)
-                    view.annotation = wp
-                    view.image = MilitarySymbolRenderer.image(for: spec)
+                    // Use LockedSizeAnnotationView so the symbol — and
+                    // especially its small echelon indicator (size dots /
+                    // bars above the frame) — gets the same white halo
+                    // treatment as tactical control measures. Military
+                    // symbols stay at a fixed pixel size on screen
+                    // (no zoom tracking) — we just pass scale 1.0 once
+                    // at creation; the symbol won't be re-scaled on
+                    // subsequent camera changes because
+                    // `applyZoomScaleToControlMeasures` filters for
+                    // the .controlMeasure kind.
+                    let view: LockedSizeAnnotationView
+                    if let reused = mv.dequeueReusableAnnotationView(withIdentifier: id)
+                        as? LockedSizeAnnotationView {
+                        view = reused
+                        view.annotation = wp
+                    } else {
+                        view = LockedSizeAnnotationView(annotation: wp,
+                                                        reuseIdentifier: id)
+                    }
+                    view.setSymbolImage(MilitarySymbolRenderer.image(for: spec))
+                    view.applyZoomScale(1.0)
                     view.centerOffset = .zero
-                    // We drive selection via mapView(_:didSelect:) and
-                    // show our own controls card — disable the native
-                    // callout so it doesn't pop up alongside.
                     view.canShowCallout = false
-                    // Long-press + drag to relocate.
                     view.isDraggable = true
                     return view
                 }
