@@ -157,114 +157,69 @@ enum WaypointKind: Hashable, Codable {
 
 // MARK: - Tactical control measures (point-symbol subset of APP-6C)
 
-/// MIL-STD-2525D / APP-6 tactical control measures and mission tasks,
-/// rendered via SVG assets generated from the official US Army C5ISR
-/// renderer (mil-sym-ts, MIT-licensed). 37 cases — flat list, no
-/// sub-categorisation.
-///
-/// `assetName` is the basename inside `Assets.xcassets/AppSymbols/` and
-/// `sidc` is the underlying MIL-STD-2525D 8-char symbol ID for export.
+/// Tactical mission tasks and control-measure point symbols.
+/// Each case maps to a bundled PNG/SVG asset under
+/// `Assets.xcassets/AppSymbols/<rawValue>`. Symbols are cropped from
+/// NATO MPSOTC Table E-I (Tactical graphics), except `assemblyArea`
+/// and `formUpPoint` which are custom SVGs.
 enum TacticalControlMeasure: String, Codable, Hashable, CaseIterable {
-    // ---- Mission tasks ----
-    case block, breach, bypass, canalize, clear
-    case counterattack, counterattackByFire, delay, destroy, disrupt
-    case fix, followAndAssume, followAndSupport, interdict, isolate
-    case neutralize, occupy, penetrate, reliefInPlace, retire
-    case secure, cover, `guard`, screen, seize
-    case withdraw, withdrawUnderPressure
-    case cordonAndKnock, cordonAndSearch, suppress
-    // ---- Control-measure point/area symbols ----
-    case axisOfAdvance
-    case supportByFire, attackByFire
-    case landingZone, assemblyArea, formUpPoint, rallyPoint, ambulanceExchange
+    // ---- Mission tasks (cropped from PDF spec) ----
+    case block, breach, bypass, canalise, clear, contain
+    case counterattack, counterattackByFire, delay, destroy
+    case disrupt, fix, interdict, isolate, neutralise
+    case occupy, penetrate, reliefInPlace, retain, secure
+    case screen, `guard`, cover, seize, withdraw, withdrawUnderPressure
+    // ---- Control-measure point symbols ----
+    case landingZone, ccp, observationPostRecon
+    case axisOfMainAttack, axisOfSupportingAttack
+    case attackByFire, supportByFire, ambush
+    case antipersonnelMinefield, turn
+    // ---- Custom ----
+    case assemblyArea, formUpPoint
 
     var displayName: String {
         switch self {
         case .block:                  return "Block"
         case .breach:                 return "Breach"
         case .bypass:                 return "Bypass"
-        case .canalize:               return "Canalize"
+        case .canalise:               return "Canalise"
         case .clear:                  return "Clear"
+        case .contain:                return "Contain"
         case .counterattack:          return "Counter-Attack"
         case .counterattackByFire:    return "Counter-Attack by Fire"
         case .delay:                  return "Delay"
         case .destroy:                return "Destroy"
         case .disrupt:                return "Disrupt"
         case .fix:                    return "Fix"
-        case .followAndAssume:        return "Follow and Assume"
-        case .followAndSupport:       return "Follow and Support"
         case .interdict:              return "Interdict"
         case .isolate:                return "Isolate"
-        case .neutralize:             return "Neutralise"
+        case .neutralise:             return "Neutralise"
         case .occupy:                 return "Occupy"
         case .penetrate:              return "Penetrate"
         case .reliefInPlace:          return "Relief in Place"
-        case .retire:                 return "Retire"
+        case .retain:                 return "Retain"
         case .secure:                 return "Secure"
-        case .cover:                  return "Cover"
-        case .guard:                  return "Guard"
         case .screen:                 return "Screen"
+        case .`guard`:                  return "Guard"
+        case .cover:                  return "Cover"
         case .seize:                  return "Seize"
         case .withdraw:               return "Withdraw"
         case .withdrawUnderPressure:  return "Withdraw Under Pressure"
-        case .cordonAndKnock:         return "Cordon and Knock"
-        case .cordonAndSearch:        return "Cordon and Search"
-        case .suppress:               return "Suppress"
-        case .axisOfAdvance:          return "Axis of Advance"
-        case .supportByFire:          return "Support by Fire"
-        case .attackByFire:           return "Attack by Fire"
         case .landingZone:            return "Landing Zone"
+        case .ccp:                    return "Communications Checkpoint"
+        case .observationPostRecon:   return "Observation Post (Recon)"
+        case .axisOfMainAttack:       return "Axis of Main Attack"
+        case .axisOfSupportingAttack: return "Axis of Supporting Attack"
+        case .attackByFire:           return "Attack by Fire"
+        case .supportByFire:          return "Support by Fire"
+        case .ambush:                 return "Ambush"
+        case .antipersonnelMinefield: return "Anti-Personnel Minefield"
+        case .turn:                   return "Turn"
         case .assemblyArea:           return "Assembly Area"
-        case .formUpPoint:            return "Form Up Point"
-        case .rallyPoint:             return "Rally Point"
-        case .ambulanceExchange:      return "Ambulance Exchange Point"
+        case .formUpPoint:            return "Form-Up Point"
         }
     }
 
-    /// Basename of the bundled SVG in `Assets.xcassets/AppSymbols/`.
+    /// Basename of the bundled image in `Assets.xcassets/AppSymbols/`.
     var assetName: String { rawValue }
-
-    /// MIL-STD-2525D 8-char symbol ID for export.
-    var sidc: String {
-        switch self {
-        case .block:                  return "25340100"
-        case .breach:                 return "25340200"
-        case .bypass:                 return "25340300"
-        case .canalize:               return "25340400"
-        case .clear:                  return "25340500"
-        case .counterattack:          return "25340600"
-        case .counterattackByFire:    return "25340700"
-        case .delay:                  return "25340800"
-        case .destroy:                return "25340900"
-        case .disrupt:                return "25341000"
-        case .fix:                    return "25341100"
-        case .followAndAssume:        return "25341200"
-        case .followAndSupport:       return "25341300"
-        case .interdict:              return "25341400"
-        case .isolate:                return "25341500"
-        case .neutralize:             return "25341600"
-        case .occupy:                 return "25341700"
-        case .penetrate:              return "25341800"
-        case .reliefInPlace:          return "25341900"
-        case .retire:                 return "25342000"
-        case .secure:                 return "25342100"
-        case .cover:                  return "25342201"
-        case .guard:                  return "25342202"
-        case .screen:                 return "25342203"
-        case .seize:                  return "25342300"
-        case .withdraw:               return "25342400"
-        case .withdrawUnderPressure:  return "25342500"
-        case .cordonAndKnock:         return "25342600"
-        case .cordonAndSearch:        return "25342700"
-        case .suppress:               return "25342800"
-        case .axisOfAdvance:          return "25151400"
-        case .supportByFire:          return "25152100"
-        case .attackByFire:           return "25152000"
-        case .landingZone:            return "25150800"
-        case .assemblyArea:           return "25150200"
-        case .formUpPoint:            return "25141200"
-        case .rallyPoint:             return "25131400"
-        case .ambulanceExchange:      return "25320101"
-        }
-    }
 }

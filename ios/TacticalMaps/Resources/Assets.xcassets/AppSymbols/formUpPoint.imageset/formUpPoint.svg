@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
-<polyline fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="8.28,60.21 111.72,60.21 110.37,60.21 104.72,60.21 99.06,60.21 93.4,60.21 87.75,60.21 82.09,60.21 76.43,60.21 70.78,60.21 65.12,60.21 59.46,60.21 53.81,60.21"/>
-<text x="8.29" y="59.79" font-family="Helvetica" font-size="15" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="#000" transform="rotate(0,8.29,59.79)">PLD</text>
-<text x="53.83" y="59.79" font-family="Helvetica" font-size="15" font-weight="bold" text-anchor="middle" dominant-baseline="central" fill="#000" transform="rotate(0,53.83,59.79)">PLD</text>
+  <!-- Upper half-circle outline (radius 40, centred at (60,70)) -->
+  <path d="M 20,70 A 40,40 0 0 1 100,70" fill="none" stroke="#000" stroke-width="4"/>
+  <!-- Diameter line, extends 12px past each end of the arc -->
+  <line x1="8" y1="70" x2="112" y2="70" stroke="#000" stroke-width="4"/>
 </svg>

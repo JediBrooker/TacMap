@@ -67,8 +67,8 @@ enum GeoJSONExporter {
             props["tacticalmaps:function"]    = spec.function.rawValue
         }
         if let m = wp.kind.controlMeasure {
-            props["tacticalmaps:sidc"]     = m.sidc
             props["tacticalmaps:tcm_name"] = m.displayName
+            props["tacticalmaps:tcm_asset"] = m.assetName
         }
         if let n = wp.notes     { props["description"] = n }     // simplestyle uses "description"
         if let e = wp.elevation { props["tacticalmaps:elevation_m"] = e }
