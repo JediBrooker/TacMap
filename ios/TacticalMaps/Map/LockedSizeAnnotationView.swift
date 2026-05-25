@@ -124,21 +124,44 @@ final class LockedSizeAnnotationView: MKAnnotationView {
     func applyZoomScale(_ scale: CGFloat) {
         let safe = max(scale, 0.01)
         self.transform = CGAffineTransform(scaleX: safe, y: safe)
-        // Halo shrinks as the symbol grows. Visible on-screen halo
-        // width = baseHalo / sqrt(scale) with a 1pt floor — so the
-        // halo never quite disappears, but a 10× symbol gets a ~2pt
-        // halo while a 1× symbol gets ~6pt. (Earlier we kept halo
-        // CONSTANT on screen, which made large symbols look like
-        // they had thick fuzzy outlines.)
+
+        // The halo only needs to exist when the symbol is small
+        // enough to be hard to read against satellite imagery. Once
+        // the symbol is big (high scale) it reads on its own and a
+        // halo just adds visual noise. Linear ramp:
         //
-        // Layer-space radius = visible / scale, because the layer is
-        // about to be transform-scaled by `scale`.
-        let baseHalo: CGFloat = 6.0
-        let onScreenHaloPt = max(1.5, baseHalo / sqrt(safe))
-        let layerRadius = max(1.0, onScreenHaloPt / safe)
-        haloLayer1.layer.shadowRadius = layerRadius
-        haloLayer2.layer.shadowRadius = layerRadius
-        haloLayer3.layer.shadowRadius = layerRadius
+        //   visible_halo = max(0, baseHalo - slope · scale)
+        //
+        // baseHalo 12pt, slope 2pt-per-scale-unit means:
+        //   scale 0.5×  → 11pt   (small symbol, fat halo)
+        //   scale 1×    → 10pt
+        //   scale 2×    →  8pt
+        //   scale 4×    →  4pt
+        //   scale 6×    →  0pt   (big symbol, no halo)
+        let baseHalo: CGFloat = 12.0
+        let slope:    CGFloat = 2.0
+        let onScreenHaloPt = max(0, baseHalo - slope * safe)
+
+        if onScreenHaloPt <= 0.01 {
+            haloLayer1.layer.shadowOpacity = 0
+            haloLayer2.layer.shadowOpacity = 0
+            haloLayer3.layer.shadowOpacity = 0
+            return
+        }
+
+        // Layer-space radius = visible / scale because the layer is
+        // about to be transform-scaled by `scale`. Core Animation
+        // can't render a Gaussian blur under ~0.7pt radius, so we
+        // fade opacity as the radius approaches that floor instead
+        // of clamping the radius (which would inflate the on-screen
+        // halo back up).
+        let layerRadius = onScreenHaloPt / safe
+        let opacity: Float = Float(min(1.0, layerRadius / 1.0))
+        let effectiveRadius = max(0.7, layerRadius)
+        for iv in [haloLayer1, haloLayer2, haloLayer3] {
+            iv.layer.shadowRadius = effectiveRadius
+            iv.layer.shadowOpacity = opacity
+        }
     }
 
     // MARK: Render outside bounds
