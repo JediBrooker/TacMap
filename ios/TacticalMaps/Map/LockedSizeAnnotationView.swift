@@ -19,10 +19,11 @@ import UIKit
 /// in the centre.
 final class LockedSizeAnnotationView: MKAnnotationView {
 
-    /// Extra room around the symbol image inside which the shadow can
-    /// render before it would be clipped by MapKit. Enough headroom
-    /// for the largest counter-scaled shadow we ever produce.
-    private static let shadowSlack: CGFloat = 40
+    /// No shadow slack — the annotation view's bounds match the image
+    /// exactly so MapKit's hit-test uses the actual symbol area as
+    /// the tap target. The halo renders outside bounds via
+    /// `masksToBounds = false` on every layer in the chain.
+    private static let shadowSlack: CGFloat = 0
 
     /// We render the symbol image *four* times, stacked. The bottom
     /// three carry the white halo (a single CALayer shadow is too
@@ -140,21 +141,20 @@ final class LockedSizeAnnotationView: MKAnnotationView {
         haloLayer3.layer.shadowRadius = layerRadius
     }
 
-    // MARK: Hit testing
+    // MARK: Render outside bounds
 
-    /// Only the actual symbol image accepts touches — the 40pt
-    /// shadow slack around it is NOT a valid hit target. Otherwise
-    /// when MapKit hit-tests a large symbol (e.g. the user has set
-    /// it to 10× via the size slider), the inflated bounds swallow
-    /// taps meant for smaller neighbouring annotations.
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        if symbolImageView.frame.contains(point) {
-            return super.hitTest(point, with: event)
+    /// Whenever MapKit attaches us to its annotation container, walk
+    /// up the parent chain and set `masksToBounds = false` so our
+    /// halo (which extends past our own bounds) doesn't get clipped.
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        var v: UIView? = superview
+        var hops = 0
+        while let s = v, hops < 4 {
+            s.clipsToBounds = false
+            s.layer.masksToBounds = false
+            v = s.superview
+            hops += 1
         }
-        return nil
-    }
-
-    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        symbolImageView.frame.contains(point)
     }
 }
