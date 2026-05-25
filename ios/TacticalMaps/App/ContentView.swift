@@ -125,7 +125,7 @@ struct ContentView: View {
                             onCancel: { calibration.cancel() }
                         )
                         .padding(.horizontal, 12)
-                        .padding(.bottom, 6)
+                        .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
                     } else if drawingSession.isDrawing {
                         DrawToolbar(session: drawingSession) {
                             if let shape = drawingSession.finish() {
@@ -133,20 +133,25 @@ struct ContentView: View {
                             }
                         }
                         .padding(.horizontal, 12)
-                        .padding(.bottom, 6)
+                        .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
                     } else {
+                        // Sit the centre-on-location pill just above the home
+                        // indicator — small enough to feel anchored to the
+                        // bottom edge, large enough to clear the gesture zone.
                         CentreButton {
                             mapVM.centreOnUser(locationService.lastLocation)
                         }
-                        .padding(.bottom, 6)
+                        .padding(.bottom, max(geo.safeAreaInsets.bottom - 18, 4))
                     }
                 }
                 // HUD sits flush below the dynamic island. We let it bleed slightly
                 // into the safe-area region by using a small negative-ish padding,
                 // ignoring the safe area entirely on the top edge — the box's
                 // rounded corners tuck under the island shape naturally.
-                .padding(.top,    4)
-                .padding(.bottom, max(geo.safeAreaInsets.bottom, 8))
+                // Bottom inset is applied per-control above so the centre-on-
+                // location pill can sit closer to the screen edge than the
+                // calibration / draw toolbars (which want a full safe-area gap).
+                .padding(.top, 4)
             }
         }
         .onAppear {
