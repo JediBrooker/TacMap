@@ -135,13 +135,16 @@ struct ContentView: View {
                         .padding(.horizontal, 12)
                         .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
                     } else {
-                        // Sit the centre-on-location pill just above the home
-                        // indicator — small enough to feel anchored to the
-                        // bottom edge, large enough to clear the gesture zone.
+                        // Anchor the centre-on-location pill to the very
+                        // bottom edge of the screen, sitting beside the
+                        // "Legal" / Apple-Maps attribution logo. We offset
+                        // past the safe area (the home-indicator gesture
+                        // zone is still respected because the pill clears
+                        // it horizontally — it's a tap target, not a swipe).
                         CentreButton {
                             mapVM.centreOnUser(locationService.lastLocation)
                         }
-                        .padding(.bottom, max(geo.safeAreaInsets.bottom - 18, 4))
+                        .offset(y: geo.safeAreaInsets.bottom - 4)
                     }
                 }
                 // HUD sits flush below the dynamic island. We let it bleed slightly
