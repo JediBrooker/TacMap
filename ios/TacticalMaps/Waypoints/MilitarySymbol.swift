@@ -95,23 +95,22 @@ enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
 
 enum SymbolFunction: String, Codable, Hashable, CaseIterable {
     // ---- Combat arms ----
-    case infantry, armour, mechInfantry, mechInfantryWheeled, recce, cavalry
-    case artillery, airDefence, antiTank, mortar, missile
+    case infantry, armour, mechInfantry, motorisedInfantry, recce, cavalry
+    case artillery, airDefence, antiTank, mortar
     // ---- Combat support ----
-    case engineer, bridging, signal, electronicRanging, electronicWarfare
-    case radar, psyOps, cbrn
+    case engineer, bridging, signal, electronicWarfare
+    case radar, cbrn
     case aviation              // rotary-wing
     case aviationFixed         // fixed-wing
     case uav
     // ---- Combat service support ----
-    case medical, hospital
+    case medical
     case logistics             // displays as "Supply" — rawValue kept for back-compat
     case fuel, maintenance, ordnance, ammunition, transportation
-    case meteorological, topographical
     // ---- Specialist / admin ----
-    case militaryPolice, eod, navy
+    case militaryPolice, eod
     case css                   // Combat Service Support
-    case specialForces, specialOps
+    case specialForces
     case unspecified
 
     var displayName: String {
@@ -119,41 +118,33 @@ enum SymbolFunction: String, Codable, Hashable, CaseIterable {
         case .infantry:           return "Infantry"
         case .armour:             return "Armour"
         case .mechInfantry:       return "Mechanised Infantry"
-        case .mechInfantryWheeled: return "Mechanised Infantry (Wheeled APC)"
+        case .motorisedInfantry: return "Motorised Infantry"
         case .recce:              return "Reconnaissance"
         case .cavalry:            return "Cavalry"
         case .artillery:          return "Artillery"
         case .airDefence:         return "Air Defence"
         case .antiTank:           return "Anti-Tank"
         case .mortar:             return "Mortar"
-        case .missile:            return "Missile"
         case .engineer:           return "Engineer"
         case .bridging:           return "Bridging"
         case .signal:             return "Signals"
-        case .electronicRanging:  return "Electronic Ranging"
         case .electronicWarfare:  return "Electronic Warfare"
         case .radar:              return "Radar"
-        case .psyOps:             return "Psychological Operations"
         case .cbrn:               return "CBRN Defence"
         case .aviation:           return "Aviation (Rotary)"
         case .aviationFixed:      return "Aviation (Fixed-Wing)"
         case .uav:                return "Unmanned Air Vehicle"
         case .medical:            return "Medical"
-        case .hospital:           return "Hospital"
         case .logistics:          return "Supply"
         case .fuel:               return "Fuel / POL"
         case .maintenance:        return "Maintenance"
         case .ordnance:           return "Ordnance"
         case .ammunition:         return "Ammunition"
         case .transportation:     return "Transportation"
-        case .meteorological:     return "Meteorological"
-        case .topographical:      return "Topographical"
         case .militaryPolice:     return "Military Police"
         case .eod:                return "Explosive Ordnance Disposal"
-        case .navy:               return "Navy"
         case .css:                return "Combat Service Support"
         case .specialForces:      return "Special Forces"
-        case .specialOps:         return "Special Operations Forces"
         case .unspecified:        return "— (no branch)"
         }
     }
@@ -355,7 +346,7 @@ struct MilitarySymbolView: View {
         case .mechInfantry:
             drawArmourCapsule(ctx: ctx, in: glyphRect)
             drawInfantryX(ctx: ctx, affiliation: affiliation, frame: glyphRect)
-        case .mechInfantryWheeled:
+        case .motorisedInfantry:
             drawArmourCapsule(ctx: ctx, in: glyphRect)
             drawInfantryX(ctx: ctx, affiliation: affiliation, frame: glyphRect)
             drawWheels(ctx: ctx, in: glyphRect)
@@ -372,37 +363,29 @@ struct MilitarySymbolView: View {
         case .airDefence:            drawAirDefenceDome(ctx: ctx, in: glyphRect)
         case .antiTank:              drawAntiTankVee(ctx: ctx, in: glyphRect)
         case .mortar:                drawMortarArrow(ctx: ctx, in: glyphRect)
-        case .missile:               drawMissile(ctx: ctx, in: glyphRect)
 
         case .engineer:              drawEngineerBridge(ctx: ctx, in: glyphRect)
         case .bridging:              drawBridging(ctx: ctx, in: glyphRect)
         case .signal:                drawSignalLightning(ctx: ctx, in: glyphRect)
-        case .electronicRanging:     drawElectronicRanging(ctx: ctx, in: glyphRect)
         case .electronicWarfare:     drawLetter(ctx: ctx, letter: "EW",  in: glyphRect)
         case .radar:                 drawRadar(ctx: ctx, in: glyphRect)
-        case .psyOps:                drawPsyOps(ctx: ctx, in: glyphRect)
         case .cbrn:                  drawCBRN(ctx: ctx, in: glyphRect)
         case .aviation:              drawRotorBladesBowtie(ctx: ctx, in: glyphRect)
         case .aviationFixed:         drawFixedWing(ctx: ctx, in: glyphRect)
         case .uav:                   drawUAV(ctx: ctx, in: glyphRect)
 
         case .medical:               drawMedicalCross(ctx: ctx, in: glyphRect)
-        case .hospital:              drawHospital(ctx: ctx, in: glyphRect)
         case .logistics:             drawSupplyLine(ctx: ctx, in: glyphRect)
         case .fuel:                  drawFunnel(ctx: ctx, in: glyphRect)
         case .maintenance:           drawMaintenance(ctx: ctx, in: glyphRect)
         case .ordnance:              drawOrdnance(ctx: ctx, in: glyphRect)
         case .ammunition:            drawAmmunition(ctx: ctx, in: glyphRect)
         case .transportation:        drawWheel(ctx: ctx, in: glyphRect)
-        case .meteorological:        drawLetter(ctx: ctx, letter: "MET", in: glyphRect)
-        case .topographical:         drawTopographical(ctx: ctx, in: glyphRect)
 
         case .militaryPolice:        drawLetter(ctx: ctx, letter: "MP",  in: glyphRect)
         case .eod:                   drawLetter(ctx: ctx, letter: "EOD", in: glyphRect)
-        case .navy:                  drawAnchor(ctx: ctx, in: glyphRect)
         case .css:                   drawLetter(ctx: ctx, letter: "CSS", in: glyphRect)
         case .specialForces:         drawLetter(ctx: ctx, letter: "SF",  in: glyphRect)
-        case .specialOps:            drawLetter(ctx: ctx, letter: "SOF", in: glyphRect)
         }
     }
 
@@ -487,36 +470,30 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Stylised lightning flash — diagonal Z with a sharp angular zig in
-    /// the middle, running from the upper-right toward the lower-left.
-    /// APP-6 signals glyph (also used as a building block for radar).
+    /// Stylised lightning flash — diagonal Z whose endpoints touch the
+    /// TOP-RIGHT and BOTTOM-LEFT corners of the frame. Sharp angular zig
+    /// in the middle. APP-6 signals glyph.
     private func drawSignalLightning(ctx: GraphicsContext, in rect: CGRect) {
-        // 3-segment polyline: top-right → mid-left → mid-right → bottom-left.
-        // The middle segment crosses back toward the right, creating the
-        // characteristic sharp "knee" of a lightning bolt.
-        let topX    = rect.maxX - rect.width * 0.10
-        let topY    = rect.minY + rect.height * 0.12
-        let midLX   = rect.minX + rect.width * 0.30
-        let midUY   = rect.minY + rect.height * 0.50
-        let midRX   = rect.maxX - rect.width * 0.30
-        let midDY   = rect.minY + rect.height * 0.55
-        let botX    = rect.minX + rect.width * 0.10
-        let botY    = rect.maxY - rect.height * 0.12
+        let p1 = CGPoint(x: rect.maxX, y: rect.minY)                    // top-right corner
+        let p2 = CGPoint(x: rect.minX + rect.width * 0.32, y: rect.midY)
+        let p3 = CGPoint(x: rect.maxX - rect.width * 0.32, y: rect.midY)
+        let p4 = CGPoint(x: rect.minX, y: rect.maxY)                    // bottom-left corner
         var p = Path()
-        p.move(to:    CGPoint(x: topX,  y: topY))
-        p.addLine(to: CGPoint(x: midLX, y: midUY))
-        p.addLine(to: CGPoint(x: midRX, y: midDY))
-        p.addLine(to: CGPoint(x: botX,  y: botY))
+        p.move(to: p1)
+        p.addLine(to: p2)
+        p.addLine(to: p3)
+        p.addLine(to: p4)
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Single flat horizontal line through the centre, spanning the FULL
-    /// width of the frame (edge-to-edge). APP-6 Supply glyph — "side view
-    /// of a road".
+    /// Single flat horizontal line spanning the FULL width of the frame,
+    /// positioned in the LOWER portion of the frame (around 75% down).
+    /// APP-6 Supply glyph — "side view of a road".
     private func drawSupplyLine(ctx: GraphicsContext, in rect: CGRect) {
+        let y = rect.minY + rect.height * 0.75
         var p = Path()
-        p.move(to:    CGPoint(x: rect.minX, y: rect.midY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        p.move(to:    CGPoint(x: rect.minX, y: y))
+        p.addLine(to: CGPoint(x: rect.maxX, y: y))
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
@@ -545,17 +522,17 @@ struct MilitarySymbolView: View {
     }
 
     /// Protective dome — single arc whose endpoints sit at the bottom-left
-    /// and bottom-right corners of the frame, peaking near the top centre.
-    /// APP-6 Air Defence glyph.
+    /// and bottom-right corners of the frame. The apex sits inside the
+    /// frame near the top edge, NOT above it.
     private func drawAirDefenceDome(ctx: GraphicsContext, in rect: CGRect) {
-        // Base endpoints AT the corners of the frame.
         let leftEnd  = CGPoint(x: rect.minX, y: rect.maxY)
         let rightEnd = CGPoint(x: rect.maxX, y: rect.maxY)
-        // Control point well above the top edge — pulls the quadratic
-        // bezier high so the apex of the dome sits just below the top of
-        // the frame instead of sagging in the middle.
-        let control  = CGPoint(x: rect.midX,
-                               y: rect.minY - rect.height * 0.35)
+        // Control y for a quadratic bezier reaches the visual apex at
+        // (start.y + end.y + 2*control.y) / 4 — i.e. the apex is halfway
+        // between the base and the control point. To make the apex sit
+        // near the top of the frame, the control point should be ~one
+        // frame-height ABOVE the top, NOT 1.35× above.
+        let control = CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.10)
         var p = Path()
         p.move(to: leftEnd)
         p.addQuadCurve(to: rightEnd, control: control)
@@ -592,301 +569,188 @@ struct MilitarySymbolView: View {
         ctx.stroke(head, with: .color(.black), lineWidth: 2)
     }
 
-    /// APP-6 maintenance — two filled triangles with apexes pointing
-    /// OUTWARD (left and right) joined by a horizontal bar through the
-    /// centre. Looks like ◀━▶ (stylised open-end wrench).
+    /// APP-6 maintenance — horizontal bar across the centre with short
+    /// vertical "jaw" caps at each end (I-beam / open-end wrench).
     private func drawMaintenance(ctx: GraphicsContext, in rect: CGRect) {
-        let cy        = rect.midY
-        let triHalfH  = rect.height * 0.22
-        let triW      = rect.width  * 0.20
-        let leftBaseX  = rect.minX + rect.width * 0.30
-        let rightBaseX = rect.maxX - rect.width * 0.30
-        let leftTipX   = leftBaseX  - triW
-        let rightTipX  = rightBaseX + triW
-
-        // Left filled triangle (apex pointing left).
-        var left = Path()
-        left.move(to:    CGPoint(x: leftBaseX, y: cy - triHalfH))
-        left.addLine(to: CGPoint(x: leftBaseX, y: cy + triHalfH))
-        left.addLine(to: CGPoint(x: leftTipX,  y: cy))
-        left.closeSubpath()
-        ctx.fill(left, with: .color(.black))
-
-        // Right filled triangle (apex pointing right).
-        var right = Path()
-        right.move(to:    CGPoint(x: rightBaseX, y: cy - triHalfH))
-        right.addLine(to: CGPoint(x: rightBaseX, y: cy + triHalfH))
-        right.addLine(to: CGPoint(x: rightTipX,  y: cy))
-        right.closeSubpath()
-        ctx.fill(right, with: .color(.black))
-
-        // Connecting bar between the two triangles' bases.
-        var bar = Path()
-        bar.move(to:    CGPoint(x: leftBaseX,  y: cy))
-        bar.addLine(to: CGPoint(x: rightBaseX, y: cy))
-        ctx.stroke(bar, with: .color(.black), lineWidth: 2)
+        let cy     = rect.midY
+        let leftX  = rect.minX + rect.width * 0.18
+        let rightX = rect.maxX - rect.width * 0.18
+        let capH   = rect.height * 0.35
+        // Horizontal shaft.
+        var shaft = Path()
+        shaft.move(to:    CGPoint(x: leftX,  y: cy))
+        shaft.addLine(to: CGPoint(x: rightX, y: cy))
+        ctx.stroke(shaft, with: .color(.black), lineWidth: 2)
+        // Left jaw — short vertical bar at the left end.
+        var lcap = Path()
+        lcap.move(to:    CGPoint(x: leftX, y: cy - capH/2))
+        lcap.addLine(to: CGPoint(x: leftX, y: cy + capH/2))
+        ctx.stroke(lcap, with: .color(.black), lineWidth: 2)
+        // Right jaw.
+        var rcap = Path()
+        rcap.move(to:    CGPoint(x: rightX, y: cy - capH/2))
+        rcap.addLine(to: CGPoint(x: rightX, y: cy + capH/2))
+        ctx.stroke(rcap, with: .color(.black), lineWidth: 2)
     }
 
-    /// Bullet/cartridge — vertical capsule with FLAT bottom and ROUNDED top.
+    /// Ammunition — artillery shell silhouette: cylindrical body with a
+    /// tapered conical nose and a short horizontal rim at the base.
     private func drawAmmunition(ctx: GraphicsContext, in rect: CGRect) {
-        let w = rect.width * 0.32
-        let h = rect.height * 0.66
-        let box = CGRect(x: rect.midX - w/2, y: rect.maxY - h - 2,
-                         width: w, height: h)
-        // Build path: bottom-left → up to (top-left, corner-radius) → arc over
-        // → down to bottom-right → close.
-        let r = w / 2
+        let bodyW = rect.width * 0.34
+        let noseY = rect.minY + rect.height * 0.18
+        let shoulderY = rect.minY + rect.height * 0.38   // where cone meets cylinder
+        let baseY = rect.maxY - rect.height * 0.18
+        let cx = rect.midX
+        let leftX  = cx - bodyW / 2
+        let rightX = cx + bodyW / 2
+        // Shell outline: nose tip → right shoulder → right base → rim
+        // back to left base → left shoulder → close to nose tip.
         var p = Path()
-        p.move(to:    CGPoint(x: box.minX, y: box.maxY))
-        p.addLine(to: CGPoint(x: box.minX, y: box.minY + r))
-        p.addArc(center: CGPoint(x: box.midX, y: box.minY + r),
-                 radius: r, startAngle: .degrees(180), endAngle: .degrees(0),
-                 clockwise: false)
-        p.addLine(to: CGPoint(x: box.maxX, y: box.maxY))
+        p.move(to:    CGPoint(x: cx,     y: noseY))     // nose tip
+        p.addLine(to: CGPoint(x: rightX, y: shoulderY)) // right shoulder
+        p.addLine(to: CGPoint(x: rightX, y: baseY))     // right base
+        p.addLine(to: CGPoint(x: leftX,  y: baseY))     // left base
+        p.addLine(to: CGPoint(x: leftX,  y: shoulderY)) // left shoulder
         p.closeSubpath()
         ctx.stroke(p, with: .color(.black), lineWidth: 1.5)
+        // Rim line just below the base.
+        let rimY = baseY + rect.height * 0.05
+        let rimExtra = bodyW * 0.20
+        var rim = Path()
+        rim.move(to:    CGPoint(x: leftX  - rimExtra, y: rimY))
+        rim.addLine(to: CGPoint(x: rightX + rimExtra, y: rimY))
+        ctx.stroke(rim, with: .color(.black), lineWidth: 1.5)
     }
 
-    /// Fixed-wing aviation — air-screw: two filled lens shapes (pointed
-    /// at the outer ends) touching apex-to-apex at the centre.
+    /// Fixed-wing aviation — air-screw: two FILLED short-and-fat ellipses
+    /// touching at the centre, forming a wide horizontal figure-8.
     private func drawFixedWing(ctx: GraphicsContext, in rect: CGRect) {
         let cx = rect.midX, cy = rect.midY
-        let halfW = rect.width  * 0.36
-        let halfH = rect.height * 0.18
-        // Left lens: tip at leftmost x, body bulges right.
-        var left = Path()
-        left.move(to: CGPoint(x: cx - halfW, y: cy))
-        left.addQuadCurve(to: CGPoint(x: cx, y: cy),
-                          control: CGPoint(x: cx - halfW * 0.5, y: cy - halfH))
-        left.addQuadCurve(to: CGPoint(x: cx - halfW, y: cy),
-                          control: CGPoint(x: cx - halfW * 0.5, y: cy + halfH))
-        // Right lens: tip at rightmost x, body bulges left.
-        var right = Path()
-        right.move(to: CGPoint(x: cx + halfW, y: cy))
-        right.addQuadCurve(to: CGPoint(x: cx, y: cy),
-                           control: CGPoint(x: cx + halfW * 0.5, y: cy - halfH))
-        right.addQuadCurve(to: CGPoint(x: cx + halfW, y: cy),
-                           control: CGPoint(x: cx + halfW * 0.5, y: cy + halfH))
+        let ew = rect.width  * 0.42
+        let eh = rect.height * 0.42
+        // Centres positioned so the ellipses' inner edges touch at cx.
+        let leftCx  = cx - ew / 2
+        let rightCx = cx + ew / 2
+        let left = Path(ellipseIn: CGRect(x: leftCx  - ew / 2,
+                                          y: cy - eh / 2,
+                                          width: ew, height: eh))
+        let right = Path(ellipseIn: CGRect(x: rightCx - ew / 2,
+                                           y: cy - eh / 2,
+                                           width: ew, height: eh))
         ctx.fill(left,  with: .color(.black))
         ctx.fill(right, with: .color(.black))
     }
 
-    /// Bridging — bridge cross-section: lens/eye shape made of two
-    /// opposing arcs meeting at the left and right edges of the frame.
+    /// Bridging — bridge cross-section from the side: horizontal beam at
+    /// the top spanning the full width, with two short vertical end posts
+    /// descending to a baseline near the middle of the frame.
     private func drawBridging(ctx: GraphicsContext, in rect: CGRect) {
-        let leftX  = rect.minX
-        let rightX = rect.maxX
-        let cy     = rect.midY
-        let amp    = rect.height * 0.35
-        // Top arc (convex up).
-        var top = Path()
-        top.move(to: CGPoint(x: leftX, y: cy))
-        top.addQuadCurve(to: CGPoint(x: rightX, y: cy),
-                         control: CGPoint(x: rect.midX, y: cy - amp))
-        ctx.stroke(top, with: .color(.black), lineWidth: 2)
-        // Bottom arc (convex down).
-        var bot = Path()
-        bot.move(to: CGPoint(x: leftX, y: cy))
-        bot.addQuadCurve(to: CGPoint(x: rightX, y: cy),
-                         control: CGPoint(x: rect.midX, y: cy + amp))
-        ctx.stroke(bot, with: .color(.black), lineWidth: 2)
+        let topY    = rect.minY + rect.height * 0.35
+        let baseY   = rect.midY + rect.height * 0.15
+        let inset   = rect.width * 0.10
+        let leftX   = rect.minX + inset
+        let rightX  = rect.maxX - inset
+        var p = Path()
+        // Top beam (full width).
+        p.move(to:    CGPoint(x: leftX,  y: topY))
+        p.addLine(to: CGPoint(x: rightX, y: topY))
+        // Left descending post.
+        p.move(to:    CGPoint(x: leftX,  y: topY))
+        p.addLine(to: CGPoint(x: leftX,  y: baseY))
+        // Right descending post.
+        p.move(to:    CGPoint(x: rightX, y: topY))
+        p.addLine(to: CGPoint(x: rightX, y: baseY))
+        // Baseline (the river or surface the bridge spans).
+        p.move(to:    CGPoint(x: rect.minX, y: baseY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: baseY))
+        ctx.stroke(p, with: .color(.black), lineWidth: 1.8)
     }
 
-    /// Electronic ranging — single parabolic curve (no mast) opening to
-    /// the RIGHT, like a sideways C with a small focus dot.
-    private func drawElectronicRanging(ctx: GraphicsContext, in rect: CGRect) {
-        let cx = rect.midX
-        let cy = rect.midY
-        let arcR = min(rect.width, rect.height) * 0.32
-        // Half-circle facing RIGHT (concave-right).
-        var dish = Path()
-        dish.addArc(center: CGPoint(x: cx - arcR * 0.3, y: cy),
-                    radius: arcR,
-                    startAngle: .degrees(-90),
-                    endAngle:   .degrees(90),
-                    clockwise: true)
-        ctx.stroke(dish, with: .color(.black), lineWidth: 2)
-        // Small filled dot at the focus.
-        let dotR = arcR * 0.15
-        let focus = Path(ellipseIn: CGRect(x: cx + arcR * 0.4 - dotR,
-                                           y: cy - dotR,
-                                           width: dotR*2, height: dotR*2))
-        ctx.fill(focus, with: .color(.black))
-    }
-
-    /// Radar — parabolic dish (opening right) on the LEFT side of the
-    /// frame with a small lightning flash going off to the upper-right.
+    /// Radar — small filled dot near the left of the frame with three
+    /// concentric arcs (radio waves) radiating to the RIGHT.
     private func drawRadar(ctx: GraphicsContext, in rect: CGRect) {
         let cy = rect.midY
-        let dishCx = rect.minX + rect.width * 0.32
-        let arcR   = min(rect.width, rect.height) * 0.28
-        // Dish: half-circle facing right.
-        var dish = Path()
-        dish.addArc(center: CGPoint(x: dishCx, y: cy),
-                    radius: arcR,
-                    startAngle: .degrees(-90),
-                    endAngle:   .degrees(90),
-                    clockwise: true)
-        ctx.stroke(dish, with: .color(.black), lineWidth: 2)
-        // Lightning bolt to the upper right of the dish.
-        let startX = dishCx + arcR * 0.7
-        let startY = cy - arcR * 0.3
-        var bolt = Path()
-        bolt.move(to:    CGPoint(x: startX, y: startY))
-        bolt.addLine(to: CGPoint(x: startX + rect.width * 0.18, y: cy - rect.height * 0.05))
-        bolt.addLine(to: CGPoint(x: startX + rect.width * 0.05, y: cy + rect.height * 0.05))
-        bolt.addLine(to: CGPoint(x: startX + rect.width * 0.22, y: cy + rect.height * 0.25))
-        ctx.stroke(bolt, with: .color(.black), lineWidth: 1.8)
+        let originX = rect.minX + rect.width * 0.22
+        let baseR   = min(rect.width, rect.height) * 0.18
+        // Source dot.
+        let dotR: CGFloat = 2.0
+        let dot = Path(ellipseIn: CGRect(x: originX - dotR, y: cy - dotR,
+                                         width: dotR*2, height: dotR*2))
+        ctx.fill(dot, with: .color(.black))
+        // Three concentric arcs (90° each, facing right).
+        for i in 1...3 {
+            let r = baseR * CGFloat(i)
+            var arc = Path()
+            arc.addArc(center: CGPoint(x: originX, y: cy),
+                       radius: r,
+                       startAngle: .degrees(-55),
+                       endAngle:   .degrees(55),
+                       clockwise: false)
+            ctx.stroke(arc, with: .color(.black), lineWidth: 1.5)
+        }
     }
 
-    /// Psychological operations — a horn / megaphone shape opening to the
-    /// right (apex on left, wide flat side on right).
-    private func drawPsyOps(ctx: GraphicsContext, in rect: CGRect) {
-        let leftX   = rect.minX + rect.width * 0.18
-        let rightX  = rect.maxX - rect.width * 0.22
-        let topY    = rect.midY - rect.height * 0.22
-        let botY    = rect.midY + rect.height * 0.22
-        var p = Path()
-        p.move(to:    CGPoint(x: leftX,  y: rect.midY))
-        p.addLine(to: CGPoint(x: rightX, y: topY))
-        p.addLine(to: CGPoint(x: rightX, y: botY))
-        p.closeSubpath()
-        ctx.stroke(p, with: .color(.black), lineWidth: 2)
-        // Sound waves to the right of the horn.
-        var wave1 = Path()
-        wave1.move(to: CGPoint(x: rightX + 3, y: topY))
-        wave1.addLine(to: CGPoint(x: rightX + 3, y: botY))
-        ctx.stroke(wave1, with: .color(.black), lineWidth: 1.5)
-    }
-
-    /// CBRN defence — two crossed leaf-shapes (retorts) forming an X.
+    /// CBRN defence — two crossed thin retort (leaf) shapes forming an X.
+    /// Each retort is drawn as a thin filled ellipse rotated 45°, with the
+    /// two together making a saltire pattern.
     private func drawCBRN(ctx: GraphicsContext, in rect: CGRect) {
         let cx = rect.midX, cy = rect.midY
-        let len = min(rect.width, rect.height) * 0.42
-        let bulge = len * 0.30
-        // First retort: NW to SE.
-        var r1 = Path()
-        r1.move(to:    CGPoint(x: cx - len, y: cy - len))
-        r1.addQuadCurve(to: CGPoint(x: cx + len, y: cy + len),
-                        control: CGPoint(x: cx - bulge, y: cy + bulge))
-        r1.addQuadCurve(to: CGPoint(x: cx - len, y: cy - len),
-                        control: CGPoint(x: cx + bulge, y: cy - bulge))
-        ctx.fill(r1, with: .color(.black))
-        // Second retort: NE to SW.
-        var r2 = Path()
-        r2.move(to:    CGPoint(x: cx + len, y: cy - len))
-        r2.addQuadCurve(to: CGPoint(x: cx - len, y: cy + len),
-                        control: CGPoint(x: cx + bulge, y: cy + bulge))
-        r2.addQuadCurve(to: CGPoint(x: cx + len, y: cy - len),
-                        control: CGPoint(x: cx - bulge, y: cy - bulge))
-        ctx.fill(r2, with: .color(.black))
+        let halfLen = min(rect.width, rect.height) * 0.36
+        let halfThk = halfLen * 0.18
+
+        // Build a thin lens shape oriented along the +x axis (horizontal),
+        // then rotate by ±45° around the centre and fill.
+        func buildLens(angle: Double) -> Path {
+            var p = Path()
+            // Lens vertices (parametric ellipse approximated by quad curves).
+            let lensRect = CGRect(x: cx - halfLen, y: cy - halfThk,
+                                  width: halfLen * 2, height: halfThk * 2)
+            p.addEllipse(in: lensRect)
+            return p.applying(CGAffineTransform(translationX: -cx, y: -cy)
+                .rotated(by: angle)
+                .translatedBy(x: cx, y: cy))
+        }
+        ctx.fill(buildLens(angle: .pi / 4),  with: .color(.black))
+        ctx.fill(buildLens(angle: -.pi / 4), with: .color(.black))
     }
 
-    /// Ordnance — outlined disc in the centre with two horizontal bars
-    /// extending outward to the left and right edges of the frame
-    /// (cannons sticking out behind a disc).
+    /// Ordnance — two crossed cannon barrels (diagonal X reaching the
+    /// corners) covered at the centre by a FILLED disc.
     private func drawOrdnance(ctx: GraphicsContext, in rect: CGRect) {
-        let r = rect.height * 0.22
         let cx = rect.midX, cy = rect.midY
-        // Horizontal bars left and right of the disc.
-        var bars = Path()
-        bars.move(to:    CGPoint(x: rect.minX + rect.width * 0.10, y: cy))
-        bars.addLine(to: CGPoint(x: cx - r, y: cy))
-        bars.move(to:    CGPoint(x: cx + r, y: cy))
-        bars.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.10, y: cy))
-        ctx.stroke(bars, with: .color(.black), lineWidth: 2)
-        // Centre disc (outlined).
+        var x = Path()
+        x.move(to:    CGPoint(x: rect.minX, y: rect.minY))
+        x.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        x.move(to:    CGPoint(x: rect.maxX, y: rect.minY))
+        x.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        ctx.stroke(x, with: .color(.black), lineWidth: 2)
+        // Filled disc over the intersection.
+        let r = min(rect.width, rect.height) * 0.18
         let disc = Path(ellipseIn: CGRect(x: cx - r, y: cy - r,
                                           width: r * 2, height: r * 2))
-        ctx.stroke(disc, with: .color(.black), lineWidth: 1.5)
+        ctx.fill(disc, with: .color(.black))
     }
 
-    /// Fuel / POL — simplified funnel: a wide inverted triangle (open
-    /// mouth at the top, apex at lower-mid) with a short vertical stem
-    /// continuing below the apex.
+    /// Fuel / POL — funnel: an inverted V (open mouth at top) with a
+    /// long vertical stem descending from the apex. The mouth opens to
+    /// roughly half the frame width.
     private func drawFunnel(ctx: GraphicsContext, in rect: CGRect) {
-        let topY     = rect.minY + rect.height * 0.18
-        let apexY    = rect.minY + rect.height * 0.62
+        let topY     = rect.minY + rect.height * 0.16
+        let apexY    = rect.minY + rect.height * 0.50
         let stemBotY = rect.maxY - rect.height * 0.12
-        let leftX  = rect.minX + rect.width * 0.18
-        let rightX = rect.maxX - rect.width * 0.18
-        // Triangle outline.
-        var funnel = Path()
-        funnel.move(to:    CGPoint(x: leftX,    y: topY))
-        funnel.addLine(to: CGPoint(x: rect.midX, y: apexY))
-        funnel.addLine(to: CGPoint(x: rightX,   y: topY))
-        ctx.stroke(funnel, with: .color(.black), lineWidth: 2)
-        // Stem from apex straight down.
+        let leftX  = rect.minX + rect.width * 0.28
+        let rightX = rect.maxX - rect.width * 0.28
+        // Inverted V (mouth).
+        var v = Path()
+        v.move(to:    CGPoint(x: leftX,    y: topY))
+        v.addLine(to: CGPoint(x: rect.midX, y: apexY))
+        v.addLine(to: CGPoint(x: rightX,   y: topY))
+        ctx.stroke(v, with: .color(.black), lineWidth: 2)
+        // Long stem.
         var stem = Path()
         stem.move(to:    CGPoint(x: rect.midX, y: apexY))
         stem.addLine(to: CGPoint(x: rect.midX, y: stemBotY))
         ctx.stroke(stem, with: .color(.black), lineWidth: 2)
-    }
-
-    /// Missile — narrow vertical projectile silhouette (pointed top).
-    private func drawMissile(ctx: GraphicsContext, in rect: CGRect) {
-        let w = rect.width * 0.20
-        let topY = rect.minY + rect.height * 0.10
-        let noseY = topY + rect.height * 0.18
-        let botY = rect.maxY - rect.height * 0.12
-        let leftX  = rect.midX - w/2
-        let rightX = rect.midX + w/2
-        var p = Path()
-        // Pointed nose.
-        p.move(to:    CGPoint(x: rect.midX, y: topY))
-        p.addLine(to: CGPoint(x: rightX,    y: noseY))
-        p.addLine(to: CGPoint(x: rightX,    y: botY))
-        p.addLine(to: CGPoint(x: leftX,     y: botY))
-        p.addLine(to: CGPoint(x: leftX,     y: noseY))
-        p.closeSubpath()
-        ctx.stroke(p, with: .color(.black), lineWidth: 1.5)
-    }
-
-    /// Navy — anchor: small ring at the top, vertical shaft, horizontal
-    /// stock near the top, two curved flukes at the bottom.
-    private func drawAnchor(ctx: GraphicsContext, in rect: CGRect) {
-        let cx = rect.midX
-        let topY    = rect.minY + rect.height * 0.16
-        let stockY  = rect.minY + rect.height * 0.32
-        let botY    = rect.maxY - rect.height * 0.18
-        let ringR   = rect.width  * 0.07
-        let halfBar = rect.width  * 0.22
-        let flukeR  = rect.width  * 0.28
-
-        // Ring at the very top.
-        let ring = Path(ellipseIn: CGRect(x: cx - ringR, y: topY - ringR*2,
-                                          width: ringR*2, height: ringR*2))
-        ctx.stroke(ring, with: .color(.black), lineWidth: 1.5)
-
-        // Vertical shaft from the ring down to the crown.
-        var shaft = Path()
-        shaft.move(to:    CGPoint(x: cx, y: topY))
-        shaft.addLine(to: CGPoint(x: cx, y: botY))
-        ctx.stroke(shaft, with: .color(.black), lineWidth: 2)
-
-        // Stock (crossbar) near the top.
-        var stock = Path()
-        stock.move(to:    CGPoint(x: cx - halfBar, y: stockY))
-        stock.addLine(to: CGPoint(x: cx + halfBar, y: stockY))
-        ctx.stroke(stock, with: .color(.black), lineWidth: 2)
-
-        // Left fluke — arc curving down and outward from the crown to the
-        // lower-left, then back up slightly (tip).
-        var leftFluke = Path()
-        leftFluke.addArc(center: CGPoint(x: cx, y: botY),
-                         radius: flukeR,
-                         startAngle: .degrees(90),
-                         endAngle:   .degrees(180),
-                         clockwise: false)
-        ctx.stroke(leftFluke, with: .color(.black), lineWidth: 2)
-
-        var rightFluke = Path()
-        rightFluke.addArc(center: CGPoint(x: cx, y: botY),
-                          radius: flukeR,
-                          startAngle: .degrees(0),
-                          endAngle:   .degrees(90),
-                          clockwise: false)
-        ctx.stroke(rightFluke, with: .color(.black), lineWidth: 2)
     }
 
     /// Transportation — outlined wheel with EIGHT radial spokes (wagon-wheel
@@ -909,42 +773,22 @@ struct MilitarySymbolView: View {
         ctx.stroke(spokes, with: .color(.black), lineWidth: 1.2)
     }
 
-    /// UAV — wide flat boomerang/wing silhouette (a shallow inverted-V).
+    /// UAV — wide horizontal CRESCENT (flying wing seen from above):
+    /// outer leading edge curves down, trailing edge curves up so the
+    /// shape resembles a flat boomerang lying across the frame.
     private func drawUAV(ctx: GraphicsContext, in rect: CGRect) {
-        let leftX   = rect.minX + rect.width * 0.10
-        let rightX  = rect.maxX - rect.width * 0.10
-        let tipY    = rect.midY - rect.height * 0.06
-        let backY   = rect.midY + rect.height * 0.12
-        let midDown = rect.midY + rect.height * 0.04
-        var p = Path()
-        p.move(to:    CGPoint(x: leftX,    y: backY))
-        p.addQuadCurve(to: CGPoint(x: rightX, y: backY),
-                       control: CGPoint(x: rect.midX, y: tipY - 8))
-        p.addLine(to: CGPoint(x: rect.midX, y: midDown))
-        p.closeSubpath()
-        ctx.fill(p, with: .color(.black))
-    }
-
-    /// Topographical — stylised sextant: arc opening downward with a small
-    /// triangular index arm pointing up from its centre.
-    private func drawTopographical(ctx: GraphicsContext, in rect: CGRect) {
+        let leftX  = rect.minX + rect.width * 0.08
+        let rightX = rect.maxX - rect.width * 0.08
         let cy = rect.midY
-        let arcR = rect.width * 0.32
-        var arc = Path()
-        arc.addArc(center: CGPoint(x: rect.midX, y: cy + rect.height * 0.05),
-                   radius: arcR,
-                   startAngle: .degrees(200),
-                   endAngle:   .degrees(340),
-                   clockwise: false)
-        ctx.stroke(arc, with: .color(.black), lineWidth: 2)
-        // Index arm: small upward triangle.
-        var tri = Path()
-        let triH = rect.height * 0.30
-        tri.move(to:    CGPoint(x: rect.midX, y: cy - triH))
-        tri.addLine(to: CGPoint(x: rect.midX - 5, y: cy))
-        tri.addLine(to: CGPoint(x: rect.midX + 5, y: cy))
-        tri.closeSubpath()
-        ctx.stroke(tri, with: .color(.black), lineWidth: 1.5)
+        // Leading edge: gentle downward sweep.
+        var p = Path()
+        p.move(to: CGPoint(x: leftX, y: cy))
+        p.addQuadCurve(to: CGPoint(x: rightX, y: cy),
+                       control: CGPoint(x: rect.midX, y: cy + rect.height * 0.40))
+        // Trailing edge: closer to flat.
+        p.addQuadCurve(to: CGPoint(x: leftX, y: cy),
+                       control: CGPoint(x: rect.midX, y: cy + rect.height * 0.12))
+        ctx.fill(p, with: .color(.black))
     }
 
     /// Three small open circles in a row along the bottom inside edge of
@@ -962,32 +806,6 @@ struct MilitarySymbolView: View {
         }
     }
 
-    /// Hospital — geometric H with horizontal crossbars at the top and
-    /// bottom (medical cross + H combined).
-    private func drawHospital(ctx: GraphicsContext, in rect: CGRect) {
-        let leftX  = rect.minX + rect.width * 0.30
-        let rightX = rect.maxX - rect.width * 0.30
-        let topY   = rect.minY + rect.height * 0.20
-        let botY   = rect.maxY - rect.height * 0.20
-        let midY   = rect.midY
-        var p = Path()
-        // Two vertical legs of the H.
-        p.move(to:    CGPoint(x: leftX,  y: topY))
-        p.addLine(to: CGPoint(x: leftX,  y: botY))
-        p.move(to:    CGPoint(x: rightX, y: topY))
-        p.addLine(to: CGPoint(x: rightX, y: botY))
-        // Middle crossbar.
-        p.move(to:    CGPoint(x: leftX,  y: midY))
-        p.addLine(to: CGPoint(x: rightX, y: midY))
-        // Top and bottom crossbars (extend slightly outside the legs).
-        let extra = rect.width * 0.10
-        p.move(to:    CGPoint(x: leftX  - extra, y: topY))
-        p.addLine(to: CGPoint(x: rightX + extra, y: topY))
-        p.move(to:    CGPoint(x: leftX  - extra, y: botY))
-        p.addLine(to: CGPoint(x: rightX + extra, y: botY))
-        ctx.stroke(p, with: .color(.black), lineWidth: 2)
-    }
-
     private func drawLetter(ctx: GraphicsContext, letter: String, in rect: CGRect) {
         // Scale the font down for multi-letter labels so they fit inside
         // the affiliation frame (CSS, EOD, SOF, etc.).
@@ -1000,13 +818,14 @@ struct MilitarySymbolView: View {
         ctx.draw(text, at: CGPoint(x: rect.midX, y: rect.midY), anchor: .center)
     }
 
+    /// Medical — equilateral cross whose arms extend to the EDGES of the
+    /// affiliation frame, drawn with thin (not bulky) bars.
     private func drawMedicalCross(ctx: GraphicsContext, in rect: CGRect) {
-        let w = rect.width * 0.5, h = rect.height * 0.5
-        let thick = min(w, h) * 0.30
-        let horiz = CGRect(x: rect.midX - w/2,    y: rect.midY - thick/2,
-                            width: w,             height: thick)
-        let vert  = CGRect(x: rect.midX - thick/2, y: rect.midY - h/2,
-                            width: thick,         height: h)
+        let thick = min(rect.width, rect.height) * 0.16
+        let horiz = CGRect(x: rect.minX,        y: rect.midY - thick/2,
+                           width: rect.width,   height: thick)
+        let vert  = CGRect(x: rect.midX - thick/2, y: rect.minY,
+                           width: thick,        height: rect.height)
         ctx.fill(Path(horiz), with: .color(.black))
         ctx.fill(Path(vert),  with: .color(.black))
     }
