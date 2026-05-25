@@ -342,49 +342,37 @@ struct MilitarySymbolView: View {
         switch function {
         case .unspecified:           break
 
-        case .infantry:              drawInfantryX(ctx: ctx, affiliation: affiliation, frame: frame)
-        case .armour:                drawArmourCapsule(ctx: ctx, in: glyphRect)
-        case .mechInfantry:
-            drawArmourCapsule(ctx: ctx, in: glyphRect)
-            drawInfantryX(ctx: ctx, affiliation: affiliation, frame: glyphRect)
-        case .motorisedInfantry:
-            drawArmourCapsule(ctx: ctx, in: glyphRect)
-            drawInfantryX(ctx: ctx, affiliation: affiliation, frame: glyphRect)
-            drawWheels(ctx: ctx, in: glyphRect)
-        case .recce:                 drawRecceSlash(ctx: ctx, in: glyphRect)
-        case .cavalry:
-            drawArmourCapsule(ctx: ctx, in: glyphRect)
-            drawRecceSlash(ctx: ctx, in: glyphRect)
-        case .artillery:
-            let r = min(glyphRect.width, glyphRect.height) * 0.18
-            let dot = Path(ellipseIn: CGRect(x: glyphRect.midX - r,
-                                             y: glyphRect.midY - r,
-                                             width: r*2, height: r*2))
-            ctx.fill(dot, with: .color(.black))
-        case .airDefence:            drawAirDefenceDome(ctx: ctx, in: glyphRect)
-        case .antiTank:              drawAntiTankVee(ctx: ctx, in: glyphRect)
-        case .mortar:                drawMortarArrow(ctx: ctx, in: glyphRect)
+        case .infantry:              drawAsset(ctx: ctx, named: "AppSymbols/infantry", in: glyphRect)
+        case .armour:                drawAsset(ctx: ctx, named: "AppSymbols/armour", in: glyphRect)
+        case .mechInfantry:          drawAsset(ctx: ctx, named: "AppSymbols/mechInfantry", in: glyphRect)
+        case .motorisedInfantry:     drawAsset(ctx: ctx, named: "AppSymbols/motorisedInfantry", in: glyphRect)
+        case .recce:                 drawAsset(ctx: ctx, named: "AppSymbols/recce", in: glyphRect)
+        case .cavalry:               drawAsset(ctx: ctx, named: "AppSymbols/cavalry", in: glyphRect)
+        case .artillery:             drawAsset(ctx: ctx, named: "AppSymbols/artillery", in: glyphRect)
+        case .airDefence:            drawAsset(ctx: ctx, named: "AppSymbols/airDefence", in: glyphRect)
+        case .antiTank:              drawAsset(ctx: ctx, named: "AppSymbols/antiTank", in: glyphRect)
+        case .mortar:                drawAsset(ctx: ctx, named: "AppSymbols/mortar", in: glyphRect)
 
-        case .engineer:              drawEngineerBridge(ctx: ctx, in: glyphRect)
+        case .engineer:              drawAsset(ctx: ctx, named: "AppSymbols/engineer", in: glyphRect)
         case .bridging:              drawAsset(ctx: ctx, named: "AppSymbols/bridging", in: glyphRect)
-        case .signal:                drawSignalLightning(ctx: ctx, in: glyphRect)
-        case .electronicWarfare:     drawLetter(ctx: ctx, letter: "EW",  in: glyphRect)
+        case .signal:                drawAsset(ctx: ctx, named: "AppSymbols/signal", in: glyphRect)
+        case .electronicWarfare:     drawAsset(ctx: ctx, named: "AppSymbols/electronicWarfare", in: glyphRect)
         case .radar:                 drawAsset(ctx: ctx, named: "AppSymbols/radar", in: glyphRect)
         case .cbrn:                  drawAsset(ctx: ctx, named: "AppSymbols/cbrn", in: glyphRect)
-        case .aviation:              drawRotorBladesBowtie(ctx: ctx, in: glyphRect)
-        case .aviationFixed:         drawAsset(ctx: ctx, named: "AppSymbols/aviation_fixed", in: glyphRect)
+        case .aviation:              drawAsset(ctx: ctx, named: "AppSymbols/aviation", in: glyphRect)
+        case .aviationFixed:         drawAsset(ctx: ctx, named: "AppSymbols/aviationFixed", in: glyphRect)
         case .uav:                   drawAsset(ctx: ctx, named: "AppSymbols/uav", in: glyphRect)
 
-        case .medical:               drawMedicalCross(ctx: ctx, in: glyphRect)
-        case .logistics:             drawSupplyLine(ctx: ctx, in: glyphRect)
+        case .medical:               drawAsset(ctx: ctx, named: "AppSymbols/medical", in: glyphRect)
+        case .logistics:             drawAsset(ctx: ctx, named: "AppSymbols/logistics", in: glyphRect)
         case .maintenance:           drawAsset(ctx: ctx, named: "AppSymbols/maintenance", in: glyphRect)
-        case .ammunition:            drawAmmunition(ctx: ctx, in: glyphRect)
-        case .transportation:        drawWheel(ctx: ctx, in: glyphRect)
+        case .ammunition:            drawAsset(ctx: ctx, named: "AppSymbols/ammunition", in: glyphRect)
+        case .transportation:        drawAsset(ctx: ctx, named: "AppSymbols/transportation", in: glyphRect)
 
-        case .militaryPolice:        drawLetter(ctx: ctx, letter: "MP",  in: glyphRect)
-        case .eod:                   drawLetter(ctx: ctx, letter: "EOD", in: glyphRect)
-        case .css:                   drawLetter(ctx: ctx, letter: "CSS", in: glyphRect)
-        case .specialForces:         drawLetter(ctx: ctx, letter: "SF",  in: glyphRect)
+        case .militaryPolice:        drawAsset(ctx: ctx, named: "AppSymbols/militaryPolice", in: glyphRect)
+        case .eod:                   drawAsset(ctx: ctx, named: "AppSymbols/eod", in: glyphRect)
+        case .css:                   drawAsset(ctx: ctx, named: "AppSymbols/css", in: glyphRect)
+        case .specialForces:         drawAsset(ctx: ctx, named: "AppSymbols/specialForces", in: glyphRect)
         }
     }
 
