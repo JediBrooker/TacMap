@@ -276,9 +276,11 @@ struct MapContainerView: UIViewRepresentable {
         /// changes from within view updates is not allowed" warning
         /// and an infinite re-render loop.
         private func publishOverlayState(in mv: MKMapView) {
+            // Publish screen positions for EVERY waypoint kind —
+            // tactical control measures, military units, and generic
+            // pins. The SwiftUI overlay renders them all.
             var positions: [UUID: CGPoint] = [:]
             for wp in currentWaypoints {
-                guard case .controlMeasure = wp.kind else { continue }
                 positions[wp.id] = mv.convert(wp.coordinate, toPointTo: mv)
             }
             let zoom = currentZoomScaleFactor(for: mv)
@@ -591,28 +593,13 @@ struct MapContainerView: UIViewRepresentable {
             styleByOverlay.removeAll()
             inProgressOverlayIDs.removeAll()
 
-            // Add waypoints if visible. Tactical control measures are
-            // rendered by `TacticalSymbolOverlay` (a SwiftUI overlay
-            // above the map) — keep them out of the MKAnnotation
-            // pipeline entirely so MapKit doesn't try to manage their
-            // views.
-            if visibility?.waypointsVisible ?? true {
-                let mapKitAnnotations = waypoints.filter { wp in
-                    if case .controlMeasure = wp.kind { return false }
-                    return true
-                }
-                mv.addAnnotations(mapKitAnnotations.map(WaypointAnnotation.init))
-            }
-
-            // Restore selection so the controls card keeps tracking the
-            // same waypoint after a rebuild. We do this after re-adding
-            // so the new annotation instance gets selected.
-            if let selectedID,
-               let restored = mv.annotations
-                    .compactMap({ $0 as? WaypointAnnotation })
-                    .first(where: { $0.waypoint.id == selectedID }) {
-                mv.selectAnnotation(restored, animated: false)
-            }
+            // ALL waypoint kinds are rendered by TacticalSymbolOverlay
+            // (a SwiftUI overlay above the map) — keep them all out
+            // of the MKAnnotation pipeline so MapKit doesn't manage
+            // their views and gesture handling is consistent across
+            // kinds. Selection / drag are handled by the overlay
+            // itself.
+            _ = selectedID  // No re-selection needed (no MKAnnotations).
 
             // Add finished drawings if visible.
             if visibility?.drawingsVisible ?? true {
