@@ -219,7 +219,12 @@ struct MilitarySymbolView: View {
             let w = canvasSize.width
             let h = canvasSize.height
             let poleH = poleReserve
-            let echelonH: CGFloat = (h - poleH) * 0.22
+            // Echelon indicator (dots / bars / X's above the frame).
+            // Bumped from 0.22 → 0.28 of the available height so the
+            // marks are easier to read against satellite imagery,
+            // since adding a halo around just the indicator would
+            // require restructuring the renderer entirely.
+            let echelonH: CGFloat = (h - poleH) * 0.28
             let gap: CGFloat      = (h - poleH) * 0.06
 
             let frameTop = echelonH + gap
@@ -803,35 +808,44 @@ struct MilitarySymbolView: View {
         case .team:
             // APP-6 Team/Crew (Ø): small open circle with a diagonal slash
             // passing through it, centred above the frame.
-            let r = rect.height * 0.35
+            let r = rect.height * 0.42   // was 0.35
             let ring = Path(ellipseIn: CGRect(x: cx - r, y: cy - r,
                                               width: r * 2, height: r * 2))
-            ctx.stroke(ring, with: ink, lineWidth: 1.5)
+            ctx.stroke(ring, with: ink, lineWidth: 2)   // was 1.5
             var slash = Path()
             let s = r * 1.2
             slash.move(to:    CGPoint(x: cx - s, y: cy + s))
             slash.addLine(to: CGPoint(x: cx + s, y: cy - s))
-            ctx.stroke(slash, with: ink, lineWidth: 1.5)
+            ctx.stroke(slash, with: ink, lineWidth: 2)  // was 1.5
         case .section:
-            drawDots(count: 1, ctx: ctx, cx: cx, cy: cy, radius: 2.2, spacing: 0, ink: ink)
+            drawDots(count: 1, ctx: ctx, cx: cx, cy: cy,
+                     radius: 3.0,    // was 2.2
+                     spacing: 0, ink: ink)
         case .platoon:
-            drawDots(count: 3, ctx: ctx, cx: cx, cy: cy, radius: 2, spacing: 6, ink: ink)
+            drawDots(count: 3, ctx: ctx, cx: cx, cy: cy,
+                     radius: 2.6,    // was 2.0
+                     spacing: 7.5,   // was 6 — wider to keep dots from kissing
+                     ink: ink)
         case .company:
             drawBars(count: 1, ctx: ctx, cx: cx, top: rect.minY + 1,
-                     height: rect.height - 2, barW: 2.5, spacing: 0, ink: ink)
+                     height: rect.height - 2,
+                     barW: 3.2,      // was 2.5
+                     spacing: 0, ink: ink)
         case .battalionRegiment:
             drawBars(count: 2, ctx: ctx, cx: cx, top: rect.minY + 1,
-                     height: rect.height - 2, barW: 2.5, spacing: 7, ink: ink)
-            drawBars(count: 3, ctx: ctx, cx: cx, top: rect.minY + 1,
-                     height: rect.height - 2, barW: 2.5, spacing: 7, ink: ink)
+                     height: rect.height - 2,
+                     barW: 3.2,      // was 2.5
+                     spacing: 8,     // was 7
+                     ink: ink)
         case .brigade:
-            drawXs(count: 1, ctx: ctx, cx: cx, top: rect.minY + 3,
-                   size: (rect.height - 6) * 0.70, spacing: 0, ink: ink)
+            drawXs(count: 1, ctx: ctx, cx: cx, top: rect.minY + 2,
+                   size: (rect.height - 4) * 0.85,   // was 0.70 with -6
+                   spacing: 0, ink: ink)
         case .division:
-            drawXs(count: 2, ctx: ctx, cx: cx, top: rect.minY + 3,
-                   size: (rect.height - 6) * 0.70, spacing: 7, ink: ink)
-            drawXs(count: 3, ctx: ctx, cx: cx, top: rect.minY + 1,
-                   size: rect.height - 2, spacing: 9, ink: ink)
+            drawXs(count: 2, ctx: ctx, cx: cx, top: rect.minY + 2,
+                   size: (rect.height - 4) * 0.85,   // was 0.70 with -6
+                   spacing: 9,       // was 7
+                   ink: ink)
         }
     }
 
