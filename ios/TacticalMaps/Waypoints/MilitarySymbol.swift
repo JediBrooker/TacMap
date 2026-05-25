@@ -59,7 +59,7 @@ enum SymbolAffiliation: String, Codable, Hashable, CaseIterable {
 enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
     case team, section, platoon
     case company, battalion, regiment
-    case brigade, division, corps
+    case brigade, division
 
     var displayName: String {
         switch self {
@@ -71,7 +71,6 @@ enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
         case .regiment:  return "Regiment"
         case .brigade:   return "Brigade"
         case .division:  return "Division"
-        case .corps:     return "Corps"
         }
     }
 
@@ -86,7 +85,6 @@ enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
         case .regiment:  return "III"
         case .brigade:   return "X"
         case .division:  return "XX"
-        case .corps:     return "XXX"
         }
     }
 }
@@ -233,18 +231,13 @@ struct MilitarySymbolView: View {
             // Frame geometry per affiliation
             let frameRect: CGRect
             switch spec.affiliation {
-            case .friend, .neutral:
-                // Axis-aligned: friend is a wider rectangle, neutral is square-ish
-                let frameW: CGFloat
-                if spec.affiliation == .friend {
-                    frameW = min(w - 4, frameH * 1.5)
-                } else {
-                    frameW = min(w - 4, frameH * 1.1)
-                }
+            case .friend:
+                let frameW = min(w - 4, frameH * 1.5)
                 frameRect = CGRect(x: (w - frameW) / 2, y: frameTop,
                                    width: frameW, height: frameH)
-            case .hostile, .unknown:
-                // Rotated / lobed shape inscribed in a square
+            case .hostile, .neutral, .unknown:
+                // Rotated / lobed shape inscribed in a square — diamond
+                // (hostile + neutral) or quatrefoil (unknown).
                 let side = min(w - 6, frameH)
                 frameRect = CGRect(x: (w - side) / 2,
                                    y: frameTop + (frameH - side) / 2,
@@ -255,9 +248,7 @@ struct MilitarySymbolView: View {
             switch spec.affiliation {
             case .friend:
                 drawAxisAligned(ctx: ctx, in: frameRect)
-            case .neutral:
-                drawAxisAligned(ctx: ctx, in: frameRect)
-            case .hostile:
+            case .hostile, .neutral:
                 drawDiamond(ctx: ctx, in: frameRect)
             case .unknown:
                 drawQuatrefoil(ctx: ctx, in: frameRect)
@@ -342,9 +333,9 @@ struct MilitarySymbolView: View {
         // bounding box for any glyph that's not the canonical infantry X.
         let inset: CGFloat
         switch affiliation {
-        case .friend, .neutral: inset = 0
-        case .hostile:          inset = frame.width * (1 - sqrt(2)/2) / 2
-        case .unknown:          inset = frame.width * 0.18
+        case .friend:                    inset = 0
+        case .hostile, .neutral:         inset = frame.width * (1 - sqrt(2)/2) / 2
+        case .unknown:                   inset = frame.width * 0.18
         }
         let glyphRect = frame.insetBy(dx: inset, dy: inset)
 
@@ -382,7 +373,7 @@ struct MilitarySymbolView: View {
         case .cbrn:                  drawAsset(ctx: ctx, named: "AppSymbols/cbrn", in: glyphRect)
         case .aviation:              drawRotorBladesBowtie(ctx: ctx, in: glyphRect)
         case .aviationFixed:         drawAsset(ctx: ctx, named: "AppSymbols/aviation_fixed", in: glyphRect)
-        case .uav:                   drawUAV(ctx: ctx, in: glyphRect)
+        case .uav:                   drawAsset(ctx: ctx, named: "AppSymbols/uav", in: glyphRect)
 
         case .medical:               drawMedicalCross(ctx: ctx, in: glyphRect)
         case .logistics:             drawSupplyLine(ctx: ctx, in: glyphRect)
@@ -400,17 +391,17 @@ struct MilitarySymbolView: View {
     private func drawInfantryX(ctx: GraphicsContext, affiliation: SymbolAffiliation, frame: CGRect) {
         var path = Path()
         switch affiliation {
-        case .friend, .neutral:
+        case .friend:
             // Diagonals corner-to-corner.
             path.move(to:    CGPoint(x: frame.minX, y: frame.minY))
             path.addLine(to: CGPoint(x: frame.maxX, y: frame.maxY))
             path.move(to:    CGPoint(x: frame.maxX, y: frame.minY))
             path.addLine(to: CGPoint(x: frame.minX, y: frame.maxY))
-        case .hostile:
-            // Diagonal X drawn in screen coords, with endpoints at the four
-            // mid-edge points of the diamond so the X stays inside the frame.
+        case .hostile, .neutral:
+            // Diamond frame — diagonal X clipped to the inscribed square
+            // so it stays inside the rotated frame.
             let cx = frame.midX, cy = frame.midY
-            let h  = frame.width / 4   // half of inscribed-square side
+            let h  = frame.width / 4
             path.move(to:    CGPoint(x: cx - h, y: cy - h))
             path.addLine(to: CGPoint(x: cx + h, y: cy + h))
             path.move(to:    CGPoint(x: cx + h, y: cy - h))
@@ -759,21 +750,6 @@ struct MilitarySymbolView: View {
         ctx.stroke(spokes, with: .color(.black), lineWidth: 1.2)
     }
 
-    /// UAV — flying-wing silhouette: flat-ish horizontal top, pronounced
-    /// V notch in the BOTTOM that dips down to a point at the centre.
-    /// Straight lines, filled.
-    private func drawUAV(ctx: GraphicsContext, in rect: CGRect) {
-        let leftTip   = CGPoint(x: rect.minX + rect.width * 0.06, y: rect.midY - rect.height * 0.06)
-        let rightTip  = CGPoint(x: rect.maxX - rect.width * 0.06, y: rect.midY - rect.height * 0.06)
-        let apex      = CGPoint(x: rect.midX,                     y: rect.midY + rect.height * 0.25)
-        var p = Path()
-        p.move(to: leftTip)
-        p.addLine(to: rightTip)
-        p.addLine(to: apex)
-        p.closeSubpath()
-        ctx.fill(p, with: .color(.black))
-    }
-
     /// Three small open circles in a row along the bottom inside edge of
     /// the frame, representing the wheels of a wheeled APC. Used for
     /// Mechanised Infantry (Wheeled APC).
@@ -859,17 +835,16 @@ struct MilitarySymbolView: View {
                      height: rect.height - 2, barW: 2.5, spacing: 0, ink: ink)
         case .battalion:
             drawBars(count: 2, ctx: ctx, cx: cx, top: rect.minY + 1,
-                     height: rect.height - 2, barW: 2.5, spacing: 5, ink: ink)
+                     height: rect.height - 2, barW: 2.5, spacing: 7, ink: ink)
         case .regiment:
             drawBars(count: 3, ctx: ctx, cx: cx, top: rect.minY + 1,
-                     height: rect.height - 2, barW: 2.5, spacing: 5, ink: ink)
+                     height: rect.height - 2, barW: 2.5, spacing: 7, ink: ink)
         case .brigade:
-            drawXs(count: 1, ctx: ctx, cx: cx, top: rect.minY + 1,
-                   size: rect.height - 2, spacing: 0, ink: ink)
+            drawXs(count: 1, ctx: ctx, cx: cx, top: rect.minY + 3,
+                   size: (rect.height - 6) * 0.70, spacing: 0, ink: ink)
         case .division:
-            drawXs(count: 2, ctx: ctx, cx: cx, top: rect.minY + 1,
-                   size: rect.height - 2, spacing: 9, ink: ink)
-        case .corps:
+            drawXs(count: 2, ctx: ctx, cx: cx, top: rect.minY + 3,
+                   size: (rect.height - 6) * 0.70, spacing: 7, ink: ink)
             drawXs(count: 3, ctx: ctx, cx: cx, top: rect.minY + 1,
                    size: rect.height - 2, spacing: 9, ink: ink)
         }
