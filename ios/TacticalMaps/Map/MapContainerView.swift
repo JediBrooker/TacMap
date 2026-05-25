@@ -267,23 +267,34 @@ struct MapContainerView: UIViewRepresentable {
         /// scale factor for `TacticalSymbolOverlay` to consume. Runs
         /// on every camera change so the SwiftUI overlay's symbols
         /// track the map as it pans and zooms.
+        ///
+        /// The actual mutation of `@Published` properties is deferred
+        /// to the next runloop tick because some call paths reach
+        /// this from inside `updateUIView` (via `refresh()`), and
+        /// SwiftUI forbids mutating observable state synchronously
+        /// during a view-update pass — it triggers the "Publishing
+        /// changes from within view updates is not allowed" warning
+        /// and an infinite re-render loop.
         private func publishOverlayState(in mv: MKMapView) {
             var positions: [UUID: CGPoint] = [:]
             for wp in currentWaypoints {
                 guard case .controlMeasure = wp.kind else { continue }
                 positions[wp.id] = mv.convert(wp.coordinate, toPointTo: mv)
             }
-            mapVM.waypointScreenPositions = positions
-            mapVM.zoomScaleFactor = currentZoomScaleFactor(for: mv)
+            let zoom = currentZoomScaleFactor(for: mv)
 
-            // Install / refresh the screen-point → coordinate bridge so
-            // the overlay's drag handler can turn a finger position
-            // back into a coordinate when persisting the move.
-            mapVM.screenToCoordinate = { [weak mv] pt in
-                guard let mv else {
-                    return CLLocationCoordinate2D(latitude: 0, longitude: 0)
+            DispatchQueue.main.async { [weak self, weak mv] in
+                guard let self else { return }
+                self.mapVM.waypointScreenPositions = positions
+                self.mapVM.zoomScaleFactor = zoom
+                if self.mapVM.screenToCoordinate == nil {
+                    self.mapVM.screenToCoordinate = { [weak mv] pt in
+                        guard let mv else {
+                            return CLLocationCoordinate2D(latitude: 0, longitude: 0)
+                        }
+                        return mv.convert(pt, toCoordinateFrom: mv)
+                    }
                 }
-                return mv.convert(pt, toCoordinateFrom: mv)
             }
         }
 
