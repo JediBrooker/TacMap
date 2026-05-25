@@ -106,7 +106,7 @@ enum SymbolFunction: String, Codable, Hashable, CaseIterable {
     case engineer          // letter E (stylised bridge)
     case medical           // black equilateral cross (red-cross style)
     case signal            // lightning bolt
-    case logistics         // letter S (supply / quartermaster)
+    case logistics         // Supply — flat horizontal line (side view of a road)
     case aviation          // two facing crescents (helicopter rotor blades)
     case maintenance       // wrench-style horizontal line with a notch
     case hq                // headquarters: vertical line extending down from bottom-left of frame
@@ -126,7 +126,7 @@ enum SymbolFunction: String, Codable, Hashable, CaseIterable {
         case .engineer:       return "Engineer"
         case .medical:        return "Medical"
         case .signal:         return "Signal"
-        case .logistics:      return "Logistics / Supply"
+        case .logistics:      return "Supply"
         case .aviation:       return "Aviation (Rotary)"
         case .maintenance:    return "Maintenance"
         case .hq:             return "Headquarters"
@@ -326,16 +326,16 @@ struct MilitarySymbolView: View {
             drawMedicalCross(ctx: ctx, in: glyphRect)
 
         case .signal:
-            drawSignalZ(ctx: ctx, in: glyphRect)
+            drawSignalLightning(ctx: ctx, in: glyphRect)
 
         case .logistics:
-            drawLogisticsContainer(ctx: ctx, in: glyphRect)
+            drawSupplyLine(ctx: ctx, in: glyphRect)
 
         case .aviation:
             drawRotorBlades(ctx: ctx, in: glyphRect)
 
         case .maintenance:
-            drawLetter(ctx: ctx, letter: "M", in: glyphRect)
+            drawMaintenanceDumbbell(ctx: ctx, in: glyphRect)
 
         case .hq:
             // HQ "flagpole" — a vertical line running from the TOP-LEFT
@@ -399,72 +399,88 @@ struct MilitarySymbolView: View {
         ctx.stroke(path, with: .color(.black), lineWidth: 2)
     }
 
-    /// Upright V (apex at the bottom-centre of the frame, opening at the
-    /// top corners). APP-6 anti-tank gun glyph — the apex MUST touch the
-    /// base of the frame.
+    /// Inverted V (apex at the top-centre, legs at the bottom-left and
+    /// bottom-right corners). APP-6 anti-tank — "concentrated piercing
+    /// action".
     private func drawAntiTankVee(ctx: GraphicsContext, in rect: CGRect) {
         var p = Path()
-        p.move(to:    CGPoint(x: rect.minX, y: rect.minY))   // top-left
-        p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))   // bottom-centre (touches base)
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))   // top-right
+        p.move(to:    CGPoint(x: rect.minX, y: rect.maxY))   // bottom-left
+        p.addLine(to: CGPoint(x: rect.midX, y: rect.minY))   // top-centre (apex)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))   // bottom-right
         ctx.stroke(p, with: .color(.black), lineWidth: 2.5)
     }
 
-    /// Stylised bridge — horizontal beam with two short vertical descenders
-    /// at each end (⊓ shape). APP-6 engineer glyph.
+    /// "Letter E on its side" — horizontal baseline with three short
+    /// vertical legs rising from it (left, centre, right). APP-6 engineer.
     private func drawEngineerBridge(ctx: GraphicsContext, in rect: CGRect) {
-        let inset = rect.width * 0.20
-        let topY    = rect.minY + rect.height * 0.30
-        let bottomY = rect.maxY - rect.height * 0.20
-        let leftX   = rect.minX + inset
-        let rightX  = rect.maxX - inset
-        var p = Path()
-        p.move(to:    CGPoint(x: leftX,  y: bottomY))
-        p.addLine(to: CGPoint(x: leftX,  y: topY))
-        p.addLine(to: CGPoint(x: rightX, y: topY))
-        p.addLine(to: CGPoint(x: rightX, y: bottomY))
-        ctx.stroke(p, with: .color(.black), lineWidth: 2)
-    }
-
-    /// Angular "Z" shape across the frame — APP-6 signal/communications glyph.
-    private func drawSignalZ(ctx: GraphicsContext, in rect: CGRect) {
-        let inset = rect.width * 0.18
+        let inset   = rect.width * 0.12
+        let baseY   = rect.maxY - rect.height * 0.22
         let topY    = rect.minY + rect.height * 0.22
-        let bottomY = rect.maxY - rect.height * 0.22
         let leftX   = rect.minX + inset
         let rightX  = rect.maxX - inset
+        let midX    = rect.midX
         var p = Path()
-        p.move(to:    CGPoint(x: leftX,  y: topY))
-        p.addLine(to: CGPoint(x: rightX, y: topY))
-        p.addLine(to: CGPoint(x: leftX,  y: bottomY))
-        p.addLine(to: CGPoint(x: rightX, y: bottomY))
+        // Baseline.
+        p.move(to:    CGPoint(x: leftX,  y: baseY))
+        p.addLine(to: CGPoint(x: rightX, y: baseY))
+        // Three verticals.
+        p.move(to:    CGPoint(x: leftX,  y: baseY)); p.addLine(to: CGPoint(x: leftX,  y: topY))
+        p.move(to:    CGPoint(x: midX,   y: baseY)); p.addLine(to: CGPoint(x: midX,   y: topY))
+        p.move(to:    CGPoint(x: rightX, y: baseY)); p.addLine(to: CGPoint(x: rightX, y: topY))
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Small filled rectangle — a stylised supply container for the Logistics
-    /// / Supply glyph.
-    private func drawLogisticsContainer(ctx: GraphicsContext, in rect: CGRect) {
-        let w = rect.width * 0.55
-        let h = rect.height * 0.42
-        let box = CGRect(x: rect.midX - w/2,
-                         y: rect.midY - h/2,
-                         width: w, height: h)
-        ctx.fill(Path(box), with: .color(.black))
+    /// Stylised lightning flash — four points zigzagging from upper-right
+    /// to lower-left, evocative of radio waves. APP-6 signals glyph.
+    private func drawSignalLightning(ctx: GraphicsContext, in rect: CGRect) {
+        let x1 = rect.minX + rect.width * 0.70
+        let y1 = rect.minY + rect.height * 0.15
+        let x2 = rect.minX + rect.width * 0.40
+        let y2 = rect.minY + rect.height * 0.45
+        let x3 = rect.minX + rect.width * 0.60
+        let y3 = rect.minY + rect.height * 0.55
+        let x4 = rect.minX + rect.width * 0.30
+        let y4 = rect.minY + rect.height * 0.85
+        var p = Path()
+        p.move(to:    CGPoint(x: x1, y: y1))
+        p.addLine(to: CGPoint(x: x2, y: y2))
+        p.addLine(to: CGPoint(x: x3, y: y3))
+        p.addLine(to: CGPoint(x: x4, y: y4))
+        ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Two horizontal parallel lines centred in the frame — APP-6 rotary-
-    /// wing aviation glyph (rotor blades viewed top-down).
+    /// Single flat horizontal line through the centre — APP-6 Supply
+    /// glyph ("side view of a road").
+    private func drawSupplyLine(ctx: GraphicsContext, in rect: CGRect) {
+        let inset = rect.width * 0.18
+        var p = Path()
+        p.move(to:    CGPoint(x: rect.minX + inset, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.midY))
+        ctx.stroke(p, with: .color(.black), lineWidth: 2)
+    }
+
+    /// Bowtie (▶◀) — two filled triangles meeting apex-to-apex at the
+    /// centre. APP-6 rotary-wing aviation ("blurred spinning helicopter
+    /// blades").
     private func drawRotorBlades(ctx: GraphicsContext, in rect: CGRect) {
-        let w = rect.width * 0.70
-        let gap = rect.height * 0.18
-        let leftX  = rect.midX - w/2
-        let rightX = rect.midX + w/2
-        var p = Path()
-        p.move(to:    CGPoint(x: leftX,  y: rect.midY - gap/2))
-        p.addLine(to: CGPoint(x: rightX, y: rect.midY - gap/2))
-        p.move(to:    CGPoint(x: leftX,  y: rect.midY + gap/2))
-        p.addLine(to: CGPoint(x: rightX, y: rect.midY + gap/2))
-        ctx.stroke(p, with: .color(.black), lineWidth: 2)
+        let cx     = rect.midX
+        let cy     = rect.midY
+        let halfH  = rect.height * 0.28
+        let halfW  = rect.width  * 0.36
+        // Left triangle: vertical base on the left, apex at centre.
+        var left = Path()
+        left.move(to:    CGPoint(x: cx - halfW, y: cy - halfH))
+        left.addLine(to: CGPoint(x: cx - halfW, y: cy + halfH))
+        left.addLine(to: CGPoint(x: cx,         y: cy))
+        left.closeSubpath()
+        // Right triangle: vertical base on the right, apex at centre.
+        var right = Path()
+        right.move(to:    CGPoint(x: cx + halfW, y: cy - halfH))
+        right.addLine(to: CGPoint(x: cx + halfW, y: cy + halfH))
+        right.addLine(to: CGPoint(x: cx,         y: cy))
+        right.closeSubpath()
+        ctx.fill(left,  with: .color(.black))
+        ctx.fill(right, with: .color(.black))
     }
 
     /// Protective dome — single arc spanning the frame width, concave down.
@@ -480,25 +496,55 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Vertical up-arrow with a horizontal base — mortar trajectory glyph.
+    /// Small open circle at the bottom-centre, with a vertical arrow
+    /// rising from it — APP-6 mortar (projectile + high-arc trajectory).
     private func drawMortarArrow(ctx: GraphicsContext, in rect: CGRect) {
-        let cx = rect.midX
-        let topY = rect.minY + rect.height * 0.20
-        let botY = rect.maxY - rect.height * 0.18
+        let cx       = rect.midX
+        let circleR  = rect.height * 0.12
+        let circleCy = rect.maxY - rect.height * 0.20
+        let topY     = rect.minY + rect.height * 0.18
+
+        // Open circle at the base.
+        let circle = Path(ellipseIn: CGRect(x: cx - circleR,
+                                            y: circleCy - circleR,
+                                            width:  circleR * 2,
+                                            height: circleR * 2))
+        ctx.stroke(circle, with: .color(.black), lineWidth: 1.5)
+
+        // Shaft from top of circle up.
         var shaft = Path()
-        shaft.move(to:    CGPoint(x: cx, y: topY))
-        shaft.addLine(to: CGPoint(x: cx, y: botY))
-        // Baseline tick.
-        shaft.move(to:    CGPoint(x: cx - rect.width * 0.22, y: botY))
-        shaft.addLine(to: CGPoint(x: cx + rect.width * 0.22, y: botY))
+        shaft.move(to:    CGPoint(x: cx, y: circleCy - circleR))
+        shaft.addLine(to: CGPoint(x: cx, y: topY))
         ctx.stroke(shaft, with: .color(.black), lineWidth: 2)
+
         // Arrowhead.
+        let hw = rect.width * 0.13
         var head = Path()
-        let hw = rect.width * 0.14
         head.move(to:    CGPoint(x: cx - hw, y: topY + rect.height * 0.10))
         head.addLine(to: CGPoint(x: cx,      y: topY))
         head.addLine(to: CGPoint(x: cx + hw, y: topY + rect.height * 0.10))
         ctx.stroke(head, with: .color(.black), lineWidth: 2)
+    }
+
+    /// Dumbbell — two small open circles at left and right, connected by a
+    /// short horizontal line. APP-6 maintenance ("stylised wrench").
+    private func drawMaintenanceDumbbell(ctx: GraphicsContext, in rect: CGRect) {
+        let cy      = rect.midY
+        let r       = rect.height * 0.13
+        let leftCx  = rect.minX + rect.width * 0.22
+        let rightCx = rect.maxX - rect.width * 0.22
+
+        let leftCircle = Path(ellipseIn: CGRect(x: leftCx - r, y: cy - r,
+                                                width: r*2, height: r*2))
+        let rightCircle = Path(ellipseIn: CGRect(x: rightCx - r, y: cy - r,
+                                                 width: r*2, height: r*2))
+        ctx.stroke(leftCircle,  with: .color(.black), lineWidth: 1.5)
+        ctx.stroke(rightCircle, with: .color(.black), lineWidth: 1.5)
+
+        var bar = Path()
+        bar.move(to:    CGPoint(x: leftCx + r,  y: cy))
+        bar.addLine(to: CGPoint(x: rightCx - r, y: cy))
+        ctx.stroke(bar, with: .color(.black), lineWidth: 2)
     }
 
     private func drawLetter(ctx: GraphicsContext, letter: String, in rect: CGRect) {
