@@ -17,6 +17,7 @@ struct WaypointEditSheet: View {
     @State private var affiliation: SymbolAffiliation = .friend
     @State private var echelon:     SymbolEchelon     = .platoon
     @State private var function:    SymbolFunction    = .infantry
+    @State private var isHeadquarters: Bool            = false
     // Control measure
     @State private var control:     TacticalControlMeasure = .formUpPoint
     @State private var notes: String = ""
@@ -37,10 +38,11 @@ struct WaypointEditSheet: View {
             case .generic:
                 _category = State(initialValue: .generic)
             case .military(let spec):
-                _category    = State(initialValue: .military)
-                _affiliation = State(initialValue: spec.affiliation)
-                _echelon     = State(initialValue: spec.echelon)
-                _function    = State(initialValue: spec.function)
+                _category       = State(initialValue: .military)
+                _affiliation    = State(initialValue: spec.affiliation)
+                _echelon        = State(initialValue: spec.echelon)
+                _function       = State(initialValue: spec.function)
+                _isHeadquarters = State(initialValue: spec.isHeadquarters)
             case .controlMeasure(let m):
                 _category = State(initialValue: .controlMeasure)
                 _control  = State(initialValue: m)
@@ -97,6 +99,7 @@ struct WaypointEditSheet: View {
                                 Text(f.displayName).tag(f)
                             }
                         }
+                        Toggle("Headquarters", isOn: $isHeadquarters)
                     }
 
                 case .controlMeasure:
@@ -173,7 +176,8 @@ struct WaypointEditSheet: View {
         case .generic:        return .generic
         case .military:       return .military(.init(affiliation: affiliation,
                                                      echelon: echelon,
-                                                     function: function))
+                                                     function: function,
+                                                     isHeadquarters: isHeadquarters))
         case .controlMeasure: return .controlMeasure(control)
         }
     }
