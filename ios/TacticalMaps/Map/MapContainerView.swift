@@ -28,6 +28,12 @@ struct MapContainerView: UIViewRepresentable {
         // independent of base-map type.
         mv.mapType = .satellite
         mv.pointOfInterestFilter = .excludingAll
+        // Lock the camera flat. MapKit can apply 3D tilt at deep zoom on
+        // satellite imagery, which visually distorts annotation views —
+        // making fixed-pixel symbols *look* like they're growing or
+        // shrinking as the user zooms. Locking pitch keeps the camera
+        // straight-down so annotations render at their canonical size.
+        mv.isPitchEnabled = false
 
         // Pan/pinch → browse mode signal.
         let pan   = UIPanGestureRecognizer(target: context.coordinator,
@@ -61,6 +67,10 @@ struct MapContainerView: UIViewRepresentable {
         }) {
             tap.require(toFail: dt)
         }
+        // Don't swallow the touch — MKMapView's internal annotation tap
+        // recognizer needs it too so `didSelect` fires when the user
+        // taps a control-measure symbol.
+        tap.cancelsTouchesInView = false
         mv.addGestureRecognizer(tap)
         context.coordinator.tapGesture = tap
 
@@ -159,6 +169,23 @@ struct MapContainerView: UIViewRepresentable {
         /// waypoint to open the rotate / resize controls card.
         private let selectionHaptic = UIImpactFeedbackGenerator(style: .light)
 
+        /// Fingerprint of the last (waypoints, drawings, in-progress
+        /// session, visibility) tuple we rendered. `refresh()` is a no-op
+        /// when the fingerprint hasn't changed — this matters because
+        /// `updateUIView` fires whenever ANY published value on the VM
+        /// changes (incl. the symbol-selection state), and otherwise we
+        /// would tear down + re-add every annotation on every selection,
+        /// which immediately deselects the just-tapped annotation and
+        /// closes the rotate / resize card.
+        private var lastRefreshFingerprint: String = ""
+
+        /// True while refresh() is tearing down + re-adding annotations.
+        /// MapKit fires `didDeselect` when an annotation is removed; we
+        /// suppress the selection-state clear during a refresh so the
+        /// controls card stays open while the user drags a slider (which
+        /// publishes a new waypoint rotation/scale and triggers refresh).
+        private var isRebuildingAnnotations = false
+
         init(mapVM: MapViewModel,
              waypointStore: WaypointStore,
              drawingStore: DrawingStore,
@@ -235,24 +262,51 @@ struct MapContainerView: UIViewRepresentable {
         /// its ID on the VM so `ContentView` can show the rotate / resize
         /// controls card. Tapping other annotation kinds does nothing
         /// special (they have no per-symbol transforms to tune).
+        ///
+        /// Implements both the iOS 17+ annotation-flavored selector and
+        /// the older view-flavored one so the callback fires regardless
+        /// of which MapKit prefers on the running system.
         func mapView(_ mv: MKMapView, didSelect view: MKAnnotationView) {
-            guard let wp = view.annotation as? WaypointAnnotation,
+            handleSelection(of: view.annotation)
+        }
+
+        func mapView(_ mv: MKMapView, didSelect annotation: MKAnnotation) {
+            handleSelection(of: annotation)
+        }
+
+        func mapView(_ mv: MKMapView, didDeselect view: MKAnnotationView) {
+            handleDeselection(of: view.annotation)
+        }
+
+        func mapView(_ mv: MKMapView, didDeselect annotation: MKAnnotation) {
+            handleDeselection(of: annotation)
+        }
+
+        private func handleSelection(of annotation: MKAnnotation?) {
+            guard let wp = annotation as? WaypointAnnotation,
                   case .controlMeasure = wp.waypoint.kind else { return }
-            selectionHaptic.prepare()
-            selectionHaptic.impactOccurred()
-            // Update on the main runloop so this published change doesn't
-            // collide with the in-progress delegate callback.
+            // Suppress the haptic when this is a refresh-driven
+            // re-selection (same waypoint already on the model) — the
+            // user didn't tap anything new.
+            let isReselection = mapVM.selectedControlMeasureWaypointID == wp.waypoint.id
+            if !isReselection {
+                selectionHaptic.prepare()
+                selectionHaptic.impactOccurred()
+            }
             DispatchQueue.main.async { [weak self] in
                 self?.mapVM.selectedControlMeasureWaypointID = wp.waypoint.id
             }
         }
 
-        func mapView(_ mv: MKMapView, didDeselect view: MKAnnotationView) {
-            guard let wp = view.annotation as? WaypointAnnotation,
+        private func handleDeselection(of annotation: MKAnnotation?) {
+            // MapKit fires didDeselect when an annotation is removed.
+            // If that removal is part of a refresh, the controls card
+            // should stay open — the annotation will be re-added and
+            // re-selected on the next line of `refresh()`.
+            if isRebuildingAnnotations { return }
+            guard let wp = annotation as? WaypointAnnotation,
                   case .controlMeasure = wp.waypoint.kind else { return }
             DispatchQueue.main.async { [weak self] in
-                // Clear only if it's still us; otherwise we'd race with a
-                // freshly-selected sibling annotation.
                 if self?.mapVM.selectedControlMeasureWaypointID == wp.waypoint.id {
                     self?.mapVM.selectedControlMeasureWaypointID = nil
                 }
@@ -383,11 +437,35 @@ struct MapContainerView: UIViewRepresentable {
 
         /// Rebuilds all annotations + overlays from the current model. Cheap
         /// enough for prototype scale; for a production app, diff instead.
+        ///
+        /// Short-circuits when the (waypoints, drawings, session, visibility)
+        /// fingerprint hasn't changed since the last call. This matters
+        /// because `updateUIView` fires on every `MapViewModel` publication,
+        /// including pure UI state like `selectedControlMeasureWaypointID`,
+        /// and rebuilding all annotations during the same runloop tick as
+        /// `didSelect` would immediately deselect the just-tapped one.
         func refresh(on mv: MKMapView,
                      waypoints: [Waypoint],
                      drawings:  [DrawingShape],
                      session:   DrawingSessionViewModel,
                      visibility: LayerVisibility?) {
+            let fingerprint = Self.makeRefreshFingerprint(
+                waypoints: waypoints,
+                drawings:  drawings,
+                session:   session,
+                visibility: visibility
+            )
+            if fingerprint == lastRefreshFingerprint { return }
+            lastRefreshFingerprint = fingerprint
+
+            // Capture the currently-selected control-measure annotation
+            // so we can re-select it after we tear annotations down — the
+            // user might be in the middle of dragging the rotate slider.
+            let selectedID = mapVM.selectedControlMeasureWaypointID
+
+            isRebuildingAnnotations = true
+            defer { isRebuildingAnnotations = false }
+
             // --- Waypoint annotations ---
             let existingWaypointAnns = mv.annotations.compactMap { $0 as? WaypointAnnotation }
             mv.removeAnnotations(existingWaypointAnns)
@@ -406,6 +484,16 @@ struct MapContainerView: UIViewRepresentable {
                 mv.addAnnotations(waypoints.map(WaypointAnnotation.init))
             }
 
+            // Restore selection so the controls card keeps tracking the
+            // same waypoint after a rebuild. We do this after re-adding
+            // so the new annotation instance gets selected.
+            if let selectedID,
+               let restored = mv.annotations
+                    .compactMap({ $0 as? WaypointAnnotation })
+                    .first(where: { $0.waypoint.id == selectedID }) {
+                mv.selectAnnotation(restored, animated: false)
+            }
+
             // Add finished drawings if visible.
             if visibility?.drawingsVisible ?? true {
                 for shape in drawings {
@@ -422,6 +510,30 @@ struct MapContainerView: UIViewRepresentable {
                 )
                 addShape(pseudo, to: mv, inProgress: true)
             }
+        }
+
+        /// Compact identity string used to decide whether `refresh()`
+        /// has work to do. Includes every field that affects what we
+        /// render — coords, kind, rotation, scale, name, notes-presence,
+        /// elevation-presence — so any meaningful mutation produces a
+        /// new string and triggers a rebuild.
+        private static func makeRefreshFingerprint(waypoints: [Waypoint],
+                                                   drawings:  [DrawingShape],
+                                                   session:   DrawingSessionViewModel,
+                                                   visibility: LayerVisibility?) -> String {
+            var parts: [String] = []
+            parts.reserveCapacity(waypoints.count + drawings.count + 3)
+            for w in waypoints {
+                let elev = w.elevation.map { String($0) } ?? ""
+                let notes = w.notes ?? ""
+                parts.append("w|\(w.id.uuidString)|\(w.latitude)|\(w.longitude)|\(w.kindFingerprint)|\(w.rotation)|\(w.scale)|\(w.name)|\(notes)|\(elev)")
+            }
+            for d in drawings {
+                parts.append("d|\(d.id.uuidString)|\(d.kind.rawValue)|\(d.coordinates.count)|\(d.style.strokeColorHex)")
+            }
+            parts.append("s|\(session.isDrawing)|\(session.inProgressCoordinates.count)|\(session.activeKind?.rawValue ?? "-")")
+            parts.append("v|\(visibility?.waypointsVisible ?? true)|\(visibility?.drawingsVisible ?? true)")
+            return parts.joined(separator: ";")
         }
 
         // MARK: Calibration marker sync

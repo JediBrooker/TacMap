@@ -69,6 +69,11 @@ struct Waypoint: Identifiable, Codable, Hashable {
         elevation.map { String(format: "%.0f m", $0) }
     }
 
+    /// Compact identity of `kind` used by MapContainerView's refresh
+    /// fingerprint. Two waypoints with the same fingerprint render to
+    /// the same annotation image, so the map can skip rebuilding.
+    var kindFingerprint: String { kind.fingerprint }
+
     // MARK: Codable (custom to allow back-compat with files that pre-date `rotation`)
 
     private enum CodingKeys: String, CodingKey {
@@ -200,6 +205,20 @@ enum WaypointKind: Hashable, Codable {
         case .generic:        return .yellow
         case .military:       return .blue
         case .controlMeasure: return .black
+        }
+    }
+
+    /// Compact representation used by the map's refresh fingerprint —
+    /// distinguishes kinds that render to different images so we can
+    /// skip rebuilding when nothing visible changed.
+    var fingerprint: String {
+        switch self {
+        case .generic:
+            return "g"
+        case .military(let s):
+            return "m|\(s.affiliation.rawValue)|\(s.echelon.rawValue)|\(s.function.rawValue)|\(s.isHeadquarters)"
+        case .controlMeasure(let m):
+            return "c|\(m.rawValue)"
         }
     }
 }
