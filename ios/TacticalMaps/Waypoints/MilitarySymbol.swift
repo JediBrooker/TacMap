@@ -769,7 +769,7 @@ struct MilitarySymbolView: View {
     /// Asset is template-rendering so the black silhouette is preserved
     /// against the affiliation frame fill.
     private func drawAsset(ctx: GraphicsContext, named: String, in rect: CGRect) {
-        let img = ctx.resolve(Image(named).renderingMode(.template))
+        let img = ctx.resolve(Image(named).renderingMode(.original))
         // Letterbox the asset inside the glyph rect, preserving aspect.
         let src = img.size                       // intrinsic size (from SVG)
         guard src.width > 0, src.height > 0 else { return }
