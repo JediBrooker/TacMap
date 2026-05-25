@@ -63,9 +63,12 @@ struct WaypointEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Name") {
-                    TextField("e.g. 1 Pl, A Coy", text: $name)
+                Section {
+                    TextField(currentKind.displayName, text: $name)
                         .autocorrectionDisabled()
+                } header: { Text("Name") } footer: {
+                    Text("Optional — leave blank to use the symbol's name automatically.")
+                        .font(.caption2)
                 }
 
                 // Live preview of the current symbol selection
@@ -219,7 +222,6 @@ struct WaypointEditSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") { save() }
                         .bold()
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .alert("Delete symbol?",
@@ -230,7 +232,10 @@ struct WaypointEditSheet: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("This will permanently remove “\(name)”.")
+                let label = name.trimmingCharacters(in: .whitespaces).isEmpty
+                    ? (original?.name ?? currentKind.displayName)
+                    : name
+                Text("This will permanently remove “\(label)”.")
             }
         }
     }
@@ -270,6 +275,13 @@ struct WaypointEditSheet: View {
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedElevation = Double(elevationText.trimmingCharacters(in: .whitespaces))
 
+        // Auto-fill the name with the kind's display name when blank
+        // so the user can drop a waypoint without thinking about a
+        // label. e.g. a tactical control measure becomes "Form-Up
+        // Point"; a friendly infantry platoon becomes "Friendly
+        // Infantry Platoon"; a generic waypoint becomes "Waypoint".
+        let resolvedName = trimmedName.isEmpty ? currentKind.displayName : trimmedName
+
         // Persist rotation + scale only for control measures; reset to
         // defaults otherwise so a user who flips category doesn't carry
         // over stale values.
@@ -278,7 +290,7 @@ struct WaypointEditSheet: View {
 
         if let existing = original {
             var updated = existing
-            updated.name      = trimmedName
+            updated.name      = resolvedName
             updated.kind      = currentKind
             updated.notes     = trimmedNotes.isEmpty ? nil : trimmedNotes
             updated.elevation = parsedElevation
@@ -287,7 +299,7 @@ struct WaypointEditSheet: View {
             waypointStore.update(updated)
         } else {
             let new = Waypoint(
-                name:      trimmedName,
+                name:      resolvedName,
                 notes:     trimmedNotes.isEmpty ? nil : trimmedNotes,
                 coordinate: defaultCoordinate,
                 elevation: parsedElevation,
