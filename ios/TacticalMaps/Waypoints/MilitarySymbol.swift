@@ -399,13 +399,14 @@ struct MilitarySymbolView: View {
         ctx.stroke(path, with: .color(.black), lineWidth: 2)
     }
 
-    /// Upright V (point at the bottom-centre), APP-6 anti-tank gun glyph.
+    /// Upright V (apex at the bottom-centre of the frame, opening at the
+    /// top corners). APP-6 anti-tank gun glyph — the apex MUST touch the
+    /// base of the frame.
     private func drawAntiTankVee(ctx: GraphicsContext, in rect: CGRect) {
         var p = Path()
-        let inset = rect.width * 0.18
-        p.move(to:    CGPoint(x: rect.minX + inset, y: rect.minY + inset))
-        p.addLine(to: CGPoint(x: rect.midX,         y: rect.maxY - inset))
-        p.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY + inset))
+        p.move(to:    CGPoint(x: rect.minX, y: rect.minY))   // top-left
+        p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))   // bottom-centre (touches base)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))   // top-right
         ctx.stroke(p, with: .color(.black), lineWidth: 2.5)
     }
 
