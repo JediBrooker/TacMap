@@ -3,48 +3,29 @@ import UIKit
 
 /// Renders a `TacticalControlMeasure` from the bundled PNG / SVG asset
 /// under `Assets.xcassets/AppSymbols/`. Pure black symbol on a
-/// transparent background. No halo — instead, four zero-radius BLACK
-/// offset shadows in the cardinal directions effectively thicken
-/// every black line by ~1pt baked into the bitmap, so the symbol
-/// reads better on satellite imagery without an outer glow.
+/// transparent background. Stroke thickness comes from the **source
+/// asset itself** (dilated PNGs + thickened SVG strokes) — no
+/// render-time effects, so the lines stay crisp at any scale.
 struct TacticalControlMeasureSymbolView: View {
     let measure: TacticalControlMeasure
     /// Clockwise rotation in degrees. 0 = canonical orientation.
     var rotation: Double = 0
     var size: CGFloat = 56
-    /// Extra room around the symbol so the thickening offsets aren't
-    /// clipped at the bitmap edge.
+    /// Small bitmap padding so rotation doesn't clip the corners.
     static let haloPadding: CGFloat = 2
 
     var body: some View {
         let canvas = size + 2 * Self.haloPadding
         return ZStack {
-            thickenLines {
-                Image("AppSymbols/\(measure.assetName)")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(.black)
-                    .frame(width: size, height: size)
-            }
-            .rotationEffect(.degrees(rotation))
+            Image("AppSymbols/\(measure.assetName)")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.black)
+                .frame(width: size, height: size)
+                .rotationEffect(.degrees(rotation))
         }
         .frame(width: canvas, height: canvas)
-    }
-
-    /// Stack of zero-radius black shadows offset ±0.5pt in the four
-    /// cardinal directions. The net effect is that every black pixel
-    /// "grows" by 0.5pt in each direction, producing a ~1pt thicker
-    /// line baked into the bitmap. Cleaner than a Gaussian — sharp
-    /// edges, no blur, no halo.
-    @ViewBuilder
-    private func thickenLines<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        let off: CGFloat = 0.5
-        content()
-            .shadow(color: .black, radius: 0, x:  off, y:  0)
-            .shadow(color: .black, radius: 0, x: -off, y:  0)
-            .shadow(color: .black, radius: 0, x:  0,   y:  off)
-            .shadow(color: .black, radius: 0, x:  0,   y: -off)
     }
 }
 

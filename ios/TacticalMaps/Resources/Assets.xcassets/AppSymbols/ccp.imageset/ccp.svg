@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
-  <circle cx="60" cy="60" r="50" fill="none" stroke="#000" stroke-width="4"/>
+  <circle cx="60" cy="60" r="50" fill="none" stroke="#000" stroke-width="6.4"/>
   <text x="60" y="60" font-family="Helvetica" font-size="32" font-weight="bold"
         fill="#000" text-anchor="middle" dominant-baseline="central">CCP</text>
 </svg>
