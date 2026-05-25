@@ -129,22 +129,18 @@ final class LockedSizeAnnotationView: MKAnnotationView {
         let safe = max(scale, 0.01)
         self.transform = CGAffineTransform(scaleX: safe, y: safe)
 
-        // The halo only needs to exist when the symbol is small
-        // enough to be hard to read against satellite imagery. Once
-        // the symbol is big (high scale) it reads on its own and a
-        // halo just adds visual noise. Linear ramp:
-        //
-        //   visible_halo = max(0, baseHalo - slope · scale)
-        //
-        // baseHalo 12pt, slope 2pt-per-scale-unit means:
-        //   scale 0.5×  → 11pt   (small symbol, fat halo)
-        //   scale 1×    → 10pt
-        //   scale 2×    →  8pt
-        //   scale 4×    →  4pt
-        //   scale 6×    →  0pt   (big symbol, no halo)
-        let baseHalo: CGFloat = 12.0
-        let slope:    CGFloat = 2.0
-        let onScreenHaloPt = max(0, baseHalo - slope * safe)
+        // Halo target ramp: thicker when symbol is small on screen,
+        // none when symbol is big.
+        let baseHalo:  CGFloat = 10.0
+        let slope:     CGFloat = 1.8
+        let formulaHalo = max(0, baseHalo - slope * safe)
+
+        // Also cap the halo width to half the symbol's on-screen size
+        // so we never end up with a halo bigger than the symbol it's
+        // outlining (which at very small scales produced a wide, very
+        // diffuse Gaussian that the eye reads as "no halo at all").
+        let symbolOnScreenPt = 64.0 * safe   // 64 = TacticalControlMeasureRenderer.baseSize
+        let onScreenHaloPt = min(formulaHalo, symbolOnScreenPt / 2)
 
         if onScreenHaloPt <= 0.01 {
             haloLayer1.layer.shadowOpacity = 0
@@ -154,12 +150,12 @@ final class LockedSizeAnnotationView: MKAnnotationView {
         }
 
         // Layer-space radius = visible / scale because the layer is
-        // about to be transform-scaled by `scale`. Core Animation
-        // can't render a Gaussian blur under ~0.7pt radius, so we
-        // fade opacity as the radius approaches that floor instead
-        // of clamping the radius (which would inflate the on-screen
-        // halo back up).
-        let layerRadius = onScreenHaloPt / safe
+        // about to be transform-scaled by `scale`. Cap at the slack
+        // value so the Gaussian doesn't bleed past what the
+        // annotation view's bounds allow — beyond that it just gets
+        // clipped anyway, AND a too-wide Gaussian on a small symbol
+        // is too diffuse to read.
+        let layerRadius = min(onScreenHaloPt / safe, CGFloat(Self.shadowSlack) - 2)
         let opacity: Float = Float(min(1.0, layerRadius / 1.0))
         let effectiveRadius = max(0.7, layerRadius)
         for iv in [haloLayer1, haloLayer2, haloLayer3] {
@@ -179,11 +175,15 @@ final class LockedSizeAnnotationView: MKAnnotationView {
     /// Both `hitTest` and `point(inside:)` are overridden because
     /// MapKit's annotation tap recognizer may use either path.
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        symbolImageView.frame.contains(point)
+        let inside = symbolImageView.frame.contains(point)
+        NSLog("[HitDbg] point(inside:) called point=\(point) imgFrame=\(symbolImageView.frame) → \(inside)")
+        return inside
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard symbolImageView.frame.contains(point) else { return nil }
+        let inside = symbolImageView.frame.contains(point)
+        NSLog("[HitDbg] hitTest called point=\(point) imgFrame=\(symbolImageView.frame) → \(inside)")
+        guard inside else { return nil }
         return self
     }
 }
