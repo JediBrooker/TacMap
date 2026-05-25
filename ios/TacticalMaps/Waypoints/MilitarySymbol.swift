@@ -94,33 +94,45 @@ enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
 // MARK: - Function (branch / role)
 
 enum SymbolFunction: String, Codable, Hashable, CaseIterable {
-    case infantry       // crossed lines (X within frame's local coords)
-    case armour         // horizontal oval
-    case mechInfantry   // oval + infantry X (mechanised infantry)
-    case recce          // single diagonal slash, top-left to bottom-right
-    case artillery      // filled dot in centre
-    case engineer       // letter E
-    case medical        // black equilateral cross
-    case signal         // lightning bolt
-    case logistics      // letter S (supply)
-    case antiTank       // upward arrowhead
-    case hq             // headquarters: vertical line on the left of the frame extending down
-    case unspecified    // no function glyph (just the affiliation frame)
+    case infantry          // crossed diagonal lines (saltire — "crossed bandoliers")
+    case armour            // horizontal capsule (tank-tread cross-section)
+    case mechInfantry      // capsule + infantry X (mechanised infantry)
+    case recce             // single diagonal line, lower-left to upper-right ("sabre belt")
+    case cavalry           // recce slash + armour capsule (mounted reconnaissance)
+    case artillery         // filled circle in centre ("cannonball")
+    case airDefence        // dome arc (concave-down, "protective dome")
+    case antiTank          // outlined inverted-V chevron ("concentrated piercing action")
+    case mortar            // vertical arrow pointing up with a baseline
+    case engineer          // letter E (stylised bridge)
+    case medical           // black equilateral cross (red-cross style)
+    case signal            // lightning bolt
+    case logistics         // letter S (supply / quartermaster)
+    case aviation          // two facing crescents (helicopter rotor blades)
+    case specialForces     // diagonal arrow lower-left to upper-right with arrowhead
+    case maintenance       // wrench-style horizontal line with a notch
+    case hq                // headquarters: vertical line extending down from bottom-left of frame
+    case unspecified       // no function glyph (just the affiliation frame)
 
     var displayName: String {
         switch self {
-        case .infantry:     return "Infantry"
-        case .armour:       return "Armour"
-        case .mechInfantry: return "Mechanised Infantry"
-        case .recce:        return "Reconnaissance"
-        case .artillery:    return "Artillery"
-        case .engineer:     return "Engineer"
-        case .medical:      return "Medical"
-        case .signal:       return "Signal"
-        case .logistics:    return "Logistics / Supply"
-        case .antiTank:     return "Anti-Tank"
-        case .hq:           return "Headquarters"
-        case .unspecified:  return "— (no branch)"
+        case .infantry:       return "Infantry"
+        case .armour:         return "Armour"
+        case .mechInfantry:   return "Mechanised Infantry"
+        case .recce:          return "Reconnaissance"
+        case .cavalry:        return "Cavalry"
+        case .artillery:      return "Artillery"
+        case .airDefence:     return "Air Defence"
+        case .antiTank:       return "Anti-Tank"
+        case .mortar:         return "Mortar"
+        case .engineer:       return "Engineer"
+        case .medical:        return "Medical"
+        case .signal:         return "Signal"
+        case .logistics:      return "Logistics / Supply"
+        case .aviation:       return "Aviation (Rotary)"
+        case .specialForces:  return "Special Forces"
+        case .maintenance:    return "Maintenance"
+        case .hq:             return "Headquarters"
+        case .unspecified:    return "— (no branch)"
         }
     }
 }
@@ -278,18 +290,20 @@ struct MilitarySymbolView: View {
             drawInfantryX(ctx: ctx, affiliation: affiliation, frame: frame)
 
         case .armour:
-            drawArmourOval(ctx: ctx, in: glyphRect)
+            drawArmourCapsule(ctx: ctx, in: glyphRect)
 
         case .mechInfantry:
-            drawArmourOval(ctx: ctx, in: glyphRect)
+            drawArmourCapsule(ctx: ctx, in: glyphRect)
             drawInfantryX(ctx: ctx, affiliation: affiliation, frame: glyphRect)
 
         case .recce:
-            // Single slash from top-left to bottom-right of the glyph box
-            var path = Path()
-            path.move(to:    CGPoint(x: glyphRect.minX, y: glyphRect.minY))
-            path.addLine(to: CGPoint(x: glyphRect.maxX, y: glyphRect.maxY))
-            ctx.stroke(path, with: .color(.black), lineWidth: 2)
+            // Single slash from lower-left to upper-right ("sabre belt").
+            drawRecceSlash(ctx: ctx, in: glyphRect)
+
+        case .cavalry:
+            // Mounted reconnaissance = armour capsule + recce slash.
+            drawArmourCapsule(ctx: ctx, in: glyphRect)
+            drawRecceSlash(ctx: ctx, in: glyphRect)
 
         case .artillery:
             let r = min(glyphRect.width, glyphRect.height) * 0.18
@@ -297,6 +311,15 @@ struct MilitarySymbolView: View {
                                              y: glyphRect.midY - r,
                                              width: r*2, height: r*2))
             ctx.fill(dot, with: .color(.black))
+
+        case .airDefence:
+            drawAirDefenceDome(ctx: ctx, in: glyphRect)
+
+        case .antiTank:
+            drawAntiTankChevron(ctx: ctx, in: glyphRect)
+
+        case .mortar:
+            drawMortarArrow(ctx: ctx, in: glyphRect)
 
         case .engineer:
             drawLetter(ctx: ctx, letter: "E", in: glyphRect)
@@ -310,8 +333,14 @@ struct MilitarySymbolView: View {
         case .logistics:
             drawLetter(ctx: ctx, letter: "S", in: glyphRect)
 
-        case .antiTank:
-            drawAntiTankArrow(ctx: ctx, in: glyphRect)
+        case .aviation:
+            drawAviationRotors(ctx: ctx, in: glyphRect)
+
+        case .specialForces:
+            drawSpecialForcesArrow(ctx: ctx, in: glyphRect)
+
+        case .maintenance:
+            drawWrench(ctx: ctx, in: glyphRect)
 
         case .hq:
             // HQ is drawn as a vertical line attached to the bottom-left
@@ -353,16 +382,133 @@ struct MilitarySymbolView: View {
         ctx.stroke(path, with: .color(.black), lineWidth: 2)
     }
 
-    private func drawArmourOval(ctx: GraphicsContext, in rect: CGRect) {
-        // Horizontal oval: ~60% of frame width, ~55% of frame height.
-        let ovalW = rect.width * 0.62
-        let ovalH = rect.height * 0.55
-        let ovalRect = CGRect(x: rect.midX - ovalW/2,
-                              y: rect.midY - ovalH/2,
-                              width: ovalW, height: ovalH)
-        let path = Path(ellipseIn: ovalRect)
-        ctx.fill(path, with: .color(.black.opacity(0.0)))   // no fill
+    /// Tank-tread capsule (horizontal stadium shape, flatter than an oval).
+    /// Drawn outlined, no fill — matches the APP-6 armour basic icon.
+    private func drawArmourCapsule(ctx: GraphicsContext, in rect: CGRect) {
+        let capW = rect.width * 0.68
+        let capH = rect.height * 0.42
+        let capRect = CGRect(x: rect.midX - capW/2,
+                             y: rect.midY - capH/2,
+                             width: capW, height: capH)
+        let path = Path(roundedRect: capRect, cornerRadius: capH / 2)
         ctx.stroke(path, with: .color(.black), lineWidth: 2)
+    }
+
+    /// Diagonal slash from lower-left to upper-right ("sabre belt").
+    /// Used by Reconnaissance and Cavalry.
+    private func drawRecceSlash(ctx: GraphicsContext, in rect: CGRect) {
+        var path = Path()
+        path.move(to:    CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        ctx.stroke(path, with: .color(.black), lineWidth: 2)
+    }
+
+    /// Inverted-V chevron representing a piercing action.
+    private func drawAntiTankChevron(ctx: GraphicsContext, in rect: CGRect) {
+        var p = Path()
+        let inset = rect.width * 0.15
+        p.move(to:    CGPoint(x: rect.minX + inset, y: rect.maxY - inset))
+        p.addLine(to: CGPoint(x: rect.midX,         y: rect.minY + inset))
+        p.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
+        ctx.stroke(p, with: .color(.black), lineWidth: 2.5)
+    }
+
+    /// Protective dome — single arc spanning the frame width, concave down.
+    private func drawAirDefenceDome(ctx: GraphicsContext, in rect: CGRect) {
+        let domeW = rect.width * 0.78
+        let domeH = rect.height * 0.65
+        let cx = rect.midX
+        let baseY = rect.midY + domeH * 0.25
+        var p = Path()
+        p.move(to: CGPoint(x: cx - domeW / 2, y: baseY))
+        p.addQuadCurve(to: CGPoint(x: cx + domeW / 2, y: baseY),
+                       control: CGPoint(x: cx, y: baseY - domeH))
+        ctx.stroke(p, with: .color(.black), lineWidth: 2)
+    }
+
+    /// Vertical up-arrow with a horizontal base — mortar trajectory glyph.
+    private func drawMortarArrow(ctx: GraphicsContext, in rect: CGRect) {
+        let cx = rect.midX
+        let topY = rect.minY + rect.height * 0.20
+        let botY = rect.maxY - rect.height * 0.18
+        var shaft = Path()
+        shaft.move(to:    CGPoint(x: cx, y: topY))
+        shaft.addLine(to: CGPoint(x: cx, y: botY))
+        // Baseline tick.
+        shaft.move(to:    CGPoint(x: cx - rect.width * 0.22, y: botY))
+        shaft.addLine(to: CGPoint(x: cx + rect.width * 0.22, y: botY))
+        ctx.stroke(shaft, with: .color(.black), lineWidth: 2)
+        // Arrowhead.
+        var head = Path()
+        let hw = rect.width * 0.14
+        head.move(to:    CGPoint(x: cx - hw, y: topY + rect.height * 0.10))
+        head.addLine(to: CGPoint(x: cx,      y: topY))
+        head.addLine(to: CGPoint(x: cx + hw, y: topY + rect.height * 0.10))
+        ctx.stroke(head, with: .color(.black), lineWidth: 2)
+    }
+
+    /// Two facing crescents — rotor blades for rotary-wing aviation.
+    private func drawAviationRotors(ctx: GraphicsContext, in rect: CGRect) {
+        let cx = rect.midX, cy = rect.midY
+        let r  = min(rect.width, rect.height) * 0.40
+        // Left crescent (concave-right)
+        var left = Path()
+        left.move(to: CGPoint(x: cx, y: cy - r))
+        left.addQuadCurve(to: CGPoint(x: cx, y: cy + r),
+                          control: CGPoint(x: cx - r * 1.1, y: cy))
+        left.addQuadCurve(to: CGPoint(x: cx, y: cy - r),
+                          control: CGPoint(x: cx - r * 0.35, y: cy))
+        // Right crescent (concave-left)
+        var right = Path()
+        right.move(to: CGPoint(x: cx, y: cy - r))
+        right.addQuadCurve(to: CGPoint(x: cx, y: cy + r),
+                           control: CGPoint(x: cx + r * 1.1, y: cy))
+        right.addQuadCurve(to: CGPoint(x: cx, y: cy - r),
+                           control: CGPoint(x: cx + r * 0.35, y: cy))
+        ctx.fill(left,  with: .color(.black))
+        ctx.fill(right, with: .color(.black))
+    }
+
+    /// Diagonal arrow (lower-left → upper-right) with an arrowhead at the
+    /// upper-right tip. Used for Special Forces.
+    private func drawSpecialForcesArrow(ctx: GraphicsContext, in rect: CGRect) {
+        var shaft = Path()
+        shaft.move(to:    CGPoint(x: rect.minX, y: rect.maxY))
+        shaft.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        ctx.stroke(shaft, with: .color(.black), lineWidth: 2)
+        // Arrowhead at upper-right corner — two short lines back toward
+        // the shaft's left/down side.
+        let tip = CGPoint(x: rect.maxX, y: rect.minY)
+        let len = min(rect.width, rect.height) * 0.30
+        var head = Path()
+        head.move(to:    CGPoint(x: tip.x - len, y: tip.y))
+        head.addLine(to: tip)
+        head.addLine(to: CGPoint(x: tip.x, y: tip.y + len))
+        ctx.stroke(head, with: .color(.black), lineWidth: 2)
+    }
+
+    /// Stylised wrench: horizontal line with a half-circle notch on the
+    /// right end (the wrench's jaw opening).
+    private func drawWrench(ctx: GraphicsContext, in rect: CGRect) {
+        let cy = rect.midY
+        let leftX  = rect.minX + rect.width * 0.20
+        let rightX = rect.maxX - rect.width * 0.22
+        let jawR   = rect.height * 0.18
+
+        var p = Path()
+        // Shaft.
+        p.move(to:    CGPoint(x: leftX,  y: cy))
+        p.addLine(to: CGPoint(x: rightX, y: cy))
+        ctx.stroke(p, with: .color(.black), lineWidth: 2)
+        // Jaw — open-end semicircle facing right.
+        var jaw = Path()
+        let jawCx = rightX + jawR
+        jaw.addArc(center: CGPoint(x: jawCx, y: cy),
+                   radius: jawR,
+                   startAngle: .degrees(180 - 50),
+                   endAngle:   .degrees(180 + 50),
+                   clockwise: true)
+        ctx.stroke(jaw, with: .color(.black), lineWidth: 2)
     }
 
     private func drawLetter(ctx: GraphicsContext, letter: String, in rect: CGRect) {
@@ -395,16 +541,6 @@ struct MilitarySymbolView: View {
         p.addLine(to: CGPoint(x: x2, y: rect.midY))
         p.addLine(to: CGPoint(x: x3, y: rect.maxY))
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
-    }
-
-    private func drawAntiTankArrow(ctx: GraphicsContext, in rect: CGRect) {
-        var p = Path()
-        let cx = rect.midX
-        p.move(to:    CGPoint(x: cx,                  y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.2, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX + rect.width * 0.2, y: rect.maxY))
-        p.closeSubpath()
-        ctx.fill(p,   with: .color(.black))
     }
 
     // MARK: Echelon
