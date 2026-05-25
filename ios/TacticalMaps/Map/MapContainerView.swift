@@ -412,6 +412,17 @@ struct MapContainerView: UIViewRepresentable {
                 return
             }
 
+            // Tap on empty map dismisses the floating waypoint controls
+            // card. Tapping on an annotation goes through MapKit's own
+            // selection path (didSelect fires there), so this branch
+            // only sees taps that DIDN'T hit a waypoint.
+            if !drawingSession.isDrawing,
+               mapVM.selectedWaypointID != nil,
+               mv.selectedAnnotations.isEmpty {
+                mapVM.selectedWaypointID = nil
+                return
+            }
+
             guard drawingSession.isDrawing else { return }
             let coord = mv.convert(pt, toCoordinateFrom: mv)
             let autoCommit = drawingSession.addPoint(coord)

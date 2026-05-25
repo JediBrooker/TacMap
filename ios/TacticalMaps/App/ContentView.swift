@@ -42,18 +42,12 @@ struct ContentView: View {
                         .onTapGesture { drawingsPanelOpen = false }
                 }
 
-                // Same pattern for the symbol controls card. Tapping the
-                // map background dismisses; taps on the card or other HUD
-                // controls still pass through because they're rendered
-                // above this layer.
-                if mapVM.selectedWaypointID != nil {
-                    Color.black.opacity(0.001)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            mapVM.selectedWaypointID = nil
-                        }
-                }
+                // (We don't put a tap-outside-dismiss overlay above the
+                // map here because it would also absorb pan / pinch
+                // gestures, preventing the user from panning the map
+                // while the controls card is open. Dismissal on tap
+                // is handled by the map's own tap recognizer — see
+                // MapContainerView.Coordinator.handleTap.)
 
                 // Crosshair: always visible (except while drawing — taps go
                 // to vertex placement and the crosshair would compete with

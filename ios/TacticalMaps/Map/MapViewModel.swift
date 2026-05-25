@@ -44,15 +44,15 @@ final class MapViewModel: ObservableObject {
     /// its geographic footprint as the user zooms in / out (so its
     /// on-screen size scales naturally with the map).
     ///
-    /// Math: the renderer produces a 72pt-wide bitmap (baseSize 64 +
-    /// 2*haloPadding 4). The annotation view's transform scale is
-    /// `waypoint.scale * zoomScale` where `zoomScale = 1.0 / metresPerPoint`
-    /// (referenceMetresPerPoint = 1.0). We want final pixel width ≈ 80pt
-    /// (≈10% of an 800pt screen), so:
-    ///   80 = 72 * waypoint.scale * (1.0 / metresPerPoint)
-    ///   waypoint.scale = (80 / 72) * metresPerPoint ≈ 1.11 * metresPerPoint
+    /// Math: the renderer produces a 64pt-wide bitmap (baseSize). The
+    /// annotation view's transform scale is `waypoint.scale * zoomScale`
+    /// where `zoomScale = 1.0 / metresPerPoint` (referenceMetresPerPoint
+    /// = 1.0). We want final pixel width ≈ 80pt (≈10% of an 800pt
+    /// screen), so:
+    ///   80 = 64 * waypoint.scale * (1.0 / metresPerPoint)
+    ///   waypoint.scale = (80 / 64) * metresPerPoint ≈ 1.25 * metresPerPoint
     var defaultControlMeasureScale: Double {
-        let raw = 1.11 * currentMetresPerPoint
+        let raw = 1.25 * currentMetresPerPoint
         // Clamp to the slider range so the default is always editable.
         return max(0.1, min(raw, 20.0))
     }
