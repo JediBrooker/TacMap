@@ -4,11 +4,21 @@ import UIKit
 /// Renders a `TacticalControlMeasure` from the bundled PNG / SVG asset
 /// under `Assets.xcassets/AppSymbols/`. Pure black symbol on a
 /// transparent background, optionally rotated around its centre.
+///
+/// A soft white halo (stacked shadows) is drawn behind the silhouette
+/// so the black ink reads against any basemap — satellite, terrain,
+/// dark imported PDF, etc. The halo is invisible against a white
+/// background (preview / picker rows) so the symbol still looks
+/// "clean" inside the edit sheet.
 struct TacticalControlMeasureSymbolView: View {
     let measure: TacticalControlMeasure
     /// Clockwise rotation in degrees. 0 = canonical orientation.
     var rotation: Double = 0
     var size: CGFloat = 56
+    /// Extra room reserved around the symbol for the halo bleed.
+    /// Exposed as a constant so the map renderer can pad its
+    /// `UIImage` bounds to match (otherwise the halo gets clipped).
+    static let haloPadding: CGFloat = 6
 
     var body: some View {
         Image("AppSymbols/\(measure.assetName)")
@@ -17,6 +27,13 @@ struct TacticalControlMeasureSymbolView: View {
             .scaledToFit()
             .foregroundStyle(.black)
             .frame(width: size, height: size)
+            // Three stacked white shadows build up an outer glow without
+            // washing out the silhouette. Radius 2 gives ~4pt visible
+            // halo width, which clears the symbol on satellite imagery.
+            .shadow(color: .white, radius: 2)
+            .shadow(color: .white, radius: 2)
+            .shadow(color: .white, radius: 1)
+            .padding(Self.haloPadding)
             .rotationEffect(.degrees(rotation))
     }
 }

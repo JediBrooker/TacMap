@@ -64,6 +64,21 @@ struct MapContainerView: UIViewRepresentable {
         mv.addGestureRecognizer(tap)
         context.coordinator.tapGesture = tap
 
+        // Long-press over a tactical-control-measure waypoint enters
+        // "drag-to-rotate" mode: the annotation's image follows the
+        // finger angle relative to the symbol centre. See
+        // Coordinator.handleSymbolLongPress.
+        let longPress = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSymbolLongPress(_:))
+        )
+        longPress.minimumPressDuration = 0.4
+        // Once the press fires, allow the finger to wander as far as
+        // needed — the user is dragging an angle, not holding still.
+        longPress.allowableMovement = .greatestFiniteMagnitude
+        longPress.delegate = context.coordinator
+        mv.addGestureRecognizer(longPress)
+
         // Programmatic camera moves.
         context.coordinator.cameraRequestSink = mapVM.cameraRequests.sink { region in
             mv.setRegion(region, animated: true)
@@ -109,6 +124,7 @@ struct MapContainerView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(mapVM: mapVM,
+                    waypointStore: waypointStore,
                     drawingStore: drawingStore,
                     drawingSession: drawingSession,
                     calibration: calibration)
@@ -118,6 +134,7 @@ struct MapContainerView: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let mapVM: MapViewModel
+        let waypointStore: WaypointStore
         let drawingStore: DrawingStore
         let drawingSession: DrawingSessionViewModel
         var calibration: CalibrationSession   // mutable so updateUIView can refresh
@@ -145,11 +162,24 @@ struct MapContainerView: UIViewRepresentable {
 
         private var nextRegionChangeIsUserDriven = false
 
+        // MARK: Long-press rotation gesture state
+
+        /// Set on long-press .began when the user grabs a control-measure
+        /// waypoint; nil otherwise. Carries the bits we need for live
+        /// rotation without having to look the annotation back up by ID
+        /// on every .changed frame.
+        private var rotatingAnnotation: WaypointAnnotation?
+        private var rotatingView: MKAnnotationView?
+        private var rotatingMeasure: TacticalControlMeasure?
+        private let rotationHaptic = UIImpactFeedbackGenerator(style: .medium)
+
         init(mapVM: MapViewModel,
+             waypointStore: WaypointStore,
              drawingStore: DrawingStore,
              drawingSession: DrawingSessionViewModel,
              calibration: CalibrationSession) {
             self.mapVM = mapVM
+            self.waypointStore = waypointStore
             self.drawingStore = drawingStore
             self.drawingSession = drawingSession
             self.calibration = calibration
@@ -212,6 +242,106 @@ struct MapContainerView: UIViewRepresentable {
         }
 
         // MARK: Drawing tap
+
+        // MARK: Long-press to rotate a tactical control measure
+
+        /// Long-press grabs the symbol; subsequent finger movement rotates
+        /// it in place around its centre. 0° = north (up), increasing
+        /// clockwise so it matches `WaypointEditSheet`'s slider semantics
+        /// and the rendered SwiftUI `rotationEffect`.
+        @objc func handleSymbolLongPress(_ g: UILongPressGestureRecognizer) {
+            guard let mv = g.view as? MKMapView else { return }
+            let touch = g.location(in: mv)
+
+            switch g.state {
+            case .began:
+                // Find a control-measure annotation whose rendered view
+                // contains the touch. Iterate in reverse so symbols drawn
+                // on top win when they overlap.
+                let candidates = mv.annotations.compactMap { $0 as? WaypointAnnotation }
+                for ann in candidates.reversed() {
+                    guard case .controlMeasure(let measure) = ann.waypoint.kind,
+                          let view = mv.view(for: ann) else { continue }
+                    // view.frame is in the annotation container's coords;
+                    // convert the touch into the same space.
+                    let local = view.superview.map { mv.convert(touch, to: $0) } ?? touch
+                    guard view.frame.contains(local) else { continue }
+                    rotatingAnnotation = ann
+                    rotatingView = view
+                    rotatingMeasure = measure
+                    rotationHaptic.prepare()
+                    rotationHaptic.impactOccurred()
+                    // Visual cue: nudge the symbol up slightly so it feels
+                    // "lifted" off the map while the user rotates it.
+                    UIView.animate(withDuration: 0.12) {
+                        view.transform = CGAffineTransform(scaleX: 1.12, y: 1.12)
+                    }
+                    // Stop the map from panning under the finger while
+                    // we're rotating; restored on .ended.
+                    mv.isScrollEnabled = false
+                    break
+                }
+
+            case .changed:
+                applyLiveRotation(touchInMap: touch, mapView: mv)
+
+            case .ended, .cancelled, .failed:
+                defer { endRotationGesture(on: mv) }
+                guard let ann = rotatingAnnotation else { return }
+                let finalDeg = angleFromCentre(touchInMap: touch,
+                                               annotation: ann,
+                                               mapView: mv)
+                // Persist via the store. The published change triggers
+                // updateUIView → refresh, which removes / re-adds this
+                // annotation with the new rotation baked in.
+                if let wp = waypointStore.waypoints.first(where: { $0.id == ann.waypoint.id }) {
+                    var updated = wp
+                    updated.rotation = finalDeg
+                    waypointStore.update(updated)
+                }
+
+            default:
+                break
+            }
+        }
+
+        /// Update the annotation view's image to reflect the current
+        /// finger angle. No store write — that happens once on .ended.
+        private func applyLiveRotation(touchInMap touch: CGPoint, mapView mv: MKMapView) {
+            guard let ann = rotatingAnnotation,
+                  let view = rotatingView,
+                  let measure = rotatingMeasure else { return }
+            let deg = angleFromCentre(touchInMap: touch, annotation: ann, mapView: mv)
+            view.image = TacticalControlMeasureRenderer.image(for: measure, rotation: deg)
+        }
+
+        /// Angle in degrees from the annotation's centre to `touch`,
+        /// normalised to [0, 360) and oriented so 0° points north (up).
+        private func angleFromCentre(touchInMap touch: CGPoint,
+                                     annotation ann: WaypointAnnotation,
+                                     mapView mv: MKMapView) -> Double {
+            let centre = mv.convert(ann.coordinate, toPointTo: mv)
+            let dx = Double(touch.x - centre.x)
+            let dy = Double(touch.y - centre.y)
+            // atan2 gives angle from +x axis; UIKit y grows downward, so
+            // adding 90° rotates the reference axis so 0° = up (north).
+            var deg = atan2(dy, dx) * 180 / .pi + 90
+            deg = deg.truncatingRemainder(dividingBy: 360)
+            if deg < 0 { deg += 360 }
+            return deg
+        }
+
+        private func endRotationGesture(on mv: MKMapView) {
+            if let view = rotatingView {
+                UIView.animate(withDuration: 0.12) {
+                    view.transform = .identity
+                }
+            }
+            mv.isScrollEnabled = true
+            rotatingAnnotation = nil
+            rotatingView = nil
+            rotatingMeasure = nil
+        }
 
         @objc func handleTap(_ tap: UITapGestureRecognizer) {
             guard let mv = tap.view as? MKMapView else { return }
