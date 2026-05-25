@@ -66,6 +66,10 @@ enum GeoJSONExporter {
             props["tacticalmaps:echelon"]     = spec.echelon.rawValue
             props["tacticalmaps:function"]    = spec.function.rawValue
         }
+        if let m = wp.kind.controlMeasure {
+            props["tacticalmaps:sidc"]     = m.sidc
+            props["tacticalmaps:tcm_name"] = m.displayName
+        }
         if let n = wp.notes     { props["description"] = n }     // simplestyle uses "description"
         if let e = wp.elevation { props["tacticalmaps:elevation_m"] = e }
 
@@ -86,10 +90,6 @@ enum GeoJSONExporter {
             "tacticalmaps:kind":       shape.kind.rawValue,
             "tacticalmaps:created_at": ISO8601DateFormatter().string(from: shape.createdAt)
         ]
-        if let task = shape.tacticalTask {
-            props["tacticalmaps:task"]              = task.rawValue
-            props["tacticalmaps:task_abbreviation"] = task.abbreviation
-        }
         if let n = shape.name  { props["name"]        = n }
         if let n = shape.notes { props["description"] = n }
 
@@ -167,15 +167,10 @@ enum GeoJSONExporter {
     }
 
     private static func makiSymbol(for m: TacticalControlMeasure) -> String {
-        switch m {
-        case .axisOfAssault: return "arrow"
-        case .supportByFire: return "scope"
-        case .attackByFire:  return "fire-station"
-        case .formUpPoint:   return "square-stroked"
-        case .rvPoint:       return "rally"
-        case .axp:           return "hospital"
-        case .lz:            return "heliport"
-        }
+        // We don't ship a Maki name for every one of the 37 cases —
+        // simplestyle viewers (geojson.io, GitHub gists) get a generic
+        // marker plus the namespaced sidc/displayName for round-tripping.
+        return "marker"
     }
 
     private static func kindCategory(_ kind: WaypointKind) -> String {

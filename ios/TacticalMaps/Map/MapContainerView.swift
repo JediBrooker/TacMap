@@ -342,8 +342,6 @@ struct MapContainerView: UIViewRepresentable {
             // --- Drawing point annotations ---
             let existingDrawingAnns = mv.annotations.compactMap { $0 as? DrawingPointAnnotation }
             mv.removeAnnotations(existingDrawingAnns)
-            let existingTaskLabels = mv.annotations.compactMap { $0 as? TaskLabelAnnotation }
-            mv.removeAnnotations(existingTaskLabels)
 
             // --- Overlays ---
             mv.removeOverlays(mv.overlays)
@@ -404,24 +402,6 @@ struct MapContainerView: UIViewRepresentable {
                 styleByOverlay[ObjectIdentifier(line)] = shape.style
                 if inProgress { inProgressOverlayIDs.insert(ObjectIdentifier(line)) }
                 mv.addOverlay(line)
-
-                // Decorate finished tactical-task lines with a geographic
-                // arrowhead at the end and an abbreviation label annotation
-                // at the centroid of the route.
-                if !inProgress, let task = shape.tacticalTask {
-                    if let head = arrowheadPolygon(forLine: coords, style: shape.style) {
-                        styleByOverlay[ObjectIdentifier(head)] = shape.style.solidVariant
-                        mv.addOverlay(head)
-                    }
-                    let labelCoord = midpointAlong(coords: coords)
-                    let labelAnn = TaskLabelAnnotation(
-                        coordinate: labelCoord,
-                        text:       task.abbreviation,
-                        colorHex:   shape.style.strokeColorHex,
-                        shape:      shape
-                    )
-                    mv.addAnnotation(labelAnn)
-                }
 
             case .polygon:
                 guard coords.count >= 2 else { return }
@@ -504,15 +484,6 @@ struct MapContainerView: UIViewRepresentable {
                 view.canShowCallout  = true
                 return view
             }
-            if let task = annotation as? TaskLabelAnnotation {
-                let id = "task-label"
-                let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
-                    ?? MKAnnotationView(annotation: task, reuseIdentifier: id)
-                view.annotation = task
-                view.image = TaskLabelRenderer.image(text: task.text, colorHex: task.colorHex)
-                view.canShowCallout = true
-                return view
-            }
             if let dp = annotation as? DrawingPointAnnotation {
                 let id = "drawing-point"
                 let view = mv.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView
@@ -526,106 +497,10 @@ struct MapContainerView: UIViewRepresentable {
             return nil
         }
 
-        // ---- Tactical-task decoration helpers ----
-
-        /// Build a small geographic-coord arrowhead triangle whose apex
-        /// sits at the polyline's end, pointing in the bearing of the
-        /// last segment. Scales modestly with the line's overall length
-        /// so it stays visible at varied zoom levels.
-        private func arrowheadPolygon(forLine coords: [CLLocationCoordinate2D],
-                                      style: DrawingStyle) -> MKPolygon? {
-            guard coords.count >= 2 else { return nil }
-            let end        = coords[coords.count - 1]
-            let secondLast = coords[coords.count - 2]
-            let bearing    = bearing(from: secondLast, to: end)
-
-            // Size the arrowhead at ~3.5% of the line's total length,
-            // clamped to a reasonable visible-at-zoom range in metres.
-            let totalLen = totalLength(coords: coords)
-            let length: CLLocationDistance = max(30, min(800, totalLen * 0.035))
-            let width:  CLLocationDistance = length * 0.85
-
-            let back   = destination(from: end, distance: length, bearing: bearing + .pi)
-            let left   = destination(from: back, distance: width / 2, bearing: bearing + .pi/2)
-            let right  = destination(from: back, distance: width / 2, bearing: bearing - .pi/2)
-            let pts: [CLLocationCoordinate2D] = [end, left, right]
-            return MKPolygon(coordinates: pts, count: pts.count)
-        }
-
-        /// Coordinate at roughly the middle of the polyline (by arc length).
-        private func midpointAlong(coords: [CLLocationCoordinate2D]) -> CLLocationCoordinate2D {
-            guard coords.count >= 2 else { return coords[0] }
-            let total = totalLength(coords: coords)
-            let target = total / 2
-            var acc: CLLocationDistance = 0
-            for i in 1..<coords.count {
-                let segLen = distance(from: coords[i-1], to: coords[i])
-                if acc + segLen >= target {
-                    let t = (target - acc) / segLen
-                    return CLLocationCoordinate2D(
-                        latitude:  coords[i-1].latitude  + (coords[i].latitude  - coords[i-1].latitude)  * t,
-                        longitude: coords[i-1].longitude + (coords[i].longitude - coords[i-1].longitude) * t
-                    )
-                }
-                acc += segLen
-            }
-            return coords[coords.count / 2]
-        }
-
-        private func totalLength(coords: [CLLocationCoordinate2D]) -> CLLocationDistance {
-            var total: CLLocationDistance = 0
-            for i in 1..<coords.count {
-                total += distance(from: coords[i-1], to: coords[i])
-            }
-            return total
-        }
-
-        private func distance(from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) -> CLLocationDistance {
-            CLLocation(latitude: a.latitude, longitude: a.longitude)
-                .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
-        }
-
-        private func bearing(from a: CLLocationCoordinate2D,
-                             to b: CLLocationCoordinate2D) -> Double {
-            let lat1 = a.latitude  * .pi / 180
-            let lat2 = b.latitude  * .pi / 180
-            let dLon = (b.longitude - a.longitude) * .pi / 180
-            let y = sin(dLon) * cos(lat2)
-            let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
-            return atan2(y, x)
-        }
-
-        private func destination(from origin: CLLocationCoordinate2D,
-                                 distance d: CLLocationDistance,
-                                 bearing: Double) -> CLLocationCoordinate2D {
-            let R: Double = 6_371_000
-            let lat1 = origin.latitude  * .pi / 180
-            let lon1 = origin.longitude * .pi / 180
-            let lat2 = asin(sin(lat1) * cos(d / R)
-                            + cos(lat1) * sin(d / R) * cos(bearing))
-            let lon2 = lon1 + atan2(sin(bearing) * sin(d / R) * cos(lat1),
-                                    cos(d / R) - sin(lat1) * sin(lat2))
-            return .init(latitude: lat2 * 180 / .pi, longitude: lon2 * 180 / .pi)
-        }
     }
 }
 
 // MARK: - Annotations
-
-final class TaskLabelAnnotation: NSObject, MKAnnotation {
-    let coord:    CLLocationCoordinate2D
-    let text:     String
-    let colorHex: String
-    let shape:    DrawingShape
-    init(coordinate: CLLocationCoordinate2D, text: String, colorHex: String, shape: DrawingShape) {
-        self.coord = coordinate
-        self.text = text
-        self.colorHex = colorHex
-        self.shape = shape
-    }
-    var coordinate: CLLocationCoordinate2D { coord }
-    var title: String? { shape.name ?? shape.tacticalTask?.displayName }
-}
 
 final class WaypointAnnotation: NSObject, MKAnnotation {
     let waypoint: Waypoint

@@ -15,10 +15,6 @@ final class DrawingSessionViewModel: ObservableObject {
     /// Persists across sessions until the user picks something else.
     @Published var strokeColorHex: String = DrawingPalette.default.hex
 
-    /// If set, the next `finish()` will decorate the polyline with an
-    /// APP-6C tactical-task arrowhead + abbreviation label.
-    @Published var pendingTask: TacticalMissionTask? = nil
-
     var isDrawing: Bool { activeKind != nil }
 
     var canFinish: Bool {
@@ -49,7 +45,6 @@ final class DrawingSessionViewModel: ObservableObject {
     func cancel() {
         activeKind = nil
         inProgressCoordinates = []
-        pendingTask = nil
     }
 
     /// Build the final shape and reset session state. Returns nil if there's
@@ -67,11 +62,8 @@ final class DrawingSessionViewModel: ObservableObject {
             strokeColorHex: strokeColorHex,
             fillColorHex:   strokeColorHex   // polygons fill with same hue
         )
-        let task = pendingTask
-        pendingTask = nil
         return DrawingShape(
             kind: kind,
-            tacticalTask: task,
             coordinates: inProgressCoordinates,
             style: style
         )

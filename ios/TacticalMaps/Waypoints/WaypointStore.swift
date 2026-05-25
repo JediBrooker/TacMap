@@ -70,7 +70,7 @@ final class WaypointStore: ObservableObject {
             Waypoint(name: "Unk Contact",  latitude: 37.7700, longitude: -122.4090, elevation: 1500,
                      kind: .military(.init(affiliation: .unknown, echelon: .section, function: .unspecified))),
             Waypoint(name: "FUP CHARLIE",  latitude: 37.7770, longitude: -122.4200, elevation: 1500,
-                     kind: .controlMeasure(.formUpPoint))
+                     kind: .controlMeasure(.assemblyArea))
         ]
         persist()
     }

@@ -19,7 +19,7 @@ struct WaypointEditSheet: View {
     @State private var function:    SymbolFunction    = .infantry
     @State private var isHeadquarters: Bool            = false
     // Control measure
-    @State private var control:     TacticalControlMeasure = .formUpPoint
+    @State private var control:     TacticalControlMeasure = .assemblyArea
     @State private var notes: String = ""
     @State private var elevationText: String = ""
     @State private var showDeleteConfirm = false

@@ -9,9 +9,6 @@ struct DrawingShape: Identifiable, Codable, Hashable {
     var name: String?
     var notes: String?
     var kind: DrawingKind
-    /// Optional APP-6C tactical mission task. Non-nil only for polyline
-    /// shapes; the renderer adds an arrowhead + abbreviation label.
-    var tacticalTask: TacticalMissionTask?
     /// Ordered vertices. For polygons, the ring is closed implicitly on export.
     var coordinates: [Coordinate2D]
     var style: DrawingStyle
@@ -21,7 +18,6 @@ struct DrawingShape: Identifiable, Codable, Hashable {
          name: String? = nil,
          notes: String? = nil,
          kind: DrawingKind,
-         tacticalTask: TacticalMissionTask? = nil,
          coordinates: [Coordinate2D] = [],
          style: DrawingStyle = .default,
          createdAt: Date = .now) {
@@ -29,7 +25,6 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         self.name = name
         self.notes = notes
         self.kind = kind
-        self.tacticalTask = tacticalTask
         self.coordinates = coordinates
         self.style = style
         self.createdAt = createdAt
@@ -94,15 +89,4 @@ struct DrawingStyle: Codable, Hashable {
 
     static let `default` = DrawingStyle()
 
-    /// A copy with full-opacity solid fill — used to render the geographic
-    /// arrowhead at the end of a tactical-task polyline.
-    var solidVariant: DrawingStyle {
-        DrawingStyle(
-            strokeColorHex: strokeColorHex,
-            fillColorHex:   strokeColorHex,
-            strokeWidth:    1.0,
-            fillOpacity:    1.0,
-            dashPattern:    nil
-        )
-    }
 }

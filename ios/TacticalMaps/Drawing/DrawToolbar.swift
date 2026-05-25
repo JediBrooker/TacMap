@@ -20,10 +20,6 @@ struct DrawToolbar: View {
 
                 colorSwatchMenu
 
-                if kind == .polyline {
-                    taskMenu
-                }
-
                 Text("\(session.inProgressCoordinates.count) pt\(session.inProgressCoordinates.count == 1 ? "" : "s")")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.8))
@@ -108,54 +104,4 @@ struct DrawToolbar: View {
         .buttonStyle(.plain)
     }
 
-    /// Task picker shown only for polyline drawings. Once a task is set,
-    /// the chip turns orange and shows the abbreviation; the finished shape
-    /// is rendered with an arrowhead + abbreviation label.
-    private var taskMenu: some View {
-        Menu {
-            // "No task" option first so the user can clear a selection.
-            Button {
-                session.pendingTask = nil
-            } label: {
-                Label("No task (plain line)", systemImage: session.pendingTask == nil ? "checkmark" : "minus")
-            }
-            ForEach(TacticalMissionTask.Group.allCases, id: \.self) { group in
-                Menu(group.displayName) {
-                    ForEach(group.tasks, id: \.self) { task in
-                        Button {
-                            session.pendingTask = task
-                        } label: {
-                            HStack {
-                                Text(task.displayName)
-                                Spacer()
-                                Text(task.abbreviation)
-                                    .font(.caption.monospaced())
-                            }
-                        }
-                    }
-                }
-            }
-        } label: {
-            let isSet = session.pendingTask != nil
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.up.forward.app.fill")
-                    .font(.caption2.weight(.bold))
-                Text(session.pendingTask?.abbreviation ?? "Task")
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .foregroundStyle(isSet ? .black : .white)
-            .background(
-                Capsule().fill(isSet
-                    ? Color(red: 1, green: 0.65, blue: 0.18)
-                    : Color.white.opacity(0.10))
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Tactical task")
-        .accessibilityValue(session.pendingTask?.displayName ?? "None")
-    }
 }
