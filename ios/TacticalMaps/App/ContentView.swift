@@ -158,11 +158,14 @@ struct ContentView: View {
                         .padding(.horizontal, 12)
                         .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
                     } else {
-                        // Floating controls card for the currently-tapped
-                        // waypoint (any kind). Sits above the centre pill
-                        // so the pill never gets covered when the card is
-                        // open.
                         if let id = mapVM.selectedWaypointID {
+                            // Floating controls card for the currently-
+                            // tapped waypoint. Slides up from the bottom
+                            // edge and covers the centre-on-location pill
+                            // — we reclaim that ~40pt strip for the W/H
+                            // sliders. The user can dismiss the card
+                            // (X in the corner, or tap the map) to get
+                            // the pill back.
                             SymbolControlsCard(
                                 waypointStore: waypointStore,
                                 mapVM: mapVM,
@@ -170,20 +173,18 @@ struct ContentView: View {
                                 onDismiss: { mapVM.selectedWaypointID = nil }
                             )
                             .padding(.horizontal, 12)
-                            .padding(.bottom, 8)
+                            .padding(.bottom, max(geo.safeAreaInsets.bottom - 32, 0))
                             .transition(.move(edge: .bottom).combined(with: .opacity))
+                        } else {
+                            // Centre pill only when no card is open.
+                            // Vertically centred on the MKMapView
+                            // "Maps / Legal" attribution chip (pill bottom
+                            // sits ~32pt above the screen bottom).
+                            CentreButton {
+                                mapVM.centreOnUser(locationService.lastLocation)
+                            }
+                            .offset(y: max(geo.safeAreaInsets.bottom - 32, 0))
                         }
-                        // Vertically centre the pill on the MKMapView
-                        // "Maps / Legal" attribution chip. The chip's
-                        // centre is ~52pt above the screen bottom; with
-                        // a ~40pt pill height, the pill's bottom needs
-                        // to sit ~32pt above the screen bottom. With
-                        // a 34pt bottom safe-area inset, that means
-                        // offsetting by ~2pt past the safe area.
-                        CentreButton {
-                            mapVM.centreOnUser(locationService.lastLocation)
-                        }
-                        .offset(y: max(geo.safeAreaInsets.bottom - 32, 0))
                     }
                 }
                 .animation(.easeInOut(duration: 0.18),

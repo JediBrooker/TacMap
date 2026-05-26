@@ -22,6 +22,8 @@ struct SymbolControlsCard: View {
     let waypointID: UUID
     let onDismiss: () -> Void
 
+    @State private var showDeleteConfirm: Bool = false
+
     var body: some View {
         if let wp = waypointStore.waypoints.first(where: { $0.id == waypointID }) {
             card(for: wp)
@@ -29,55 +31,83 @@ struct SymbolControlsCard: View {
     }
 
     private func card(for wp: Waypoint) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             header(for: wp)
 
-            Divider()
-
-            // Rotation + size live only for tactical control measures —
-            // military symbols don't have orientation or per-instance
-            // size in the model.
+            // Rotation + width/height live only for tactical control
+            // measures — military symbols don't have orientation or
+            // per-instance size in the model. No dividers between
+            // sections — the icons and spacing carry enough structure.
             if case .controlMeasure = wp.kind {
                 rotationRow(for: wp)
-                sizeRow(for: wp)
-                Divider()
+                widthRow(for: wp)
+                heightRow(for: wp)
             }
 
-            moveButton(for: wp)
+            actionRow(for: wp)
         }
-        .padding(14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(.white.opacity(0.15), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .alert("Delete symbol?", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                if let wp = waypointStore.waypoints.first(where: { $0.id == waypointID }) {
+                    waypointStore.remove(wp)
+                }
+                onDismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            let name = waypointStore.waypoints
+                .first(where: { $0.id == waypointID })?.name ?? "this symbol"
+            Text("This will permanently remove “\(name)”.")
+        }
     }
 
     // MARK: Rows
 
     private func header(for wp: Waypoint) -> some View {
-        HStack(spacing: 12) {
+        // Compact one-line header: small icon + name (or name + kind
+        // muted, if they differ) + close. The previous two-line layout
+        // wasted vertical space and the subtitle was usually the same
+        // string as the name (we auto-fill blank names from the kind's
+        // display name).
+        let kindLabel = wp.kind.displayName
+        let showKindSuffix = wp.name != kindLabel
+        return HStack(spacing: 10) {
             WaypointKindIcon(
                 kind: wp.kind,
-                size: 36,
+                size: 22,
                 rotation: wp.kind.controlMeasure == nil ? 0 : wp.rotation
             )
-            .frame(width: 56, height: 56)
+            .frame(width: 28, height: 28)
+            // White background so the (mostly black) symbols stay
+            // legible against the translucent material card.
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white)
+            )
 
-            VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
                 Text(wp.name)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text(wp.kind.displayName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if showKindSuffix {
+                    Text(kindLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
-            Spacer()
+            Spacer(minLength: 4)
             Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.title3)
+                    .font(.body)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
             }
@@ -105,16 +135,16 @@ struct SymbolControlsCard: View {
         )
     }
 
-    private func sizeRow(for wp: Waypoint) -> some View {
+    private func widthRow(for wp: Waypoint) -> some View {
         sliderRow(
-            icon: "arrow.up.left.and.arrow.down.right.circle",
-            title: "Size",
-            valueLabel: String(format: "%.2f×", wp.scale),
+            icon: "arrow.left.and.right.circle",
+            title: "Width",
+            valueLabel: String(format: "%.2f×", wp.scaleX),
             value: Binding(
-                get: { wp.scale },
+                get: { wp.scaleX },
                 set: { newValue in
                     var updated = wp
-                    updated.scale = newValue
+                    updated.scaleX = newValue
                     waypointStore.update(updated)
                 }
             ),
@@ -124,36 +154,75 @@ struct SymbolControlsCard: View {
         )
     }
 
-    /// One-tap relocation: snap the waypoint to the current map centre
-    /// (which is where the on-screen crosshair sits). The user pans
-    /// the map first to position the crosshair, then taps this. For
-    /// drag-style moves, the annotation view is also `isDraggable` so
-    /// long-press + drag works directly on the map.
-    private func moveButton(for wp: Waypoint) -> some View {
-        Button {
-            var updated = wp
-            updated.latitude  = mapVM.cameraCentre.latitude
-            updated.longitude = mapVM.cameraCentre.longitude
-            waypointStore.update(updated)
-        } label: {
-            Label {
-                Text("Move to Crosshair")
-                    .font(.subheadline.weight(.semibold))
-            } icon: {
-                Image(systemName: "scope")
+    private func heightRow(for wp: Waypoint) -> some View {
+        sliderRow(
+            icon: "arrow.up.and.down.circle",
+            title: "Height",
+            valueLabel: String(format: "%.2f×", wp.scaleY),
+            value: Binding(
+                get: { wp.scaleY },
+                set: { newValue in
+                    var updated = wp
+                    updated.scaleY = newValue
+                    waypointStore.update(updated)
+                }
+            ),
+            range: 0.1...20.0,
+            step: 0.1,
+            resetTo: 1.0
+        )
+    }
+
+    /// Move + Delete row. Move snaps the waypoint to the current map
+    /// centre (where the crosshair sits) — long-press-drag on the map
+    /// itself is also supported. Delete shows a confirm alert before
+    /// removing the waypoint, then dismisses the card.
+    private func actionRow(for wp: Waypoint) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                var updated = wp
+                updated.latitude  = mapVM.cameraCentre.latitude
+                updated.longitude = mapVM.cameraCentre.longitude
+                waypointStore.update(updated)
+            } label: {
+                Label {
+                    Text("Move to Crosshair")
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                } icon: {
+                    Image(systemName: "scope")
+                        .font(.footnote)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(Color.accentColor.opacity(0.85),
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(Color.accentColor.opacity(0.85),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .buttonStyle(.plain)
+            .accessibilityHint("Pan the map first so the crosshair is at the new location, then tap.")
+
+            Button {
+                showDeleteConfirm = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 30)
+                    .background(Color.red.opacity(0.85),
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete symbol")
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Pan the map first so the crosshair is at the new location, then tap.")
     }
 
     // MARK: Slider primitive
 
+    /// One-line slider: `[icon] [——slider——] [value] [reset]`. The
+    /// `title` is used only for the reset button's accessibility
+    /// label — the icon visually conveys what's being adjusted, and
+    /// dropping the redundant text label saves a whole row per slider.
     private func sliderRow(icon: String,
                            title: String,
                            valueLabel: String,
@@ -161,30 +230,26 @@ struct SymbolControlsCard: View {
                            range: ClosedRange<Double>,
                            step: Double,
                            resetTo defaultValue: Double) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                Text(valueLabel)
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Button {
-                    value.wrappedValue = defaultValue
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.tint.opacity(0.15), in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Reset \(title)")
-            }
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
             Slider(value: value, in: range, step: step)
+            Text(valueLabel)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 44, alignment: .trailing)
+            Button {
+                value.wrappedValue = defaultValue
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.caption2.weight(.semibold))
+                    .frame(width: 22, height: 22)
+                    .background(.tint.opacity(0.15), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Reset \(title)")
         }
     }
 }

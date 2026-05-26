@@ -633,7 +633,7 @@ struct MapContainerView: UIViewRepresentable {
             for w in waypoints {
                 let elev = w.elevation.map { String($0) } ?? ""
                 let notes = w.notes ?? ""
-                parts.append("w|\(w.id.uuidString)|\(w.latitude)|\(w.longitude)|\(w.kindFingerprint)|\(w.rotation)|\(w.scale)|\(w.name)|\(notes)|\(elev)")
+                parts.append("w|\(w.id.uuidString)|\(w.latitude)|\(w.longitude)|\(w.kindFingerprint)|\(w.rotation)|\(w.scaleX)|\(w.scaleY)|\(w.name)|\(notes)|\(elev)")
             }
             for d in drawings {
                 parts.append("d|\(d.id.uuidString)|\(d.kind.rawValue)|\(d.coordinates.count)|\(d.style.strokeColorHex)")

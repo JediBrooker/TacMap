@@ -21,7 +21,8 @@ struct WaypointEditSheet: View {
     // Control measure
     @State private var control:     TacticalControlMeasure = .assemblyArea
     @State private var rotation:    Double                 = 0
-    @State private var scale:       Double                 = 1.0
+    @State private var scaleX:      Double                 = 1.0
+    @State private var scaleY:      Double                 = 1.0
     @State private var notes: String = ""
     @State private var elevationText: String = ""
     @State private var showDeleteConfirm = false
@@ -38,7 +39,8 @@ struct WaypointEditSheet: View {
             _notes         = State(initialValue: wp.notes ?? "")
             _elevationText = State(initialValue: wp.elevation.map { String(Int($0)) } ?? "")
             _rotation      = State(initialValue: wp.rotation)
-            _scale         = State(initialValue: wp.scale)
+            _scaleX        = State(initialValue: wp.scaleX)
+            _scaleY        = State(initialValue: wp.scaleY)
             switch wp.kind {
             case .generic:
                 _category = State(initialValue: .generic)
@@ -54,9 +56,10 @@ struct WaypointEditSheet: View {
             }
         } else {
             // New tactical control measure: start at the zoom-appropriate
-            // scale so the symbol enters at ~10% of screen height at the
-            // current zoom level.
-            _scale = State(initialValue: defaultScale)
+            // scale on BOTH axes so the symbol enters square at roughly
+            // 10% of screen height at the current zoom level.
+            _scaleX = State(initialValue: defaultScale)
+            _scaleY = State(initialValue: defaultScale)
         }
     }
 
@@ -86,12 +89,17 @@ struct WaypointEditSheet: View {
                 } header: { Text("Preview") }
 
                 Section("Type") {
-                    Picker("Category", selection: $category) {
-                        ForEach(KindCategory.allCases, id: \.self) { c in
-                            Text(c.displayName).tag(c)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    // Custom segmented control. SwiftUI's
+                    // `.pickerStyle(.segmented)` on iOS 26 ignores
+                    // short taps (< ~200ms), which makes the bug
+                    // "I can't click Tasks" — finger taps mostly
+                    // work on device but it's flaky, and mouse
+                    // clicks in the simulator straight up don't
+                    // register. Buttons fire on touchUpInside with
+                    // no minimum-press threshold.
+                    KindCategorySegmentedPicker(selection: $category)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                 }
 
                 switch category {
@@ -100,31 +108,49 @@ struct WaypointEditSheet: View {
 
                 case .military:
                     Section("Military Unit (APP-6C)") {
+                        // Affiliation is only 4 options — popup menu
+                        // (default style) fits comfortably with no
+                        // scrolling needed.
                         Picker("Affiliation", selection: $affiliation) {
                             ForEach(SymbolAffiliation.allCases, id: \.self) { a in
                                 Text(a.displayName).tag(a)
                             }
                         }
+                        // Echelon (7) and Function (~30) push to a
+                        // dedicated scrollable List instead of using
+                        // the default popup menu — popup menu scroll
+                        // is unreliable in iOS 26 simulator and
+                        // fiddly on device for long lists.
                         Picker("Echelon", selection: $echelon) {
                             ForEach(SymbolEchelon.allCases, id: \.self) { e in
                                 Text(e.displayName).tag(e)
                             }
                         }
+                        .pickerStyle(.navigationLink)
                         Picker("Function / Branch", selection: $function) {
                             ForEach(SymbolFunction.allCases, id: \.self) { f in
                                 Text(f.displayName).tag(f)
                             }
                         }
+                        .pickerStyle(.navigationLink)
                         Toggle("Headquarters", isOn: $isHeadquarters)
                     }
 
                 case .controlMeasure:
                     Section("Tactical Task / Control Measure") {
+                        // .navigationLink pushes a real scrollable List
+                        // onto the navigation stack. The default
+                        // popup-menu style has too many items to fit
+                        // on screen and the in-menu scroll doesn't
+                        // work reliably (silently swallows mouse-wheel
+                        // events in iOS 26 simulator, and is fiddly to
+                        // flick on device).
                         Picker("Measure", selection: $control) {
                             ForEach(TacticalControlMeasure.allCases, id: \.self) { m in
                                 Text(m.displayName).tag(m)
                             }
                         }
+                        .pickerStyle(.navigationLink)
                     }
                     Section {
                         VStack(alignment: .leading, spacing: 4) {
@@ -153,29 +179,55 @@ struct WaypointEditSheet: View {
                             .font(.caption2)
                     }
                     Section {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("Size")
-                                Spacer()
-                                Text(String(format: "%.2f×", scale))
-                                    .font(.subheadline.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            Slider(value: $scale, in: 0.1...20.0, step: 0.1)
-                            HStack {
-                                Button("Reset") { scale = 1.0 }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                Spacer()
-                                ForEach([0.5, 1.0, 2.0, 5.0, 10.0], id: \.self) { s in
-                                    Button(String(format: "%g×", s)) { scale = s }
+                        VStack(alignment: .leading, spacing: 12) {
+                            // Width
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Label("Width", systemImage: "arrow.left.and.right")
+                                    Spacer()
+                                    Text(String(format: "%.2f×", scaleX))
+                                        .font(.subheadline.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                    Button("Reset") { scaleX = 1.0 }
                                         .buttonStyle(.bordered)
                                         .controlSize(.small)
+                                }
+                                Slider(value: $scaleX, in: 0.1...20.0, step: 0.1)
+                            }
+                            // Height
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Label("Height", systemImage: "arrow.up.and.down")
+                                    Spacer()
+                                    Text(String(format: "%.2f×", scaleY))
+                                        .font(.subheadline.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                    Button("Reset") { scaleY = 1.0 }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                }
+                                Slider(value: $scaleY, in: 0.1...20.0, step: 0.1)
+                            }
+                            // Quick uniform-scale presets — applied to BOTH axes
+                            // (and any prior aspect-ratio stretch is lost). Lets
+                            // the user say "make the whole thing 2× bigger"
+                            // without dragging both sliders.
+                            HStack {
+                                Text("Both:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                ForEach([0.5, 1.0, 2.0, 5.0, 10.0], id: \.self) { s in
+                                    Button(String(format: "%g×", s)) {
+                                        scaleX = s; scaleY = s
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
                                 }
                             }
                         }
                     } header: { Text("Size") } footer: {
-                        Text("Scale multiplier on the symbol's geographic footprint. The symbol shrinks when the map zooms out and grows when it zooms in.")
+                        Text("Independent width and height multipliers — stretch the symbol wider/thinner or longer/shorter. The geographic footprint scales with the map zoom.")
                             .font(.caption2)
                     }
                 }
@@ -258,12 +310,15 @@ struct WaypointEditSheet: View {
         category == .controlMeasure ? rotation : 0
     }
 
-    /// Scale applied to the live preview. Clamped to a reasonable
-    /// display range (0.6×–1.4×) so the preview never overflows
-    /// the picker cell — the persisted value can still be 0.5×–2.5×.
+    /// Scale applied to the live preview. Uses the geometric mean of
+    /// scaleX/scaleY so a stretched symbol still shows at a sensible
+    /// size in the fixed-size preview cell. Clamped to a reasonable
+    /// display range (0.6×–1.4×); the persisted values can still span
+    /// 0.1×–20×.
     private var previewScale: CGFloat {
         guard category == .controlMeasure else { return 1.0 }
-        return CGFloat(min(max(scale, 0.6), 1.4))
+        let mean = (scaleX * scaleY).squareRoot()
+        return CGFloat(min(max(mean, 0.6), 1.4))
     }
 
     private var locationCoordinate: CLLocationCoordinate2D {
@@ -286,7 +341,8 @@ struct WaypointEditSheet: View {
         // defaults otherwise so a user who flips category doesn't carry
         // over stale values.
         let persistedRotation = category == .controlMeasure ? rotation : 0
-        let persistedScale    = category == .controlMeasure ? scale    : 1.0
+        let persistedScaleX   = category == .controlMeasure ? scaleX   : 1.0
+        let persistedScaleY   = category == .controlMeasure ? scaleY   : 1.0
 
         if let existing = original {
             var updated = existing
@@ -295,7 +351,8 @@ struct WaypointEditSheet: View {
             updated.notes     = trimmedNotes.isEmpty ? nil : trimmedNotes
             updated.elevation = parsedElevation
             updated.rotation  = persistedRotation
-            updated.scale     = persistedScale
+            updated.scaleX    = persistedScaleX
+            updated.scaleY    = persistedScaleY
             waypointStore.update(updated)
         } else {
             let new = Waypoint(
@@ -305,7 +362,8 @@ struct WaypointEditSheet: View {
                 elevation: parsedElevation,
                 kind:      currentKind,
                 rotation:  persistedRotation,
-                scale:     persistedScale
+                scaleX:    persistedScaleX,
+                scaleY:    persistedScaleY
             )
             waypointStore.add(new)
         }
@@ -323,5 +381,48 @@ private enum KindCategory: String, CaseIterable, Hashable {
         case .military:       return "Military"
         case .controlMeasure: return "Tasks"
         }
+    }
+}
+
+/// Drop-in replacement for `Picker(...).pickerStyle(.segmented)` that
+/// works with fast taps and mouse clicks. Apple's segmented picker on
+/// iOS 26 has a regression where it ignores touches shorter than
+/// ~200ms — a deal-breaker for simulator testing with a mouse and
+/// flaky on real devices for users with quick fingers. SwiftUI
+/// `Button` doesn't have that issue.
+private struct KindCategorySegmentedPicker: View {
+    @Binding var selection: KindCategory
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(KindCategory.allCases, id: \.self) { kind in
+                Button {
+                    selection = kind
+                } label: {
+                    Text(kind.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(selection == kind
+                                      ? Color.accentColor.opacity(0.85)
+                                      : Color.clear)
+                        )
+                        .foregroundStyle(selection == kind
+                                         ? Color.white
+                                         : Color.primary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(.tertiarySystemFill))
+        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
     }
 }
