@@ -10,7 +10,7 @@ import java.io.File
 
 /**
  * In-memory waypoint store with disk persistence to filesDir/waypoints.json.
- * Seeds demo waypoints on first run so the prototype looks like the mockup.
+ * Fresh installs start empty — no demo seed (matches iOS).
  */
 class WaypointStore(context: Context) {
 
@@ -30,23 +30,12 @@ class WaypointStore(context: Context) {
     }
 
     private fun load() {
-        if (!file.exists()) { seedDemo(); return }
+        if (!file.exists()) return
         runCatching { json.decodeFromString<List<Waypoint>>(file.readText()) }
             .onSuccess { _waypoints.value = it }
-            .onFailure { seedDemo() }
     }
 
     private fun persist() {
         runCatching { file.writeText(json.encodeToString(_waypoints.value)) }
-    }
-
-    private fun seedDemo() {
-        _waypoints.value = listOf(
-            Waypoint(name = "Camp Alpha",        latitude = 37.7820, longitude = -122.4310, elevationMetres = 2345.0, kind = WaypointKind.CAMP),
-            Waypoint(name = "Water Source",      latitude = 37.7750, longitude = -122.4250, elevationMetres = 1856.0, kind = WaypointKind.WATER),
-            Waypoint(name = "Observation Point", latitude = 37.7790, longitude = -122.4080, elevationMetres = 2120.0, kind = WaypointKind.OBSERVATION),
-            Waypoint(name = "Drop Zone",         latitude = 37.7730, longitude = -122.4140, elevationMetres = 1620.0, kind = WaypointKind.DROP_ZONE)
-        )
-        persist()
     }
 }

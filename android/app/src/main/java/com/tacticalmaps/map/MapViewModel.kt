@@ -40,6 +40,12 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private val _pendingCameraTarget = MutableStateFlow<CameraPosition?>(null)
     val pendingCameraTarget: StateFlow<CameraPosition?> = _pendingCameraTarget.asStateFlow()
 
+    /** ID of the currently-selected waypoint. Drives the floating
+     *  controls card in MapScreen. null = no selection. */
+    private val _selectedWaypointId = MutableStateFlow<String?>(null)
+    val selectedWaypointId: StateFlow<String?> = _selectedWaypointId.asStateFlow()
+    fun selectWaypoint(id: String?) { _selectedWaypointId.value = id }
+
     private var lastUserLocation: Location? = null
     private var hasInitialFix = false
 
@@ -74,6 +80,18 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         _pendingCameraTarget.value = CameraPosition.Builder()
             .target(target)
             .zoom(15f)
+            .build()
+    }
+
+    /** Animate camera to an arbitrary coordinate. Used by the
+     *  waypoint list's "fly to" rows. Enters browse mode so the
+     *  header reads the map centre, not the user. */
+    fun flyTo(target: LatLng, zoom: Float = 15f) {
+        _isBrowsing.value = true
+        _cameraCentre.value = target
+        _pendingCameraTarget.value = CameraPosition.Builder()
+            .target(target)
+            .zoom(zoom)
             .build()
     }
 
