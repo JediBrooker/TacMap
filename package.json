@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "generate:milsymbol": "node scripts/generate_milsymbol_assets.cjs"
+  },
+  "dependencies": {
+    "milsymbol": "3.0.4"
+  }
+}

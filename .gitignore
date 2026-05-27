@@ -37,6 +37,7 @@ samples/*.pdf
 # Build artifacts
 *.log
 *.hprof
+node_modules/
 
 # SwiftPM cache (when using -clonedSourcePackagesDirPath)
 spm-cache/

@@ -31,6 +31,12 @@ final class MapViewModel: ObservableObject {
     /// `ContentView`. nil = no selection.
     @Published var selectedWaypointID: UUID? = nil
 
+    /// ID of the currently-selected drawing (polyline / polygon / point).
+    /// Mutually exclusive with `selectedWaypointID` — setting one clears
+    /// the other in `ContentView`'s tap handler. Drives the floating
+    /// DrawingControlsCard.
+    @Published var selectedDrawingID: UUID? = nil
+
     /// Current map metres-per-point (the smaller number is more zoomed in).
     /// Updated by `MapContainerView.Coordinator` whenever the camera
     /// changes. Drives `defaultControlMeasureScale` so newly-placed

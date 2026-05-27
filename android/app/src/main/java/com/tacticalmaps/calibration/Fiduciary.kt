@@ -1,6 +1,5 @@
 package com.tacticalmaps.calibration
 
-import com.google.android.gms.maps.model.LatLng
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
@@ -19,5 +18,5 @@ data class Fiduciary(
     val longitude: Double,
     val label: String? = null
 ) {
-    val wgs84: LatLng get() = LatLng(latitude, longitude)
+    val wgs84: Wgs84Coordinate get() = Wgs84Coordinate(latitude, longitude)
 }

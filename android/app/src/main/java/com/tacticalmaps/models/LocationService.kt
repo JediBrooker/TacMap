@@ -35,13 +35,25 @@ class LocationService(context: Context) {
     }
 
     fun hasPermission(): Boolean =
+        hasFineLocationPermission() || hasCoarseLocationPermission()
+
+    private fun hasFineLocationPermission(): Boolean =
         ActivityCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun hasCoarseLocationPermission(): Boolean =
+        ActivityCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")
     fun start() {
         if (!hasPermission()) return
-        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L)
+        val priority = if (hasFineLocationPermission()) {
+            Priority.PRIORITY_HIGH_ACCURACY
+        } else {
+            Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        }
+        val req = LocationRequest.Builder(priority, 1_000L)
             .setMinUpdateIntervalMillis(500L)
             .build()
         client.requestLocationUpdates(req, callback, Looper.getMainLooper())

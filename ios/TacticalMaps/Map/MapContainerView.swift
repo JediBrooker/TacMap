@@ -74,6 +74,16 @@ struct MapContainerView: UIViewRepresentable {
         mv.addGestureRecognizer(tap)
         context.coordinator.tapGesture = tap
 
+        // Long-press-drag → reposition a drawing under the finger. We
+        // disable the map's scroll while a drag is active so the user is
+        // actually dragging the shape, not panning the basemap.
+        let press = UILongPressGestureRecognizer(target: context.coordinator,
+                                                 action: #selector(Coordinator.handleDrawingDrag(_:)))
+        press.minimumPressDuration = 0.35
+        press.allowableMovement = .greatestFiniteMagnitude
+        press.delegate = context.coordinator
+        mv.addGestureRecognizer(press)
+
         // Programmatic camera moves.
         context.coordinator.cameraRequestSink = mapVM.cameraRequests.sink { region in
             mv.setRegion(region, animated: true)
@@ -96,7 +106,7 @@ struct MapContainerView: UIViewRepresentable {
                                            visible: visibility.pdfOverlayVisible)
         context.coordinator.refresh(on: mv,
                                     waypoints: waypointStore.waypoints,
-                                    drawings:  drawingStore.shapes,
+                                    drawings:  drawingStore.visibleShapes,
                                     session:   drawingSession,
                                     visibility: visibility)
         return mv
@@ -110,7 +120,7 @@ struct MapContainerView: UIViewRepresentable {
                                            visible: visibility.pdfOverlayVisible)
         context.coordinator.refresh(on: mv,
                                     waypoints: waypointStore.waypoints,
-                                    drawings:  drawingStore.shapes,
+                                    drawings:  drawingStore.visibleShapes,
                                     session:   drawingSession,
                                     visibility: visibility)
         // Sync calibration markers + clear when not calibrating.
@@ -427,29 +437,158 @@ struct MapContainerView: UIViewRepresentable {
                 return
             }
 
-            // Tap on empty map dismisses the floating waypoint controls
-            // card. Tapping on an annotation goes through MapKit's own
-            // selection path (didSelect fires there), so this branch
-            // only sees taps that DIDN'T hit a waypoint.
-            if !drawingSession.isDrawing,
-               mapVM.selectedWaypointID != nil,
-               mv.selectedAnnotations.isEmpty {
-                mapVM.selectedWaypointID = nil
+            // Drawing-mode taps add a vertex — never select existing shapes.
+            if drawingSession.isDrawing {
+                let coord = mv.convert(pt, toCoordinateFrom: mv)
+                let autoCommit = drawingSession.addPoint(coord)
+                if autoCommit, let shape = drawingSession.finish() {
+                    drawingStore.add(shape)
+                }
+                refresh(on: mv,
+                        waypoints: Array(mv.annotations.compactMap { ($0 as? WaypointAnnotation)?.waypoint }),
+                        drawings:  drawingStore.visibleShapes,
+                        session:   drawingSession,
+                        visibility: nil)
                 return
             }
 
-            guard drawingSession.isDrawing else { return }
-            let coord = mv.convert(pt, toCoordinateFrom: mv)
-            let autoCommit = drawingSession.addPoint(coord)
-            if autoCommit, let shape = drawingSession.finish() {
-                drawingStore.add(shape)
+            // Hit-test against existing drawings (most-recent on top). A hit
+            // selects that drawing and clears any waypoint selection.
+            if mv.selectedAnnotations.isEmpty,
+               let hit = drawingHitTest(at: pt, on: mv) {
+                mapVM.selectedWaypointID = nil
+                mapVM.selectedDrawingID  = hit.id
+                return
             }
-            // Re-render so the in-progress polyline grows visually.
-            refresh(on: mv,
-                    waypoints: Array(mv.annotations.compactMap { ($0 as? WaypointAnnotation)?.waypoint }),
-                    drawings:  drawingStore.shapes,
-                    session:   drawingSession,
-                    visibility: nil)
+
+            // Tap on empty map dismisses any floating controls card.
+            if mapVM.selectedWaypointID != nil, mv.selectedAnnotations.isEmpty {
+                mapVM.selectedWaypointID = nil
+            }
+            if mapVM.selectedDrawingID != nil {
+                mapVM.selectedDrawingID = nil
+            }
+        }
+
+        // MARK: Drag-to-move drawings
+
+        /// ID of the drawing currently being dragged via long-press, plus
+        /// the last touch coordinate (so each .changed event applies an
+        /// incremental delta).
+        private var draggingDrawingID: UUID?
+        private var lastDragCoord: CLLocationCoordinate2D?
+
+        @objc func handleDrawingDrag(_ press: UILongPressGestureRecognizer) {
+            guard let mv = press.view as? MKMapView else { return }
+            let pt = press.location(in: mv)
+
+            switch press.state {
+            case .began:
+                // Don't grab when the user is mid-draw, mid-calibrate, or
+                // already has a card/sheet open via tap selection.
+                guard !drawingSession.isDrawing,
+                      !calibration.isCalibrating,
+                      let hit = drawingHitTest(at: pt, on: mv) else { return }
+                draggingDrawingID = hit.id
+                lastDragCoord = mv.convert(pt, toCoordinateFrom: mv)
+                mv.isScrollEnabled = false
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                // Long-press never opens the controls card — that's a
+                // tap-only affordance, matching how units and tasks work.
+
+            case .changed:
+                guard let id = draggingDrawingID,
+                      let start = lastDragCoord,
+                      var shape = drawingStore.shapes.first(where: { $0.id == id })
+                else { return }
+                let current = mv.convert(pt, toCoordinateFrom: mv)
+                let dLat = current.latitude  - start.latitude
+                let dLon = current.longitude - start.longitude
+                shape.coordinates = shape.coordinates.map {
+                    Coordinate2D(latitude:  $0.latitude  + dLat,
+                                 longitude: $0.longitude + dLon)
+                }
+                drawingStore.update(shape)
+                lastDragCoord = current
+
+            case .ended, .cancelled, .failed:
+                if draggingDrawingID != nil {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+                draggingDrawingID = nil
+                lastDragCoord = nil
+                mv.isScrollEnabled = true
+
+            default:
+                break
+            }
+        }
+
+        /// Hit-test the visible drawings against a screen-space tap. Returns
+        /// the topmost shape within the tap tolerance, or nil. Uses a 20pt
+        /// screen-space tolerance so thin strokes still feel tappable.
+        private func drawingHitTest(at tap: CGPoint, on mv: MKMapView) -> DrawingShape? {
+            let tolerance: CGFloat = 20
+            for shape in drawingStore.visibleShapes.reversed() {
+                let screen = shape.effectiveCoordinates.map {
+                    mv.convert(CLLocationCoordinate2D(latitude: $0.latitude,
+                                                     longitude: $0.longitude),
+                               toPointTo: mv)
+                }
+                switch shape.kind {
+                case .point:
+                    if let p = screen.first,
+                       hypot(p.x - tap.x, p.y - tap.y) <= tolerance {
+                        return shape
+                    }
+                case .polyline where screen.count >= 2:
+                    for i in 0 ..< screen.count - 1 {
+                        if Self.distance(from: tap, to: screen[i], screen[i+1]) <= tolerance {
+                            return shape
+                        }
+                    }
+                case .polygon where screen.count >= 3:
+                    if Self.pointInPolygon(tap, vertices: screen) {
+                        return shape
+                    }
+                    for i in 0 ..< screen.count {
+                        let next = screen[(i + 1) % screen.count]
+                        if Self.distance(from: tap, to: screen[i], next) <= tolerance {
+                            return shape
+                        }
+                    }
+                default:
+                    continue
+                }
+            }
+            return nil
+        }
+
+        /// Shortest distance from point p to segment a-b (CGPoint screen coords).
+        private static func distance(from p: CGPoint, to a: CGPoint, _ b: CGPoint) -> CGFloat {
+            let dx = b.x - a.x, dy = b.y - a.y
+            let l2 = dx * dx + dy * dy
+            if l2 == 0 { return hypot(p.x - a.x, p.y - a.y) }
+            var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2
+            t = max(0, min(1, t))
+            let projX = a.x + t * dx, projY = a.y + t * dy
+            return hypot(p.x - projX, p.y - projY)
+        }
+
+        /// Ray-casting point-in-polygon test on screen coordinates.
+        private static func pointInPolygon(_ p: CGPoint, vertices: [CGPoint]) -> Bool {
+            guard vertices.count >= 3 else { return false }
+            var inside = false
+            var j = vertices.count - 1
+            for i in 0 ..< vertices.count {
+                let vi = vertices[i], vj = vertices[j]
+                if ((vi.y > p.y) != (vj.y > p.y)) &&
+                   (p.x < (vj.x - vi.x) * (p.y - vi.y) / (vj.y - vi.y) + vi.x) {
+                    inside.toggle()
+                }
+                j = i
+            }
+            return inside
         }
 
         // MARK: PDF overlay sync
@@ -636,7 +775,14 @@ struct MapContainerView: UIViewRepresentable {
                 parts.append("w|\(w.id.uuidString)|\(w.latitude)|\(w.longitude)|\(w.kindFingerprint)|\(w.rotation)|\(w.scaleX)|\(w.scaleY)|\(w.name)|\(notes)|\(elev)")
             }
             for d in drawings {
-                parts.append("d|\(d.id.uuidString)|\(d.kind.rawValue)|\(d.coordinates.count)|\(d.style.strokeColorHex)")
+                // First + last coord pick up translations (drag-to-move
+                // preserves count). Mid-vertex edits without changing the
+                // endpoints will still re-render via the rotation/scale
+                // / count fields.
+                let first = d.coordinates.first
+                let last  = d.coordinates.last
+                let coordsKey = "\(first?.latitude ?? 0),\(first?.longitude ?? 0)/\(last?.latitude ?? 0),\(last?.longitude ?? 0)"
+                parts.append("d|\(d.id.uuidString)|\(d.kind.rawValue)|\(d.coordinates.count)|\(coordsKey)|\(d.style.strokeColorHex)|\(d.layerID.uuidString)|\(d.rotation)|\(d.scaleX)|\(d.scaleY)|\(d.style.dashPattern != nil)")
             }
             parts.append("s|\(session.isDrawing)|\(session.inProgressCoordinates.count)|\(session.activeKind?.rawValue ?? "-")")
             parts.append("v|\(visibility?.waypointsVisible ?? true)|\(visibility?.drawingsVisible ?? true)")
@@ -660,7 +806,9 @@ struct MapContainerView: UIViewRepresentable {
         }
 
         private func addShape(_ shape: DrawingShape, to mv: MKMapView, inProgress: Bool) {
-            let coords = shape.clCoordinates
+            // In-progress shapes are drawn as-typed; finished shapes use
+            // their effective coordinates (rotation + W/H applied).
+            let coords = inProgress ? shape.clCoordinates : shape.clEffectiveCoordinates
             switch shape.kind {
             case .point:
                 guard let c = coords.first else { return }

@@ -1,7 +1,13 @@
 package com.tacticalmaps.map
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationSearching
@@ -18,17 +24,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * Position-agnostic MGRS readout card. Caller decides where in the
+ * layout it sits and applies any safe-area / status-bar padding.
+ */
 @Composable
-fun BoxScope.MgrsHeader(
+fun MgrsHeader(
     mgrs: String,
     wgs84: String,
     isBrowsing: Boolean,
-    accuracy: Double?
+    accuracy: Double?,
+    modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = Modifier
-            .align(Alignment.TopCenter)
-            .padding(top = 24.dp, start = 16.dp, end = 16.dp)
+        modifier = modifier
+            .padding(horizontal = 16.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xCC000000))
             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -52,8 +62,6 @@ fun BoxScope.MgrsHeader(
         ) {
             Text("WGS84", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Text(wgs84, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-            Text(if (isBrowsing) "Map Centre" else "Your Location",
-                color = Color.White.copy(alpha = 0.75f), fontSize = 10.sp)
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),

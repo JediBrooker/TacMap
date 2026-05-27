@@ -6,35 +6,42 @@ struct DrawToolbar: View {
     @ObservedObject var session: DrawingSessionViewModel
     let onFinish: () -> Void
 
+    @State private var showingNameAlert = false
+    @State private var draftName: String = ""
+
     var body: some View {
         if let kind = session.activeKind {
-            HStack(spacing: 10) {
-                Label(kind.displayName, systemImage: kind.sfSymbol)
+            // Sized to fit iPhone portrait widths. The "active tool" pill
+            // shows just the icon (label is redundant once you've tapped
+            // the tool); the point counter sits alongside it. Cancel
+            // collapses to an icon on narrow widths.
+            HStack(spacing: 6) {
+                Image(systemName: kind.sfSymbol)
                     .font(.caption.weight(.bold))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(red: 1, green: 0.65, blue: 0.18), in: Capsule())
                     .foregroundStyle(.black)
+                    .frame(width: 30, height: 30)
+                    .background(Color(red: 1, green: 0.65, blue: 0.18), in: Circle())
 
                 colorSwatchMenu
 
                 strokeStyleToggle
 
-                Text("\(session.inProgressCoordinates.count) pt\(session.inProgressCoordinates.count == 1 ? "" : "s")")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.8))
-                    .fixedSize(horizontal: true, vertical: false)
+                nameButton
 
-                Spacer()
+                Text("\(session.inProgressCoordinates.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.85))
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 16)
+
+                Spacer(minLength: 0)
 
                 Button {
                     session.undo()
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
                         .font(.subheadline.weight(.semibold))
-                        .frame(width: 34, height: 34)
+                        .frame(width: 30, height: 30)
                         .background(.white.opacity(0.10), in: Circle())
                         .foregroundStyle(.white)
                 }
@@ -42,19 +49,28 @@ struct DrawToolbar: View {
                 .disabled(session.inProgressCoordinates.isEmpty)
                 .opacity(session.inProgressCoordinates.isEmpty ? 0.4 : 1)
 
-                Button("Cancel") { session.cancel() }
-                    .font(.subheadline)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.white.opacity(0.10), in: Capsule())
-                    .buttonStyle(.plain)
+                // fixedSize + lineLimit(1) keep these as single-line pills.
+                // Compact paddings let both fit alongside the tool icons
+                // on a portrait phone.
+                Button {
+                    session.cancel()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(width: 30, height: 30)
+                        .background(.white.opacity(0.10), in: Circle())
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Cancel")
 
                 Button("Finish", action: onFinish)
                     .font(.subheadline.weight(.bold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .foregroundStyle(.black)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
                     .background(
                         Capsule().fill(
                             session.canFinish
@@ -65,11 +81,52 @@ struct DrawToolbar: View {
                     .buttonStyle(.plain)
                     .disabled(!session.canFinish)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))
+            .alert("Name this drawing", isPresented: $showingNameAlert) {
+                TextField("e.g. Patrol route, Engagement area", text: $draftName)
+                    .autocorrectionDisabled()
+                Button("Save") {
+                    session.shapeName = draftName.trimmingCharacters(in: .whitespaces)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Leave blank to keep the default name (\(session.activeKind?.displayName ?? "")).")
+            }
         }
+    }
+
+    /// "Tag" button. Outline icon when no name set, filled with a tiny
+    /// label preview when set. Tap opens an alert with a TextField.
+    private var nameButton: some View {
+        Button {
+            draftName = session.shapeName
+            showingNameAlert = true
+        } label: {
+            let hasName = !session.shapeName.isEmpty
+            HStack(spacing: 4) {
+                Image(systemName: hasName ? "tag.fill" : "tag")
+                    .font(.caption.weight(.semibold))
+                if hasName {
+                    Text(session.shapeName)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 70)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, hasName ? 8 : 0)
+            .frame(height: 30)
+            .frame(minWidth: 30)
+            .background(.white.opacity(hasName ? 0.18 : 0.10),
+                        in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Drawing name")
+        .accessibilityValue(session.shapeName.isEmpty ? "Unset" : session.shapeName)
     }
 
     /// Toggle between solid and dashed stroke for the finalized line /
@@ -113,16 +170,12 @@ struct DrawToolbar: View {
                 Button {
                     session.strokeColorHex = swatch.hex
                 } label: {
-                    Label {
-                        Text(swatch.name)
-                    } icon: {
-                        // Filled tinted circle so the menu reads as a palette
-                        Image(systemName: session.strokeColorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
+                    Label(swatch.name,
+                          systemImage: session.strokeColorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
                               ? "largecircle.fill.circle"
                               : "circle.fill")
-                            .foregroundStyle(swatch.color)
-                    }
                 }
+                .tint(swatch.color)
             }
         } label: {
             ZStack {

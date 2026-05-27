@@ -1,6 +1,5 @@
 package com.tacticalmaps.calibration
 
-import com.google.android.gms.maps.model.LatLng
 import kotlinx.serialization.Serializable
 import kotlin.math.PI
 import kotlin.math.abs
@@ -22,8 +21,8 @@ data class AffineTransform2D(
     val a: Double, val b: Double, val c: Double,
     val d: Double, val e: Double, val f: Double
 ) {
-    fun apply(x: Double, y: Double): LatLng =
-        LatLng(d * x + e * y + f, a * x + b * y + c)
+    fun apply(x: Double, y: Double): Wgs84Coordinate =
+        Wgs84Coordinate(d * x + e * y + f, a * x + b * y + c)
 
     fun inverted(): AffineTransform2D? {
         val det = a * e - b * d
@@ -120,7 +119,7 @@ object AffineFitter {
         m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
         m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
 
-    private fun squareMetres(a: LatLng, b: LatLng): Double {
+    private fun squareMetres(a: Wgs84Coordinate, b: Wgs84Coordinate): Double {
         val R = 6_371_000.0
         val dLat = (b.latitude  - a.latitude)  * PI / 180
         val dLon = (b.longitude - a.longitude) * PI / 180 *

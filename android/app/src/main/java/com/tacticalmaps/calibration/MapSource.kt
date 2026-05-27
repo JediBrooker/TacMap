@@ -1,13 +1,10 @@
 package com.tacticalmaps.calibration
 
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.LatLngBounds
 import java.util.UUID
 
 /**
  * Abstract basemap source. Three flavours today:
- *  - [AppleSatelliteMapSourceAndroid] — Google satellite, used when no PDF is loaded
- *    (we keep the iOS naming so the cross-platform doc reads consistently).
+ *  - [OpenStreetMapSourceAndroid] — default online OSM tiles when no PDF is loaded.
  *  - [PdfMapSource] in `.geoPDF` mode — calibration parsed from GeoPDF tags.
  *  - [PdfMapSource] in `.calibratedPdf` mode — user-fitted via 3+ fiduciaries.
  *
@@ -17,11 +14,30 @@ sealed interface MapSource {
     val id: String
     val displayName: String
     val kind: MapSourceKind
-    val coverage: LatLngBounds?
+    val coverage: Wgs84Bounds?
     val calibration: Calibration?
 }
 
-enum class MapSourceKind { APPLE_SATELLITE, GEO_PDF, CALIBRATED_PDF }
+enum class MapSourceKind { OPEN_STREET_MAP, GEO_PDF, CALIBRATED_PDF }
+
+data class Wgs84Coordinate(
+    val latitude: Double,
+    val longitude: Double
+)
+
+data class Wgs84Bounds(
+    val southwest: Wgs84Coordinate,
+    val northeast: Wgs84Coordinate
+) {
+    val center: Wgs84Coordinate
+        get() = Wgs84Coordinate(
+            latitude = (southwest.latitude + northeast.latitude) / 2.0,
+            longitude = (southwest.longitude + northeast.longitude) / 2.0
+        )
+
+    val latitudeSpan: Double get() = northeast.latitude - southwest.latitude
+    val longitudeSpan: Double get() = northeast.longitude - southwest.longitude
+}
 
 /** Calibration state for a PDF source. */
 sealed interface Calibration {
@@ -29,10 +45,10 @@ sealed interface Calibration {
     data class Fiduciaries(val fids: List<Fiduciary>, val transform: AffineTransform2D) : Calibration
 }
 
-class AppleSatelliteMapSourceAndroid : MapSource {
+class OpenStreetMapSourceAndroid : MapSource {
     override val id: String = UUID.randomUUID().toString()
-    override val displayName = "Google Satellite"
-    override val kind = MapSourceKind.APPLE_SATELLITE
-    override val coverage: LatLngBounds? = null
+    override val displayName = "OpenStreetMap"
+    override val kind = MapSourceKind.OPEN_STREET_MAP
+    override val coverage: Wgs84Bounds? = null
     override val calibration: Calibration? = null
 }

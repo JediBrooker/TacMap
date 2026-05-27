@@ -8,19 +8,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,9 +29,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.android.gms.maps.model.LatLng
 import com.tacticalmaps.mgrs.MgrsFormatter
 import com.tacticalmaps.waypoints.Waypoint
+import com.tacticalmaps.waypoints.WaypointKind
 import com.tacticalmaps.waypoints.WaypointStore
 
 /**
@@ -46,13 +45,18 @@ fun WaypointListSheet(
     waypoints: List<Waypoint>,
     crosshairLat: Double,
     crosshairLng: Double,
+    activeLayerId: String,
     store: WaypointStore,
     onDismiss: () -> Unit,
-    onFlyTo: (LatLng) -> Unit
+    onFlyTo: (lat: Double, lng: Double) -> Unit
 ) {
-    var pendingNewName by remember { mutableStateOf<String?>(null) }
+    var pendingEditor by remember { mutableStateOf<SymbolEditorMode?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             // Title
             Text(
@@ -71,7 +75,7 @@ fun WaypointListSheet(
             // List
             if (waypoints.isEmpty()) {
                 Text(
-                    "No symbols yet. Pan the crosshair to a feature and tap “Add at Crosshair” below.",
+                    "No symbols yet. Pan the crosshair to a feature and add a marker, unit, or task below.",
                     fontSize = 12.sp,
                     color = Color.Gray,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
@@ -80,7 +84,7 @@ fun WaypointListSheet(
                 LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
                     items(waypoints, key = { it.id }) { wp ->
                         WaypointRow(wp = wp, onTap = {
-                            onFlyTo(LatLng(wp.latitude, wp.longitude))
+                            onFlyTo(wp.latitude, wp.longitude)
                             onDismiss()
                         })
                     }
@@ -89,24 +93,28 @@ fun WaypointListSheet(
 
             Spacer(Modifier.size(12.dp))
 
-            // Add at Crosshair button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF0A84FF))
-                    .clickable { pendingNewName = "" }
-                    .padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.White)
-                Spacer(Modifier.size(8.dp))
-                Text("Add at Crosshair", color = Color.White, fontWeight = FontWeight.SemiBold)
-            }
+            AddSymbolButton(
+                label = "Waypoint",
+                icon = Icons.Default.LocationOn,
+                modifier = Modifier.padding(horizontal = 20.dp),
+                onClick = { pendingEditor = SymbolEditorMode.WAYPOINT }
+            )
+            Spacer(Modifier.size(8.dp))
+            AddSymbolButton(
+                label = "Military Unit",
+                icon = Icons.Default.Security,
+                modifier = Modifier.padding(horizontal = 20.dp),
+                onClick = { pendingEditor = SymbolEditorMode.MILITARY }
+            )
+            Spacer(Modifier.size(8.dp))
+            AddSymbolButton(
+                label = "Tactical Task",
+                icon = Icons.Default.Flag,
+                modifier = Modifier.padding(horizontal = 20.dp),
+                onClick = { pendingEditor = SymbolEditorMode.TASK }
+            )
             Text(
-                "The new waypoint will be placed at the current map centre.",
+                "New symbols are placed at the current map centre.",
                 fontSize = 11.sp,
                 color = Color.Gray,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
@@ -114,45 +122,60 @@ fun WaypointListSheet(
         }
     }
 
-    // Quick-name dialog after Add at Crosshair.
-    pendingNewName?.let { initial ->
-        var name by remember { mutableStateOf(initial) }
-        AlertDialog(
-            onDismissRequest = { pendingNewName = null },
-            title = { Text("New waypoint") },
-            text = {
-                Column {
-                    Text(
-                        "Crosshair: ${MgrsFormatter.format(LatLng(crosshairLat, crosshairLng))}",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                    Spacer(Modifier.size(8.dp))
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        placeholder = { Text("Waypoint") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+    pendingEditor?.let { mode ->
+        val initialKind = when (mode) {
+            SymbolEditorMode.WAYPOINT -> WaypointKind.Generic
+            SymbolEditorMode.MILITARY -> WaypointKind.Military()
+            SymbolEditorMode.TASK -> WaypointKind.ControlMeasure()
+        }
+        SymbolEditorDialog(
+            mode = mode,
+            initialKind = initialKind,
+            initialName = "",
+            crosshairLat = crosshairLat,
+            crosshairLng = crosshairLng,
+            title = when (mode) {
+                SymbolEditorMode.WAYPOINT -> "New Waypoint"
+                SymbolEditorMode.MILITARY -> "New Military Unit"
+                SymbolEditorMode.TASK -> "New Tactical Task"
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    val resolved = name.trim().ifEmpty { "Waypoint" }
-                    store.add(Waypoint(
-                        name = resolved,
-                        latitude = crosshairLat,
-                        longitude = crosshairLng
-                    ))
-                    pendingNewName = null
-                    onDismiss()
-                }) { Text("Add") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingNewName = null }) { Text("Cancel") }
+            actionLabel = "Place",
+            onDismiss = { pendingEditor = null },
+            onConfirm = { name, kind ->
+                store.add(Waypoint(
+                    name = name,
+                    latitude = crosshairLat,
+                    longitude = crosshairLng,
+                    kind = kind,
+                    layerId = activeLayerId
+                ))
+                pendingEditor = null
+                onDismiss()
             }
         )
+    }
+}
+
+@Composable
+private fun AddSymbolButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF0A84FF))
+            .clickable { onClick() }
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White)
+        Spacer(Modifier.size(8.dp))
+        Text("Add $label", color = Color.White, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -165,13 +188,19 @@ private fun WaypointRow(wp: Waypoint, onTap: () -> Unit) {
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Default.LocationOn, contentDescription = null,
+        val icon = when (wp.kind) {
+            WaypointKind.Generic -> Icons.Default.LocationOn
+            is WaypointKind.Military -> Icons.Default.Security
+            is WaypointKind.ControlMeasure -> Icons.Default.Flag
+        }
+        Icon(icon, contentDescription = null,
              tint = Color(0xFFB48800), modifier = Modifier.size(28.dp))
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
             Text(wp.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(wp.kind.displayName, fontSize = 11.sp, color = Color.Gray)
             Text(
-                MgrsFormatter.format(LatLng(wp.latitude, wp.longitude)) +
+                MgrsFormatter.format(wp.latitude, wp.longitude) +
                     (wp.elevationLabel?.let { " • $it" } ?: ""),
                 fontSize = 11.sp,
                 color = Color.Gray,

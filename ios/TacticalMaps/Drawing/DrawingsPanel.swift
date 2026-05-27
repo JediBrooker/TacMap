@@ -27,6 +27,8 @@ struct DrawingsPanel: View {
             }
             .padding(.horizontal, 4)
 
+            layerPicker
+
             row(.polyline, subtitle: "Tap points to trace a route")
             row(.polygon,  subtitle: "Mark out a boundary")
             row(.point,    subtitle: "Drop a single marker")
@@ -105,10 +107,61 @@ struct DrawingsPanel: View {
         .padding(.vertical, 3)
     }
 
+    /// Layer chooser. Tapping opens a menu of every drawing layer (with
+    /// its colour swatch) and updates `drawingStore.activeLayerID`, which
+    /// each "New X" row reads when it kicks off the session.
+    @ViewBuilder
+    private var layerPicker: some View {
+        let active = activeLayer
+        Menu {
+            ForEach(drawingStore.layers) { layer in
+                Button {
+                    drawingStore.activeLayerID = layer.id
+                } label: {
+                    Label(layer.name,
+                          systemImage: layer.id == active?.id
+                              ? "largecircle.fill.circle"
+                              : "circle.fill")
+                }
+                .tint(Color(hex: layer.defaultColorHex))
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color(hex: active?.defaultColorHex ?? "#888888"))
+                    .frame(width: 14, height: 14)
+                    .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 1))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("LAYER")
+                        .font(.system(size: 9).weight(.bold))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text(active?.name ?? "—")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private var activeLayer: DrawingLayer? {
+        if let id = drawingStore.activeLayerID,
+           let layer = drawingStore.layer(id: id) { return layer }
+        return drawingStore.layers.first
+    }
+
     @ViewBuilder
     private func row(_ kind: DrawingKind, subtitle: String) -> some View {
         Button {
-            session.start(kind: kind)
+            guard let layerID = activeLayer?.id else { return }
+            session.start(kind: kind, layerID: layerID)
             onDismiss()
         } label: {
             HStack(spacing: 10) {

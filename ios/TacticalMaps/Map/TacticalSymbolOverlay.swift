@@ -23,6 +23,7 @@ import UIKit
 ///    UIView rewrite. Native UIKit gesture recognizers don't leak.
 struct TacticalSymbolOverlay: UIViewRepresentable {
     @ObservedObject var waypointStore: WaypointStore
+    @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var mapVM: MapViewModel
     @ObservedObject var visibility: LayerVisibility
 
@@ -35,8 +36,16 @@ struct TacticalSymbolOverlay: UIViewRepresentable {
     }
 
     func updateUIView(_ view: OverlayContainerView, context: Context) {
+        // Waypoints respect both the master toggle AND their assigned
+        // layer's visibility. Hidden waypoints are filtered out before
+        // the overlay sees them so their bubble views are torn down and
+        // taps pass through the now-empty region.
+        let visibleLayerIDs = Set(drawingStore.layers.filter { $0.visible }.map(\.id))
+        let visibleWaypoints = waypointStore.waypoints.filter {
+            visibleLayerIDs.contains($0.layerID)
+        }
         view.update(
-            waypoints: waypointStore.waypoints,
+            waypoints: visibleWaypoints,
             positions: mapVM.waypointScreenPositions,
             zoomScale: mapVM.zoomScaleFactor,
             visible: visibility.waypointsVisible,

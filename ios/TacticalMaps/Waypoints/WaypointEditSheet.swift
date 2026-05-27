@@ -146,7 +146,7 @@ struct WaypointEditSheet: View {
                         // events in iOS 26 simulator, and is fiddly to
                         // flick on device).
                         Picker("Measure", selection: $control) {
-                            ForEach(TacticalControlMeasure.allCases, id: \.self) { m in
+                            ForEach(TacticalControlMeasure.pickerEntries, id: \.self) { m in
                                 Text(m.displayName).tag(m)
                             }
                         }

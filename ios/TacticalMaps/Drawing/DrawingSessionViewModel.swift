@@ -19,6 +19,14 @@ final class DrawingSessionViewModel: ObservableObject {
     /// Persists across sessions until the user toggles it.
     @Published var isDashed: Bool = false
 
+    /// Layer the in-progress drawing will be saved to when finished.
+    /// Nil = no layer was supplied to `start`; finish() will refuse.
+    @Published private(set) var targetLayerID: UUID? = nil
+
+    /// Optional name the user typed into the toolbar's name field while
+    /// drawing. Reset on each start/finish/cancel.
+    @Published var shapeName: String = ""
+
     var isDrawing: Bool { activeKind != nil }
 
     var canFinish: Bool {
@@ -26,9 +34,11 @@ final class DrawingSessionViewModel: ObservableObject {
         return inProgressCoordinates.count >= kind.minimumVertices
     }
 
-    func start(kind: DrawingKind) {
+    func start(kind: DrawingKind, layerID: UUID) {
         activeKind = kind
         inProgressCoordinates = []
+        targetLayerID = layerID
+        shapeName = ""
     }
 
     /// Add a vertex from a map tap. Returns `true` if the shape auto-commits
@@ -49,16 +59,22 @@ final class DrawingSessionViewModel: ObservableObject {
     func cancel() {
         activeKind = nil
         inProgressCoordinates = []
+        targetLayerID = nil
+        shapeName = ""
     }
 
     /// Build the final shape and reset session state. Returns nil if there's
-    /// nothing to commit.
+    /// nothing to commit (no active kind, fewer than the kind's minimum
+    /// vertices, or no target layer set).
     func finish() -> DrawingShape? {
         defer {
             activeKind = nil
             inProgressCoordinates = []
+            targetLayerID = nil
+            shapeName = ""
         }
         guard let kind = activeKind,
+              let layerID = targetLayerID,
               inProgressCoordinates.count >= kind.minimumVertices else {
             return nil
         }
@@ -70,10 +86,13 @@ final class DrawingSessionViewModel: ObservableObject {
             fillColorHex:   strokeColorHex,   // polygons fill with same hue
             dashPattern:    isDashed ? [8, 6] : nil
         )
+        let trimmedName = shapeName.trimmingCharacters(in: .whitespaces)
         return DrawingShape(
+            name: trimmedName.isEmpty ? nil : trimmedName,
             kind: kind,
             coordinates: inProgressCoordinates,
-            style: style
+            style: style,
+            layerID: layerID
         )
     }
 }

@@ -13,6 +13,8 @@ import CoreLocation
 /// is handled by `ContentView` — this view only renders.
 struct SymbolControlsCard: View {
     @ObservedObject var waypointStore: WaypointStore
+    /// Shared layer model — used to render and pick the waypoint's layer.
+    @ObservedObject var drawingStore: DrawingStore
     /// Map VM exposes the current crosshair coordinate (camera centre)
     /// for the "Move to Crosshair" action.
     @ObservedObject var mapVM: MapViewModel
@@ -23,6 +25,10 @@ struct SymbolControlsCard: View {
     let onDismiss: () -> Void
 
     @State private var showDeleteConfirm: Bool = false
+    /// Tapping the name in the header presents the full edit sheet so the
+    /// user can change the kind (e.g. swap Ambush → Block) without
+    /// re-creating the waypoint.
+    @State private var showingEdit: Bool = false
 
     var body: some View {
         if let wp = waypointStore.waypoints.first(where: { $0.id == waypointID }) {
@@ -67,6 +73,15 @@ struct SymbolControlsCard: View {
                 .first(where: { $0.id == waypointID })?.name ?? "this symbol"
             Text("This will permanently remove “\(name)”.")
         }
+        .sheet(isPresented: $showingEdit) {
+            if let wp = waypointStore.waypoints.first(where: { $0.id == waypointID }) {
+                WaypointEditSheet(
+                    waypointStore: waypointStore,
+                    original: wp,
+                    defaultCoordinate: wp.coordinate
+                )
+            }
+        }
     }
 
     // MARK: Rows
@@ -80,12 +95,20 @@ struct SymbolControlsCard: View {
         let kindLabel = wp.kind.displayName
         let showKindSuffix = wp.name != kindLabel
         return HStack(spacing: 10) {
+            // Military unit symbols carry an echelon (dots / bars / X)
+            // sitting *above* the frame plus a function glyph inside —
+            // a 22pt icon in a 28pt tile compressed all of that into
+            // an unreadable blob. Give units a roomier tile; control
+            // measures + generic markers stay compact.
+            let isUnit = wp.kind.militarySpec != nil
+            let tile: CGFloat = isUnit ? 44 : 28
+            let inner: CGFloat = isUnit ? 38 : 22
             WaypointKindIcon(
                 kind: wp.kind,
-                size: 22,
+                size: inner,
                 rotation: wp.kind.controlMeasure == nil ? 0 : wp.rotation
             )
-            .frame(width: 28, height: 28)
+            .frame(width: tile, height: tile)
             // White background so the (mostly black) symbols stay
             // legible against the translucent material card.
             .background(
@@ -93,17 +116,30 @@ struct SymbolControlsCard: View {
                     .fill(Color.white)
             )
 
-            HStack(spacing: 6) {
-                Text(wp.name)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                if showKindSuffix {
-                    Text(kindLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            Button {
+                showingEdit = true
+            } label: {
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(wp.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        if showKindSuffix {
+                            Text(kindLabel)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Image(systemName: "pencil")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityHint("Edit symbol type")
             Spacer(minLength: 4)
             Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")
@@ -114,6 +150,44 @@ struct SymbolControlsCard: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Close symbol controls")
         }
+    }
+
+    /// Compact layer pill — colour swatch + name, opens a menu to reassign.
+    private func layerPill(for wp: Waypoint) -> some View {
+        let current = drawingStore.layer(id: wp.layerID) ?? drawingStore.layers.first
+        return Menu {
+            ForEach(drawingStore.layers) { layer in
+                Button {
+                    var updated = wp
+                    updated.layerID = layer.id
+                    waypointStore.update(updated)
+                } label: {
+                    Label(layer.name,
+                          systemImage: layer.id == current?.id
+                              ? "largecircle.fill.circle"
+                              : "circle.fill")
+                }
+                .tint(Color(hex: layer.defaultColorHex))
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(hex: current?.defaultColorHex ?? "#888888"))
+                Text(current?.name ?? "—")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: 120)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.white.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Layer")
+        .accessibilityValue(current?.name ?? "")
     }
 
     private func rotationRow(for wp: Waypoint) -> some View {
@@ -179,6 +253,7 @@ struct SymbolControlsCard: View {
     /// removing the waypoint, then dismisses the card.
     private func actionRow(for wp: Waypoint) -> some View {
         HStack(spacing: 8) {
+            layerPill(for: wp)
             Button {
                 var updated = wp
                 updated.latitude  = mapVM.cameraCentre.latitude

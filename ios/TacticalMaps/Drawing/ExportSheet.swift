@@ -76,7 +76,8 @@ struct ExportSheet: View {
         do {
             let url = try GeoJSONExporter.exportToFile(
                 waypoints: waypointStore.waypoints,
-                drawings:  drawingStore.shapes
+                drawings:  drawingStore.shapes,
+                layers:    drawingStore.layers
             )
             let str = try String(contentsOf: url, encoding: .utf8)
             generatedURL = url

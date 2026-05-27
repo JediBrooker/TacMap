@@ -4,30 +4,50 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+val releaseStoreFilePath = providers.gradleProperty("TACTICALMAPS_RELEASE_STORE_FILE")
+    .orElse(providers.environmentVariable("TACTICALMAPS_RELEASE_STORE_FILE"))
+val releaseStorePassword = providers.gradleProperty("TACTICALMAPS_RELEASE_STORE_PASSWORD")
+    .orElse(providers.environmentVariable("TACTICALMAPS_RELEASE_STORE_PASSWORD"))
+val releaseKeyAlias = providers.gradleProperty("TACTICALMAPS_RELEASE_KEY_ALIAS")
+    .orElse(providers.environmentVariable("TACTICALMAPS_RELEASE_KEY_ALIAS"))
+val releaseKeyPassword = providers.gradleProperty("TACTICALMAPS_RELEASE_KEY_PASSWORD")
+    .orElse(providers.environmentVariable("TACTICALMAPS_RELEASE_KEY_PASSWORD"))
+val hasReleaseSigning = releaseStoreFilePath.isPresent &&
+    releaseStorePassword.isPresent &&
+    releaseKeyAlias.isPresent &&
+    releaseKeyPassword.isPresent
+
 android {
     namespace = "com.tacticalmaps"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.tacticalmaps"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
 
-        // Read MAPS_API_KEY from gradle.properties / -P / env, fall back to empty.
-        val mapsKey: String = (project.findProperty("MAPS_API_KEY") as String?)
-            ?: System.getenv("MAPS_API_KEY")
-            ?: ""
-        manifestPlaceholders["MAPS_API_KEY"] = mapsKey
-        buildConfigField("String", "MAPS_API_KEY", "\"$mapsKey\"")
-
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFilePath.get())
+                storePassword = releaseStorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -66,11 +86,10 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Google Maps Compose (satellite fallback).
-    implementation("com.google.maps.android:maps-compose:4.4.1")
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
+    // OpenStreetMap tiles via osmdroid: no map API key required.
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("com.caverock:androidsvg-aar:1.4")
 
-    // Location.
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
     // MGRS conversion (NGA).

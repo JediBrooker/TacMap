@@ -11,13 +11,17 @@ import Foundation
 enum GeoJSONExporter {
 
     /// Build the FeatureCollection as a pretty-printed JSON string.
+    /// Pass `layers` so drawing features can carry `tacticalmaps:layer`
+    /// (name + colour) for round-tripping the grouping.
     static func export(waypoints: [Waypoint] = [],
-                       drawings:  [DrawingShape] = []) throws -> String {
+                       drawings:  [DrawingShape] = [],
+                       layers:    [DrawingLayer] = []) throws -> String {
         var features: [[String: Any]] = []
         features.reserveCapacity(waypoints.count + drawings.count)
 
+        let layerByID = Dictionary(uniqueKeysWithValues: layers.map { ($0.id, $0) })
         for wp in waypoints      { features.append(feature(for: wp)) }
-        for shape in drawings    { features.append(feature(for: shape)) }
+        for shape in drawings    { features.append(feature(for: shape, layer: layerByID[shape.layerID])) }
 
         let collection: [String: Any] = [
             "type":      "FeatureCollection",
@@ -36,8 +40,9 @@ enum GeoJSONExporter {
     /// Write the export to a temporary `.geojson` file and return the URL,
     /// suitable for handing to `ShareLink`.
     static func exportToFile(waypoints: [Waypoint],
-                             drawings:  [DrawingShape]) throws -> URL {
-        let json = try export(waypoints: waypoints, drawings: drawings)
+                             drawings:  [DrawingShape],
+                             layers:    [DrawingLayer] = []) throws -> URL {
+        let json = try export(waypoints: waypoints, drawings: drawings, layers: layers)
         let dir  = FileManager.default.temporaryDirectory
         let stamp = ISO8601DateFormatter().string(from: .now)
             .replacingOccurrences(of: ":", with: "-")
@@ -89,7 +94,7 @@ enum GeoJSONExporter {
         ]
     }
 
-    private static func feature(for shape: DrawingShape) -> [String: Any] {
+    private static func feature(for shape: DrawingShape, layer: DrawingLayer? = nil) -> [String: Any] {
         var props: [String: Any] = [
             "tacticalmaps:category":   "drawing",
             "tacticalmaps:kind":       shape.kind.rawValue,
@@ -97,6 +102,11 @@ enum GeoJSONExporter {
         ]
         if let n = shape.name  { props["name"]        = n }
         if let n = shape.notes { props["description"] = n }
+        if let layer {
+            props["tacticalmaps:layer"]       = layer.name
+            props["tacticalmaps:layer_id"]    = layer.id.uuidString
+            props["tacticalmaps:layer_color"] = layer.defaultColorHex
+        }
 
         // simplestyle-spec keys.
         props["stroke"]       = shape.style.strokeColorHex

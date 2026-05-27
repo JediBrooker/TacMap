@@ -25,6 +25,12 @@ struct Waypoint: Identifiable, Codable, Hashable {
     var scaleX: Double
     /// Vertical multiplier. See `scaleX`.
     var scaleY: Double
+    /// Which map layer this waypoint belongs to. Shared layer model with
+    /// `DrawingShape` so toggling a layer hides both drawings and
+    /// waypoints on it. Backward-compat: pre-layer saves get the
+    /// `DrawingLayer.legacyFallbackID` so they land in the default
+    /// "Friendly" layer.
+    var layerID: UUID
     var createdAt: Date
 
     init(id: UUID = UUID(),
@@ -37,6 +43,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
          rotation: Double = 0,
          scaleX: Double = 1.0,
          scaleY: Double = 1.0,
+         layerID: UUID = DrawingLayer.legacyFallbackID,
          createdAt: Date = .now) {
         self.id = id
         self.name = name
@@ -48,6 +55,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
         self.rotation = rotation
         self.scaleX = scaleX
         self.scaleY = scaleY
+        self.layerID = layerID
         self.createdAt = createdAt
     }
 
@@ -61,11 +69,13 @@ struct Waypoint: Identifiable, Codable, Hashable {
          rotation: Double = 0,
          scaleX: Double = 1.0,
          scaleY: Double = 1.0,
+         layerID: UUID = DrawingLayer.legacyFallbackID,
          createdAt: Date = .now) {
         self.init(id: id, name: name, notes: notes,
                   latitude: coordinate.latitude, longitude: coordinate.longitude,
                   elevation: elevation, kind: kind, rotation: rotation,
-                  scaleX: scaleX, scaleY: scaleY, createdAt: createdAt)
+                  scaleX: scaleX, scaleY: scaleY, layerID: layerID,
+                  createdAt: createdAt)
     }
 
     var coordinate: CLLocationCoordinate2D {
@@ -85,7 +95,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, notes, latitude, longitude, elevation, kind,
-             rotation, scale, scaleX, scaleY, createdAt
+             rotation, scale, scaleX, scaleY, layerID, createdAt
     }
 
     init(from decoder: Decoder) throws {
@@ -106,6 +116,8 @@ struct Waypoint: Identifiable, Codable, Hashable {
             ?? legacyScale ?? 1.0
         self.scaleY = try c.decodeIfPresent(Double.self, forKey: .scaleY)
             ?? legacyScale ?? 1.0
+        self.layerID = try c.decodeIfPresent(UUID.self, forKey: .layerID)
+            ?? DrawingLayer.legacyFallbackID
         self.createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
 
@@ -121,6 +133,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
         try c.encode(rotation, forKey: .rotation)
         try c.encode(scaleX, forKey: .scaleX)
         try c.encode(scaleY, forKey: .scaleY)
+        try c.encode(layerID, forKey: .layerID)
         try c.encode(createdAt, forKey: .createdAt)
     }
 }
@@ -306,4 +319,10 @@ enum TacticalControlMeasure: String, Codable, Hashable, CaseIterable {
 
     /// Basename of the bundled image in `Assets.xcassets/AppSymbols/`.
     var assetName: String { rawValue }
+
+    /// Picker order — alphabetised by `displayName` so the in-app list
+    /// matches what a user would scan for. Mirrors Android's
+    /// `TacticalControlMeasure.pickerEntries`.
+    static let pickerEntries: [TacticalControlMeasure] =
+        allCases.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
 }

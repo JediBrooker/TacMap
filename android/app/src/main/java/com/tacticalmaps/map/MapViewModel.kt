@@ -4,10 +4,8 @@ import android.app.Application
 import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.tacticalmaps.calibration.AppleSatelliteMapSourceAndroid
 import com.tacticalmaps.calibration.MapSource
+import com.tacticalmaps.calibration.OpenStreetMapSourceAndroid
 import com.tacticalmaps.mgrs.MgrsFormatter
 import com.tacticalmaps.models.LocationService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,24 +19,44 @@ import kotlin.math.abs
  *
  * Browse mode = the user has manually panned/zoomed away from their location.
  * Cleared by `centreOnUser`.
+ *
+ * Coordinates are exposed as bare (lat, lng, zoom) triples so the VM
+ * doesn't depend on any specific map library type.
  */
 class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     val locationService = LocationService(app)
 
-    // Camera centre published by MapScreen whenever the GoogleMap camera moves.
-    private val _cameraCentre = MutableStateFlow(LatLng(0.0, 0.0))
-    val cameraCentre: StateFlow<LatLng> = _cameraCentre.asStateFlow()
+    // Camera centre published by MapScreen on every camera-idle event.
+    private val _cameraLat = MutableStateFlow(0.0)
+    val cameraLat: StateFlow<Double> = _cameraLat.asStateFlow()
+    private val _cameraLng = MutableStateFlow(0.0)
+    val cameraLng: StateFlow<Double> = _cameraLng.asStateFlow()
 
     private val _isBrowsing = MutableStateFlow(false)
     val isBrowsing: StateFlow<Boolean> = _isBrowsing.asStateFlow()
 
-    private val _mapSource = MutableStateFlow<MapSource>(AppleSatelliteMapSourceAndroid())
+    private val _mapBearingDegrees = MutableStateFlow(0.0)
+    val mapBearingDegrees: StateFlow<Double> = _mapBearingDegrees.asStateFlow()
+
+    private val _mapSource = MutableStateFlow<MapSource>(OpenStreetMapSourceAndroid())
     val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
 
-    // Programmatic camera target (MapScreen animates the GoogleMap when this changes).
-    private val _pendingCameraTarget = MutableStateFlow<CameraPosition?>(null)
-    val pendingCameraTarget: StateFlow<CameraPosition?> = _pendingCameraTarget.asStateFlow()
+    fun setMapSource(source: MapSource) {
+        _mapSource.value = source
+        source.coverage?.center?.let { center ->
+            flyTo(center.latitude, center.longitude, 13f)
+        }
+    }
+
+    fun unloadPdfMap() {
+        _mapSource.value = OpenStreetMapSourceAndroid()
+    }
+
+    /** Programmatic camera target = (lat, lng, zoom). null when nothing
+     *  pending. MapScreen consumes via [consumePendingCameraTarget]. */
+    private val _pendingCameraTarget = MutableStateFlow<Triple<Double, Double, Float>?>(null)
+    val pendingCameraTarget: StateFlow<Triple<Double, Double, Float>?> = _pendingCameraTarget.asStateFlow()
 
     /** ID of the currently-selected waypoint. Drives the floating
      *  controls card in MapScreen. null = no selection. */
@@ -57,12 +75,19 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Called by MapScreen on every camera idle event. `byUser` distinguishes
      *  user gestures from programmatic moves. */
-    fun onCameraIdle(centre: LatLng, byUser: Boolean) {
-        _cameraCentre.value = centre
+    fun onCameraIdle(lat: Double, lng: Double, byUser: Boolean) {
+        _cameraLat.value = lat
+        _cameraLng.value = lng
         if (byUser) _isBrowsing.value = true
     }
 
-    /** Clear the pending target once MapScreen has consumed it. */
+    fun onMapBearingChanged(degrees: Double) {
+        val normalized = ((degrees % 360.0) + 360.0) % 360.0
+        if (abs(_mapBearingDegrees.value - normalized) > 0.05) {
+            _mapBearingDegrees.value = normalized
+        }
+    }
+
     fun consumePendingCameraTarget() { _pendingCameraTarget.value = null }
 
     private fun onUserLocation(loc: Location) {
@@ -74,40 +99,43 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun centreOnUser() {
-        val target = lastUserLocation?.let { LatLng(it.latitude, it.longitude) } ?: return
+        val loc = lastUserLocation ?: return
         _isBrowsing.value = false
-        _cameraCentre.value = target
-        _pendingCameraTarget.value = CameraPosition.Builder()
-            .target(target)
-            .zoom(15f)
-            .build()
+        _cameraLat.value = loc.latitude
+        _cameraLng.value = loc.longitude
+        _pendingCameraTarget.value = Triple(loc.latitude, loc.longitude, 15f)
     }
 
     /** Animate camera to an arbitrary coordinate. Used by the
      *  waypoint list's "fly to" rows. Enters browse mode so the
      *  header reads the map centre, not the user. */
-    fun flyTo(target: LatLng, zoom: Float = 15f) {
+    fun flyTo(lat: Double, lng: Double, zoom: Float = 15f) {
         _isBrowsing.value = true
-        _cameraCentre.value = target
-        _pendingCameraTarget.value = CameraPosition.Builder()
-            .target(target)
-            .zoom(zoom)
-            .build()
+        _cameraLat.value = lat
+        _cameraLng.value = lng
+        _pendingCameraTarget.value = Triple(lat, lng, zoom)
     }
 
     // MARK: - Header content
 
-    val headerMgrs: String get() = MgrsFormatter.format(headerCoordinate)
+    val headerMgrs: String get() {
+        val (lat, lng) = headerCoordinate
+        return MgrsFormatter.format(lat, lng)
+    }
 
     val headerWgs84: String get() {
-        val c = headerCoordinate
+        val (lat, lng) = headerCoordinate
         return "%.5f° %s, %.5f° %s".format(
-            abs(c.latitude),  if (c.latitude  >= 0) "N" else "S",
-            abs(c.longitude), if (c.longitude >= 0) "E" else "W"
+            abs(lat), if (lat >= 0) "N" else "S",
+            abs(lng), if (lng >= 0) "E" else "W"
         )
     }
 
-    private val headerCoordinate: LatLng
-        get() = if (_isBrowsing.value) _cameraCentre.value
-                else lastUserLocation?.let { LatLng(it.latitude, it.longitude) } ?: _cameraCentre.value
+    private val headerCoordinate: Pair<Double, Double>
+        get() = if (_isBrowsing.value) {
+            _cameraLat.value to _cameraLng.value
+        } else {
+            lastUserLocation?.let { it.latitude to it.longitude }
+                ?: (_cameraLat.value to _cameraLng.value)
+        }
 }

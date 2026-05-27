@@ -29,7 +29,7 @@ targets:
       properties:
         CFBundleDisplayName: TacticalMaps
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "2"
+        CFBundleVersion: "5"
         UILaunchScreen:
           UIColorName: LaunchBackground
         # iOS 16+ devices are all arm64. armv7 is 32-bit and would
@@ -37,6 +37,13 @@ targets:
         UIRequiredDeviceCapabilities: [arm64]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # iPad multitasking (Split View) requires all 4 orientations
+        # including UpsideDown. iPhone keeps the 3-orientation set.
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSLocationWhenInUseUsageDescription: TacticalMaps shows your live position on the map and reads it as an MGRS grid reference.

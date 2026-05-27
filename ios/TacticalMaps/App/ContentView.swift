@@ -41,6 +41,7 @@ struct ContentView: View {
                 // visible symbol pixels exactly.
                 TacticalSymbolOverlay(
                     waypointStore: waypointStore,
+                    drawingStore: drawingStore,
                     mapVM: mapVM,
                     visibility: visibility
                 )
@@ -168,9 +169,19 @@ struct ContentView: View {
                             // the pill back.
                             SymbolControlsCard(
                                 waypointStore: waypointStore,
+                                drawingStore: drawingStore,
                                 mapVM: mapVM,
                                 waypointID: id,
                                 onDismiss: { mapVM.selectedWaypointID = nil }
+                            )
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, max(geo.safeAreaInsets.bottom - 32, 0))
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        } else if let id = mapVM.selectedDrawingID {
+                            DrawingControlsCard(
+                                drawingStore: drawingStore,
+                                drawingID: id,
+                                onDismiss: { mapVM.selectedDrawingID = nil }
                             )
                             .padding(.horizontal, 12)
                             .padding(.bottom, max(geo.safeAreaInsets.bottom - 32, 0))
@@ -189,6 +200,8 @@ struct ContentView: View {
                 }
                 .animation(.easeInOut(duration: 0.18),
                            value: mapVM.selectedWaypointID)
+                .animation(.easeInOut(duration: 0.18),
+                           value: mapVM.selectedDrawingID)
                 // HUD sits flush below the dynamic island. We let it bleed slightly
                 // into the safe-area region by using a small negative-ish padding,
                 // ignoring the safe area entirely on the top edge — the box's
@@ -213,7 +226,10 @@ struct ContentView: View {
             DrawingsSheet(drawingStore: drawingStore, session: drawingSession)
         }
         .sheet(isPresented: $showLayersSheet) {
-            LayersSheet(visibility: visibility, mapVM: mapVM, onCalibrate: startCalibration)
+            LayersSheet(visibility: visibility,
+                        mapVM: mapVM,
+                        drawingStore: drawingStore,
+                        onCalibrate: startCalibration)
         }
         .sheet(isPresented: Binding(
             get: { calibration.pendingTap != nil },
