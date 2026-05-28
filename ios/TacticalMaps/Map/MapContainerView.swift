@@ -86,6 +86,7 @@ struct MapContainerView: UIViewRepresentable {
         press.allowableMovement = .greatestFiniteMagnitude
         press.delegate = context.coordinator
         mv.addGestureRecognizer(press)
+        context.coordinator.drawingDragPress = press
 
         // Programmatic camera moves.
         context.coordinator.cameraRequestSink = mapVM.cameraRequests.sink { region in
@@ -166,6 +167,7 @@ struct MapContainerView: UIViewRepresentable {
         var cameraRequestSink: AnyCancellable?
         var resetNorthSink:    AnyCancellable?
         weak var tapGesture: UITapGestureRecognizer?
+        weak var drawingDragPress: UILongPressGestureRecognizer?
         weak var attachedMapView: MKMapView?
 
         /// Style lookup keyed by overlay identity (MKPolyline/MKPolygon don't
@@ -273,6 +275,21 @@ struct MapContainerView: UIViewRepresentable {
         func gestureRecognizer(_ g: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             true
+        }
+
+        /// Refuse to begin our long-press-drag recogniser when the
+        /// press lands on a vertex-edit handle. Otherwise our gesture
+        /// claims the touches and MapKit's annotation drag can never
+        /// fire — meaning the user can't actually move a vertex.
+        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+            if g === drawingDragPress,
+               let mv = g.view as? MKMapView {
+                let pt = g.location(in: mv)
+                if pressIsOnVertexHandle(at: pt, on: mv) {
+                    return false
+                }
+            }
+            return true
         }
 
         func mapView(_ mv: MKMapView, regionDidChangeAnimated animated: Bool) {
@@ -522,6 +539,21 @@ struct MapContainerView: UIViewRepresentable {
                 return
             }
 
+            // Vertex-edit "+" midpoint handles: a single tap inserts
+            // a new vertex at the handle's current coordinate (a more
+            // discoverable affordance than the drag-the-plus path).
+            if let mid = midpointHandleHitTest(at: pt, on: mv),
+               var shape = drawingStore.shapes.first(where: { $0.id == mid.shapeID }) {
+                let coord = Coordinate2D(
+                    latitude: mid.coordinate.latitude,
+                    longitude: mid.coordinate.longitude
+                )
+                shape.insertEffectiveVertex(coord, at: mid.vertexIndex)
+                drawingStore.update(shape)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                return
+            }
+
             // Hit-test against tactical symbols FIRST (drawn on top of
             // drawings in the SwiftUI overlay), then against drawings.
             // Bubbles are non-interactive so the tap arrives here even
@@ -682,6 +714,27 @@ struct MapContainerView: UIViewRepresentable {
                 if hypot(p.x - pt.x, p.y - pt.y) <= tol { return true }
             }
             return false
+        }
+
+        /// Return the midpoint ("+" insertion) handle nearest to the
+        /// tap point, or nil if the tap missed all of them. Skips real
+        /// vertices so tap-to-insert and tap-on-vertex don't collide.
+        private func midpointHandleHitTest(at pt: CGPoint, on mv: MKMapView)
+            -> DrawingVertexHandleAnnotation?
+        {
+            let tol: CGFloat = 22
+            var best: DrawingVertexHandleAnnotation?
+            var bestDist: CGFloat = .infinity
+            for ann in mv.annotations {
+                guard let h = ann as? DrawingVertexHandleAnnotation, h.isMidpoint else { continue }
+                let p = mv.convert(h.coordinate, toPointTo: mv)
+                let d = hypot(p.x - pt.x, p.y - pt.y)
+                if d <= tol && d < bestDist {
+                    best = h
+                    bestDist = d
+                }
+            }
+            return best
         }
 
         /// ID of the waypoint currently being dragged via long-press.
