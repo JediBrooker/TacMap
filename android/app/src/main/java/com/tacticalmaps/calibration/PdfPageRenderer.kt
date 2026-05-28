@@ -26,7 +26,12 @@ data class RenderedPdfPage(
 )
 
 object PdfPageRenderer {
-    private const val MAX_RENDER_DIMENSION_PX = 2048
+    /// Larger than the original 2048 because the rendered bitmap is
+    /// stretched across the map's ground overlay and any zoom past
+    /// the per-pixel level of this bitmap shows up as blur. 4096
+    /// gives enough resolution for a few extra zoom steps while
+    /// staying well under the 64MB (4096*4096*4 ≈ 64MB) ARGB limit.
+    private const val MAX_RENDER_DIMENSION_PX = 4096
 
     fun firstPageInfo(context: Context, uri: Uri): PdfPageInfo =
         openDescriptor(context, uri).use { descriptor ->

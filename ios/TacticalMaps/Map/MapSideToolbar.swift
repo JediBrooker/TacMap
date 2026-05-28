@@ -29,11 +29,17 @@ struct HamburgerMenu: View {
             Button { onAbout() }     label: { Label("About & Credits", systemImage: "info.circle") }
         } label: {
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 17, weight: .medium))
-                .frame(width: 42, height: 42)
+                .font(.system(size: 19, weight: .medium))
+                /// 48pt sits comfortably above Apple's 44pt minimum
+                /// tap target and matches the surrounding HUD chips
+                /// (compass, "Centre on My Location"), so the user
+                /// doesn't have to aim for a small button to open
+                /// the menu.
+                .frame(width: 48, height: 48)
                 .background(.black.opacity(0.78), in: Circle())
                 .overlay(Circle().stroke(.white.opacity(0.08)))
                 .foregroundStyle(.white)
+                .contentShape(Circle())
         }
     }
 }

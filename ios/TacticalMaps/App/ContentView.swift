@@ -286,23 +286,36 @@ struct ContentView: View {
         .sheet(isPresented: $showAboutSheet) {
             AcknowledgementsView()
         }
-        .fileImporter(
-            isPresented: $showImporter,
-            allowedContentTypes: [.pdf],
-            allowsMultipleSelection: false
-        ) { result in
-            handleImport(result)
-        }
-        .fileImporter(
-            isPresented: $showGeoJSONImporter,
-            allowedContentTypes: [
-                .json,
-                UTType(filenameExtension: "geojson") ?? .json
-            ],
-            allowsMultipleSelection: false
-        ) { result in
-            handleGeoJSONImport(result)
-        }
+        /// SwiftUI has a long-standing bug where two `.fileImporter`
+        /// modifiers attached back-to-back on the same view silently
+        /// shadow each other — only the last one ever presents,
+        /// which is why "Import PDF Map" did nothing while
+        /// "Import GeoJSON…" worked. Attaching each via an empty
+        /// background view puts them on separate view nodes and
+        /// they both fire independently.
+        .background(
+            EmptyView()
+                .fileImporter(
+                    isPresented: $showImporter,
+                    allowedContentTypes: [.pdf],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleImport(result)
+                }
+        )
+        .background(
+            EmptyView()
+                .fileImporter(
+                    isPresented: $showGeoJSONImporter,
+                    allowedContentTypes: [
+                        .json,
+                        UTType(filenameExtension: "geojson") ?? .json
+                    ],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleGeoJSONImport(result)
+                }
+        )
         .alert("Import",
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),

@@ -11,6 +11,7 @@ ios/TacticalMaps.xcodeproj/
 ios/TacticalMaps.xcworkspace/
 ios/Pods/
 ios/DerivedData/
+ios/build/
 ios/.swiftpm/
 ios/*.xcuserdata
 

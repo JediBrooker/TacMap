@@ -81,6 +81,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tacticalmaps.calibration.AffineFitter
 import com.tacticalmaps.calibration.Calibration
 import com.tacticalmaps.calibration.Fiduciary
+import com.tacticalmaps.calibration.GeoPdfParser
 import com.tacticalmaps.calibration.PdfMapSource
 import com.tacticalmaps.calibration.PdfPageRenderer
 import com.tacticalmaps.calibration.Wgs84Coordinate
@@ -989,12 +990,26 @@ private fun importPdfMapSource(
 
     val fileUri = Uri.fromFile(dest)
     val pageInfo = PdfPageRenderer.firstPageInfo(context, fileUri)
-    return PdfMapSource.imported(
+    val baseName = displayName.removeSuffix(".pdf").removeSuffix(".PDF")
+    val base = PdfMapSource.imported(
         uri = fileUri,
-        name = displayName.removeSuffix(".pdf").removeSuffix(".PDF"),
+        name = baseName,
         center = Wgs84Coordinate(cameraLat, cameraLng),
         pageInfo = pageInfo
     )
+
+    /// Try to lift georeferencing straight out of the PDF (OGC
+    /// GeoPDF / Adobe LGIDict). If we find ≥3 correspondences we
+    /// fit the same affine the manual-fiduciary flow would and
+    /// return a calibrated source — the PDF lands in its real
+    /// geographic position with the right rotation and scale, no
+    /// user calibration step required. If the PDF has no
+    /// recognisable georeferencing we leave the base (uncalibrated)
+    /// source in place and the user can drop fiduciaries by hand.
+    val geo = GeoPdfParser.parse(context, fileUri) ?: return base
+    val fiducials = geo.correspondences.map { it.toFiduciary() }
+    val fit = runCatching { AffineFitter.fit(fiducials) }.getOrNull() ?: return base
+    return base.calibrated(fit.transform, fiducials)
 }
 
 private fun Context.displayNameFor(uri: Uri): String {

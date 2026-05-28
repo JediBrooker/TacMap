@@ -35,6 +35,7 @@ import kotlin.math.min
 object SymbolIconFactory {
     private const val MILSYMBOL_MARKER_SCALE = 1.0f
     private val cache = mutableMapOf<String, Bitmap>()
+    private val visibleBoundsCache = mutableMapOf<String, Rect>()
     private var milsymbolMetrics: Map<String, MilsymbolMetric>? = null
 
     fun drawableFor(context: Context, waypoint: Waypoint): Drawable {
@@ -66,6 +67,28 @@ object SymbolIconFactory {
             )
             else -> BitmapDrawable(context.resources, bitmap)
         }
+    }
+
+    /// Visible (non-transparent) bounds of the rendered icon bitmap.
+    /// Used to anchor labels just below the icon's visible bottom
+    /// regardless of any transparent padding the SVG / asset baked in.
+    /// Result is cached per icon-kind key so the per-pixel scan only
+    /// runs once.
+    fun visibleBoundsFor(context: Context, waypoint: Waypoint): Rect {
+        val key = cacheKey(context, waypoint)
+        visibleBoundsCache[key]?.let { return it }
+        val drawable = drawableFor(context, waypoint)
+        val w = drawable.intrinsicWidth.coerceAtLeast(1)
+        val h = drawable.intrinsicHeight.coerceAtLeast(1)
+        val bmp = if (drawable is BitmapDrawable) drawable.bitmap else {
+            val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            drawable.setBounds(0, 0, w, h)
+            drawable.draw(Canvas(b))
+            b
+        }
+        val bounds = visibleBounds(bmp) ?: Rect(0, 0, w, h)
+        visibleBoundsCache[key] = bounds
+        return bounds
     }
 
     fun anchorFor(context: Context, waypoint: Waypoint): Pair<Float, Float> {

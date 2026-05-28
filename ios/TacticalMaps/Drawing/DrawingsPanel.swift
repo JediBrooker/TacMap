@@ -18,10 +18,15 @@ struct DrawingsPanel: View {
                 Spacer()
                 Button { onDismiss() } label: {
                     Image(systemName: "xmark")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 22, height: 22)
-                        .background(.white.opacity(0.08), in: Circle())
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        /// 36pt visual chip, 44pt invisible hit area
+                        /// via contentShape so the close button is
+                        /// reliably tappable without ballooning the
+                        /// panel header.
+                        .frame(width: 36, height: 36)
+                        .background(.white.opacity(0.10), in: Circle())
+                        .contentShape(Rectangle().inset(by: -4))
                 }
                 .buttonStyle(.plain)
             }
@@ -95,16 +100,17 @@ struct DrawingsPanel: View {
                 drawingStore.remove(shape)
             } label: {
                 Image(systemName: "trash")
-                    .font(.caption)
-                    .foregroundStyle(.red.opacity(0.85))
-                    .frame(width: 28, height: 28)
-                    .background(.white.opacity(0.06), in: Circle())
+                    .font(.subheadline)
+                    .foregroundStyle(.red.opacity(0.9))
+                    .frame(width: 40, height: 40)
+                    .background(.white.opacity(0.08), in: Circle())
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Delete \(shape.name ?? shape.kind.displayName)")
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
     }
 
     /// Layer chooser. Tapping opens a menu of every drawing layer (with
@@ -183,8 +189,12 @@ struct DrawingsPanel: View {
                 }
                 Spacer()
             }
+            /// Vertical padding bumped from 6 → 10 so each draw-tool
+            /// row is ~48pt tall (icon ~22pt + 2×10 padding + text
+            /// metrics). At the previous 6pt the rows were ~34pt and
+            /// missed taps were common.
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.vertical, 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

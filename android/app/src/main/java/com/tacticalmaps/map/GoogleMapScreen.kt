@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -159,27 +160,28 @@ fun GoogleMapScreen(
     }
 
     val currentOnCameraIdle = rememberUpdatedState(onCameraIdle)
-    val currentOnMapTapForPan = rememberUpdatedState(onMapTap)
     val currentOnBearingChanged = rememberUpdatedState(onBearingChanged)
     LaunchedEffect(cameraPositionState) {
         snapshotFlow { cameraPositionState.isMoving }
             .drop(1)
             .distinctUntilChanged()
             .collect { isMoving ->
-                val byUser = cameraPositionState.cameraMoveStartedReason ==
-                    CameraMoveStartedReason.GESTURE
-                if (isMoving) {
-                    /// Starting a user gesture (pan / zoom / rotate)
-                    /// dismisses any selection card. The platform SDK's
-                    /// onMapClick doesn't always fire for taps the user
-                    /// perceives as empty space, so we rely on the more
-                    /// reliable "user interacted with the camera" signal
-                    /// to clear selection state.
-                    if (byUser) currentOnMapTapForPan.value()
-                } else {
+                if (!isMoving) {
+                    val byUser = cameraPositionState.cameraMoveStartedReason ==
+                        CameraMoveStartedReason.GESTURE
                     val pos = cameraPositionState.position
                     currentOnCameraIdle.value(pos.target.latitude, pos.target.longitude, byUser)
                 }
+                /// We deliberately do NOT clear selection on
+                /// gesture-start anymore. The SDK's camera tracker
+                /// briefly flips `isMoving = true` for clean taps
+                /// (no real camera movement), and that race would
+                /// clear the selection that [MapItemTouchOverlay]
+                /// just set via `onWaypointTap`. Empty-tap clearing
+                /// is now handled by the overlay's `onEmptyTap`,
+                /// which only fires when the user lifts without
+                /// hitting any item — so we don't need this
+                /// fallback any more.
             }
     }
     /// Report bearing changes so the compass chip in the HUD reflects
@@ -222,12 +224,28 @@ fun GoogleMapScreen(
             ?.takeIf { it.geometry == DrawingGeometry.LINE || it.geometry == DrawingGeometry.POLYGON }
     }
 
+    /// Single source of truth for any in-flight touch-and-drag of a
+    /// map item (waypoint OR drawing). The unified touch overlay
+    /// writes to this; both the SDK polyline renderer and the
+    /// Compose waypoint renderer read from it to display the item
+    /// following the user's finger in real time.
+    var dragState by remember { mutableStateOf<MapItemDrag?>(null) }
+    val currentDragState = rememberUpdatedState(dragState)
+
     Box(modifier = modifier) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
-                mapType = MapType.SATELLITE,
+                /// When a PDF basemap is loaded we hide Google Maps'
+                /// satellite tiles entirely (MapType.NONE) so the
+                /// PDF doesn't have to compete with the satellite
+                /// imagery underneath. Otherwise the user sees the
+                /// PDF surrounded by satellite where the page
+                /// doesn't cover, which makes the PDF look like
+                /// it's "floating" on Google Maps.
+                mapType = if (mapSource is PdfMapSource) MapType.NONE
+                    else MapType.SATELLITE,
                 /// Google Maps' built-in blue user-location dot.
                 /// Gated on runtime permission — the SDK throws if
                 /// this is true without ACCESS_FINE_LOCATION granted.
@@ -247,7 +265,14 @@ fun GoogleMapScreen(
                         currentOnDrawingTap.value(latLng.latitude, latLng.longitude)
                     currentCalibrationInputEnabled.value ->
                         currentOnCalibrationTap.value(latLng.latitude, latLng.longitude)
-                    else -> currentOnMapTap.value()
+                    /// Normal mode tap handling lives in
+                    /// [MapItemTouchOverlay] — it fires
+                    /// `onEmptyTap` (= currentOnMapTap) itself so
+                    /// it can sequence selection-clear AFTER any
+                    /// waypoint/drawing tap it just dispatched.
+                    /// If we also fired it here, the SDK's
+                    /// onMapClick would race against the overlay
+                    /// and clear selections the overlay just set.
                 }
             }
         ) {
@@ -260,11 +285,35 @@ fun GoogleMapScreen(
             }
 
             visibleDrawings.forEach { feature ->
+                /// Live drag preview: if THIS drawing is the active
+                /// drag target, compute a lat/lng delta from the
+                /// touch's start position to its current position
+                /// (via the projection) and apply it to every vertex.
+                /// Polyline.points changing causes the SDK to redraw
+                /// the shape at the new position on each MOVE event.
+                val activeDrag = dragState
+                    ?.takeIf { it.kind == MapItemDrag.Kind.DRAWING && it.itemId == feature.id }
+                val drawingDragDelta = activeDrag?.let { ds ->
+                    cameraPositionState.projection?.let { proj ->
+                        val before = proj.fromScreenLocation(
+                            Point(ds.startX.roundToInt(), ds.startY.roundToInt())
+                        )
+                        val after = proj.fromScreenLocation(
+                            Point(
+                                (ds.startX + ds.offsetX).roundToInt(),
+                                (ds.startY + ds.offsetY).roundToInt()
+                            )
+                        )
+                        (after.latitude - before.latitude) to
+                            (after.longitude - before.longitude)
+                    }
+                }
                 DrawingShape(
                     feature = feature,
                     isDraft = false,
                     selected = feature.id == selectedDrawingId,
                     inputEnabled = drawingInputEnabled,
+                    dragOffsetLatLng = drawingDragDelta,
                     onTap = { currentOnDrawingFeatureTap.value(feature.id) }
                 )
             }
@@ -274,6 +323,7 @@ fun GoogleMapScreen(
                     isDraft = true,
                     selected = false,
                     inputEnabled = drawingInputEnabled,
+                    dragOffsetLatLng = null,
                     onTap = null
                 )
             }
@@ -286,18 +336,16 @@ fun GoogleMapScreen(
             }
         }
 
-        /// Waypoint handles — Compose overlay (sibling of GoogleMap)
-        /// so the icon can be drawn AND tap/drag can be handled by
-        /// pointerInput. Google Maps' Marker.draggable is a long-
-        /// press-then-drag UX; this overlay gives instant drag the
-        /// moment the user moves their finger, matching the vertex /
-        /// translate handles.
+        /// Waypoint handles — Compose overlay that ONLY renders the
+        /// icons. Touch handling (tap + drag) is owned by the unified
+        /// MapItemTouchOverlay below. If this waypoint is the active
+        /// drag target, its icon visually follows the finger via
+        /// `graphicsLayer { translationX/Y }`.
         WaypointHandlesOverlay(
             waypoints = visibleWaypoints,
             selectedWaypointId = selectedWaypointId,
             cameraPositionState = cameraPositionState,
-            onTap = { wp -> currentOnMarkerTap.value(wp) },
-            onMoved = { wp, lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
+            dragState = dragState
         )
 
         /// Waypoint name labels (units / tasks) — Compose Text
@@ -308,7 +356,8 @@ fun GoogleMapScreen(
             waypoints = visibleWaypoints,
             cameraPositionState = cameraPositionState,
             unitLabelsVisible = unitLabelsVisible,
-            taskLabelsVisible = taskLabelsVisible
+            taskLabelsVisible = taskLabelsVisible,
+            dragState = dragState
         )
 
         /// Drawing name labels — anchored at the centroid for polygons,
@@ -316,7 +365,8 @@ fun GoogleMapScreen(
         if (drawingLabelsVisible) {
             DrawingLabelsOverlay(
                 drawings = visibleDrawings,
-                cameraPositionState = cameraPositionState
+                cameraPositionState = cameraPositionState,
+                dragState = dragState
             )
         }
 
@@ -327,12 +377,32 @@ fun GoogleMapScreen(
             MgrsGridLabelsOverlay(cameraPositionState = cameraPositionState)
         }
 
-        /// Vertex-edit handles live as Compose overlays on top of the map
-        /// instead of as Marker composables — maps-compose Markers wrap
-        /// the platform SDK's marker drag (which requires a long-press to
-        /// initiate) and their onClick wiring is unreliable when nested
-        /// in a forEach. Compose pointerInput gives us immediate drag and
-        /// reliable tap detection.
+        /// Single unified touch handler for ALL map items (waypoints
+        /// and drawings). Replaces the old per-icon pointerInput
+        /// handlers on waypoints and the separate DrawingsDragOverlay.
+        /// Hit-tests in z-order (waypoints first, then drawings) and
+        /// passes the gesture through to the GoogleMap underneath
+        /// when nothing is hit, so pan/zoom still work everywhere
+        /// else. Also detects empty taps and dispatches them via
+        /// `onEmptyTap` so we can clear selection without relying on
+        /// the SDK's onMapClick (which races against our tap handler
+        /// and would otherwise immediately clear a waypoint we just
+        /// selected).
+        MapItemTouchOverlay(
+            waypoints = visibleWaypoints,
+            drawings = visibleDrawings,
+            cameraPositionState = cameraPositionState,
+            drawingInputEnabled = drawingInputEnabled,
+            calibrationInputEnabled = calibrationInputEnabled,
+            dragState = currentDragState,
+            onDragStateChange = { dragState = it },
+            onWaypointTap = { wp -> currentOnMarkerTap.value(wp) },
+            onWaypointMoved = { wp, lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) },
+            onDrawingTap = { id -> currentOnDrawingFeatureTap.value(id) },
+            onDrawingMoved = { id, dLat, dLng -> currentOnShapeMoved.value(id, dLat, dLng) },
+            onEmptyTap = { currentOnMapTap.value() }
+        )
+
         VertexHandlesOverlay(
             feature = selectedDrawing.takeUnless { drawingInputEnabled },
             cameraPositionState = cameraPositionState,
@@ -340,18 +410,24 @@ fun GoogleMapScreen(
             onVertexInserted = currentOnVertexInserted.value,
             onVertexDeleted = currentOnVertexDeleted.value
         )
-
-        /// Translate handle — drags the whole shape (all vertices)
-        /// by the same lat/lng delta. Renders at the shape's
-        /// labelAnchor (centroid for polygons, mid-segment for
-        /// lines) so the user has a stable grab-point that follows
-        /// the shape as it moves.
-        TranslateHandleOverlay(
-            feature = selectedDrawing.takeUnless { drawingInputEnabled },
-            cameraPositionState = cameraPositionState,
-            onShapeMoved = currentOnShapeMoved.value
-        )
     }
+}
+
+/// Tracks an in-flight touch-and-drag of a single map item.
+/// `startX/Y` is the touch position where the gesture began (window
+/// pixels). `offsetX/Y` is the cumulative finger displacement from
+/// that start. `didDrag` flips to true once the finger has moved past
+/// the tap slop — lift-with-didDrag-false fires the tap callback.
+data class MapItemDrag(
+    val kind: Kind,
+    val itemId: String,
+    val startX: Float,
+    val startY: Float,
+    val offsetX: Float,
+    val offsetY: Float,
+    val didDrag: Boolean
+) {
+    enum class Kind { WAYPOINT, DRAWING }
 }
 
 @Composable
@@ -425,138 +501,485 @@ private fun VertexHandlesOverlay(
     }
 }
 
-/// A single grab-handle at the selected drawing's labelAnchor that
-/// translates ALL of the shape's vertices by the same lat/lng delta.
-/// Mirrors the old osmdroid "long-press a polyline to drag the whole
-/// shape" affordance but in a more discoverable place — the user can
-/// see and aim for the handle rather than guessing.
+/// Unified fullscreen touch handler for ALL map items — waypoints
+/// (units AND tasks share this code path) and drawings.
+///
+/// Touch lifecycle (single finger):
+///   1. DOWN: hit-test in z-order. If nothing's hit, we return
+///      without consuming and the gesture falls through to
+///      GoogleMap (pan starts there).
+///   2. Finger moves but stays within tap-slop, no extra pointers
+///      → we still don't consume; GoogleMap may briefly start
+///      panning but we'll cancel it once drag commits.
+///   3. Finger crosses tap-slop with no second pointer present
+///      → CLAIM. We consume the change, GoogleMap sees a
+///      synthetic CANCEL via Compose's interop layer, and the item
+///      starts following the finger via the shared `dragState`.
+///   4. Lift before slop → fire the tap callback.
+///   5. Lift after slop → commit the new lat/lng.
+///
+/// Multi-touch escape hatch:
+///   - If a second pointer arrives BEFORE the drag has committed,
+///     we abandon the gesture entirely (no consume). GoogleMap has
+///     been receiving every pointer event unconsumed so far, so
+///     it can immediately treat the touches as a pinch / two-
+///     finger pan. This is the fix for "I can't pinch when my
+///     finger is on a graphic".
+///   - If a second pointer arrives AFTER drag commits, we keep
+///     dragging single-finger — the user clearly meant drag.
+///
+/// On commit we project the final screen position back to lat/lng:
+///   - Waypoint: drop the icon's geographic anchor at
+///     (anchor + offset) → exact match for where the icon ended
+///     up visually.
+///   - Drawing: shift every vertex by (after - before) in lat/lng.
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-private fun TranslateHandleOverlay(
-    feature: DrawingFeature?,
+private fun MapItemTouchOverlay(
+    waypoints: List<Waypoint>,
+    drawings: List<DrawingFeature>,
     cameraPositionState: CameraPositionState,
-    onShapeMoved: (featureId: String, deltaLat: Double, deltaLng: Double) -> Unit
+    drawingInputEnabled: Boolean,
+    calibrationInputEnabled: Boolean,
+    dragState: androidx.compose.runtime.State<MapItemDrag?>,
+    onDragStateChange: (MapItemDrag?) -> Unit,
+    onWaypointTap: (Waypoint) -> Unit,
+    onWaypointMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit,
+    onDrawingTap: (String) -> Unit,
+    onDrawingMoved: (featureId: String, deltaLat: Double, deltaLng: Double) -> Unit,
+    onEmptyTap: () -> Unit
 ) {
-    if (feature == null) return
-    val anchor = feature.labelAnchor ?: return
+    /// Drawing-input mode (placing vertices on a draft) and
+    /// calibration mode (placing PDF fiduciaries) must let every tap
+    /// reach the GoogleMap so `onMapClick` fires — bail out.
+    if (drawingInputEnabled || calibrationInputEnabled) return
     cameraPositionState.position
     val projection = cameraPositionState.projection ?: return
+    val context = LocalContext.current
     val density = LocalDensity.current
-    val sizePx = with(density) { 52.dp.roundToPx() }
-    val screen = projection.toScreenLocation(LatLng(anchor.latitude, anchor.longitude))
+    val hitExpandPx = with(density) { 6.dp.toPx() }
+    val drawingTolerancePx = with(density) { 22.dp.toPx() }
+    val tapSlopPx = with(density) { 8.dp.toPx() }
 
-    val currentOnShapeMoved = rememberUpdatedState(onShapeMoved)
-    var dragOffset by remember(feature.id) { mutableStateOf(Offset.Zero) }
-
-    Box(
-        modifier = Modifier
-            .offset {
-                IntOffset(
-                    screen.x - sizePx / 2 + dragOffset.x.roundToInt(),
-                    screen.y - sizePx / 2 + dragOffset.y.roundToInt()
-                )
-            }
-            .size(with(density) { sizePx.toDp() })
-            .pointerInput(feature.id) {
-                detectDragGestures(
-                    onDragEnd = {
-                        val dx = dragOffset.x
-                        val dy = dragOffset.y
-                        dragOffset = Offset.Zero
-                        val proj = cameraPositionState.projection ?: return@detectDragGestures
-                        val before = proj.fromScreenLocation(Point(screen.x, screen.y))
-                        val after = proj.fromScreenLocation(
-                            Point((screen.x + dx).roundToInt(), (screen.y + dy).roundToInt())
-                        )
-                        currentOnShapeMoved.value(
-                            feature.id,
-                            after.latitude - before.latitude,
-                            after.longitude - before.longitude
-                        )
-                    },
-                    onDragCancel = { dragOffset = Offset.Zero }
-                ) { change, drag ->
-                    change.consume()
-                    dragOffset += drag
-                }
-            }
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val orange = Color(0xFFFFA63D)
-            val white = Color.White
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val r = (size.width / 2f) - 3.dp.toPx()
-            /// Solid orange disc with a white "+" four-way arrow icon
-            /// so the affordance reads "drag to move".
-            drawCircle(orange, r, center)
-            drawCircle(white, r, center, style = Stroke(width = 2.5.dp.toPx()))
-            val arm = r * 0.55f
-            val headLen = 3.dp.toPx()
-            val stroke = 2.5.dp.toPx()
-            // Vertical arrow shaft
-            drawLine(
-                white,
-                Offset(center.x, center.y - arm),
-                Offset(center.x, center.y + arm),
-                strokeWidth = stroke
-            )
-            // Horizontal arrow shaft
-            drawLine(
-                white,
-                Offset(center.x - arm, center.y),
-                Offset(center.x + arm, center.y),
-                strokeWidth = stroke
-            )
-            // Four arrowheads — tiny V's at each end
-            drawLine(
-                white,
-                Offset(center.x, center.y - arm),
-                Offset(center.x - headLen, center.y - arm + headLen),
-                strokeWidth = stroke
-            )
-            drawLine(
-                white,
-                Offset(center.x, center.y - arm),
-                Offset(center.x + headLen, center.y - arm + headLen),
-                strokeWidth = stroke
-            )
-            drawLine(
-                white,
-                Offset(center.x, center.y + arm),
-                Offset(center.x - headLen, center.y + arm - headLen),
-                strokeWidth = stroke
-            )
-            drawLine(
-                white,
-                Offset(center.x, center.y + arm),
-                Offset(center.x + headLen, center.y + arm - headLen),
-                strokeWidth = stroke
-            )
-            drawLine(
-                white,
-                Offset(center.x - arm, center.y),
-                Offset(center.x - arm + headLen, center.y - headLen),
-                strokeWidth = stroke
-            )
-            drawLine(
-                white,
-                Offset(center.x - arm, center.y),
-                Offset(center.x - arm + headLen, center.y + headLen),
-                strokeWidth = stroke
-            )
-            drawLine(
-                white,
-                Offset(center.x + arm, center.y),
-                Offset(center.x + arm - headLen, center.y - headLen),
-                strokeWidth = stroke
-            )
-            drawLine(
-                white,
-                Offset(center.x + arm, center.y),
-                Offset(center.x + arm - headLen, center.y + headLen),
-                strokeWidth = stroke
+    /// Project every waypoint to a screen-space bounding rect so the
+    /// pointer callback can hit-test cheaply. The icon's anchor is
+    /// pinned to the projected lat/lng so the rect runs from
+    /// (screen - anchor*size) to (screen + (1-anchor)*size).
+    val projectedWaypoints = remember(waypoints, cameraPositionState.position) {
+        waypoints.map { wp ->
+            val drawable = SymbolIconFactory.drawableFor(context, wp)
+            val anchor = SymbolIconFactory.anchorFor(context, wp)
+            val screen = projection.toScreenLocation(LatLng(wp.latitude, wp.longitude))
+            val w = drawable.intrinsicWidth.coerceAtLeast(1).toFloat()
+            val h = drawable.intrinsicHeight.coerceAtLeast(1).toFloat()
+            ProjectedWaypoint(
+                ref = wp,
+                screenX = screen.x.toFloat(),
+                screenY = screen.y.toFloat(),
+                left = screen.x - anchor.first * w,
+                top = screen.y - anchor.second * h,
+                right = screen.x + (1f - anchor.first) * w,
+                bottom = screen.y + (1f - anchor.second) * h
             )
         }
     }
+
+    val projectedShapes = remember(drawings, cameraPositionState.position) {
+        drawings.mapNotNull { feature ->
+            if (feature.effectivePoints.isEmpty()) return@mapNotNull null
+            val screenPts = feature.effectivePoints.map { p ->
+                val sp = projection.toScreenLocation(LatLng(p.latitude, p.longitude))
+                Offset(sp.x.toFloat(), sp.y.toFloat())
+            }
+            ProjectedShape(
+                id = feature.id,
+                geometry = feature.geometry,
+                screenPoints = screenPts
+            )
+        }
+    }
+
+    val currentWaypoints = rememberUpdatedState(projectedWaypoints)
+    val currentShapes = rememberUpdatedState(projectedShapes)
+    val currentOnWaypointTap = rememberUpdatedState(onWaypointTap)
+    val currentOnWaypointMoved = rememberUpdatedState(onWaypointMoved)
+    val currentOnDrawingTap = rememberUpdatedState(onDrawingTap)
+    val currentOnDrawingMoved = rememberUpdatedState(onDrawingMoved)
+    val currentOnEmptyTap = rememberUpdatedState(onEmptyTap)
+    val currentCameraPosition = rememberUpdatedState(cameraPositionState)
+    val currentOnDragStateChange = rememberUpdatedState(onDragStateChange)
+
+    /// Per-gesture state. Lives outside the filter lambda because
+    /// the filter is recreated on every MotionEvent — we need
+    /// persistent fields for the in-flight gesture.
+    val gesture = remember { TouchGestureState() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInteropFilter { event ->
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        val pos = Offset(event.x, event.y)
+                        val wpHit = hitTestWaypoints(
+                            pos, currentWaypoints.value, hitExpandPx
+                        )
+                        val shapeHitId = if (wpHit == null) {
+                            hitTestShapes(
+                                pos, currentShapes.value, drawingTolerancePx
+                            )
+                        } else null
+                        gesture.startX = event.x
+                        gesture.startY = event.y
+                        gesture.committed = false
+                        gesture.lastDx = 0f
+                        gesture.lastDy = 0f
+                        gesture.tracking = true
+                        gesture.abandoned = false
+                        when {
+                            wpHit != null -> {
+                                gesture.kind = MapItemDrag.Kind.WAYPOINT
+                                gesture.itemId = wpHit.ref.id
+                            }
+                            shapeHitId != null -> {
+                                gesture.kind = MapItemDrag.Kind.DRAWING
+                                gesture.itemId = shapeHitId
+                            }
+                            else -> {
+                                gesture.kind = null
+                                gesture.itemId = null
+                            }
+                        }
+                        /// pointerInteropFilter follows the Android
+                        /// View.onTouchEvent contract: returning
+                        /// FALSE on DOWN means we won't receive any
+                        /// further events for this gesture. So we
+                        /// MUST return true to keep the gesture if
+                        /// we want to detect tap/drag at all.
+                        ///
+                        /// When there's no hit we let the SDK have
+                        /// the whole gesture (return false) so pan
+                        /// and pinch work natively. When there IS a
+                        /// hit we claim it — the trade-off is that
+                        /// pinch starting on a graphic doesn't
+                        /// work, but pinch from empty space still
+                        /// does.
+                        gesture.itemId != null
+                    }
+                    android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                        /// Second finger arrived. Since we already
+                        /// claimed the gesture on DOWN, the SDK
+                        /// never saw the first finger and can't
+                        /// recover into a pinch. We just keep
+                        /// processing as a single-finger drag (or
+                        /// tap on lift).
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        if (!gesture.tracking) return@pointerInteropFilter false
+                        val itemId = gesture.itemId
+                        if (itemId == null) {
+                            /// No hit — just observing in case the
+                            /// user lifts within tap slop on empty
+                            /// space (we'll dispatch onEmptyTap).
+                            /// Otherwise the map handles the pan
+                            /// because we never consume.
+                            return@pointerInteropFilter false
+                        }
+                        val dx = event.x - gesture.startX
+                        val dy = event.y - gesture.startY
+                        if (gesture.committed) {
+                            gesture.lastDx = dx
+                            gesture.lastDy = dy
+                            currentOnDragStateChange.value(
+                                MapItemDrag(
+                                    kind = gesture.kind!!,
+                                    itemId = itemId,
+                                    startX = gesture.startX,
+                                    startY = gesture.startY,
+                                    offsetX = dx,
+                                    offsetY = dy,
+                                    didDrag = true
+                                )
+                            )
+                            return@pointerInteropFilter true
+                        }
+                        if (kotlin.math.hypot(dx, dy) > tapSlopPx &&
+                            event.pointerCount == 1
+                        ) {
+                            /// CLAIM. Returning true tells Compose
+                            /// to mark the event consumed, which
+                            /// causes GoogleMap to receive a
+                            /// CANCEL and abort its incidental
+                            /// pan.
+                            gesture.committed = true
+                            gesture.lastDx = dx
+                            gesture.lastDy = dy
+                            currentOnDragStateChange.value(
+                                MapItemDrag(
+                                    kind = gesture.kind!!,
+                                    itemId = itemId,
+                                    startX = gesture.startX,
+                                    startY = gesture.startY,
+                                    offsetX = dx,
+                                    offsetY = dy,
+                                    didDrag = true
+                                )
+                            )
+                            return@pointerInteropFilter true
+                        }
+                        false
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        if (!gesture.tracking) {
+                            gesture.reset()
+                            return@pointerInteropFilter false
+                        }
+                        val itemId = gesture.itemId
+                        val kind = gesture.kind
+                        val committed = gesture.committed
+                        val dx = event.x - gesture.startX
+                        val dy = event.y - gesture.startY
+                        val lastDx = gesture.lastDx
+                        val lastDy = gesture.lastDy
+                        val startX = gesture.startX
+                        val startY = gesture.startY
+                        gesture.reset()
+                        currentOnDragStateChange.value(null)
+
+                        if (committed && itemId != null && kind != null) {
+                            commitDragEnd(
+                                kind = kind,
+                                hitId = itemId,
+                                startX = startX,
+                                startY = startY,
+                                offsetX = lastDx,
+                                offsetY = lastDy,
+                                projection = currentCameraPosition.value.projection,
+                                waypoints = currentWaypoints.value,
+                                onWaypointMoved = currentOnWaypointMoved.value,
+                                onDrawingMoved = currentOnDrawingMoved.value
+                            )
+                            return@pointerInteropFilter true
+                        }
+
+                        /// Tap: lift within slop. Fire the right
+                        /// callback and CONSUME the UP (return
+                        /// true) so the GoogleMap underneath
+                        /// doesn't also fire its onMapClick — that
+                        /// race is what made waypoint selection
+                        /// flicker and immediately disappear.
+                        if (kotlin.math.hypot(dx, dy) < tapSlopPx) {
+                            when {
+                                itemId != null && kind == MapItemDrag.Kind.WAYPOINT -> {
+                                    val wp = currentWaypoints.value
+                                        .firstOrNull { it.ref.id == itemId }?.ref
+                                    if (wp != null) currentOnWaypointTap.value(wp)
+                                }
+                                itemId != null && kind == MapItemDrag.Kind.DRAWING ->
+                                    currentOnDrawingTap.value(itemId)
+                                else -> currentOnEmptyTap.value()
+                            }
+                            return@pointerInteropFilter true
+                        }
+                        /// Movement past slop without commit means
+                        /// the user panned — don't fire a tap, let
+                        /// the map have the UP.
+                        false
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        gesture.reset()
+                        currentOnDragStateChange.value(null)
+                        false
+                    }
+                    else -> false
+                }
+            }
+    )
+}
+
+private class TouchGestureState {
+    var kind: MapItemDrag.Kind? = null
+    var itemId: String? = null
+    var startX: Float = 0f
+    var startY: Float = 0f
+    var committed: Boolean = false
+    var lastDx: Float = 0f
+    var lastDy: Float = 0f
+    /// `tracking` is true between ACTION_DOWN and ACTION_UP /
+    /// ACTION_CANCEL. `abandoned` flips when a second pointer comes
+    /// down before drag-commit (so we don't accidentally fire a tap
+    /// when the user lifts their first finger after pinch).
+    var tracking: Boolean = false
+    var abandoned: Boolean = false
+
+    fun reset() {
+        kind = null
+        itemId = null
+        startX = 0f
+        startY = 0f
+        committed = false
+        lastDx = 0f
+        lastDy = 0f
+        tracking = false
+        abandoned = false
+    }
+}
+
+private fun commitDragEnd(
+    kind: MapItemDrag.Kind,
+    hitId: String,
+    startX: Float,
+    startY: Float,
+    offsetX: Float,
+    offsetY: Float,
+    projection: com.google.android.gms.maps.Projection?,
+    waypoints: List<ProjectedWaypoint>,
+    onWaypointMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit,
+    onDrawingMoved: (featureId: String, deltaLat: Double, deltaLng: Double) -> Unit
+) {
+    val proj = projection ?: return
+    when (kind) {
+        MapItemDrag.Kind.WAYPOINT -> {
+            val wpProj = waypoints.firstOrNull { it.ref.id == hitId } ?: return
+            val after = proj.fromScreenLocation(
+                Point(
+                    (wpProj.screenX + offsetX).roundToInt(),
+                    (wpProj.screenY + offsetY).roundToInt()
+                )
+            )
+            onWaypointMoved(wpProj.ref, after.latitude, after.longitude)
+        }
+        MapItemDrag.Kind.DRAWING -> {
+            val before = proj.fromScreenLocation(
+                Point(startX.roundToInt(), startY.roundToInt())
+            )
+            val after = proj.fromScreenLocation(
+                Point(
+                    (startX + offsetX).roundToInt(),
+                    (startY + offsetY).roundToInt()
+                )
+            )
+            onDrawingMoved(
+                hitId,
+                after.latitude - before.latitude,
+                after.longitude - before.longitude
+            )
+        }
+    }
+}
+
+private data class ProjectedWaypoint(
+    val ref: Waypoint,
+    val screenX: Float,
+    val screenY: Float,
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float
+)
+
+private fun hitTestWaypoints(
+    point: Offset,
+    waypoints: List<ProjectedWaypoint>,
+    expandPx: Float
+): ProjectedWaypoint? {
+    /// Reverse iterate so the icon drawn last (visually topmost)
+    /// wins ties.
+    for (i in waypoints.indices.reversed()) {
+        val w = waypoints[i]
+        if (point.x in (w.left - expandPx)..(w.right + expandPx) &&
+            point.y in (w.top - expandPx)..(w.bottom + expandPx)
+        ) {
+            return w
+        }
+    }
+    return null
+}
+
+private data class ProjectedShape(
+    val id: String,
+    val geometry: DrawingGeometry,
+    val screenPoints: List<Offset>
+)
+
+
+/// Z-ordered (last drawn = topmost) hit-test against projected shapes.
+/// Returns the topmost shape ID that the point lands on, or null.
+private fun hitTestShapes(
+    point: Offset,
+    shapes: List<ProjectedShape>,
+    tolerancePx: Float
+): String? {
+    /// Iterate in reverse so shapes drawn last (visually on top)
+    /// win ties — matches the user's expectation of grabbing the
+    /// shape they see, not whichever was added first.
+    for (i in shapes.indices.reversed()) {
+        val s = shapes[i]
+        if (shapeHit(point, s, tolerancePx)) return s.id
+    }
+    return null
+}
+
+private fun shapeHit(point: Offset, shape: ProjectedShape, tolerancePx: Float): Boolean {
+    val pts = shape.screenPoints
+    if (pts.isEmpty()) return false
+    return when (shape.geometry) {
+        DrawingGeometry.POINT -> {
+            val p = pts.first()
+            kotlin.math.hypot(point.x - p.x, point.y - p.y) <= tolerancePx + 12f
+        }
+        DrawingGeometry.LINE -> {
+            if (pts.size < 2) {
+                val p = pts.first()
+                kotlin.math.hypot(point.x - p.x, point.y - p.y) <= tolerancePx
+            } else {
+                pointToPolylineDistance(point, pts) <= tolerancePx
+            }
+        }
+        DrawingGeometry.POLYGON -> {
+            if (pts.size < 3) {
+                pointToPolylineDistance(point, pts) <= tolerancePx
+            } else {
+                pointInPolygon(point, pts) ||
+                    pointToPolylineDistance(point, pts + pts.first()) <= tolerancePx
+            }
+        }
+    }
+}
+
+private fun pointToPolylineDistance(p: Offset, line: List<Offset>): Float {
+    var best = Float.MAX_VALUE
+    for (i in 0 until line.size - 1) {
+        val d = pointToSegmentDistance(p, line[i], line[i + 1])
+        if (d < best) best = d
+    }
+    return best
+}
+
+private fun pointToSegmentDistance(p: Offset, a: Offset, b: Offset): Float {
+    val dx = b.x - a.x
+    val dy = b.y - a.y
+    val len2 = dx * dx + dy * dy
+    if (len2 == 0f) return kotlin.math.hypot(p.x - a.x, p.y - a.y)
+    val t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / len2).coerceIn(0f, 1f)
+    val cx = a.x + t * dx
+    val cy = a.y + t * dy
+    return kotlin.math.hypot(p.x - cx, p.y - cy)
+}
+
+private fun pointInPolygon(p: Offset, poly: List<Offset>): Boolean {
+    var inside = false
+    var j = poly.size - 1
+    for (i in poly.indices) {
+        val xi = poly[i].x; val yi = poly[i].y
+        val xj = poly[j].x; val yj = poly[j].y
+        val intersect = ((yi > p.y) != (yj > p.y)) &&
+            (p.x < (xj - xi) * (p.y - yi) / ((yj - yi).takeIf { it != 0f } ?: 1e-9f) + xi)
+        if (intersect) inside = !inside
+        j = i
+    }
+    return inside
 }
 
 @Composable
@@ -639,6 +1062,7 @@ private fun DrawingShape(
     isDraft: Boolean,
     selected: Boolean,
     inputEnabled: Boolean,
+    dragOffsetLatLng: Pair<Double, Double>?,
     onTap: (() -> Unit)?
 ) {
     val effective = remember(
@@ -646,9 +1070,16 @@ private fun DrawingShape(
         feature.scaleX,
         feature.scaleY,
         feature.rotationDegrees,
-        feature.geometry
+        feature.geometry,
+        dragOffsetLatLng
     ) {
-        feature.effectivePoints.map { LatLng(it.latitude, it.longitude) }
+        val base = feature.effectivePoints
+        if (dragOffsetLatLng == null) {
+            base.map { LatLng(it.latitude, it.longitude) }
+        } else {
+            val (dLat, dLng) = dragOffsetLatLng
+            base.map { LatLng(it.latitude + dLat, it.longitude + dLng) }
+        }
     }
     if (effective.isEmpty()) return
 
@@ -870,54 +1301,37 @@ private fun MgrsGridLabelsOverlay(cameraPositionState: CameraPositionState) {
 
     val ink = Color(MgrsGridRenderer.LABEL_TEXT_COLOR)
     val halo = Color(0xE6FFFFFF)
-    val density = LocalDensity.current
 
     labels.forEach { mark ->
         val screen = projection.toScreenLocation(LatLng(mark.lat, mark.lng))
         val sp = MgrsGridRenderer.labelTextSp(mark.type)
-        /// Approximate text bounds (a few sp wider/taller than the
-        /// glyphs themselves) so we can centre the label on its
-        /// geographic anchor regardless of glyph length.
-        val labelWidthPx = (mark.text.length * sp * 0.62f * density.density).toInt().coerceAtLeast(8)
-        val labelHeightPx = (sp * 1.25f * density.density).toInt().coerceAtLeast(8)
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        screen.x - labelWidthPx / 2,
-                        screen.y - labelHeightPx / 2
-                    )
+        val rotation = if (mark.isVertical) -90f else 0f
+        ScreenAnchoredOverlay(screenX = screen.x, screenY = screen.y) {
+            Box(contentAlignment = Alignment.Center) {
+                /// Soft white halo via four offset passes — keeps
+                /// the dark digits readable on busy satellite tiles
+                /// without a visible pill.
+                for (dx in listOf(-1f, 1f)) {
+                    for (dy in listOf(-1f, 1f)) {
+                        Text(
+                            text = mark.text,
+                            color = halo,
+                            fontSize = sp.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .offset(x = dx.dp, y = dy.dp)
+                                .graphicsLayer { rotationZ = rotation }
+                        )
+                    }
                 }
-                .size(
-                    width = with(density) { labelWidthPx.toDp() },
-                    height = with(density) { labelHeightPx.toDp() }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            val rotation = if (mark.isVertical) -90f else 0f
-            /// Soft white halo via four offset passes — keeps the
-            /// dark digits readable on busy satellite tiles without
-            /// a visible pill.
-            for (dx in listOf(-1f, 1f)) {
-                for (dy in listOf(-1f, 1f)) {
-                    Text(
-                        text = mark.text,
-                        color = halo,
-                        fontSize = sp.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .offset(x = dx.dp, y = dy.dp)
-                            .graphicsLayer { rotationZ = rotation }
-                    )
-                }
+                Text(
+                    text = mark.text,
+                    color = ink,
+                    fontSize = sp.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.graphicsLayer { rotationZ = rotation }
+                )
             }
-            Text(
-                text = mark.text,
-                color = ink,
-                fontSize = sp.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.graphicsLayer { rotationZ = rotation }
-            )
         }
     }
 }
@@ -927,15 +1341,20 @@ private fun PdfGroundOverlay(source: PdfMapSource) {
     val bounds = source.coverage ?: return
     val context = LocalContext.current
 
-    /// Loads the first page of the PDF off the main thread once per URI
-    /// and exposes it as a BitmapDescriptor. A high-res viewport pass
-    /// that re-renders on pan / zoom (via a custom TileProvider) is a
-    /// future enhancement — the single-page bitmap is sufficient for
-    /// typical zoom ranges.
-    var image by remember(source.uri) { mutableStateOf<BitmapDescriptor?>(null) }
+    /// Render the PDF's first page once per URI as a single high-res
+    /// bitmap and stretch it across the source's coverage bounds via
+    /// a GroundOverlay. Simple, robust, and at the 4096-px max
+    /// dimension set in [PdfPageRenderer] it stays readable through
+    /// several zoom steps. The previous tile-based approach was more
+    /// flexible but proved slow to first-render and held multiple
+    /// PdfRenderer instances in native memory, which tripped the
+    /// low-memory killer on larger PDFs.
+    var image by remember(source.uri) {
+        mutableStateOf<BitmapDescriptor?>(null)
+    }
     LaunchedEffect(source.uri) {
         val rendered = runCatching {
-            withContext(Dispatchers.IO) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 PdfPageRenderer.renderFirstPage(context, source.uri)
             }
         }.getOrNull() ?: return@LaunchedEffect
@@ -957,18 +1376,17 @@ private fun PdfGroundOverlay(source: PdfMapSource) {
     )
 }
 
-/// Overlay that renders each waypoint as a Compose Box positioned at
-/// the projected screen coordinate of its lat/lng. Tap and drag are
-/// driven by pointerInput so dragging is instant (no long-press
-/// warmup), matching the vertex / translate handle behaviour and the
-/// iOS app.
+/// Overlay that renders each waypoint icon at the projected screen
+/// coordinate of its lat/lng. RENDERING ONLY — all touch handling
+/// (tap + drag) lives in [MapItemTouchOverlay]. When a waypoint is
+/// the active drag target, its icon visually follows the finger via
+/// `graphicsLayer { translationX/Y }`.
 @Composable
 private fun WaypointHandlesOverlay(
     waypoints: List<Waypoint>,
     selectedWaypointId: String?,
     cameraPositionState: CameraPositionState,
-    onTap: (Waypoint) -> Unit,
-    onMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit
+    dragState: MapItemDrag?
 ) {
     /// Re-read camera position so handles reproject on every pan /
     /// zoom — same trick as VertexHandlesOverlay.
@@ -987,7 +1405,7 @@ private fun WaypointHandlesOverlay(
         val isSelected = wp.id == selectedWaypointId
 
         /// Pre-bake the icon (with halo when selected) into a
-        /// Bitmap + anchor that we'll draw and hit-test against.
+        /// Bitmap + anchor.
         val (iconBmp, anchor) = remember(rawIcon, rawAnchor, isSelected) {
             if (isSelected) {
                 val (glowed, ga) = applySelectionGlow(context, rawIcon, rawAnchor)
@@ -1008,57 +1426,26 @@ private fun WaypointHandlesOverlay(
         val anchorPxX = (anchor.first * boxW).roundToInt()
         val anchorPxY = (anchor.second * boxH).roundToInt()
 
-        val currentOnTap = rememberUpdatedState(onTap)
-        val currentOnMoved = rememberUpdatedState(onMoved)
-        var dragOffset by remember(wp.id) { mutableStateOf(Offset.Zero) }
+        /// Apply the active drag's screen-pixel offset visually so
+        /// the icon follows the finger in real time without changing
+        /// its layout origin (and thus without disturbing any other
+        /// overlays' coordinate frames).
+        val activeDrag = dragState?.takeIf {
+            it.kind == MapItemDrag.Kind.WAYPOINT && it.itemId == wp.id
+        }
+        val dx = activeDrag?.offsetX ?: 0f
+        val dy = activeDrag?.offsetY ?: 0f
 
         Box(
             modifier = Modifier
-                .offset {
-                    IntOffset(
-                        screen.x - anchorPxX + dragOffset.x.roundToInt(),
-                        screen.y - anchorPxY + dragOffset.y.roundToInt()
-                    )
-                }
+                .offset { IntOffset(screen.x - anchorPxX, screen.y - anchorPxY) }
                 .size(
                     width = with(density) { boxW.toDp() },
                     height = with(density) { boxH.toDp() }
                 )
-                .pointerInput(wp.id) {
-                    detectDragGestures(
-                        onDragEnd = {
-                            val dx = dragOffset.x
-                            val dy = dragOffset.y
-                            dragOffset = Offset.Zero
-                            val proj = cameraPositionState.projection ?: return@detectDragGestures
-                            val before = proj.fromScreenLocation(Point(screen.x, screen.y))
-                            val after = proj.fromScreenLocation(
-                                Point(
-                                    (screen.x + dx).roundToInt(),
-                                    (screen.y + dy).roundToInt()
-                                )
-                            )
-                            /// Apply the screen delta in geographic
-                            /// space relative to the waypoint's own
-                            /// position (not the icon's anchor pixel
-                            /// projection), so the marker doesn't
-                            /// drift on long drags at high latitudes.
-                            val deltaLat = after.latitude - before.latitude
-                            val deltaLng = after.longitude - before.longitude
-                            currentOnMoved.value(
-                                wp,
-                                wp.latitude + deltaLat,
-                                wp.longitude + deltaLng
-                            )
-                        },
-                        onDragCancel = { dragOffset = Offset.Zero }
-                    ) { change, drag ->
-                        change.consume()
-                        dragOffset += drag
-                    }
-                }
-                .pointerInput(wp.id) {
-                    detectTapGestures(onTap = { currentOnTap.value(wp) })
+                .graphicsLayer {
+                    translationX = dx
+                    translationY = dy
                 }
         ) {
             androidx.compose.foundation.Image(
@@ -1124,17 +1511,23 @@ private fun applySelectionGlow(
 
 /// Per-waypoint name labels rendered as Compose overlays on top of
 /// the map. Tasks (control measures) place the label centred inside
-/// the symbol bubble; units / generic waypoints sit the label below.
+/// the symbol bubble; units / generic waypoints sit the label
+/// horizontally centred on the icon's visual centre and just below
+/// the icon's bottom edge. During a drag the label follows the icon
+/// via the same screen-pixel offset.
 @Composable
 private fun WaypointLabelsOverlay(
     waypoints: List<Waypoint>,
     cameraPositionState: CameraPositionState,
     unitLabelsVisible: Boolean,
-    taskLabelsVisible: Boolean
+    taskLabelsVisible: Boolean,
+    dragState: MapItemDrag?
 ) {
     cameraPositionState.position
     val projection = cameraPositionState.projection ?: return
+    val context = LocalContext.current
     val density = LocalDensity.current
+    val labelGapPx = with(density) { 2.dp.toPx() }.toInt()
 
     waypoints.forEach { wp ->
         val trimmed = wp.name.trim()
@@ -1144,68 +1537,66 @@ private fun WaypointLabelsOverlay(
         if (!visible) return@forEach
 
         val screen = projection.toScreenLocation(LatLng(wp.latitude, wp.longitude))
-        /// Approximate label size — kept in step with the label
-        /// composable's actual rendering so the centred offset puts
-        /// the pill where we want it.
-        val sp = 11f
-        val labelWidthPx = with(density) {
-            (trimmed.length * sp * 0.65f * density.density + 12.dp.toPx()).toInt().coerceAtLeast(40)
+        val activeDrag = dragState?.takeIf {
+            it.kind == MapItemDrag.Kind.WAYPOINT && it.itemId == wp.id
         }
-        val labelHeightPx = with(density) {
-            (sp * 1.45f * density.density + 6.dp.toPx()).toInt().coerceAtLeast(20)
-        }
-        /// Tasks: centred on the icon. Units / generic: below the
-        /// icon by ~22dp so the label clears the symbol footprint.
-        val yOffset = if (isTask) 0 else with(density) { 22.dp.toPx() }.toInt()
+        val dragDx = activeDrag?.offsetX?.roundToInt() ?: 0
+        val dragDy = activeDrag?.offsetY?.roundToInt() ?: 0
 
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        screen.x - labelWidthPx / 2,
-                        screen.y - labelHeightPx / 2 + yOffset
-                    )
-                }
-                .size(
-                    width = with(density) { labelWidthPx.toDp() },
-                    height = with(density) { labelHeightPx.toDp() }
-                )
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 6.dp, vertical = 3.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = trimmed,
-                    color = Color.White,
-                    fontSize = sp.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    modifier = Modifier
-                        .background(
-                            Color.Black.copy(alpha = 0.62f),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
-                        )
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                )
+        if (isTask) {
+            /// Tasks: centred on the projected anchor (matches the
+            /// icon's geometric centre because control-measure
+            /// anchors are 0.5/0.5).
+            ScreenAnchoredOverlay(
+                screenX = screen.x + dragDx,
+                screenY = screen.y + dragDy
+            ) { LabelPill(text = trimmed) }
+        } else {
+            /// Units / generic: anchor on the icon's VISIBLE centre
+            /// (using the rendered bitmap's visible bounds, so any
+            /// transparent padding baked into the SVG/asset doesn't
+            /// throw the label off-centre or push it further below)
+            /// and sit the label just below the icon's visible
+            /// bottom edge.
+            val drawable = remember(wp.kind, wp.rotation, wp.scaleX, wp.scaleY) {
+                SymbolIconFactory.drawableFor(context, wp)
             }
+            val anchor = remember(wp.kind) {
+                SymbolIconFactory.anchorFor(context, wp)
+            }
+            val visibleBounds = remember(wp.kind, wp.rotation, wp.scaleX, wp.scaleY) {
+                SymbolIconFactory.visibleBoundsFor(context, wp)
+            }
+            val iconW = drawable.intrinsicWidth.coerceAtLeast(1)
+            val iconH = drawable.intrinsicHeight.coerceAtLeast(1)
+            val anchorPxX = (anchor.first * iconW).roundToInt()
+            val anchorPxY = (anchor.second * iconH).roundToInt()
+            /// Bitmap top-left in screen coords.
+            val bmpLeftX = screen.x - anchorPxX
+            val bmpTopY = screen.y - anchorPxY
+            val visibleCenterX = bmpLeftX + (visibleBounds.left + visibleBounds.right) / 2 + dragDx
+            val visibleBottomY = bmpTopY + visibleBounds.bottom + dragDy
+            ScreenAnchoredOverlay(
+                screenX = visibleCenterX,
+                screenY = visibleBottomY + labelGapPx,
+                anchor = ScreenAnchor.TOP
+            ) { LabelPill(text = trimmed) }
         }
     }
 }
 
 /// Drawing name labels — one per named drawing, anchored at the
 /// shape's labelAnchor (centroid / mid-segment / point). Non-
-/// interactive; the underlying drawing handles taps.
+/// interactive; the unified touch overlay handles taps. During a
+/// drag the label follows the shape.
 @Composable
 private fun DrawingLabelsOverlay(
     drawings: List<DrawingFeature>,
-    cameraPositionState: CameraPositionState
+    cameraPositionState: CameraPositionState,
+    dragState: MapItemDrag?
 ) {
     cameraPositionState.position
     val projection = cameraPositionState.projection ?: return
-    val density = LocalDensity.current
 
     drawings.forEach { feature ->
         val trimmed = feature.name.trim()
@@ -1213,43 +1604,69 @@ private fun DrawingLabelsOverlay(
         val anchor = feature.labelAnchor ?: return@forEach
 
         val screen = projection.toScreenLocation(LatLng(anchor.latitude, anchor.longitude))
-        val sp = 11f
-        val labelWidthPx = with(density) {
-            (trimmed.length * sp * 0.65f * density.density + 12.dp.toPx()).toInt().coerceAtLeast(40)
+        val activeDrag = dragState?.takeIf {
+            it.kind == MapItemDrag.Kind.DRAWING && it.itemId == feature.id
         }
-        val labelHeightPx = with(density) {
-            (sp * 1.45f * density.density + 6.dp.toPx()).toInt().coerceAtLeast(20)
-        }
+        val dragDx = activeDrag?.offsetX?.roundToInt() ?: 0
+        val dragDy = activeDrag?.offsetY?.roundToInt() ?: 0
 
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        screen.x - labelWidthPx / 2,
-                        screen.y - labelHeightPx / 2
-                    )
-                }
-                .size(
-                    width = with(density) { labelWidthPx.toDp() },
-                    height = with(density) { labelHeightPx.toDp() }
-                ),
-            contentAlignment = Alignment.Center
+        ScreenAnchoredOverlay(
+            screenX = screen.x + dragDx,
+            screenY = screen.y + dragDy
         ) {
-            Text(
-                text = trimmed,
-                color = Color.White,
-                fontSize = sp.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                modifier = Modifier
-                    .background(
-                        Color.Black.copy(alpha = 0.62f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
-                    )
-                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            LabelPill(text = trimmed)
+        }
+    }
+}
+
+private enum class ScreenAnchor { CENTER, TOP }
+
+/// Lay a single child out at an absolute screen coordinate. With
+/// `ScreenAnchor.CENTER` the child's CENTRE sits at (`screenX`,
+/// `screenY + yOffsetPx`); with `ScreenAnchor.TOP` the child's TOP
+/// edge sits at that point (horizontal centring is unchanged). The
+/// Layout itself reports a zero footprint so it doesn't push siblings
+/// around.
+@Composable
+private fun ScreenAnchoredOverlay(
+    screenX: Int,
+    screenY: Int,
+    yOffsetPx: Int = 0,
+    anchor: ScreenAnchor = ScreenAnchor.CENTER,
+    content: @Composable () -> Unit
+) {
+    androidx.compose.ui.layout.Layout(content = content) { measurables, constraints ->
+        val child = measurables.firstOrNull()
+            ?: return@Layout layout(0, 0) {}
+        val placeable = child.measure(constraints.copy(minWidth = 0, minHeight = 0))
+        layout(0, 0) {
+            val yShift = when (anchor) {
+                ScreenAnchor.CENTER -> -placeable.height / 2
+                ScreenAnchor.TOP -> 0
+            }
+            placeable.place(
+                x = screenX - placeable.width / 2,
+                y = screenY + yOffsetPx + yShift
             )
         }
     }
+}
+
+@Composable
+private fun LabelPill(text: String) {
+    Text(
+        text = text,
+        color = Color.White,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        modifier = Modifier
+            .background(
+                Color.Black.copy(alpha = 0.62f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+            )
+            .padding(horizontal = 5.dp, vertical = 2.dp)
+    )
 }
 
 /// Numbered pin for one PDF-calibration fiduciary. The pin's geographic

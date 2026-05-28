@@ -35,8 +35,8 @@ android {
         applicationId = "com.tacticalmaps"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
 
         vectorDrawables { useSupportLibrary = true }
 
@@ -116,6 +116,11 @@ dependencies {
 
     // JSON / GeoJSON export.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // PDF parsing — used to extract OGC GeoPDF / Adobe LGIDict
+    // georeferencing dictionaries so imported GeoPDFs land in the
+    // correct geographic position without manual calibration.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
