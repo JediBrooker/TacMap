@@ -29,7 +29,7 @@ targets:
       properties:
         CFBundleDisplayName: TacticalMaps
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "5"
+        CFBundleVersion: "6"
         UILaunchScreen:
           UIColorName: LaunchBackground
         # iOS 16+ devices are all arm64. armv7 is 32-bit and would
@@ -62,6 +62,19 @@ targets:
         ENABLE_PREVIEWS: "YES"
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: TacticalMaps/Resources/Info.plist
+        # Apple Developer team. Signing style is split per-config:
+        # Debug uses Automatic so simulator builds Just Work without
+        # a profile, Release archives use Manual with the
+        # "TacticalMaps" App Store distribution profile pre-
+        # provisioned in App Store Connect.
+        DEVELOPMENT_TEAM: 6MY34D5RKG
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: TacticalMaps
     dependencies:
       - package: mgrs-ios
         product: MGRS
