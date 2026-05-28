@@ -379,6 +379,7 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                 selectedWaypointId = selectedWaypointId,
                 calibrationFiduciaries = calibrationFiduciaries,
                 pendingTarget = pendingTarget,
+                resetNorthRequests = vm.resetNorthRequests,
                 onConsumePendingTarget = vm::consumePendingCameraTarget,
                 onCameraIdle = { lat, lng, byUser ->
                     vm.onCameraIdle(lat, lng, byUser)
@@ -596,7 +597,10 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                     )
                 }
             }
-            CompassChip(mapOrientationDegrees = mapBearingDegrees)
+            CompassChip(
+                mapOrientationDegrees = mapBearingDegrees,
+                onTap = vm::requestResetNorth
+            )
         }
 
         if (isCalibratingPdf) {
@@ -797,7 +801,7 @@ private fun CircleHudButton(
 }
 
 @Composable
-private fun CompassChip(mapOrientationDegrees: Double) {
+private fun CompassChip(mapOrientationDegrees: Double, onTap: () -> Unit = {}) {
     /// `mapOrientationDegrees` is the camera bearing — the compass
     /// bearing of where screen-up points (0 = north up, 90 = east up).
     /// The displayed mils reading matches that bearing; the needle
@@ -809,7 +813,8 @@ private fun CompassChip(mapOrientationDegrees: Double) {
         modifier = Modifier
             .size(56.dp)
             .clip(CircleShape)
-            .background(Color(0xCC000000)),
+            .background(Color(0xCC000000))
+            .clickable { onTap() },
         contentAlignment = Alignment.Center
     ) {
         Canvas(

@@ -8,9 +8,12 @@ import com.tacticalmaps.calibration.MapSource
 import com.tacticalmaps.calibration.OpenStreetMapSourceAndroid
 import com.tacticalmaps.mgrs.MgrsFormatter
 import com.tacticalmaps.models.LocationService
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -89,6 +92,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun consumePendingCameraTarget() { _pendingCameraTarget.value = null }
+
+    /** One-shot signal that the compass HUD was tapped, asking the
+     *  map to animate its bearing back to 0° (north up). A Channel
+     *  with BUFFERED capacity ensures rapid taps don't drop. */
+    private val _resetNorthRequests = Channel<Unit>(Channel.BUFFERED)
+    val resetNorthRequests: Flow<Unit> = _resetNorthRequests.receiveAsFlow()
+    fun requestResetNorth() { _resetNorthRequests.trySend(Unit) }
 
     private fun onUserLocation(loc: Location) {
         lastUserLocation = loc

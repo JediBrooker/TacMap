@@ -107,6 +107,7 @@ fun GoogleMapScreen(
     selectedWaypointId: String? = null,
     calibrationFiduciaries: List<com.tacticalmaps.calibration.Fiduciary> = emptyList(),
     pendingTarget: Triple<Double, Double, Float>? = null,
+    resetNorthRequests: kotlinx.coroutines.flow.Flow<Unit>? = null,
     onConsumePendingTarget: () -> Unit = {},
     onCameraIdle: (lat: Double, lng: Double, byUser: Boolean) -> Unit = { _, _, _ -> },
     onBearingChanged: (Double) -> Unit = {},
@@ -131,6 +132,27 @@ fun GoogleMapScreen(
                 CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), zoom)
             )
             onConsumePendingTarget()
+        }
+    }
+
+    /// Compass tap → animate the camera bearing back to 0° (north up)
+    /// while keeping the current target, zoom, and tilt. The viewmodel
+    /// emits a Unit on every tap; we drop tilt to 0 too so the map
+    /// reads as "flat, north up".
+    LaunchedEffect(resetNorthRequests) {
+        val flow = resetNorthRequests ?: return@LaunchedEffect
+        flow.collect {
+            val current = cameraPositionState.position
+            cameraPositionState.animate(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.Builder()
+                        .target(current.target)
+                        .zoom(current.zoom)
+                        .bearing(0f)
+                        .tilt(0f)
+                        .build()
+                )
+            )
         }
     }
 
