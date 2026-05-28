@@ -6,11 +6,13 @@ import android.graphics.Point
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,15 +22,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
@@ -93,6 +100,9 @@ fun GoogleMapScreen(
     drawingInputEnabled: Boolean = false,
     calibrationInputEnabled: Boolean = false,
     mgrsGridVisible: Boolean = false,
+    unitLabelsVisible: Boolean = true,
+    taskLabelsVisible: Boolean = true,
+    drawingLabelsVisible: Boolean = true,
     selectedDrawingId: String? = null,
     selectedWaypointId: String? = null,
     pendingTarget: Triple<Double, Double, Float>? = null,
@@ -237,10 +247,38 @@ fun GoogleMapScreen(
             visibleWaypoints.forEach { wp ->
                 WaypointMarker(
                     waypoint = wp,
+                    selected = wp.id == selectedWaypointId,
                     onTap = { currentOnMarkerTap.value(wp) },
                     onMoved = { lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
                 )
             }
+        }
+
+        /// Waypoint name labels (units / tasks) — Compose Text
+        /// overlays projected to screen coords each frame. Units +
+        /// generic get a pill below the icon; tasks get the pill
+        /// centred inside the graphic.
+        WaypointLabelsOverlay(
+            waypoints = visibleWaypoints,
+            cameraPositionState = cameraPositionState,
+            unitLabelsVisible = unitLabelsVisible,
+            taskLabelsVisible = taskLabelsVisible
+        )
+
+        /// Drawing name labels — anchored at the centroid for polygons,
+        /// midpoint for lines, the point itself for points.
+        if (drawingLabelsVisible) {
+            DrawingLabelsOverlay(
+                drawings = visibleDrawings,
+                cameraPositionState = cameraPositionState
+            )
+        }
+
+        /// MGRS grid labels — drawn as Compose Text on top of the map
+        /// so they can be rotated for vertical lines without baking
+        /// per-zoom bitmap markers.
+        if (mgrsGridVisible) {
+            MgrsGridLabelsOverlay(cameraPositionState = cameraPositionState)
         }
 
         /// Vertex-edit handles live as Compose overlays on top of the map
@@ -553,17 +591,20 @@ private fun MgrsGridLayer(cameraPositionState: CameraPositionState) {
     val ink = Color(MgrsGridRenderer.INK_COLOR)
     val sw = bounds.southwest
     val ne = bounds.northeast
-    val segments = remember(sw.latitude, sw.longitude, ne.latitude, ne.longitude, mapWidthPx) {
+    val built = remember(sw.latitude, sw.longitude, ne.latitude, ne.longitude, mapWidthPx) {
         MgrsGridRenderer.build(
             minLat = sw.latitude,
             minLng = sw.longitude,
             maxLat = ne.latitude,
             maxLng = ne.longitude,
             mapWidthPx = mapWidthPx
-        ).first
+        )
     }
 
-    segments.forEach { seg ->
+    /// Lines render inside the GoogleMap composable's scope (this
+    /// composable is called from inside GoogleMap { … }), so we can
+    /// emit Polyline directly here.
+    built.first.forEach { seg ->
         Polyline(
             points = listOf(
                 LatLng(seg.start.latitude, seg.start.longitude),
@@ -574,6 +615,86 @@ private fun MgrsGridLayer(cameraPositionState: CameraPositionState) {
             clickable = false,
             zIndex = -0.5f
         )
+    }
+}
+
+/// MGRS grid labels live OUTSIDE the GoogleMap composable scope (they
+/// need to draw Compose Text on top of the map, projected to screen
+/// coords each frame) — they're rendered by [MgrsGridLabelsOverlay]
+/// in the parent Box.
+@Composable
+private fun MgrsGridLabelsOverlay(cameraPositionState: CameraPositionState) {
+    cameraPositionState.position
+    val projection = cameraPositionState.projection ?: return
+    val bounds = projection.visibleRegion.latLngBounds
+
+    val mapWidthPx = with(LocalDensity.current) {
+        androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp.toPx()
+    }.toInt().coerceAtLeast(1)
+
+    val sw = bounds.southwest
+    val ne = bounds.northeast
+    val labels = remember(sw.latitude, sw.longitude, ne.latitude, ne.longitude, mapWidthPx) {
+        MgrsGridRenderer.build(
+            minLat = sw.latitude,
+            minLng = sw.longitude,
+            maxLat = ne.latitude,
+            maxLng = ne.longitude,
+            mapWidthPx = mapWidthPx
+        ).second
+    }
+
+    val ink = Color(MgrsGridRenderer.LABEL_TEXT_COLOR)
+    val halo = Color(0xE6FFFFFF)
+    val density = LocalDensity.current
+
+    labels.forEach { mark ->
+        val screen = projection.toScreenLocation(LatLng(mark.lat, mark.lng))
+        val sp = MgrsGridRenderer.labelTextSp(mark.type)
+        /// Approximate text bounds (a few sp wider/taller than the
+        /// glyphs themselves) so we can centre the label on its
+        /// geographic anchor regardless of glyph length.
+        val labelWidthPx = (mark.text.length * sp * 0.62f * density.density).toInt().coerceAtLeast(8)
+        val labelHeightPx = (sp * 1.25f * density.density).toInt().coerceAtLeast(8)
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        screen.x - labelWidthPx / 2,
+                        screen.y - labelHeightPx / 2
+                    )
+                }
+                .size(
+                    width = with(density) { labelWidthPx.toDp() },
+                    height = with(density) { labelHeightPx.toDp() }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            val rotation = if (mark.isVertical) -90f else 0f
+            /// Soft white halo via four offset passes — keeps the
+            /// dark digits readable on busy satellite tiles without
+            /// a visible pill.
+            for (dx in listOf(-1f, 1f)) {
+                for (dy in listOf(-1f, 1f)) {
+                    Text(
+                        text = mark.text,
+                        color = halo,
+                        fontSize = sp.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .offset(x = dx.dp, y = dy.dp)
+                            .graphicsLayer { rotationZ = rotation }
+                    )
+                }
+            }
+            Text(
+                text = mark.text,
+                color = ink,
+                fontSize = sp.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.graphicsLayer { rotationZ = rotation }
+            )
+        }
     }
 }
 
@@ -615,6 +736,7 @@ private fun PdfGroundOverlay(source: PdfMapSource) {
 @Composable
 private fun WaypointMarker(
     waypoint: Waypoint,
+    selected: Boolean,
     onTap: () -> Unit,
     onMoved: (lat: Double, lng: Double) -> Unit
 ) {
@@ -649,23 +771,35 @@ private fun WaypointMarker(
             }
     }
 
-    val icon = remember(
+    val rawIcon = remember(
         waypoint.kind,
         waypoint.rotation,
         waypoint.scaleX,
         waypoint.scaleY
     ) {
-        SymbolIconFactory.drawableFor(context, waypoint).toBitmapDescriptor()
+        SymbolIconFactory.drawableFor(context, waypoint)
     }
-    val anchor = remember(waypoint.kind) {
-        val (u, v) = SymbolIconFactory.anchorFor(context, waypoint)
-        Offset(u, v)
+    val rawAnchor = remember(waypoint.kind) {
+        SymbolIconFactory.anchorFor(context, waypoint)
+    }
+
+    /// When selected, composite an orange halo behind the icon and
+    /// shift the anchor so the marker still pins to the same
+    /// geographic position. The icon bitmap grows by ~36dp on every
+    /// side to make room for the bloom.
+    val (descriptor, anchor) = remember(rawIcon, rawAnchor, selected) {
+        if (selected) {
+            val (glowed, ga) = applySelectionGlow(context, rawIcon, rawAnchor)
+            glowed.toBitmapDescriptor() to Offset(ga.first, ga.second)
+        } else {
+            rawIcon.toBitmapDescriptor() to Offset(rawAnchor.first, rawAnchor.second)
+        }
     }
 
     val currentOnTap = rememberUpdatedState(onTap)
     Marker(
         state = markerState,
-        icon = icon,
+        icon = descriptor,
         anchor = anchor,
         title = waypoint.name,
         draggable = true,
@@ -674,6 +808,188 @@ private fun WaypointMarker(
             true
         }
     )
+}
+
+/// Composite an orange halo behind the icon by drawing the icon's
+/// alpha mask multiple times with a tinted blur, then drawing the
+/// crisp icon on top. Returns the larger bitmap drawable plus a new
+/// anchor that keeps the original icon's anchor pixel pinned to the
+/// marker's geographic position.
+private fun applySelectionGlow(
+    context: android.content.Context,
+    icon: Drawable,
+    originalAnchor: Pair<Float, Float>
+): Pair<BitmapDrawable, Pair<Float, Float>> {
+    val density = context.resources.displayMetrics.density
+    val pad = (18f * density).toInt().coerceAtLeast(18)
+    val w = icon.intrinsicWidth.coerceAtLeast(1)
+    val h = icon.intrinsicHeight.coerceAtLeast(1)
+    val outW = w + pad * 2
+    val outH = h + pad * 2
+
+    val src = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    icon.setBounds(0, 0, w, h)
+    icon.draw(Canvas(src))
+    val alpha = src.extractAlpha()
+
+    val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(out)
+
+    val outerGlow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFA63D.toInt()
+        maskFilter = android.graphics.BlurMaskFilter(
+            16f * density,
+            android.graphics.BlurMaskFilter.Blur.NORMAL
+        )
+    }
+    repeat(4) {
+        canvas.drawBitmap(alpha, pad.toFloat(), pad.toFloat(), outerGlow)
+    }
+    val innerGlow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFA63D.toInt()
+        maskFilter = android.graphics.BlurMaskFilter(
+            6f * density,
+            android.graphics.BlurMaskFilter.Blur.SOLID
+        )
+    }
+    repeat(3) {
+        canvas.drawBitmap(alpha, pad.toFloat(), pad.toFloat(), innerGlow)
+    }
+    canvas.drawBitmap(src, pad.toFloat(), pad.toFloat(), null)
+
+    val newAnchorU = (pad + originalAnchor.first * w) / outW
+    val newAnchorV = (pad + originalAnchor.second * h) / outH
+    return BitmapDrawable(context.resources, out) to (newAnchorU to newAnchorV)
+}
+
+/// Per-waypoint name labels rendered as Compose overlays on top of
+/// the map. Tasks (control measures) place the label centred inside
+/// the symbol bubble; units / generic waypoints sit the label below.
+@Composable
+private fun WaypointLabelsOverlay(
+    waypoints: List<Waypoint>,
+    cameraPositionState: CameraPositionState,
+    unitLabelsVisible: Boolean,
+    taskLabelsVisible: Boolean
+) {
+    cameraPositionState.position
+    val projection = cameraPositionState.projection ?: return
+    val density = LocalDensity.current
+
+    waypoints.forEach { wp ->
+        val trimmed = wp.name.trim()
+        if (trimmed.isEmpty()) return@forEach
+        val isTask = wp.kind is com.tacticalmaps.waypoints.WaypointKind.ControlMeasure
+        val visible = if (isTask) taskLabelsVisible else unitLabelsVisible
+        if (!visible) return@forEach
+
+        val screen = projection.toScreenLocation(LatLng(wp.latitude, wp.longitude))
+        /// Approximate label size — kept in step with the label
+        /// composable's actual rendering so the centred offset puts
+        /// the pill where we want it.
+        val sp = 11f
+        val labelWidthPx = with(density) {
+            (trimmed.length * sp * 0.65f * density.density + 12.dp.toPx()).toInt().coerceAtLeast(40)
+        }
+        val labelHeightPx = with(density) {
+            (sp * 1.45f * density.density + 6.dp.toPx()).toInt().coerceAtLeast(20)
+        }
+        /// Tasks: centred on the icon. Units / generic: below the
+        /// icon by ~22dp so the label clears the symbol footprint.
+        val yOffset = if (isTask) 0 else with(density) { 22.dp.toPx() }.toInt()
+
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        screen.x - labelWidthPx / 2,
+                        screen.y - labelHeightPx / 2 + yOffset
+                    )
+                }
+                .size(
+                    width = with(density) { labelWidthPx.toDp() },
+                    height = with(density) { labelHeightPx.toDp() }
+                )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = trimmed,
+                    color = Color.White,
+                    fontSize = sp.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    modifier = Modifier
+                        .background(
+                            Color.Black.copy(alpha = 0.62f),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+/// Drawing name labels — one per named drawing, anchored at the
+/// shape's labelAnchor (centroid / mid-segment / point). Non-
+/// interactive; the underlying drawing handles taps.
+@Composable
+private fun DrawingLabelsOverlay(
+    drawings: List<DrawingFeature>,
+    cameraPositionState: CameraPositionState
+) {
+    cameraPositionState.position
+    val projection = cameraPositionState.projection ?: return
+    val density = LocalDensity.current
+
+    drawings.forEach { feature ->
+        val trimmed = feature.name.trim()
+        if (trimmed.isEmpty()) return@forEach
+        val anchor = feature.labelAnchor ?: return@forEach
+
+        val screen = projection.toScreenLocation(LatLng(anchor.latitude, anchor.longitude))
+        val sp = 11f
+        val labelWidthPx = with(density) {
+            (trimmed.length * sp * 0.65f * density.density + 12.dp.toPx()).toInt().coerceAtLeast(40)
+        }
+        val labelHeightPx = with(density) {
+            (sp * 1.45f * density.density + 6.dp.toPx()).toInt().coerceAtLeast(20)
+        }
+
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        screen.x - labelWidthPx / 2,
+                        screen.y - labelHeightPx / 2
+                    )
+                }
+                .size(
+                    width = with(density) { labelWidthPx.toDp() },
+                    height = with(density) { labelHeightPx.toDp() }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = trimmed,
+                color = Color.White,
+                fontSize = sp.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                modifier = Modifier
+                    .background(
+                        Color.Black.copy(alpha = 0.62f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                    )
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            )
+        }
+    }
 }
 
 private fun Drawable.toBitmapDescriptor(): BitmapDescriptor {
