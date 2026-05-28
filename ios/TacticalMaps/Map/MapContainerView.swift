@@ -87,6 +87,7 @@ struct MapContainerView: UIViewRepresentable {
         press.delegate = context.coordinator
         mv.addGestureRecognizer(press)
         context.coordinator.drawingDragPress = press
+        context.coordinator.attachedMapView = mv
 
         // Programmatic camera moves.
         context.coordinator.cameraRequestSink = mapVM.cameraRequests.sink { region in
@@ -483,6 +484,50 @@ struct MapContainerView: UIViewRepresentable {
         /// Long-press a real vertex handle → delete the vertex if the
         /// shape still meets its kind's minimum. The drawing snaps back
         /// to a baked, transform-free state (rotation/scale reset).
+        /// Direct pan-driven drag for a vertex-edit handle. Bypasses
+        /// MapKit's built-in (and unreliable for small custom views)
+        /// long-press-then-drag, so the user can pick up and move a
+        /// vertex with a single fluid gesture. While a drag is in
+        /// flight we disable the map's own scroll so the basemap
+        /// doesn't slide under the finger.
+        @objc func handleVertexPan(_ pan: UIPanGestureRecognizer) {
+            guard let view = pan.view as? MKAnnotationView,
+                  let h = view.annotation as? DrawingVertexHandleAnnotation,
+                  let mv = attachedMapView
+            else { return }
+
+            let pt = pan.location(in: mv)
+            let coord = mv.convert(pt, toCoordinateFrom: mv)
+
+            switch pan.state {
+            case .began:
+                mv.isScrollEnabled = false
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            case .changed:
+                // Update the annotation's coordinate live so the
+                // handle visibly follows the finger.
+                h.coordinate = coord
+            case .ended, .cancelled, .failed:
+                mv.isScrollEnabled = true
+                guard pan.state == .ended,
+                      var shape = drawingStore.shapes.first(where: { $0.id == h.shapeID })
+                else { return }
+                let newCoord = Coordinate2D(
+                    latitude: coord.latitude,
+                    longitude: coord.longitude
+                )
+                if h.isMidpoint {
+                    shape.insertEffectiveVertex(newCoord, at: h.vertexIndex)
+                } else {
+                    shape.setEffectiveVertex(h.vertexIndex, to: newCoord)
+                }
+                drawingStore.update(shape)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            default:
+                break
+            }
+        }
+
         @objc func handleVertexLongPress(_ g: UILongPressGestureRecognizer) {
             guard g.state == .began,
                   let view = g.view as? MKAnnotationView,
@@ -1413,7 +1458,13 @@ struct MapContainerView: UIViewRepresentable {
                 view.annotation = h
                 view.canShowCallout = false
                 view.isUserInteractionEnabled = true
-                view.isDraggable = true
+                // MapKit's built-in drag is a long-press-then-drag that
+                // never fires reliably on small custom annotation
+                // views, so we drive the drag ourselves via a
+                // UIPanGestureRecognizer below. Keep isDraggable off
+                // so the system doesn't install its own competing
+                // recogniser.
+                view.isDraggable = false
                 view.displayPriority = .required
                 view.image = h.isMidpoint
                     ? Self.renderVertexHandle(midpoint: true)
@@ -1422,22 +1473,26 @@ struct MapContainerView: UIViewRepresentable {
                     view.bounds = CGRect(origin: .zero, size: img.size)
                 }
                 view.centerOffset = .zero
-                // Long-press to delete (real vertices only — midpoint
+
+                // Strip any recogniser left over from a recycled view
+                // so handlers don't stack on reuse.
+                view.gestureRecognizers?.forEach { view.removeGestureRecognizer($0) }
+
+                // Pan = instant drag. Fires on the very first movement
+                // (no long-press warmup) so the handle behaves like a
+                // standard drawing-app vertex.
+                let pan = UIPanGestureRecognizer(target: self, action: #selector(handleVertexPan(_:)))
+                view.addGestureRecognizer(pan)
+
+                // Long-press = delete (real vertices only — midpoint
                 // handles don't represent a stored vertex so there's
-                // nothing to remove).
+                // nothing to remove). 0.6s lets it fire reliably while
+                // still giving a quick tap-to-insert / drag enough
+                // headroom.
                 if !h.isMidpoint {
-                    // Strip any prior long-press recognizers from a
-                    // recycled view so we don't stack handlers each reuse.
-                    view.gestureRecognizers?.forEach {
-                        if $0 is UILongPressGestureRecognizer { view.removeGestureRecognizer($0) }
-                    }
-                    // 0.9s + tight movement tolerance — MapKit's own
-                    // drag-from-annotation gesture has a shorter timer
-                    // and wider slop, so any movement during the hold
-                    // hands off to drag instead of firing delete.
                     let lp = UILongPressGestureRecognizer(target: self, action: #selector(handleVertexLongPress(_:)))
-                    lp.minimumPressDuration = 0.9
-                    lp.allowableMovement = 6
+                    lp.minimumPressDuration = 0.6
+                    lp.allowableMovement = 8
                     view.addGestureRecognizer(lp)
                 }
                 return view

@@ -336,24 +336,22 @@ fun OsmMap(
         if (selected != null) {
             val pts = selected.effectivePoints
             val featureId = selected.id
-            // Real vertex handles — draggable, long-press (via map) to delete.
+            // Real vertex handles. We use DragMarker (custom subclass)
+            // so the user can move a vertex with one fluid drag instead
+            // of OSMDroid's default long-press-then-drag, which fights
+            // the map pan and rarely activates on a small handle.
+            // Long-press anywhere near the handle deletes it; that's
+            // wired via the tap-overlay's longPressHelper below.
             pts.forEachIndexed { i, p ->
-                val marker = makeVertexHandleMarker(
-                    context = context,
+                val marker = DragMarker(
                     mapView = mapView,
-                    midpoint = false,
+                    drawable = makeVertexHandleDrawable(context, midpoint = false),
                     lat = p.latitude,
-                    lng = p.longitude
-                )
-                marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                    override fun onMarkerDragStart(m: Marker?) = Unit
-                    override fun onMarkerDrag(m: Marker?) = Unit
-                    override fun onMarkerDragEnd(m: Marker?) {
-                        m?.position?.let { pos ->
-                            currentOnVertexMoved.value(featureId, i, pos.latitude, pos.longitude)
-                        }
+                    lng = p.longitude,
+                    onDragEnded = { lat, lng ->
+                        currentOnVertexMoved.value(featureId, i, lat, lng)
                     }
-                })
+                )
                 vertexHandleOverlays.add(marker)
                 vertexHandleInfo.add(VertexHandle(index = i, isMidpoint = false,
                     lat = p.latitude, lng = p.longitude))
@@ -366,28 +364,21 @@ fun OsmMap(
                 val b = pts[(i + 1) % pts.size]
                 val midLat = (a.latitude  + b.latitude ) / 2.0
                 val midLng = (a.longitude + b.longitude) / 2.0
-                val marker = makeVertexHandleMarker(
-                    context = context,
-                    mapView = mapView,
-                    midpoint = true,
-                    lat = midLat,
-                    lng = midLng
-                )
                 val insertIndex = i + 1
-                marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                    override fun onMarkerDragStart(m: Marker?) = Unit
-                    override fun onMarkerDrag(m: Marker?) = Unit
-                    override fun onMarkerDragEnd(m: Marker?) {
-                        m?.position?.let { pos ->
-                            currentOnVertexInserted.value(featureId, insertIndex, pos.latitude, pos.longitude)
-                        }
+                val marker = DragMarker(
+                    mapView = mapView,
+                    drawable = makeVertexHandleDrawable(context, midpoint = true),
+                    lat = midLat,
+                    lng = midLng,
+                    onTapped = {
+                        // Quick tap inserts at the midpoint location.
+                        currentOnVertexInserted.value(featureId, insertIndex, midLat, midLng)
+                    },
+                    onDragEnded = { lat, lng ->
+                        // Drag inserts at the final dragged location.
+                        currentOnVertexInserted.value(featureId, insertIndex, lat, lng)
                     }
-                })
-                marker.setOnMarkerClickListener { _, _ ->
-                    // Tap a midpoint → insert a vertex at the midpoint.
-                    currentOnVertexInserted.value(featureId, insertIndex, midLat, midLng)
-                    true
-                }
+                )
                 vertexHandleOverlays.add(marker)
                 vertexHandleInfo.add(VertexHandle(index = insertIndex, isMidpoint = true,
                     lat = midLat, lng = midLng))
@@ -971,6 +962,77 @@ private data class VertexHandle(
     val lat: Double,
     val lng: Double
 )
+
+/// Marker subclass that drags the moment the user's finger moves —
+/// no long-press warm-up. OSMDroid's stock drag is a long-press-then-
+/// drag that competes with the map's pan and basically never wins on
+/// a small handle, so we drive the drag ourselves out of
+/// onTouchEvent. A short touch with no movement counts as a tap and
+/// fires onTapped (used by midpoint handles for tap-to-insert).
+private class DragMarker(
+    mapView: MapView,
+    drawable: android.graphics.drawable.Drawable,
+    lat: Double,
+    lng: Double,
+    private val onTapped: (() -> Unit)? = null,
+    private val onDragEnded: (lat: Double, lng: Double) -> Unit
+) : Marker(mapView) {
+    private var dragging = false
+    private var didMove = false
+    private var downTime: Long = 0
+
+    init {
+        position = org.osmdroid.util.GeoPoint(lat, lng)
+        setAnchor(ANCHOR_CENTER, ANCHOR_CENTER)
+        icon = drawable
+        setInfoWindow(null)
+    }
+
+    override fun onTouchEvent(event: android.view.MotionEvent, mapView: MapView): Boolean {
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                if (hitTest(event, mapView)) {
+                    dragging = true
+                    didMove = false
+                    downTime = event.eventTime
+                    return true
+                }
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (dragging) {
+                    didMove = true
+                    val proj = mapView.projection
+                    val pt = proj.fromPixels(event.x.toInt(), event.y.toInt())
+                    position = org.osmdroid.util.GeoPoint(pt.latitude, pt.longitude)
+                    mapView.invalidate()
+                    return true
+                }
+            }
+            android.view.MotionEvent.ACTION_UP -> {
+                if (dragging) {
+                    dragging = false
+                    val proj = mapView.projection
+                    val pt = proj.fromPixels(event.x.toInt(), event.y.toInt())
+                    val dt = event.eventTime - downTime
+                    if (!didMove && dt < 300) {
+                        // Quick tap with no movement → tap callback.
+                        onTapped?.invoke()
+                    } else {
+                        onDragEnded(pt.latitude, pt.longitude)
+                    }
+                    return true
+                }
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> {
+                if (dragging) {
+                    dragging = false
+                    return true
+                }
+            }
+        }
+        return super.onTouchEvent(event, mapView)
+    }
+}
 
 /// Build a draggable vertex-edit handle marker. `midpoint = true`
 /// renders the hollow "+" insertion handle; `midpoint = false`
