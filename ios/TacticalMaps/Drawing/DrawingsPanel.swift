@@ -160,8 +160,12 @@ struct DrawingsPanel: View {
     @ViewBuilder
     private func row(_ kind: DrawingKind, subtitle: String) -> some View {
         Button {
-            guard let layerID = activeLayer?.id else { return }
-            session.start(kind: kind, layerID: layerID)
+            guard let layer = activeLayer else { return }
+            // New drawings inherit the active layer's default colour so
+            // a Hostile-layer drawing starts red instead of forcing the
+            // user to recolour from the palette default.
+            session.strokeColorHex = layer.defaultColorHex
+            session.start(kind: kind, layerID: layer.id)
             onDismiss()
         } label: {
             HStack(spacing: 10) {

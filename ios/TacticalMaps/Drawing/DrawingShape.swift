@@ -89,6 +89,72 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         effectiveCoordinates.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
+    /// Once the user starts editing individual vertices, any
+    /// rotation/scale baked into the controls card is no longer
+    /// meaningful — the new vertex set BECOMES the canonical shape.
+    /// Apply the transform to `coordinates` and reset rotation/scale.
+    mutating func bakeTransformIfNeeded() {
+        guard rotation != 0 || scaleX != 1 || scaleY != 1 else { return }
+        coordinates = effectiveCoordinates
+        rotation = 0
+        scaleX = 1
+        scaleY = 1
+    }
+
+    /// Move the vertex at `index` to a new coordinate. Bakes any
+    /// pending rotation/scale first so the dragged handle's screen
+    /// position matches what gets stored.
+    mutating func setEffectiveVertex(_ index: Int, to coord: Coordinate2D) {
+        bakeTransformIfNeeded()
+        guard index >= 0 && index < coordinates.count else { return }
+        coordinates[index] = coord
+    }
+
+    /// Insert a new vertex at `index` (shifting existing vertices
+    /// right). Used when the user drags a midpoint handle.
+    mutating func insertEffectiveVertex(_ coord: Coordinate2D, at index: Int) {
+        bakeTransformIfNeeded()
+        guard index >= 0 && index <= coordinates.count else { return }
+        coordinates.insert(coord, at: index)
+    }
+
+    /// Drop the vertex at `index`. No-op when removing would put the
+    /// shape below its kind's minimum vertex count (a polygon needs
+    /// at least 3 points, a polyline at least 2).
+    @discardableResult
+    mutating func removeEffectiveVertex(at index: Int) -> Bool {
+        let minCount = kind.minimumVertices
+        guard coordinates.count > minCount,
+              index >= 0, index < coordinates.count
+        else { return false }
+        bakeTransformIfNeeded()
+        coordinates.remove(at: index)
+        return true
+    }
+
+    /// Map coordinate where a name-label should be anchored on the map.
+    /// Polygons → centroid. Polylines → midpoint of the central segment.
+    /// Points → the point itself.
+    var labelAnchor: CLLocationCoordinate2D? {
+        let coords = effectiveCoordinates
+        guard !coords.isEmpty else { return nil }
+        switch kind {
+        case .point:
+            return CLLocationCoordinate2D(latitude: coords[0].latitude,
+                                          longitude: coords[0].longitude)
+        case .polyline:
+            guard coords.count >= 2 else { return nil }
+            let mid = coords.count / 2
+            let a = coords[mid - 1], b = coords[mid]
+            return CLLocationCoordinate2D(latitude: (a.latitude + b.latitude) / 2,
+                                          longitude: (a.longitude + b.longitude) / 2)
+        case .polygon:
+            let lat = coords.map(\.latitude ).reduce(0, +) / Double(coords.count)
+            let lon = coords.map(\.longitude).reduce(0, +) / Double(coords.count)
+            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        }
+    }
+
     // Backward-compat: legacy drawings.json files have no `layerID` /
     // rotation / scaleX / scaleY. Decode them with sensible defaults.
     private enum CodingKeys: String, CodingKey {

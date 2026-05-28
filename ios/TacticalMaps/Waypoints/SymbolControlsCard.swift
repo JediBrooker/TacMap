@@ -152,17 +152,19 @@ struct SymbolControlsCard: View {
         }
     }
 
-    /// Compact layer pill — colour swatch + name, opens a menu to reassign.
+    /// Compact layer pill — colour swatch + name + item count, opens a menu
+    /// to reassign.
     private func layerPill(for wp: Waypoint) -> some View {
         let current = drawingStore.layer(id: wp.layerID) ?? drawingStore.layers.first
         return Menu {
             ForEach(drawingStore.layers) { layer in
+                let count = layerItemCount(layer)
                 Button {
                     var updated = wp
                     updated.layerID = layer.id
                     waypointStore.update(updated)
                 } label: {
-                    Label(layer.name,
+                    Label("\(layer.name) (\(count))",
                           systemImage: layer.id == current?.id
                               ? "largecircle.fill.circle"
                               : "circle.fill")
@@ -174,13 +176,13 @@ struct SymbolControlsCard: View {
                 Image(systemName: "square.stack.3d.up.fill")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color(hex: current?.defaultColorHex ?? "#888888"))
-                Text(current?.name ?? "—")
+                Text(current.map { "\($0.name) (\(layerItemCount($0)))" } ?? "—")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .frame(maxWidth: 120)
+            .frame(maxWidth: 140)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(.white.opacity(0.10), in: Capsule())
@@ -188,6 +190,13 @@ struct SymbolControlsCard: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Layer")
         .accessibilityValue(current?.name ?? "")
+    }
+
+    /// Count of drawings + waypoints assigned to a layer.
+    private func layerItemCount(_ layer: DrawingLayer) -> Int {
+        let drawings = drawingStore.shapes(in: layer.id).count
+        let waypoints = waypointStore.waypoints.filter { $0.layerID == layer.id }.count
+        return drawings + waypoints
     }
 
     private func rotationRow(for wp: Waypoint) -> some View {

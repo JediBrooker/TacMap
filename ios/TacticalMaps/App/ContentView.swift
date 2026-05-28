@@ -1,23 +1,27 @@
 import SwiftUI
 import MapKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var locationService = LocationService()
     @StateObject private var waypointStore   = WaypointStore()
     @StateObject private var drawingStore    = DrawingStore()
     @StateObject private var drawingSession  = DrawingSessionViewModel()
+    @StateObject private var measureSession  = MeasureSession()
     @StateObject private var visibility      = LayerVisibility()
     @StateObject private var mapVM           = MapViewModel()
     @StateObject private var calibration     = CalibrationSession()
 
-    @State private var showImporter      = false
-    @State private var showWaypointSheet = false
-    @State private var showDrawingsSheet = false   // "All Drawings" list
-    @State private var showLayersSheet   = false
-    @State private var showExportSheet   = false
-    @State private var showSearchSheet   = false
-    @State private var showAboutSheet    = false
-    @State private var drawingsPanelOpen = false   // inline panel below hamburger
+    @State private var showImporter        = false
+    @State private var showGeoJSONImporter = false
+    @State private var importMessage: String? = nil
+    @State private var showWaypointSheet   = false
+    @State private var showDrawingsSheet   = false   // "All Drawings" list
+    @State private var showLayersSheet     = false
+    @State private var showExportSheet     = false
+    @State private var showSearchSheet     = false
+    @State private var showAboutSheet      = false
+    @State private var drawingsPanelOpen   = false   // inline panel below hamburger
 
     var body: some View {
         GeometryReader { geo in
@@ -28,6 +32,7 @@ struct ContentView: View {
                     waypointStore: waypointStore,
                     drawingStore: drawingStore,
                     drawingSession: drawingSession,
+                    measureSession: measureSession,
                     visibility: visibility,
                     calibration: calibration
                 )
@@ -82,7 +87,25 @@ struct ContentView: View {
                         // Crosshair elevation: prefer the DEM lookup so panning
                         // around shows real terrain heights; fall back to the
                         // GPS-reported altitude only if the DEM hasn't replied yet.
-                        elevation: mapVM.centreElevation ?? locationService.lastAltitude
+                        elevation: mapVM.centreElevation ?? locationService.lastAltitude,
+                        coordinate: mapVM.isBrowsing
+                            ? mapVM.cameraCentre
+                            : locationService.lastLocation?.coordinate,
+                        onDropPin: { coord, mgrs in
+                            // Drop a generic waypoint at this MGRS — auto-named
+                            // with the MGRS string so the user can see where the
+                            // pin came from. The active layer takes ownership.
+                            let layerID = drawingStore.activeLayerID
+                                ?? drawingStore.layers.first?.id
+                                ?? DrawingLayer.legacyFallbackID
+                            let wp = Waypoint(
+                                name: mgrs,
+                                coordinate: coord,
+                                kind: .generic,
+                                layerID: layerID
+                            )
+                            waypointStore.add(wp)
+                        }
                     )
                     .padding(.horizontal, 12)
 
@@ -106,9 +129,18 @@ struct ContentView: View {
                                     drawingsPanelOpen = false
                                     showLayersSheet = true
                                 },
+                                onMeasure:   {
+                                    drawingsPanelOpen = false
+                                    drawingSession.cancel()
+                                    measureSession.start()
+                                },
                                 onImport:    {
                                     drawingsPanelOpen = false
                                     showImporter = true
+                                },
+                                onImportGeoJSON: {
+                                    drawingsPanelOpen = false
+                                    showGeoJSONImporter = true
                                 },
                                 onExport:    {
                                     drawingsPanelOpen = false
@@ -158,6 +190,10 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
+                    } else if measureSession.isActive {
+                        MeasureToolbar(session: measureSession)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
                     } else {
                         if let id = mapVM.selectedWaypointID {
                             // Floating controls card for the currently-
@@ -256,6 +292,59 @@ struct ContentView: View {
             allowsMultipleSelection: false
         ) { result in
             handleImport(result)
+        }
+        .fileImporter(
+            isPresented: $showGeoJSONImporter,
+            allowedContentTypes: [
+                .json,
+                UTType(filenameExtension: "geojson") ?? .json
+            ],
+            allowsMultipleSelection: false
+        ) { result in
+            handleGeoJSONImport(result)
+        }
+        .alert("Import",
+               isPresented: Binding(get: { importMessage != nil },
+                                    set: { if !$0 { importMessage = nil } }),
+               presenting: importMessage) { _ in
+            Button("OK", role: .cancel) { importMessage = nil }
+        } message: { msg in
+            Text(msg)
+        }
+    }
+
+    private func handleGeoJSONImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let err):
+            importMessage = "Import failed: \(err.localizedDescription)"
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            // Documents picker hands us a security-scoped URL.
+            let didStart = url.startAccessingSecurityScopedResource()
+            defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let fallback = drawingStore.activeLayerID
+                    ?? drawingStore.layers.first?.id
+                    ?? DrawingLayer.legacyFallbackID
+                let parsed = try GeoJSONImporter.parse(
+                    data,
+                    existingLayers: drawingStore.layers,
+                    fallbackLayerID: fallback
+                )
+                for layer in parsed.newLayers {
+                    _ = drawingStore.addLayer(name: layer.name,
+                                              defaultColorHex: layer.defaultColorHex)
+                }
+                for shape in parsed.drawings { drawingStore.add(shape) }
+                for wp in parsed.waypoints { waypointStore.add(wp) }
+                importMessage = "Imported \(parsed.waypoints.count) waypoint" +
+                    "\(parsed.waypoints.count == 1 ? "" : "s") and " +
+                    "\(parsed.drawings.count) drawing" +
+                    "\(parsed.drawings.count == 1 ? "" : "s")."
+            } catch {
+                importMessage = "Couldn't parse this file as GeoJSON: \(error.localizedDescription)"
+            }
         }
     }
 

@@ -1,5 +1,7 @@
 package com.tacticalmaps.drawings
 
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.util.UUID
@@ -47,7 +49,112 @@ data class DrawingFeature(
     @SerialName("scale_y") val scaleY: Double = 1.0,
     @SerialName("rotation_degrees") val rotationDegrees: Double = 0.0,
     @SerialName("created_at_epoch_ms") val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    /// Coordinates with rotation + scale applied around the centroid.
+    /// Vertex-edit handles render against these so the dots line up
+    /// with the rendered polyline / polygon.
+    val effectivePoints: List<DrawingPoint>
+        get() {
+            if (points.size < 2 && geometry != DrawingGeometry.POINT) return points
+            if (scaleX == 1.0 && scaleY == 1.0 && rotationDegrees == 0.0) return points
+            val centerLat = points.map { it.latitude }.average()
+            val centerLng = points.map { it.longitude }.average()
+            val lonScale = cos(Math.toRadians(centerLat)).coerceAtLeast(0.000001)
+            val radians = Math.toRadians(-rotationDegrees)
+            val cosA = cos(radians)
+            val sinA = sin(radians)
+            return points.map { p ->
+                val localX = (p.longitude - centerLng) * lonScale
+                val localY = p.latitude - centerLat
+                val sx = localX * scaleX
+                val sy = localY * scaleY
+                val rx = sx * cosA - sy * sinA
+                val ry = sx * sinA + sy * cosA
+                DrawingPoint(
+                    latitude  = centerLat + ry,
+                    longitude = centerLng + rx / lonScale
+                )
+            }
+        }
+
+    /// Bake any pending rotation/scale into `points` and reset the
+    /// transform. Called automatically by the vertex-edit helpers so
+    /// the user's dragged handle position matches what gets persisted.
+    fun bakedTransform(): DrawingFeature {
+        if (scaleX == 1.0 && scaleY == 1.0 && rotationDegrees == 0.0) return this
+        return copy(
+            points = effectivePoints,
+            scaleX = 1.0,
+            scaleY = 1.0,
+            rotationDegrees = 0.0
+        )
+    }
+
+    /// Move the vertex at `index` to a new coordinate. Returns the
+    /// updated feature (with any transform baked) or the receiver
+    /// unchanged if the index is out of range.
+    fun withVertexMoved(index: Int, lat: Double, lng: Double): DrawingFeature {
+        val baked = bakedTransform()
+        if (index < 0 || index >= baked.points.size) return baked
+        val updated = baked.points.toMutableList().also {
+            it[index] = DrawingPoint(latitude = lat, longitude = lng)
+        }
+        return baked.copy(points = updated)
+    }
+
+    /// Insert a new vertex at `index`, shifting later points right.
+    /// Used when a midpoint handle is dragged or tapped.
+    fun withVertexInserted(index: Int, lat: Double, lng: Double): DrawingFeature {
+        val baked = bakedTransform()
+        if (index < 0 || index > baked.points.size) return baked
+        val updated = baked.points.toMutableList().also {
+            it.add(index, DrawingPoint(latitude = lat, longitude = lng))
+        }
+        return baked.copy(points = updated)
+    }
+
+    /// Remove the vertex at `index`. Returns null when removing would
+    /// drop the feature below its kind's minimum vertex count.
+    fun withVertexRemovedOrNull(index: Int): DrawingFeature? {
+        val baked = bakedTransform()
+        val minCount = when (baked.geometry) {
+            DrawingGeometry.POINT -> 1
+            DrawingGeometry.LINE -> 2
+            DrawingGeometry.POLYGON -> 3
+        }
+        if (baked.points.size <= minCount) return null
+        if (index < 0 || index >= baked.points.size) return null
+        return baked.copy(
+            points = baked.points.toMutableList().also { it.removeAt(index) }
+        )
+    }
+
+    /// Anchor point for a name-label on the map. Centroid for polygons,
+    /// mid-segment for polylines, the single coordinate for points.
+    /// Returns null if the feature has no usable coordinates.
+    val labelAnchor: DrawingPoint?
+        get() {
+            if (points.isEmpty()) return null
+            return when (geometry) {
+                DrawingGeometry.POINT -> points.first()
+                DrawingGeometry.LINE -> {
+                    if (points.size < 2) return null
+                    val mid = points.size / 2
+                    val a = points[mid - 1]
+                    val b = points[mid]
+                    DrawingPoint(
+                        latitude  = (a.latitude  + b.latitude ) / 2.0,
+                        longitude = (a.longitude + b.longitude) / 2.0
+                    )
+                }
+                DrawingGeometry.POLYGON -> {
+                    val lat = points.sumOf { it.latitude  } / points.size
+                    val lon = points.sumOf { it.longitude } / points.size
+                    DrawingPoint(latitude = lat, longitude = lon)
+                }
+            }
+        }
+}
 
 @Serializable
 data class DrawingDocument(

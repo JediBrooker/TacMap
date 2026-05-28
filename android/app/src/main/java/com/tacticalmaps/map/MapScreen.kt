@@ -122,6 +122,11 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
     var showAboutDialog by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
     var activeDrawingLayerId by remember { mutableStateOf(DrawingDocument.DEFAULT_LAYER_ID) }
+    val measureSession = remember { MeasureSession() }
+    var unitLabelsVisible by remember { mutableStateOf(true) }
+    var taskLabelsVisible by remember { mutableStateOf(true) }
+    var drawingLabelsVisible by remember { mutableStateOf(true) }
+    var mgrsGridVisible by remember { mutableStateOf(false) }
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
     var draftPoints by remember { mutableStateOf<List<DrawingPoint>>(emptyList()) }
@@ -167,6 +172,47 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
         }
     }
 
+    val geoJsonImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val json = runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.bufferedReader().readText()
+                    }
+                }
+            }.getOrNull()
+            if (json == null) {
+                Toast.makeText(context, "Couldn't read file", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val fallback = drawingDocument.layers
+                .firstOrNull { it.id == activeDrawingLayerId }?.id
+                ?: drawingDocument.layers.firstOrNull()?.id
+                ?: com.tacticalmaps.drawings.DrawingDocument.DEFAULT_LAYER_ID
+            val parsed = runCatching {
+                com.tacticalmaps.export.GeoJsonImporter.parse(
+                    json = json,
+                    existingLayers = drawingDocument.layers,
+                    fallbackLayerId = fallback
+                )
+            }.getOrElse { e ->
+                Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            parsed.newLayers.forEach { drawingStore.addLayerVerbatim(it) }
+            parsed.drawings.forEach { drawingStore.addFeature(it) }
+            parsed.waypoints.forEach { waypointStore.add(it) }
+            Toast.makeText(
+                context,
+                "Imported ${parsed.waypoints.size} waypoint(s) and ${parsed.drawings.size} drawing(s)",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (vm.locationService.hasPermission()) {
             vm.locationService.start()
@@ -192,10 +238,22 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
     val safeActiveLayerId = drawingDocument.layers.firstOrNull { it.id == activeDrawingLayerId }?.id
         ?: drawingDocument.layers.firstOrNull()?.id
         ?: DrawingDocument.DEFAULT_LAYER_ID
-    val draftDrawing = draftGeometry?.let { geometry ->
-        DrawingFeature(
-            name = drawingNameOrDefault(activeDrawingName, geometry, drawingDocument.features),
-            geometry = geometry,
+    val draftDrawing = when {
+        // Measure tool takes precedence — render its polyline as a draft
+        // overlay so the user can see the path they're laying down.
+        measureSession.isActive && measureSession.points.size >= 1 -> DrawingFeature(
+            name = "",
+            geometry = DrawingGeometry.LINE,
+            points = measureSession.points.map { DrawingPoint(it.first, it.second) },
+            layerId = safeActiveLayerId,
+            strokeColor = 0xFFFFA500.toInt(),
+            fillColor = 0,
+            strokeWidth = DrawingDefaults.STROKE_WIDTH,
+            strokeStyle = DrawingStrokeStyle.DASHED
+        )
+        draftGeometry != null -> DrawingFeature(
+            name = drawingNameOrDefault(activeDrawingName, draftGeometry!!, drawingDocument.features),
+            geometry = draftGeometry!!,
             points = draftPoints,
             layerId = safeActiveLayerId,
             strokeColor = activeStrokeColor,
@@ -203,6 +261,7 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
             strokeWidth = DrawingDefaults.STROKE_WIDTH,
             strokeStyle = activeStrokeStyle
         )
+        else -> null
     }
 
     fun stopDrawing() {
@@ -233,6 +292,13 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
     }
 
     fun handleDrawingTap(lat: Double, lng: Double) {
+        // Measure-mode tap is captured here too — when active it intercepts
+        // taps before the drawing branch so the user can lay down a route
+        // without picking a draw tool.
+        if (measureSession.isActive) {
+            measureSession.addPoint(lat, lng)
+            return
+        }
         val tool = activeDrawTool ?: return
         vm.selectWaypoint(null)
         selectedDrawingId = null
@@ -302,7 +368,13 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
             drawings = drawingDocument.features,
             drawingLayers = drawingDocument.layers,
             draftDrawing = draftDrawing,
-            drawingInputEnabled = activeDrawTool != null,
+            drawingInputEnabled = activeDrawTool != null || measureSession.isActive,
+            unitLabelsVisible = unitLabelsVisible,
+            taskLabelsVisible = taskLabelsVisible,
+            drawingLabelsVisible = drawingLabelsVisible,
+            mgrsGridVisible = mgrsGridVisible,
+            selectedDrawingId = selectedDrawingId,
+            selectedWaypointId = selectedWaypointId,
             calibrationInputEnabled = isCalibratingPdf,
             pendingTarget = pendingTarget,
             onConsumePendingTarget = vm::consumePendingCameraTarget,
@@ -345,6 +417,23 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                     selectedDrawingId = featureId
                 }
             },
+            onVertexMoved = { featureId, vertexIndex, lat, lng ->
+                drawingDocument.features.firstOrNull { it.id == featureId }?.let { feature ->
+                    drawingStore.updateFeature(feature.withVertexMoved(vertexIndex, lat, lng))
+                }
+            },
+            onVertexInserted = { featureId, atIndex, lat, lng ->
+                drawingDocument.features.firstOrNull { it.id == featureId }?.let { feature ->
+                    drawingStore.updateFeature(feature.withVertexInserted(atIndex, lat, lng))
+                }
+            },
+            onVertexDeleted = { featureId, vertexIndex ->
+                drawingDocument.features.firstOrNull { it.id == featureId }?.let { feature ->
+                    feature.withVertexRemovedOrNull(vertexIndex)?.let {
+                        drawingStore.updateFeature(it)
+                    }
+                }
+            },
             onMapTap = {
                 if (selectedWaypointId != null) vm.selectWaypoint(null)
                 selectedDrawingId = null
@@ -365,7 +454,23 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
                 .padding(top = 8.dp)
-                .fillMaxWidth()
+                .fillMaxWidth(),
+            onDropPin = {
+                val (lat, lng) = vm.headerCoordinate
+                val mgrs = vm.headerMgrs
+                val activeLayerId = drawingDocument.layers
+                    .firstOrNull { it.isVisible }?.id
+                    ?: com.tacticalmaps.drawings.DrawingDocument.DEFAULT_LAYER_ID
+                waypointStore.add(
+                    com.tacticalmaps.waypoints.Waypoint(
+                        name = mgrs,
+                        latitude = lat,
+                        longitude = lng,
+                        kind = com.tacticalmaps.waypoints.WaypointKind.Generic,
+                        layerId = activeLayerId
+                    )
+                )
+            }
         )
 
         // Hamburger (left) + Compass (right), below the header.
@@ -406,6 +511,38 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                         }
                     )
                     DropdownMenuItem(
+                        text = { Text("Measure") },
+                        onClick = {
+                            hamburgerOpen = false
+                            stopDrawing()
+                            measureSession.start()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (unitLabelsVisible) "✓ Unit Labels" else "Unit Labels") },
+                        onClick = {
+                            unitLabelsVisible = !unitLabelsVisible
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (taskLabelsVisible) "✓ Task Labels" else "Task Labels") },
+                        onClick = {
+                            taskLabelsVisible = !taskLabelsVisible
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (drawingLabelsVisible) "✓ Drawing Labels" else "Drawing Labels") },
+                        onClick = {
+                            drawingLabelsVisible = !drawingLabelsVisible
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (mgrsGridVisible) "✓ MGRS Grid" else "MGRS Grid") },
+                        onClick = {
+                            mgrsGridVisible = !mgrsGridVisible
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text("Import PDF Map") },
                         onClick = {
                             hamburgerOpen = false
@@ -429,6 +566,13 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                             }
                         )
                     }
+                    DropdownMenuItem(
+                        text = { Text("Import GeoJSON") },
+                        onClick = {
+                            hamburgerOpen = false
+                            geoJsonImportLauncher.launch(arrayOf("application/geo+json", "application/json", "*/*"))
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Export GeoJSON") },
                         onClick = {
@@ -463,6 +607,13 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 12.dp, vertical = 16.dp)
                     .fillMaxWidth()
+            )
+        } else if (measureSession.isActive) {
+            MeasureToolbar(
+                session = measureSession,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 12.dp, vertical = 16.dp)
             )
         } else if (activeDrawTool != null) {
             DrawingDraftBar(

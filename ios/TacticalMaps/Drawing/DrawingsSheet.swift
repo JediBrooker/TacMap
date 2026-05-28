@@ -9,6 +9,8 @@ struct DrawingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var pendingDelete: DrawingShape? = nil
+    @State private var renamingShape: DrawingShape? = nil
+    @State private var renameDraft: String = ""
 
     var body: some View {
         NavigationStack {
@@ -75,6 +77,20 @@ struct DrawingsSheet: View {
             } message: { shape in
                 Text("This will permanently remove “\(shape.name ?? shape.kind.displayName)” — \(shape.coordinates.count) point\(shape.coordinates.count == 1 ? "" : "s").")
             }
+            .alert("Rename drawing",
+                   isPresented: Binding(get: { renamingShape != nil },
+                                        set: { if !$0 { renamingShape = nil } }),
+                   presenting: renamingShape) { shape in
+                TextField("Name", text: $renameDraft).autocorrectionDisabled()
+                Button("Save") {
+                    var updated = shape
+                    let trimmed = renameDraft.trimmingCharacters(in: .whitespaces)
+                    updated.name = trimmed.isEmpty ? nil : trimmed
+                    drawingStore.update(updated)
+                    renamingShape = nil
+                }
+                Button("Cancel", role: .cancel) { renamingShape = nil }
+            }
         }
     }
 
@@ -82,6 +98,9 @@ struct DrawingsSheet: View {
     private func newRow(_ kind: DrawingKind, subtitle: String) -> some View {
         Button {
             guard let layerID = activeLayerID else { return }
+            if let layer = drawingStore.layer(id: layerID) {
+                session.strokeColorHex = layer.defaultColorHex
+            }
             session.start(kind: kind, layerID: layerID)
             dismiss()
         } label: {
@@ -117,6 +136,19 @@ struct DrawingsSheet: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            // Inline rename button so users don't have to discover the
+            // swipe/long-press affordances.
+            Button {
+                renameDraft = shape.name ?? ""
+                renamingShape = shape
+            } label: {
+                Image(systemName: "pencil")
+                    .foregroundStyle(.indigo)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Rename \(shape.name ?? shape.kind.displayName)")
             Button(role: .destructive) {
                 pendingDelete = shape
             } label: {
@@ -129,6 +161,26 @@ struct DrawingsSheet: View {
             .accessibilityLabel("Delete \(shape.name ?? shape.kind.displayName)")
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                pendingDelete = shape
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            Button {
+                renameDraft = shape.name ?? ""
+                renamingShape = shape
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            .tint(.indigo)
+        }
+        .contextMenu {
+            Button {
+                renameDraft = shape.name ?? ""
+                renamingShape = shape
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
             Button(role: .destructive) {
                 pendingDelete = shape
             } label: {

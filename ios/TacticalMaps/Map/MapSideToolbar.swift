@@ -3,35 +3,30 @@ import SwiftUI
 /// Top-left hamburger button. Opens a Menu containing every secondary tool:
 /// Search, Waypoints, Drawings, Layers, Import PDF Map, Export GeoJSON.
 struct HamburgerMenu: View {
-    let onSearch:    () -> Void
-    let onWaypoints: () -> Void
-    let onDrawings:  () -> Void
-    let onLayers:    () -> Void
-    let onImport:    () -> Void
-    let onExport:    () -> Void
-    let onAbout:     () -> Void
+    let onSearch:        () -> Void
+    let onWaypoints:     () -> Void
+    let onDrawings:      () -> Void
+    let onLayers:        () -> Void
+    let onMeasure:       () -> Void
+    let onImport:        () -> Void
+    let onImportGeoJSON: () -> Void
+    let onExport:        () -> Void
+    let onAbout:         () -> Void
 
     var body: some View {
         Menu {
-            Section {
-                Button { onSearch() } label: {
-                    Label("Search…", systemImage: "magnifyingglass")
-                }
-            }
-            Section("Layers & data") {
-                Button { onWaypoints() } label: { Label("Symbology", systemImage: "mappin.and.ellipse") }
-                Button { onDrawings()  } label: { Label("Drawings",  systemImage: "scribble.variable") }
-                Button { onLayers()    } label: { Label("Layers",    systemImage: "square.3.stack.3d") }
-            }
-            Section("Maps") {
-                Button { onImport() } label: { Label("Import PDF Map…", systemImage: "doc.badge.plus") }
-            }
-            Section {
-                Button { onExport() } label: { Label("Export GeoJSON…", systemImage: "square.and.arrow.up") }
-            }
-            Section {
-                Button { onAbout() } label: { Label("About & Credits", systemImage: "info.circle") }
-            }
+            // Section dividers eat enough vertical space that the menu
+            // clipped its tail on iPhone-portrait. Flat layout fits every
+            // item without scrolling.
+            Button { onSearch() }    label: { Label("Search…",         systemImage: "magnifyingglass") }
+            Button { onWaypoints() } label: { Label("Symbology",       systemImage: "mappin.and.ellipse") }
+            Button { onDrawings()  } label: { Label("Drawings",        systemImage: "scribble.variable") }
+            Button { onLayers()    } label: { Label("Layers",          systemImage: "square.3.stack.3d") }
+            Button { onMeasure()   } label: { Label("Measure",         systemImage: "ruler") }
+            Button { onImport() }    label: { Label("Import PDF Map…", systemImage: "doc.badge.plus") }
+            Button { onImportGeoJSON() } label: { Label("Import GeoJSON…", systemImage: "square.and.arrow.down") }
+            Button { onExport() }    label: { Label("Export GeoJSON…", systemImage: "square.and.arrow.up") }
+            Button { onAbout() }     label: { Label("About & Credits", systemImage: "info.circle") }
         } label: {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 17, weight: .medium))

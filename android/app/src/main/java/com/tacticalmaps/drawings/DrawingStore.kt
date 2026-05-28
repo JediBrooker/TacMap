@@ -52,6 +52,20 @@ class DrawingStore(context: Context) {
         persist()
     }
 
+    /**
+     * Insert a layer verbatim (preserves the supplied id + colour). Used
+     * by GeoJSON import so feature.layerId references resolve correctly
+     * after a round-trip. If a layer with the same id already exists,
+     * this is a no-op.
+     */
+    fun addLayerVerbatim(layer: DrawingLayer) {
+        if (_document.value.layers.any { it.id == layer.id }) return
+        _document.value = _document.value.copy(
+            layers = _document.value.layers + layer
+        ).withDefaultLayers()
+        persist()
+    }
+
     fun setLayerVisible(layerId: String, visible: Boolean) {
         _document.value = _document.value.copy(
             layers = _document.value.layers.map {

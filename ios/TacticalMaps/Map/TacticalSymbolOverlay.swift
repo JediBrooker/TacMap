@@ -49,6 +49,9 @@ struct TacticalSymbolOverlay: UIViewRepresentable {
             positions: mapVM.waypointScreenPositions,
             zoomScale: mapVM.zoomScaleFactor,
             visible: visibility.waypointsVisible,
+            unitLabelsVisible: visibility.unitLabelsVisible,
+            taskLabelsVisible: visibility.taskLabelsVisible,
+            selectedID: mapVM.selectedWaypointID,
             store: waypointStore,
             mapVM: mapVM
         )
@@ -60,27 +63,22 @@ struct TacticalSymbolOverlay: UIViewRepresentable {
 /// bubble's frame — this is what kills the click-hijack bug.
 final class OverlayContainerView: UIView {
     private var bubbleViews: [UUID: BubbleView] = [:]
+    /// Optional name labels rendered as a translucent pill under each
+    /// bubble. Disabled via the Layers sheet's "Unit Labels" toggle.
+    private var labelViews: [UUID: UILabel] = [:]
 
+    /// The overlay is purely VISUAL — never claim any touch. Tap and
+    /// long-press selection for symbols is dispatched from
+    /// MapContainerView's own gesture recognisers, which hit-test
+    /// against the published waypoint screen positions. Returning nil
+    /// here means every gesture (tap, pan, pinch, rotation) falls
+    /// straight through to MKMapView underneath, so a pinch that
+    /// starts on a symbol still zooms the map.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        for sub in subviews.reversed() {
-            guard !sub.isHidden, sub.isUserInteractionEnabled else { continue }
-            let localPoint = sub.convert(point, from: self)
-            if let hit = sub.hitTest(localPoint, with: event) {
-                return hit
-            }
-        }
         return nil
     }
 
-    /// Returning false for empty taps is what makes the overlay
-    /// transparent to the map below. Without this, `hitTest` returning
-    /// nil isn't always enough — some SwiftUI hosting paths still
-    /// consider us "hit" if point(inside) returns the default true.
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        for sub in subviews {
-            guard !sub.isHidden, sub.isUserInteractionEnabled else { continue }
-            if sub.frame.contains(point) { return true }
-        }
         return false
     }
 
@@ -88,6 +86,9 @@ final class OverlayContainerView: UIView {
                 positions: [UUID: CGPoint],
                 zoomScale: CGFloat,
                 visible: Bool,
+                unitLabelsVisible: Bool,
+                taskLabelsVisible: Bool,
+                selectedID: UUID?,
                 store: WaypointStore,
                 mapVM: MapViewModel) {
         let liveIDs: Set<UUID> = visible
@@ -97,6 +98,23 @@ final class OverlayContainerView: UIView {
         for (id, bub) in bubbleViews where !liveIDs.contains(id) {
             bub.removeFromSuperview()
             bubbleViews.removeValue(forKey: id)
+        }
+        // Decide per-waypoint whether a label should currently exist. A
+        // waypoint earns a label slot only if its kind's toggle is on AND
+        // the waypoint is otherwise visible — so toggling "Task Labels"
+        // off doesn't yank "Unit Labels" along with it.
+        let waypointsByID = Dictionary(uniqueKeysWithValues: waypoints.map { ($0.id, $0) })
+        let labelIDs: Set<UUID> = visible
+            ? Set(waypoints.filter { wp in
+                switch wp.kind {
+                case .controlMeasure: return taskLabelsVisible
+                case .military, .generic: return unitLabelsVisible
+                }
+            }.map(\.id))
+            : []
+        for (id, lbl) in labelViews where !labelIDs.contains(id) {
+            lbl.removeFromSuperview()
+            labelViews.removeValue(forKey: id)
         }
         guard visible else { return }
 
@@ -109,6 +127,7 @@ final class OverlayContainerView: UIView {
                 width:  size.width,
                 height: size.height
             )
+            let isSelected = (wp.id == selectedID)
             if let existing = bubbleViews[wp.id] {
                 // CRITICAL: skip frame updates while a bubble is being
                 // dragged. Otherwise an unrelated re-render (location
@@ -120,15 +139,81 @@ final class OverlayContainerView: UIView {
                     existing.frame = frame
                 }
                 existing.update(waypoint: wp, store: store, mapVM: mapVM)
+                existing.setSelected(isSelected)
             } else {
                 let bub = BubbleView(waypoint: wp,
                                      store: store,
                                      mapVM: mapVM)
                 bub.frame = frame
+                bub.setSelected(isSelected)
                 addSubview(bub)
                 bubbleViews[wp.id] = bub
             }
+
+            // Position the optional name label — INSIDE the bubble for
+            // tactical control measures (task graphics) so it sits within
+            // the symbol's shape, BELOW the bubble for military / generic
+            // waypoints.
+            let wantsLabel: Bool = {
+                switch wp.kind {
+                case .controlMeasure: return taskLabelsVisible
+                case .military, .generic: return unitLabelsVisible
+                }
+            }()
+            if wantsLabel {
+                let name = wp.name.trimmingCharacters(in: .whitespaces)
+                if name.isEmpty {
+                    if let stale = labelViews.removeValue(forKey: wp.id) {
+                        stale.removeFromSuperview()
+                    }
+                } else {
+                    let label = labelViews[wp.id] ?? Self.makeUnitLabel()
+                    label.text = name
+                    label.numberOfLines = 2
+                    // Cap label content at ~110pt; wraps to a second line
+                    // if needed so unit names that overshoot don't sprawl
+                    // across neighbouring icons.
+                    let maxContentWidth: CGFloat = 110
+                    let fitted = label.sizeThatFits(
+                        CGSize(width: maxContentWidth,
+                               height: .greatestFiniteMagnitude)
+                    )
+                    let labelW = min(fitted.width,  maxContentWidth) + 10
+                    let labelH = fitted.height + 4
+                    label.bounds = CGRect(x: 0, y: 0, width: labelW, height: labelH)
+                    switch wp.kind {
+                    case .controlMeasure:
+                        label.center = CGPoint(x: pos.x, y: pos.y)
+                    case .military, .generic:
+                        label.center = CGPoint(x: pos.x,
+                                               y: frame.maxY + labelH / 2 + 2)
+                    }
+                    if label.superview == nil {
+                        addSubview(label)
+                    }
+                    // Always raise the label above the bubble so task
+                    // labels (which sit inside the graphic) aren't
+                    // obscured by the bubble's stroke. Unit labels sit
+                    // below the bubble anyway so this is a no-op there.
+                    bringSubviewToFront(label)
+                    labelViews[wp.id] = label
+                }
+            }
         }
+    }
+
+    private static func makeUnitLabel() -> UILabel {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.numberOfLines = 1
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.62)
+        label.layer.cornerRadius = 4
+        label.layer.cornerCurve = .continuous
+        label.layer.masksToBounds = true
+        label.isUserInteractionEnabled = false
+        return label
     }
 
     /// Per-kind intrinsic bubble size. Tactical control measures can
@@ -165,6 +250,12 @@ final class BubbleView: UIView {
     private weak var mapVM: MapViewModel?
 
     private let imageView = UIImageView()
+    /// Tactical-orange halo behind the icon when this bubble is the
+    /// selected waypoint. Its image is a pre-rendered, blurred orange
+    /// silhouette of the symbol — so the glow follows the icon's
+    /// shape (rectangle for units, hexagon for control measures, etc.)
+    /// instead of looking like a generic circle.
+    private let glowImageView = UIImageView()
     private var dragStartScreenPoint: CGPoint?
     /// True between long-press recognition and release. While true the
     /// container leaves our frame alone — re-renders triggered by
@@ -182,6 +273,11 @@ final class BubbleView: UIView {
         backgroundColor = .clear
         isOpaque = false
         clipsToBounds = false
+        // Bubbles are PURELY VISUAL. All tap / long-press handling
+        // lives in MapContainerView so MKMapView's pinch + pan + tap
+        // recognisers own the entire gesture chain — pinches that
+        // start on a symbol still zoom the map.
+        isUserInteractionEnabled = false
 
         // .scaleToFill (NOT .scaleAspectFit) so non-uniform bubble
         // frames actually stretch the symbol — a control measure with
@@ -190,6 +286,12 @@ final class BubbleView: UIView {
         // have square frames so this is a no-op for them.
         imageView.contentMode = .scaleToFill
         imageView.isUserInteractionEnabled = false
+        // Halo behind the icon. Image is set in refreshImage() so it
+        // matches the symbol shape, and alpha goes to 1 on select.
+        glowImageView.contentMode = .scaleToFill
+        glowImageView.isUserInteractionEnabled = false
+        glowImageView.alpha = 0
+        addSubview(glowImageView)
         addSubview(imageView)
 
         // Triple-stacked shadow approximates the soft white halo the
@@ -203,17 +305,9 @@ final class BubbleView: UIView {
         shadow.shadowOffset  = .zero
         shadow.masksToBounds = false
 
-        // Tap → select.
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
-        addGestureRecognizer(tap)
-
-        // Long-press + drag → move. minimumPressDuration matches the
-        // SwiftUI version (0.35s), giving a regular tap or pinch a
-        // chance to "win" and pass through.
-        let press = UILongPressGestureRecognizer(target: self, action: #selector(handlePress))
-        press.minimumPressDuration = 0.35
-        press.allowableMovement = .greatestFiniteMagnitude  // don't cancel on drift
-        addGestureRecognizer(press)
+        // No gesture recognisers — tap / long-press are dispatched
+        // from MapContainerView's own recognisers which hit-test
+        // against waypoint screen positions.
 
         refreshImage()
     }
@@ -231,9 +325,44 @@ final class BubbleView: UIView {
         }
     }
 
+    /// Bright orange halo when the controls card for this waypoint is
+    /// open. Toggles the imageView's CALayer shadow rather than adding
+    /// a separate subview so the glow tracks the symbol's pixel-perfect
+    /// outline.
+    func setSelected(_ selected: Bool) {
+        let layer = imageView.layer
+        if selected {
+            // Sharp orange CALayer shadow on the icon — gives the halo
+            // a crisp inner edge right against the symbol outline.
+            layer.shadowColor   = UIColor(red: 1, green: 0.65, blue: 0.18, alpha: 1).cgColor
+            layer.shadowOpacity = 1.0
+            layer.shadowRadius  = 10.0
+            layer.shadowOffset  = .zero
+            // Halo image gives the wide outer glow that follows the
+            // symbol's actual shape (rectangle / hexagon / etc.).
+            UIView.animate(withDuration: 0.15) {
+                self.imageView.transform = CGAffineTransform(scaleX: 1.10, y: 1.10)
+                self.glowImageView.alpha = 1.0
+            }
+        } else {
+            layer.shadowColor   = UIColor.white.cgColor
+            layer.shadowOpacity = 1.0
+            layer.shadowRadius  = 2.0
+            layer.shadowOffset  = .zero
+            UIView.animate(withDuration: 0.15) {
+                self.imageView.transform = .identity
+                self.glowImageView.alpha = 0
+            }
+        }
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         imageView.frame = bounds
+        // Halo image sits behind the icon, sized 25% larger on every
+        // side so the wide outer bloom is visible past the symbol edges.
+        let glowInset: CGFloat = -bounds.width * 0.25
+        glowImageView.frame = bounds.insetBy(dx: glowInset, dy: glowInset)
     }
 
     // MARK: - Rendering
@@ -250,6 +379,39 @@ final class BubbleView: UIView {
             imageView.image = MilitarySymbolRenderer.image(for: spec, size: 44)
         case .generic:
             imageView.image = Self.genericImage()
+        }
+        // Regenerate the halo image so it matches the new symbol's
+        // shape. Cheap — runs only when the icon image changes.
+        glowImageView.image = imageView.image.flatMap {
+            Self.makeGlowImage(from: $0,
+                               color: UIColor(red: 1, green: 0.65, blue: 0.18, alpha: 1),
+                               blurRadius: 14)
+        }
+    }
+
+    /// Build an icon-shaped glow image from the given symbol. Renders
+    /// the symbol several times with a tactical-orange drop shadow at
+    /// zero offset; the shadows stack into a bright halo that follows
+    /// the symbol's alpha mask exactly. The original glyph is also
+    /// drawn but is overlaid by the crisp `imageView` on top, so only
+    /// the spillover halo ends up visible.
+    private static func makeGlowImage(from src: UIImage,
+                                      color: UIColor,
+                                      blurRadius: CGFloat) -> UIImage {
+        let inset = blurRadius * 2
+        let outSize = CGSize(width: src.size.width + inset * 2,
+                             height: src.size.height + inset * 2)
+        let renderer = UIGraphicsImageRenderer(size: outSize)
+        return renderer.image { ctx in
+            let cg = ctx.cgContext
+            cg.setShadow(offset: .zero, blur: blurRadius, color: color.cgColor)
+            // Stack passes so the shadow's alpha builds up to a bright
+            // halo — a single pass washes out at large blur radii.
+            for _ in 0..<4 {
+                src.draw(in: CGRect(x: inset, y: inset,
+                                    width: src.size.width,
+                                    height: src.size.height))
+            }
         }
     }
 
@@ -285,10 +447,11 @@ final class BubbleView: UIView {
         mapVM?.selectedWaypointID = waypoint.id
     }
 
-    /// Tight-bounding-box hit-test for control-measure symbols.
-    /// Military and generic glyphs fill their frame solidly so the
-    /// default frame-contains check is fine for them.
-    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    /// Static helper used by MapContainerView's tap handler to decide
+    /// whether a tap at the given local point hits this bubble's
+    /// visible symbol (control-measure alpha mask) or just its frame
+    /// rectangle (military / generic).
+    func containsVisiblePoint(_ point: CGPoint) -> Bool {
         guard bounds.contains(point) else { return false }
         guard case .controlMeasure(let measure) = waypoint.kind else {
             return true

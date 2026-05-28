@@ -1,6 +1,8 @@
 import SwiftUI
 import MapKit
 import Combine
+import Grid
+import MGRS
 
 /// `UIViewRepresentable` wrapper around `MKMapView`. Hosts the satellite map,
 /// waypoint annotations, and drawing overlays (polyline/polygon/point).
@@ -15,6 +17,7 @@ struct MapContainerView: UIViewRepresentable {
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var drawingSession: DrawingSessionViewModel
+    @ObservedObject var measureSession: MeasureSession
     @ObservedObject var visibility: LayerVisibility
     @ObservedObject var calibration: CalibrationSession
 
@@ -118,6 +121,12 @@ struct MapContainerView: UIViewRepresentable {
         context.coordinator.syncPDFOverlay(on: mv,
                                            source: mapVM.mapSource,
                                            visible: visibility.pdfOverlayVisible)
+        // Sync the MGRS-grid toggle through to the coordinator and
+        // rebuild — flipping the switch must take effect without
+        // waiting for the next pan/zoom.
+        let mgrsChanged = context.coordinator.mgrsGridVisibleFlag != visibility.mgrsGridVisible
+        context.coordinator.mgrsGridVisibleFlag = visibility.mgrsGridVisible
+        if mgrsChanged { context.coordinator.refreshMGRSGrid(on: mv) }
         context.coordinator.refresh(on: mv,
                                     waypoints: waypointStore.waypoints,
                                     drawings:  drawingStore.visibleShapes,
@@ -140,6 +149,7 @@ struct MapContainerView: UIViewRepresentable {
                     waypointStore: waypointStore,
                     drawingStore: drawingStore,
                     drawingSession: drawingSession,
+                    measureSession: measureSession,
                     calibration: calibration)
     }
 
@@ -150,6 +160,7 @@ struct MapContainerView: UIViewRepresentable {
         let waypointStore: WaypointStore
         let drawingStore: DrawingStore
         let drawingSession: DrawingSessionViewModel
+        let measureSession: MeasureSession
         var calibration: CalibrationSession   // mutable so updateUIView can refresh
 
         var cameraRequestSink: AnyCancellable?
@@ -161,6 +172,20 @@ struct MapContainerView: UIViewRepresentable {
         /// carry style metadata themselves).
         private var styleByOverlay: [ObjectIdentifier: DrawingStyle] = [:]
         private var inProgressOverlayIDs: Set<ObjectIdentifier> = []
+        /// Drawing-shape id keyed by overlay identity. Lets the renderer
+        /// thicken the stroke for whichever shape is currently selected.
+        private var shapeIDByOverlay: [ObjectIdentifier: UUID] = [:]
+        /// MGRS-grid polyline lookup: which grid-type each registered
+        /// overlay represents. Used by the renderer to pick stroke
+        /// colour/width per level, and by the refresh routine to remove
+        /// only grid polylines when toggling the overlay or panning.
+        private var mgrsGridTypeByOverlay: [ObjectIdentifier: GridType] = [:]
+        private var mgrsOverlayIDs: Set<ObjectIdentifier> = []
+        private var lastMGRSFingerprint: String = ""
+        /// Active MGRS label annotations — tracked separately so the
+        /// refresh routine can yank just the grid labels without
+        /// touching drawing or waypoint annotations.
+        private var mgrsLabelAnnotations: [MGRSGridLabelAnnotation] = []
 
         /// PDF overlay rendered as a UIImageView subview (bypasses MKOverlay
         /// because iOS 26 MapKit silently refuses to draw custom overlays on
@@ -200,11 +225,13 @@ struct MapContainerView: UIViewRepresentable {
              waypointStore: WaypointStore,
              drawingStore: DrawingStore,
              drawingSession: DrawingSessionViewModel,
+             measureSession: MeasureSession,
              calibration: CalibrationSession) {
             self.mapVM = mapVM
             self.waypointStore = waypointStore
             self.drawingStore = drawingStore
             self.drawingSession = drawingSession
+            self.measureSession = measureSession
             self.calibration = calibration
         }
 
@@ -256,6 +283,7 @@ struct MapContainerView: UIViewRepresentable {
             mapVM.currentMetresPerPoint = metresPerPoint(in: mv)
             pdfImageView?.updateFrame(in: mv)
             publishOverlayState(in: mv)
+            refreshMGRSGrid(on: mv)
         }
 
         /// Fires on every render frame during pan/zoom/rotate — the only delegate
@@ -411,16 +439,46 @@ struct MapContainerView: UIViewRepresentable {
                      annotationView view: MKAnnotationView,
                      didChange newState: MKAnnotationView.DragState,
                      fromOldState oldState: MKAnnotationView.DragState) {
-            guard newState == .ending,
-                  let ann = view.annotation as? WaypointAnnotation
+            guard newState == .ending else { return }
+            if let ann = view.annotation as? WaypointAnnotation {
+                if let wp = waypointStore.waypoints.first(where: { $0.id == ann.waypoint.id }) {
+                    var updated = wp
+                    updated.latitude  = ann.coordinate.latitude
+                    updated.longitude = ann.coordinate.longitude
+                    waypointStore.update(updated)
+                }
+                return
+            }
+            if let h = view.annotation as? DrawingVertexHandleAnnotation,
+               var shape = drawingStore.shapes.first(where: { $0.id == h.shapeID }) {
+                let newCoord = Coordinate2D(latitude: h.coordinate.latitude,
+                                            longitude: h.coordinate.longitude)
+                if h.isMidpoint {
+                    shape.insertEffectiveVertex(newCoord, at: h.vertexIndex)
+                } else {
+                    shape.setEffectiveVertex(h.vertexIndex, to: newCoord)
+                }
+                drawingStore.update(shape)
+                return
+            }
+        }
+
+        /// Long-press a real vertex handle → delete the vertex if the
+        /// shape still meets its kind's minimum. The drawing snaps back
+        /// to a baked, transform-free state (rotation/scale reset).
+        @objc func handleVertexLongPress(_ g: UILongPressGestureRecognizer) {
+            guard g.state == .began,
+                  let view = g.view as? MKAnnotationView,
+                  let h = view.annotation as? DrawingVertexHandleAnnotation,
+                  !h.isMidpoint,
+                  var shape = drawingStore.shapes.first(where: { $0.id == h.shapeID })
             else { return }
-            // The annotation's `coordinate` was updated live by MapKit
-            // during the drag; commit it.
-            if let wp = waypointStore.waypoints.first(where: { $0.id == ann.waypoint.id }) {
-                var updated = wp
-                updated.latitude  = ann.coordinate.latitude
-                updated.longitude = ann.coordinate.longitude
-                waypointStore.update(updated)
+            if shape.removeEffectiveVertex(at: h.vertexIndex) {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                drawingStore.update(shape)
+            } else {
+                // Tell the user why nothing happened.
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
             }
         }
 
@@ -434,6 +492,18 @@ struct MapContainerView: UIViewRepresentable {
                     calibration.recordTap(pdfPoint: pdfPoint, screenPoint: pt)
                     syncCalibrationMarkers()
                 }
+                return
+            }
+
+            // Measure-mode taps add a vertex to the running measurement.
+            if measureSession.isActive {
+                let coord = mv.convert(pt, toCoordinateFrom: mv)
+                measureSession.addPoint(coord)
+                refresh(on: mv,
+                        waypoints: Array(mv.annotations.compactMap { ($0 as? WaypointAnnotation)?.waypoint }),
+                        drawings:  drawingStore.visibleShapes,
+                        session:   drawingSession,
+                        visibility: nil)
                 return
             }
 
@@ -452,21 +522,84 @@ struct MapContainerView: UIViewRepresentable {
                 return
             }
 
-            // Hit-test against existing drawings (most-recent on top). A hit
-            // selects that drawing and clears any waypoint selection.
-            if mv.selectedAnnotations.isEmpty,
-               let hit = drawingHitTest(at: pt, on: mv) {
+            // Hit-test against tactical symbols FIRST (drawn on top of
+            // drawings in the SwiftUI overlay), then against drawings.
+            // Bubbles are non-interactive so the tap arrives here even
+            // when the user taps directly on a symbol.
+            if let wpID = waypointHitTest(at: pt) {
+                mapVM.selectedDrawingID = nil
+                mapVM.selectedWaypointID = wpID
+                selectionHaptic.prepare()
+                selectionHaptic.impactOccurred()
+                return
+            }
+            if let hit = drawingHitTest(at: pt, on: mv) {
                 mapVM.selectedWaypointID = nil
                 mapVM.selectedDrawingID  = hit.id
                 return
             }
 
             // Tap on empty map dismisses any floating controls card.
-            if mapVM.selectedWaypointID != nil, mv.selectedAnnotations.isEmpty {
+            if mapVM.selectedWaypointID != nil {
                 mapVM.selectedWaypointID = nil
             }
             if mapVM.selectedDrawingID != nil {
                 mapVM.selectedDrawingID = nil
+            }
+        }
+
+        /// Hit-test the tactical-symbol overlay using the published
+        /// screen positions and per-kind sizes. The overlay itself is
+        /// non-interactive (touches pass through to MKMapView so pinch
+        /// works), so selection has to happen from here.
+        private func waypointHitTest(at pt: CGPoint) -> UUID? {
+            let positions = mapVM.waypointScreenPositions
+            let zoom = mapVM.zoomScaleFactor
+            // Most-recent-on-top: walk the waypoints in reverse to
+            // match the overlay's draw order.
+            for wp in waypointStore.waypoints.reversed() {
+                guard let centre = positions[wp.id] else { continue }
+                let size = waypointBubbleSize(for: wp, zoomScale: zoom)
+                let frame = CGRect(
+                    x: centre.x - size.width  / 2,
+                    y: centre.y - size.height / 2,
+                    width:  size.width,
+                    height: size.height
+                )
+                guard frame.contains(pt) else { continue }
+                // Control measures: extra alpha-mask test so taps in
+                // the transparent corners of a hexagonal/triangle
+                // graphic fall through. Military / generic glyphs fill
+                // their frame solidly so a rect check is enough.
+                if case .controlMeasure(let measure) = wp.kind {
+                    let local = CGPoint(x: pt.x - frame.minX, y: pt.y - frame.minY)
+                    let normalized = CGPoint(
+                        x: local.x / max(frame.width,  1),
+                        y: local.y / max(frame.height, 1)
+                    )
+                    if !TacticalControlMeasureAlphaMask.containsInVisibleBounds(
+                        measure: measure,
+                        rotation: wp.rotation,
+                        normalizedPoint: normalized
+                    ) { continue }
+                }
+                return wp.id
+            }
+            return nil
+        }
+
+        /// Mirror of TacticalSymbolOverlay.bubbleSize so the tap
+        /// hit-test sees the same bubble geometry the overlay draws.
+        private func waypointBubbleSize(for wp: Waypoint, zoomScale: CGFloat) -> CGSize {
+            switch wp.kind {
+            case .controlMeasure:
+                let w = max(8, 64 * CGFloat(wp.scaleX) * zoomScale)
+                let h = max(8, 64 * CGFloat(wp.scaleY) * zoomScale)
+                return CGSize(width: w, height: h)
+            case .military:
+                return CGSize(width: 44, height: 44)
+            case .generic:
+                return CGSize(width: 34, height: 34)
             }
         }
 
@@ -478,25 +611,122 @@ struct MapContainerView: UIViewRepresentable {
         private var draggingDrawingID: UUID?
         private var lastDragCoord: CLLocationCoordinate2D?
 
+        // MARK: MGRS grid overlay
+
+        /// Snapshot of the toggle so refreshMGRSGrid can read it without
+        /// taking the LayerVisibility object as a parameter on every
+        /// region-change callback.
+        var mgrsGridVisibleFlag: Bool = false
+
+        /// Rebuild the visible MGRS-grid polylines. Cheap: bounded by
+        /// what's actually on screen, and skipped entirely when the
+        /// toggle is off. We bucket by a coarse fingerprint so panning
+        /// inside a stable cell doesn't re-tessellate the same lines.
+        func refreshMGRSGrid(on mv: MKMapView) {
+            // Always drop the existing overlay set + label annotations
+            // first — if the toggle is off, this leaves the map clean.
+            if !mgrsOverlayIDs.isEmpty {
+                let toRemove = mv.overlays.filter { mgrsOverlayIDs.contains(ObjectIdentifier($0)) }
+                mv.removeOverlays(toRemove)
+                mgrsOverlayIDs.removeAll()
+                mgrsGridTypeByOverlay.removeAll()
+            }
+            if !mgrsLabelAnnotations.isEmpty {
+                mv.removeAnnotations(mgrsLabelAnnotations)
+                mgrsLabelAnnotations.removeAll()
+            }
+            guard mgrsGridVisibleFlag else {
+                lastMGRSFingerprint = ""
+                return
+            }
+
+            // Skip the heavy work when the rounded region hasn't moved
+            // enough to change which 100km / 10km / 1km cells are visible.
+            let region = mv.region
+            let widthPts = mv.bounds.width
+            let fp = String(format: "%.3f,%.3f,%.3f,%.3f,%.0f",
+                            region.center.latitude,
+                            region.center.longitude,
+                            region.span.latitudeDelta,
+                            region.span.longitudeDelta,
+                            widthPts)
+            if fp == lastMGRSFingerprint { return }
+            lastMGRSFingerprint = fp
+
+            let built = MGRSGridRenderer.build(for: region, mapWidthPoints: widthPts)
+            for seg in built.lines {
+                mgrsGridTypeByOverlay[ObjectIdentifier(seg.polyline)] = seg.gridType
+                mgrsOverlayIDs.insert(ObjectIdentifier(seg.polyline))
+                mv.addOverlay(seg.polyline, level: .aboveLabels)
+            }
+            for label in built.labels {
+                let ann = MGRSGridLabelAnnotation(text: label.text,
+                                                  coordinate: label.coordinate,
+                                                  gridType: label.gridType,
+                                                  isVertical: label.isVertical)
+                mgrsLabelAnnotations.append(ann)
+            }
+            if !mgrsLabelAnnotations.isEmpty {
+                mv.addAnnotations(mgrsLabelAnnotations)
+            }
+        }
+
+        /// True if the press began on (or close to) any vertex-edit
+        /// handle annotation. Used by the whole-shape drag gesture to
+        /// step aside and let the handle's own drag run instead.
+        private func pressIsOnVertexHandle(at pt: CGPoint, on mv: MKMapView) -> Bool {
+            let tol: CGFloat = 22
+            for ann in mv.annotations {
+                guard let h = ann as? DrawingVertexHandleAnnotation else { continue }
+                let p = mv.convert(h.coordinate, toPointTo: mv)
+                if hypot(p.x - pt.x, p.y - pt.y) <= tol { return true }
+            }
+            return false
+        }
+
+        /// ID of the waypoint currently being dragged via long-press.
+        /// Only one of (waypoint, drawing) drags at a time.
+        private var draggingWaypointID: UUID?
+
         @objc func handleDrawingDrag(_ press: UILongPressGestureRecognizer) {
             guard let mv = press.view as? MKMapView else { return }
             let pt = press.location(in: mv)
 
             switch press.state {
             case .began:
-                // Don't grab when the user is mid-draw, mid-calibrate, or
-                // already has a card/sheet open via tap selection.
-                guard !drawingSession.isDrawing,
-                      !calibration.isCalibrating,
-                      let hit = drawingHitTest(at: pt, on: mv) else { return }
-                draggingDrawingID = hit.id
-                lastDragCoord = mv.convert(pt, toCoordinateFrom: mv)
-                mv.isScrollEnabled = false
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                // Long-press never opens the controls card — that's a
-                // tap-only affordance, matching how units and tasks work.
+                // If the user pressed a vertex-edit handle for the
+                // currently selected drawing, defer to per-handle
+                // gestures (drag, long-press-to-delete) instead of
+                // grabbing the whole shape.
+                if pressIsOnVertexHandle(at: pt, on: mv) {
+                    return
+                }
+                guard !drawingSession.isDrawing, !calibration.isCalibrating else { return }
+                // Waypoints sit on top of drawings — try them first.
+                if let wpID = waypointHitTest(at: pt) {
+                    draggingWaypointID = wpID
+                    mv.isScrollEnabled = false
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    return
+                }
+                if let hit = drawingHitTest(at: pt, on: mv) {
+                    draggingDrawingID = hit.id
+                    lastDragCoord = mv.convert(pt, toCoordinateFrom: mv)
+                    mv.isScrollEnabled = false
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    return
+                }
 
             case .changed:
+                if let wpID = draggingWaypointID,
+                   let wp = waypointStore.waypoints.first(where: { $0.id == wpID }) {
+                    let coord = mv.convert(pt, toCoordinateFrom: mv)
+                    var updated = wp
+                    updated.latitude  = coord.latitude
+                    updated.longitude = coord.longitude
+                    waypointStore.update(updated)
+                    return
+                }
                 guard let id = draggingDrawingID,
                       let start = lastDragCoord,
                       var shape = drawingStore.shapes.first(where: { $0.id == id })
@@ -512,10 +742,11 @@ struct MapContainerView: UIViewRepresentable {
                 lastDragCoord = current
 
             case .ended, .cancelled, .failed:
-                if draggingDrawingID != nil {
+                if draggingDrawingID != nil || draggingWaypointID != nil {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
                 draggingDrawingID = nil
+                draggingWaypointID = nil
                 lastDragCoord = nil
                 mv.isScrollEnabled = true
 
@@ -693,10 +924,11 @@ struct MapContainerView: UIViewRepresentable {
                      drawings:  [DrawingShape],
                      session:   DrawingSessionViewModel,
                      visibility: LayerVisibility?) {
-            let fingerprint = Self.makeRefreshFingerprint(
+            let fingerprint = makeRefreshFingerprint(
                 waypoints: waypoints,
                 drawings:  drawings,
                 session:   session,
+                measureSession: measureSession,
                 visibility: visibility
             )
             // Always cache so the per-frame overlay-position publisher
@@ -727,10 +959,25 @@ struct MapContainerView: UIViewRepresentable {
             let existingDrawingAnns = mv.annotations.compactMap { $0 as? DrawingPointAnnotation }
             mv.removeAnnotations(existingDrawingAnns)
 
+            // --- Drawing label annotations (cleared then re-added per refresh) ---
+            let existingLabelAnns = mv.annotations.compactMap { $0 as? DrawingLabelAnnotation }
+            mv.removeAnnotations(existingLabelAnns)
+
+            // --- In-progress vertex dots ---
+            let existingVertexAnns = mv.annotations.compactMap { $0 as? DrawingVertexAnnotation }
+            mv.removeAnnotations(existingVertexAnns)
+
+            // --- Vertex-edit handles (rebuilt whenever selection changes) ---
+            let existingHandleAnns = mv.annotations.compactMap { $0 as? DrawingVertexHandleAnnotation }
+            mv.removeAnnotations(existingHandleAnns)
+
+            self.labelsVisible = visibility?.drawingLabelsVisible ?? true
+
             // --- Overlays ---
             mv.removeOverlays(mv.overlays)
             styleByOverlay.removeAll()
             inProgressOverlayIDs.removeAll()
+            shapeIDByOverlay.removeAll()
 
             // ALL waypoint kinds are rendered by TacticalSymbolOverlay
             // (a SwiftUI overlay above the map) — keep them all out
@@ -756,6 +1003,84 @@ struct MapContainerView: UIViewRepresentable {
                 )
                 addShape(pseudo, to: mv, inProgress: true)
             }
+
+            // Measure-tool polyline. Drawn dashed in the tactical-orange
+            // accent so it reads as a "tool" overlay distinct from saved
+            // drawings.
+            if measureSession.isActive && measureSession.points.count >= 2 {
+                let coords = measureSession.points
+                let line = MKPolyline(coordinates: coords, count: coords.count)
+                let style = DrawingStyle(
+                    strokeColorHex: "#FFA500",
+                    fillColorHex:   nil,
+                    strokeWidth:    3.0,
+                    fillOpacity:    0,
+                    dashPattern:    [6, 4]
+                )
+                styleByOverlay[ObjectIdentifier(line)] = style
+                inProgressOverlayIDs.insert(ObjectIdentifier(line))
+                mv.addOverlay(line)
+            }
+
+            // Vertex dots: every tapped point during drawing/measuring
+            // gets a small marker so the user can see where their taps
+            // landed even before the polyline connects two of them.
+            let drawColor = UIColor(hex: drawingSession.strokeColorHex)
+            let measureColor = UIColor(red: 1, green: 0.65, blue: 0.18, alpha: 1)
+            if drawingSession.isDrawing {
+                for c in drawingSession.inProgressCoordinates {
+                    let ann = DrawingVertexAnnotation(color: drawColor)
+                    ann.coordinate = CLLocationCoordinate2D(latitude: c.latitude, longitude: c.longitude)
+                    mv.addAnnotation(ann)
+                }
+            }
+            if measureSession.isActive {
+                for c in measureSession.points {
+                    let ann = DrawingVertexAnnotation(color: measureColor)
+                    ann.coordinate = c
+                    mv.addAnnotation(ann)
+                }
+            }
+
+            // Vertex-edit handles for the currently selected polyline /
+            // polygon. We render them at the EFFECTIVE coordinates so the
+            // handles sit on top of the rendered shape. Mutations bake the
+            // rotation/scale transform before persisting (see
+            // `DrawingShape.setEffectiveVertex`).
+            if let selectedID = mapVM.selectedDrawingID,
+               let shape = drawings.first(where: { $0.id == selectedID }),
+               shape.kind == .polyline || shape.kind == .polygon {
+                let coords = shape.clEffectiveCoordinates
+                // Real vertex handles — draggable, long-press to delete.
+                for (i, c) in coords.enumerated() {
+                    let h = DrawingVertexHandleAnnotation(
+                        shapeID: shape.id,
+                        vertexIndex: i,
+                        isMidpoint: false,
+                        coordinate: c
+                    )
+                    mv.addAnnotation(h)
+                }
+                // Midpoint insertion handles. Polylines: between each
+                // adjacent pair. Polygons: also between last and first
+                // so the user can split the closing segment.
+                let segmentCount = shape.kind == .polygon ? coords.count : coords.count - 1
+                for i in 0..<max(segmentCount, 0) {
+                    let a = coords[i]
+                    let b = coords[(i + 1) % coords.count]
+                    let mid = CLLocationCoordinate2D(
+                        latitude:  (a.latitude  + b.latitude)  / 2,
+                        longitude: (a.longitude + b.longitude) / 2
+                    )
+                    let h = DrawingVertexHandleAnnotation(
+                        shapeID: shape.id,
+                        vertexIndex: i + 1,
+                        isMidpoint: true,
+                        coordinate: mid
+                    )
+                    mv.addAnnotation(h)
+                }
+            }
         }
 
         /// Compact identity string used to decide whether `refresh()`
@@ -763,9 +1088,10 @@ struct MapContainerView: UIViewRepresentable {
         /// render — coords, kind, rotation, scale, name, notes-presence,
         /// elevation-presence — so any meaningful mutation produces a
         /// new string and triggers a rebuild.
-        private static func makeRefreshFingerprint(waypoints: [Waypoint],
+        private func makeRefreshFingerprint(waypoints: [Waypoint],
                                                    drawings:  [DrawingShape],
                                                    session:   DrawingSessionViewModel,
+                                                   measureSession: MeasureSession,
                                                    visibility: LayerVisibility?) -> String {
             var parts: [String] = []
             parts.reserveCapacity(waypoints.count + drawings.count + 3)
@@ -775,16 +1101,19 @@ struct MapContainerView: UIViewRepresentable {
                 parts.append("w|\(w.id.uuidString)|\(w.latitude)|\(w.longitude)|\(w.kindFingerprint)|\(w.rotation)|\(w.scaleX)|\(w.scaleY)|\(w.name)|\(notes)|\(elev)")
             }
             for d in drawings {
-                // First + last coord pick up translations (drag-to-move
-                // preserves count). Mid-vertex edits without changing the
-                // endpoints will still re-render via the rotation/scale
-                // / count fields.
-                let first = d.coordinates.first
-                let last  = d.coordinates.last
-                let coordsKey = "\(first?.latitude ?? 0),\(first?.longitude ?? 0)/\(last?.latitude ?? 0),\(last?.longitude ?? 0)"
-                parts.append("d|\(d.id.uuidString)|\(d.kind.rawValue)|\(d.coordinates.count)|\(coordsKey)|\(d.style.strokeColorHex)|\(d.layerID.uuidString)|\(d.rotation)|\(d.scaleX)|\(d.scaleY)|\(d.style.dashPattern != nil)")
+                // Hash every vertex so mid-shape edits (drag a single
+                // handle, insert/delete a midpoint) invalidate the
+                // cached fingerprint. Cheap — drawing counts are tiny.
+                var coordsHash = Hasher()
+                for c in d.coordinates {
+                    coordsHash.combine(c.latitude)
+                    coordsHash.combine(c.longitude)
+                }
+                let selected = mapVM.selectedDrawingID == d.id
+                parts.append("d|\(d.id.uuidString)|\(d.kind.rawValue)|\(d.coordinates.count)|\(coordsHash.finalize())|\(d.style.strokeColorHex)|\(d.layerID.uuidString)|\(d.rotation)|\(d.scaleX)|\(d.scaleY)|\(d.style.dashPattern != nil)|\(d.name ?? "")|\(selected)")
             }
             parts.append("s|\(session.isDrawing)|\(session.inProgressCoordinates.count)|\(session.activeKind?.rawValue ?? "-")")
+            parts.append("m|\(measureSession.isActive)|\(measureSession.points.count)")
             parts.append("v|\(visibility?.waypointsVisible ?? true)|\(visibility?.drawingsVisible ?? true)")
             return parts.joined(separator: ";")
         }
@@ -805,10 +1134,28 @@ struct MapContainerView: UIViewRepresentable {
             }
         }
 
+        /// Snapshot of the current label-visibility toggle. Captured in
+        /// `refresh()` so addShape's label-add branch can read it.
+        private var labelsVisible: Bool = true
+
         private func addShape(_ shape: DrawingShape, to mv: MKMapView, inProgress: Bool) {
             // In-progress shapes are drawn as-typed; finished shapes use
             // their effective coordinates (rotation + W/H applied).
             let coords = inProgress ? shape.clCoordinates : shape.clEffectiveCoordinates
+
+            // Drop a label annotation if the user named the shape (only
+            // for finished shapes; in-progress drawings have no name yet)
+            // and the user hasn't hidden drawing labels via the Layers sheet.
+            if !inProgress,
+               labelsVisible,
+               let name = shape.name?.trimmingCharacters(in: .whitespaces),
+               !name.isEmpty,
+               let anchor = shape.labelAnchor {
+                let labelAnn = DrawingLabelAnnotation(shape: shape, text: name)
+                labelAnn.coordinate = anchor
+                mv.addAnnotation(labelAnn)
+            }
+
             switch shape.kind {
             case .point:
                 guard let c = coords.first else { return }
@@ -820,6 +1167,7 @@ struct MapContainerView: UIViewRepresentable {
                 guard coords.count >= 2 else { return }
                 let line = MKPolyline(coordinates: coords, count: coords.count)
                 styleByOverlay[ObjectIdentifier(line)] = shape.style
+                if !inProgress { shapeIDByOverlay[ObjectIdentifier(line)] = shape.id }
                 if inProgress { inProgressOverlayIDs.insert(ObjectIdentifier(line)) }
                 mv.addOverlay(line)
 
@@ -827,6 +1175,7 @@ struct MapContainerView: UIViewRepresentable {
                 guard coords.count >= 2 else { return }
                 let poly = MKPolygon(coordinates: coords, count: coords.count)
                 styleByOverlay[ObjectIdentifier(poly)] = shape.style
+                if !inProgress { shapeIDByOverlay[ObjectIdentifier(poly)] = shape.id }
                 if inProgress { inProgressOverlayIDs.insert(ObjectIdentifier(poly)) }
                 mv.addOverlay(poly)
                 // For in-progress polygon, also draw the open edge as a dashed polyline
@@ -847,13 +1196,29 @@ struct MapContainerView: UIViewRepresentable {
             // subview (see syncPDFOverlay). This delegate handles drawings only.
 
             let key = ObjectIdentifier(overlay)
+            // MGRS grid line — pick stroke width from grid type, colour
+            // is a shared neutral dark-grey ink so the grid matches
+            // across iOS / Android and stays readable on any basemap.
+            if let gridType = mgrsGridTypeByOverlay[key],
+               let line = overlay as? MKPolyline {
+                let r = MKPolylineRenderer(polyline: line)
+                r.strokeColor = MGRSGridRenderer.inkColor
+                r.lineWidth = MGRSGridRenderer.lineWidth(for: gridType)
+                return r
+            }
             let style = styleByOverlay[key] ?? .default
             let inProgress = inProgressOverlayIDs.contains(key)
+            // Selection glow: when this overlay's shape is the one whose
+            // controls card is open, bump the stroke width so the shape
+            // visibly "lifts" off the map.
+            let isSelected = shapeIDByOverlay[key]
+                .map { $0 == mapVM.selectedDrawingID } ?? false
+            let selectionBoost: CGFloat = isSelected ? 3.0 : 0.0
 
             if let line = overlay as? MKPolyline {
                 let r = MKPolylineRenderer(polyline: line)
                 r.strokeColor = UIColor(hex: style.strokeColorHex)
-                r.lineWidth   = CGFloat(style.strokeWidth)
+                r.lineWidth   = CGFloat(style.strokeWidth) + selectionBoost
                 r.lineDashPattern = effectiveDashPattern(for: style,
                                                          inProgress: inProgress)
                 return r
@@ -861,9 +1226,11 @@ struct MapContainerView: UIViewRepresentable {
             if let poly = overlay as? MKPolygon {
                 let r = MKPolygonRenderer(polygon: poly)
                 r.strokeColor = UIColor(hex: style.strokeColorHex)
-                r.lineWidth   = CGFloat(style.strokeWidth)
+                r.lineWidth   = CGFloat(style.strokeWidth) + selectionBoost
                 let fillHex   = style.fillColorHex ?? style.strokeColorHex
-                r.fillColor   = UIColor(hex: fillHex, alpha: style.fillOpacity)
+                // Slightly brighter fill when selected.
+                let fillAlpha = style.fillOpacity * (isSelected ? 1.6 : 1.0)
+                r.fillColor   = UIColor(hex: fillHex, alpha: min(fillAlpha, 0.6))
                 r.lineDashPattern = effectiveDashPattern(for: style,
                                                          inProgress: inProgress)
                 return r
@@ -931,7 +1298,233 @@ struct MapContainerView: UIViewRepresentable {
                 view.canShowCallout = true
                 return view
             }
+            if let lbl = annotation as? DrawingLabelAnnotation {
+                let id = "drawing-label"
+                let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
+                    ?? MKAnnotationView(annotation: lbl, reuseIdentifier: id)
+                view.annotation = lbl
+                view.canShowCallout = false
+                view.isUserInteractionEnabled = false
+                view.displayPriority = .required
+                // Render the pill as a single UIImage — much more reliable
+                // than building subviews, which MapKit sometimes drops on
+                // annotation reuse.
+                view.image = Self.renderLabelPill(text: lbl.text)
+                if let img = view.image {
+                    view.bounds = CGRect(origin: .zero, size: img.size)
+                }
+                // Hang the pill below the shape's anchor.
+                view.centerOffset = CGPoint(x: 0, y: (view.bounds.height / 2) + 8)
+                return view
+            }
+            if let pv = annotation as? DrawingVertexAnnotation {
+                let id = "drawing-vertex"
+                let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
+                    ?? MKAnnotationView(annotation: pv, reuseIdentifier: id)
+                view.annotation = pv
+                view.canShowCallout = false
+                view.isUserInteractionEnabled = false
+                view.displayPriority = .required
+                view.image = Self.renderVertexDot(color: pv.color)
+                if let img = view.image {
+                    view.bounds = CGRect(origin: .zero, size: img.size)
+                }
+                view.centerOffset = .zero
+                return view
+            }
+            if let g = annotation as? MGRSGridLabelAnnotation {
+                let id = "mgrs-grid-label"
+                let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
+                    ?? MKAnnotationView(annotation: g, reuseIdentifier: id)
+                view.annotation = g
+                view.canShowCallout = false
+                view.isUserInteractionEnabled = false
+                // .required so MapKit never declutters grid labels away
+                // — a sparse grid with hidden numbers is worse than a
+                // dense one where the user can still read the values.
+                view.displayPriority = .required
+                view.collisionMode = .none
+                view.image = Self.renderMGRSLabel(text: g.text,
+                                                  fontSize: MGRSGridRenderer.labelFontSize(for: g.gridType),
+                                                  rotated: g.isVertical)
+                if let img = view.image {
+                    view.bounds = CGRect(origin: .zero, size: img.size)
+                }
+                view.centerOffset = .zero
+                return view
+            }
+            if let h = annotation as? DrawingVertexHandleAnnotation {
+                let id = h.isMidpoint ? "drawing-vertex-mid" : "drawing-vertex-handle"
+                let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
+                    ?? MKAnnotationView(annotation: h, reuseIdentifier: id)
+                view.annotation = h
+                view.canShowCallout = false
+                view.isUserInteractionEnabled = true
+                view.isDraggable = true
+                view.displayPriority = .required
+                view.image = h.isMidpoint
+                    ? Self.renderVertexHandle(midpoint: true)
+                    : Self.renderVertexHandle(midpoint: false)
+                if let img = view.image {
+                    view.bounds = CGRect(origin: .zero, size: img.size)
+                }
+                view.centerOffset = .zero
+                // Long-press to delete (real vertices only — midpoint
+                // handles don't represent a stored vertex so there's
+                // nothing to remove).
+                if !h.isMidpoint {
+                    // Strip any prior long-press recognizers from a
+                    // recycled view so we don't stack handlers each reuse.
+                    view.gestureRecognizers?.forEach {
+                        if $0 is UILongPressGestureRecognizer { view.removeGestureRecognizer($0) }
+                    }
+                    // 0.9s + tight movement tolerance — MapKit's own
+                    // drag-from-annotation gesture has a shorter timer
+                    // and wider slop, so any movement during the hold
+                    // hands off to drag instead of firing delete.
+                    let lp = UILongPressGestureRecognizer(target: self, action: #selector(handleVertexLongPress(_:)))
+                    lp.minimumPressDuration = 0.9
+                    lp.allowableMovement = 6
+                    view.addGestureRecognizer(lp)
+                }
+                return view
+            }
             return nil
+        }
+
+        /// Render the drawing-name pill as a UIImage so it survives MapKit's
+        /// annotation-view reuse cycle.
+        private static func renderLabelPill(text: String) -> UIImage {
+            let font = UIFont.systemFont(ofSize: 11, weight: .semibold)
+            let attrs: [NSAttributedString.Key: Any] = [.font: font]
+            let textSize = (text as NSString).size(withAttributes: attrs)
+            let padH: CGFloat = 6, padV: CGFloat = 3
+            let size = CGSize(width: ceil(textSize.width) + padH * 2,
+                              height: ceil(textSize.height) + padV * 2)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            return renderer.image { ctx in
+                let cg = ctx.cgContext
+                // Pill background.
+                let rect = CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5)
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: 4).cgPath
+                cg.addPath(path)
+                cg.setFillColor(UIColor.black.withAlphaComponent(0.62).cgColor)
+                cg.fillPath()
+                cg.addPath(path)
+                cg.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
+                cg.setLineWidth(0.5)
+                cg.strokePath()
+                // Text — slight shadow for legibility.
+                let textAttrs: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: UIColor.white,
+                    .shadow: {
+                        let s = NSShadow()
+                        s.shadowColor = UIColor.black.withAlphaComponent(0.8)
+                        s.shadowBlurRadius = 1.5
+                        return s
+                    }()
+                ]
+                (text as NSString).draw(at: CGPoint(x: padH, y: padV), withAttributes: textAttrs)
+            }
+        }
+
+        /// Filled dot rendered at each tapped vertex during a measure or
+        /// draw session, so the user can see exactly where their taps
+        /// landed before the polyline closes the gap.
+        private static func renderVertexDot(color: UIColor) -> UIImage {
+            let size = CGSize(width: 12, height: 12)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            return renderer.image { ctx in
+                let cg = ctx.cgContext
+                cg.setFillColor(color.cgColor)
+                cg.fillEllipse(in: CGRect(x: 1, y: 1, width: 10, height: 10))
+                cg.setStrokeColor(UIColor.white.cgColor)
+                cg.setLineWidth(1.5)
+                cg.strokeEllipse(in: CGRect(x: 1, y: 1, width: 10, height: 10))
+            }
+        }
+
+        /// MGRS grid label drawn as bare dark-grey bold text with a
+        /// subtle white "drop shadow" halo for legibility on busy
+        /// basemaps. No pill background. When `rotated` is true the
+        /// text is drawn sideways so it lines up with vertical
+        /// (easting) grid lines.
+        private static func renderMGRSLabel(text: String, fontSize: CGFloat, rotated: Bool) -> UIImage {
+            let font = UIFont.systemFont(ofSize: fontSize, weight: .bold)
+            let baseAttrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: MGRSGridRenderer.labelTextColor
+            ]
+            let textSize = (text as NSString).size(withAttributes: baseAttrs)
+            let pad: CGFloat = 3
+            let drawW = textSize.width  + pad * 2
+            let drawH = textSize.height + pad * 2
+            // Rotated labels need the canvas swapped to fit the
+            // rotated text — width becomes the original height + pad,
+            // height becomes the original width.
+            let canvasSize = rotated
+                ? CGSize(width: drawH, height: drawW)
+                : CGSize(width: drawW, height: drawH)
+            let r = UIGraphicsImageRenderer(size: canvasSize)
+            return r.image { ctx in
+                let cg = ctx.cgContext
+                if rotated {
+                    // Rotate -90° around centre so easting labels run
+                    // along the line (text reads bottom→top).
+                    cg.translateBy(x: canvasSize.width / 2, y: canvasSize.height / 2)
+                    cg.rotate(by: -.pi / 2)
+                    cg.translateBy(x: -drawW / 2, y: -drawH / 2)
+                }
+                // Soft white halo via four offset white passes — keeps
+                // dark-grey digits readable on dark satellite tiles
+                // without adding a visible pill.
+                let haloAttrs: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: UIColor(white: 1, alpha: 0.9)
+                ]
+                let offset: CGFloat = 1
+                for dx in [-offset, offset] {
+                    for dy in [-offset, offset] {
+                        (text as NSString).draw(at: CGPoint(x: pad + dx, y: pad + dy),
+                                                withAttributes: haloAttrs)
+                    }
+                }
+                (text as NSString).draw(at: CGPoint(x: pad, y: pad),
+                                        withAttributes: baseAttrs)
+            }
+        }
+
+        /// Bigger, fatter vertex-edit handle. Solid orange for real
+        /// vertices; outlined white "+" for midpoint insertion handles.
+        private static func renderVertexHandle(midpoint: Bool) -> UIImage {
+            let size = CGSize(width: 26, height: 26)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            let orange = UIColor(red: 1, green: 0.65, blue: 0.18, alpha: 1)
+            return renderer.image { ctx in
+                let cg = ctx.cgContext
+                let rect = CGRect(x: 3, y: 3, width: 20, height: 20)
+                if midpoint {
+                    // Hollow disc with a "+" so the user knows tapping
+                    // / dragging inserts a new vertex.
+                    cg.setFillColor(UIColor.white.withAlphaComponent(0.85).cgColor)
+                    cg.fillEllipse(in: rect)
+                    cg.setStrokeColor(orange.cgColor)
+                    cg.setLineWidth(2)
+                    cg.strokeEllipse(in: rect)
+                    cg.setStrokeColor(orange.cgColor)
+                    cg.setLineWidth(2.5)
+                    cg.move(to: CGPoint(x: 13, y: 8));  cg.addLine(to: CGPoint(x: 13, y: 18))
+                    cg.move(to: CGPoint(x:  8, y: 13)); cg.addLine(to: CGPoint(x: 18, y: 13))
+                    cg.strokePath()
+                } else {
+                    cg.setFillColor(orange.cgColor)
+                    cg.fillEllipse(in: rect)
+                    cg.setStrokeColor(UIColor.white.cgColor)
+                    cg.setLineWidth(2)
+                    cg.strokeEllipse(in: rect)
+                }
+            }
         }
 
     }
@@ -952,6 +1545,70 @@ final class WaypointAnnotation: NSObject, MKAnnotation {
     }
     var title: String? { waypoint.name }
     var subtitle: String? { waypoint.subtitle }
+}
+
+/// Small filled-circle annotation rendered at each tapped vertex while
+/// the user is drawing or measuring. Provides instant visual feedback for
+/// the tap landing point and matches the Android-side dot affordance.
+final class DrawingVertexAnnotation: NSObject, MKAnnotation {
+    let color: UIColor
+    @objc dynamic var coordinate: CLLocationCoordinate2D = .init()
+    init(color: UIColor) { self.color = color }
+}
+
+/// Interactive vertex-edit handle rendered alongside the currently
+/// selected polyline / polygon. Two flavours: a solid orange disc at
+/// each existing vertex (drag to move, long-press to delete), and a
+/// hollow "+" disc at each segment midpoint (drag to insert a new
+/// vertex at that position).
+final class DrawingVertexHandleAnnotation: NSObject, MKAnnotation {
+    let shapeID: UUID
+    /// For real vertices: the index in `shape.coordinates`. For
+    /// midpoint handles: the index where a NEW vertex would be
+    /// inserted (i.e. between coords[index-1] and coords[index]).
+    let vertexIndex: Int
+    let isMidpoint: Bool
+    @objc dynamic var coordinate: CLLocationCoordinate2D = .init()
+    init(shapeID: UUID, vertexIndex: Int, isMidpoint: Bool, coordinate: CLLocationCoordinate2D) {
+        self.shapeID = shapeID
+        self.vertexIndex = vertexIndex
+        self.isMidpoint = isMidpoint
+        self.coordinate = coordinate
+    }
+}
+
+/// Floating text label rendered alongside a finished drawing whose
+/// `shape.name` is non-empty. Anchored at `shape.labelAnchor` so it sits
+/// near the centroid (polygons), mid-segment (polylines), or the point
+/// itself. Non-interactive — taps pass through to the underlying shape.
+final class DrawingLabelAnnotation: NSObject, MKAnnotation {
+    let shapeID: UUID
+    let text: String
+    @objc dynamic var coordinate: CLLocationCoordinate2D = .init()
+    init(shape: DrawingShape, text: String) {
+        self.shapeID = shape.id
+        self.text = text
+    }
+}
+
+/// Static label rendered alongside an MGRS grid line — typically the
+/// 100km square ID ("LH") or a 10km / 1km easting-northing pair. Never
+/// interactive: taps pass straight through to the underlying overlay
+/// or basemap.
+final class MGRSGridLabelAnnotation: NSObject, MKAnnotation {
+    let text: String
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    let gridType: GridType
+    /// True when the label belongs to a north-south line (easting
+    /// label); false when it belongs to an east-west line (northing
+    /// label). Drives the on-screen orientation of the rendered text.
+    let isVertical: Bool
+    init(text: String, coordinate: CLLocationCoordinate2D, gridType: GridType, isVertical: Bool) {
+        self.text = text
+        self.coordinate = coordinate
+        self.gridType = gridType
+        self.isVertical = isVertical
+    }
 }
 
 final class DrawingPointAnnotation: NSObject, MKAnnotation {

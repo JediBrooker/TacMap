@@ -22,6 +22,13 @@ struct LayersSheet: View {
                     Toggle("Symbology",     isOn: $visibility.waypointsVisible)
                     Toggle("Drawings",      isOn: $visibility.drawingsVisible)
                     Toggle("User Location", isOn: $visibility.userLocationVisible)
+                    Toggle("MGRS Grid",     isOn: $visibility.mgrsGridVisible)
+                }
+
+                Section("Labels") {
+                    Toggle("Unit Labels",    isOn: $visibility.unitLabelsVisible)
+                    Toggle("Task Labels",    isOn: $visibility.taskLabelsVisible)
+                    Toggle("Drawing Labels", isOn: $visibility.drawingLabelsVisible)
                 }
 
                 drawingLayersSection

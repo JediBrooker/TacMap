@@ -131,7 +131,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private val headerCoordinate: Pair<Double, Double>
+    val headerCoordinate: Pair<Double, Double>
         get() = if (_isBrowsing.value) {
             _cameraLat.value to _cameraLng.value
         } else {
