@@ -473,12 +473,13 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
             }
         )
 
-        // Hamburger (left) + Compass (right), below the header.
+        // Hamburger (left) + Compass (right), pinned just below the
+        // MGRS header (which is ~96dp tall after the recent tighten).
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .statusBarsPadding()
-                .padding(top = 146.dp, start = 12.dp, end = 12.dp)
+                .padding(top = 100.dp, start = 12.dp, end = 12.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween
