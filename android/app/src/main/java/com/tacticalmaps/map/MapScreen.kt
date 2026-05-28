@@ -139,11 +139,15 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
     var activeStrokeColor by remember { mutableStateOf(DrawingDefaults.DEFAULT_COLOR) }
     var activeStrokeStyle by remember { mutableStateOf(DrawingStrokeStyle.SOLID) }
 
+    var hasLocationPermission by remember {
+        mutableStateOf(vm.locationService.hasPermission())
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { granted ->
         if (granted[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+            hasLocationPermission = true
             vm.locationService.start()
         }
     }
@@ -378,6 +382,7 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                 selectedDrawingId = selectedDrawingId,
                 selectedWaypointId = selectedWaypointId,
                 calibrationFiduciaries = calibrationFiduciaries,
+                myLocationEnabled = hasLocationPermission,
                 pendingTarget = pendingTarget,
                 resetNorthRequests = vm.resetNorthRequests,
                 onConsumePendingTarget = vm::consumePendingCameraTarget,

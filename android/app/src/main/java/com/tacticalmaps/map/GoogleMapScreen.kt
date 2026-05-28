@@ -106,6 +106,7 @@ fun GoogleMapScreen(
     selectedDrawingId: String? = null,
     selectedWaypointId: String? = null,
     calibrationFiduciaries: List<com.tacticalmaps.calibration.Fiduciary> = emptyList(),
+    myLocationEnabled: Boolean = false,
     pendingTarget: Triple<Double, Double, Float>? = null,
     resetNorthRequests: kotlinx.coroutines.flow.Flow<Unit>? = null,
     onConsumePendingTarget: () -> Unit = {},
@@ -224,9 +225,17 @@ fun GoogleMapScreen(
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
-            properties = MapProperties(mapType = MapType.SATELLITE),
+            properties = MapProperties(
+                mapType = MapType.SATELLITE,
+                /// Google Maps' built-in blue user-location dot.
+                /// Gated on runtime permission — the SDK throws if
+                /// this is true without ACCESS_FINE_LOCATION granted.
+                isMyLocationEnabled = myLocationEnabled
+            ),
             uiSettings = MapUiSettings(
                 zoomControlsEnabled = false,
+                /// We render our own "Centre on My Location" pill at
+                /// the bottom; suppress the SDK's stock button.
                 myLocationButtonEnabled = false,
                 mapToolbarEnabled = false,
                 compassEnabled = false
