@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -277,15 +278,6 @@ fun GoogleMapScreen(
                 )
             }
 
-            visibleWaypoints.forEach { wp ->
-                WaypointMarker(
-                    waypoint = wp,
-                    selected = wp.id == selectedWaypointId,
-                    onTap = { currentOnMarkerTap.value(wp) },
-                    onMoved = { lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
-                )
-            }
-
             /// PDF calibration fiduciaries — render small numbered
             /// pins for each tapped reference point so the user can
             /// see which corners of the PDF they've registered.
@@ -293,6 +285,20 @@ fun GoogleMapScreen(
                 CalibrationFiduciaryMarker(index = i + 1, fid = fid)
             }
         }
+
+        /// Waypoint handles — Compose overlay (sibling of GoogleMap)
+        /// so the icon can be drawn AND tap/drag can be handled by
+        /// pointerInput. Google Maps' Marker.draggable is a long-
+        /// press-then-drag UX; this overlay gives instant drag the
+        /// moment the user moves their finger, matching the vertex /
+        /// translate handles.
+        WaypointHandlesOverlay(
+            waypoints = visibleWaypoints,
+            selectedWaypointId = selectedWaypointId,
+            cameraPositionState = cameraPositionState,
+            onTap = { wp -> currentOnMarkerTap.value(wp) },
+            onMoved = { wp, lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
+        )
 
         /// Waypoint name labels (units / tasks) — Compose Text
         /// overlays projected to screen coords each frame. Units +
@@ -655,10 +661,16 @@ private fun DrawingShape(
     /// colours).
     val fillColor = Color(feature.strokeColor and 0x00FFFFFF or 0x33000000)
     val baseWidth = if (isDraft) feature.strokeWidth + 2f else feature.strokeWidth
-    val width = if (selected) baseWidth + 6f else baseWidth
+    val width = baseWidth
     val pattern: List<PatternItem>? = if (feature.strokeStyle == DrawingStrokeStyle.DASHED) {
         listOf(Dash(width * 3f), Gap(width * 2f))
     } else null
+    /// Wider, translucent tactical-orange halo painted UNDER the
+    /// real polyline / polygon when the shape is selected — gives
+    /// the same "selection glow" affordance the waypoint icons get
+    /// and matches the iOS thicken-stroke pattern but with colour.
+    val haloColor = Color(0xFFFFA63D)
+    val haloWidth = width + 14f
 
     /// Tapping a feature while drawing is in progress would otherwise
     /// swallow vertex placement.
@@ -693,6 +705,15 @@ private fun DrawingShape(
                 DraftSeedMarker(effective.first())
                 return
             }
+            if (selected) {
+                Polyline(
+                    points = effective,
+                    color = haloColor.copy(alpha = 0.55f),
+                    width = haloWidth,
+                    clickable = false,
+                    zIndex = -0.1f
+                )
+            }
             Polyline(
                 points = effective,
                 color = strokeColor,
@@ -709,6 +730,15 @@ private fun DrawingShape(
                 return
             }
             if (effective.size < 3) {
+                if (selected) {
+                    Polyline(
+                        points = effective,
+                        color = haloColor.copy(alpha = 0.55f),
+                        width = haloWidth,
+                        clickable = false,
+                        zIndex = -0.1f
+                    )
+                }
                 Polyline(
                     points = effective,
                     color = strokeColor,
@@ -718,6 +748,15 @@ private fun DrawingShape(
                     onClick = { handleClick() }
                 )
                 return
+            }
+            if (selected) {
+                Polyline(
+                    points = effective + effective.first(),
+                    color = haloColor.copy(alpha = 0.55f),
+                    width = haloWidth,
+                    clickable = false,
+                    zIndex = -0.1f
+                )
             }
             Polygon(
                 points = effective,
@@ -918,81 +957,117 @@ private fun PdfGroundOverlay(source: PdfMapSource) {
     )
 }
 
+/// Overlay that renders each waypoint as a Compose Box positioned at
+/// the projected screen coordinate of its lat/lng. Tap and drag are
+/// driven by pointerInput so dragging is instant (no long-press
+/// warmup), matching the vertex / translate handle behaviour and the
+/// iOS app.
 @Composable
-private fun WaypointMarker(
-    waypoint: Waypoint,
-    selected: Boolean,
-    onTap: () -> Unit,
-    onMoved: (lat: Double, lng: Double) -> Unit
+private fun WaypointHandlesOverlay(
+    waypoints: List<Waypoint>,
+    selectedWaypointId: String?,
+    cameraPositionState: CameraPositionState,
+    onTap: (Waypoint) -> Unit,
+    onMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit
 ) {
+    /// Re-read camera position so handles reproject on every pan /
+    /// zoom — same trick as VertexHandlesOverlay.
+    cameraPositionState.position
+    val projection = cameraPositionState.projection ?: return
     val context = LocalContext.current
-    val markerState = rememberMarkerState(
-        position = LatLng(waypoint.latitude, waypoint.longitude)
-    )
+    val density = LocalDensity.current
 
-    LaunchedEffect(waypoint.latitude, waypoint.longitude) {
-        val next = LatLng(waypoint.latitude, waypoint.longitude)
-        if (markerState.position != next) markerState.position = next
-    }
+    waypoints.forEach { wp ->
+        val rawIcon = remember(wp.kind, wp.rotation, wp.scaleX, wp.scaleY) {
+            SymbolIconFactory.drawableFor(context, wp)
+        }
+        val rawAnchor = remember(wp.kind) {
+            SymbolIconFactory.anchorFor(context, wp)
+        }
+        val isSelected = wp.id == selectedWaypointId
 
-    val currentOnMoved = rememberUpdatedState(onMoved)
-    LaunchedEffect(markerState) {
-        /// Skip the initial `END` value — `snapshotFlow` emits the
-        /// current state on subscribe, which would fire onMoved with
-        /// whatever transient position the marker has during attach
-        /// / rotation / recomposition. Only report END after we've
-        /// actually seen a START or DRAG.
-        var seenActiveDrag = false
-        snapshotFlow { markerState.dragState }
-            .collect { state ->
-                when (state) {
-                    DragState.START, DragState.DRAG -> seenActiveDrag = true
-                    DragState.END -> if (seenActiveDrag) {
-                        seenActiveDrag = false
-                        val p = markerState.position
-                        currentOnMoved.value(p.latitude, p.longitude)
+        /// Pre-bake the icon (with halo when selected) into a
+        /// Bitmap + anchor that we'll draw and hit-test against.
+        val (iconBmp, anchor) = remember(rawIcon, rawAnchor, isSelected) {
+            if (isSelected) {
+                val (glowed, ga) = applySelectionGlow(context, rawIcon, rawAnchor)
+                glowed.bitmap to ga
+            } else {
+                val w = rawIcon.intrinsicWidth.coerceAtLeast(1)
+                val h = rawIcon.intrinsicHeight.coerceAtLeast(1)
+                val bm = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                rawIcon.setBounds(0, 0, w, h)
+                rawIcon.draw(Canvas(bm))
+                bm to rawAnchor
+            }
+        }
+
+        val screen = projection.toScreenLocation(LatLng(wp.latitude, wp.longitude))
+        val boxW = iconBmp.width
+        val boxH = iconBmp.height
+        val anchorPxX = (anchor.first * boxW).roundToInt()
+        val anchorPxY = (anchor.second * boxH).roundToInt()
+
+        val currentOnTap = rememberUpdatedState(onTap)
+        val currentOnMoved = rememberUpdatedState(onMoved)
+        var dragOffset by remember(wp.id) { mutableStateOf(Offset.Zero) }
+
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        screen.x - anchorPxX + dragOffset.x.roundToInt(),
+                        screen.y - anchorPxY + dragOffset.y.roundToInt()
+                    )
+                }
+                .size(
+                    width = with(density) { boxW.toDp() },
+                    height = with(density) { boxH.toDp() }
+                )
+                .pointerInput(wp.id) {
+                    detectDragGestures(
+                        onDragEnd = {
+                            val dx = dragOffset.x
+                            val dy = dragOffset.y
+                            dragOffset = Offset.Zero
+                            val proj = cameraPositionState.projection ?: return@detectDragGestures
+                            val before = proj.fromScreenLocation(Point(screen.x, screen.y))
+                            val after = proj.fromScreenLocation(
+                                Point(
+                                    (screen.x + dx).roundToInt(),
+                                    (screen.y + dy).roundToInt()
+                                )
+                            )
+                            /// Apply the screen delta in geographic
+                            /// space relative to the waypoint's own
+                            /// position (not the icon's anchor pixel
+                            /// projection), so the marker doesn't
+                            /// drift on long drags at high latitudes.
+                            val deltaLat = after.latitude - before.latitude
+                            val deltaLng = after.longitude - before.longitude
+                            currentOnMoved.value(
+                                wp,
+                                wp.latitude + deltaLat,
+                                wp.longitude + deltaLng
+                            )
+                        },
+                        onDragCancel = { dragOffset = Offset.Zero }
+                    ) { change, drag ->
+                        change.consume()
+                        dragOffset += drag
                     }
                 }
-            }
-    }
-
-    val rawIcon = remember(
-        waypoint.kind,
-        waypoint.rotation,
-        waypoint.scaleX,
-        waypoint.scaleY
-    ) {
-        SymbolIconFactory.drawableFor(context, waypoint)
-    }
-    val rawAnchor = remember(waypoint.kind) {
-        SymbolIconFactory.anchorFor(context, waypoint)
-    }
-
-    /// When selected, composite an orange halo behind the icon and
-    /// shift the anchor so the marker still pins to the same
-    /// geographic position. The icon bitmap grows by ~36dp on every
-    /// side to make room for the bloom.
-    val (descriptor, anchor) = remember(rawIcon, rawAnchor, selected) {
-        if (selected) {
-            val (glowed, ga) = applySelectionGlow(context, rawIcon, rawAnchor)
-            glowed.toBitmapDescriptor() to Offset(ga.first, ga.second)
-        } else {
-            rawIcon.toBitmapDescriptor() to Offset(rawAnchor.first, rawAnchor.second)
+                .pointerInput(wp.id) {
+                    detectTapGestures(onTap = { currentOnTap.value(wp) })
+                }
+        ) {
+            androidx.compose.foundation.Image(
+                bitmap = iconBmp.asImageBitmap(),
+                contentDescription = wp.name,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
-
-    val currentOnTap = rememberUpdatedState(onTap)
-    Marker(
-        state = markerState,
-        icon = descriptor,
-        anchor = anchor,
-        title = waypoint.name,
-        draggable = true,
-        onClick = {
-            currentOnTap.value()
-            true
-        }
-    )
 }
 
 /// Composite an orange halo behind the icon by drawing the icon's
