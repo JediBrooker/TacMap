@@ -36,25 +36,29 @@ struct HamburgerMenu: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        /// Use `popover` so on phone the system renders it as a
-        /// compact sheet anchored near the trigger. We rely on the
-        /// `.compact` detent so it doesn't fill the screen on phone.
+        /// Half-height sheet by default with a `.large` upper bound
+        /// the user can drag to. Items live inside a ScrollView so
+        /// every entry stays reachable even at the smaller detent —
+        /// nine 54pt rows plus dividers don't fit a medium sheet on
+        /// shorter iPhones, and the previous build clipped "About &
+        /// Credits" off the bottom.
         .sheet(isPresented: $isOpen) {
             NavigationStack {
-                VStack(alignment: .leading, spacing: 0) {
-                    row("Search…",         systemImage: "magnifyingglass")     { close(onSearch) }
-                    divider
-                    row("Symbology",       systemImage: "mappin.and.ellipse")  { close(onWaypoints) }
-                    row("Drawings",        systemImage: "scribble.variable")   { close(onDrawings) }
-                    row("Layers",          systemImage: "square.3.stack.3d")   { close(onLayers) }
-                    row("Measure",         systemImage: "ruler")               { close(onMeasure) }
-                    divider
-                    row("Import PDF Map…", systemImage: "doc.badge.plus")      { close(onImport) }
-                    row("Import GeoJSON…", systemImage: "square.and.arrow.down") { close(onImportGeoJSON) }
-                    row("Export GeoJSON…", systemImage: "square.and.arrow.up")   { close(onExport) }
-                    divider
-                    row("About & Credits", systemImage: "info.circle")         { close(onAbout) }
-                    Spacer(minLength: 0)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        row("Search…",         systemImage: "magnifyingglass")     { close(onSearch) }
+                        divider
+                        row("Symbology",       systemImage: "mappin.and.ellipse")  { close(onWaypoints) }
+                        row("Drawings",        systemImage: "scribble.variable")   { close(onDrawings) }
+                        row("Layers",          systemImage: "square.3.stack.3d")   { close(onLayers) }
+                        row("Measure",         systemImage: "ruler")               { close(onMeasure) }
+                        divider
+                        row("Import PDF Map…", systemImage: "doc.badge.plus")      { close(onImport) }
+                        row("Import GeoJSON…", systemImage: "square.and.arrow.down") { close(onImportGeoJSON) }
+                        row("Export GeoJSON…", systemImage: "square.and.arrow.up")   { close(onExport) }
+                        divider
+                        row("About & Credits", systemImage: "info.circle")         { close(onAbout) }
+                    }
                 }
                 .navigationTitle("Menu")
                 .navigationBarTitleDisplayMode(.inline)
@@ -64,7 +68,7 @@ struct HamburgerMenu: View {
                     }
                 }
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
     }
