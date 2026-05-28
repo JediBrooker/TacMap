@@ -24,6 +24,8 @@ android/captures/
 android/.cxx/
 *.keystore
 !debug.keystore
+*.jks
+android/keystore/
 
 # Secrets — NEVER commit
 **/secrets.properties
