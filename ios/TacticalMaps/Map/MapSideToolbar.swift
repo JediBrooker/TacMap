@@ -17,6 +17,9 @@ struct HamburgerMenu: View {
     let onAbout:         () -> Void
 
     @State private var isOpen = false
+    /// Action chosen from a menu row. Run from the sheet's `onDismiss` so
+    /// it never races the dismiss animation (see `close`/`runPendingAction`).
+    @State private var pendingAction: (() -> Void)?
 
     var body: some View {
         Button {
@@ -36,13 +39,13 @@ struct HamburgerMenu: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        /// Half-height sheet by default with a `.large` upper bound
-        /// the user can drag to. Items live inside a ScrollView so
-        /// every entry stays reachable even at the smaller detent —
-        /// nine 54pt rows plus dividers don't fit a medium sheet on
-        /// shorter iPhones, and the previous build clipped "About &
-        /// Credits" off the bottom.
-        .sheet(isPresented: $isOpen) {
+        .accessibilityLabel("Menu")
+        /// Single `.large` detent: nine 54pt rows + dividers + nav bar
+        /// don't fit a medium sheet on shorter iPhones (medium clipped
+        /// "About & Credits" off the bottom), so the sheet opens
+        /// full-height. Rows live in a ScrollView so every entry stays
+        /// reachable regardless.
+        .sheet(isPresented: $isOpen, onDismiss: runPendingAction) {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
@@ -73,9 +76,18 @@ struct HamburgerMenu: View {
         }
     }
 
+    /// Stash the row's action and dismiss the sheet. The action fires from
+    /// `onDismiss` once the sheet has fully gone, so actions that present
+    /// another sheet (file importer, etc.) don't race the dismissal.
     private func close(_ action: @escaping () -> Void) {
+        pendingAction = action
         isOpen = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { action() }
+    }
+
+    private func runPendingAction() {
+        let action = pendingAction
+        pendingAction = nil
+        action?()
     }
 
     @ViewBuilder
