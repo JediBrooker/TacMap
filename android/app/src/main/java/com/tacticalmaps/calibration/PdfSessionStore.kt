@@ -62,7 +62,9 @@ class PdfSessionStore(private val context: Context) {
                 neLng = coverage.northeast.longitude
             )
         )
-        prefs.edit().putString(KEY_PDF, json.encodeToString(dto)).apply()
+        runCatching { json.encodeToString(dto) }
+            .onSuccess { prefs.edit().putString(KEY_PDF, it).apply() }
+            .onFailure { Log.w(TAG, "Couldn't encode PDF for persistence: ${it.message}") }
     }
 
     fun load(): PdfMapSource? {

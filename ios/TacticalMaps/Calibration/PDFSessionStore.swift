@@ -44,8 +44,13 @@ enum PDFSessionStore {
             kind: source.kind.rawValue,
             calibration: cal
         )
-        if let data = try? JSONEncoder().encode(dto) {
+        do {
+            let data = try JSONEncoder().encode(dto)
             UserDefaults.standard.set(data, forKey: key)
+        } catch {
+            /// Don't silently drop the write — a stale entry would then
+            /// be restored on next launch with no clue why.
+            NSLog("[PDFSessionStore] failed to encode active PDF: \(error)")
         }
     }
 
@@ -55,9 +60,9 @@ enum PDFSessionStore {
             UserDefaults.standard.removeObject(forKey: key)
             return nil
         }
-        let docsDir = FileManager.default.urls(
+        guard let docsDir = FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask
-        ).first!
+        ).first else { return nil }
         let url = docsDir.appendingPathComponent(dto.fileName)
         guard FileManager.default.fileExists(atPath: url.path) else {
             NSLog("[PDFSessionStore] file vanished, clearing: \(url.path)")
