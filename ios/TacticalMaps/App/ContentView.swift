@@ -387,6 +387,11 @@ struct ContentView: View {
         let bounds = newSource.bounds
         calibration.cancel()
         mapVM.mapSource = newSource
+        /// Persist the freshly-calibrated source so the fiduciary fit
+        /// survives an app restart. Without this the next launch would
+        /// restore the pre-calibration import and silently drop the
+        /// user's calibration work.
+        PDFSessionStore.save(newSource)
         if let b = bounds {
             let span = MKCoordinateSpan(
                 latitudeDelta:  abs(b.northEast.latitude  - b.southWest.latitude)  * 1.2,

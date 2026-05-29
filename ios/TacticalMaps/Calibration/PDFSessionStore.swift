@@ -14,10 +14,15 @@ enum PDFSessionStore {
 
     static func save(_ source: PDFMapSource) {
         guard let bounds = source.bounds else {
-            /// Uncalibrated PDF — don't persist, the fallback bounds
-            /// aren't worth restoring.
+            /// No bounds at all — nothing to anchor the page to.
             return
         }
+        /// Only persist genuinely georeferenced sources: a GeoPDF whose
+        /// position came from embedded tags, or one the user has fitted
+        /// with fiduciaries. A plain PDF carrying only the rough
+        /// camera-centred fallback box isn't worth resurrecting — it
+        /// would reappear at an arbitrary location on the next launch.
+        guard source.kind == .geoPDF || source.calibration != nil else { return }
         let cropRect = source.pdfRenderRect
         let cal: PersistedCalibration?
         if case .fiduciaries(let fids, let transform) = source.calibration {

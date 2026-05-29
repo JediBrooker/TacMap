@@ -60,6 +60,10 @@ struct LayersSheet: View {
                         }
                         Button(role: .destructive) {
                             mapVM.mapSource = AppleSatelliteMapSource()
+                            /// Clear the persisted entry too, otherwise the
+                            /// PDF the user just unloaded resurrects on the
+                            /// next launch.
+                            PDFSessionStore.clear()
                         } label: {
                             Label("Unload PDF", systemImage: "xmark.circle")
                         }
