@@ -73,6 +73,25 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build | xcbeautify --renderer github-actions || (cat -; exit 1)
 
+      - name: Run unit tests (iPhone Simulator)
+        working-directory: ios
+        run: |
+          DEST=$(xcrun simctl list devices available | grep -E 'iPhone (15|16|17) Pro \(' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          if [ -z "$DEST" ]; then
+            echo "::warning::No iPhone 15/16/17 Pro simulator found; using first available iPhone"
+            DEST=$(xcrun simctl list devices available | grep -E 'iPhone .* \([A-F0-9-]+\)' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          fi
+          echo "Testing on simulator $DEST"
+          xcodebuild \
+            -project TacticalMaps.xcodeproj \
+            -scheme TacticalMaps \
+            -destination "id=$DEST" \
+            -clonedSourcePackagesDirPath /tmp/spm-cache \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            test | xcbeautify --renderer github-actions || (cat -; exit 1)
+
       - name: Upload .app artefact
         if: success()
         uses: actions/upload-artifact@v4

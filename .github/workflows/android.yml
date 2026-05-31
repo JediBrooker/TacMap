@@ -41,6 +41,13 @@ jobs:
             https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar
           chmod +x android/gradlew
 
+      - name: Run unit tests
+        working-directory: android
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        run: |
+          ./gradlew --no-daemon testDebugUnitTest -PMAPS_API_KEY="${MAPS_API_KEY:-}"
+
       - name: Assemble debug APK
         working-directory: android
         env:

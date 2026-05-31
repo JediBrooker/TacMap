@@ -78,3 +78,24 @@ targets:
     dependencies:
       - package: mgrs-ios
         product: MGRS
+    scheme:
+      testTargets:
+        - TacticalMapsTests
+      gatherCoverageData: true
+
+  TacticalMapsTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: TacticalMapsTests
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - target: TacticalMaps
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.tacticalmaps.app.tests
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGNING_ALLOWED: "NO"

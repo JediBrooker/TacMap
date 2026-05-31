@@ -124,4 +124,9 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // JVM unit tests (run on the host with `./gradlew testDebugUnitTest` —
+    // no emulator). The pure-logic suites for the affine solve, MGRS
+    // formatting, and GeoJSON export live in src/test.
+    testImplementation("junit:junit:4.13.2")
 }
