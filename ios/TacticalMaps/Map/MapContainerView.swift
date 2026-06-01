@@ -363,19 +363,16 @@ struct MapContainerView: UIViewRepresentable {
         /// visible from "single building" zoom all the way out to a
         /// continental view.
         func currentZoomScaleFactor(for mv: MKMapView) -> CGFloat {
-            let mpp = metresPerPoint(in: mv)
-            let raw = referenceMetresPerPoint / mpp
-            return CGFloat(max(0.005, min(raw, 50.0)))
+            MapGeometry.zoomScaleFactor(metresPerPoint: metresPerPoint(in: mv),
+                                        reference: referenceMetresPerPoint)
         }
 
         /// Pure metres-per-point at the current camera, no clamping.
         /// Used by `defaultScaleForNewSymbol` to size new symbols
         /// relative to the screen at placement time.
         func metresPerPoint(in mv: MKMapView) -> Double {
-            // 111_000 m / degree latitude — close enough for sizing.
-            let latDeltaMetres = mv.region.span.latitudeDelta * 111_000
-            let viewHeight = max(Double(mv.bounds.height), 1)
-            return latDeltaMetres / viewHeight
+            MapGeometry.metresPerPoint(latitudeDelta: mv.region.span.latitudeDelta,
+                                       viewHeightPoints: Double(mv.bounds.height))
         }
 
         /// Reference zoom where `waypoint.scale = 1.0` renders at the
@@ -898,17 +895,17 @@ struct MapContainerView: UIViewRepresentable {
                     }
                 case .polyline where screen.count >= 2:
                     for i in 0 ..< screen.count - 1 {
-                        if Self.distance(from: tap, to: screen[i], screen[i+1]) <= tolerance {
+                        if MapGeometry.distance(from: tap, toSegment: screen[i], screen[i+1]) <= tolerance {
                             return shape
                         }
                     }
                 case .polygon where screen.count >= 3:
-                    if Self.pointInPolygon(tap, vertices: screen) {
+                    if MapGeometry.pointInPolygon(tap, vertices: screen) {
                         return shape
                     }
                     for i in 0 ..< screen.count {
                         let next = screen[(i + 1) % screen.count]
-                        if Self.distance(from: tap, to: screen[i], next) <= tolerance {
+                        if MapGeometry.distance(from: tap, toSegment: screen[i], next) <= tolerance {
                             return shape
                         }
                     }
@@ -917,33 +914,6 @@ struct MapContainerView: UIViewRepresentable {
                 }
             }
             return nil
-        }
-
-        /// Shortest distance from point p to segment a-b (CGPoint screen coords).
-        private static func distance(from p: CGPoint, to a: CGPoint, _ b: CGPoint) -> CGFloat {
-            let dx = b.x - a.x, dy = b.y - a.y
-            let l2 = dx * dx + dy * dy
-            if l2 == 0 { return hypot(p.x - a.x, p.y - a.y) }
-            var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2
-            t = max(0, min(1, t))
-            let projX = a.x + t * dx, projY = a.y + t * dy
-            return hypot(p.x - projX, p.y - projY)
-        }
-
-        /// Ray-casting point-in-polygon test on screen coordinates.
-        private static func pointInPolygon(_ p: CGPoint, vertices: [CGPoint]) -> Bool {
-            guard vertices.count >= 3 else { return false }
-            var inside = false
-            var j = vertices.count - 1
-            for i in 0 ..< vertices.count {
-                let vi = vertices[i], vj = vertices[j]
-                if ((vi.y > p.y) != (vj.y > p.y)) &&
-                   (p.x < (vj.x - vi.x) * (p.y - vi.y) / (vj.y - vi.y) + vi.x) {
-                    inside.toggle()
-                }
-                j = i
-            }
-            return inside
         }
 
         // MARK: PDF overlay sync
