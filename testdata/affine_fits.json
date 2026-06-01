@@ -1,0 +1,28 @@
+{
+  "description": "Shared affine-fit golden vectors for the fiduciary calibration solve. Fiduciaries are generated from `transform` (lon = a*x+b*y+c, lat = d*x+e*y+f); both the iOS and Android AffineFitter.fit implementations must recover it within coeffTolerance with RMS < rmsMaxMetres. Keeps the two ports from diverging.",
+  "cases": [
+    {
+      "name": "translate + scale + small rotation/shear, 4 exact points",
+      "transform": { "a": 0.0001, "b": 0.00002, "c": -122.5, "d": -0.00003, "e": 0.00009, "f": 37.7 },
+      "fiduciaries": [
+        { "pdfX": 0,    "pdfY": 0,   "lat": 37.7,   "lon": -122.5 },
+        { "pdfX": 1000, "pdfY": 0,   "lat": 37.67,  "lon": -122.4 },
+        { "pdfX": 0,    "pdfY": 800, "lat": 37.772, "lon": -122.484 },
+        { "pdfX": 1000, "pdfY": 800, "lat": 37.742, "lon": -122.384 }
+      ],
+      "coeffTolerance": 1e-5,
+      "rmsMaxMetres": 0.01
+    },
+    {
+      "name": "axis-aligned translate + scale, 3 exact points",
+      "transform": { "a": 0.00012, "b": 0.0, "c": 10.0, "d": 0.0, "e": 0.00008, "f": 50.0 },
+      "fiduciaries": [
+        { "pdfX": 0,   "pdfY": 0,   "lat": 50.0,  "lon": 10.0 },
+        { "pdfX": 500, "pdfY": 0,   "lat": 50.0,  "lon": 10.06 },
+        { "pdfX": 0,   "pdfY": 500, "lat": 50.04, "lon": 10.0 }
+      ],
+      "coeffTolerance": 1e-5,
+      "rmsMaxMetres": 0.01
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "description": "Shared MGRS golden vectors. Both iOS (MGRSFormatter.string / .coordinate) and Android (MgrsFormatter.format / .parse) must produce identical strings for each coordinate and round-trip within 1e-3 deg. `invalid` entries must return null on both platforms (the crash-safety contract). Generated from the verified NGA-backed formatters.",
+  "coordinates": [
+    { "lat": 37.7749,  "lon": -122.4194, "spaced": "10SEG 51130 80998", "compact": "10SEG5113080998" },
+    { "lat": 51.5074,  "lon": -0.1278,   "spaced": "30UXC 99316 10163", "compact": "30UXC9931610163" },
+    { "lat": -33.8568, "lon": 151.2153,  "spaced": "56HLH 34900 52288", "compact": "56HLH3490052288" },
+    { "lat": -33.99,   "lon": 150.95,    "spaced": "56HLH 10649 37058", "compact": "56HLH1064937058" }
+  ],
+  "invalid": ["hello", "", "H", "1885", "not mgrs", "xyz"]
+}
