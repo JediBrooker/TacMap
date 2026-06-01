@@ -81,6 +81,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tacticalmaps.calibration.AffineFitter
 import com.tacticalmaps.calibration.Calibration
 import com.tacticalmaps.calibration.Fiduciary
+import com.tacticalmaps.calibration.Datum
 import com.tacticalmaps.calibration.GeoPdfParser
 import com.tacticalmaps.calibration.OfflineTileMapSourceAndroid
 import com.tacticalmaps.calibration.OpenStreetMapSourceAndroid
@@ -138,6 +139,8 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
     var isCalibratingPdf by remember { mutableStateOf(false) }
     var calibrationFiduciaries by remember { mutableStateOf<List<Fiduciary>>(emptyList()) }
     var pendingCalibrationTap by remember { mutableStateOf<PendingCalibrationTap?>(null) }
+    // Datum the sheet's MGRS is in; fiduciaries are shifted to WGS84 on save.
+    var calibrationDatum by remember { mutableStateOf(Datum.WGS84) }
     var activeDrawingName by remember { mutableStateOf("") }
     var activeStrokeColor by remember { mutableStateOf(DrawingDefaults.DEFAULT_COLOR) }
     var activeStrokeStyle by remember { mutableStateOf(DrawingStrokeStyle.SOLID) }
@@ -801,18 +804,22 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
         CalibrationInputDialog(
             point = tap,
             fiduciaryNumber = calibrationFiduciaries.size + 1,
+            datum = calibrationDatum,
+            onDatumChange = { calibrationDatum = it },
             onDismiss = { pendingCalibrationTap = null },
             onSave = { mgrs, label ->
                 val parsed = MgrsFormatter.parse(mgrs)
                 if (parsed == null) {
                     false
                 } else {
+                    // MGRS is in the sheet's datum; shift to WGS84 before storing.
+                    val (lat, lng) = calibrationDatum.toWgs84(parsed.first, parsed.second)
                     calibrationFiduciaries = calibrationFiduciaries + Fiduciary(
                         pdfX = tap.pdfX,
                         pdfY = tap.pdfY,
                         mgrs = mgrs.trim().uppercase(),
-                        latitude = parsed.first,
-                        longitude = parsed.second,
+                        latitude = lat,
+                        longitude = lng,
                         label = label.trim().ifBlank { null }
                     )
                     pendingCalibrationTap = null
@@ -972,6 +979,8 @@ private fun calibrationStatus(fiduciaryCount: Int): String =
 private fun CalibrationInputDialog(
     point: PendingCalibrationTap,
     fiduciaryNumber: Int,
+    datum: Datum,
+    onDatumChange: (Datum) -> Unit,
     onDismiss: () -> Unit,
     onSave: (mgrs: String, label: String) -> Boolean
 ) {
@@ -1006,6 +1015,22 @@ private fun CalibrationInputDialog(
                     placeholder = { Text("Grid intersection") },
                     singleLine = true
                 )
+                Text("Sheet datum", fontSize = 12.sp, color = Color.White)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Datum.entries.forEach { d ->
+                        val selected = d == datum
+                        Text(
+                            d.displayName,
+                            fontSize = 11.sp,
+                            color = if (selected) Color.Black else Color.White,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) Color(0xFFFFA000) else Color(0x33FFFFFF))
+                                .clickable { onDatumChange(d) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
                 error?.let {
                     Text(it, color = Color(0xFFE53935), fontSize = 12.sp)
                 }
