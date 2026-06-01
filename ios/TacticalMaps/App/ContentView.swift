@@ -461,6 +461,9 @@ struct ContentView: View {
                     bounds: resolvedBounds,
                     fromGeoPDF: fromGeoPDF
                 )
+                // If this PDF was calibrated in a previous session, restore its
+                // fiduciaries + affine so it re-imports already aligned.
+                PDFSessionStore.applyCalibrationIfKnown(to: source)
                 mapVM.mapSource = source
                 PDFSessionStore.save(source)
 

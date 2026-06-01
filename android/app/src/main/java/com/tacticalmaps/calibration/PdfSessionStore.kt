@@ -60,6 +60,9 @@ class PdfSessionStore(private val context: Context) {
         runCatching { json.encodeToString(dto) }
             .onSuccess { prefs.edit().putString(KEY_PDF, it).apply() }
             .onFailure { Log.w(TAG, "Couldn't encode PDF for persistence: ${it.message}") }
+        // Also remember it in the per-PDF library so switching PDFs and back
+        // restores this one's own calibration.
+        saveToLibrary(source.displayName, calibration)
     }
 
     fun load(): PdfMapSource? {
@@ -91,9 +94,31 @@ class PdfSessionStore(private val context: Context) {
         prefs.edit().remove(KEY_PDF).apply()
     }
 
+    // Per-PDF calibration library keyed by display name — restores each PDF's
+    // own fiduciaries + affine when the user re-imports / switches PDFs.
+    fun calibration(displayName: String): Calibration.Fiduciaries? {
+        val cal = loadLibrary()[displayName] ?: return null
+        return Calibration.Fiduciaries(cal.fids, cal.transform)
+    }
+
+    private fun saveToLibrary(displayName: String, cal: Calibration.Fiduciaries) {
+        val lib = loadLibrary().toMutableMap()
+        lib[displayName] = PersistedCalibration(cal.fids, cal.transform)
+        runCatching { json.encodeToString(lib) }
+            .onSuccess { prefs.edit().putString(KEY_LIBRARY, it).apply() }
+            .onFailure { Log.w(TAG, "Couldn't encode PDF calibration library: ${it.message}") }
+    }
+
+    private fun loadLibrary(): Map<String, PersistedCalibration> {
+        val raw = prefs.getString(KEY_LIBRARY, null) ?: return emptyMap()
+        return runCatching { json.decodeFromString<Map<String, PersistedCalibration>>(raw) }
+            .getOrDefault(emptyMap())
+    }
+
     private companion object {
         const val PREFS_NAME = "pdf_session"
         const val KEY_PDF = "active_pdf"
+        const val KEY_LIBRARY = "pdf_calibrations"
         const val TAG = "PdfSessionStore"
     }
 }

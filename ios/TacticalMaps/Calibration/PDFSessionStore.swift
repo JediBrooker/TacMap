@@ -30,6 +30,9 @@ enum PDFSessionStore {
         } else {
             cal = nil
         }
+        // Remember this PDF's calibration in the per-file library too, so it can
+        // be restored even after the user switches to a different PDF and back.
+        if let cal { saveToLibrary(fileName: source.url.lastPathComponent, cal) }
         let dto = PersistedPDF(
             fileName: source.url.lastPathComponent,
             swLat: bounds.southWest.latitude,
@@ -89,6 +92,36 @@ enum PDFSessionStore {
 
     static func clear() {
         UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    // MARK: - Per-PDF calibration library
+    //
+    // Beyond the single *active* source above, keep every PDF's calibration
+    // keyed by file name, so importing / switching between several PDFs restores
+    // each one's own fiduciaries + affine instead of only the last one used.
+
+    private static let libraryKey = "pdf_calibrations_v1"
+
+    /// Apply a previously-saved calibration for this source's file, if any.
+    /// Called on import so a re-imported PDF lands already calibrated.
+    static func applyCalibrationIfKnown(to source: PDFMapSource) {
+        guard let cal = loadLibrary()[source.url.lastPathComponent] else { return }
+        source.applyCalibration(transform: cal.transform, fiduciaries: cal.fids)
+    }
+
+    private static func saveToLibrary(fileName: String, _ cal: PersistedCalibration) {
+        var lib = loadLibrary()
+        lib[fileName] = cal
+        if let data = try? JSONEncoder().encode(lib) {
+            UserDefaults.standard.set(data, forKey: libraryKey)
+        }
+    }
+
+    private static func loadLibrary() -> [String: PersistedCalibration] {
+        guard let data = UserDefaults.standard.data(forKey: libraryKey),
+              let lib = try? JSONDecoder().decode([String: PersistedCalibration].self, from: data)
+        else { return [:] }
+        return lib
     }
 }
 

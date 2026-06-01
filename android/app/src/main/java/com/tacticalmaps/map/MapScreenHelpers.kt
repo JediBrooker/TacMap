@@ -10,6 +10,7 @@ import com.tacticalmaps.calibration.GeoPdfParser
 import com.tacticalmaps.calibration.OfflineTileMapSourceAndroid
 import com.tacticalmaps.calibration.PdfMapSource
 import com.tacticalmaps.calibration.PdfPageRenderer
+import com.tacticalmaps.calibration.PdfSessionStore
 import com.tacticalmaps.calibration.Wgs84Coordinate
 import com.tacticalmaps.drawings.DrawingFeature
 import com.tacticalmaps.drawings.DrawingGeometry
@@ -143,6 +144,11 @@ internal fun importPdfMapSource(
         center = Wgs84Coordinate(cameraLat, cameraLng),
         pageInfo = pageInfo
     )
+
+    // A previously-saved manual calibration for this PDF wins over auto-parsing.
+    PdfSessionStore(context).calibration(baseName)?.let { saved ->
+        return base.calibrated(saved.transform, saved.fids)
+    }
 
     /// Try to lift georeferencing straight out of the PDF (OGC
     /// GeoPDF / Adobe LGIDict). If we find ≥3 correspondences we
