@@ -88,6 +88,9 @@ struct ContentView: View {
                         // around shows real terrain heights; fall back to the
                         // GPS-reported altitude only if the DEM hasn't replied yet.
                         elevation: mapVM.centreElevation ?? locationService.lastAltitude,
+                        // "~" marks an approximate height served from the offline
+                        // cache when the DEM network call can't reach Open-Meteo.
+                        elevationIsApproximate: mapVM.centreElevationIsApproximate,
                         coordinate: mapVM.isBrowsing
                             ? mapVM.cameraCentre
                             : locationService.lastLocation?.coordinate,

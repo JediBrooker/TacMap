@@ -19,11 +19,19 @@ final class MapViewModel: ObservableObject {
         didSet { NSLog("[MapVM] mapSource changed -> kind=\(mapSource.kind) name=\(mapSource.displayName)") }
     }
 
-    /// Terrain elevation (metres) for the current `cameraCentre`. Fetched async
-    /// from Open-Meteo — see `ElevationService`. Stays at its previous value
-    /// while a new request is in flight (so panning doesn’t flash “—”), and is
-    /// cleared to nil only when the centre changes by more than ~10m.
-    @Published var centreElevation: Double? = nil
+    /// Latest terrain-elevation reading for the current `cameraCentre` (metres
+    /// + staleness). Fetched async from Open-Meteo via `ElevationService`, which
+    /// is offline-resilient: when the network drops, this holds the nearest
+    /// cached height marked stale rather than going blank.
+    @Published var centreElevationReading: ElevationReading? = nil
+
+    /// Metres above sea level for the current centre, or nil if unknown.
+    /// Convenience so existing callers keep reading a plain `Double?`.
+    var centreElevation: Double? { centreElevationReading?.metres }
+
+    /// True when `centreElevation` is an approximate (offline) fallback rather
+    /// than a fresh DEM lookup — the HUD prefixes it with "~".
+    var centreElevationIsApproximate: Bool { centreElevationReading?.isStale ?? false }
 
     /// ID of the currently-selected waypoint of any kind (generic,
     /// military, or tactical control measure). Set by the map's
@@ -113,11 +121,11 @@ final class MapViewModel: ObservableObject {
     private func fetchElevation(for coord: CLLocationCoordinate2D) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let value = await self.elevationService.elevation(for: coord)
-            // Guard against stale responses: only commit if the camera hasn’t
+            let reading = await self.elevationService.reading(for: coord)
+            // Guard against stale responses: only commit if the camera hasn't
             // moved meaningfully since we kicked off the request.
             if Self.isApproximatelyEqual(self.cameraCentre, coord) {
-                self.centreElevation = value
+                self.centreElevationReading = reading
             }
         }
     }

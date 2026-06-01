@@ -14,6 +14,9 @@ struct MGRSHeaderView: View {
     let isBrowsing: Bool
     let accuracy: CLLocationAccuracy?
     let elevation: CLLocationDistance?
+    /// True when `elevation` is an approximate offline-cache value, shown with
+    /// a leading "~". Defaults false (fresh / live reading).
+    var elevationIsApproximate: Bool = false
     /// Caller hands us the coordinate currently displayed (live or crosshair).
     /// We use it for the long-press "drop pin" action.
     var coordinate: CLLocationCoordinate2D? = nil
@@ -104,7 +107,8 @@ struct MGRSHeaderView: View {
 
     private var elevationText: String {
         guard let e = elevation else { return "ELEV —" }
-        return String(format: "ELEV %.0f m", e)
+        let mark = elevationIsApproximate ? "~" : ""
+        return String(format: "ELEV %@%.0f m", mark, e)
     }
 }
 
