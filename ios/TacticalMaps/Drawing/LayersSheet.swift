@@ -67,10 +67,22 @@ struct LayersSheet: View {
                         } label: {
                             Label("Unload PDF", systemImage: "xmark.circle")
                         }
+                    } else if let tileSource = mapVM.mapSource as? OfflineTileMapSource {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tileSource.displayName).font(.callout)
+                            Text("Offline MBTiles raster — no network needed")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button(role: .destructive) {
+                            mapVM.mapSource = AppleSatelliteMapSource()
+                        } label: {
+                            Label("Unload offline tiles", systemImage: "xmark.circle")
+                        }
                     } else {
                         Label("None loaded", systemImage: "doc")
                             .foregroundStyle(.secondary)
-                        Text("Import a PDF or GeoPDF via ☰ → Import PDF Map.")
+                        Text("Import a PDF/GeoPDF via ☰ → Import PDF Map, or an MBTiles raster via ☰ → Import Offline Tiles.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -81,9 +93,9 @@ struct LayersSheet: View {
                         Image(systemName: "globe.americas.fill")
                         Text("Apple Satellite")
                         Spacer()
-                        Text(mapVM.mapSource is PDFMapSource
-                             ? "Hidden while PDF is loaded"
-                             : "Active")
+                        Text(mapVM.mapSource is AppleSatelliteMapSource
+                             ? "Active"
+                             : "Hidden while an imported map is loaded")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

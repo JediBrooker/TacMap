@@ -12,6 +12,10 @@ import MGRS
 extension MapContainerView.Coordinator {
 
     func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+        // Offline MBTiles raster basemap.
+        if let tile = overlay as? MKTileOverlay {
+            return MKTileOverlayRenderer(tileOverlay: tile)
+        }
         // PDF basemap is no longer an MKOverlay — it's a UIImageView
         // subview (see syncPDFOverlay). This delegate handles drawings only.
 

@@ -13,6 +13,7 @@ struct ContentView: View {
     @StateObject private var calibration     = CalibrationSession()
 
     @State private var showImporter        = false
+    @State private var showMBTilesImporter = false
     @State private var showGeoJSONImporter = false
     @State private var importMessage: String? = nil
     @State private var showWaypointSheet   = false
@@ -140,6 +141,10 @@ struct ContentView: View {
                                 onImport:    {
                                     drawingsPanelOpen = false
                                     showImporter = true
+                                },
+                                onImportTiles: {
+                                    drawingsPanelOpen = false
+                                    showMBTilesImporter = true
                                 },
                                 onImportGeoJSON: {
                                     drawingsPanelOpen = false
@@ -335,6 +340,19 @@ struct ContentView: View {
                     handleGeoJSONImport(result)
                 }
         )
+        .background(
+            EmptyView()
+                .fileImporter(
+                    isPresented: $showMBTilesImporter,
+                    allowedContentTypes: [
+                        UTType(filenameExtension: "mbtiles") ?? .database,
+                        .database
+                    ],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleMBTilesImport(result)
+                }
+        )
         .alert("Import",
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),
@@ -455,6 +473,34 @@ struct ContentView: View {
                 )
             }
         }
+    }
+
+    /// Import a local MBTiles raster pyramid as an offline basemap. Copies the
+    /// picked file into Documents (stable sandbox access) and installs an
+    /// `OfflineTileMapSource` — served with no network via an MKTileOverlay.
+    private func handleMBTilesImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else { return }
+
+        let scoped = url.startAccessingSecurityScopedResource()
+        let docsDir = FileManager.default.urls(
+            for: .documentDirectory, in: .userDomainMask
+        ).first!
+        let dest = docsDir.appendingPathComponent(url.lastPathComponent)
+        if !FileManager.default.fileExists(atPath: dest.path) {
+            try? FileManager.default.copyItem(at: url, to: dest)
+        }
+        if scoped { url.stopAccessingSecurityScopedResource() }
+
+        guard let source = OfflineTileMapSource(url: dest) else {
+            importMessage = "Couldn't open this file as an MBTiles map."
+            return
+        }
+        mapVM.mapSource = source
+        mapVM.frameCamera(
+            for: source,
+            userLocation: locationService.lastLocation?.coordinate
+        )
+        importMessage = "Loaded offline tiles: \(source.displayName)."
     }
 }
 

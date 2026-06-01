@@ -12,6 +12,7 @@ struct HamburgerMenu: View {
     let onLayers:        () -> Void
     let onMeasure:       () -> Void
     let onImport:        () -> Void
+    let onImportTiles:   () -> Void
     let onImportGeoJSON: () -> Void
     let onExport:        () -> Void
     let onAbout:         () -> Void
@@ -57,6 +58,7 @@ struct HamburgerMenu: View {
                         row("Measure",         systemImage: "ruler")               { close(onMeasure) }
                         divider
                         row("Import PDF Map…", systemImage: "doc.badge.plus")      { close(onImport) }
+                        row("Import Offline Tiles…", systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }
                         row("Import GeoJSON…", systemImage: "square.and.arrow.down") { close(onImportGeoJSON) }
                         row("Export GeoJSON…", systemImage: "square.and.arrow.up")   { close(onExport) }
                         divider

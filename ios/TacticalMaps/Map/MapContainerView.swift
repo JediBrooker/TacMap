@@ -109,6 +109,7 @@ struct MapContainerView: UIViewRepresentable {
         context.coordinator.syncPDFOverlay(on: mv,
                                            source: mapVM.mapSource,
                                            visible: visibility.pdfOverlayVisible)
+        context.coordinator.syncTileOverlay(on: mv, source: mapVM.mapSource)
         context.coordinator.refresh(on: mv,
                                     waypoints: waypointStore.waypoints,
                                     drawings:  drawingStore.visibleShapes,
@@ -123,6 +124,7 @@ struct MapContainerView: UIViewRepresentable {
         context.coordinator.syncPDFOverlay(on: mv,
                                            source: mapVM.mapSource,
                                            visible: visibility.pdfOverlayVisible)
+        context.coordinator.syncTileOverlay(on: mv, source: mapVM.mapSource)
         // Sync the MGRS-grid toggle through to the coordinator and
         // rebuild — flipping the switch must take effect without
         // waiting for the next pan/zoom.
@@ -195,6 +197,11 @@ struct MapContainerView: UIViewRepresentable {
         /// satellite imagery). Keyed by the source's UUID.
         var pdfImageView: PDFImageOverlayView?
         var pdfSourceID: UUID?
+
+        /// Offline MBTiles raster basemap overlay + the id of the source it
+        /// belongs to. Persists across refresh() (see MapContainerCoordinator+TileSync).
+        var tileOverlay: MBTilesTileOverlay?
+        var tileSourceID: UUID?
 
         /// Dark UIView covering the satellite while a PDF is loaded so the
         /// imported map is the only visible content. Removed when the PDF is
@@ -423,8 +430,9 @@ struct MapContainerView: UIViewRepresentable {
 
             self.labelsVisible = visibility?.drawingLabelsVisible ?? true
 
-            // --- Overlays ---
-            mv.removeOverlays(mv.overlays)
+            // --- Overlays --- (keep the offline-tile basemap; it persists
+            // across refreshes so the tiles don't reload on every model change)
+            mv.removeOverlays(mv.overlays.filter { !($0 is MKTileOverlay) })
             styleByOverlay.removeAll()
             inProgressOverlayIDs.removeAll()
             shapeIDByOverlay.removeAll()
