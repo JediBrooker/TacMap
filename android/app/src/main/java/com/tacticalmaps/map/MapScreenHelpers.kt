@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import com.tacticalmaps.calibration.AffineFitter
 import com.tacticalmaps.calibration.GeoPdfParser
+import com.tacticalmaps.calibration.OfflineTileMapSourceAndroid
 import com.tacticalmaps.calibration.PdfMapSource
 import com.tacticalmaps.calibration.PdfPageRenderer
 import com.tacticalmaps.calibration.Wgs84Coordinate
@@ -173,4 +174,21 @@ internal fun uniquePdfFileName(displayName: String): String {
         .trim('_')
         .ifBlank { "Imported_Map" }
     return "${System.currentTimeMillis()}_$base.pdf"
+}
+
+/** Copy a picked .mbtiles into the app's files dir (SQLite needs a real path,
+ *  not a content Uri) and open it as an offline-tile basemap source. */
+internal fun importMBTilesMapSource(context: Context, sourceUri: Uri): OfflineTileMapSourceAndroid? {
+    val displayName = context.displayNameFor(sourceUri)
+    val dir = File(context.filesDir, "mbtiles").apply { mkdirs() }
+    val base = displayName.substringBeforeLast('.', displayName)
+        .replace(Regex("[^A-Za-z0-9._-]+"), "_")
+        .trim('_')
+        .ifBlank { "Offline_Tiles" }
+    val dest = File(dir, "${System.currentTimeMillis()}_$base.mbtiles")
+    context.contentResolver.openInputStream(sourceUri).use { input ->
+        requireNotNull(input) { "Unable to open selected MBTiles" }
+        dest.outputStream().use { output -> input.copyTo(output) }
+    }
+    return OfflineTileMapSourceAndroid.open(dest.path)
 }

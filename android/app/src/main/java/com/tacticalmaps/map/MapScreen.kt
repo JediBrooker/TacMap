@@ -82,6 +82,8 @@ import com.tacticalmaps.calibration.AffineFitter
 import com.tacticalmaps.calibration.Calibration
 import com.tacticalmaps.calibration.Fiduciary
 import com.tacticalmaps.calibration.GeoPdfParser
+import com.tacticalmaps.calibration.OfflineTileMapSourceAndroid
+import com.tacticalmaps.calibration.OpenStreetMapSourceAndroid
 import com.tacticalmaps.calibration.PdfMapSource
 import com.tacticalmaps.calibration.PdfPageRenderer
 import com.tacticalmaps.calibration.Wgs84Coordinate
@@ -174,6 +176,23 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
             source?.let {
                 vm.setMapSource(it)
                 Toast.makeText(context, "Imported ${it.displayName}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val mbtilesImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val source = runCatching {
+                withContext(Dispatchers.IO) { importMBTilesMapSource(context, uri) }
+            }.getOrNull()
+            if (source == null) {
+                Toast.makeText(context, "Couldn't open this file as MBTiles.", Toast.LENGTH_SHORT).show()
+            } else {
+                vm.setMapSource(source)
+                Toast.makeText(context, "Loaded offline tiles: ${source.displayName}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -558,6 +577,23 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                             pdfImportLauncher.launch(arrayOf("application/pdf"))
                         }
                     )
+                    DropdownMenuItem(
+                        text = { Text("Import Offline Tiles") },
+                        onClick = {
+                            hamburgerOpen = false
+                            // MBTiles has no standard MIME type — show all files.
+                            mbtilesImportLauncher.launch(arrayOf("*/*"))
+                        }
+                    )
+                    if (mapSource is OfflineTileMapSourceAndroid) {
+                        DropdownMenuItem(
+                            text = { Text("Unload Offline Tiles") },
+                            onClick = {
+                                hamburgerOpen = false
+                                vm.setMapSource(OpenStreetMapSourceAndroid())
+                            }
+                        )
+                    }
                     if (pdfSource != null) {
                         DropdownMenuItem(
                             text = { Text("Calibrate PDF Map") },

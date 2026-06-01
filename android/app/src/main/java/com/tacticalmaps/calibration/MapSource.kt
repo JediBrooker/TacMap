@@ -19,7 +19,7 @@ sealed interface MapSource {
     val calibration: Calibration?
 }
 
-enum class MapSourceKind { OPEN_STREET_MAP, GEO_PDF, CALIBRATED_PDF }
+enum class MapSourceKind { OPEN_STREET_MAP, GEO_PDF, CALIBRATED_PDF, OFFLINE_TILES }
 
 @Serializable
 data class Wgs84Coordinate(

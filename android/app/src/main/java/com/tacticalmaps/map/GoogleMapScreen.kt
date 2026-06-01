@@ -56,12 +56,14 @@ import com.google.maps.android.compose.GroundOverlayPosition
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.TileOverlay
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.Polygon
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
 import com.tacticalmaps.calibration.MapSource
+import com.tacticalmaps.calibration.OfflineTileMapSourceAndroid
 import com.tacticalmaps.calibration.PdfMapSource
 import com.tacticalmaps.calibration.PdfPageRenderer
 import com.tacticalmaps.mgrs.MgrsGridRenderer
@@ -244,7 +246,7 @@ fun GoogleMapScreen(
                 /// PDF surrounded by satellite where the page
                 /// doesn't cover, which makes the PDF look like
                 /// it's "floating" on Google Maps.
-                mapType = if (mapSource is PdfMapSource) MapType.NONE
+                mapType = if (mapSource is PdfMapSource || mapSource is OfflineTileMapSourceAndroid) MapType.NONE
                     else MapType.SATELLITE,
                 /// Google Maps' built-in blue user-location dot.
                 /// Gated on runtime permission — the SDK throws if
@@ -278,6 +280,13 @@ fun GoogleMapScreen(
         ) {
             (mapSource as? PdfMapSource)?.let { pdf ->
                 PdfGroundOverlay(source = pdf)
+            }
+
+            (mapSource as? OfflineTileMapSourceAndroid)?.let { tiles ->
+                /// remember on the source id so the provider (and its tile
+                /// cache) survives recomposition; only rebuilt on source change.
+                val provider = remember(tiles.id) { tiles.tileProvider() }
+                TileOverlay(tileProvider = provider)
             }
 
             if (mgrsGridVisible) {
