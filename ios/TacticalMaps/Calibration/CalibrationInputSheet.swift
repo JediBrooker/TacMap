@@ -29,6 +29,18 @@ struct CalibrationInputSheet: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                Section("Map datum") {
+                    Picker("Datum", selection: $session.datum) {
+                        ForEach(Datum.allCases, id: \.self) { d in
+                            Text(d.displayName).tag(d)
+                        }
+                    }
+                    if session.datum != .wgs84 {
+                        Text("MGRS you enter is read as \(session.datum.displayName) and shifted to WGS84 (~1–2 m) so overlays line up.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Section("MGRS grid reference") {
                     TextField("56HLH 12345 67890", text: $mgrs)
                         .textInputAutocapitalization(.characters)

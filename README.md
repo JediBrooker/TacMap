@@ -225,8 +225,12 @@ Full design + math in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - **Wave 2 projections** — Lambert Conformal Conic (French IGN, Canadian
   NRCan, US state plane), arbitrary-central-meridian TM (UK OSGB36, NZ NZTM),
   non-WGS84 datum shifts.
-- **Persistent fiduciaries per PDF** — currently in-memory only; needs a
-  `Calibration/CalibrationStore.swift`.
+- **Per-PDF fiduciary library** — the *active* calibrated PDF's fiduciaries +
+  affine already persist across launches (`PDFSessionStore`). A keyed library so
+  switching between several PDFs remembers each one's calibration is still TODO.
+- **Datum shift** — calibration now lets you flag the sheet's datum (WGS84 /
+  GDA94 / GDA2020) and shifts fiduciaries to WGS84 via the ICSM Helmert; Lambert
+  Conformal Conic + arbitrary-TM datum work remains (see Wave 2 above).
 - **Route logging** — the iOS `UIBackgroundModes: [location]` declaration is
   in place; logger UI + GPX export TBD.
 - **iCloud sync** for waypoints + drawings.

@@ -4,6 +4,9 @@ import SwiftUI
 /// data source we depend on with its license + project link.
 struct AcknowledgementsView: View {
     @Environment(\.dismiss) private var dismiss
+    /// Captured once on appear so the destructive "Clear" button can hide the
+    /// section without a re-render fight.
+    @State private var crashURL: URL? = CrashReporter.exportURL()
 
     var body: some View {
         NavigationStack {
@@ -71,6 +74,23 @@ struct AcknowledgementsView: View {
                     Text("TacticalMaps respects your privacy. We collect no telemetry. Location and elevation lookups stay on your device or are anonymised in flight.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                if let crashURL {
+                    Section("Diagnostics") {
+                        ShareLink(item: crashURL) {
+                            Label("Export last crash log", systemImage: "ladybug")
+                        }
+                        Button(role: .destructive) {
+                            CrashReporter.clear()
+                            self.crashURL = nil
+                        } label: {
+                            Label("Clear crash log", systemImage: "trash")
+                        }
+                        Text("A crash was recorded on a previous run. Nothing is sent anywhere — you choose whether to share this file.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle("About & Credits")

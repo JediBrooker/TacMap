@@ -30,6 +30,11 @@ final class CalibrationSession: ObservableObject {
     @Published private(set) var pendingTap: PendingTap? = nil
     @Published private(set) var lastFitRMSMetres: Double? = nil
 
+    /// Datum the sheet's grid references are in. Defaults to WGS84 (a no-op);
+    /// set to GDA94/GDA2020 for Australian MGA sheets so fiduciary coordinates
+    /// are shifted to WGS84 before storing. See `Datum`.
+    @Published var datum: Datum = .wgs84
+
     /// The source being calibrated. Held weakly so we don't keep the old
     /// source alive after replacement.
     private(set) weak var source: PDFMapSource?
@@ -66,7 +71,10 @@ final class CalibrationSession: ObservableObject {
     @discardableResult
     func confirmFiduciary(mgrs: String, label: String? = nil) -> Bool {
         guard let pending = pendingTap,
-              let coord = MGRSFormatter.coordinate(from: mgrs) else { return false }
+              let parsed = MGRSFormatter.coordinate(from: mgrs) else { return false }
+        // The MGRS is in the sheet's datum; shift to WGS84 before storing so
+        // every overlay (and the GeoJSON export) is in one consistent datum.
+        let coord = datum.toWGS84(parsed)
         let fid = Fiduciary(
             pdfX: Double(pending.pdfPoint.x),
             pdfY: Double(pending.pdfPoint.y),
