@@ -28,8 +28,8 @@ targets:
       path: TacticalMaps/Resources/Info.plist
       properties:
         CFBundleDisplayName: TacticalMaps
-        CFBundleShortVersionString: "0.1.7"
-        CFBundleVersion: "12"
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "13"
         UILaunchScreen:
           UIColorName: LaunchBackground
         # iOS 16+ devices are all arm64. armv7 is 32-bit and would
