@@ -19,7 +19,7 @@
 - [x] Holsworthy demo PDF removed from `samples/` (ADF copyright — don't bundle)
 - [x] Privacy policy template in `docs/PRIVACY_POLICY.md`
 - [x] `ITSAppUsesNonExemptEncryption: false` declared (we only use TLS — exempt)
-- [ ] Bump `CFBundleShortVersionString` from `0.1.0` → `1.0.0` for the first submission
+- [ ] Bump `CFBundleShortVersionString` from `0.1.7` → `1.0.0` for the first submission
 - [ ] Crash reporting (Sentry / Firebase Crashlytics / built-in only) — strongly recommended
 - [ ] Test on a **real device** via TestFlight before submitting
 

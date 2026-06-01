@@ -29,12 +29,15 @@ presentation-only: it is computed on the fly from WGS84 via NGA's `mgrs-ios` /
 `mgrs` (Java) libraries.
 
 The `MapSource` abstraction (Swift protocol / Kotlin sealed interface) hides the
-basemap implementation from everything else. Three concrete kinds:
+basemap implementation from everything else. Four concrete kinds:
 
-- `AppleSatelliteMapSource` / `AppleSatelliteMapSourceAndroid` — the default
+- `AppleSatelliteMapSource` / `OpenStreetMapSourceAndroid` — the default
   fallback (Apple satellite on iOS, Google satellite on Android).
 - `PDFMapSource(kind = .geoPDF)` — PDF with OGC GeoPDF tags; calibration parsed.
 - `PDFMapSource(kind = .calibratedPDF)` — hand-calibrated via 3+ fiduciaries.
+- `OfflineTileMapSource` / `OfflineTileMapSourceAndroid` — a sideloaded MBTiles
+  raster pyramid served offline via `MKTileOverlay` (iOS) / a Google Maps
+  `TileProvider` (Android).
 
 ## 2. Browse mode
 
@@ -128,6 +131,11 @@ Production-grade ingest requires both. The pragmatic plan:
 Until that pipeline ships, the in-app PDF importer falls back to fiduciary
 calibration.
 
+The on-device serving half (step 3) is now implemented: the app reads a
+sideloaded `.mbtiles` directly via `MBTilesStore` and serves it through
+`MKTileOverlay` / a Google Maps `TileProvider`. Producing the MBTiles from a
+GeoPDF is still an offline GDAL step the user runs on a desktop.
+
 ## 6. Open questions
 
 - **Coordinate datum on PDFs**: most defence-issued 1:25,000 sheets use MGA94
@@ -138,6 +146,7 @@ calibration.
   encoding, but we need to decide how to attach style (colour, dash pattern,
   width) — GeoJSON's `properties` bag is unstructured. A small in-house schema
   with a documented set of style keys is probably the right move.
-- **Offline tiles**: when the GDAL pipeline ships, where do MBTiles live and how
-  large do we let them get on a phone? AppleSatellite/GoogleSatellite are
-  online-only; users in the field need offline as a first-class concern.
+- **Offline tiles**: sideloaded MBTiles are now served offline on both platforms
+  (copied into the app sandbox on import). Open questions remain: how large do we
+  let them get on a phone, and is an in-app tiler worth it so users don't need a
+  desktop GDAL step? AppleSatellite/GoogleSatellite remain online-only.

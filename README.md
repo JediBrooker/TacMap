@@ -90,9 +90,18 @@ quadrangle (public domain) rendered live over the satellite. Run
 - **Adobe Geospatial fallback** for newer PDFs that use `/VP/Measure` +
   `/GPTS` instead of LGIDict.
 - **Fiduciary calibration UI** for any PDF without proper metadata — tap
-  3+ known features on the PDF, enter their MGRS, and `AffineFitter` solves
+  3 known features on the PDF, enter their MGRS, and `AffineFitter` solves
   a least-squares affine to re-derive bounds. Shows RMS residual in metres
   so you know how trustworthy the fit is.
+
+### Offline raster basemap (MBTiles)
+
+- Sideload a **`.mbtiles`** raster pyramid (e.g. `gdal_translate` +
+`gdal2tiles.py` of any GeoPDF / raster) and the app serves it through a tile
+overlay with **no network** — the real offline-field path, and the
+ToS-compliant alternative to caching Apple/Google's own tiles. Import via
+**☰ → Import Offline Tiles**; the bounds metadata frames the camera, and the
+Layers sheet lets you unload it. iOS + Android.
 
 ### Search
 
@@ -181,6 +190,25 @@ other UI element still works.
 
 ---
 
+## Testing
+
+Pure-logic unit tests run on both platforms and gate CI:
+
+```bash
+# iOS — XCTest (affine fit, MGRS, GeoJSON geometry, MBTiles, map geometry, …)
+cd ios && xcodegen generate
+xcodebuild test -scheme TacticalMaps -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+
+# Android — JVM unit tests (no emulator needed)
+cd android && ./gradlew testDebugUnitTest
+```
+
+Cross-platform invariants (the affine solve, MGRS formatting, GeoJSON geometry)
+are pinned by shared golden vectors in [`testdata/`](testdata/) that **both**
+suites load, so the Swift and Kotlin ports can't silently drift.
+
+---
+
 ## Architecture overview
 
 The single most important architectural choice: **all overlays (waypoints,
@@ -202,8 +230,10 @@ Full design + math in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - **Route logging** — the iOS `UIBackgroundModes: [location]` declaration is
   in place; logger UI + GPX export TBD.
 - **iCloud sync** for waypoints + drawings.
-- **Android feature parity** — the Android edition builds + runs but only the
-  basic HUD is wired; drawing / search / GeoPDF still iOS-only.
+- **Android feature parity** — drawing, search, waypoints + APP-6 symbols,
+  GeoPDF import & fiduciary calibration, GeoJSON import/export, and the offline
+  MBTiles basemap are all wired on Android now. The main iOS-only item left is
+  the live DEM elevation readout in the HUD.
 
 ---
 
