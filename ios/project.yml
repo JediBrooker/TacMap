@@ -28,8 +28,8 @@ targets:
       path: TacticalMaps/Resources/Info.plist
       properties:
         CFBundleDisplayName: TacticalMaps
-        CFBundleShortVersionString: "0.2.0"
-        CFBundleVersion: "13"
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "14"
         UILaunchScreen:
           UIColorName: LaunchBackground
         # iOS 16+ devices are all arm64. armv7 is 32-bit and would
@@ -47,8 +47,13 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSLocationWhenInUseUsageDescription: TacticalMaps shows your live position on the map and reads it as an MGRS grid reference.
-        NSLocationAlwaysAndWhenInUseUsageDescription: TacticalMaps tracks your route and may continue logging when the app is backgrounded.
-        UIBackgroundModes: [location]
+        # NOTE: No background location. The app only requests
+        # When-In-Use authorization (see LocationService.swift) and does
+        # not enable allowsBackgroundLocationUpdates. Declaring
+        # UIBackgroundModes:[location] or the "Always" usage string
+        # without a persistent-location feature triggers App Store
+        # rejection under guideline 2.5.4 — re-add both only when
+        # background route logging actually ships.
         ITSAppUsesNonExemptEncryption: false
         # Surface the app's Documents folder in the Files app so the user can
         # drop GeoPDFs into TacticalMaps from Files → "On My iPhone".
@@ -81,7 +86,12 @@ targets:
     scheme:
       testTargets:
         - TacticalMapsTests
+        - TacticalMapsUITests
       gatherCoverageData: true
+      # Local IAP testing without App Store Connect — purchases resolve
+      # against this config. Production uses the real ASC product.
+      run:
+        storeKitConfiguration: TacticalMaps.storekit
 
   TacticalMapsTests:
     type: bundle.unit-test
@@ -99,3 +109,24 @@ targets:
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGNING_ALLOWED: "NO"
+
+  # UI-test target used only to capture App Store screenshots
+  # deterministically (Menu → sheets → snap). Not part of CI logic;
+  # run with -only-testing:TacticalMapsUITests. See scripts/ios_screenshots.sh.
+  TacticalMapsUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: TacticalMapsUITests
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - target: TacticalMaps
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.tacticalmaps.app.uitests
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGNING_ALLOWED: "NO"
+        TEST_TARGET_NAME: TacticalMaps

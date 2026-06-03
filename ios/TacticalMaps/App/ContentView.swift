@@ -281,15 +281,18 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showWaypointSheet) {
             WaypointListSheet(waypointStore: waypointStore, mapVM: mapVM)
+                .padSheetSizing()
         }
         .sheet(isPresented: $showDrawingsSheet) {
             DrawingsSheet(drawingStore: drawingStore, session: drawingSession)
+                .padSheetSizing()
         }
         .sheet(isPresented: $showLayersSheet) {
             LayersSheet(visibility: visibility,
                         mapVM: mapVM,
                         drawingStore: drawingStore,
                         onCalibrate: startCalibration)
+                .padSheetSizing()
         }
         .sheet(isPresented: Binding(
             get: { calibration.pendingTap != nil },
@@ -300,15 +303,19 @@ struct ContentView: View {
                 onCancel: { calibration.clearPendingTap() },
                 currentLocation: locationService.lastLocation?.coordinate
             )
+            .padSheetSizing()
         }
         .sheet(isPresented: $showExportSheet) {
             ExportSheet(waypointStore: waypointStore, drawingStore: drawingStore)
+                .padSheetSizing()
         }
         .sheet(isPresented: $showSearchSheet) {
             SearchSheet(mapVM: mapVM)
+                .padSheetSizing()
         }
         .sheet(isPresented: $showAboutSheet) {
             AcknowledgementsView()
+                .padSheetSizing()
         }
         /// SwiftUI has a long-standing bug where two `.fileImporter`
         /// modifiers attached back-to-back on the same view silently

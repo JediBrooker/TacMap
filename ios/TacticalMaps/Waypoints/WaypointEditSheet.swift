@@ -290,6 +290,11 @@ struct WaypointEditSheet: View {
                 Text("This will permanently remove “\(label)”.")
             }
         }
+        // The default iPad form-sheet is too small — the APP-6C unit options
+        // (affiliation / echelon / function / HQ) fall below the fold. On
+        // iOS 18+ present it as a large "page" sheet on iPad so the whole
+        // builder shows without scrolling (no-op on iPhone / older iOS).
+        .padSheetSizing()
     }
 
     /// Current kind derived from the live editor state.
