@@ -67,19 +67,16 @@ targets:
         ENABLE_PREVIEWS: "YES"
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: TacticalMaps/Resources/Info.plist
-        # Apple Developer team. Signing style is split per-config:
-        # Debug uses Automatic so simulator builds Just Work without
-        # a profile, Release archives use Manual with the
-        # "TacticalMaps" App Store distribution profile pre-
-        # provisioned in App Store Connect.
+        # Apple Developer team. Both configs use Automatic signing so Xcode /
+        # xcodebuild manage the App Store distribution profile on the fly via
+        # -allowProvisioningUpdates (no pre-provisioned profile required). The
+        # archive export step re-signs with the distribution cert.
         DEVELOPMENT_TEAM: 6MY34D5RKG
       configs:
         Debug:
           CODE_SIGN_STYLE: Automatic
         Release:
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: "Apple Distribution"
-          PROVISIONING_PROFILE_SPECIFIER: TacticalMaps
+          CODE_SIGN_STYLE: Automatic
     dependencies:
       - package: mgrs-ios
         product: MGRS
@@ -91,6 +88,8 @@ targets:
       # Local IAP testing without App Store Connect — purchases resolve
       # against this config. Production uses the real ASC product.
       run:
+        storeKitConfiguration: TacticalMaps.storekit
+      test:
         storeKitConfiguration: TacticalMaps.storekit
 
   TacticalMapsTests:
