@@ -6,9 +6,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import com.tacticalmaps.billing.BillingManager
 import com.tacticalmaps.billing.PaywallScreen
 import com.tacticalmaps.billing.TrialManager
@@ -37,7 +43,24 @@ class MainActivity : ComponentActivity() {
                 val unlocked = purchased || trial.isTrialActive(now)
 
                 if (unlocked) {
-                    MapScreen()
+                    var showPaywall by remember { mutableStateOf(false) }
+                    Box(Modifier.fillMaxSize()) {
+                        MapScreen(
+                            isPurchased = purchased,
+                            trialDaysRemaining = trial.daysRemaining(now),
+                            onUnlock = { showPaywall = true },
+                        )
+                        // On-demand paywall (from the menu's Unlock row during trial).
+                        if (showPaywall && !purchased) {
+                            PaywallScreen(
+                                priceText = price,
+                                trialDaysRemaining = trial.daysRemaining(now),
+                                onUnlock = { billing.launchPurchase(this@MainActivity) },
+                                onRestore = { billing.restore() },
+                                onClose = { showPaywall = false },
+                            )
+                        }
+                    }
                 } else {
                     PaywallScreen(
                         priceText = price,

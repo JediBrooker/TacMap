@@ -34,7 +34,7 @@ private struct RootGate: View {
     var body: some View {
         Group {
             if store.isPurchased || trial.isTrialActive(now: now) {
-                ContentView()
+                ContentView(store: store)
             } else {
                 PaywallView(
                     store: store,

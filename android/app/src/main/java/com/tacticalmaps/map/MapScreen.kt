@@ -32,9 +32,21 @@ import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Tune
@@ -43,6 +55,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -104,7 +117,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
-fun MapScreen(vm: MapViewModel = viewModel()) {
+fun MapScreen(
+    vm: MapViewModel = viewModel(),
+    isPurchased: Boolean = true,
+    trialDaysRemaining: Int = 0,
+    onUnlock: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -125,13 +143,16 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
     var showDrawingSheet by remember { mutableStateOf(false) }
     var showSearchDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showLayersSheet by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
     var activeDrawingLayerId by remember { mutableStateOf(DrawingDocument.DEFAULT_LAYER_ID) }
     val measureSession = remember { MeasureSession() }
-    var unitLabelsVisible by remember { mutableStateOf(true) }
-    var taskLabelsVisible by remember { mutableStateOf(true) }
-    var drawingLabelsVisible by remember { mutableStateOf(true) }
-    var mgrsGridVisible by remember { mutableStateOf(false) }
+    // Persisted to SharedPreferences so layer toggles survive app relaunch
+    // (previously plain remember{} state that reset on every launch).
+    var unitLabelsVisible by rememberPersistedBoolean("unitLabels", true)
+    var taskLabelsVisible by rememberPersistedBoolean("taskLabels", true)
+    var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", true)
+    var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
     var draftPoints by remember { mutableStateOf<List<DrawingPoint>>(emptyList()) }
@@ -520,26 +541,61 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                     expanded = hamburgerOpen,
                     onDismissRequest = { hamburgerOpen = false }
                 ) {
+                    if (!isPurchased) {
+                        DropdownMenuItem(
+                            enabled = false,
+                            text = {
+                                Text(
+                                    if (trialDaysRemaining > 0)
+                                        "Free trial — $trialDaysRemaining ${if (trialDaysRemaining == 1) "day" else "days"} left"
+                                    else "Free trial ended"
+                                )
+                            },
+                            onClick = {},
+                            leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Unlock Full Version") },
+                            onClick = {
+                                hamburgerOpen = false
+                                onUnlock()
+                            },
+                            leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = null) }
+                        )
+                        HorizontalDivider()
+                    }
                     DropdownMenuItem(
                         text = { Text("Search") },
                         onClick = {
                             hamburgerOpen = false
                             showSearchDialog = true
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
                     )
+                    HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text("Symbology") },
                         onClick = {
                             hamburgerOpen = false
                             showWaypointSheet = true
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("Draw") },
+                        text = { Text("Drawings") },
                         onClick = {
                             hamburgerOpen = false
                             showDrawingSheet = true
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.Gesture, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Layers") },
+                        onClick = {
+                            hamburgerOpen = false
+                            showLayersSheet = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Layers, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("Measure") },
@@ -547,38 +603,17 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                             hamburgerOpen = false
                             stopDrawing()
                             measureSession.start()
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.Straighten, contentDescription = null) }
                     )
-                    DropdownMenuItem(
-                        text = { Text(if (unitLabelsVisible) "✓ Unit Labels" else "Unit Labels") },
-                        onClick = {
-                            unitLabelsVisible = !unitLabelsVisible
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (taskLabelsVisible) "✓ Task Labels" else "Task Labels") },
-                        onClick = {
-                            taskLabelsVisible = !taskLabelsVisible
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (drawingLabelsVisible) "✓ Drawing Labels" else "Drawing Labels") },
-                        onClick = {
-                            drawingLabelsVisible = !drawingLabelsVisible
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (mgrsGridVisible) "✓ MGRS Grid" else "MGRS Grid") },
-                        onClick = {
-                            mgrsGridVisible = !mgrsGridVisible
-                        }
-                    )
+                    HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text("Import PDF Map") },
                         onClick = {
                             hamburgerOpen = false
                             pdfImportLauncher.launch(arrayOf("application/pdf"))
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.PictureAsPdf, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("Import Offline Tiles") },
@@ -586,40 +621,16 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                             hamburgerOpen = false
                             // MBTiles has no standard MIME type — show all files.
                             mbtilesImportLauncher.launch(arrayOf("*/*"))
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.Map, contentDescription = null) }
                     )
-                    if (mapSource is OfflineTileMapSourceAndroid) {
-                        DropdownMenuItem(
-                            text = { Text("Unload Offline Tiles") },
-                            onClick = {
-                                hamburgerOpen = false
-                                vm.setMapSource(OpenStreetMapSourceAndroid())
-                            }
-                        )
-                    }
-                    if (pdfSource != null) {
-                        DropdownMenuItem(
-                            text = { Text("Calibrate PDF Map") },
-                            onClick = {
-                                hamburgerOpen = false
-                                startPdfCalibration()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Unload PDF Map") },
-                            onClick = {
-                                hamburgerOpen = false
-                                cancelPdfCalibration()
-                                vm.unloadPdfMap()
-                            }
-                        )
-                    }
                     DropdownMenuItem(
                         text = { Text("Import GeoJSON") },
                         onClick = {
                             hamburgerOpen = false
                             geoJsonImportLauncher.launch(arrayOf("application/geo+json", "application/json", "*/*"))
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("Export GeoJSON") },
@@ -631,14 +642,17 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
                                 drawings = drawingDocument.features,
                                 layers = drawingDocument.layers
                             )
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) }
                     )
+                    HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("About") },
+                        text = { Text("About & Credits") },
                         onClick = {
                             hamburgerOpen = false
                             showAboutDialog = true
-                        }
+                        },
+                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
                     )
                 }
             }
@@ -798,6 +812,35 @@ fun MapScreen(vm: MapViewModel = viewModel()) {
 
     if (showAboutDialog) {
         AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    if (showLayersSheet) {
+        LayersSheet(
+            mgrsGridVisible = mgrsGridVisible,
+            unitLabelsVisible = unitLabelsVisible,
+            taskLabelsVisible = taskLabelsVisible,
+            drawingLabelsVisible = drawingLabelsVisible,
+            onMgrsGridChange = { mgrsGridVisible = it },
+            onUnitLabelsChange = { unitLabelsVisible = it },
+            onTaskLabelsChange = { taskLabelsVisible = it },
+            onDrawingLabelsChange = { drawingLabelsVisible = it },
+            hasPdfMap = pdfSource != null,
+            hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
+            onCalibratePdf = {
+                showLayersSheet = false
+                startPdfCalibration()
+            },
+            onUnloadPdf = {
+                showLayersSheet = false
+                cancelPdfCalibration()
+                vm.unloadPdfMap()
+            },
+            onUnloadOfflineTiles = {
+                showLayersSheet = false
+                vm.setMapSource(OpenStreetMapSourceAndroid())
+            },
+            onDismiss = { showLayersSheet = false }
+        )
     }
 
     pendingCalibrationTap?.let { tap ->

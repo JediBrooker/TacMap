@@ -8,6 +8,9 @@ struct PaywallView: View {
     /// >0 while the trial is still running; 0 once it has expired.
     let trialDaysRemaining: Int
     let onRestore: () -> Void
+    /// When non-nil the paywall is being shown on-demand (e.g. from the menu
+    /// during the trial) and gets a close button. nil = the hard launch gate.
+    var onClose: (() -> Void)? = nil
 
     private let green = Color(red: 0.55, green: 0.95, blue: 0.55)   // hud_green
     private let orange = Color(red: 0.95, green: 0.64, blue: 0.29)  // hud_orange
@@ -72,6 +75,22 @@ struct PaywallView: View {
                     .padding(.top, 18)
 
                 Spacer()
+            }
+
+            if let onClose {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: onClose) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(Color(white: 0.6))
+                        }
+                        .padding()
+                    }
+                    Spacer()
+                }
             }
         }
         .preferredColorScheme(.dark)

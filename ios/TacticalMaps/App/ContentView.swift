@@ -12,6 +12,13 @@ struct ContentView: View {
     @StateObject private var mapVM           = MapViewModel()
     @StateObject private var calibration     = CalibrationSession()
 
+    /// Injected from the app gate so the menu can show trial status + offer
+    /// the unlock on demand (the paywall otherwise only appears once the
+    /// trial has expired).
+    @ObservedObject var store: StoreManager
+    private let trial = TrialManager()
+    @State private var showPaywallSheet    = false
+
     @State private var showImporter        = false
     @State private var showMBTilesImporter = false
     @State private var showGeoJSONImporter = false
@@ -117,6 +124,9 @@ struct ContentView: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 8) {
                             HamburgerMenu(
+                                isPurchased: store.isPurchased,
+                                trialDaysRemaining: trial.daysRemaining(),
+                                onUnlock: { showPaywallSheet = true },
                                 onSearch:    {
                                     drawingsPanelOpen = false
                                     showSearchSheet = true
@@ -317,6 +327,14 @@ struct ContentView: View {
             AcknowledgementsView()
                 .padSheetSizing()
         }
+        .sheet(isPresented: $showPaywallSheet) {
+            PaywallView(
+                store: store,
+                trialDaysRemaining: trial.daysRemaining(),
+                onRestore: { Task { await store.restore() } },
+                onClose: { showPaywallSheet = false }
+            )
+        }
         /// SwiftUI has a long-standing bug where two `.fileImporter`
         /// modifiers attached back-to-back on the same view silently
         /// shadow each other — only the last one ever presents,
@@ -515,6 +533,6 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(store: StoreManager())
         .preferredColorScheme(.dark)
 }

@@ -6,6 +6,10 @@ import SwiftUI
 /// The system Menu's compact rows were hard to tap consistently per
 /// user feedback.
 struct HamburgerMenu: View {
+    /// Billing: show trial status + an unlock entry point (hidden once bought).
+    let isPurchased: Bool
+    let trialDaysRemaining: Int
+    let onUnlock:        () -> Void
     let onSearch:        () -> Void
     let onWaypoints:     () -> Void
     let onDrawings:      () -> Void
@@ -50,6 +54,11 @@ struct HamburgerMenu: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        if !isPurchased {
+                            trialBanner
+                            row("Unlock Full Version", systemImage: "cart") { close(onUnlock) }
+                            divider
+                        }
                         row("Search…",         systemImage: "magnifyingglass")     { close(onSearch) }
                         divider
                         row("Symbology",       systemImage: "mappin.and.ellipse")  { close(onWaypoints) }
@@ -123,6 +132,24 @@ struct HamburgerMenu: View {
         Rectangle()
             .fill(Color.gray.opacity(0.25))
             .frame(height: 0.5)
+    }
+
+    /// Non-interactive status line above the Unlock row.
+    private var trialBanner: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "clock.badge.checkmark")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, alignment: .center)
+            Text(trialDaysRemaining > 0
+                 ? "Free trial — \(trialDaysRemaining) day\(trialDaysRemaining == 1 ? "" : "s") left"
+                 : "Free trial ended")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 40)
     }
 }
 
