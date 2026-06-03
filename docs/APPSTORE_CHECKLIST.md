@@ -10,6 +10,13 @@
 - [ ] **Marketing screenshots** — 6.7" iPhone is mandatory (1290×2796). Use the simulator's screenshot tool. Need 3–10 screenshots.
 - [ ] **App icon** — already generated via `scripts/generate_icon.swift`. Re-run if you tweak the design.
 - [ ] **App preview video** (optional but recommended) — 15–30 seconds, screen recording from simulator.
+- [ ] **In-App Purchase** — the app is **free with a 3-day trial → one-time
+      unlock** (`com.tacticalmaps.app.unlock`, Non-Consumable). Create it in
+      App Store Connect → **Features → In-App Purchases** and submit it with the
+      build. Requires the **Paid Applications agreement** + banking/tax (same as
+      a paid app). Full design + steps: [MONETISATION.md](MONETISATION.md).
+- [x] **Marketing screenshots** captured at Shoalwater Bay for **iPhone 6.9"**
+      (1320×2868) and **iPad 13"** (2064×2752) — see `docs/store/ios/`.
 
 ## Code-side prep
 
@@ -19,7 +26,12 @@
 - [x] Holsworthy demo PDF removed from `samples/` (ADF copyright — don't bundle)
 - [x] Privacy policy template in `docs/PRIVACY_POLICY.md`
 - [x] `ITSAppUsesNonExemptEncryption: false` declared (we only use TLS — exempt)
-- [ ] Bump `CFBundleShortVersionString` from `0.1.7` → `1.0.0` for the first submission
+- [x] `CFBundleShortVersionString` set to `1.0.0` (build `14`) for the first submission
+- [x] Background-location declaration removed — the app only requests
+      When-In-Use (`LocationService.swift`) and never enables
+      `allowsBackgroundLocationUpdates`. `UIBackgroundModes:[location]` and the
+      "Always" usage string were dropped to avoid a guideline 2.5.4 rejection.
+      Re-add both only when background route logging actually ships.
 - [ ] Crash reporting (Sentry / Firebase Crashlytics / built-in only) — strongly recommended
 - [ ] Test on a **real device** via TestFlight before submitting
 
@@ -27,7 +39,7 @@
 
 - [ ] **Sign-in credentials** — N/A (no login)
 - [ ] **Demo content** — the App ships without sample PDFs. Reviewers can test with any open GeoPDF (US Topo from USGS works: <https://www.usgs.gov/programs/national-geospatial-program/us-topo-maps-america>)
-- [ ] **Notes**: explain (a) why we use "Always" location background mode (route tracking, planned), (b) what TacticalMaps is for (field navigation — hiking, search-and-rescue, military training, outdoor sports). Spell out that it is *not* itself a defence/weapons system.
+- [ ] **Notes**: explain (a) that location is **When-In-Use only** (live position → MGRS grid; no background tracking), (b) what TacticalMaps is for (field navigation — hiking, search-and-rescue, military training, outdoor sports). Spell out that it is *not* itself a defence/weapons system.
 - [ ] **Age rating** — 4+ (no objectionable content)
 
 ## Privacy Nutrition Labels (App Store Connect form)

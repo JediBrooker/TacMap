@@ -35,8 +35,8 @@ android {
         applicationId = "com.tacticalmaps"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.2.0"
+        versionCode = 10
+        versionName = "1.0.0"
 
         vectorDrawables { useSupportLibrary = true }
 
@@ -110,6 +110,11 @@ dependencies {
     implementation("com.google.maps.android:android-maps-utils:3.8.2")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // Google Play Billing — the one-time "unlock_full" in-app product that
+    // converts the 3-day free trial into permanent access. v7 is the
+    // minimum Play accepts for new apps. See com.tacticalmaps.billing.
+    implementation("com.android.billingclient:billing-ktx:7.0.0")
 
     // MGRS conversion (NGA).
     implementation("mil.nga:mgrs:2.1.3")

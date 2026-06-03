@@ -1,0 +1,31 @@
+{
+  "identifier" : "A1B2C3D4-0000-0000-0000-000000000000",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "B2C3D4E5-0000-0000-0000-000000000001",
+      "localizations" : [
+        {
+          "description" : "Permanently unlock TacticalMaps after the free trial.",
+          "displayName" : "TacticalMaps — Full Version",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.tacticalmaps.app.unlock",
+      "referenceName" : "Full Version Unlock",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
