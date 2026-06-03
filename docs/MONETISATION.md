@@ -58,13 +58,14 @@ Trial length is `TrialManager.trialDays = 3` on both platforms — keep them in 
 
 ## Testing
 
-- **iOS (local, no ASC needed):** the scheme references
-  `ios/TacticalMaps.storekit`, so running from Xcode resolves the product and a
-  sandbox purchase. To see the paywall, expire the trial: delete the app, or set
-  `trialFirstLaunch` to an old date in the app container's
-  `Library/Preferences/com.tacticalmaps.app.plist`. (Launching via `simctl`
-  directly does **not** inject the StoreKit config — the price shows
-  "Loading price…". Use the Xcode scheme for the price/purchase path.)
+- **iOS (local, no ASC needed):** a `ios/TacticalMaps.storekit` config exists,
+  but **xcodegen does not persist a StoreKit reference into the scheme**, so you
+  must attach it manually once: Xcode → **Edit Scheme → Run → Options → StoreKit
+  Configuration → TacticalMaps.storekit**. Then running from Xcode resolves the
+  product + sandbox purchase. Without it (e.g. `simctl launch` or a UI test) the
+  price shows "Loading price…". To see the paywall, either tap **Menu → Unlock
+  Full Version** during the trial, or expire the trial (delete the app, or set
+  `trialFirstLaunch` to an old date in the container plist).
 - **Android:** upload to **Internal testing**, install as a license tester, and
   the BillingClient resolves `unlock_full` and a test purchase.
 
