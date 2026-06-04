@@ -1,10 +1,12 @@
 package com.tacticalmaps.map
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import com.tacticalmaps.calibration.AffineFitter
 import com.tacticalmaps.calibration.GeoPdfParser
 import com.tacticalmaps.calibration.OfflineTileMapSourceAndroid
@@ -108,10 +110,21 @@ internal fun shareGeoJson(
     layers: List<com.tacticalmaps.drawings.DrawingLayer>
 ) {
     val geoJson = GeoJsonExporter.export(waypoints, drawings, layers)
+    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+    val exportFile = File(exportDir, "TacticalMaps-${System.currentTimeMillis()}.geojson")
+    exportFile.writeText(geoJson)
+    val exportUri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        exportFile
+    )
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "application/geo+json"
-        putExtra(Intent.EXTRA_SUBJECT, "TacticalMaps export.geojson")
-        putExtra(Intent.EXTRA_TEXT, geoJson)
+        putExtra(Intent.EXTRA_SUBJECT, exportFile.name)
+        putExtra(Intent.EXTRA_TITLE, exportFile.name)
+        putExtra(Intent.EXTRA_STREAM, exportUri)
+        clipData = ClipData.newUri(context.contentResolver, exportFile.name, exportUri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     runCatching {
         context.startActivity(Intent.createChooser(intent, "Export GeoJSON"))
