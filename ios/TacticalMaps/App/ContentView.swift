@@ -408,8 +408,7 @@ struct ContentView: View {
                     fallbackLayerID: fallback
                 )
                 for layer in parsed.newLayers {
-                    _ = drawingStore.addLayer(name: layer.name,
-                                              defaultColorHex: layer.defaultColorHex)
+                    drawingStore.addLayerVerbatim(layer)
                 }
                 for shape in parsed.drawings { drawingStore.add(shape) }
                 for wp in parsed.waypoints { waypointStore.add(wp) }
