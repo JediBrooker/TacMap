@@ -28,6 +28,8 @@ class LocationService(context: Context) {
     private val _lastLocation = MutableStateFlow<Location?>(null)
     val lastLocation: StateFlow<Location?> = _lastLocation.asStateFlow()
 
+    private var isRunning = false
+
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             result.lastLocation?.let { _lastLocation.value = it }
@@ -48,6 +50,7 @@ class LocationService(context: Context) {
     @SuppressLint("MissingPermission")
     fun start() {
         if (!hasPermission()) return
+        if (isRunning) return
         val priority = if (hasFineLocationPermission()) {
             Priority.PRIORITY_HIGH_ACCURACY
         } else {
@@ -57,9 +60,12 @@ class LocationService(context: Context) {
             .setMinUpdateIntervalMillis(500L)
             .build()
         client.requestLocationUpdates(req, callback, Looper.getMainLooper())
+        isRunning = true
     }
 
     fun stop() {
+        if (!isRunning) return
         client.removeLocationUpdates(callback)
+        isRunning = false
     }
 }

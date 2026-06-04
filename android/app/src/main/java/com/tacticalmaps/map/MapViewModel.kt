@@ -198,4 +198,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             lastUserLocation?.let { it.latitude to it.longitude }
                 ?: (_cameraLat.value to _cameraLng.value)
         }
+
+    override fun onCleared() {
+        locationService.stop()
+        super.onCleared()
+    }
 }

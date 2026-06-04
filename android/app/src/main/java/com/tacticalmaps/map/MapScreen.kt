@@ -67,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -85,11 +86,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tacticalmaps.calibration.AffineFitter
 import com.tacticalmaps.calibration.Calibration
@@ -138,6 +142,7 @@ fun MapScreen(
     val lastLocation by vm.locationService.lastLocation.collectAsState()
     val selectedWaypointId by vm.selectedWaypointId.collectAsState()
     val mapBearingDegrees by vm.mapBearingDegrees.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     var showWaypointSheet by remember { mutableStateOf(false) }
     var showDrawingSheet by remember { mutableStateOf(false) }
@@ -175,7 +180,6 @@ fun MapScreen(
         if (granted[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
             hasLocationPermission = true
-            vm.locationService.start()
         }
     }
 
@@ -263,13 +267,33 @@ fun MapScreen(
     }
 
     LaunchedEffect(Unit) {
-        if (vm.locationService.hasPermission()) {
-            vm.locationService.start()
-        } else {
+        if (!vm.locationService.hasPermission()) {
             permissionLauncher.launch(arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ))
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, hasLocationPermission) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    if (hasLocationPermission) vm.locationService.start()
+                }
+                Lifecycle.Event.ON_STOP -> vm.locationService.stop()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (hasLocationPermission &&
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        ) {
+            vm.locationService.start()
+        }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            vm.locationService.stop()
         }
     }
 
@@ -872,7 +896,5 @@ fun MapScreen(
         )
     }
 }
-
-
 
 
