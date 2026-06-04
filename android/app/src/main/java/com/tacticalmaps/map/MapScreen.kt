@@ -797,6 +797,8 @@ fun MapScreen(
         SearchDialog(
             waypoints = waypoints,
             drawings = drawingDocument.features,
+            cameraLat = cameraLat,
+            cameraLng = cameraLng,
             onDismiss = { showSearchDialog = false },
             onFlyTo = { lat, lng -> vm.flyTo(lat, lng) },
             onWaypointSelected = { waypointId ->
@@ -872,7 +874,6 @@ fun MapScreen(
         )
     }
 }
-
 
 
 
