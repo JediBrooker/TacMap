@@ -36,13 +36,6 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
-      - name: Download Gradle wrapper jar (we don't commit it)
-        run: |
-          mkdir -p android/gradle/wrapper
-          curl -sSL -o android/gradle/wrapper/gradle-wrapper.jar \
-            https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar
-          chmod +x android/gradlew
-
       - name: Run unit tests
         working-directory: android
         env:
