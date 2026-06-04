@@ -75,8 +75,10 @@ targets:
       configs:
         Debug:
           CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: Apple Development
         Release:
           CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: Apple Distribution
     dependencies:
       - package: mgrs-ios
         product: MGRS
