@@ -8,3 +8,6 @@
 -keepclasseswithmembers class * {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# Optional JPEG2000 decoder referenced by pdfbox-android's JPX filter.
+-dontwarn com.gemalto.jp2.JP2Decoder

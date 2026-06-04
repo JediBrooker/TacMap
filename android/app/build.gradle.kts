@@ -41,7 +41,6 @@ android {
         vectorDrawables { useSupportLibrary = true }
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
-        buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
     }
 
     signingConfigs {
@@ -57,7 +56,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -112,9 +112,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
     // Google Play Billing — the one-time "unlock_full" in-app product that
-    // converts the 3-day free trial into permanent access. v7 is the
-    // minimum Play accepts for new apps. See com.tacticalmaps.billing.
-    implementation("com.android.billingclient:billing-ktx:7.0.0")
+    // converts the 3-day free trial into permanent access.
+    implementation("com.android.billingclient:billing-ktx:7.1.1")
 
     // MGRS conversion (NGA).
     implementation("mil.nga:mgrs:2.1.3")
