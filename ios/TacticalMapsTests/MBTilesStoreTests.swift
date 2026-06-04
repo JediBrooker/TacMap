@@ -49,4 +49,29 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertNil(store.tileData(z: 1, x: 0, y: 0))
         XCTAssertNil(store.tileData(z: 9, x: 9, y: 9))
     }
+
+    func testImportedMapFileCopierCopiesSameNamedFilesToUniqueDestinations() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("import-copy-\(UUID().uuidString)", isDirectory: true)
+        let sourceA = root.appendingPathComponent("a", isDirectory: true)
+        let sourceB = root.appendingPathComponent("b", isDirectory: true)
+        let docs = root.appendingPathComponent("Documents", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: sourceA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sourceB, withIntermediateDirectories: true)
+        let first = sourceA.appendingPathComponent("training.mbtiles")
+        let second = sourceB.appendingPathComponent("training.mbtiles")
+        try Data("first".utf8).write(to: first)
+        try Data("second".utf8).write(to: second)
+
+        let firstDest = try ImportedMapFileCopier.copy(first, into: docs)
+        let secondDest = try ImportedMapFileCopier.copy(second, into: docs)
+
+        XCTAssertNotEqual(firstDest, secondDest)
+        XCTAssertEqual(firstDest.lastPathComponent, "training.mbtiles")
+        XCTAssertEqual(secondDest.lastPathComponent, "training-1.mbtiles")
+        XCTAssertEqual(try Data(contentsOf: firstDest), Data("first".utf8))
+        XCTAssertEqual(try Data(contentsOf: secondDest), Data("second".utf8))
+    }
 }

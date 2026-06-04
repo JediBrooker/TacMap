@@ -2,6 +2,45 @@ import SwiftUI
 import MapKit
 import UniformTypeIdentifiers
 
+enum ImportedMapFileCopier {
+    static func copyToDocuments(_ source: URL,
+                                fileManager: FileManager = .default) throws -> URL {
+        let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return try copy(source, into: docsDir, fileManager: fileManager)
+    }
+
+    static func copy(_ source: URL,
+                     into directory: URL,
+                     fileManager: FileManager = .default) throws -> URL {
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = uniqueDestination(for: source, in: directory, fileManager: fileManager)
+        try fileManager.copyItem(at: source, to: destination)
+        return destination
+    }
+
+    private static func uniqueDestination(for source: URL,
+                                          in directory: URL,
+                                          fileManager: FileManager) -> URL {
+        let ext = source.pathExtension
+        let rawStem = source.deletingPathExtension().lastPathComponent
+        let stem = rawStem.isEmpty ? "Imported Map" : rawStem
+
+        func candidate(_ suffix: Int?) -> URL {
+            let name = suffix.map { "\(stem)-\($0)" } ?? stem
+            let base = directory.appendingPathComponent(name, isDirectory: false)
+            return ext.isEmpty ? base : base.appendingPathExtension(ext)
+        }
+
+        var next = candidate(nil)
+        var suffix = 1
+        while fileManager.fileExists(atPath: next.path) {
+            next = candidate(suffix)
+            suffix += 1
+        }
+        return next
+    }
+}
+
 struct ContentView: View {
     @StateObject private var locationService = LocationService()
     @StateObject private var waypointStore   = WaypointStore()
@@ -456,19 +495,25 @@ struct ContentView: View {
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result, let url = urls.first else { return }
+        guard case .success(let urls) = result, let url = urls.first else {
+            if case .failure(let error) = result {
+                importMessage = "Import failed: \(error.localizedDescription)"
+            }
+            return
+        }
 
         // The file picker may hand us a security-scoped URL (file came from
         // outside the sandbox). Copy into Documents so we have stable access.
         let scoped = url.startAccessingSecurityScopedResource()
-        let docsDir = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first!
-        let dest = docsDir.appendingPathComponent(url.lastPathComponent)
-        if !FileManager.default.fileExists(atPath: dest.path) {
-            try? FileManager.default.copyItem(at: url, to: dest)
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        let dest: URL
+        do {
+            dest = try ImportedMapFileCopier.copyToDocuments(url)
+        } catch {
+            importMessage = "Couldn't import this PDF map: \(error.localizedDescription)"
+            return
         }
-        if scoped { url.stopAccessingSecurityScopedResource() }
 
         NSLog("[Import] picked \(url.lastPathComponent) -> dest=\(dest.path)")
         let cameraAtImport = mapVM.cameraCentre
@@ -507,17 +552,23 @@ struct ContentView: View {
     /// picked file into Documents (stable sandbox access) and installs an
     /// `OfflineTileMapSource` — served with no network via an MKTileOverlay.
     private func handleMBTilesImport(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result, let url = urls.first else { return }
+        guard case .success(let urls) = result, let url = urls.first else {
+            if case .failure(let error) = result {
+                importMessage = "Import failed: \(error.localizedDescription)"
+            }
+            return
+        }
 
         let scoped = url.startAccessingSecurityScopedResource()
-        let docsDir = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first!
-        let dest = docsDir.appendingPathComponent(url.lastPathComponent)
-        if !FileManager.default.fileExists(atPath: dest.path) {
-            try? FileManager.default.copyItem(at: url, to: dest)
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        let dest: URL
+        do {
+            dest = try ImportedMapFileCopier.copyToDocuments(url)
+        } catch {
+            importMessage = "Couldn't import this MBTiles map: \(error.localizedDescription)"
+            return
         }
-        if scoped { url.stopAccessingSecurityScopedResource() }
 
         guard let source = OfflineTileMapSource(url: dest) else {
             importMessage = "Couldn't open this file as an MBTiles map."
