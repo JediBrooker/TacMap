@@ -36,6 +36,15 @@ final class DrawingStore: ObservableObject {
         return layer
     }
 
+    /// Insert a layer exactly as supplied. Used by GeoJSON import so drawings
+    /// that reference the imported layer id do not become orphaned.
+    func addLayerVerbatim(_ layer: DrawingLayer) {
+        guard !layers.contains(where: { $0.id == layer.id }) else { return }
+        layers.append(layer)
+        if activeLayerID == nil { activeLayerID = layer.id }
+        persist()
+    }
+
     /// Remove a layer along with every shape on it.
     func removeLayer(_ layer: DrawingLayer) {
         layers.removeAll { $0.id == layer.id }
