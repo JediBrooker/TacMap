@@ -43,7 +43,7 @@ enum GeoJSONImporter {
             guard let geometry = feature["geometry"] as? [String: Any],
                   let geomType = geometry["type"] as? String else { continue }
             let props = feature["properties"] as? [String: Any] ?? [:]
-            let category = props["tacticalmaps:category"] as? String
+            let category = resolveCategory(props)
 
             // Resolve target layer: existing-by-id → newly-imported-by-id →
             // create new layer from name/color → fallback.
@@ -95,24 +95,51 @@ enum GeoJSONImporter {
 
     // MARK: - Layer resolution
 
+    private static func resolveCategory(_ props: [String: Any]) -> String? {
+        if let category = props["tacticalmaps:category"] as? String {
+            return category
+        }
+        guard (props["source"] as? String) == "symbol" else {
+            return props["source"] as? String
+        }
+        switch props["kind"] as? String {
+        case "military":
+            return "military"
+        case "control_measure", "controlMeasure":
+            return "controlMeasure"
+        case "generic":
+            return "generic"
+        default:
+            return "generic"
+        }
+    }
+
     private static func resolveLayerID(props: [String: Any],
                                        existingLayersByID: inout [String: DrawingLayer],
                                        newLayers: inout [DrawingLayer],
                                        fallback: UUID) -> UUID {
-        if let idStr = props["tacticalmaps:layer_id"] as? String,
+        let idStr = (props["tacticalmaps:layer_id"] as? String)
+            ?? (props["layer_id"] as? String)
+        if let idStr,
            let layer = existingLayersByID[idStr] {
             return layer.id
         }
-        if let idStr = props["tacticalmaps:layer_id"] as? String,
+        if let idStr,
            let uuid = UUID(uuidString: idStr) {
-            let name = (props["tacticalmaps:layer"] as? String) ?? "Imported"
-            let color = (props["tacticalmaps:layer_color"] as? String) ?? "#FFA500"
+            let name = (props["tacticalmaps:layer"] as? String)
+                ?? (props["layer_name"] as? String)
+                ?? "Imported"
+            let color = (props["tacticalmaps:layer_color"] as? String)
+                ?? (props["layer_color"] as? String)
+                ?? "#FFA500"
             let layer = DrawingLayer(id: uuid, name: name, defaultColorHex: color)
             existingLayersByID[uuid.uuidString] = layer
             newLayers.append(layer)
             return uuid
         }
-        if let name = props["tacticalmaps:layer"] as? String,
+        let name = (props["tacticalmaps:layer"] as? String)
+            ?? (props["layer_name"] as? String)
+        if let name,
            let match = existingLayersByID.values.first(where: { $0.name == name }) {
             return match.id
         }
@@ -189,8 +216,9 @@ enum GeoJSONImporter {
         guard let c = geometry["coordinates"] as? [Double], c.count >= 2 else { return nil }
         let coord = CLLocationCoordinate2D(latitude: c[1], longitude: c[0])
         let name = (props["name"] as? String) ?? "Imported"
-        let notes = props["description"] as? String
-        let elevation = props["tacticalmaps:elevation_m"] as? Double
+        let notes = (props["description"] as? String) ?? (props["notes"] as? String)
+        let elevation = doubleValue(props["tacticalmaps:elevation_m"])
+            ?? doubleValue(props["elevation_m"])
         let id = (feature["id"] as? String).flatMap { UUID(uuidString: $0) } ?? UUID()
 
         let kind: WaypointKind
@@ -206,10 +234,12 @@ enum GeoJSONImporter {
                 affiliation: aff,
                 echelon: ech,
                 function: fn,
-                isHeadquarters: false
+                isHeadquarters: boolValue(props["tacticalmaps:is_hq"]) ?? false
             ))
         case "controlMeasure":
-            if let raw = props["tacticalmaps:tcm_asset"] as? String,
+            if let raw = (props["tacticalmaps:tcm_asset"] as? String)
+                ?? (props["tacticalmaps:kind"] as? String)
+                ?? (props["kind"] as? String),
                let m = TacticalControlMeasure(rawValue: raw) {
                 kind = .controlMeasure(m)
             } else {
@@ -219,7 +249,15 @@ enum GeoJSONImporter {
             kind = .generic
         }
 
-        let rotation = (props["tacticalmaps:rotation_deg"] as? Double) ?? 0
+        let rotation = doubleValue(props["tacticalmaps:rotation_deg"])
+            ?? doubleValue(props["rotation"])
+            ?? 0
+        let scaleX = doubleValue(props["tacticalmaps:scale_x"])
+            ?? doubleValue(props["scale_x"])
+            ?? 1
+        let scaleY = doubleValue(props["tacticalmaps:scale_y"])
+            ?? doubleValue(props["scale_y"])
+            ?? 1
         return Waypoint(id: id,
                         name: name,
                         notes: notes,
@@ -227,6 +265,8 @@ enum GeoJSONImporter {
                         elevation: elevation,
                         kind: kind,
                         rotation: rotation,
+                        scaleX: scaleX,
+                        scaleY: scaleY,
                         layerID: layerID)
     }
 
@@ -239,5 +279,20 @@ enum GeoJSONImporter {
                              props: props,
                              category: "generic",
                              layerID: layerID)
+    }
+
+    private static func doubleValue(_ any: Any?) -> Double? {
+        if let value = any as? Double { return value }
+        if let value = any as? Int { return Double(value) }
+        if let value = any as? NSNumber { return value.doubleValue }
+        if let value = any as? String { return Double(value) }
+        return nil
+    }
+
+    private static func boolValue(_ any: Any?) -> Bool? {
+        if let value = any as? Bool { return value }
+        if let value = any as? NSNumber { return value.boolValue }
+        if let value = any as? String { return Bool(value) }
+        return nil
     }
 }

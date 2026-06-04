@@ -68,4 +68,72 @@ final class GeoJSONExporterTests: XCTestCase {
         XCTAssertEqual(ring.count, 4, "3 vertices + 1 closing point")
         assertCoord(ring.first ?? [], ring.last ?? [])
     }
+
+    func testExportImport_roundTripsTacticalWaypointSchema() throws {
+        let layerID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let layer = DrawingLayer(id: layerID, name: "Alpha", defaultColorHex: "#123456")
+        let militaryID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        let controlID = try XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333"))
+        let military = Waypoint(
+            id: militaryID,
+            name: "HQ",
+            notes: "watch",
+            latitude: -33.86,
+            longitude: 151.21,
+            elevation: 42,
+            kind: .military(MilitarySymbolSpec(
+                affiliation: .hostile,
+                echelon: .battalionRegiment,
+                function: .airDefence,
+                isHeadquarters: true
+            )),
+            layerID: layerID
+        )
+        let control = Waypoint(
+            id: controlID,
+            name: "Attack axis",
+            latitude: -33.87,
+            longitude: 151.22,
+            kind: .controlMeasure(.axisOfMainAttack),
+            rotation: 42,
+            scaleX: 2.5,
+            scaleY: 0.75,
+            layerID: layerID
+        )
+
+        let json = try GeoJSONExporter.export(waypoints: [military, control], layers: [layer])
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let parsed = try GeoJSONImporter.parse(
+            data,
+            existingLayers: [],
+            fallbackLayerID: DrawingLayer.legacyFallbackID
+        )
+
+        XCTAssertEqual(parsed.newLayers.count, 1)
+        XCTAssertEqual(parsed.newLayers.first?.id, layerID)
+        XCTAssertEqual(parsed.newLayers.first?.name, "Alpha")
+        XCTAssertEqual(parsed.newLayers.first?.defaultColorHex, "#123456")
+
+        let importedMilitary = try XCTUnwrap(parsed.waypoints.first { $0.id == militaryID })
+        XCTAssertEqual(importedMilitary.layerID, layerID)
+        XCTAssertEqual(importedMilitary.notes, "watch")
+        XCTAssertEqual(importedMilitary.elevation, 42)
+        guard case .military(let spec) = importedMilitary.kind else {
+            return XCTFail("Expected military waypoint")
+        }
+        XCTAssertEqual(spec.affiliation, .hostile)
+        XCTAssertEqual(spec.echelon, .battalionRegiment)
+        XCTAssertEqual(spec.function, .airDefence)
+        XCTAssertTrue(spec.isHeadquarters)
+
+        let importedControl = try XCTUnwrap(parsed.waypoints.first { $0.id == controlID })
+        XCTAssertEqual(importedControl.layerID, layerID)
+        guard case .controlMeasure(let measure) = importedControl.kind else {
+            return XCTFail("Expected control measure waypoint")
+        }
+        XCTAssertEqual(measure, .axisOfMainAttack)
+        XCTAssertEqual(importedControl.rotation, 42, accuracy: 1e-9)
+        XCTAssertEqual(importedControl.scaleX, 2.5, accuracy: 1e-9)
+        XCTAssertEqual(importedControl.scaleY, 0.75, accuracy: 1e-9)
+    }
 }

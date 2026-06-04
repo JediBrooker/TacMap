@@ -74,8 +74,7 @@ object GeoJsonImporter {
             // Detect what kind of feature this is. Try the namespaced
             // iOS schema first, then the Android "source" flag, then
             // fall back to geometry-only guesses.
-            val category = props["tacticalmaps:category"]?.jsonPrimitive?.contentOrNull
-                ?: props["source"]?.jsonPrimitive?.contentOrNull
+            val category = resolveCategory(props)
             val isDrawing = category == "drawing"
             val isWaypoint = category == "symbol" || category == "military"
                 || category == "controlMeasure" || category == "generic"
@@ -90,6 +89,18 @@ object GeoJsonImporter {
             }
         }
         return Result(waypoints = waypoints, drawings = drawings, newLayers = newLayers)
+    }
+
+    private fun resolveCategory(props: JsonObject): String? {
+        props["tacticalmaps:category"]?.jsonPrimitive?.contentOrNull?.let { return it }
+        val source = props["source"]?.jsonPrimitive?.contentOrNull ?: return null
+        if (source != "symbol") return source
+        return when (props["kind"]?.jsonPrimitive?.contentOrNull) {
+            "military" -> "military"
+            "control_measure", "controlMeasure" -> "controlMeasure"
+            "generic" -> "generic"
+            else -> "generic"
+        }
     }
 
     // ----- Layer resolution -----
@@ -110,7 +121,8 @@ object GeoJsonImporter {
             val name = props["layer_name"]?.jsonPrimitive?.contentOrNull
                 ?: props["tacticalmaps:layer"]?.jsonPrimitive?.contentOrNull
                 ?: "Imported"
-            val color = (props["tacticalmaps:layer_color"]?.jsonPrimitive?.contentOrNull)
+            val color = (props["tacticalmaps:layer_color"]?.jsonPrimitive?.contentOrNull
+                ?: props["layer_color"]?.jsonPrimitive?.contentOrNull)
                 ?.let(::parseHexColor) ?: DrawingDocument.FRIENDLY_LAYER_COLOR
             val layer = DrawingLayer(id = explicitId, name = name, color = color)
             layersById[explicitId] = layer
@@ -211,8 +223,14 @@ object GeoJsonImporter {
         val name = props["name"]?.jsonPrimitive?.contentOrNull ?: "Imported"
         val notes = props["notes"]?.jsonPrimitive?.contentOrNull
             ?: props["description"]?.jsonPrimitive?.contentOrNull
-        val elevation = (props["elevation_m"] ?: props["tacticalmaps:elevation_m"])
+        val elevation = (props["tacticalmaps:elevation_m"] ?: props["elevation_m"])
             ?.jsonPrimitive?.doubleOrNull
+        val rotation = (props["tacticalmaps:rotation_deg"] ?: props["rotation"])
+            ?.jsonPrimitive?.doubleOrNull ?: 0.0
+        val scaleX = (props["tacticalmaps:scale_x"] ?: props["scale_x"])
+            ?.jsonPrimitive?.doubleOrNull ?: 1.0
+        val scaleY = (props["tacticalmaps:scale_y"] ?: props["scale_y"])
+            ?.jsonPrimitive?.doubleOrNull ?: 1.0
 
         val kind: WaypointKind = when (category) {
             "military" -> WaypointKind.Military(parseMilSpec(props))
@@ -227,29 +245,73 @@ object GeoJsonImporter {
             longitude = lon,
             elevationMetres = elevation,
             kind = kind,
+            rotation = rotation,
+            scaleX = scaleX,
+            scaleY = scaleY,
             layerId = layerId
         )
     }
 
     private fun parseMilSpec(props: JsonObject): MilitarySymbolSpec {
-        val aff = props["tacticalmaps:affiliation"]?.jsonPrimitive?.contentOrNull
-            ?.let { runCatching { SymbolAffiliation.valueOf(it.uppercase()) }.getOrNull() }
+        val aff = parseAffiliation(props["tacticalmaps:affiliation"]?.jsonPrimitive?.contentOrNull)
             ?: SymbolAffiliation.FRIEND
-        val ech = props["tacticalmaps:echelon"]?.jsonPrimitive?.contentOrNull
-            ?.let { runCatching { SymbolEchelon.valueOf(it.uppercase()) }.getOrNull() }
+        val ech = parseEchelon(props["tacticalmaps:echelon"]?.jsonPrimitive?.contentOrNull)
             ?: SymbolEchelon.PLATOON
-        val fn  = props["tacticalmaps:function"]?.jsonPrimitive?.contentOrNull
-            ?.let { runCatching { SymbolFunction.valueOf(it.uppercase()) }.getOrNull() }
+        val fn  = parseFunction(props["tacticalmaps:function"]?.jsonPrimitive?.contentOrNull)
             ?: SymbolFunction.INFANTRY
-        return MilitarySymbolSpec(aff, ech, fn, isHeadquarters = false)
+        val isHeadquarters = props["tacticalmaps:is_hq"]?.jsonPrimitive?.contentOrNull
+            ?.toBooleanStrictOrNull() ?: false
+        return MilitarySymbolSpec(aff, ech, fn, isHeadquarters = isHeadquarters)
     }
 
     private fun parseControlMeasure(props: JsonObject): WaypointKind.ControlMeasure? {
-        val name = props["tacticalmaps:tcm_asset"]?.jsonPrimitive?.contentOrNull ?: return null
-        val measure = TacticalControlMeasure.values().firstOrNull { it.assetName == name }
+        val name = props["tacticalmaps:tcm_asset"]?.jsonPrimitive?.contentOrNull
+            ?: props["tacticalmaps:kind"]?.jsonPrimitive?.contentOrNull
+            ?: props["kind"]?.jsonPrimitive?.contentOrNull
+            ?: return null
+        val measure = TacticalControlMeasure.entries.firstOrNull {
+            it.assetName == name || normaliseToken(it.name) == normaliseToken(name)
+        }
             ?: return null
         return WaypointKind.ControlMeasure(measure)
     }
+
+    private fun parseAffiliation(raw: String?): SymbolAffiliation? =
+        raw?.let { value ->
+            SymbolAffiliation.entries.firstOrNull {
+                normaliseToken(it.name) == normaliseToken(value)
+            }
+        }
+
+    private fun parseEchelon(raw: String?): SymbolEchelon? =
+        raw?.let { value ->
+            SymbolEchelon.entries.firstOrNull {
+                normaliseToken(it.name) == normaliseToken(value) ||
+                    normaliseToken(it.exportValue) == normaliseToken(value)
+            }
+        }
+
+    private fun parseFunction(raw: String?): SymbolFunction? =
+        raw?.let { value ->
+            SymbolFunction.entries.firstOrNull {
+                normaliseToken(it.name) == normaliseToken(value) ||
+                    normaliseToken(it.assetName) == normaliseToken(value)
+            }
+        }
+
+    private fun normaliseToken(raw: String): String =
+        raw.filter { it.isLetterOrDigit() }.lowercase()
+
+    private val SymbolEchelon.exportValue: String
+        get() = when (this) {
+            SymbolEchelon.TEAM -> "team"
+            SymbolEchelon.SECTION -> "section"
+            SymbolEchelon.PLATOON -> "platoon"
+            SymbolEchelon.COMPANY -> "company"
+            SymbolEchelon.BATTALION_REGIMENT -> "battalionRegiment"
+            SymbolEchelon.BRIGADE -> "brigade"
+            SymbolEchelon.DIVISION -> "division"
+        }
 
     // ----- Colour parsing -----
 

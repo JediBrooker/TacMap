@@ -20,7 +20,7 @@ enum GeoJSONExporter {
         features.reserveCapacity(waypoints.count + drawings.count)
 
         let layerByID = Dictionary(uniqueKeysWithValues: layers.map { ($0.id, $0) })
-        for wp in waypoints      { features.append(feature(for: wp)) }
+        for wp in waypoints      { features.append(feature(for: wp, layer: layerByID[wp.layerID])) }
         for shape in drawings    { features.append(feature(for: shape, layer: layerByID[shape.layerID])) }
 
         let collection: [String: Any] = [
@@ -53,9 +53,13 @@ enum GeoJSONExporter {
 
     // MARK: - Feature builders
 
-    private static func feature(for wp: Waypoint) -> [String: Any] {
+    private static func feature(for wp: Waypoint, layer: DrawingLayer? = nil) -> [String: Any] {
         var props: [String: Any] = [
             "name":        wp.name,
+            // Android legacy metadata.
+            "source":      "symbol",
+            "kind":        legacyKindDescriptor(wp.kind),
+            "kind_display": wp.kind.displayName,
             // simplestyle marker key
             "marker-color": markerColor(for: wp.kind),
             "marker-symbol": markerSymbol(for: wp.kind),
@@ -64,24 +68,46 @@ enum GeoJSONExporter {
             "tacticalmaps:kind":     kindDescriptor(wp.kind),
             "tacticalmaps:created_at": ISO8601DateFormatter().string(from: wp.createdAt)
         ]
+        props["created_at"] = props["tacticalmaps:created_at"]
+        props["layer_id"] = wp.layerID.uuidString
+        props["tacticalmaps:layer_id"] = wp.layerID.uuidString
+        if let layer {
+            props["layer_name"] = layer.name
+            props["tacticalmaps:layer"] = layer.name
+            props["tacticalmaps:layer_color"] = layer.defaultColorHex
+        }
         // Carry the structured APP-6C spec verbatim for round-tripping into
         // other tools that may want to re-render the symbol.
         if let spec = wp.kind.militarySpec {
             props["tacticalmaps:affiliation"] = spec.affiliation.rawValue
             props["tacticalmaps:echelon"]     = spec.echelon.rawValue
             props["tacticalmaps:function"]    = spec.function.rawValue
+            if spec.isHeadquarters {
+                props["tacticalmaps:is_hq"] = true
+            }
         }
         if let m = wp.kind.controlMeasure {
             props["tacticalmaps:tcm_name"] = m.displayName
             props["tacticalmaps:tcm_asset"] = m.assetName
+            props["rotation"] = wp.rotation
+            props["scale_x"] = wp.scaleX
+            props["scale_y"] = wp.scaleY
+            props["tacticalmaps:scale_x"] = wp.scaleX
+            props["tacticalmaps:scale_y"] = wp.scaleY
             if wp.rotation != 0 {
                 // Round to 1° — sub-degree precision is meaningless for a
                 // hand-dialed slider and just clutters the diff.
                 props["tacticalmaps:rotation_deg"] = (wp.rotation.rounded() as Double)
             }
         }
-        if let n = wp.notes     { props["description"] = n }     // simplestyle uses "description"
-        if let e = wp.elevation { props["tacticalmaps:elevation_m"] = e }
+        if let n = wp.notes {
+            props["description"] = n     // simplestyle uses "description"
+            props["notes"] = n
+        }
+        if let e = wp.elevation {
+            props["tacticalmaps:elevation_m"] = e
+            props["elevation_m"] = e
+        }
 
         return [
             "type": "Feature",
@@ -96,13 +122,18 @@ enum GeoJSONExporter {
 
     private static func feature(for shape: DrawingShape, layer: DrawingLayer? = nil) -> [String: Any] {
         var props: [String: Any] = [
+            "source":                  "drawing",
+            "kind":                    shape.kind.rawValue,
             "tacticalmaps:category":   "drawing",
             "tacticalmaps:kind":       shape.kind.rawValue,
             "tacticalmaps:created_at": ISO8601DateFormatter().string(from: shape.createdAt)
         ]
+        props["created_at"] = props["tacticalmaps:created_at"]
         if let n = shape.name  { props["name"]        = n }
         if let n = shape.notes { props["description"] = n }
         if let layer {
+            props["layer_id"]                 = layer.id.uuidString
+            props["layer_name"]               = layer.name
             props["tacticalmaps:layer"]       = layer.name
             props["tacticalmaps:layer_id"]    = layer.id.uuidString
             props["tacticalmaps:layer_color"] = layer.defaultColorHex
@@ -193,6 +224,14 @@ enum GeoJSONExporter {
         case .generic:        return "generic"
         case .military:       return "military"
         case .controlMeasure: return "controlMeasure"
+        }
+    }
+
+    private static func legacyKindDescriptor(_ kind: WaypointKind) -> String {
+        switch kind {
+        case .generic:        return "generic"
+        case .military:       return "military"
+        case .controlMeasure: return "control_measure"
         }
     }
 

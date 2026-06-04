@@ -4,6 +4,8 @@ import com.tacticalmaps.drawings.DrawingFeature
 import com.tacticalmaps.drawings.DrawingGeometry
 import com.tacticalmaps.drawings.DrawingLayer
 import com.tacticalmaps.drawings.DrawingPoint
+import com.tacticalmaps.waypoints.SymbolAffiliation
+import com.tacticalmaps.waypoints.SymbolEchelon
 import com.tacticalmaps.waypoints.Waypoint
 import com.tacticalmaps.waypoints.WaypointKind
 import kotlinx.serialization.json.*
@@ -23,10 +25,10 @@ object GeoJsonExporter {
         drawings: List<DrawingFeature> = emptyList(),
         layers: List<DrawingLayer> = emptyList()
     ): String {
-        val layerNames = layers.associate { it.id to it.name }
+        val layersById = layers.associateBy { it.id }
         val features = JsonArray(
-            waypoints.map(::waypointFeature) +
-                drawings.map { drawingFeature(it, layerNames[it.layerId]) }
+            waypoints.map { waypointFeature(it, layersById[it.layerId]) } +
+                drawings.map { drawingFeature(it, layersById[it.layerId]) }
         )
 
         val collection = buildJsonObject {
@@ -37,7 +39,7 @@ object GeoJsonExporter {
         return Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), collection)
     }
 
-    private fun waypointFeature(wp: Waypoint): JsonObject = buildJsonObject {
+    private fun waypointFeature(wp: Waypoint, layer: DrawingLayer?): JsonObject = buildJsonObject {
         put("type", "Feature")
         put("id", wp.id)
         putJsonObject("geometry") {
@@ -51,20 +53,52 @@ object GeoJsonExporter {
             put("source", "symbol")
             put("kind", wp.kind.exportKind)
             put("kind_display", wp.kind.displayName)
-            if (wp.kind is WaypointKind.ControlMeasure) {
-                put("rotation", wp.rotation)
-                put("scale_x", wp.scaleX)
-                put("scale_y", wp.scaleY)
+            put("tacticalmaps:category", wp.kind.exportCategory)
+            put("tacticalmaps:kind", wp.kind.exportDescriptor)
+
+            put("layer_id", wp.layerId)
+            put("tacticalmaps:layer_id", wp.layerId)
+            layer?.let {
+                put("layer_name", it.name)
+                put("tacticalmaps:layer", it.name)
+                put("tacticalmaps:layer_color", it.color.rgbHex())
             }
-            wp.notes?.let { put("notes", it) }
-            wp.elevationMetres?.let { put("elevation_m", it) }
-            put("created_at", DateTimeFormatter.ISO_INSTANT.format(
-                Instant.ofEpochMilli(wp.createdAt)
-            ))
+
+            when (val kind = wp.kind) {
+                WaypointKind.Generic -> Unit
+                is WaypointKind.Military -> {
+                    put("tacticalmaps:affiliation", kind.spec.affiliation.exportValue)
+                    put("tacticalmaps:echelon", kind.spec.echelon.exportValue)
+                    put("tacticalmaps:function", kind.spec.function.assetName)
+                    if (kind.spec.isHeadquarters) put("tacticalmaps:is_hq", true)
+                }
+                is WaypointKind.ControlMeasure -> {
+                    put("tacticalmaps:tcm_name", kind.measure.displayName)
+                    put("tacticalmaps:tcm_asset", kind.measure.assetName)
+                    put("rotation", wp.rotation)
+                    put("scale_x", wp.scaleX)
+                    put("scale_y", wp.scaleY)
+                    put("tacticalmaps:rotation_deg", wp.rotation)
+                    put("tacticalmaps:scale_x", wp.scaleX)
+                    put("tacticalmaps:scale_y", wp.scaleY)
+                }
+            }
+
+            wp.notes?.let {
+                put("notes", it)
+                put("description", it)
+            }
+            wp.elevationMetres?.let {
+                put("elevation_m", it)
+                put("tacticalmaps:elevation_m", it)
+            }
+            val createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(wp.createdAt))
+            put("created_at", createdAt)
+            put("tacticalmaps:created_at", createdAt)
         }
     }
 
-    private fun drawingFeature(feature: DrawingFeature, layerName: String?): JsonObject =
+    private fun drawingFeature(feature: DrawingFeature, layer: DrawingLayer?): JsonObject =
         buildJsonObject {
             put("type", "Feature")
             put("id", feature.id)
@@ -73,8 +107,15 @@ object GeoJsonExporter {
                 put("name", feature.name)
                 put("source", "drawing")
                 put("kind", feature.geometry.name.lowercase())
+                put("tacticalmaps:category", "drawing")
+                put("tacticalmaps:kind", feature.geometry.name.lowercase())
                 put("layer_id", feature.layerId)
-                layerName?.let { put("layer_name", it) }
+                put("tacticalmaps:layer_id", feature.layerId)
+                layer?.let {
+                    put("layer_name", it.name)
+                    put("tacticalmaps:layer", it.name)
+                    put("tacticalmaps:layer_color", it.color.rgbHex())
+                }
                 put("stroke_color", feature.strokeColor.argbHex())
                 put("fill_color", feature.fillColor.argbHex())
                 put("stroke_width", feature.strokeWidth)
@@ -82,9 +123,9 @@ object GeoJsonExporter {
                 put("scale_x", feature.scaleX)
                 put("scale_y", feature.scaleY)
                 put("rotation_degrees", feature.rotationDegrees)
-                put("created_at", DateTimeFormatter.ISO_INSTANT.format(
-                    Instant.ofEpochMilli(feature.createdAt)
-                ))
+                val createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(feature.createdAt))
+                put("created_at", createdAt)
+                put("tacticalmaps:created_at", createdAt)
             }
         }
 
@@ -145,10 +186,41 @@ object GeoJsonExporter {
 
     private fun Int.argbHex(): String = "#%08X".format(this)
 
+    private fun Int.rgbHex(): String = "#%06X".format(this and 0x00FFFFFF)
+
     private val WaypointKind.exportKind: String
         get() = when (this) {
             WaypointKind.Generic -> "generic"
             is WaypointKind.Military -> "military"
             is WaypointKind.ControlMeasure -> "control_measure"
+        }
+
+    private val WaypointKind.exportCategory: String
+        get() = when (this) {
+            WaypointKind.Generic -> "generic"
+            is WaypointKind.Military -> "military"
+            is WaypointKind.ControlMeasure -> "controlMeasure"
+        }
+
+    private val WaypointKind.exportDescriptor: String
+        get() = when (this) {
+            WaypointKind.Generic -> "generic"
+            is WaypointKind.Military ->
+                "${spec.affiliation.exportValue}.${spec.function.assetName}.${spec.echelon.exportValue}"
+            is WaypointKind.ControlMeasure -> measure.assetName
+        }
+
+    private val SymbolAffiliation.exportValue: String
+        get() = name.lowercase()
+
+    private val SymbolEchelon.exportValue: String
+        get() = when (this) {
+            SymbolEchelon.TEAM -> "team"
+            SymbolEchelon.SECTION -> "section"
+            SymbolEchelon.PLATOON -> "platoon"
+            SymbolEchelon.COMPANY -> "company"
+            SymbolEchelon.BATTALION_REGIMENT -> "battalionRegiment"
+            SymbolEchelon.BRIGADE -> "brigade"
+            SymbolEchelon.DIVISION -> "division"
         }
 }
