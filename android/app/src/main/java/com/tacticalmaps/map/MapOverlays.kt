@@ -485,7 +485,12 @@ private data class BakedSymbol(
     val descriptor: BitmapDescriptor,
     val anchor: Offset,
     val wPx: Int,
-    val hPx: Int
+    val hPx: Int,
+    val vcx: Float = 0f,
+    val vcy: Float = 0f,
+    /// Transparent hit-target sized to the symbol's VISIBLE bounds (only on
+    /// the raw symbol; the glow doesn't need one).
+    val tapDescriptor: BitmapDescriptor? = null
 )
 
 /// Visible waypoint symbols painted as GROUND OVERLAYS — i.e. on the map
@@ -544,76 +549,71 @@ internal fun WaypointGroundOverlays(
                 }
             }
             val isSelected = wp.id == selectedWaypointId
+            /// Bake the symbol into a PADDED bitmap (room for the halo). The
+            /// padded size + centroid anchor are identical whether selected or
+            /// not, so toggling selection never shifts OR duplicates it — the
+            /// glow is only DRAWN (in the existing padding) when selected. Also
+            /// bakes a transparent hit-target sized to the symbol's VISIBLE
+            /// bounds so a tap only selects when it lands on the symbol.
             val baked = remember(wp.kind, wp.rotation, wp.scaleX, wp.scaleY, wp.taskColor, isSelected) {
                 val raw = SymbolIconFactory.drawableFor(context, wp)
-                val rawAnchor = SymbolIconFactory.anchorFor(context, wp)
                 val rawW = raw.intrinsicWidth.coerceAtLeast(1)
                 val rawH = raw.intrinsicHeight.coerceAtLeast(1)
-                /// VISIBLE centroid of the symbol. The overlay must rotate
-                /// about THIS point, not the milsymbol ground anchor: the
-                /// ground anchor is offset from the symbol's visible mass, so
-                /// rotating about it makes the symbol ORBIT that pivot and
-                /// "drift" as it rights itself. The visible centroid spins in
-                /// place. (Position-wise this seats the symbol's visual centre
-                /// on the lat/lng, which is what reads as "on the spot".)
+                /// VISIBLE centroid — the overlay rotates about THIS point so it
+                /// spins truly in place (not orbiting the off-centroid ground
+                /// anchor), and seats the symbol's visual centre on the lat/lng.
                 val vb = SymbolIconFactory.visibleBoundsFor(context, wp)
                 val vcx = (vb.left + vb.right) / 2f
                 val vcy = (vb.top + vb.bottom) / 2f
-                if (isSelected) {
-                    val (glowed, _) = applySelectionGlow(context, raw, rawAnchor)
-                    val gw = glowed.intrinsicWidth.coerceAtLeast(1)
-                    val gh = glowed.intrinsicHeight.coerceAtLeast(1)
-                    val padX = (gw - rawW) / 2f
-                    val padY = (gh - rawH) / 2f
-                    BakedSymbol(
-                        glowed.toBitmapDescriptor(),
-                        Offset((padX + vcx) / gw, (padY + vcy) / gh),
-                        gw, gh
-                    )
-                } else {
-                    BakedSymbol(
-                        raw.toBitmapDescriptor(),
-                        Offset(vcx / rawW, vcy / rawH),
-                        rawW, rawH
-                    )
-                }
+                val (drawable, pad) = bakePaddedSymbol(context, raw, glow = isSelected)
+                val outW = rawW + pad * 2
+                val outH = rawH + pad * 2
+                val vbw = (vb.right - vb.left).coerceAtLeast(1)
+                val vbh = (vb.bottom - vb.top).coerceAtLeast(1)
+                val tap = BitmapDescriptorFactory.fromBitmap(
+                    Bitmap.createBitmap(vbw, vbh, Bitmap.Config.ARGB_8888)
+                )
+                BakedSymbol(
+                    drawable.toBitmapDescriptor(),
+                    Offset((pad + vcx) / outW, (pad + vcy) / outH),
+                    outW, outH, vcx, vcy, tap
+                )
             }
-            /// Ground metres spanning the symbol's pixel width at this zoom.
-            /// Keyed on ZOOM ONLY, so it does NOT change during a rotate —
-            /// the overlay stays fully static while rotating, which is the
-            /// only thing the GL renderer keeps glued (like the Circle).
-            val widthMeters = remember(zoom, wp.latitude, baked.wPx, density) {
-                val metersPerPixel = 40075016.686 *
+            /// Ground metres per symbol pixel at this zoom. Keyed on ZOOM ONLY,
+            /// so it does NOT change during a rotate — the overlay stays static
+            /// while rotating, which is the only thing the GL keeps glued.
+            val metersPerPixel = remember(zoom, wp.latitude, density) {
+                40075016.686 *
                     kotlin.math.cos(Math.toRadians(wp.latitude)) /
                     (256.0 * Math.pow(2.0, zoom.toDouble()) * density)
-                (baked.wPx * metersPerPixel).toFloat().coerceIn(1f, 1_000_000f)
             }
+            val widthMeters = (baked.wPx * metersPerPixel).toFloat().coerceIn(1f, 1_000_000f)
             val heightMeters = (widthMeters * baked.hPx / baked.wPx).coerceAtLeast(1f)
-            /// VISIBLE symbol on the map surface — anchored at the marker's
-            /// CURRENT position. During a finger-drag the camera is stationary
-            /// (no lag), so the overlay tracks the marker under the finger;
-            /// otherwise it sits on the stored lat/lng.
+
+            /// VISIBLE symbol — anchored at the marker's CURRENT position (so a
+            /// finger-drag moves it under the finger), counter-rotated about its
+            /// visible centroid to stay upright with no orbit/drift.
             GroundOverlay(
                 position = GroundOverlayPosition.create(
                     markerState.position, widthMeters, heightMeters
                 ),
                 image = baked.descriptor,
-                /// Anchor = the symbol's VISIBLE centroid, so the per-frame
-                /// upright counter-rotation spins it truly in place instead of
-                /// orbiting an off-centroid pivot (which is what drifted).
                 anchor = baked.anchor,
                 bearing = mapBearing,
                 clickable = false,
                 zIndex = 2f
             )
 
-            /// Invisible native marker — the SDK-owned TAP + long-press-DRAG.
-            /// A drag updates markerState.position, which the GroundOverlay
-            /// above follows, so the symbol moves under the finger; a tap
-            /// selects. Invisible (alpha 0) so the native "lift" on pickup
-            /// isn't seen and it never steals the map's pan/rotate.
+            /// Invisible native marker — SDK-owned TAP + long-press-DRAG. Its
+            /// icon is a transparent bitmap sized to the symbol's VISIBLE bounds
+            /// (anchored centre), so the tap target matches the symbol and a tap
+            /// just OUTSIDE it no longer opens its settings. Invisible (alpha 0)
+            /// so the native "lift" on pickup isn't seen, and the GroundOverlay
+            /// above follows this marker's position during a drag.
             Marker(
                 state = markerState,
+                icon = baked.tapDescriptor,
+                anchor = Offset(0.5f, 0.5f),
                 alpha = 0f,
                 draggable = !locked,
                 zIndex = 2f,
@@ -705,6 +705,46 @@ internal fun WaypointHandlesOverlay(
             )
         }
     }
+}
+
+/// Bake [icon] into a bitmap padded by a fixed margin on EVERY side (room for
+/// the selection halo), drawing the orange glow behind the crisp symbol only
+/// when [glow] is true. The padded SIZE is identical glow-or-not, so toggling
+/// selection never resizes/shifts/duplicates the overlay — the halo simply
+/// appears in the already-present padding. Returns (drawable, pad).
+private fun bakePaddedSymbol(
+    context: android.content.Context,
+    icon: Drawable,
+    glow: Boolean
+): Pair<BitmapDrawable, Int> {
+    val density = context.resources.displayMetrics.density
+    val pad = (18f * density).toInt().coerceAtLeast(18)
+    val w = icon.intrinsicWidth.coerceAtLeast(1)
+    val h = icon.intrinsicHeight.coerceAtLeast(1)
+    val src = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    icon.setBounds(0, 0, w, h)
+    icon.draw(NativeCanvas(src))
+    val out = Bitmap.createBitmap(w + pad * 2, h + pad * 2, Bitmap.Config.ARGB_8888)
+    val canvas = NativeCanvas(out)
+    if (glow) {
+        val alpha = src.extractAlpha()
+        val outer = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFA63D.toInt()
+            maskFilter = android.graphics.BlurMaskFilter(
+                16f * density, android.graphics.BlurMaskFilter.Blur.NORMAL
+            )
+        }
+        repeat(4) { canvas.drawBitmap(alpha, pad.toFloat(), pad.toFloat(), outer) }
+        val inner = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFA63D.toInt()
+            maskFilter = android.graphics.BlurMaskFilter(
+                6f * density, android.graphics.BlurMaskFilter.Blur.SOLID
+            )
+        }
+        repeat(3) { canvas.drawBitmap(alpha, pad.toFloat(), pad.toFloat(), inner) }
+    }
+    canvas.drawBitmap(src, pad.toFloat(), pad.toFloat(), null)
+    return BitmapDrawable(context.resources, out) to pad
 }
 
 /// Composite an orange halo behind the icon by drawing the icon's
