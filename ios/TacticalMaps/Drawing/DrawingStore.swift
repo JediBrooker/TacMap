@@ -17,6 +17,10 @@ final class DrawingStore: ObservableObject {
     /// the first layer.
     @Published var activeLayerID: UUID?
 
+    /// Set by ContentView from `@Environment(\.undoManager)` after the
+    /// view appears. Weak so the store doesn't extend the window's lifetime.
+    weak var undoManager: UndoManager?
+
     private let url: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                             in: .userDomainMask).first!
@@ -33,7 +37,28 @@ final class DrawingStore: ObservableObject {
         layers.append(layer)
         if activeLayerID == nil { activeLayerID = layer.id }
         persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.removeLayerUndo(layer) }
+        undoManager?.setActionName("Add Layer")
         return layer
+    }
+
+    /// Undo-only removal of a layer that had no shapes (i.e. was just added).
+    /// Only called from the undo handler for addLayer — not exposed as a
+    /// general-purpose API so we don't accidentally skip the shape-deletion
+    /// logic in removeLayer.
+    private func removeLayerUndo(_ layer: DrawingLayer) {
+        layers.removeAll { $0.id == layer.id }
+        if activeLayerID == layer.id {
+            activeLayerID = layers.first(where: { $0.visible })?.id ?? layers.first?.id
+        }
+        persist()
+        undoManager?.registerUndo(withTarget: self) { [layer] s in
+            s.layers.append(layer)
+            if s.activeLayerID == nil { s.activeLayerID = layer.id }
+            s.persist()
+            s.undoManager?.setActionName("Add Layer")
+        }
+        undoManager?.setActionName("Add Layer")
     }
 
     /// Insert a layer exactly as supplied. Used by GeoJSON import so drawings
@@ -93,17 +118,34 @@ final class DrawingStore: ObservableObject {
     func add(_ shape: DrawingShape) {
         shapes.append(shape)
         persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.remove(shape) }
+        undoManager?.setActionName("Add Drawing")
     }
 
     func update(_ shape: DrawingShape) {
         guard let idx = shapes.firstIndex(where: { $0.id == shape.id }) else { return }
+        let old = shapes[idx]
         shapes[idx] = shape
         persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.update(old) }
+        undoManager?.setActionName("Edit Drawing")
     }
 
     func remove(_ shape: DrawingShape) {
-        shapes.removeAll { $0.id == shape.id }
+        guard let idx = shapes.firstIndex(where: { $0.id == shape.id }) else { return }
+        let removed = shapes.remove(at: idx)
         persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.insertShape(removed, at: idx) }
+        undoManager?.setActionName("Delete Drawing")
+    }
+
+    /// Inserts a shape at a specific index (used by undo of remove) and
+    /// registers the corresponding redo so the cycle is complete.
+    private func insertShape(_ shape: DrawingShape, at idx: Int) {
+        shapes.insert(shape, at: min(idx, shapes.count))
+        persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.remove(shape) }
+        undoManager?.setActionName("Delete Drawing")
     }
 
     func removeAll() {

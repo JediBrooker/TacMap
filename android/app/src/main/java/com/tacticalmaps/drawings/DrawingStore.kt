@@ -16,9 +16,19 @@ class DrawingStore(context: Context) {
     private val _document = MutableStateFlow(DrawingDocument())
     val document: StateFlow<DrawingDocument> = _document.asStateFlow()
 
+    private val undoStack = ArrayDeque<DrawingDocument>()
+    private val redoStack = ArrayDeque<DrawingDocument>()
+
+    private val _canUndo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+
+    private val _canRedo = MutableStateFlow(false)
+    val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
+
     init { load() }
 
     fun addFeature(feature: DrawingFeature) {
+        pushUndo()
         _document.value = _document.value.copy(
             features = _document.value.features + feature
         ).withDefaultLayers()
@@ -26,6 +36,7 @@ class DrawingStore(context: Context) {
     }
 
     fun updateFeature(feature: DrawingFeature) {
+        pushUndo()
         _document.value = _document.value.copy(
             features = _document.value.features.map {
                 if (it.id == feature.id) feature else it
@@ -35,6 +46,7 @@ class DrawingStore(context: Context) {
     }
 
     fun removeFeature(featureId: String) {
+        pushUndo()
         _document.value = _document.value.copy(
             features = _document.value.features.filterNot { it.id == featureId }
         ).withDefaultLayers()
@@ -42,6 +54,7 @@ class DrawingStore(context: Context) {
     }
 
     fun addLayer(name: String) {
+        pushUndo()
         val cleanName = name.trim().ifBlank { "Layer ${_document.value.layers.size + 1}" }
         _document.value = _document.value.copy(
             layers = _document.value.layers + DrawingLayer(
@@ -73,6 +86,41 @@ class DrawingStore(context: Context) {
             }
         ).withDefaultLayers()
         persist()
+    }
+
+    /** Updates a feature for visual feedback during a continuous gesture (e.g. slider
+     *  drag) without pushing to the undo stack. Call [updateFeature] at gesture end. */
+    fun updateFeatureNoUndo(feature: DrawingFeature) {
+        _document.value = _document.value.copy(
+            features = _document.value.features.map { if (it.id == feature.id) feature else it }
+        ).withDefaultLayers()
+        persist()
+    }
+
+    fun undo() {
+        val snapshot = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(_document.value)
+        _document.value = snapshot
+        persist()
+        _canUndo.value = undoStack.isNotEmpty()
+        _canRedo.value = true
+    }
+
+    fun redo() {
+        val snapshot = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(_document.value)
+        _document.value = snapshot
+        persist()
+        _canUndo.value = true
+        _canRedo.value = redoStack.isNotEmpty()
+    }
+
+    private fun pushUndo() {
+        if (undoStack.size >= 50) undoStack.removeFirst()
+        undoStack.addLast(_document.value)
+        redoStack.clear()
+        _canUndo.value = true
+        _canRedo.value = false
     }
 
     private fun load() {

@@ -39,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +64,7 @@ fun DrawingLayersSheet(
     onActiveLayerChange: (String) -> Unit,
     onPlacePoint: () -> Unit,
     onStartDraft: (DrawingGeometry) -> Unit,
+    onStartFreeDraw: () -> Unit,
     onLayerVisibilityChange: (String, Boolean) -> Unit,
     onAddLayer: (String) -> Unit,
     onDeleteFeature: (String) -> Unit
@@ -119,7 +122,7 @@ fun DrawingLayersSheet(
                 ) {
                     DrawingTypeIcon(DrawingGeometry.LINE)
                     Spacer(Modifier.size(6.dp))
-                    Text("Line")
+                    Text("Line Tool")
                 }
                 ElevatedButton(
                     onClick = { onStartDraft(DrawingGeometry.POLYGON) },
@@ -130,9 +133,17 @@ fun DrawingLayersSheet(
                     Text("Area")
                 }
             }
+            ElevatedButton(
+                onClick = onStartFreeDraw,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                FreeDrawIcon()
+                Spacer(Modifier.size(6.dp))
+                Text("Free Draw")
+            }
 
             Text(
-                "After selecting a tool, tap the map to place points. Use Finish in the toolbar to complete a line or area.",
+                "After selecting a tool, tap the map to place points. Free Draw: drag to sketch freely — lifts to finish.",
                 fontSize = 11.sp,
                 modifier = Modifier.padding(top = 8.dp, bottom = 14.dp)
             )
@@ -196,17 +207,46 @@ fun DrawingLayersSheet(
 }
 
 @Composable
+private fun FreeDrawIcon() {
+    Canvas(Modifier.size(18.dp)) {
+        val stroke = Stroke(width = size.minDimension * 0.11f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        // Double S-curve — clearly suggests freehand vs the straight line tool
+        val path = Path().apply {
+            moveTo(size.width * 0.05f, size.height * 0.50f)
+            cubicTo(
+                size.width * 0.10f, size.height * 0.10f,
+                size.width * 0.35f, size.height * 0.10f,
+                size.width * 0.40f, size.height * 0.50f
+            )
+            cubicTo(
+                size.width * 0.45f, size.height * 0.90f,
+                size.width * 0.70f, size.height * 0.90f,
+                size.width * 0.75f, size.height * 0.50f
+            )
+            cubicTo(
+                size.width * 0.82f, size.height * 0.15f,
+                size.width * 0.92f, size.height * 0.25f,
+                size.width * 0.95f, size.height * 0.35f
+            )
+        }
+        drawPath(path, Color.White, style = stroke)
+    }
+}
+
+@Composable
 private fun DrawingTypeIcon(geometry: DrawingGeometry) {
     Canvas(Modifier.size(18.dp)) {
         val stroke = Stroke(width = size.minDimension * 0.11f)
         when (geometry) {
             DrawingGeometry.POINT -> drawCircle(Color.White, radius = size.minDimension * 0.24f)
-            DrawingGeometry.LINE -> drawLine(
-                Color.White,
-                start = Offset(size.width * 0.12f, size.height * 0.72f),
-                end = Offset(size.width * 0.88f, size.height * 0.28f),
-                strokeWidth = stroke.width
-            )
+            DrawingGeometry.LINE -> {
+                // Straight line with endpoint nodes — distinct from the freehand curve
+                val start = Offset(size.width * 0.15f, size.height * 0.78f)
+                val end = Offset(size.width * 0.85f, size.height * 0.22f)
+                drawLine(Color.White, start = start, end = end, strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawCircle(Color.White, radius = stroke.width * 1.6f, center = start)
+                drawCircle(Color.White, radius = stroke.width * 1.6f, center = end)
+            }
             DrawingGeometry.POLYGON -> {
                 val path = Path().apply {
                     moveTo(size.width * 0.22f, size.height * 0.75f)

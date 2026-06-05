@@ -75,6 +75,7 @@ internal fun DrawingFeatureEditBar(
     feature: DrawingFeature,
     layers: List<DrawingLayer>,
     onFeatureChange: (DrawingFeature) -> Unit,
+    onFeatureChangeDraft: (DrawingFeature) -> Unit = onFeatureChange,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
@@ -152,7 +153,8 @@ internal fun DrawingFeatureEditBar(
                     value = normalizedDrawingDegrees(feature.rotationDegrees).toFloat(),
                     valueLabel = "${normalizedDrawingDegrees(feature.rotationDegrees).toInt()}°",
                     range = 0f..360f,
-                    onChange = { onFeatureChange(feature.copy(rotationDegrees = it.toDouble())) },
+                    onChange = { onFeatureChangeDraft(feature.copy(rotationDegrees = it.toDouble())) },
+                    onCommit = { onFeatureChange(feature.copy(rotationDegrees = it.toDouble())) },
                     onReset = { onFeatureChange(feature.copy(rotationDegrees = 0.0)) }
                 )
                 DrawingTransformSliderRow(
@@ -160,7 +162,8 @@ internal fun DrawingFeatureEditBar(
                     value = feature.scaleX.toFloat().coerceIn(0.15f, 6f),
                     valueLabel = "%.2fx".format(feature.scaleX),
                     range = 0.15f..6f,
-                    onChange = { onFeatureChange(feature.copy(scaleX = it.toDouble())) },
+                    onChange = { onFeatureChangeDraft(feature.copy(scaleX = it.toDouble())) },
+                    onCommit = { onFeatureChange(feature.copy(scaleX = it.toDouble())) },
                     onReset = { onFeatureChange(feature.copy(scaleX = 1.0)) }
                 )
                 DrawingTransformSliderRow(
@@ -168,7 +171,8 @@ internal fun DrawingFeatureEditBar(
                     value = feature.scaleY.toFloat().coerceIn(0.15f, 6f),
                     valueLabel = "%.2fx".format(feature.scaleY),
                     range = 0.15f..6f,
-                    onChange = { onFeatureChange(feature.copy(scaleY = it.toDouble())) },
+                    onChange = { onFeatureChangeDraft(feature.copy(scaleY = it.toDouble())) },
+                    onCommit = { onFeatureChange(feature.copy(scaleY = it.toDouble())) },
                     onReset = { onFeatureChange(feature.copy(scaleY = 1.0)) }
                 )
             }
@@ -263,8 +267,10 @@ private fun DrawingTransformSliderRow(
     valueLabel: String,
     range: ClosedFloatingPointRange<Float>,
     onChange: (Float) -> Unit,
+    onCommit: (Float) -> Unit = onChange,
     onReset: () -> Unit
 ) {
+    var latestValue by remember(value) { mutableStateOf(value) }
     Row(
         modifier = Modifier.height(30.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -285,8 +291,9 @@ private fun DrawingTransformSliderRow(
             )
         }
         Slider(
-            value = value.coerceIn(range.start, range.endInclusive),
-            onValueChange = onChange,
+            value = latestValue.coerceIn(range.start, range.endInclusive),
+            onValueChange = { latestValue = it; onChange(it) },
+            onValueChangeFinished = { onCommit(latestValue) },
             valueRange = range,
             modifier = Modifier
                 .weight(1f)

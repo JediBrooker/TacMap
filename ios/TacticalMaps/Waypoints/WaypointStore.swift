@@ -6,6 +6,9 @@ import CoreLocation
 final class WaypointStore: ObservableObject {
     @Published private(set) var waypoints: [Waypoint] = []
 
+    /// Set by ContentView from `@Environment(\.undoManager)` after the view appears.
+    weak var undoManager: UndoManager?
+
     private let url: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                             in: .userDomainMask).first!
@@ -18,17 +21,32 @@ final class WaypointStore: ObservableObject {
     func add(_ wp: Waypoint) {
         waypoints.append(wp)
         persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.remove(wp) }
+        undoManager?.setActionName("Add Waypoint")
     }
 
     func remove(_ wp: Waypoint) {
-        waypoints.removeAll { $0.id == wp.id }
+        guard let idx = waypoints.firstIndex(where: { $0.id == wp.id }) else { return }
+        let removed = waypoints.remove(at: idx)
         persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.insertWaypoint(removed, at: idx) }
+        undoManager?.setActionName("Delete Waypoint")
     }
 
     func update(_ wp: Waypoint) {
         guard let idx = waypoints.firstIndex(where: { $0.id == wp.id }) else { return }
+        let old = waypoints[idx]
         waypoints[idx] = wp
         persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.update(old) }
+        undoManager?.setActionName("Edit Waypoint")
+    }
+
+    private func insertWaypoint(_ wp: Waypoint, at idx: Int) {
+        waypoints.insert(wp, at: min(idx, waypoints.count))
+        persist()
+        undoManager?.registerUndo(withTarget: self) { s in s.remove(wp) }
+        undoManager?.setActionName("Delete Waypoint")
     }
 
     // MARK: - Persistence

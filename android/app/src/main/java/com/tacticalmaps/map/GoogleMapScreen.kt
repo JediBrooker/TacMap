@@ -7,6 +7,8 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -102,6 +104,9 @@ fun GoogleMapScreen(
     drawingLayers: List<DrawingLayer> = emptyList(),
     draftDrawing: DrawingFeature? = null,
     drawingInputEnabled: Boolean = false,
+    freeDrawActive: Boolean = false,
+    onFreeDrawPoint: (lat: Double, lng: Double) -> Unit = { _, _ -> },
+    onFreeDrawEnd: () -> Unit = {},
     calibrationInputEnabled: Boolean = false,
     mgrsGridVisible: Boolean = false,
     unitLabelsVisible: Boolean = true,
@@ -255,11 +260,13 @@ fun GoogleMapScreen(
             ),
             uiSettings = MapUiSettings(
                 zoomControlsEnabled = false,
-                /// We render our own "Centre on My Location" pill at
-                /// the bottom; suppress the SDK's stock button.
                 myLocationButtonEnabled = false,
                 mapToolbarEnabled = false,
-                compassEnabled = false
+                compassEnabled = false,
+                scrollGesturesEnabled = !freeDrawActive,
+                zoomGesturesEnabled = !freeDrawActive,
+                tiltGesturesEnabled = !freeDrawActive,
+                rotationGesturesEnabled = !freeDrawActive
             ),
             onMapClick = { latLng ->
                 when {
@@ -290,7 +297,7 @@ fun GoogleMapScreen(
             }
 
             if (mgrsGridVisible) {
-                MgrsGridLayer(cameraPositionState = cameraPositionState)
+                MgrsGridLayer()
             }
 
             visibleDrawings.forEach { feature ->
@@ -371,7 +378,7 @@ fun GoogleMapScreen(
 
         /// Drawing name labels — anchored at the centroid for polygons,
         /// midpoint for lines, the point itself for points.
-        if (drawingLabelsVisible) {
+        if (drawingLabelsVisible && !freeDrawActive) {
             DrawingLabelsOverlay(
                 drawings = visibleDrawings,
                 cameraPositionState = cameraPositionState,
@@ -379,10 +386,9 @@ fun GoogleMapScreen(
             )
         }
 
-        /// MGRS grid labels — drawn as Compose Text on top of the map
-        /// so they can be rotated for vertical lines without baking
-        /// per-zoom bitmap markers.
-        if (mgrsGridVisible) {
+        /// MGRS grid labels — suppressed during freehand drawing to avoid
+        /// recomposing hundreds of Text composables on every pointer event.
+        if (mgrsGridVisible && !freeDrawActive) {
             MgrsGridLabelsOverlay(cameraPositionState = cameraPositionState)
         }
 
@@ -419,6 +425,46 @@ fun GoogleMapScreen(
             onVertexInserted = currentOnVertexInserted.value,
             onVertexDeleted = currentOnVertexDeleted.value
         )
+
+        if (freeDrawActive) {
+            val currentOnFreeDrawPoint = rememberUpdatedState(onFreeDrawPoint)
+            val currentOnFreeDrawEnd = rememberUpdatedState(onFreeDrawEnd)
+            var lastLat by remember { mutableStateOf(Double.NaN) }
+            var lastLng by remember { mutableStateOf(Double.NaN) }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            lastLat = Double.NaN
+                            lastLng = Double.NaN
+                            do {
+                                val event = awaitPointerEvent()
+                                event.changes.forEach { change ->
+                                    if (change.pressed) {
+                                        change.consume()
+                                        val pos = change.position
+                                        val latLng = cameraPositionState.projection
+                                            ?.fromScreenLocation(
+                                                android.graphics.Point(pos.x.toInt(), pos.y.toInt())
+                                            ) ?: return@forEach
+                                        val dLat = latLng.latitude - lastLat
+                                        val dLng = latLng.longitude - lastLng
+                                        if (lastLat.isNaN() || dLat * dLat + dLng * dLng > 2e-9) {
+                                            lastLat = latLng.latitude
+                                            lastLng = latLng.longitude
+                                            currentOnFreeDrawPoint.value(latLng.latitude, latLng.longitude)
+                                        }
+                                    }
+                                }
+                            } while (event.changes.any { it.pressed })
+                            currentOnFreeDrawEnd.value()
+                        }
+                    }
+            )
+        }
     }
 }
 

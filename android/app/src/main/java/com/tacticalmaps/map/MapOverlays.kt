@@ -1,7 +1,7 @@
 package com.tacticalmaps.map
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.graphics.Canvas as NativeCanvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.Canvas
@@ -27,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -48,7 +49,10 @@ import com.google.maps.android.compose.GroundOverlayPosition
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.Polygon
 import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.TileOverlay
 import com.google.maps.android.compose.rememberMarkerState
+import com.google.maps.android.SphericalUtil
+import com.tacticalmaps.calibration.Calibration
 import com.tacticalmaps.calibration.PdfMapSource
 import com.tacticalmaps.calibration.PdfPageRenderer
 import com.tacticalmaps.mgrs.MgrsGridRenderer
@@ -311,58 +315,28 @@ private fun pointCircle(center: LatLng, radiusMetres: Double, segments: Int = 24
     }
 }
 
+/// MGRS grid lines rendered as a TileOverlay so the Maps SDK fetches tiles
+/// lazily and handles caching internally — no per-line Polyline IPC calls.
 @Composable
-internal fun MgrsGridLayer(cameraPositionState: CameraPositionState) {
-    /// Re-read camera position so this composable rebuilds when the
-    /// user pans / zooms — the grid lines depend on the visible region.
-    cameraPositionState.position
-    val projection = cameraPositionState.projection ?: return
-    val bounds = projection.visibleRegion.latLngBounds
-
+internal fun MgrsGridLayer() {
     val density = LocalDensity.current.density
-    val mapWidthPx = with(LocalDensity.current) {
-        androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp.toPx()
-    }.toInt().coerceAtLeast(1)
-
-    val ink = Color(MgrsGridRenderer.INK_COLOR)
-    val sw = bounds.southwest
-    val ne = bounds.northeast
-    val built = remember(sw.latitude, sw.longitude, ne.latitude, ne.longitude, mapWidthPx) {
-        MgrsGridRenderer.build(
-            minLat = sw.latitude,
-            minLng = sw.longitude,
-            maxLat = ne.latitude,
-            maxLng = ne.longitude,
-            mapWidthPx = mapWidthPx
-        )
-    }
-
-    /// Lines render inside the GoogleMap composable's scope (this
-    /// composable is called from inside GoogleMap { … }), so we can
-    /// emit Polyline directly here.
-    built.first.forEach { seg ->
-        Polyline(
-            points = listOf(
-                LatLng(seg.start.latitude, seg.start.longitude),
-                LatLng(seg.end.latitude, seg.end.longitude)
-            ),
-            color = ink,
-            width = MgrsGridRenderer.lineWidthDp(seg.type) * density,
-            clickable = false,
-            zIndex = -0.5f
-        )
-    }
+    val provider = remember(density) { MgrsGridTileProvider(density) }
+    TileOverlay(tileProvider = provider, zIndex = -0.5f)
 }
 
 /// MGRS grid labels live OUTSIDE the GoogleMap composable scope (they
-/// need to draw Compose Text on top of the map, projected to screen
-/// coords each frame) — they're rendered by [MgrsGridLabelsOverlay]
-/// in the parent Box.
+/// need to draw on top of the map, projected to screen coords each
+/// frame). Uses a single Canvas draw call instead of N×5 Text
+/// composables to avoid exhausting the Compose change-list under
+/// rapid camera movement.
 @Composable
 internal fun MgrsGridLabelsOverlay(cameraPositionState: CameraPositionState) {
     cameraPositionState.position
     val projection = cameraPositionState.projection ?: return
     val bounds = projection.visibleRegion.latLngBounds
+
+    val density = LocalDensity.current.density
+    val fontScale = LocalDensity.current.fontScale
 
     val mapWidthPx = with(LocalDensity.current) {
         androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp.toPx()
@@ -380,53 +354,61 @@ internal fun MgrsGridLabelsOverlay(cameraPositionState: CameraPositionState) {
         ).second
     }
 
-    val ink = Color(MgrsGridRenderer.LABEL_TEXT_COLOR)
-    val halo = Color(0xE6FFFFFF)
+    val mainPaint = remember {
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textAlign = android.graphics.Paint.Align.CENTER
+            color = MgrsGridRenderer.LABEL_TEXT_COLOR
+        }
+    }
+    val haloPaint = remember {
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textAlign = android.graphics.Paint.Align.CENTER
+            color = 0xE6FFFFFF.toInt()
+        }
+    }
 
-    labels.forEach { mark ->
-        val screen = projection.toScreenLocation(LatLng(mark.lat, mark.lng))
-        val sp = MgrsGridRenderer.labelTextSp(mark.type)
-        val rotation = if (mark.isVertical) -90f else 0f
-        ScreenAnchoredOverlay(screenX = screen.x, screenY = screen.y) {
-            Box(contentAlignment = Alignment.Center) {
-                /// Soft white halo via four offset passes — keeps
-                /// the dark digits readable on busy satellite tiles
-                /// without a visible pill.
-                for (dx in listOf(-1f, 1f)) {
-                    for (dy in listOf(-1f, 1f)) {
-                        Text(
-                            text = mark.text,
-                            color = halo,
-                            fontSize = sp.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .offset(x = dx.dp, y = dy.dp)
-                                .graphicsLayer { rotationZ = rotation }
-                        )
-                    }
-                }
-                Text(
-                    text = mark.text,
-                    color = ink,
-                    fontSize = sp.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.graphicsLayer { rotationZ = rotation }
-                )
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val nc = drawContext.canvas.nativeCanvas
+        labels.forEach { mark ->
+            val screen = projection.toScreenLocation(LatLng(mark.lat, mark.lng))
+            val textSizePx = MgrsGridRenderer.labelTextSp(mark.type) * density * fontScale
+            mainPaint.textSize = textSizePx
+            haloPaint.textSize = textSizePx
+
+            val cx = screen.x.toFloat()
+            val cy = screen.y.toFloat()
+            val fm = mainPaint.fontMetrics
+            // Baseline that vertically centres the text glyph at cy
+            val textY = cy - (fm.ascent + fm.descent) / 2f
+            val haloOff = textSizePx * 0.07f
+
+            if (mark.isVertical) {
+                nc.save()
+                nc.rotate(-90f, cx, cy)
             }
+            // Halo: four diagonal offsets keep text readable on busy tiles
+            nc.drawText(mark.text, cx - haloOff, textY - haloOff, haloPaint)
+            nc.drawText(mark.text, cx + haloOff, textY - haloOff, haloPaint)
+            nc.drawText(mark.text, cx - haloOff, textY + haloOff, haloPaint)
+            nc.drawText(mark.text, cx + haloOff, textY + haloOff, haloPaint)
+            nc.drawText(mark.text, cx, textY, mainPaint)
+            if (mark.isVertical) nc.restore()
         }
     }
 }
 
 @Composable
 internal fun PdfGroundOverlay(source: PdfMapSource) {
-    val bounds = source.coverage ?: return
     val context = LocalContext.current
 
     /// Render the PDF's first page once per URI as a single high-res
-    /// bitmap and stretch it across the source's coverage bounds via
-    /// a GroundOverlay. Simple, robust, and at the 4096-px max
-    /// dimension set in [PdfPageRenderer] it stays readable through
-    /// several zoom steps. The previous tile-based approach was more
+    /// bitmap and place it via a GroundOverlay. Simple, robust, and at the
+    /// 4096-px max dimension set in [PdfPageRenderer] it stays readable
+    /// through several zoom steps. The previous tile-based approach was more
     /// flexible but proved slow to first-render and held multiple
     /// PdfRenderer instances in native memory, which tripped the
     /// low-memory killer on larger PDFs.
@@ -443,14 +425,53 @@ internal fun PdfGroundOverlay(source: PdfMapSource) {
     }
 
     val descriptor = image ?: return
-    val latLngBounds = remember(bounds) {
-        LatLngBounds(
-            LatLng(bounds.southwest.latitude, bounds.southwest.longitude),
-            LatLng(bounds.northeast.latitude, bounds.northeast.longitude)
-        )
+
+    // When the PDF carries a georeferencing affine, place the page with the
+    // sheet's true ROTATION + scale (centre + width/height in metres + bearing)
+    // instead of stretching the bitmap to an axis-aligned LatLngBounds. The
+    // bounds form drops the ~1° grid-convergence rotation, which is exactly why
+    // the app's MGRS grid sat offset from the sheet's printed grid.
+    val transform = (source.calibration as? Calibration.Fiduciaries)?.transform
+        ?: (source.calibration as? Calibration.Parsed)?.transform
+    val pageInfo = source.pageInfo
+    if (transform != null && pageInfo != null) {
+        val pw = pageInfo.pageWidth.toDouble()
+        val ph = pageInfo.pageHeight.toDouble()
+        // PdfRenderer rasterises with bitmap-top = page-top (PDF y-up maxY).
+        val tlC = transform.apply(0.0, ph); val tl = LatLng(tlC.latitude, tlC.longitude)
+        val trC = transform.apply(pw, ph);  val tr = LatLng(trC.latitude, trC.longitude)
+        val blC = transform.apply(0.0, 0.0); val bl = LatLng(blC.latitude, blC.longitude)
+        val brC = transform.apply(pw, 0.0);  val br = LatLng(brC.latitude, brC.longitude)
+        val widthM = SphericalUtil.computeDistanceBetween(tl, tr)
+        val heightM = SphericalUtil.computeDistanceBetween(tl, bl)
+        if (widthM >= 1.0 && heightM >= 1.0) {
+            val center = LatLng(
+                (tl.latitude + tr.latitude + bl.latitude + br.latitude) / 4.0,
+                (tl.longitude + tr.longitude + bl.longitude + br.longitude) / 4.0
+            )
+            // At bearing 0 the bitmap's top edge runs due east (heading 90); the
+            // real top edge's heading minus 90 is the clockwise rotation.
+            val bearing = ((SphericalUtil.computeHeading(tl, tr) - 90.0) % 360.0 + 360.0) % 360.0
+            GroundOverlay(
+                position = GroundOverlayPosition.create(center, widthM.toFloat(), heightM.toFloat()),
+                image = descriptor,
+                bearing = bearing.toFloat(),
+                clickable = false,
+                zIndex = -1f
+            )
+            return
+        }
     }
+
+    // Fallback: axis-aligned stretch for uncalibrated PDFs (no affine).
+    val bounds = source.coverage ?: return
     GroundOverlay(
-        position = GroundOverlayPosition.create(latLngBounds),
+        position = GroundOverlayPosition.create(
+            LatLngBounds(
+                LatLng(bounds.southwest.latitude, bounds.southwest.longitude),
+                LatLng(bounds.northeast.latitude, bounds.northeast.longitude)
+            )
+        ),
         image = descriptor,
         clickable = false,
         zIndex = -1f
@@ -496,7 +517,7 @@ internal fun WaypointHandlesOverlay(
                 val h = rawIcon.intrinsicHeight.coerceAtLeast(1)
                 val bm = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                 rawIcon.setBounds(0, 0, w, h)
-                rawIcon.draw(Canvas(bm))
+                rawIcon.draw(NativeCanvas(bm))
                 bm to rawAnchor
             }
         }
@@ -557,11 +578,11 @@ private fun applySelectionGlow(
 
     val src = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     icon.setBounds(0, 0, w, h)
-    icon.draw(Canvas(src))
+    icon.draw(NativeCanvas(src))
     val alpha = src.extractAlpha()
 
     val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(out)
+    val canvas = NativeCanvas(out)
 
     val outerGlow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFFFA63D.toInt()
@@ -780,7 +801,7 @@ private fun makeFiduciaryPinDrawable(
     val density = context.resources.displayMetrics.density
     val size = (32f * density).toInt()
     val bmp = Bitmap.createBitmap(size, size + (8f * density).toInt(), Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
+    val canvas = NativeCanvas(bmp)
     val cx = size / 2f
     val cy = size / 2f
     val r = size / 2f - 2f * density
@@ -838,6 +859,6 @@ private fun Drawable.toBitmapDescriptor(): BitmapDescriptor {
     val h = intrinsicHeight.coerceAtLeast(1)
     val bm = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     setBounds(0, 0, w, h)
-    draw(Canvas(bm))
+    draw(NativeCanvas(bm))
     return BitmapDescriptorFactory.fromBitmap(bm)
 }

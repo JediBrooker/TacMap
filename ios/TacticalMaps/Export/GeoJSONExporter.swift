@@ -156,7 +156,7 @@ enum GeoJSONExporter {
                 "coordinates": [c.longitude, c.latitude]
             ]
 
-        case .polyline:
+        case .polyline, .freedraw:
             geometry = [
                 "type":        "LineString",
                 "coordinates": shape.coordinates.map { [$0.longitude, $0.latitude] }

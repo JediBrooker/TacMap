@@ -58,6 +58,10 @@ struct ContentView: View {
     private let trial = TrialManager()
     @State private var showPaywallSheet    = false
 
+    @Environment(\.undoManager) private var undoManager
+    @State private var canUndo = false
+    @State private var canRedo = false
+
     @State private var showImporter        = false
     @State private var showMBTilesImporter = false
     @State private var showGeoJSONImporter = false
@@ -124,6 +128,27 @@ struct ContentView: View {
                     CrosshairOverlay().allowsHitTesting(false)
                 }
 
+                // Freehand capture overlay. Sits above the map but below the
+                // HUD VStack so toolbar buttons remain interactive. Converts
+                // every drag point to a map coordinate and streams it into the
+                // session; auto-commits when the finger lifts.
+                if drawingSession.activeKind == .freedraw {
+                    Color.clear
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                                .onChanged { value in
+                                    guard let convert = mapVM.screenToCoordinate else { return }
+                                    drawingSession.addFreeDrawPoint(convert(value.location))
+                                }
+                                .onEnded { _ in
+                                    if let shape = drawingSession.finish() {
+                                        drawingStore.add(shape)
+                                    }
+                                }
+                        )
+                }
 
                 VStack(spacing: 0) {
                     MGRSHeaderView(
@@ -223,11 +248,23 @@ struct ContentView: View {
                             }
                         }
                         Spacer()
-                        CompassChip(heading: mapVM.heading) { mapVM.resetNorth() }
+                        VStack(spacing: 6) {
+                            CompassChip(heading: mapVM.heading) { mapVM.resetNorth() }
+                            if canUndo || canRedo {
+                                UndoRedoButtons(
+                                    canUndo: canUndo,
+                                    canRedo: canRedo,
+                                    onUndo: { undoManager?.undo() },
+                                    onRedo: { undoManager?.redo() }
+                                )
+                            }
+                        }
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
                     .animation(.easeInOut(duration: 0.18), value: drawingsPanelOpen)
+                    .animation(.easeInOut(duration: 0.18), value: canUndo)
+                    .animation(.easeInOut(duration: 0.18), value: canRedo)
 
                     Spacer(minLength: 0)
 
@@ -304,6 +341,19 @@ struct ContentView: View {
                 // calibration / draw toolbars (which want a full safe-area gap).
                 .padding(.top, 4)
             }
+        }
+        .task {
+            drawingStore.undoManager = undoManager
+            waypointStore.undoManager = undoManager
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidCloseUndoGroup)) { _ in
+            refreshUndoState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange)) { _ in
+            refreshUndoState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange)) { _ in
+            refreshUndoState()
         }
         .onAppear {
             locationService.requestAuthorisation()
@@ -425,6 +475,11 @@ struct ContentView: View {
         } message: { msg in
             Text(msg)
         }
+    }
+
+    private func refreshUndoState() {
+        canUndo = undoManager?.canUndo ?? false
+        canRedo = undoManager?.canRedo ?? false
     }
 
     private func handleGeoJSONImport(_ result: Result<[URL], Error>) {

@@ -46,10 +46,15 @@ enum MGRSGridRenderer {
     /// library understands.
     static func build(for region: MKCoordinateRegion,
                       mapWidthPoints: CGFloat) -> (lines: [LineSegment], labels: [LabelMark]) {
-        let west  = region.center.longitude - region.span.longitudeDelta / 2
-        let east  = region.center.longitude + region.span.longitudeDelta / 2
-        let south = region.center.latitude  - region.span.latitudeDelta  / 2
-        let north = region.center.latitude  + region.span.latitudeDelta  / 2
+        // Clamp to the range the NGA grid library accepts. A cold-launch or
+        // world-spanning region can otherwise hand GridZones a longitude at
+        // exactly ±180 (→ UTM zone 61) or a polar latitude, tripping the
+        // library's zone-number assertion (a hard crash in debug). UTM is
+        // defined for lon [-180, 180) and lat [-80, 84].
+        let west  = (region.center.longitude - region.span.longitudeDelta / 2).clamped(to: -180 ... 179.9999)
+        let east  = (region.center.longitude + region.span.longitudeDelta / 2).clamped(to: -180 ... 179.9999)
+        let south = (region.center.latitude  - region.span.latitudeDelta  / 2).clamped(to: -80 ... 84)
+        let north = (region.center.latitude  + region.span.latitudeDelta  / 2).clamped(to: -80 ... 84)
 
         // Approximate tile zoom from horizontal span. MapKit doesn't expose
         // a tile-zoom number, so back into it from degrees-per-pixel.

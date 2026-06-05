@@ -32,6 +32,15 @@ final class PDFMapSource: MapSource {
 
     private var cachedImage: UIImage?
 
+    /// Affine (PDF user-space → WGS84) used to PLACE the page on the map with
+    /// true rotation + scale, instead of stretching it to the lat/lon box.
+    /// A manual fiduciary calibration wins; otherwise the GeoPDF auto-fit
+    /// affine from `bounds`. nil → the overlay falls back to a bbox stretch.
+    var placementTransform: AffineTransform2D? {
+        if case .fiduciaries(_, let t)? = calibration { return t }
+        return bounds?.placementAffine
+    }
+
     init(url: URL,
          bounds: GeoPDFReader.Bounds?,
          fromGeoPDF: Bool = false) {
@@ -59,7 +68,14 @@ final class PDFMapSource: MapSource {
         return page.bounds(for: .mediaBox)
     }
 
+    /// The rasterised page if it's already been rendered — `nil` if not yet,
+    /// WITHOUT triggering a (blocking) rasterisation. Lets the overlay sync
+    /// render off the main thread and attach the page when it's ready.
+    var cachedRenderedImage: UIImage? { cachedImage }
+
     /// Cached PDF rasterisation, cropped to the LGIDict Neatline if known.
+    /// Heavy (decodes the page to a bitmap) — call OFF the main thread on first
+    /// use; subsequent calls return the cache.
     func renderedImage() -> UIImage? {
         if let cached = cachedImage { return cached }
         guard let img = PDFRasteriser.render(url: url,

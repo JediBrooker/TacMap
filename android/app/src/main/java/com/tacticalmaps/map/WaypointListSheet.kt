@@ -94,13 +94,6 @@ fun WaypointListSheet(
             Spacer(Modifier.size(12.dp))
 
             AddSymbolButton(
-                label = "Waypoint",
-                icon = Icons.Default.LocationOn,
-                modifier = Modifier.padding(horizontal = 20.dp),
-                onClick = { pendingEditor = SymbolEditorMode.WAYPOINT }
-            )
-            Spacer(Modifier.size(8.dp))
-            AddSymbolButton(
                 label = "Military Unit",
                 icon = Icons.Default.Security,
                 modifier = Modifier.padding(horizontal = 20.dp),
@@ -124,7 +117,6 @@ fun WaypointListSheet(
 
     pendingEditor?.let { mode ->
         val initialKind = when (mode) {
-            SymbolEditorMode.WAYPOINT -> WaypointKind.Generic
             SymbolEditorMode.MILITARY -> WaypointKind.Military()
             SymbolEditorMode.TASK -> WaypointKind.ControlMeasure()
         }
@@ -135,7 +127,6 @@ fun WaypointListSheet(
             crosshairLat = crosshairLat,
             crosshairLng = crosshairLng,
             title = when (mode) {
-                SymbolEditorMode.WAYPOINT -> "New Waypoint"
                 SymbolEditorMode.MILITARY -> "New Military Unit"
                 SymbolEditorMode.TASK -> "New Tactical Task"
             },

@@ -225,8 +225,11 @@ final class OverlayContainerView: UIView {
             let w = max(8, 64 * CGFloat(wp.scaleX) * zoomScale)
             let h = max(8, 64 * CGFloat(wp.scaleY) * zoomScale)
             return CGSize(width: w, height: h)
-        case .military:
-            return CGSize(width: 44, height: 44)
+        case .military(let spec):
+            // Non-friend symbols use a taller canvas (diamondReserve = size * 0.22)
+            // so the diamond/quatrefoil bottom vertex isn't clipped.
+            let h: CGFloat = spec.affiliation == .friend ? 44 : 54
+            return CGSize(width: 44, height: h)
         case .generic:
             return CGSize(width: 34, height: 34)
         }

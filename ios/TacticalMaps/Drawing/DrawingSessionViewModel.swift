@@ -51,6 +51,21 @@ final class DrawingSessionViewModel: ObservableObject {
         return activeKind == .point
     }
 
+    /// Append a freehand point only when far enough from the last vertex
+    /// to avoid recording hundreds of near-identical coordinates during
+    /// a fast drag. Threshold is ~5 m at mid-latitudes.
+    func addFreeDrawPoint(_ coord: CLLocationCoordinate2D) {
+        guard isDrawing else { return }
+        if let last = inProgressCoordinates.last {
+            let dLat = coord.latitude  - last.latitude
+            let dLon = coord.longitude - last.longitude
+            guard dLat * dLat + dLon * dLon > 2e-9 else { return }
+        }
+        inProgressCoordinates.append(
+            Coordinate2D(latitude: coord.latitude, longitude: coord.longitude)
+        )
+    }
+
     func undo() {
         guard !inProgressCoordinates.isEmpty else { return }
         inProgressCoordinates.removeLast()
@@ -87,9 +102,11 @@ final class DrawingSessionViewModel: ObservableObject {
             dashPattern:    isDashed ? [8, 6] : nil
         )
         let trimmedName = shapeName.trimmingCharacters(in: .whitespaces)
+        // Free draw is a capture mode — store the result as a polyline.
+        let storedKind: DrawingKind = kind == .freedraw ? .polyline : kind
         return DrawingShape(
             name: trimmedName.isEmpty ? nil : trimmedName,
-            kind: kind,
+            kind: storedKind,
             coordinates: inProgressCoordinates,
             style: style,
             layerID: layerID

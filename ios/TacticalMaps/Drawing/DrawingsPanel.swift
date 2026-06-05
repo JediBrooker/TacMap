@@ -34,7 +34,8 @@ struct DrawingsPanel: View {
 
             layerPicker
 
-            row(.polyline, subtitle: "Tap points to trace a route")
+            row(.freedraw, label: "Free Draw", subtitle: "Draw freely with your finger")
+            row(.polyline, label: "Line Tool", subtitle: "Tap points to trace a route")
             row(.polygon,  subtitle: "Mark out a boundary")
             row(.point,    subtitle: "Drop a single marker")
 
@@ -164,7 +165,7 @@ struct DrawingsPanel: View {
     }
 
     @ViewBuilder
-    private func row(_ kind: DrawingKind, subtitle: String) -> some View {
+    private func row(_ kind: DrawingKind, label: String? = nil, subtitle: String) -> some View {
         Button {
             guard let layer = activeLayer else { return }
             // New drawings inherit the active layer's default colour so
@@ -180,7 +181,7 @@ struct DrawingsPanel: View {
                     .foregroundStyle(Color(red: 1, green: 0.65, blue: 0.18))
                     .frame(width: 28)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("New \(kind.displayName)")
+                    Text(label ?? "New \(kind.displayName)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                     Text(subtitle)

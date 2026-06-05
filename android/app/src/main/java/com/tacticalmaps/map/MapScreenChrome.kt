@@ -1,5 +1,6 @@
 package com.tacticalmaps.map
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,6 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -26,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -126,6 +131,57 @@ internal fun CompassChip(mapOrientationDegrees: Double, onTap: () -> Unit = {}) 
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp)
+        )
+    }
+}
+
+/** Undo / redo button pair — appears below the compass chip. */
+@Composable
+internal fun UndoRedoButtons(
+    canUndo: Boolean,
+    canRedo: Boolean,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+) {
+    AnimatedVisibility(visible = canUndo || canRedo) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            UndoRedoChip(
+                icon = Icons.Default.Undo,
+                enabled = canUndo,
+                contentDescription = "Undo",
+                onClick = onUndo
+            )
+            UndoRedoChip(
+                icon = Icons.Default.Redo,
+                enabled = canRedo,
+                contentDescription = "Redo",
+                onClick = onRedo
+            )
+        }
+    }
+}
+
+@Composable
+private fun UndoRedoChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Color(0xCC000000))
+            .alpha(if (enabled) 1f else 0.35f)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = Color.White,
+            modifier = Modifier.size(18.dp)
         )
     }
 }

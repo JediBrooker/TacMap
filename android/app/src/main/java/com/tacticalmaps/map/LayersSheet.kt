@@ -53,7 +53,7 @@ fun LayersSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Text("Layers", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Layers and Labels", fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
             SectionHeader("Overlays")
             ToggleRow("MGRS Grid", mgrsGridVisible, onMgrsGridChange)

@@ -139,6 +139,12 @@ fun MapScreen(
     val waypoints by waypointStore.waypoints.collectAsState()
     val drawingStore = remember { DrawingStore(context) }
     val drawingDocument by drawingStore.document.collectAsState()
+    val drawingCanUndo by drawingStore.canUndo.collectAsState()
+    val drawingCanRedo by drawingStore.canRedo.collectAsState()
+    val waypointCanUndo by waypointStore.canUndo.collectAsState()
+    val waypointCanRedo by waypointStore.canRedo.collectAsState()
+    val canUndo = drawingCanUndo || waypointCanUndo
+    val canRedo = drawingCanRedo || waypointCanRedo
     val lastLocation by vm.locationService.lastLocation.collectAsState()
     val selectedWaypointId by vm.selectedWaypointId.collectAsState()
     val mapBearingDegrees by vm.mapBearingDegrees.collectAsState()
@@ -154,11 +160,12 @@ fun MapScreen(
     val measureSession = remember { MeasureSession() }
     // Persisted to SharedPreferences so layer toggles survive app relaunch
     // (previously plain remember{} state that reset on every launch).
-    var unitLabelsVisible by rememberPersistedBoolean("unitLabels", true)
-    var taskLabelsVisible by rememberPersistedBoolean("taskLabels", true)
-    var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", true)
+    var unitLabelsVisible by rememberPersistedBoolean("unitLabels", false)
+    var taskLabelsVisible by rememberPersistedBoolean("taskLabels", false)
+    var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
     var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
+    var isFreeDrawMode by remember { mutableStateOf(false) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
     var draftPoints by remember { mutableStateOf<List<DrawingPoint>>(emptyList()) }
     var selectedDrawingId by remember { mutableStateOf<String?>(null) }
@@ -339,6 +346,7 @@ fun MapScreen(
 
     fun stopDrawing() {
         activeDrawTool = null
+        isFreeDrawMode = false
         draftGeometry = null
         draftPoints = emptyList()
         activeDrawingName = ""
@@ -442,6 +450,17 @@ fun MapScreen(
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,
                 drawingInputEnabled = activeDrawTool != null || measureSession.isActive,
+                freeDrawActive = isFreeDrawMode,
+                onFreeDrawPoint = { lat, lng ->
+                    draftPoints = (draftPoints + DrawingPoint(lat, lng)).dedupeTrailingPoints()
+                },
+                onFreeDrawEnd = {
+                    finishDraft()
+                    isFreeDrawMode = false
+                    activeDrawTool = null
+                    draftGeometry = null
+                    draftPoints = emptyList()
+                },
                 calibrationInputEnabled = isCalibratingPdf,
                 mgrsGridVisible = mgrsGridVisible,
                 unitLabelsVisible = unitLabelsVisible,
@@ -614,7 +633,7 @@ fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Gesture, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("Layers") },
+                        text = { Text("Layers and Labels") },
                         onClick = {
                             hamburgerOpen = false
                             showLayersSheet = true
@@ -680,10 +699,18 @@ fun MapScreen(
                     )
                 }
             }
-            CompassChip(
-                mapOrientationDegrees = mapBearingDegrees,
-                onTap = vm::requestResetNorth
-            )
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                CompassChip(
+                    mapOrientationDegrees = mapBearingDegrees,
+                    onTap = vm::requestResetNorth
+                )
+                UndoRedoButtons(
+                    canUndo = canUndo,
+                    canRedo = canRedo,
+                    onUndo = { if (drawingCanUndo) drawingStore.undo() else waypointStore.undo() },
+                    onRedo = { if (drawingCanRedo) drawingStore.redo() else waypointStore.redo() }
+                )
+            }
         }
 
         if (isCalibratingPdf) {
@@ -735,6 +762,7 @@ fun MapScreen(
                 feature = selectedDrawing,
                 layers = drawingDocument.layers,
                 onFeatureChange = drawingStore::updateFeature,
+                onFeatureChangeDraft = drawingStore::updateFeatureNoUndo,
                 onDelete = {
                     drawingStore.removeFeature(selectedDrawing.id)
                     selectedDrawingId = null
@@ -806,8 +834,19 @@ fun MapScreen(
                 vm.selectWaypoint(null)
                 selectedDrawingId = null
                 activeDrawTool = geometry
+                isFreeDrawMode = false
                 activeDrawingName = defaultDrawingName(geometry, drawingDocument.features)
                 draftGeometry = geometry
+                draftPoints = emptyList()
+                showDrawingSheet = false
+            },
+            onStartFreeDraw = {
+                vm.selectWaypoint(null)
+                selectedDrawingId = null
+                activeDrawTool = DrawingGeometry.LINE
+                isFreeDrawMode = true
+                activeDrawingName = defaultDrawingName(DrawingGeometry.LINE, drawingDocument.features)
+                draftGeometry = DrawingGeometry.LINE
                 draftPoints = emptyList()
                 showDrawingSheet = false
             },

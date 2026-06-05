@@ -56,6 +56,11 @@ final class PDFImageOverlayView: UIImageView {
     /// coordinate conversions used by fiduciary calibration.
     let pdfRenderRect: CGRect
 
+    /// Affine (PDF user-space → WGS84) for rotation/scale-correct placement.
+    /// When set, `updateFrame` projects the page's true corners through it;
+    /// when nil it falls back to the axis-aligned lat/lon stretch.
+    let placementTransform: AffineTransform2D?
+
     /// Per-fiduciary marker subviews, indexed by fiduciary id so we can
     /// reposition them on layout without rebuilding.
     private var markers: [UUID: UIView] = [:]
@@ -65,10 +70,12 @@ final class PDFImageOverlayView: UIImageView {
     init(image: UIImage,
          southWest: CLLocationCoordinate2D,
          northEast: CLLocationCoordinate2D,
-         pdfRenderRect: CGRect) {
+         pdfRenderRect: CGRect,
+         placementTransform: AffineTransform2D? = nil) {
         self.pdfSW = southWest
         self.pdfNE = northEast
         self.pdfRenderRect = pdfRenderRect
+        self.placementTransform = placementTransform
         super.init(image: image)
         self.contentMode = .scaleToFill
         // Default false (taps fall through to MKMapView for pan/zoom/draw).
@@ -85,6 +92,13 @@ final class PDFImageOverlayView: UIImageView {
     /// via affine transform so the image spins WITH the map instead of being
     /// crushed into an axis-aligned bounding box.
     func updateFrame(in mapView: MKMapView) {
+        // Preferred path: place via the embedded affine so the sheet sits at its
+        // true rotation (grid convergence) + scale and lines up with the MGRS
+        // grid. Falls through to the lat/lon stretch when there's no affine.
+        if let t = placementTransform, applyAffinePlacement(t, in: mapView) {
+            return
+        }
+
         // Build the four geographic corners of the rect (not just SW & NE).
         let nw = CLLocationCoordinate2D(latitude: pdfNE.latitude, longitude: pdfSW.longitude)
         let ne = pdfNE
@@ -125,6 +139,37 @@ final class PDFImageOverlayView: UIImageView {
         if abs(heading) > 0.001 {
             self.transform = CGAffineTransform(rotationAngle: heading * .pi / 180)
         }
+    }
+
+    /// Place the page using the embedded PDF→WGS84 affine: map the crop's four
+    /// true corners to geographic points, project them to screen, then size +
+    /// rotate the (axis-aligned) image rect onto that quad. The projected
+    /// corners already fold in the camera heading, so no separate heading term
+    /// is needed. Returns false on a degenerate projection so `updateFrame` can
+    /// fall back to the lat/lon stretch.
+    private func applyAffinePlacement(_ t: AffineTransform2D, in mapView: MKMapView) -> Bool {
+        let r = pdfRenderRect
+        // The image is rasterised from the crop with a Y-flip, so image-top maps
+        // to crop-top (maxY) and image-bottom to crop-bottom (minY).
+        let pTL = mapView.convert(t.apply(CGPoint(x: r.minX, y: r.maxY)), toPointTo: mapView)
+        let pTR = mapView.convert(t.apply(CGPoint(x: r.maxX, y: r.maxY)), toPointTo: mapView)
+        let pBL = mapView.convert(t.apply(CGPoint(x: r.minX, y: r.minY)), toPointTo: mapView)
+        let pBR = mapView.convert(t.apply(CGPoint(x: r.maxX, y: r.minY)), toPointTo: mapView)
+
+        let width  = hypot(pTR.x - pTL.x, pTR.y - pTL.y)
+        let height = hypot(pBL.x - pTL.x, pBL.y - pTL.y)
+        let angle  = atan2(pTR.y - pTL.y, pTR.x - pTL.x)
+        guard width >= 1, height >= 1,
+              width.isFinite, height.isFinite, angle.isFinite else { return false }
+
+        let centre = CGPoint(x: (pTL.x + pTR.x + pBL.x + pBR.x) / 4,
+                             y: (pTL.y + pTR.y + pBL.y + pBR.y) / 4)
+        self.isHidden = false
+        self.transform = .identity
+        self.bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        self.center = centre
+        self.transform = CGAffineTransform(rotationAngle: angle)
+        return true
     }
 
     // MARK: - Tap ↔ PDF coordinate conversion

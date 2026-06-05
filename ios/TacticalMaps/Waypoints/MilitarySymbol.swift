@@ -211,8 +211,15 @@ struct MilitarySymbolView: View {
 
     /// Extra vertical room reserved for the HQ flagpole modifier (when set).
     private var poleReserve: CGFloat { spec.isHeadquarters ? size * 0.42 : 0 }
-    /// Total canvas height — symbol frame + (optional) flagpole strip below.
-    private var canvasHeight: CGFloat { size + poleReserve }
+    /// Hostile / neutral / unknown frames are square with side equal to the
+    /// friendly frame WIDTH (not height), so the diamond extends above and
+    /// below the friendly frame's vertical extent. Reserve extra space so
+    /// the bottom vertex isn't clipped.
+    private var diamondReserve: CGFloat {
+        spec.affiliation == .friend ? 0 : size * 0.22
+    }
+    /// Total canvas height — symbol frame + (optional) flagpole + diamond overflow.
+    private var canvasHeight: CGFloat { size + poleReserve + diamondReserve }
 
     var body: some View {
         Canvas { ctx, canvasSize in
@@ -244,9 +251,13 @@ struct MilitarySymbolView: View {
                 frameRect = CGRect(x: (w - frameW) / 2, y: frameTop,
                                    width: frameW, height: frameH)
             case .hostile, .neutral, .unknown:
-                // Rotated / lobed shape inscribed in a square — diamond
-                // (hostile + neutral) or quatrefoil (unknown).
-                let side = min(w - 6, frameH)
+                // Square bounding box whose side equals the friendly frame
+                // WIDTH (same min(w-4, frameH*1.5) formula). This makes the
+                // diamond tip-to-tip the same as the friendly rectangle width,
+                // matching APP-6C proportions. The diamond is centred on the
+                // same y-midpoint as the friendly frame; the diamondReserve
+                // canvas extension absorbs the bottom-vertex overflow.
+                let side = min(w - 4, frameH * 1.5)
                 frameRect = CGRect(x: (w - side) / 2,
                                    y: frameTop + (frameH - side) / 2,
                                    width: side, height: side)

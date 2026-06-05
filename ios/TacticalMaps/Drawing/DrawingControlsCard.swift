@@ -297,7 +297,16 @@ struct DrawingControlsCard: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
-            Slider(value: value, in: range, step: step)
+            Slider(value: value, in: range, step: step, onEditingChanged: { editing in
+                // Group all per-tick undo registrations into one undo step
+                // so a single Undo undoes the whole drag, not each tick.
+                if editing {
+                    drawingStore.undoManager?.beginUndoGrouping()
+                } else {
+                    drawingStore.undoManager?.endUndoGrouping()
+                    drawingStore.undoManager?.setActionName(title)
+                }
+            })
             Text(valueLabel)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)

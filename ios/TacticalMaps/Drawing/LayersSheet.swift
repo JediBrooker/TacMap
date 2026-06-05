@@ -101,7 +101,7 @@ struct LayersSheet: View {
                     }
                 }
             }
-            .navigationTitle("Layers")
+            .navigationTitle("Layers and Labels")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }

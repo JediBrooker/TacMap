@@ -142,7 +142,7 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         case .point:
             return CLLocationCoordinate2D(latitude: coords[0].latitude,
                                           longitude: coords[0].longitude)
-        case .polyline:
+        case .polyline, .freedraw:
             guard coords.count >= 2 else { return nil }
             let mid = coords.count / 2
             let a = coords[mid - 1], b = coords[mid]
@@ -179,13 +179,14 @@ struct DrawingShape: Identifiable, Codable, Hashable {
 }
 
 enum DrawingKind: String, Codable, CaseIterable, Hashable {
-    case point, polyline, polygon
+    case point, polyline, polygon, freedraw
 
     var sfSymbol: String {
         switch self {
         case .point:    return "mappin"
-        case .polyline: return "scribble.variable"
+        case .polyline: return "line.diagonal.arrow"
         case .polygon:  return "hexagon"
+        case .freedraw: return "scribble"
         }
     }
 
@@ -194,6 +195,7 @@ enum DrawingKind: String, Codable, CaseIterable, Hashable {
         case .point:    return "Point"
         case .polyline: return "Line"
         case .polygon:  return "Area"
+        case .freedraw: return "Free Draw"
         }
     }
 
@@ -203,6 +205,7 @@ enum DrawingKind: String, Codable, CaseIterable, Hashable {
         case .point:    return 1
         case .polyline: return 2
         case .polygon:  return 3
+        case .freedraw: return 2
         }
     }
 }

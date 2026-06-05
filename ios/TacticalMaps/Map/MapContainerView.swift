@@ -191,12 +191,19 @@ struct MapContainerView: UIViewRepresentable {
         /// refresh routine can yank just the grid labels without
         /// touching drawing or waypoint annotations.
         var mgrsLabelAnnotations: [MGRSGridLabelAnnotation] = []
+        /// Subview-based grid renderer, used ONLY while a PDF basemap is
+        /// active (MKOverlay grid lines render beneath the PDF image subview
+        /// and would be hidden). nil on the plain-basemap path.
+        var mgrsGridOverlayView: MGRSGridOverlayView?
 
         /// PDF overlay rendered as a UIImageView subview (bypasses MKOverlay
         /// because iOS 26 MapKit silently refuses to draw custom overlays on
         /// satellite imagery). Keyed by the source's UUID.
         var pdfImageView: PDFImageOverlayView?
         var pdfSourceID: UUID?
+        /// Source whose page bitmap is currently being rasterised off the main
+        /// thread, so repeated `syncPDFOverlay` calls don't kick off duplicates.
+        var pdfRasterizingSourceID: UUID?
 
         /// Offline MBTiles raster basemap overlay + the id of the source it
         /// belongs to. Persists across refresh() (see MapContainerCoordinator+TileSync).
@@ -264,6 +271,9 @@ struct MapContainerView: UIViewRepresentable {
             mapVM.mapCameraDidChange(heading: mv.camera.heading)
             mapVM.currentMetresPerPoint = metresPerPoint(in: mv)
             pdfImageView?.updateFrame(in: mv)
+            // Keep the subview grid (PDF basemap path) glued to the map every
+            // frame; no-op on the MKOverlay path.
+            reprojectMGRSGridOverlay()
             publishOverlayState(in: mv)
         }
 
@@ -605,7 +615,7 @@ struct MapContainerView: UIViewRepresentable {
                 ann.coordinate = c
                 mv.addAnnotation(ann)
 
-            case .polyline:
+            case .polyline, .freedraw:
                 guard coords.count >= 2 else { return }
                 let line = MKPolyline(coordinates: coords, count: coords.count)
                 styleByOverlay[ObjectIdentifier(line)] = shape.style

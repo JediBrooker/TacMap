@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TacticalMaps</string>
+    <string name="app_name">TacMap</string>
     <string name="centre_on_location">Centre on My Location</string>
     <string name="import_pdf">Import PDF Map</string>
     <string name="map_centre">Map Centre</string>

@@ -44,7 +44,8 @@ enum PDFSessionStore {
             cropW: Double(cropRect.size.width),
             cropH: Double(cropRect.size.height),
             kind: source.kind.rawValue,
-            calibration: cal
+            calibration: cal,
+            placementAffine: bounds.placementAffine
         )
         do {
             let data = try JSONEncoder().encode(dto)
@@ -77,7 +78,8 @@ enum PDFSessionStore {
             pdfCropRect: CGRect(
                 x: dto.cropX, y: dto.cropY,
                 width: dto.cropW, height: dto.cropH
-            )
+            ),
+            placementAffine: dto.placementAffine
         )
         let source = PDFMapSource(
             url: url,
@@ -140,6 +142,9 @@ private struct PersistedPDF: Codable {
     let cropH: Double
     let kind: String
     let calibration: PersistedCalibration?
+    /// GeoPDF auto-fit placement affine (rotation/scale-correct). Optional so
+    /// older persisted entries (which predate it) still decode → bbox fallback.
+    let placementAffine: AffineTransform2D?
 }
 
 private struct PersistedCalibration: Codable {

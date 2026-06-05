@@ -9,6 +9,7 @@ import com.tom_roush.pdfbox.cos.COSBase
 import com.tom_roush.pdfbox.cos.COSDictionary
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.cos.COSNumber
+import com.tom_roush.pdfbox.cos.COSString
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import java.io.File
@@ -76,8 +77,18 @@ object GeoPdfParser {
     }
 
     /// Adobe / OGC viewports — searches a page or catalog dictionary.
+    ///
+    /// A page often carries SEVERAL viewports: the map neatline PLUS small
+    /// marginalia insets (adjoining-sheets index, state locator). We must NOT
+    /// take the first usable one — QTopo sheets list the adjoining-sheets inset
+    /// first, and that inset is georeferenced against a 145°E prime meridian, so
+    /// trusting it drops the import off the coast of West Africa. The map body
+    /// is always the LARGEST viewport by BBox area, so keep the candidate with
+    /// the greatest area.
     private fun extractAdobeViewports(parent: COSDictionary): List<GeoCorrespondence>? {
         val vp = parent.getDictionaryObject(COSName.getPDFName("VP")) as? COSArray ?: return null
+        var best: List<GeoCorrespondence>? = null
+        var bestArea = -1.0
         for (i in 0 until vp.size()) {
             val viewport = vp.getObject(i) as? COSDictionary ?: continue
             val measure = viewport
@@ -106,6 +117,10 @@ object GeoPdfParser {
             val dy = by1 - by0
             if (kotlin.math.abs(dx) < 1e-9 || kotlin.math.abs(dy) < 1e-9) continue
 
+            // GPTS longitudes are relative to the GCS prime meridian (Greenwich
+            // for the map body, but 145°E on some QTopo insets).
+            val primeMeridian = primeMeridianOffset(measure)
+
             val list = mutableListOf<GeoCorrespondence>()
             val pairs = minOf(gpts.size() / 2, lpts.size() / 2)
             for (j in 0 until pairs) {
@@ -115,11 +130,29 @@ object GeoPdfParser {
                 val ny = lpts.numAt(j * 2 + 1) ?: continue
                 val pdfX = bx0 + nx * dx
                 val pdfY = by0 + ny * dy
-                list += GeoCorrespondence(pdfX = pdfX, pdfY = pdfY, latitude = lat, longitude = lon)
+                list += GeoCorrespondence(
+                    pdfX = pdfX, pdfY = pdfY,
+                    latitude = lat, longitude = lon + primeMeridian
+                )
             }
-            if (list.size >= 3) return list
+            val area = kotlin.math.abs(dx * dy)
+            if (list.size >= 3 && area > bestArea) {
+                best = list
+                bestArea = area
+            }
         }
-        return null
+        return best
+    }
+
+    /// GPTS longitudes are measured from the GCS prime meridian — almost always
+    /// Greenwich (0), but some QTopo insets declare e.g. `PRIMEM["…",145.0]`.
+    /// Without adding that offset the longitudes come out ~145° too small.
+    /// Parses the offset from the Measure's /GCS /WKT string.
+    private fun primeMeridianOffset(measure: COSDictionary): Double {
+        val gcs = measure.getDictionaryObject(COSName.getPDFName("GCS")) as? COSDictionary ?: return 0.0
+        val wkt = (gcs.getDictionaryObject(COSName.getPDFName("WKT")) as? COSString)?.string ?: return 0.0
+        val match = Regex("""PRIMEM\["[^"]*",\s*(-?\d+(?:\.\d+)?)""").find(wkt) ?: return 0.0
+        return match.groupValues[1].toDoubleOrNull() ?: 0.0
     }
 
     /// Convenience overload — page-level extraction.

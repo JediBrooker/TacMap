@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.tacticalmaps.calibration.AffineFitter
@@ -158,10 +159,16 @@ internal fun importPdfMapSource(
         pageInfo = pageInfo
     )
 
-    // A previously-saved manual calibration for this PDF wins over auto-parsing.
-    PdfSessionStore(context).calibration(baseName)?.let { saved ->
-        return base.calibrated(saved.transform, saved.fids)
-    }
+    // A previously-saved MANUAL calibration (user-dropped fiduciaries, which
+    // carry real MGRS strings) wins over auto-parsing. Auto-parsed calibrations
+    // are deliberately NOT honored here: they're reproducible from the PDF, so
+    // short-circuiting the re-parse would pin a stale result that a parser fix
+    // can never correct on re-import — exactly what stranded the sheet at the
+    // wrong longitude after the GeoPDF viewport fix. Auto correspondences leave
+    // the MGRS field blank; manual ones don't — that's how we tell them apart.
+    PdfSessionStore(context).calibration(baseName)
+        ?.takeIf { saved -> saved.fids.any { it.mgrs.isNotBlank() } }
+        ?.let { saved -> return base.calibrated(saved.transform, saved.fids) }
 
     /// Try to lift georeferencing straight out of the PDF (OGC
     /// GeoPDF / Adobe LGIDict). If we find ≥3 correspondences we
@@ -174,6 +181,14 @@ internal fun importPdfMapSource(
     val geo = GeoPdfParser.parse(context, fileUri) ?: return base
     val fiducials = geo.correspondences.map { it.toFiduciary() }
     val fit = runCatching { AffineFitter.fit(fiducials) }.getOrNull() ?: return base
+    Log.i(
+        "GeoPdfImport",
+        "auto-parsed ${fiducials.size} correspondences; centre≈" +
+            "%.4f,%.4f".format(
+                fiducials.map { it.latitude }.average(),
+                fiducials.map { it.longitude }.average()
+            )
+    )
     return base.calibrated(fit.transform, fiducials)
 }
 

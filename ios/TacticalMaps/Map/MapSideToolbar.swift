@@ -63,7 +63,7 @@ struct HamburgerMenu: View {
                         divider
                         row("Symbology",       systemImage: "mappin.and.ellipse")  { close(onWaypoints) }
                         row("Drawings",        systemImage: "scribble.variable")   { close(onDrawings) }
-                        row("Layers",          systemImage: "square.3.stack.3d")   { close(onLayers) }
+                        row("Layers and Labels", systemImage: "square.3.stack.3d") { close(onLayers) }
                         row("Measure",         systemImage: "ruler")               { close(onMeasure) }
                         divider
                         row("Import PDF Map…", systemImage: "doc.badge.plus")      { close(onImport) }

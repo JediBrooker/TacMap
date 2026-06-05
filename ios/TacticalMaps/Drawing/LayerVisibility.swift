@@ -17,15 +17,15 @@ final class LayerVisibility: ObservableObject {
     @Published var pdfOverlayVisible:    Bool = true  { didSet { d.set(pdfOverlayVisible,    forKey: K.pdfOverlay) } }
 
     /// Whether the name-label pill is rendered alongside each drawing.
-    @Published var drawingLabelsVisible: Bool = true  { didSet { d.set(drawingLabelsVisible, forKey: K.drawingLabels) } }
+    @Published var drawingLabelsVisible: Bool = false { didSet { d.set(drawingLabelsVisible, forKey: K.drawingLabels) } }
     /// Whether the name-label pill is rendered under each military / generic
     /// waypoint icon.
-    @Published var unitLabelsVisible:    Bool = true  { didSet { d.set(unitLabelsVisible,    forKey: K.unitLabels) } }
+    @Published var unitLabelsVisible:    Bool = false { didSet { d.set(unitLabelsVisible,    forKey: K.unitLabels) } }
     /// Whether the name-label is rendered inside each tactical control
     /// measure (task graphic). Separate from units because tasks have
     /// different rendering geometry — labels sit inside the bubble, not
     /// below it — and users often want one toggled without the other.
-    @Published var taskLabelsVisible:    Bool = true  { didSet { d.set(taskLabelsVisible,    forKey: K.taskLabels) } }
+    @Published var taskLabelsVisible:    Bool = false { didSet { d.set(taskLabelsVisible,    forKey: K.taskLabels) } }
 
     /// MGRS military grid overlay. Defaults off because the grid is a
     /// performance- and visual-cost feature most users won't want on by
@@ -56,9 +56,9 @@ final class LayerVisibility: ObservableObject {
         drawingsVisible      = restore(K.drawings,      default: true)
         userLocationVisible  = restore(K.userLocation,  default: true)
         pdfOverlayVisible    = restore(K.pdfOverlay,    default: true)
-        drawingLabelsVisible = restore(K.drawingLabels, default: true)
-        unitLabelsVisible    = restore(K.unitLabels,    default: true)
-        taskLabelsVisible    = restore(K.taskLabels,    default: true)
+        drawingLabelsVisible = restore(K.drawingLabels, default: false)
+        unitLabelsVisible    = restore(K.unitLabels,    default: false)
+        taskLabelsVisible    = restore(K.taskLabels,    default: false)
         mgrsGridVisible      = restore(K.mgrsGrid,      default: false)
     }
 }

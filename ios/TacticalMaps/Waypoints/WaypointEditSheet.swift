@@ -43,7 +43,7 @@ struct WaypointEditSheet: View {
             _scaleY        = State(initialValue: wp.scaleY)
             switch wp.kind {
             case .generic:
-                _category = State(initialValue: .generic)
+                _category = State(initialValue: .military)
             case .military(let spec):
                 _category       = State(initialValue: .military)
                 _affiliation    = State(initialValue: spec.affiliation)
@@ -103,9 +103,6 @@ struct WaypointEditSheet: View {
                 }
 
                 switch category {
-                case .generic:
-                    EmptyView()
-
                 case .military:
                     Section("Military Unit (APP-6C)") {
                         // Affiliation is only 4 options — popup menu
@@ -300,7 +297,6 @@ struct WaypointEditSheet: View {
     /// Current kind derived from the live editor state.
     private var currentKind: WaypointKind {
         switch category {
-        case .generic:        return .generic
         case .military:       return .military(.init(affiliation: affiliation,
                                                      echelon: echelon,
                                                      function: function,
@@ -378,11 +374,10 @@ struct WaypointEditSheet: View {
 
 /// Top-level category in the edit sheet picker.
 private enum KindCategory: String, CaseIterable, Hashable {
-    case generic, military, controlMeasure
+    case military, controlMeasure
 
     var displayName: String {
         switch self {
-        case .generic:        return "Generic"
         case .military:       return "Military"
         case .controlMeasure: return "Tasks"
         }

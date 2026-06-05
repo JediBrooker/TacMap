@@ -27,7 +27,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -69,7 +68,7 @@ import com.tacticalmaps.waypoints.TacticalControlMeasure
 import com.tacticalmaps.waypoints.Waypoint
 import com.tacticalmaps.waypoints.WaypointKind
 
-enum class SymbolEditorMode { WAYPOINT, MILITARY, TASK }
+enum class SymbolEditorMode { MILITARY, TASK }
 
 @Composable
 fun SymbolEditorDialog(
@@ -93,7 +92,6 @@ fun SymbolEditorDialog(
     }
 
     val currentKind = when (mode) {
-        SymbolEditorMode.WAYPOINT -> WaypointKind.Generic
         SymbolEditorMode.MILITARY -> WaypointKind.Military(militarySpec)
         SymbolEditorMode.TASK -> WaypointKind.ControlMeasure(measure)
     }
@@ -150,7 +148,6 @@ fun SymbolEditorDialog(
                     /// symbol to show.
                     kind = currentKind,
                     fallbackIcon = when (mode) {
-                        SymbolEditorMode.WAYPOINT -> Icons.Default.LocationOn
                         SymbolEditorMode.MILITARY -> Icons.Default.Security
                         SymbolEditorMode.TASK -> Icons.Default.Flag
                     },
@@ -200,7 +197,6 @@ fun SymbolEditorDialog(
                     }
 
                     when (mode) {
-                        SymbolEditorMode.WAYPOINT -> Unit
                         SymbolEditorMode.MILITARY -> item {
                             MilitaryTypeFields(spec = militarySpec, onChange = { militarySpec = it })
                         }

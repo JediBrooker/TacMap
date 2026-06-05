@@ -85,7 +85,8 @@ fun SymbolControlsCard(
             WaypointKind.Generic -> Unit
             is WaypointKind.ControlMeasure -> ControlMeasureControls(
                 waypoint = waypoint,
-                onWaypointChange = store::update
+                onWaypointChange = store::update,
+                onWaypointChangeDraft = store::updateNoUndo
             )
             is WaypointKind.Military -> Unit
         }
@@ -136,7 +137,6 @@ fun SymbolControlsCard(
             crosshairLat = null,
             crosshairLng = null,
             title = when (mode) {
-                SymbolEditorMode.WAYPOINT -> "Edit Waypoint"
                 SymbolEditorMode.MILITARY -> "Change Military Unit"
                 SymbolEditorMode.TASK -> "Change Tactical Task"
             },
@@ -207,7 +207,8 @@ private fun Header(
 @Composable
 private fun ControlMeasureControls(
     waypoint: Waypoint,
-    onWaypointChange: (Waypoint) -> Unit
+    onWaypointChange: (Waypoint) -> Unit,
+    onWaypointChangeDraft: (Waypoint) -> Unit = onWaypointChange,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SliderRow(
@@ -215,7 +216,8 @@ private fun ControlMeasureControls(
             value = waypoint.rotation.toFloat(),
             valueLabel = "${waypoint.rotation.toInt()}°",
             range = 0f..360f,
-            onChange = { onWaypointChange(waypoint.copy(rotation = it.toDouble())) },
+            onChange = { onWaypointChangeDraft(waypoint.copy(rotation = it.toDouble())) },
+            onCommit = { onWaypointChange(waypoint.copy(rotation = it.toDouble())) },
             onReset = { onWaypointChange(waypoint.copy(rotation = 0.0)) }
         )
         SliderRow(
@@ -223,7 +225,8 @@ private fun ControlMeasureControls(
             value = waypoint.scaleX.toFloat(),
             valueLabel = "%.2fx".format(waypoint.scaleX),
             range = 0.15f..6f,
-            onChange = { onWaypointChange(waypoint.copy(scaleX = it.toDouble())) },
+            onChange = { onWaypointChangeDraft(waypoint.copy(scaleX = it.toDouble())) },
+            onCommit = { onWaypointChange(waypoint.copy(scaleX = it.toDouble())) },
             onReset = { onWaypointChange(waypoint.copy(scaleX = 1.0)) }
         )
         SliderRow(
@@ -231,7 +234,8 @@ private fun ControlMeasureControls(
             value = waypoint.scaleY.toFloat(),
             valueLabel = "%.2fx".format(waypoint.scaleY),
             range = 0.15f..6f,
-            onChange = { onWaypointChange(waypoint.copy(scaleY = it.toDouble())) },
+            onChange = { onWaypointChangeDraft(waypoint.copy(scaleY = it.toDouble())) },
+            onCommit = { onWaypointChange(waypoint.copy(scaleY = it.toDouble())) },
             onReset = { onWaypointChange(waypoint.copy(scaleY = 1.0)) }
         )
     }
@@ -290,13 +294,16 @@ private fun SliderRow(
     valueLabel: String,
     range: ClosedFloatingPointRange<Float>,
     onChange: (Float) -> Unit,
+    onCommit: (Float) -> Unit = onChange,
     onReset: () -> Unit
 ) {
+    var latestValue by remember(value) { mutableStateOf(value) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, modifier = Modifier.weight(0.75f))
         Slider(
-            value = value.coerceIn(range.start, range.endInclusive),
-            onValueChange = onChange,
+            value = latestValue.coerceIn(range.start, range.endInclusive),
+            onValueChange = { latestValue = it; onChange(it) },
+            onValueChangeFinished = { onCommit(latestValue) },
             valueRange = range,
             modifier = Modifier.weight(1.8f)
         )

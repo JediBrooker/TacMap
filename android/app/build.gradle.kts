@@ -35,8 +35,8 @@ android {
         applicationId = "com.tacticalmaps"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.0.0"
+        versionCode = 13
+        versionName = "1.0.1"
 
         vectorDrawables { useSupportLibrary = true }
 
