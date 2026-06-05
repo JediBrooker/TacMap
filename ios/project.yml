@@ -46,7 +46,7 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        NSLocationWhenInUseUsageDescription: TacticalMaps shows your live position on the map and reads it as an MGRS grid reference.
+        NSLocationWhenInUseUsageDescription: TacMap shows your live position on the map and reads it as an MGRS grid reference.
         # NOTE: No background location. The app only requests
         # When-In-Use authorization (see LocationService.swift) and does
         # not enable allowsBackgroundLocationUpdates. Declaring

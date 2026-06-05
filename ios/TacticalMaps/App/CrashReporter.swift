@@ -48,7 +48,7 @@ enum CrashReporter {
     static func exportURL() -> URL? {
         guard let report = lastReport() else { return nil }
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("TacticalMaps-crash.txt")
+            .appendingPathComponent("TacMap-crash.txt")
         try? report.data(using: .utf8)?.write(to: url)
         return url
     }
@@ -64,7 +64,7 @@ enum CrashReporter {
     private static func write(_ body: String) {
         guard let url = fileURL else { return }
         let stamp = ISO8601DateFormatter().string(from: Date())
-        let report = "TacticalMaps crash\n\(stamp)\n\n\(body)\n"
+        let report = "TacMap crash\n\(stamp)\n\n\(body)\n"
         try? report.data(using: .utf8)?.write(to: url)
     }
 }

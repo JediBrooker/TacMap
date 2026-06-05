@@ -112,7 +112,7 @@ internal fun shareGeoJson(
 ) {
     val geoJson = GeoJsonExporter.export(waypoints, drawings, layers)
     val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-    val exportFile = File(exportDir, "TacticalMaps-${System.currentTimeMillis()}.geojson")
+    val exportFile = File(exportDir, "TacMap-${System.currentTimeMillis()}.geojson")
     exportFile.writeText(geoJson)
     val exportUri = FileProvider.getUriForFile(
         context,

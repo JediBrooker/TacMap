@@ -60,7 +60,7 @@ fun PaywallScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            "TacticalMaps",
+            "TacMap",
             color = HudGreen,
             fontSize = 30.sp,
             fontWeight = FontWeight.Bold,
@@ -77,7 +77,7 @@ fun PaywallScreen(
         Text(
             if (expired)
                 "Your ${TrialManager.TRIAL_DAYS}-day free trial is over. " +
-                    "Make a one-time purchase to keep using TacticalMaps — " +
+                    "Make a one-time purchase to keep using TacMap — " +
                     "live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export."
             else
                 "You're on the free trial ($trialDaysRemaining " +

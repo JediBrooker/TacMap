@@ -25,7 +25,7 @@ enum GeoJSONExporter {
 
         let collection: [String: Any] = [
             "type":      "FeatureCollection",
-            "generator": "TacticalMaps iOS prototype \(generatorVersion)",
+            "generator": "TacMap iOS prototype \(generatorVersion)",
             "generated_at": ISO8601DateFormatter().string(from: .now),
             "features":  features
         ]
@@ -46,7 +46,7 @@ enum GeoJSONExporter {
         let dir  = FileManager.default.temporaryDirectory
         let stamp = ISO8601DateFormatter().string(from: .now)
             .replacingOccurrences(of: ":", with: "-")
-        let url = dir.appendingPathComponent("TacticalMaps-\(stamp).geojson")
+        let url = dir.appendingPathComponent("TacMap-\(stamp).geojson")
         try json.write(to: url, atomically: true, encoding: .utf8)
         return url
     }

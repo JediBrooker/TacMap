@@ -24,7 +24,7 @@ struct PaywallView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                Text("TacticalMaps")
+                Text("TacMap")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(green)
 
@@ -104,7 +104,7 @@ struct PaywallView: View {
     private var bodyText: String {
         if expired {
             return "Your \(TrialManager.trialDays)-day free trial is over. Make a one-time "
-                + "purchase to keep using TacticalMaps — live MGRS, GeoPDF maps, "
+                + "purchase to keep using TacMap — live MGRS, GeoPDF maps, "
                 + "NATO APP-6 symbology and GeoJSON export."
         }
         let unit = trialDaysRemaining == 1 ? "day" : "days"

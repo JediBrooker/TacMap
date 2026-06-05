@@ -22,7 +22,7 @@ struct ExportSheet: View {
                     if let url = generatedURL {
                         ShareLink(
                             item: url,
-                            preview: SharePreview("TacticalMaps export", image: Image(systemName: "map"))
+                            preview: SharePreview("TacMap export", image: Image(systemName: "map"))
                         ) {
                             Label("Share GeoJSON file", systemImage: "square.and.arrow.up")
                                 .frame(maxWidth: .infinity)

@@ -25,7 +25,7 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>TacticalMaps shows your live position on the map and reads it as an MGRS grid reference.</string>
+	<string>TacMap shows your live position on the map and reads it as an MGRS grid reference.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>

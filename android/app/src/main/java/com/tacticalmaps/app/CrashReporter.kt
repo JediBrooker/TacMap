@@ -28,7 +28,7 @@ object CrashReporter {
                 throwable.printStackTrace(PrintWriter(sw))
                 val stamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date())
                 file(appContext).writeText(
-                    "TacticalMaps crash\n$stamp\nthread=${thread.name}\n\n$sw\n"
+                    "TacMap crash\n$stamp\nthread=${thread.name}\n\n$sw\n"
                 )
             }
             // Hand off to the platform handler so the OS still records it.

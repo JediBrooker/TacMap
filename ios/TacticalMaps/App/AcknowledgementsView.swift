@@ -71,7 +71,7 @@ struct AcknowledgementsView: View {
                 }
 
                 Section {
-                    Text("TacticalMaps respects your privacy. We collect no telemetry. Location and elevation lookups stay on your device or are anonymised in flight.")
+                    Text("TacMap respects your privacy. We collect no telemetry. Location and elevation lookups stay on your device or are anonymised in flight.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -24,7 +24,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
     var crashReport by remember { mutableStateOf(CrashReporter.lastReport(context)) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("TacticalMaps") },
+        title = { Text("TacMap") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -45,7 +45,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
                     TextButton(onClick = {
                         val intent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "TacticalMaps crash log")
+                            putExtra(Intent.EXTRA_SUBJECT, "TacMap crash log")
                             putExtra(Intent.EXTRA_TEXT, report)
                         }
                         context.startActivity(Intent.createChooser(intent, "Export crash log"))
