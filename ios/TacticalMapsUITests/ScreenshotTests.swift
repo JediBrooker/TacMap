@@ -130,4 +130,21 @@ final class ScreenshotTests: XCTestCase {
         sleep(2)
         snap("05-about")
     }
+
+    /// Recapture the hamburger menu + the Layers and Labels sheet from the
+    /// current build (so the README shows the renamed "Layers and Labels"
+    /// title rather than the older "Layers"). Extract `menu` / `layers`
+    /// attachments from the .xcresult.
+    func testCaptureMenuAndLayers() {
+        openMenu()
+        sleep(1)
+        snap("menu")
+        _ = tap("Close")
+        sleep(1)
+
+        openMenu()
+        _ = tap("Layers and Labels")
+        sleep(2)
+        snap("layers")
+    }
 }

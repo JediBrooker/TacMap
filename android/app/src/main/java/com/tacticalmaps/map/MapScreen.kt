@@ -156,6 +156,9 @@ fun MapScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLayersSheet by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
+    /// Lock toggle — when true, NO graphic (symbol or drawing) can be
+    /// moved by any gesture. An extra guard against accidental drags.
+    var graphicsLocked by remember { mutableStateOf(false) }
     var activeDrawingLayerId by remember { mutableStateOf(DrawingDocument.DEFAULT_LAYER_ID) }
     val measureSession = remember { MeasureSession() }
     // Persisted to SharedPreferences so layer toggles survive app relaunch
@@ -449,6 +452,7 @@ fun MapScreen(
                 drawings = drawingDocument.features,
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,
+                graphicsLocked = graphicsLocked,
                 drawingInputEnabled = activeDrawTool != null || measureSession.isActive,
                 freeDrawActive = isFreeDrawMode,
                 onFreeDrawPoint = { lat, lng ->
@@ -709,6 +713,10 @@ fun MapScreen(
                     canRedo = canRedo,
                     onUndo = { if (drawingCanUndo) drawingStore.undo() else waypointStore.undo() },
                     onRedo = { if (drawingCanRedo) drawingStore.redo() else waypointStore.redo() }
+                )
+                LockButton(
+                    locked = graphicsLocked,
+                    onToggle = { graphicsLocked = !graphicsLocked }
                 )
             }
         }

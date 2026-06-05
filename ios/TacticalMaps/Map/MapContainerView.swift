@@ -20,6 +20,10 @@ struct MapContainerView: UIViewRepresentable {
     @ObservedObject var measureSession: MeasureSession
     @ObservedObject var visibility: LayerVisibility
     @ObservedObject var calibration: CalibrationSession
+    /// When true, ALL graphic interaction is frozen — no select / tap-to-open,
+    /// no whole-shape or waypoint drag, no vertex insert / move / delete.
+    /// Mirrored onto the Coordinator every `updateUIView`.
+    var graphicsLocked: Bool
 
     func makeUIView(context: Context) -> MKMapView {
         let mv = MKMapView()
@@ -121,6 +125,7 @@ struct MapContainerView: UIViewRepresentable {
     func updateUIView(_ mv: MKMapView, context: Context) {
         mv.showsUserLocation = visibility.userLocationVisible
         context.coordinator.calibration = calibration
+        context.coordinator.graphicsLocked = graphicsLocked
         context.coordinator.syncPDFOverlay(on: mv,
                                            source: mapVM.mapSource,
                                            visible: visibility.pdfOverlayVisible)
@@ -166,6 +171,8 @@ struct MapContainerView: UIViewRepresentable {
         let drawingSession: DrawingSessionViewModel
         let measureSession: MeasureSession
         var calibration: CalibrationSession   // mutable so updateUIView can refresh
+        /// Mirrors MapContainerView.graphicsLocked. Gesture handlers bail when set.
+        var graphicsLocked = false
 
         var cameraRequestSink: AnyCancellable?
         var resetNorthSink:    AnyCancellable?
@@ -563,37 +570,45 @@ struct MapContainerView: UIViewRepresentable {
             // rotation/scale transform before persisting (see
             // `DrawingShape.setEffectiveVertex`).
             if let selectedID = mapVM.selectedDrawingID,
-               let shape = drawings.first(where: { $0.id == selectedID }),
-               shape.kind == .polyline || shape.kind == .polygon {
+               let shape = drawings.first(where: { $0.id == selectedID }) {
                 let coords = shape.clEffectiveCoordinates
-                // Real vertex handles — draggable, long-press to delete.
-                for (i, c) in coords.enumerated() {
-                    let h = DrawingVertexHandleAnnotation(
-                        shapeID: shape.id,
-                        vertexIndex: i,
-                        isMidpoint: false,
-                        coordinate: c
-                    )
-                    mv.addAnnotation(h)
-                }
-                // Midpoint insertion handles. Polylines: between each
-                // adjacent pair. Polygons: also between last and first
-                // so the user can split the closing segment.
-                let segmentCount = shape.kind == .polygon ? coords.count : coords.count - 1
-                for i in 0..<max(segmentCount, 0) {
-                    let a = coords[i]
-                    let b = coords[(i + 1) % coords.count]
-                    let mid = CLLocationCoordinate2D(
-                        latitude:  (a.latitude  + b.latitude)  / 2,
-                        longitude: (a.longitude + b.longitude) / 2
-                    )
-                    let h = DrawingVertexHandleAnnotation(
-                        shapeID: shape.id,
-                        vertexIndex: i + 1,
-                        isMidpoint: true,
-                        coordinate: mid
-                    )
-                    mv.addAnnotation(h)
+                // Free-hand strokes (captured & stored as a many-point polyline)
+                // have far too many vertices to edit meaningfully, so they get
+                // NO vertex handles — still selectable/movable/deletable via the
+                // controls card, just not vertex-editable. Detect by point count
+                // (matches the Android > 20 heuristic).
+                let isFreehand = shape.kind == .freedraw
+                    || (shape.kind == .polyline && coords.count > 20)
+                if !isFreehand && (shape.kind == .polyline || shape.kind == .polygon) {
+                    // Real vertex handles — draggable, long-press to delete.
+                    for (i, c) in coords.enumerated() {
+                        let h = DrawingVertexHandleAnnotation(
+                            shapeID: shape.id,
+                            vertexIndex: i,
+                            isMidpoint: false,
+                            coordinate: c
+                        )
+                        mv.addAnnotation(h)
+                    }
+                    // Midpoint insertion handles. Polylines: between each
+                    // adjacent pair. Polygons: also between last and first
+                    // so the user can split the closing segment.
+                    let segmentCount = shape.kind == .polygon ? coords.count : coords.count - 1
+                    for i in 0..<max(segmentCount, 0) {
+                        let a = coords[i]
+                        let b = coords[(i + 1) % coords.count]
+                        let mid = CLLocationCoordinate2D(
+                            latitude:  (a.latitude  + b.latitude)  / 2,
+                            longitude: (a.longitude + b.longitude) / 2
+                        )
+                        let h = DrawingVertexHandleAnnotation(
+                            shapeID: shape.id,
+                            vertexIndex: i + 1,
+                            isMidpoint: true,
+                            coordinate: mid
+                        )
+                        mv.addAnnotation(h)
+                    }
                 }
             }
         }

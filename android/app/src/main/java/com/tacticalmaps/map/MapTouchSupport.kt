@@ -58,6 +58,14 @@ internal fun VertexHandlesOverlay(
     val density = LocalDensity.current
     val sizePx = with(density) { 48.dp.roundToPx() }
 
+    /// Free-hand strokes have far too many vertices to edit meaningfully, so
+    /// they get NO vertex handles at all — a dense LINE (> 20 points) is a
+    /// free-draw. It stays selectable/movable/deletable via the controls card;
+    /// it just isn't vertex-editable.
+    if (feature.geometry == DrawingGeometry.LINE && effective.size > 20) {
+        return
+    }
+
     effective.forEachIndexed { i, p ->
         val screen = projection.toScreenLocation(LatLng(p.latitude, p.longitude))
         VertexHandleBox(
@@ -149,6 +157,7 @@ internal fun MapItemTouchOverlay(
     cameraPositionState: CameraPositionState,
     drawingInputEnabled: Boolean,
     calibrationInputEnabled: Boolean,
+    locked: Boolean,
     dragState: androidx.compose.runtime.State<MapItemDrag?>,
     onDragStateChange: (MapItemDrag?) -> Unit,
     onWaypointTap: (Waypoint) -> Unit,
@@ -229,10 +238,14 @@ internal fun MapItemTouchOverlay(
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         val pos = Offset(event.x, event.y)
-                        val wpHit = hitTestWaypoints(
-                            pos, currentWaypoints.value, hitExpandPx
-                        )
-                        val shapeHitId = if (wpHit == null) {
+                        /// Waypoints are native draggable map markers now
+                        /// (see [WaypointMarkers]) — the SDK owns their
+                        /// tap + long-press-drag and never blocks the map,
+                        /// so this overlay only claims DRAWINGS.
+                        val wpHit: ProjectedWaypoint? = null
+                        /// Locked → claim nothing, so a tap can't open a
+                        /// drawing's settings and a drag can't move it.
+                        val shapeHitId = if (wpHit == null && !locked) {
                             hitTestShapes(
                                 pos, currentShapes.value, drawingTolerancePx
                             )
@@ -312,7 +325,8 @@ internal fun MapItemTouchOverlay(
                             )
                             return@pointerInteropFilter true
                         }
-                        if (kotlin.math.hypot(dx, dy) > tapSlopPx &&
+                        if (!locked &&
+                            kotlin.math.hypot(dx, dy) > tapSlopPx &&
                             event.pointerCount == 1
                         ) {
                             /// CLAIM. Returning true tells Compose

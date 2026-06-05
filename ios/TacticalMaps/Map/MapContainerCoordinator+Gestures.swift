@@ -84,6 +84,7 @@ extension MapContainerView.Coordinator {
 
         switch pan.state {
         case .began:
+            if graphicsLocked { return }
             mv.isScrollEnabled = false
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         case .changed:
@@ -115,6 +116,7 @@ extension MapContainerView.Coordinator {
         let key = ObjectIdentifier(g)
         switch g.state {
         case .began:
+            if graphicsLocked { return }
             vertexLongPressMoved[key] = false
             // Subtle "you're holding it" haptic so the user knows
             // the hold has been registered — they can either lift
@@ -188,6 +190,14 @@ extension MapContainerView.Coordinator {
             return
         }
 
+        // Locked → ignore all graphic taps (no vertex insert, no select);
+        // still let an empty-area tap dismiss a stray controls card.
+        if graphicsLocked {
+            if mapVM.selectedWaypointID != nil { mapVM.selectedWaypointID = nil }
+            if mapVM.selectedDrawingID  != nil { mapVM.selectedDrawingID  = nil }
+            return
+        }
+
         // Vertex-edit "+" midpoint handles: a single tap inserts
         // a new vertex at the handle's current coordinate (a more
         // discoverable affordance than the drag-the-plus path).
@@ -237,6 +247,7 @@ extension MapContainerView.Coordinator {
 
         switch press.state {
         case .began:
+            if graphicsLocked { return }
             // If the user pressed a vertex-edit handle for the
             // currently selected drawing, defer to per-handle
             // gestures (drag, long-press-to-delete) instead of

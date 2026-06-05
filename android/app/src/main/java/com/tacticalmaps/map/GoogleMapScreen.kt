@@ -103,6 +103,7 @@ fun GoogleMapScreen(
     drawings: List<DrawingFeature> = emptyList(),
     drawingLayers: List<DrawingLayer> = emptyList(),
     draftDrawing: DrawingFeature? = null,
+    graphicsLocked: Boolean = false,
     drawingInputEnabled: Boolean = false,
     freeDrawActive: Boolean = false,
     onFreeDrawPoint: (lat: Double, lng: Double) -> Unit = { _, _ -> },
@@ -274,14 +275,12 @@ fun GoogleMapScreen(
                         currentOnDrawingTap.value(latLng.latitude, latLng.longitude)
                     currentCalibrationInputEnabled.value ->
                         currentOnCalibrationTap.value(latLng.latitude, latLng.longitude)
-                    /// Normal mode tap handling lives in
-                    /// [MapItemTouchOverlay] — it fires
-                    /// `onEmptyTap` (= currentOnMapTap) itself so
-                    /// it can sequence selection-clear AFTER any
-                    /// waypoint/drawing tap it just dispatched.
-                    /// If we also fired it here, the SDK's
-                    /// onMapClick would race against the overlay
-                    /// and clear selections the overlay just set.
+                    /// Normal mode: a tap reaching the SDK landed on
+                    /// EMPTY map — a tap on a waypoint is consumed by
+                    /// its native marker's onClick, and a tap on a
+                    /// drawing by [MapItemTouchOverlay], before
+                    /// onMapClick fires. So anything here means deselect.
+                    else -> currentOnMapTap.value()
                 }
             }
         ) {
@@ -350,19 +349,21 @@ fun GoogleMapScreen(
             calibrationFiduciaries.forEachIndexed { i, fid ->
                 CalibrationFiduciaryMarker(index = i + 1, fid = fid)
             }
-        }
 
-        /// Waypoint handles — Compose overlay that ONLY renders the
-        /// icons. Touch handling (tap + drag) is owned by the unified
-        /// MapItemTouchOverlay below. If this waypoint is the active
-        /// drag target, its icon visually follows the finger via
-        /// `graphicsLayer { translationX/Y }`.
-        WaypointHandlesOverlay(
-            waypoints = visibleWaypoints,
-            selectedWaypointId = selectedWaypointId,
-            cameraPositionState = cameraPositionState,
-            dragState = dragState
-        )
+            /// Waypoint symbols (units + tasks): GroundOverlays on the map
+            /// surface (glued + always-upright on rotate), each paired with an
+            /// invisible native marker for the SDK-owned tap + finger-drag.
+            /// The overlay follows its marker, so a drag moves the symbol under
+            /// the finger; lock disables the drag + tap.
+            WaypointGroundOverlays(
+                waypoints = visibleWaypoints,
+                selectedWaypointId = selectedWaypointId,
+                locked = graphicsLocked,
+                cameraPositionState = cameraPositionState,
+                onWaypointTap = { wp -> currentOnMarkerTap.value(wp) },
+                onWaypointMoved = { wp, lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
+            )
+        }
 
         /// Waypoint name labels (units / tasks) — Compose Text
         /// overlays projected to screen coords each frame. Units +
@@ -409,6 +410,7 @@ fun GoogleMapScreen(
             cameraPositionState = cameraPositionState,
             drawingInputEnabled = drawingInputEnabled,
             calibrationInputEnabled = calibrationInputEnabled,
+            locked = graphicsLocked,
             dragState = currentDragState,
             onDragStateChange = { dragState = it },
             onWaypointTap = { wp -> currentOnMarkerTap.value(wp) },
@@ -419,7 +421,7 @@ fun GoogleMapScreen(
         )
 
         VertexHandlesOverlay(
-            feature = selectedDrawing.takeUnless { drawingInputEnabled },
+            feature = selectedDrawing.takeUnless { drawingInputEnabled || graphicsLocked },
             cameraPositionState = cameraPositionState,
             onVertexMoved = currentOnVertexMoved.value,
             onVertexInserted = currentOnVertexInserted.value,

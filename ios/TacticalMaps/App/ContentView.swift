@@ -61,6 +61,8 @@ struct ContentView: View {
     @Environment(\.undoManager) private var undoManager
     @State private var canUndo = false
     @State private var canRedo = false
+    /// Freeze all graphic interaction (select / drag / vertex-edit / settings).
+    @State private var graphicsLocked = false
 
     @State private var showImporter        = false
     @State private var showMBTilesImporter = false
@@ -85,7 +87,8 @@ struct ContentView: View {
                     drawingSession: drawingSession,
                     measureSession: measureSession,
                     visibility: visibility,
-                    calibration: calibration
+                    calibration: calibration,
+                    graphicsLocked: graphicsLocked
                 )
                 .ignoresSafeArea()
 
@@ -137,7 +140,14 @@ struct ContentView: View {
                         .ignoresSafeArea()
                         .contentShape(Rectangle())
                         .gesture(
-                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            // GLOBAL (screen-absolute) space: the map is
+                            // full-screen (ignoresSafeArea), so its
+                            // `screenToCoordinate` expects screen points.
+                            // `.local` here resolves against the
+                            // GeometryReader's safe-area-inset origin, which
+                            // shifted every captured point ~50pt up the screen
+                            // (the line drew above the finger).
+                            DragGesture(minimumDistance: 0, coordinateSpace: .global)
                                 .onChanged { value in
                                     guard let convert = mapVM.screenToCoordinate else { return }
                                     drawingSession.addFreeDrawPoint(convert(value.location))
@@ -257,6 +267,15 @@ struct ContentView: View {
                                     onUndo: { undoManager?.undo() },
                                     onRedo: { undoManager?.redo() }
                                 )
+                            }
+                            LockButton(locked: graphicsLocked) {
+                                graphicsLocked.toggle()
+                                // Locking clears any open selection so its
+                                // controls card + vertex handles disappear.
+                                if graphicsLocked {
+                                    mapVM.selectedWaypointID = nil
+                                    mapVM.selectedDrawingID = nil
+                                }
                             }
                         }
                     }

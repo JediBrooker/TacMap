@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
@@ -158,6 +160,31 @@ internal fun UndoRedoButtons(
                 onClick = onRedo
             )
         }
+    }
+}
+
+/** Lock toggle — freezes ALL graphics (symbols + drawings) so no gesture
+ *  can move them. Sits below the undo/redo buttons; always visible. Turns
+ *  amber when engaged. */
+@Composable
+internal fun LockButton(
+    locked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (locked) Color(0xCCEF6C00) else Color(0xCC000000))
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            if (locked) Icons.Default.Lock else Icons.Default.LockOpen,
+            contentDescription = if (locked) "Graphics locked — tap to unlock" else "Lock graphics in place",
+            tint = Color.White,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
