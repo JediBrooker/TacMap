@@ -137,7 +137,14 @@ struct ContentView: View {
                         .ignoresSafeArea()
                         .contentShape(Rectangle())
                         .gesture(
-                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            // GLOBAL (screen-absolute) space: the map is
+                            // full-screen (ignoresSafeArea), so its
+                            // `screenToCoordinate` expects screen points.
+                            // `.local` here resolves against the
+                            // GeometryReader's safe-area-inset origin, which
+                            // shifted every captured point ~50pt up the screen
+                            // (the line drew above the finger).
+                            DragGesture(minimumDistance: 0, coordinateSpace: .global)
                                 .onChanged { value in
                                     guard let convert = mapVM.screenToCoordinate else { return }
                                     drawingSession.addFreeDrawPoint(convert(value.location))
