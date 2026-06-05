@@ -47,7 +47,7 @@ class GeoJsonExporterTest {
         val root = Json.parseToJsonElement(json).jsonObject
 
         assertEquals("FeatureCollection", root["type"]!!.jsonPrimitive.content)
-        assertTrue(root["generator"]!!.jsonPrimitive.content.contains("TacticalMaps Android prototype"))
+        assertTrue(root["generator"]!!.jsonPrimitive.content.contains("TacMap Android prototype"))
 
         val features = root["features"]!!.jsonArray
         assertEquals(3, features.size)
