@@ -153,6 +153,33 @@ struct HamburgerMenu: View {
     }
 }
 
+/// Lock toggle. When on, every graphic is frozen — symbols and drawings
+/// can't be selected, dragged, or vertex-edited, and tapping one won't open
+/// its settings. Sits just under the undo/redo buttons in the right rail.
+struct LockButton: View {
+    let locked: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            Image(systemName: locked ? "lock.fill" : "lock.open")
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .background(
+                    (locked ? Color(red: 239/255, green: 108/255, blue: 0).opacity(0.88)
+                            : Color.black.opacity(0.80)),
+                    in: Circle()
+                )
+                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                .foregroundStyle(.white)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(locked ? "Graphics locked — tap to unlock"
+                                   : "Lock graphics in place")
+    }
+}
+
 /// Top-right compass chip. Rotates the N marker live with the map's heading
 /// (so N always points to real-world north) and shows the heading as a
 /// NATO-mil reading (6400 mils per full circle) in the lower half.

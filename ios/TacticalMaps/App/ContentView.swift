@@ -61,6 +61,8 @@ struct ContentView: View {
     @Environment(\.undoManager) private var undoManager
     @State private var canUndo = false
     @State private var canRedo = false
+    /// Freeze all graphic interaction (select / drag / vertex-edit / settings).
+    @State private var graphicsLocked = false
 
     @State private var showImporter        = false
     @State private var showMBTilesImporter = false
@@ -85,7 +87,8 @@ struct ContentView: View {
                     drawingSession: drawingSession,
                     measureSession: measureSession,
                     visibility: visibility,
-                    calibration: calibration
+                    calibration: calibration,
+                    graphicsLocked: graphicsLocked
                 )
                 .ignoresSafeArea()
 
@@ -264,6 +267,15 @@ struct ContentView: View {
                                     onUndo: { undoManager?.undo() },
                                     onRedo: { undoManager?.redo() }
                                 )
+                            }
+                            LockButton(locked: graphicsLocked) {
+                                graphicsLocked.toggle()
+                                // Locking clears any open selection so its
+                                // controls card + vertex handles disappear.
+                                if graphicsLocked {
+                                    mapVM.selectedWaypointID = nil
+                                    mapVM.selectedDrawingID = nil
+                                }
                             }
                         }
                     }
