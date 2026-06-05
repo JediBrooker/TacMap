@@ -58,12 +58,47 @@ struct ExportSheet: View {
         }
     }
 
+    /// Per-type counts (only non-empty types are listed). Free-draws are stored
+    /// as many-point polylines, so they're split out from plain lines by point
+    /// count (matching the > 20 heuristic used elsewhere).
+    private var summaryItems: [(text: String, icon: String)] {
+        let wps = waypointStore.waypoints
+        let units = wps.filter { if case .military = $0.kind { return true }; return false }.count
+        let tasks = wps.filter { if case .controlMeasure = $0.kind { return true }; return false }.count
+        let markers = wps.filter { if case .generic = $0.kind { return true }; return false }.count
+
+        let shapes = drawingStore.shapes
+        let lineish = shapes.filter { $0.kind == .polyline || $0.kind == .freedraw }
+        let freeDraws = lineish.filter { $0.coordinates.count > 20 }.count
+        let lines = lineish.count - freeDraws
+        let areas = shapes.filter { $0.kind == .polygon }.count
+        let points = shapes.filter { $0.kind == .point }.count
+
+        var items: [(String, String)] = []
+        func add(_ n: Int, _ noun: String, _ icon: String) {
+            if n > 0 { items.append(("\(n) \(noun)\(n == 1 ? "" : "s")", icon)) }
+        }
+        add(units,    "unit",      "shield.lefthalf.filled")
+        add(tasks,    "task",      "scope")
+        add(markers,  "marker",    "mappin")
+        add(lines,    "line",      "line.diagonal")
+        add(freeDraws,"free-draw", "scribble.variable")
+        add(areas,    "area",      "hexagon")
+        add(points,   "point",     "smallcircle.filled.circle")
+        return items
+    }
+
     private var summary: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("\(waypointStore.waypoints.count) waypoint\(waypointStore.waypoints.count == 1 ? "" : "s")",
-                  systemImage: "mappin.and.ellipse")
-            Label("\(drawingStore.shapes.count) drawing\(drawingStore.shapes.count == 1 ? "" : "s")",
-                  systemImage: "scribble.variable")
+            let items = summaryItems
+            if items.isEmpty {
+                Label("Nothing to export", systemImage: "tray")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(items.indices, id: \.self) { i in
+                    Label(items[i].text, systemImage: items[i].icon)
+                }
+            }
             Text("Format: GeoJSON FeatureCollection (RFC 7946) with simplestyle-spec styling. Opens in geojson.io, GitHub, Mapbox, Felt, QGIS, ArcGIS, Google Earth (via the GeoJSON-to-KML converter).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
