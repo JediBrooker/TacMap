@@ -31,9 +31,9 @@ fiduciary calibration for any PDF that lacks proper georeferencing. iOS (SwiftUI
 <p align="center">
   <img src="docs/screenshots/03-hamburger-menu.png" width="260" alt="Hamburger menu">
   &nbsp;
-  <img src="docs/screenshots/05-drawings-panel.png" width="260" alt="Drawings panel">
+  <img src="docs/screenshots/05-drawings-panel.png" width="260" alt="Drawing tools — line / area / point">
   &nbsp;
-  <img src="docs/screenshots/07-layers.png" width="260" alt="Layers sheet (USGS PDF loaded)">
+  <img src="docs/screenshots/07-layers.png" width="260" alt="Layers &amp; Labels sheet">
 </p>
 
 <p align="center">
