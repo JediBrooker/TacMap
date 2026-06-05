@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ import com.google.android.gms.maps.model.PatternItem
 import com.google.maps.android.compose.CameraPositionState
 import com.google.maps.android.compose.GroundOverlay
 import com.google.maps.android.compose.GroundOverlayPosition
+import com.google.maps.android.compose.DragState
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.Polygon
 import com.google.maps.android.compose.Polyline
@@ -476,6 +478,76 @@ internal fun PdfGroundOverlay(source: PdfMapSource) {
         clickable = false,
         zIndex = -1f
     )
+}
+
+/// Native, draggable Google-Map markers for every waypoint (units +
+/// tasks). Native markers are how the map keeps ALL its gestures: a
+/// single-finger pan or a two-finger pinch/rotate that starts on a
+/// symbol drives the MAP, because the SDK only begins a marker drag
+/// after a deliberate long-press — so nothing steals pan/zoom/rotate.
+/// Tap selects; a long-press picks the symbol up; drag-end commits the
+/// new lat/lng. Replaces WaypointHandlesOverlay + the waypoint path of
+/// MapItemTouchOverlay (a Compose overlay can't be draggable without
+/// stealing the map's gestures).
+@Composable
+internal fun WaypointMarkers(
+    waypoints: List<Waypoint>,
+    selectedWaypointId: String?,
+    onWaypointTap: (Waypoint) -> Unit,
+    onWaypointMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit
+) {
+    val context = LocalContext.current
+    waypoints.forEach { wp ->
+        key(wp.id) {
+            val markerState = rememberMarkerState(position = LatLng(wp.latitude, wp.longitude))
+
+            /// Re-pin to the model position when it changes externally
+            /// (e.g. "Move to Crosshair"), but never fight a live drag.
+            LaunchedEffect(wp.latitude, wp.longitude) {
+                val target = LatLng(wp.latitude, wp.longitude)
+                if (markerState.dragState != DragState.DRAG && markerState.position != target) {
+                    markerState.position = target
+                }
+            }
+
+            /// Commit the moved position once the user's drag ends.
+            LaunchedEffect(markerState.dragState) {
+                if (markerState.dragState == DragState.END) {
+                    onWaypointMoved(
+                        wp,
+                        markerState.position.latitude,
+                        markerState.position.longitude
+                    )
+                }
+            }
+
+            val isSelected = wp.id == selectedWaypointId
+            val (descriptor, anchor) = remember(
+                wp.kind, wp.rotation, wp.scaleX, wp.scaleY, wp.taskColor, isSelected
+            ) {
+                val raw = SymbolIconFactory.drawableFor(context, wp)
+                val rawAnchor = SymbolIconFactory.anchorFor(context, wp)
+                if (isSelected) {
+                    val (glowed, ga) = applySelectionGlow(context, raw, rawAnchor)
+                    glowed.toBitmapDescriptor() to Offset(ga.first, ga.second)
+                } else {
+                    raw.toBitmapDescriptor() to Offset(rawAnchor.first, rawAnchor.second)
+                }
+            }
+
+            Marker(
+                state = markerState,
+                icon = descriptor,
+                anchor = anchor,
+                draggable = true,
+                zIndex = 2f,
+                onClick = {
+                    onWaypointTap(wp)
+                    true   // consume → no info window + no onMapClick race
+                }
+            )
+        }
+    }
 }
 
 /// Overlay that renders each waypoint icon at the projected screen

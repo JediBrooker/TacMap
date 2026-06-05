@@ -274,14 +274,12 @@ fun GoogleMapScreen(
                         currentOnDrawingTap.value(latLng.latitude, latLng.longitude)
                     currentCalibrationInputEnabled.value ->
                         currentOnCalibrationTap.value(latLng.latitude, latLng.longitude)
-                    /// Normal mode tap handling lives in
-                    /// [MapItemTouchOverlay] — it fires
-                    /// `onEmptyTap` (= currentOnMapTap) itself so
-                    /// it can sequence selection-clear AFTER any
-                    /// waypoint/drawing tap it just dispatched.
-                    /// If we also fired it here, the SDK's
-                    /// onMapClick would race against the overlay
-                    /// and clear selections the overlay just set.
+                    /// Normal mode: a tap reaching the SDK landed on
+                    /// EMPTY map — a tap on a waypoint is consumed by
+                    /// its native marker's onClick, and a tap on a
+                    /// drawing by [MapItemTouchOverlay], before
+                    /// onMapClick fires. So anything here means deselect.
+                    else -> currentOnMapTap.value()
                 }
             }
         ) {
@@ -350,19 +348,18 @@ fun GoogleMapScreen(
             calibrationFiduciaries.forEachIndexed { i, fid ->
                 CalibrationFiduciaryMarker(index = i + 1, fid = fid)
             }
-        }
 
-        /// Waypoint handles — Compose overlay that ONLY renders the
-        /// icons. Touch handling (tap + drag) is owned by the unified
-        /// MapItemTouchOverlay below. If this waypoint is the active
-        /// drag target, its icon visually follows the finger via
-        /// `graphicsLayer { translationX/Y }`.
-        WaypointHandlesOverlay(
-            waypoints = visibleWaypoints,
-            selectedWaypointId = selectedWaypointId,
-            cameraPositionState = cameraPositionState,
-            dragState = dragState
-        )
+            /// Waypoint symbols (units + tasks) — NATIVE draggable map
+            /// markers. The map keeps every gesture (pan / pinch /
+            /// rotate, even with a finger on a symbol); a deliberate
+            /// long-press picks a symbol up to drag it. Tap selects.
+            WaypointMarkers(
+                waypoints = visibleWaypoints,
+                selectedWaypointId = selectedWaypointId,
+                onWaypointTap = { wp -> currentOnMarkerTap.value(wp) },
+                onWaypointMoved = { wp, lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
+            )
+        }
 
         /// Waypoint name labels (units / tasks) — Compose Text
         /// overlays projected to screen coords each frame. Units +

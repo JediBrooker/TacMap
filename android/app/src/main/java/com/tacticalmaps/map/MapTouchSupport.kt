@@ -229,9 +229,11 @@ internal fun MapItemTouchOverlay(
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         val pos = Offset(event.x, event.y)
-                        val wpHit = hitTestWaypoints(
-                            pos, currentWaypoints.value, hitExpandPx
-                        )
+                        /// Waypoints are native draggable map markers now
+                        /// (see [WaypointMarkers]) — the SDK owns their
+                        /// tap + long-press-drag and never blocks the map,
+                        /// so this overlay only claims DRAWINGS.
+                        val wpHit: ProjectedWaypoint? = null
                         val shapeHitId = if (wpHit == null) {
                             hitTestShapes(
                                 pos, currentShapes.value, drawingTolerancePx
