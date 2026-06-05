@@ -350,14 +350,16 @@ fun GoogleMapScreen(
                 CalibrationFiduciaryMarker(index = i + 1, fid = fid)
             }
 
-            /// Waypoint symbols (units + tasks) — NATIVE draggable map
-            /// markers. The map keeps every gesture (pan / pinch /
-            /// rotate, even with a finger on a symbol); a deliberate
-            /// long-press picks a symbol up to drag it. Tap selects.
-            WaypointMarkers(
+            /// Waypoint symbols (units + tasks): GroundOverlays on the map
+            /// surface (glued + always-upright on rotate), each paired with an
+            /// invisible native marker for the SDK-owned tap + finger-drag.
+            /// The overlay follows its marker, so a drag moves the symbol under
+            /// the finger; lock disables the drag + tap.
+            WaypointGroundOverlays(
                 waypoints = visibleWaypoints,
                 selectedWaypointId = selectedWaypointId,
                 locked = graphicsLocked,
+                cameraPositionState = cameraPositionState,
                 onWaypointTap = { wp -> currentOnMarkerTap.value(wp) },
                 onWaypointMoved = { wp, lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
             )

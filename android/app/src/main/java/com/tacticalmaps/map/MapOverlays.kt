@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -480,77 +481,145 @@ internal fun PdfGroundOverlay(source: PdfMapSource) {
     )
 }
 
-/// Native, draggable Google-Map markers for every waypoint (units +
-/// tasks). Native markers are how the map keeps ALL its gestures: a
-/// single-finger pan or a two-finger pinch/rotate that starts on a
-/// symbol drives the MAP, because the SDK only begins a marker drag
-/// after a deliberate long-press — so nothing steals pan/zoom/rotate.
-/// Tap selects; a long-press picks the symbol up; drag-end commits the
-/// new lat/lng. Replaces WaypointHandlesOverlay + the waypoint path of
-/// MapItemTouchOverlay (a Compose overlay can't be draggable without
-/// stealing the map's gestures).
+private data class BakedSymbol(
+    val descriptor: BitmapDescriptor,
+    val anchor: Offset,
+    val wPx: Int,
+    val hPx: Int
+)
+
+/// Visible waypoint symbols painted as GROUND OVERLAYS — i.e. on the map
+/// surface, the SAME layer as Circle/Polyline, which is the only layer the
+/// GL renderer keeps glued to its lat/lng through a rotate. Native markers
+/// (billboard or flat) AND projection-based Compose overlays both lag the
+/// map on rotate and let the symbol slide off its coordinate; a
+/// GroundOverlay does not. `bearing = mapBearing` counter-rotates the bitmap
+/// so it still reads screen-upright; the ground size is recomputed from the
+/// projection so the symbol holds a roughly constant on-screen size across
+/// zooms. (Tap/selection stays on the invisible [WaypointMarkers].)
 @Composable
-internal fun WaypointMarkers(
+internal fun WaypointGroundOverlays(
     waypoints: List<Waypoint>,
     selectedWaypointId: String?,
     locked: Boolean,
+    cameraPositionState: CameraPositionState,
     onWaypointTap: (Waypoint) -> Unit,
     onWaypointMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit
 ) {
     val context = LocalContext.current
+    val density = context.resources.displayMetrics.density
+    val zoom by remember(cameraPositionState) {
+        derivedStateOf { cameraPositionState.position.zoom }
+    }
+    /// Counter-rotate EVERY frame so the symbol is ALWAYS screen-upright.
+    /// Safe ONLY because the overlay's anchor is the symbol's VISIBLE
+    /// centroid: `bearing` rotates a GroundOverlay about its anchor, and that
+    /// anchor is pinned to the lat/lng and rendered by the GL map directly, so
+    /// a bearing change just spins the symbol in place — its visible mass never
+    /// orbits off the coordinate. (Earlier per-frame-bearing attempts drifted
+    /// because they pivoted about an OFF-centroid anchor.) During a very fast
+    /// spin the bearing value can lag the GL camera by a frame, so the symbol
+    /// may sit a couple degrees off-upright mid-gesture and settle exactly
+    /// upright — but it never leaves its spot.
+    val mapBearing by remember(cameraPositionState) {
+        derivedStateOf { cameraPositionState.position.bearing }
+    }
     waypoints.forEach { wp ->
         key(wp.id) {
             val markerState = rememberMarkerState(position = LatLng(wp.latitude, wp.longitude))
-
-            /// Re-pin to the model position when it changes externally
-            /// (e.g. "Move to Crosshair"), but never fight a live drag.
+            /// Re-pin to the model position when it changes externally (a drag
+            /// commit, or "Move to Crosshair"), but never fight a live drag.
             LaunchedEffect(wp.latitude, wp.longitude) {
                 val target = LatLng(wp.latitude, wp.longitude)
                 if (markerState.dragState != DragState.DRAG && markerState.position != target) {
                     markerState.position = target
                 }
             }
-
-            /// Commit the moved position once the user's drag ends.
+            /// Commit the new position once a finger-drag ends.
             LaunchedEffect(markerState.dragState) {
                 if (markerState.dragState == DragState.END) {
                     onWaypointMoved(
-                        wp,
-                        markerState.position.latitude,
-                        markerState.position.longitude
+                        wp, markerState.position.latitude, markerState.position.longitude
                     )
                 }
             }
-
             val isSelected = wp.id == selectedWaypointId
-            val (descriptor, anchor) = remember(
-                wp.kind, wp.rotation, wp.scaleX, wp.scaleY, wp.taskColor, isSelected
-            ) {
+            val baked = remember(wp.kind, wp.rotation, wp.scaleX, wp.scaleY, wp.taskColor, isSelected) {
                 val raw = SymbolIconFactory.drawableFor(context, wp)
                 val rawAnchor = SymbolIconFactory.anchorFor(context, wp)
+                val rawW = raw.intrinsicWidth.coerceAtLeast(1)
+                val rawH = raw.intrinsicHeight.coerceAtLeast(1)
+                /// VISIBLE centroid of the symbol. The overlay must rotate
+                /// about THIS point, not the milsymbol ground anchor: the
+                /// ground anchor is offset from the symbol's visible mass, so
+                /// rotating about it makes the symbol ORBIT that pivot and
+                /// "drift" as it rights itself. The visible centroid spins in
+                /// place. (Position-wise this seats the symbol's visual centre
+                /// on the lat/lng, which is what reads as "on the spot".)
+                val vb = SymbolIconFactory.visibleBoundsFor(context, wp)
+                val vcx = (vb.left + vb.right) / 2f
+                val vcy = (vb.top + vb.bottom) / 2f
                 if (isSelected) {
-                    val (glowed, ga) = applySelectionGlow(context, raw, rawAnchor)
-                    glowed.toBitmapDescriptor() to Offset(ga.first, ga.second)
+                    val (glowed, _) = applySelectionGlow(context, raw, rawAnchor)
+                    val gw = glowed.intrinsicWidth.coerceAtLeast(1)
+                    val gh = glowed.intrinsicHeight.coerceAtLeast(1)
+                    val padX = (gw - rawW) / 2f
+                    val padY = (gh - rawH) / 2f
+                    BakedSymbol(
+                        glowed.toBitmapDescriptor(),
+                        Offset((padX + vcx) / gw, (padY + vcy) / gh),
+                        gw, gh
+                    )
                 } else {
-                    raw.toBitmapDescriptor() to Offset(rawAnchor.first, rawAnchor.second)
+                    BakedSymbol(
+                        raw.toBitmapDescriptor(),
+                        Offset(vcx / rawW, vcy / rawH),
+                        rawW, rawH
+                    )
                 }
             }
+            /// Ground metres spanning the symbol's pixel width at this zoom.
+            /// Keyed on ZOOM ONLY, so it does NOT change during a rotate —
+            /// the overlay stays fully static while rotating, which is the
+            /// only thing the GL renderer keeps glued (like the Circle).
+            val widthMeters = remember(zoom, wp.latitude, baked.wPx, density) {
+                val metersPerPixel = 40075016.686 *
+                    kotlin.math.cos(Math.toRadians(wp.latitude)) /
+                    (256.0 * Math.pow(2.0, zoom.toDouble()) * density)
+                (baked.wPx * metersPerPixel).toFloat().coerceIn(1f, 1_000_000f)
+            }
+            val heightMeters = (widthMeters * baked.hPx / baked.wPx).coerceAtLeast(1f)
+            /// VISIBLE symbol on the map surface — anchored at the marker's
+            /// CURRENT position. During a finger-drag the camera is stationary
+            /// (no lag), so the overlay tracks the marker under the finger;
+            /// otherwise it sits on the stored lat/lng.
+            GroundOverlay(
+                position = GroundOverlayPosition.create(
+                    markerState.position, widthMeters, heightMeters
+                ),
+                image = baked.descriptor,
+                /// Anchor = the symbol's VISIBLE centroid, so the per-frame
+                /// upright counter-rotation spins it truly in place instead of
+                /// orbiting an off-centroid pivot (which is what drifted).
+                anchor = baked.anchor,
+                bearing = mapBearing,
+                clickable = false,
+                zIndex = 2f
+            )
 
+            /// Invisible native marker — the SDK-owned TAP + long-press-DRAG.
+            /// A drag updates markerState.position, which the GroundOverlay
+            /// above follows, so the symbol moves under the finger; a tap
+            /// selects. Invisible (alpha 0) so the native "lift" on pickup
+            /// isn't seen and it never steals the map's pan/rotate.
             Marker(
                 state = markerState,
-                /// NOT draggable. Native marker drag (a) got grabbed by a
-                /// two-finger rotate that lingered on the symbol, moving it
-                /// instead of rotating the map, and (b) "jumped" the symbol
-                /// up on pickup. Symbols move via the controls card's
-                /// "Move to Crosshair" instead.
-                icon = descriptor,
-                anchor = anchor,
-                draggable = false,
+                alpha = 0f,
+                draggable = !locked,
                 zIndex = 2f,
                 onClick = {
-                    /// Locked → swallow the tap so the settings can't open.
                     if (!locked) onWaypointTap(wp)
-                    true   // consume → no info window / no onMapClick race
+                    true
                 }
             )
         }
