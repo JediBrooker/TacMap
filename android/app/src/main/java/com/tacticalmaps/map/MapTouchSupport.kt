@@ -264,7 +264,9 @@ internal fun MapItemTouchOverlay(
                         /// tap + long-press-drag and never blocks the map,
                         /// so this overlay only claims DRAWINGS.
                         val wpHit: ProjectedWaypoint? = null
-                        val shapeHitId = if (wpHit == null) {
+                        /// Locked → claim nothing, so a tap can't open a
+                        /// drawing's settings and a drag can't move it.
+                        val shapeHitId = if (wpHit == null && !locked) {
                             hitTestShapes(
                                 pos, currentShapes.value, drawingTolerancePx
                             )

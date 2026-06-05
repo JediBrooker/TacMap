@@ -538,13 +538,19 @@ internal fun WaypointMarkers(
 
             Marker(
                 state = markerState,
+                /// NOT draggable. Native marker drag (a) got grabbed by a
+                /// two-finger rotate that lingered on the symbol, moving it
+                /// instead of rotating the map, and (b) "jumped" the symbol
+                /// up on pickup. Symbols move via the controls card's
+                /// "Move to Crosshair" instead.
                 icon = descriptor,
                 anchor = anchor,
-                draggable = !locked,
+                draggable = false,
                 zIndex = 2f,
                 onClick = {
-                    onWaypointTap(wp)
-                    true   // consume → no info window + no onMapClick race
+                    /// Locked → swallow the tap so the settings can't open.
+                    if (!locked) onWaypointTap(wp)
+                    true   // consume → no info window / no onMapClick race
                 }
             )
         }
