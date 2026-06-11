@@ -41,26 +41,50 @@ struct PaywallView: View {
                     .padding(.top, 14)
                     .padding(.horizontal, 28)
 
-                Button {
-                    Task { await store.purchase() }
-                } label: {
-                    Group {
-                        if store.purchasing {
-                            ProgressView().tint(.black)
-                        } else {
-                            Text(buttonTitle)
-                                .font(.system(size: 16, weight: .bold))
-                        }
+                switch store.loadState {
+                case .failed, .unavailable:
+                    Text("Couldn't load purchase options. Check your connection and try again.")
+                        .font(.subheadline)
+                        .foregroundStyle(orange)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 24)
+                        .padding(.horizontal, 28)
+
+                    Button {
+                        Task { await store.loadProduct() }
+                    } label: {
+                        Text("Try Again")
+                            .font(.system(size: 16, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(green, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .foregroundStyle(.black)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
-                    .background(store.product == nil ? Color(white: 0.22) : green,
-                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .foregroundStyle(store.product == nil ? Color(white: 0.5) : .black)
+                    .padding(.top, 16)
+                    .padding(.horizontal, 28)
+
+                case .loading, .loaded:
+                    Button {
+                        Task { await store.purchase() }
+                    } label: {
+                        Group {
+                            if store.purchasing || store.loadState == .loading {
+                                ProgressView().tint(.black)
+                            } else {
+                                Text(buttonTitle)
+                                    .font(.system(size: 16, weight: .bold))
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(store.loadState != .loaded ? Color(white: 0.22) : green,
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .foregroundStyle(store.loadState != .loaded ? Color(white: 0.5) : .black)
+                    }
+                    .disabled(store.loadState != .loaded || store.purchasing)
+                    .padding(.top, 28)
+                    .padding(.horizontal, 28)
                 }
-                .disabled(store.product == nil || store.purchasing)
-                .padding(.top, 28)
-                .padding(.horizontal, 28)
 
                 Button(action: onRestore) {
                     Text("Restore purchase")
@@ -94,6 +118,13 @@ struct PaywallView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .task {
+            // Re-attempt the fetch whenever the paywall surfaces, so a load
+            // that failed/timed out at launch recovers without restarting.
+            if store.loadState != .loaded {
+                await store.loadProduct()
+            }
+        }
     }
 
     private var buttonTitle: String {

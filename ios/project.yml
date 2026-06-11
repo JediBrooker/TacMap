@@ -29,7 +29,7 @@ targets:
       properties:
         CFBundleDisplayName: TacMap
         CFBundleShortVersionString: "1.0.3"
-        CFBundleVersion: "19"
+        CFBundleVersion: "20"
         UILaunchScreen:
           UIColorName: LaunchBackground
         # iOS 16+ devices are all arm64. armv7 is 32-bit and would

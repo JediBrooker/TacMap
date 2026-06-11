@@ -14,9 +14,24 @@ final class StoreManager: ObservableObject {
     /// (and the local `TacticalMaps.storekit` testing config).
     static let productID = "com.tacticalmaps.app.unlock"
 
+    /// Where the one-time product fetch currently stands. Drives the paywall's
+    /// loading / error / retry UI so it can never sit on a dead "Loading…"
+    /// screen — the failure App Review hit when the IAP wasn't yet approved.
+    enum ProductLoadState: Equatable {
+        case loading      // fetch in flight
+        case loaded       // product available, purchase enabled
+        case unavailable  // fetch succeeded but App Store returned no product
+        case failed       // fetch threw or timed out
+    }
+
     @Published private(set) var isPurchased = false
     @Published private(set) var product: Product?
     @Published private(set) var purchasing = false
+    @Published private(set) var loadState: ProductLoadState = .loading
+
+    /// Hard ceiling on the product fetch so a stalled StoreKit request can't
+    /// hang the paywall forever.
+    private static let loadTimeout: Double = 15
 
     private var updatesTask: Task<Void, Never>?
 
@@ -34,9 +49,24 @@ final class StoreManager: ObservableObject {
     var priceText: String? { product?.displayPrice }
 
     func loadProduct() async {
+        loadState = .loading
         do {
-            product = try await Product.products(for: [Self.productID]).first
+            let products = try await withTimeout(seconds: Self.loadTimeout) {
+                try await Product.products(for: [Self.productID])
+            }
+            if let first = products.first {
+                product = first
+                loadState = .loaded
+            } else {
+                // No error, but the App Store returned nothing. Happens when the
+                // IAP isn't approved/Ready-to-Submit yet (i.e. during review).
+                product = nil
+                loadState = .unavailable
+                print("[Store] product load returned no products for \(Self.productID)")
+            }
         } catch {
+            product = nil
+            loadState = .failed
             print("[Store] product load failed: \(error)")
         }
     }
@@ -94,5 +124,24 @@ final class StoreManager: ObservableObject {
                 }
             }
         }
+    }
+}
+
+private struct TimeoutError: Error {}
+
+/// Runs `operation`, throwing `TimeoutError` if it doesn't finish within
+/// `seconds`. Whichever finishes first wins; the loser is cancelled.
+private func withTimeout<T: Sendable>(
+    seconds: Double,
+    operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw TimeoutError()
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
     }
 }
