@@ -28,7 +28,7 @@ targets:
       path: TacticalMaps/Resources/Info.plist
       properties:
         CFBundleDisplayName: TacMap
-        CFBundleShortVersionString: "1.0.3"
+        CFBundleShortVersionString: "1.0.4"
         CFBundleVersion: "20"
         UILaunchScreen:
           UIColorName: LaunchBackground
