@@ -99,6 +99,17 @@ final class StoreManager: ObservableObject {
         await refreshEntitlement()
     }
 
+    /// Present the App Store's own code-redemption sheet for promo codes
+    /// (App Store Connect → your IAP → "Promo Codes", up to 100 free per
+    /// version). A redeemed code grants the real `unlock` entitlement and
+    /// produces a normal transaction that `listenForTransactions` already
+    /// picks up, flipping `isPurchased` — so no app-side validation is needed.
+    /// This is Apple's UI, so it's review-safe (no guideline 3.1.1 risk).
+    /// No-op in the Simulator / StoreKit local testing.
+    func presentRedeemSheet() {
+        SKPaymentQueue.default().presentCodeRedemptionSheet()
+    }
+
     /// Grant the unlock if a verified, non-revoked entitlement exists.
     func refreshEntitlement() async {
         var hasEntitlement = false

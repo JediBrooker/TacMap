@@ -1,9 +1,9 @@
 import Foundation
 import Security
 
-/// Minimal Keychain wrapper for small entitlement values (trial timestamp,
-/// voucher flag). Generic-password items survive app deletion, which is the
-/// whole point: a reinstall sees the same trial clock.
+/// Minimal Keychain wrapper for the trial timestamps (first launch + the
+/// clock-rollback high-water mark). Generic-password items survive app
+/// deletion, which is the whole point: a reinstall sees the same trial clock.
 ///
 /// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` keeps the items
 /// device-bound (not migrated via iCloud Keychain / encrypted backup to a
@@ -56,14 +56,5 @@ enum KeychainStore {
     static func set(_ date: Date, for account: String) -> Bool {
         var epoch = date.timeIntervalSince1970
         return set(Data(bytes: &epoch, count: 8), for: account)
-    }
-
-    static func bool(for account: String) -> Bool {
-        data(for: account)?.first == 1
-    }
-
-    @discardableResult
-    static func set(_ value: Bool, for account: String) -> Bool {
-        set(Data([value ? 1 : 0]), for: account)
     }
 }

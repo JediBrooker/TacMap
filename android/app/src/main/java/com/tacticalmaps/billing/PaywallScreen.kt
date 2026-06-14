@@ -48,6 +48,7 @@ fun PaywallScreen(
     trialDaysRemaining: Int,
     onUnlock: () -> Unit,
     onRestore: () -> Unit,
+    onRedeem: () -> Unit,
     onClose: (() -> Unit)? = null,
 ) {
     val expired = trialDaysRemaining <= 0
@@ -110,6 +111,9 @@ fun PaywallScreen(
         Spacer(Modifier.height(6.dp))
         TextButton(onClick = onRestore) {
             Text("Restore purchase", color = HudOrange, fontSize = 14.sp)
+        }
+        TextButton(onClick = onRedeem) {
+            Text("Redeem code", color = HudOrange, fontSize = 14.sp)
         }
         Spacer(Modifier.height(20.dp))
         Text(

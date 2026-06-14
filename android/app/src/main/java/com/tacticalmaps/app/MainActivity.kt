@@ -1,5 +1,8 @@
 package com.tacticalmaps.app
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -57,6 +60,7 @@ class MainActivity : ComponentActivity() {
                                 trialDaysRemaining = trial.daysRemaining(now),
                                 onUnlock = { billing.launchPurchase(this@MainActivity) },
                                 onRestore = { billing.restore() },
+                                onRedeem = { openPlayRedeem() },
                                 onClose = { showPaywall = false },
                             )
                         }
@@ -67,6 +71,7 @@ class MainActivity : ComponentActivity() {
                         trialDaysRemaining = trial.daysRemaining(now),
                         onUnlock = { billing.launchPurchase(this@MainActivity) },
                         onRestore = { billing.restore() },
+                        onRedeem = { openPlayRedeem() },
                     )
                 }
             }
@@ -76,8 +81,26 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         // Re-evaluate the trial window and re-check entitlement on return.
+        // This also picks up an unlock granted by a Play promo code the user
+        // redeemed while away (via "Redeem code" → Play Store).
         resumeTick.longValue = System.currentTimeMillis()
         billing.restore()
+    }
+
+    /**
+     * Open the Play Store's own code-redemption screen for promo codes
+     * (Play Console → your in-app product → Promotions). A redeemed code
+     * grants the real `unlock_full` entitlement, which [BillingManager.restore]
+     * picks up on return — no app-side code validation, and store-safe.
+     * Falls back to the browser if the Play Store app isn't installed.
+     */
+    private fun openPlayRedeem() {
+        val redeem = Uri.parse("https://play.google.com/redeem")
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, redeem).setPackage("com.android.vending"))
+        } catch (_: ActivityNotFoundException) {
+            startActivity(Intent(Intent.ACTION_VIEW, redeem))
+        }
     }
 
     override fun onDestroy() {

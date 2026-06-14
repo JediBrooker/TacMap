@@ -93,6 +93,15 @@ struct PaywallView: View {
                 }
                 .padding(.top, 10)
 
+                Button {
+                    store.presentRedeemSheet()
+                } label: {
+                    Text("Redeem code")
+                        .font(.subheadline)
+                        .foregroundStyle(orange)
+                }
+                .padding(.top, 6)
+
                 Text("One-time purchase. No subscription.")
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.48))
