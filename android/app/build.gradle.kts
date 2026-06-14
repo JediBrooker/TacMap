@@ -115,6 +115,11 @@ dependencies {
     // converts the 3-day free trial into permanent access.
     implementation("com.android.billingclient:billing-ktx:7.1.1")
 
+    // Block Store — persists the trial first-launch stamp and voucher
+    // redemption across uninstall/reinstall on devices with Play services
+    // (parity with the iOS Keychain). Degrades silently on de-Googled devices.
+    implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
+
     // MGRS conversion (NGA).
     implementation("mil.nga:mgrs:2.1.3")
 
