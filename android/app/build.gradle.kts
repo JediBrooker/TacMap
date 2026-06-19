@@ -28,11 +28,11 @@ val hasReleaseSigning = releaseStoreFilePath.isPresent &&
     releaseKeyPassword.isPresent
 
 android {
-    namespace = "com.tacticalmaps"
+    namespace = "com.tacmap"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.tacticalmaps"
+        applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
         versionCode = 15
