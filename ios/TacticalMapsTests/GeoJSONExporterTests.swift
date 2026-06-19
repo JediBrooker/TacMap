@@ -42,7 +42,7 @@ final class GeoJSONExporterTests: XCTestCase {
         let root = try parse(json)
 
         XCTAssertEqual(root["type"] as? String, "FeatureCollection")
-        XCTAssertTrue((root["generator"] as? String ?? "").contains("TacticalMaps iOS prototype"))
+        XCTAssertTrue((root["generator"] as? String ?? "").contains("TacMap iOS prototype"))
 
         let features = try XCTUnwrap(root["features"] as? [[String: Any]])
         XCTAssertEqual(features.count, 3)
