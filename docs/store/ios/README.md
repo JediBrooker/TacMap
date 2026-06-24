@@ -1,5 +1,8 @@
 # App Store screenshots
 
+> Listing copy (title, subtitle, promo text, description, keywords) lives in
+> [`docs/STORE_LISTING.md`](../../STORE_LISTING.md).
+
 Captured from the real app on the iOS Simulator at **Shoalwater Bay Training
 Area, QLD**, via the `TacticalMapsUITests` screenshot UI test (see
 `scripts/ios_screenshots.sh` notes below). Regenerate with that test; extract

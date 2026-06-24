@@ -28,8 +28,11 @@ Upload under "7-inch / 10-inch tablet screenshots" (same numbering as phone).
 - 1080×2400 (20:9) is the native Pixel resolution and uploads to Play as-is.
   If the uploader ever rejects the ratio, pad the width to 1200×2400 (2:1).
 - Tablet shots are 2560×1600 (16:10) — within Play's limits.
-- Still needed in Play Console (not generatable here): short/full descriptions,
-  privacy-policy URL, Data Safety + content-rating forms.
+- Short/full descriptions: paste-ready copy lives in
+  [`docs/STORE_LISTING.md`](../../STORE_LISTING.md) (leads with the
+  pay-once / offline-anywhere / open-interop wedges).
+- Still needed in Play Console (not generatable here): privacy-policy URL,
+  Data Safety + content-rating forms.
 - Signed release bundle: `android/app/build/outputs/bundle/release/app-release.aab`
   (rebuild with `JAVA_HOME=$(/usr/libexec/java_home -v 17) ./android/gradlew -p android bundleRelease`).
   Version code 10 / versionName 1.0.0. Upload under Test and release.
