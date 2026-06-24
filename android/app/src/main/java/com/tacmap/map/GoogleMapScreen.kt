@@ -66,6 +66,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
 import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
+import com.tacmap.calibration.OpenStreetMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.mgrs.MgrsGridRenderer
@@ -252,7 +253,10 @@ fun GoogleMapScreen(
                 /// PDF surrounded by satellite where the page
                 /// doesn't cover, which makes the PDF look like
                 /// it's "floating" on Google Maps.
-                mapType = if (mapSource is PdfMapSource || mapSource is OfflineTileMapSourceAndroid) MapType.NONE
+                mapType = if (mapSource is PdfMapSource ||
+                    mapSource is OfflineTileMapSourceAndroid ||
+                    mapSource is OpenStreetMapSourceAndroid
+                ) MapType.NONE
                     else MapType.SATELLITE,
                 /// Google Maps' built-in blue user-location dot.
                 /// Gated on runtime permission — the SDK throws if
@@ -292,6 +296,12 @@ fun GoogleMapScreen(
                 /// remember on the source id so the provider (and its tile
                 /// cache) survives recomposition; only rebuilt on source change.
                 val provider = remember(tiles.id) { tiles.tileProvider() }
+                TileOverlay(tileProvider = provider)
+            }
+
+            (mapSource as? OpenStreetMapSourceAndroid)?.let { osm ->
+                /// Online OSM raster tiles over MapType.NONE.
+                val provider = remember(osm.id) { OsmTileProvider() }
                 TileOverlay(tileProvider = provider)
             }
 

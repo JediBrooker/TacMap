@@ -89,13 +89,22 @@ struct LayersSheet: View {
                 }
 
                 Section("Basemap") {
-                    HStack {
-                        Image(systemName: "globe.americas.fill")
-                        Text("Apple Satellite")
-                        Spacer()
-                        Text(mapVM.mapSource is AppleSatelliteMapSource
-                             ? "Active"
-                             : "Hidden while an imported map is loaded")
+                    let importedActive = mapVM.mapSource is PDFMapSource
+                        || mapVM.mapSource is OfflineTileMapSource
+                    basemapRow(title: "Apple Satellite",
+                               systemImage: "globe.americas.fill",
+                               isActive: mapVM.mapSource is AppleSatelliteMapSource) {
+                        mapVM.mapSource = AppleSatelliteMapSource()
+                        PDFSessionStore.clear()
+                    }
+                    basemapRow(title: "OpenStreetMap",
+                               systemImage: "map.fill",
+                               isActive: mapVM.mapSource is OpenStreetMapMapSource) {
+                        mapVM.mapSource = OpenStreetMapMapSource()
+                        PDFSessionStore.clear()
+                    }
+                    if importedActive {
+                        Text("An imported map is active — pick a basemap to switch back to it.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -136,6 +145,28 @@ struct LayersSheet: View {
                 Button("Cancel", role: .cancel) { renamingLayer = nil }
             }
         }
+    }
+
+    @ViewBuilder
+    private func basemapRow(title: String,
+                            systemImage: String,
+                            isActive: Bool,
+                            select: @escaping () -> Void) -> some View {
+        Button(action: select) {
+            HStack {
+                Image(systemName: systemImage)
+                    .frame(width: 24)
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if isActive {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

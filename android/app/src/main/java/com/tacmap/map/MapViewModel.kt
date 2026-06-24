@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OpenStreetMapSourceAndroid
+import com.tacmap.calibration.SatelliteMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfSessionStore
 import com.tacmap.mgrs.MgrsFormatter
@@ -62,8 +63,22 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private val pdfSessionStore = PdfSessionStore(app)
 
-    private val _mapSource = MutableStateFlow<MapSource>(OpenStreetMapSourceAndroid())
+    private val _mapSource = MutableStateFlow<MapSource>(SatelliteMapSourceAndroid())
     val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
+
+    /** Which online basemap to return to when an imported map is unloaded.
+     *  false = Satellite (default), true = OpenStreetMap. */
+    private var preferOsmBasemap = false
+    private fun onlineBasemap(): MapSource =
+        if (preferOsmBasemap) OpenStreetMapSourceAndroid() else SatelliteMapSourceAndroid()
+
+    /** Switch the online basemap (Satellite ⇄ OpenStreetMap). Also clears any
+     *  imported PDF so the chosen basemap actually shows. */
+    fun selectBaseMap(osm: Boolean) {
+        preferOsmBasemap = osm
+        _mapSource.value = onlineBasemap()
+        pdfSessionStore.clear()
+    }
 
     /**
      * Set the active map source AND, when it has coverage, fly the camera
@@ -101,7 +116,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun unloadPdfMap() {
-        _mapSource.value = OpenStreetMapSourceAndroid()
+        _mapSource.value = onlineBasemap()
         pdfSessionStore.clear()
     }
 

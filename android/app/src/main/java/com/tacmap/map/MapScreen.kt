@@ -948,6 +948,8 @@ fun MapScreen(
             onUnitLabelsChange = { unitLabelsVisible = it },
             onTaskLabelsChange = { taskLabelsVisible = it },
             onDrawingLabelsChange = { drawingLabelsVisible = it },
+            osmBasemapActive = mapSource is OpenStreetMapSourceAndroid,
+            onSelectBaseMap = { osm -> vm.selectBaseMap(osm) },
             hasPdfMap = pdfSource != null,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
             onCalibratePdf = {
@@ -961,7 +963,7 @@ fun MapScreen(
             },
             onUnloadOfflineTiles = {
                 showLayersSheet = false
-                vm.setMapSource(OpenStreetMapSourceAndroid())
+                vm.selectBaseMap(osm = mapSource is OpenStreetMapSourceAndroid)
             },
             onDismiss = { showLayersSheet = false }
         )

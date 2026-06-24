@@ -215,9 +215,9 @@ struct MapContainerView: UIViewRepresentable {
         /// thread, so repeated `syncPDFOverlay` calls don't kick off duplicates.
         var pdfRasterizingSourceID: UUID?
 
-        /// Offline MBTiles raster basemap overlay + the id of the source it
-        /// belongs to. Persists across refresh() (see MapContainerCoordinator+TileSync).
-        var tileOverlay: MBTilesTileOverlay?
+        /// Raster basemap overlay (offline MBTiles or online OSM) + the id of the
+        /// source it belongs to. Persists across refresh() (see MapContainerCoordinator+TileSync).
+        var tileOverlay: MKTileOverlay?
         var tileSourceID: UUID?
 
         /// Dark UIView covering the satellite while a PDF is loaded so the

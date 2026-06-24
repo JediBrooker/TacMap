@@ -18,6 +18,11 @@ struct AcknowledgementsView: View {
                         url: URL(string: "https://www.apple.com/legal/internet-services/maps/terms-en.html")
                     )
                     LinkRow(
+                        title: "OpenStreetMap",
+                        subtitle: "© OpenStreetMap contributors — basemap tiles under the Open Database License (ODbL).",
+                        url: URL(string: "https://www.openstreetmap.org/copyright")
+                    )
+                    LinkRow(
                         title: "Open-Meteo Elevation API",
                         subtitle: "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.",
                         url: URL(string: "https://open-meteo.com/en/license")

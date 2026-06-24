@@ -11,7 +11,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -38,6 +40,8 @@ fun LayersSheet(
     onUnitLabelsChange: (Boolean) -> Unit,
     onTaskLabelsChange: (Boolean) -> Unit,
     onDrawingLabelsChange: (Boolean) -> Unit,
+    osmBasemapActive: Boolean,
+    onSelectBaseMap: (osm: Boolean) -> Unit,
     hasPdfMap: Boolean,
     hasOfflineTiles: Boolean,
     onCalibratePdf: () -> Unit,
@@ -62,6 +66,26 @@ fun LayersSheet(
             ToggleRow("Unit Labels", unitLabelsVisible, onUnitLabelsChange)
             ToggleRow("Task Labels", taskLabelsVisible, onTaskLabelsChange)
             ToggleRow("Drawing Labels", drawingLabelsVisible, onDrawingLabelsChange)
+
+            SectionHeader("Basemap")
+            val importedMapActive = hasPdfMap || hasOfflineTiles
+            BasemapRow(
+                label = "Satellite",
+                selected = !osmBasemapActive && !importedMapActive,
+                onClick = { onSelectBaseMap(false) }
+            )
+            BasemapRow(
+                label = "OpenStreetMap",
+                selected = osmBasemapActive && !importedMapActive,
+                onClick = { onSelectBaseMap(true) }
+            )
+            if (importedMapActive) {
+                Text(
+                    "An imported map is active — pick a basemap to switch back to it.",
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
 
             if (hasPdfMap || hasOfflineTiles) {
                 SectionHeader("Imported Map")
@@ -96,6 +120,21 @@ private fun SectionHeader(title: String) {
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
     )
+}
+
+@Composable
+private fun BasemapRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontSize = 15.sp)
+        RadioButton(selected = selected, onClick = onClick)
+    }
 }
 
 @Composable
