@@ -134,6 +134,7 @@ fun MapScreen(
     val pendingTarget by vm.pendingCameraTarget.collectAsState()
     val cameraLat by vm.cameraLat.collectAsState()
     val cameraLng by vm.cameraLng.collectAsState()
+    val centreElevation by vm.centreElevation.collectAsState()
     val mapSource by vm.mapSource.collectAsState()
     val waypointStore = remember { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
@@ -583,6 +584,8 @@ fun MapScreen(
             wgs84 = vm.headerWgs84,
             isBrowsing = isBrowsing,
             accuracy = lastLocation?.accuracy?.toDouble(),
+            elevation = centreElevation?.metres,
+            elevationApprox = centreElevation?.isStale == true,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()

@@ -48,6 +48,8 @@ fun MgrsHeader(
     isBrowsing: Boolean,
     accuracy: Double?,
     modifier: Modifier = Modifier,
+    elevation: Double? = null,
+    elevationApprox: Boolean = false,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -99,6 +101,17 @@ fun MgrsHeader(
                  fontWeight = FontWeight.Bold, lineHeight = 12.sp)
             Text(wgs84, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
                  fontFamily = FontFamily.Monospace, lineHeight = 12.sp)
+            elevation?.let { metres ->
+                Text("·", color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
+                     lineHeight = 12.sp)
+                Text(
+                    (if (elevationApprox) "~" else "") + "%.0f m MSL".format(metres),
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 12.sp
+                )
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
