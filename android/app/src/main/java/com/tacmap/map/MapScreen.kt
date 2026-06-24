@@ -276,6 +276,41 @@ fun MapScreen(
         }
     }
 
+    val kmlImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val fallback = drawingDocument.layers
+                .firstOrNull { it.id == activeDrawingLayerId }?.id
+                ?: drawingDocument.layers.firstOrNull()?.id
+                ?: com.tacmap.drawings.DrawingDocument.DEFAULT_LAYER_ID
+            // Read bytes (not text) so a KMZ zip survives intact.
+            val parsed = runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        com.tacmap.export.KmlImporter.parseStream(
+                            input = stream,
+                            existingLayers = drawingDocument.layers,
+                            fallbackLayerId = fallback
+                        )
+                    } ?: throw IllegalStateException("Couldn't read file")
+                }
+            }.getOrElse { e ->
+                Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            parsed.newLayers.forEach { drawingStore.addLayerVerbatim(it) }
+            parsed.drawings.forEach { drawingStore.addFeature(it) }
+            parsed.waypoints.forEach { waypointStore.add(it) }
+            Toast.makeText(
+                context,
+                "Imported ${parsed.waypoints.size} waypoint(s) and ${parsed.drawings.size} drawing(s)",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (!vm.locationService.hasPermission()) {
             permissionLauncher.launch(arrayOf(
@@ -676,6 +711,19 @@ fun MapScreen(
                         onClick = {
                             hamburgerOpen = false
                             geoJsonImportLauncher.launch(arrayOf("application/geo+json", "application/json", "*/*"))
+                        },
+                        leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Import KML / KMZ") },
+                        onClick = {
+                            hamburgerOpen = false
+                            // KML/KMZ have no reliable MIME registration across providers — show all files.
+                            kmlImportLauncher.launch(arrayOf(
+                                "application/vnd.google-earth.kml+xml",
+                                "application/vnd.google-earth.kmz",
+                                "*/*"
+                            ))
                         },
                         leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) }
                     )
