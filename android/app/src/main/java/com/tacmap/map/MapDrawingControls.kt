@@ -25,11 +25,13 @@ import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,6 +83,7 @@ internal fun DrawingFeatureEditBar(
     modifier: Modifier = Modifier
 ) {
     var colorMenuOpen by remember { mutableStateOf(false) }
+    var lineGraphicMenuOpen by remember { mutableStateOf(false) }
     var nameDialogOpen by remember { mutableStateOf(false) }
     // Rotation / W / H sliders take up most of the card's vertical
     // space and aren't needed for every edit, so they hide behind a
@@ -205,6 +208,43 @@ internal fun DrawingFeatureEditBar(
                     onFeatureChange(feature.copy(strokeStyle = feature.strokeStyle.next()))
                 }
             )
+            // Tactical line-graphic picker (line features only).
+            if (feature.geometry == DrawingGeometry.LINE) {
+                Box {
+                    val active = feature.lineGraphic != null &&
+                        feature.lineGraphic != com.tacmap.drawings.LineGraphic.PLAIN
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = if (active) 0.22f else 0.10f))
+                            .clickable { lineGraphicMenuOpen = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Timeline,
+                            contentDescription = "Tactical line graphic",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = lineGraphicMenuOpen,
+                        onDismissRequest = { lineGraphicMenuOpen = false }
+                    ) {
+                        com.tacmap.drawings.LineGraphic.entries.forEach { g ->
+                            DropdownMenuItem(
+                                text = { Text(g.displayName) },
+                                onClick = {
+                                    val v = if (g == com.tacmap.drawings.LineGraphic.PLAIN) null else g
+                                    onFeatureChange(feature.copy(lineGraphic = v))
+                                    lineGraphicMenuOpen = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
             if (hasTransforms) {
                 Box(
                     modifier = Modifier

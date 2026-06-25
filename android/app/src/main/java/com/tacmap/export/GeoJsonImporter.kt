@@ -186,6 +186,9 @@ object GeoJsonImporter {
             ?.jsonPrimitive?.doubleOrNull?.toFloat() ?: 8f
         val dashed = props["stroke_style"]?.jsonPrimitive?.contentOrNull
             ?.let { it.equals("dashed", ignoreCase = true) } == true
+        val lineGraphic = com.tacmap.drawings.LineGraphic.fromWire(
+            props["tacticalmaps:line_graphic"]?.jsonPrimitive?.contentOrNull
+        )
 
         return DrawingFeature(
             id = featureId,
@@ -196,7 +199,8 @@ object GeoJsonImporter {
             strokeColor = stroke,
             fillColor = fill,
             strokeWidth = strokeWidth,
-            strokeStyle = if (dashed) DrawingStrokeStyle.DASHED else DrawingStrokeStyle.SOLID
+            strokeStyle = if (dashed) DrawingStrokeStyle.DASHED else DrawingStrokeStyle.SOLID,
+            lineGraphic = lineGraphic
         )
     }
 

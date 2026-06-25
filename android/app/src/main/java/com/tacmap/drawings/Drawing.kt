@@ -25,6 +25,22 @@ enum class DrawingStrokeStyle(val displayName: String) {
     @SerialName("dashed") DASHED("Dashed")
 }
 
+/// NATO tactical line-graphic style for a line feature. `wire` matches the
+/// iOS rawValue so it round-trips through GeoJSON (tacticalmaps:line_graphic)
+/// and Unit Sync. PLAIN (or null) is an ordinary stroked line.
+@Serializable
+enum class LineGraphic(val wire: String, val displayName: String) {
+    @SerialName("plain")         PLAIN("plain", "Plain line"),
+    @SerialName("phaseLine")     PHASE_LINE("phaseLine", "Phase line"),
+    @SerialName("boundary")      BOUNDARY("boundary", "Boundary"),
+    @SerialName("forwardEdge")   FORWARD_EDGE("forwardEdge", "Forward line (FLOT)"),
+    @SerialName("axisOfAdvance") AXIS_OF_ADVANCE("axisOfAdvance", "Axis of advance");
+
+    companion object {
+        fun fromWire(s: String?): LineGraphic? = entries.firstOrNull { it.wire == s }
+    }
+}
+
 @Serializable
 data class DrawingLayer(
     val id: String = UUID.randomUUID().toString(),
@@ -45,6 +61,7 @@ data class DrawingFeature(
     @SerialName("fill_color") val fillColor: Int = 0x33FFA000,
     @SerialName("stroke_width") val strokeWidth: Float = 8f,
     @SerialName("stroke_style") val strokeStyle: DrawingStrokeStyle = DrawingStrokeStyle.SOLID,
+    @SerialName("line_graphic") val lineGraphic: LineGraphic? = null,
     @SerialName("scale_x") val scaleX: Double = 1.0,
     @SerialName("scale_y") val scaleY: Double = 1.0,
     @SerialName("rotation_degrees") val rotationDegrees: Double = 0.0,
