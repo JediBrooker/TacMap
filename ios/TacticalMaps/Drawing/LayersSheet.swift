@@ -14,6 +14,7 @@ struct LayersSheet: View {
     @State private var showingNewLayerSheet = false
     @State private var pendingDeleteLayer: DrawingLayer? = nil
     @State private var renamingLayer: DrawingLayer? = nil
+    @State private var tilingProgress: PDFTiler.Progress? = nil
 
     var body: some View {
         NavigationStack {
@@ -57,6 +58,21 @@ struct LayersSheet: View {
                             Text("Currently calibrated with \(fids.count) fiduciaries")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                        }
+                        if let p = tilingProgress {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ProgressView(value: p.total > 0 ? Double(p.done) / Double(p.total) : 0)
+                                Text(p.total > 0 ? "Generating offline tiles — \(p.done)/\(p.total)" : "Preparing…")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Button {
+                                generateTiles(from: pdfSource)
+                            } label: {
+                                Label("Generate Offline Tiles…", systemImage: "square.stack.3d.down.right")
+                            }
+                            Text("Bakes this calibrated map into an offline tile set on-device — no desktop tools.")
+                                .font(.caption2).foregroundStyle(.secondary)
                         }
                         Button(role: .destructive) {
                             mapVM.mapSource = AppleSatelliteMapSource()
@@ -143,6 +159,25 @@ struct LayersSheet: View {
                     renamingLayer = nil
                 }
                 Button("Cancel", role: .cancel) { renamingLayer = nil }
+            }
+        }
+    }
+
+    /// Bake the calibrated PDF into an offline MBTiles set off the main thread,
+    /// then swap the active source to the generated tiles.
+    private func generateTiles(from pdf: PDFMapSource) {
+        tilingProgress = PDFTiler.Progress(done: 0, total: 0)
+        Task.detached(priority: .userInitiated) {
+            let url = PDFTiler.generate(source: pdf) { p in
+                Task { @MainActor in tilingProgress = p }
+            }
+            await MainActor.run {
+                tilingProgress = nil
+                if let url, let source = OfflineTileMapSource(url: url) {
+                    mapVM.mapSource = source
+                    PDFSessionStore.clear()
+                    dismiss()
+                }
             }
         }
     }
