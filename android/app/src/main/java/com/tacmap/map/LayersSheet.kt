@@ -45,6 +45,7 @@ fun LayersSheet(
     hasPdfMap: Boolean,
     hasOfflineTiles: Boolean,
     onCalibratePdf: () -> Unit,
+    onGenerateTiles: () -> Unit,
     onUnloadPdf: () -> Unit,
     onUnloadOfflineTiles: () -> Unit,
     onDismiss: () -> Unit,
@@ -94,6 +95,15 @@ fun LayersSheet(
                         onClick = onCalibratePdf,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                     ) { Text("Calibrate PDF Map") }
+                    OutlinedButton(
+                        onClick = onGenerateTiles,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    ) { Text("Generate Offline Tiles") }
+                    Text(
+                        "Bakes this calibrated map into an offline tile set on-device — no desktop tools needed.",
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
                     OutlinedButton(
                         onClick = onUnloadPdf,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)

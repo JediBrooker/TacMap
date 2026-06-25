@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -168,6 +169,8 @@ fun MapScreen(
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var showAppLockSetup by remember { mutableStateOf(false) }
     val appLock = remember { com.tacmap.app.AppLock(context) }
+    /// (done, total) while baking a calibrated PDF into offline tiles; null when idle.
+    var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     /// Lock toggle — when true, NO graphic (symbol or drawing) can be
     /// moved by any gesture. An extra guard against accidental drags.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -1001,6 +1004,27 @@ fun MapScreen(
         com.tacmap.app.AppLockSetupDialog(appLock = appLock, onDismiss = { showAppLockSetup = false })
     }
 
+    tilingProgress?.let { (done, total) ->
+        AlertDialog(
+            onDismissRequest = { /* non-cancelable while baking */ },
+            confirmButton = {},
+            title = { Text("Generating offline tiles") },
+            text = {
+                Column {
+                    @Suppress("DEPRECATION")
+                    LinearProgressIndicator(
+                        progress = if (total > 0) done.toFloat() / total else 0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        if (total > 0) "$done / $total tiles" else "Preparing…",
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+        )
+    }
+
     if (showLayersSheet) {
         LayersSheet(
             mgrsGridVisible = mgrsGridVisible,
@@ -1018,6 +1042,32 @@ fun MapScreen(
             onCalibratePdf = {
                 showLayersSheet = false
                 startPdfCalibration()
+            },
+            onGenerateTiles = {
+                val pdf = pdfSource
+                showLayersSheet = false
+                if (pdf == null) {
+                    Toast.makeText(context, "Load a PDF map first", Toast.LENGTH_SHORT).show()
+                } else {
+                    scope.launch {
+                        tilingProgress = 0 to 0
+                        val path = com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
+                            tilingProgress = p.done to p.total
+                        }
+                        tilingProgress = null
+                        if (path != null) {
+                            com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
+                                ?.let { vm.setMapSource(it) }
+                            Toast.makeText(context, "Offline tiles ready", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Couldn't generate tiles — calibrate the PDF first (3+ fiduciaries).",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
             },
             onUnloadPdf = {
                 showLayersSheet = false
