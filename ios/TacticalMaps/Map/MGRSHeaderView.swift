@@ -70,23 +70,22 @@ struct MGRSHeaderView: View {
                 Text(isBrowsing ? "Map Centre" : "Live Location")
                     .font(.caption.weight(.semibold))
                 Spacer()
+                if syncConnected {
+                    HStack(spacing: 4) {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.caption2)
+                        Text("Unit Sync")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .foregroundStyle(Color(red: 0.31, green: 0.66, blue: 1.0))
+                    Spacer()
+                }
                 Text(accuracyText)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.75))
             }
             .padding(.top, 1)
             .foregroundStyle(.orange)
-
-            if syncConnected {
-                HStack(spacing: 5) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .font(.caption2)
-                    Text("Unit Sync")
-                        .font(.caption2.weight(.semibold))
-                }
-                .foregroundStyle(Color(red: 0.31, green: 0.66, blue: 1.0))
-                .frame(maxWidth: .infinity)
-            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)

@@ -146,21 +146,7 @@ fun MgrsHeader(
                 lineHeight = 13.sp
             )
             Spacer(Modifier.weight(1f))
-            Text(
-                accuracy?.let { "Accuracy ±%.0fm".format(it) } ?: "Accuracy N/A",
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                lineHeight = 12.sp,
-                textAlign = TextAlign.End
-            )
-        }
-        if (syncConnected) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            if (syncConnected) {
                 Icon(
                     Icons.Default.Sync,
                     contentDescription = null,
@@ -175,7 +161,16 @@ fun MgrsHeader(
                     fontWeight = FontWeight.SemiBold,
                     lineHeight = 12.sp
                 )
+                Spacer(Modifier.weight(1f))
             }
+            Text(
+                accuracy?.let { "Accuracy ±%.0fm".format(it) } ?: "Accuracy N/A",
+                color = Color.White.copy(alpha = 0.75f),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 12.sp,
+                textAlign = TextAlign.End
+            )
         }
     }
 }
