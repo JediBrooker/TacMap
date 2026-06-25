@@ -28,7 +28,17 @@ final class StoreManager: ObservableObject {
     @Published private(set) var isPurchased = false
     @Published private(set) var product: Product?
     @Published private(set) var purchasing = false
+    @Published private(set) var restoring = false
+    /// Set after a Restore attempt so the paywall can show the outcome; the UI
+    /// clears it once shown.
+    @Published var restoreOutcome: String?
     @Published private(set) var loadState: ProductLoadState = .loading
+
+    /// True for TestFlight / Sandbox builds (receipt is `sandboxReceipt`), where
+    /// in-app purchases are FREE — used to reassure testers they won't be charged.
+    var isSandbox: Bool {
+        Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    }
 
     /// Hard ceiling on the product fetch so a stalled StoreKit request can't
     /// hang the paywall forever.
@@ -95,9 +105,16 @@ final class StoreManager: ObservableObject {
     }
 
     /// "Restore purchase" — re-sync with the App Store and re-read entitlements.
+    /// Always reports an outcome so the button never feels like it did nothing.
     func restore() async {
+        restoring = true
+        defer { restoring = false }
+        let wasPurchased = isPurchased
         try? await AppStore.sync()
         await refreshEntitlement()
+        restoreOutcome = isPurchased
+            ? (wasPurchased ? "Already unlocked." : "Purchase restored.")
+            : "No previous purchase found on this Apple ID."
     }
 
     /// Open the App Store's "Redeem Gift Card or Code" screen.

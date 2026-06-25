@@ -87,10 +87,15 @@ struct PaywallView: View {
                 }
 
                 Button(action: onRestore) {
-                    Text("Restore purchase")
-                        .font(.subheadline)
-                        .foregroundStyle(orange)
+                    if store.restoring {
+                        ProgressView().tint(orange)
+                    } else {
+                        Text("Restore purchase")
+                            .font(.subheadline)
+                            .foregroundStyle(orange)
+                    }
                 }
+                .disabled(store.restoring)
                 .padding(.top, 10)
 
                 Button {
@@ -106,6 +111,15 @@ struct PaywallView: View {
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.48))
                     .padding(.top, 18)
+
+                if store.isSandbox {
+                    Text("Test build (Sandbox) — purchases are free; you won't be charged.")
+                        .font(.caption2)
+                        .foregroundStyle(green.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 6)
+                        .padding(.horizontal, 28)
+                }
 
                 Spacer()
             }
@@ -134,6 +148,12 @@ struct PaywallView: View {
                 await store.loadProduct()
             }
         }
+        .alert("Restore Purchase",
+               isPresented: Binding(get: { store.restoreOutcome != nil },
+                                    set: { if !$0 { store.restoreOutcome = nil } }),
+               presenting: store.restoreOutcome) { _ in
+            Button("OK", role: .cancel) { store.restoreOutcome = nil }
+        } message: { Text($0) }
     }
 
     private var buttonTitle: String {
