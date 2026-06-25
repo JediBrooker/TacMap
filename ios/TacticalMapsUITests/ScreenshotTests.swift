@@ -262,4 +262,39 @@ final class ScreenshotTests: XCTestCase {
         snap("m10-search")
         dismissSheet()
     }
+
+    /// Hero shot: join the unit-sync room that the host script
+    /// (scripts/sync_push_situation.mjs) pre-populated with a NATO APP-6
+    /// company-attack overlay. The snapshot delivers the shared picture and
+    /// the on-screen Unit Sync indicator goes Connected — symbology (the #1
+    /// feature) + live encrypted sync in one frame.
+    func testCaptureHero() {
+        openMenu()
+        _ = tapContaining("Unit Sync")
+        sleep(2)
+        let codeField = app.textFields.firstMatch
+        if codeField.waitForExistence(timeout: 6) {
+            codeField.tap(); sleep(1)
+            codeField.typeText("DAGGER-6")
+            sleep(1)
+            _ = tapContaining("Join")
+            sleep(8)               // connect + snapshot + render the situation
+        }
+        dismissSheet()
+        sleep(2)
+
+        // Turn on map labels so unit designations + control-measure names show.
+        openMenu()
+        _ = tap("Layers and Labels")
+        sleep(2)
+        for label in ["Unit Labels", "Task Labels", "Drawing Labels"] {
+            let sw = app.switches[label]
+            if sw.waitForExistence(timeout: 3), (sw.value as? String) == "0" {
+                sw.tap(); sleep(1)
+            }
+        }
+        dismissSheet()
+        sleep(3)
+        snap("hero")
+    }
 }
