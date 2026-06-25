@@ -1,0 +1,18 @@
+{
+  // TacMap real-time sync backend (Cloudflare Worker + Durable Object).
+  // Self-hostable: a unit can deploy this to their own Cloudflare account.
+  "name": "tacmap-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SYNC_ROOM", "class_name": "SyncRoom" }
+    ]
+  },
+  // SQLite-backed Durable Objects — available on the Workers free plan and the
+  // current recommended storage backend.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }
+  ]
+}
