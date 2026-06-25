@@ -27,6 +27,11 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var trial: TrialManager
     private lateinit var billing: BillingManager
+    private val appLock by lazy { AppLock(this) }
+
+    /// True when the App Lock PIN gate must be shown. Armed on launch and on
+    /// every pause, so returning to the app re-prompts.
+    private val locked = mutableStateOf(false)
 
     // Bumped on resume so the trial-expiry gate re-evaluates when the user
     // returns to the app (e.g. days later) without a cold restart.
@@ -36,9 +41,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         trial = TrialManager(this)
         billing = BillingManager(this).also { it.start() }
+        locked.value = appLock.isEnabled
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
+                if (locked.value) {
+                    AppLockScreen(appLock) { locked.value = false }
+                    return@MaterialTheme
+                }
                 val purchased by billing.isPurchased.collectAsState()
                 val price by billing.priceText.collectAsState()
                 val now by resumeTick
@@ -76,6 +86,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Re-arm the App Lock so returning to the app re-prompts for the PIN.
+        if (appLock.isEnabled) locked.value = true
     }
 
     override fun onResume() {

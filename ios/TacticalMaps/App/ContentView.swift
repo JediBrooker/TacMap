@@ -71,6 +71,7 @@ struct ContentView: View {
     @State private var showKMLImporter     = false
     @State private var showGPXExporter     = false
     @State private var showWeatherSheet    = false
+    @State private var showAppLockSheet    = false
     @State private var importMessage: String? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
@@ -267,6 +268,10 @@ struct ContentView: View {
                                     drawingsPanelOpen = false
                                     showGPXExporter = true
                                 },
+                                onAppLock:   {
+                                    drawingsPanelOpen = false
+                                    showAppLockSheet = true
+                                },
                                 onAbout:     {
                                     drawingsPanelOpen = false
                                     showAboutSheet = true
@@ -462,6 +467,10 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showWeatherSheet) {
             WeatherSheet(coordinate: mapVM.cameraCentre)
+                .padSheetSizing()
+        }
+        .sheet(isPresented: $showAppLockSheet) {
+            AppLockSetupView()
                 .padSheetSizing()
         }
         // Feed every fix into the track recorder; it ignores them unless recording.

@@ -30,10 +30,15 @@ private struct RootGate: View {
     let trial: TrialManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var now = Date()
+    /// Locked when an App Lock PIN is set; cleared after a successful unlock,
+    /// re-armed when the app backgrounds.
+    @State private var locked = AppLock.isEnabled
 
     var body: some View {
         Group {
-            if store.isPurchased || trial.isTrialActive(now: now) {
+            if locked {
+                LockView { locked = false }
+            } else if store.isPurchased || trial.isTrialActive(now: now) {
                 ContentView(store: store)
             } else {
                 PaywallView(
@@ -47,6 +52,9 @@ private struct RootGate: View {
             if phase == .active {
                 now = Date()
                 Task { await store.refreshEntitlement() }
+            }
+            if phase == .background && AppLock.isEnabled {
+                locked = true
             }
         }
     }

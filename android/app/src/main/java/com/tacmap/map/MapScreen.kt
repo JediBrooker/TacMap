@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Menu
@@ -165,6 +166,8 @@ fun MapScreen(
     var hamburgerOpen by remember { mutableStateOf(false) }
     /// Weather/UAV widget target = (lat, lng) of the map centre, null when closed.
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    var showAppLockSetup by remember { mutableStateOf(false) }
+    val appLock = remember { com.tacmap.app.AppLock(context) }
     /// Lock toggle — when true, NO graphic (symbol or drawing) can be
     /// moved by any gesture. An extra guard against accidental drags.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -789,6 +792,14 @@ fun MapScreen(
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
+                        text = { Text("App Lock") },
+                        onClick = {
+                            hamburgerOpen = false
+                            showAppLockSetup = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
                         text = { Text("About & Credits") },
                         onClick = {
                             hamburgerOpen = false
@@ -984,6 +995,10 @@ fun MapScreen(
 
     weatherTarget?.let { (lat, lng) ->
         WeatherDialog(lat = lat, lng = lng, onDismiss = { weatherTarget = null })
+    }
+
+    if (showAppLockSetup) {
+        com.tacmap.app.AppLockSetupDialog(appLock = appLock, onDismiss = { showAppLockSetup = false })
     }
 
     if (showLayersSheet) {
