@@ -52,6 +52,8 @@ import com.google.maps.android.compose.CameraMoveStartedReason
 import com.google.maps.android.compose.CameraPositionState
 import com.google.maps.android.compose.DragState
 import com.google.android.gms.maps.model.LatLngBounds
+import com.tacmap.calibration.Wgs84Bounds
+import com.tacmap.calibration.Wgs84Coordinate
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.GroundOverlay
 import com.google.maps.android.compose.GroundOverlayPosition
@@ -78,6 +80,8 @@ import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.waypoints.Waypoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -111,6 +115,7 @@ fun GoogleMapScreen(
     onFreeDrawEnd: () -> Unit = {},
     calibrationInputEnabled: Boolean = false,
     mgrsGridVisible: Boolean = false,
+    terrainHeatmapVisible: Boolean = false,
     unitLabelsVisible: Boolean = true,
     taskLabelsVisible: Boolean = true,
     drawingLabelsVisible: Boolean = true,
@@ -166,6 +171,29 @@ fun GoogleMapScreen(
                 )
             )
         }
+    }
+
+    // Auto terrain heat-map: when enabled, sample the visible region's DEM once
+    // the camera settles (debounced) and stretch a coloured overlay across it.
+    val heatmapService = remember { TerrainHeatmapService() }
+    var terrainHeatmap by remember { mutableStateOf<Pair<Bitmap, LatLngBounds>?>(null) }
+    LaunchedEffect(terrainHeatmapVisible, cameraPositionState) {
+        if (!terrainHeatmapVisible) {
+            terrainHeatmap = null
+            return@LaunchedEffect
+        }
+        snapshotFlow { cameraPositionState.isMoving }
+            .collectLatest { moving ->
+                if (moving) return@collectLatest
+                delay(500)   // debounce; collectLatest cancels this if the camera moves again
+                val region = cameraPositionState.projection?.visibleRegion ?: return@collectLatest
+                val b = region.latLngBounds
+                val wb = Wgs84Bounds(
+                    southwest = Wgs84Coordinate(b.southwest.latitude, b.southwest.longitude),
+                    northeast = Wgs84Coordinate(b.northeast.latitude, b.northeast.longitude)
+                )
+                heatmapService.generate(wb)?.let { bmp -> terrainHeatmap = bmp to b }
+            }
     }
 
     val currentOnCameraIdle = rememberUpdatedState(onCameraIdle)
@@ -303,6 +331,15 @@ fun GoogleMapScreen(
                 /// Online OSM raster tiles over MapType.NONE.
                 val provider = remember(osm.id) { OsmTileProvider() }
                 TileOverlay(tileProvider = provider)
+            }
+
+            if (terrainHeatmapVisible) {
+                terrainHeatmap?.let { (bmp, bounds) ->
+                    GroundOverlay(
+                        position = GroundOverlayPosition.create(bounds),
+                        image = BitmapDescriptorFactory.fromBitmap(bmp)
+                    )
+                }
             }
 
             if (mgrsGridVisible) {

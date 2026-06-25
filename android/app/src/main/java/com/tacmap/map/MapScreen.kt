@@ -182,6 +182,7 @@ fun MapScreen(
     var taskLabelsVisible by rememberPersistedBoolean("taskLabels", false)
     var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
     var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
+    var terrainHeatmapVisible by rememberPersistedBoolean("terrainHeatmap", false)
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
     var isFreeDrawMode by remember { mutableStateOf(false) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
@@ -517,6 +518,7 @@ fun MapScreen(
                 },
                 calibrationInputEnabled = isCalibratingPdf,
                 mgrsGridVisible = mgrsGridVisible,
+                terrainHeatmapVisible = terrainHeatmapVisible,
                 unitLabelsVisible = unitLabelsVisible,
                 taskLabelsVisible = taskLabelsVisible,
                 drawingLabelsVisible = drawingLabelsVisible,
@@ -1031,7 +1033,9 @@ fun MapScreen(
             unitLabelsVisible = unitLabelsVisible,
             taskLabelsVisible = taskLabelsVisible,
             drawingLabelsVisible = drawingLabelsVisible,
+            terrainHeatmapVisible = terrainHeatmapVisible,
             onMgrsGridChange = { mgrsGridVisible = it },
+            onTerrainHeatmapChange = { terrainHeatmapVisible = it },
             onUnitLabelsChange = { unitLabelsVisible = it },
             onTaskLabelsChange = { taskLabelsVisible = it },
             onDrawingLabelsChange = { drawingLabelsVisible = it },

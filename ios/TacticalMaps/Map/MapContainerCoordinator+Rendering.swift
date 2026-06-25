@@ -12,9 +12,13 @@ import MGRS
 extension MapContainerView.Coordinator {
 
     func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-        // Offline MBTiles raster basemap.
+        // Offline MBTiles / OSM raster basemap.
         if let tile = overlay as? MKTileOverlay {
             return MKTileOverlayRenderer(tileOverlay: tile)
+        }
+        // Auto terrain heat-map.
+        if let heatmap = overlay as? TerrainHeatmapOverlay {
+            return TerrainHeatmapRenderer(heatmap: heatmap)
         }
         // PDF basemap is no longer an MKOverlay — it's a UIImageView
         // subview (see syncPDFOverlay). This delegate handles drawings only.

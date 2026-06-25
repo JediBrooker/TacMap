@@ -24,6 +24,7 @@ struct LayersSheet: View {
                     Toggle("Drawings",      isOn: $visibility.drawingsVisible)
                     Toggle("User Location", isOn: $visibility.userLocationVisible)
                     Toggle("MGRS Grid",     isOn: $visibility.mgrsGridVisible)
+                    Toggle("Terrain Heat-map", isOn: $visibility.terrainHeatmapVisible)
                 }
 
                 Section("Labels") {

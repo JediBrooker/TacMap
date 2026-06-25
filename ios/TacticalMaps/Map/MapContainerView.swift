@@ -130,6 +130,7 @@ struct MapContainerView: UIViewRepresentable {
                                            source: mapVM.mapSource,
                                            visible: visibility.pdfOverlayVisible)
         context.coordinator.syncTileOverlay(on: mv, source: mapVM.mapSource)
+        context.coordinator.setHeatmapEnabled(visibility.terrainHeatmapVisible, on: mv)
         // Sync the MGRS-grid toggle through to the coordinator and
         // rebuild — flipping the switch must take effect without
         // waiting for the next pan/zoom.
@@ -220,6 +221,13 @@ struct MapContainerView: UIViewRepresentable {
         var tileOverlay: MKTileOverlay?
         var tileSourceID: UUID?
 
+        /// Auto terrain heat-map: a geo-anchored DEM overlay refreshed (debounced)
+        /// when the region changes while enabled. Persists across refresh().
+        var heatmapOverlay: TerrainHeatmapOverlay?
+        var heatmapEnabled = false
+        let heatmapService = TerrainHeatmapService()
+        var heatmapTask: Task<Void, Never>?
+
         /// Dark UIView covering the satellite while a PDF is loaded so the
         /// imported map is the only visible content. Removed when the PDF is
         /// hidden or unloaded.
@@ -272,6 +280,7 @@ struct MapContainerView: UIViewRepresentable {
             pdfImageView?.updateFrame(in: mv)
             publishOverlayState(in: mv)
             refreshMGRSGrid(on: mv)
+            if heatmapEnabled { scheduleHeatmapRefresh(on: mv) }
         }
 
         /// Fires on every render frame during pan/zoom/rotate — the only delegate
@@ -451,9 +460,12 @@ struct MapContainerView: UIViewRepresentable {
 
             self.labelsVisible = visibility?.drawingLabelsVisible ?? true
 
-            // --- Overlays --- (keep the offline-tile basemap; it persists
-            // across refreshes so the tiles don't reload on every model change)
-            mv.removeOverlays(mv.overlays.filter { !($0 is MKTileOverlay) })
+            // --- Overlays --- (keep the offline-tile basemap and the terrain
+            // heat-map; they persist across refreshes so they don't reload on
+            // every model change)
+            mv.removeOverlays(mv.overlays.filter {
+                !($0 is MKTileOverlay) && !($0 is TerrainHeatmapOverlay)
+            })
             styleByOverlay.removeAll()
             inProgressOverlayIDs.removeAll()
             shapeIDByOverlay.removeAll()

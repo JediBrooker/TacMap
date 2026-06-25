@@ -36,7 +36,9 @@ fun LayersSheet(
     unitLabelsVisible: Boolean,
     taskLabelsVisible: Boolean,
     drawingLabelsVisible: Boolean,
+    terrainHeatmapVisible: Boolean,
     onMgrsGridChange: (Boolean) -> Unit,
+    onTerrainHeatmapChange: (Boolean) -> Unit,
     onUnitLabelsChange: (Boolean) -> Unit,
     onTaskLabelsChange: (Boolean) -> Unit,
     onDrawingLabelsChange: (Boolean) -> Unit,
@@ -62,6 +64,7 @@ fun LayersSheet(
 
             SectionHeader("Overlays")
             ToggleRow("MGRS Grid", mgrsGridVisible, onMgrsGridChange)
+            ToggleRow("Terrain Heat-map", terrainHeatmapVisible, onTerrainHeatmapChange)
 
             SectionHeader("Labels")
             ToggleRow("Unit Labels", unitLabelsVisible, onUnitLabelsChange)
