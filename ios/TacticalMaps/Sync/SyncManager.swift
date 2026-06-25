@@ -23,8 +23,10 @@ final class SyncManager: ObservableObject {
 
     static let relayBase = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
 
-    private let waypointStore: WaypointStore
-    private let drawingStore: DrawingStore
+    // Set once via configure() so this can be a @StateObject (created without
+    // referencing the other @StateObject stores at declaration).
+    private var waypointStore: WaypointStore!
+    private var drawingStore: DrawingStore!
 
     private var task: URLSessionWebSocketTask?
     private var roomKey: SymmetricKey?
@@ -38,9 +40,7 @@ final class SyncManager: ObservableObject {
     private var kindById: [String: String] = [:]
     private var observers = Set<AnyCancellable>()
 
-    init(waypointStore: WaypointStore, drawingStore: DrawingStore) {
-        self.waypointStore = waypointStore
-        self.drawingStore = drawingStore
+    init() {
         if let existing = UserDefaults.standard.string(forKey: "sync.clientId") {
             clientId = existing
         } else {
@@ -48,6 +48,14 @@ final class SyncManager: ObservableObject {
             UserDefaults.standard.set(id, forKey: "sync.clientId")
             clientId = id
         }
+    }
+
+    /// Inject the shared stores once the view hierarchy exists. Safe to call
+    /// repeatedly; only the first call binds.
+    func configure(waypointStore: WaypointStore, drawingStore: DrawingStore) {
+        guard self.waypointStore == nil else { return }
+        self.waypointStore = waypointStore
+        self.drawingStore = drawingStore
     }
 
     // MARK: API

@@ -73,7 +73,7 @@ struct ContentView: View {
     @State private var showWeatherSheet    = false
     @State private var showAppLockSheet    = false
     @State private var showSyncSheet       = false
-    @State private var syncManager: SyncManager?
+    @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: String? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
@@ -172,6 +172,7 @@ struct ContentView: View {
                         mgrs: mapVM.headerMGRS,
                         wgs84: mapVM.headerWGS84,
                         utm: mapVM.headerUTM,
+                        syncConnected: syncManager.status == .connected,
                         isBrowsing: mapVM.isBrowsing,
                         accuracy: locationService.lastAccuracy,
                         // Crosshair elevation: prefer the DEM lookup so panning
@@ -480,15 +481,11 @@ struct ContentView: View {
                 .padSheetSizing()
         }
         .sheet(isPresented: $showSyncSheet) {
-            if let syncManager {
-                SyncSheet(manager: syncManager)
-                    .padSheetSizing()
-            }
+            SyncSheet(manager: syncManager)
+                .padSheetSizing()
         }
         .task {
-            if syncManager == nil {
-                syncManager = SyncManager(waypointStore: waypointStore, drawingStore: drawingStore)
-            }
+            syncManager.configure(waypointStore: waypointStore, drawingStore: drawingStore)
         }
         // Feed every fix into the track recorder; it ignores them unless recording.
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in

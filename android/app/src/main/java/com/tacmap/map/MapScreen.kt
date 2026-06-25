@@ -174,6 +174,7 @@ fun MapScreen(
     val syncManager = remember {
         com.tacmap.sync.SyncManager(waypointStore, drawingStore, scope, context)
     }
+    val syncStatus by syncManager.status.collectAsState()
     /// (done, total) while baking a calibrated PDF into offline tiles; null when idle.
     var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     /// Lock toggle — when true, NO graphic (symbol or drawing) can be
@@ -608,6 +609,7 @@ fun MapScreen(
             elevation = centreElevation?.metres,
             elevationApprox = centreElevation?.isStale == true,
             utm = vm.headerUtm,
+            syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()

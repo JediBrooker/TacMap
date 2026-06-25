@@ -13,6 +13,8 @@ struct MGRSHeaderView: View {
     let wgs84: String
     /// User-facing UTM readout (e.g. "33N 450000mE 6700000mN"). nil hides the row.
     var utm: String? = nil
+    /// True while connected to a Unit Sync room — shows a blue indicator.
+    var syncConnected: Bool = false
     let isBrowsing: Bool
     let accuracy: CLLocationAccuracy?
     let elevation: CLLocationDistance?
@@ -74,6 +76,17 @@ struct MGRSHeaderView: View {
             }
             .padding(.top, 1)
             .foregroundStyle(.orange)
+
+            if syncConnected {
+                HStack(spacing: 5) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.caption2)
+                    Text("Unit Sync")
+                        .font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(Color(red: 0.31, green: 0.66, blue: 1.0))
+                .frame(maxWidth: .infinity)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)

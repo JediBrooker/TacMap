@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationSearching
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +52,7 @@ fun MgrsHeader(
     elevation: Double? = null,
     elevationApprox: Boolean = false,
     utm: String? = null,
+    syncConnected: Boolean = false,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -153,5 +155,29 @@ fun MgrsHeader(
                 textAlign = TextAlign.End
             )
         }
+        if (syncConnected) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Sync,
+                    contentDescription = null,
+                    tint = SyncBlue,
+                    modifier = Modifier.size(12.dp)
+                )
+                Spacer(Modifier.size(4.dp))
+                Text(
+                    "Unit Sync",
+                    color = SyncBlue,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 12.sp
+                )
+            }
+        }
     }
 }
+
+private val SyncBlue = Color(0xFF4FA8FF)
