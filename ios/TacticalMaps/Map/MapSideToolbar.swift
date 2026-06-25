@@ -26,6 +26,7 @@ struct HamburgerMenu: View {
     let trackPointCount: Int
     let onToggleTrackRecording: () -> Void
     let onExportGPX:     () -> Void
+    let onSync:          () -> Void
     let onAppLock:       () -> Void
     let onAbout:         () -> Void
 
@@ -89,6 +90,7 @@ struct HamburgerMenu: View {
                         row("Export GPX Track…", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                             { close(onExportGPX) }
                         divider
+                        row("Unit Sync…", systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
                         row("App Lock…", systemImage: "lock.shield")               { close(onAppLock) }
                         row("About & Credits", systemImage: "info.circle")         { close(onAbout) }
                     }

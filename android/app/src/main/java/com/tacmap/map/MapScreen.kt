@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Timeline
@@ -169,6 +170,10 @@ fun MapScreen(
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var showAppLockSetup by remember { mutableStateOf(false) }
     val appLock = remember { com.tacmap.app.AppLock(context) }
+    var showSyncDialog by remember { mutableStateOf(false) }
+    val syncManager = remember {
+        com.tacmap.sync.SyncManager(waypointStore, drawingStore, scope, context)
+    }
     /// (done, total) while baking a calibrated PDF into offline tiles; null when idle.
     var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     /// Lock toggle — when true, NO graphic (symbol or drawing) can be
@@ -797,6 +802,14 @@ fun MapScreen(
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
+                        text = { Text("Unit Sync") },
+                        onClick = {
+                            hamburgerOpen = false
+                            showSyncDialog = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Sync, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
                         text = { Text("App Lock") },
                         onClick = {
                             hamburgerOpen = false
@@ -1004,6 +1017,10 @@ fun MapScreen(
 
     if (showAppLockSetup) {
         com.tacmap.app.AppLockSetupDialog(appLock = appLock, onDismiss = { showAppLockSetup = false })
+    }
+
+    if (showSyncDialog) {
+        com.tacmap.sync.SyncDialog(manager = syncManager, onDismiss = { showSyncDialog = false })
     }
 
     tilingProgress?.let { (done, total) ->

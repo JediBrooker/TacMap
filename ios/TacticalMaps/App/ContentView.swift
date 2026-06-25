@@ -72,6 +72,8 @@ struct ContentView: View {
     @State private var showGPXExporter     = false
     @State private var showWeatherSheet    = false
     @State private var showAppLockSheet    = false
+    @State private var showSyncSheet       = false
+    @State private var syncManager: SyncManager?
     @State private var importMessage: String? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
@@ -267,6 +269,10 @@ struct ContentView: View {
                                 onExportGPX: {
                                     drawingsPanelOpen = false
                                     showGPXExporter = true
+                                },
+                                onSync:      {
+                                    drawingsPanelOpen = false
+                                    showSyncSheet = true
                                 },
                                 onAppLock:   {
                                     drawingsPanelOpen = false
@@ -472,6 +478,17 @@ struct ContentView: View {
         .sheet(isPresented: $showAppLockSheet) {
             AppLockSetupView()
                 .padSheetSizing()
+        }
+        .sheet(isPresented: $showSyncSheet) {
+            if let syncManager {
+                SyncSheet(manager: syncManager)
+                    .padSheetSizing()
+            }
+        }
+        .task {
+            if syncManager == nil {
+                syncManager = SyncManager(waypointStore: waypointStore, drawingStore: drawingStore)
+            }
         }
         // Feed every fix into the track recorder; it ignores them unless recording.
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
