@@ -96,7 +96,7 @@ struct PaywallView: View {
                 Button {
                     store.presentRedeemSheet()
                 } label: {
-                    Text("Redeem code")
+                    Text("Redeem code on the App Store")
                         .font(.subheadline)
                         .foregroundStyle(orange)
                 }

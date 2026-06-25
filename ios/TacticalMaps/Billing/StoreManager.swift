@@ -1,5 +1,6 @@
 import Foundation
 import StoreKit
+import UIKit
 
 /// StoreKit 2 wrapper for the single one-time, non-consumable unlock that
 /// permanently removes the trial gate.
@@ -99,15 +100,18 @@ final class StoreManager: ObservableObject {
         await refreshEntitlement()
     }
 
-    /// Present the App Store's own code-redemption sheet for promo codes
-    /// (App Store Connect → your IAP → "Promo Codes", up to 100 free per
-    /// version). A redeemed code grants the real `unlock` entitlement and
-    /// produces a normal transaction that `listenForTransactions` already
-    /// picks up, flipping `isPurchased` — so no app-side validation is needed.
-    /// This is Apple's UI, so it's review-safe (no guideline 3.1.1 risk).
-    /// No-op in the Simulator / StoreKit local testing.
+    /// Open the App Store's "Redeem Gift Card or Code" screen.
+    ///
+    /// App Store **promo codes** for a NON-consumable IAP can only be redeemed
+    /// in the App Store app — Apple's in-app `presentCodeRedemptionSheet()` is
+    /// for *subscription offer codes* only, which this app doesn't have, so it
+    /// would dead-end. Instead we deep-link to the store's redeem screen (the
+    /// iOS mirror of Android's `play.google.com/redeem`); the user pastes the
+    /// code there. A successful redemption produces a normal transaction that
+    /// `listenForTransactions` / restore picks up, flipping `isPurchased`.
     func presentRedeemSheet() {
-        SKPaymentQueue.default().presentCodeRedemptionSheet()
+        guard let url = URL(string: "https://apps.apple.com/redeem") else { return }
+        UIApplication.shared.open(url)
     }
 
     /// Grant the unlock if a verified, non-revoked entitlement exists.
