@@ -20,6 +20,11 @@ struct HamburgerMenu: View {
     let onImportGeoJSON: () -> Void
     let onImportKML:     () -> Void
     let onExport:        () -> Void
+    /// GPX track recording state + actions.
+    let isRecordingTrack: Bool
+    let trackPointCount: Int
+    let onToggleTrackRecording: () -> Void
+    let onExportGPX:     () -> Void
     let onAbout:         () -> Void
 
     @State private var isOpen = false
@@ -72,6 +77,14 @@ struct HamburgerMenu: View {
                         row("Import GeoJSON…", systemImage: "square.and.arrow.down") { close(onImportGeoJSON) }
                         row("Import KML / KMZ…", systemImage: "globe.desk")          { close(onImportKML) }
                         row("Export GeoJSON…", systemImage: "square.and.arrow.up")   { close(onExport) }
+                        divider
+                        row(isRecordingTrack
+                            ? "Stop Track Recording (\(trackPointCount) pts)"
+                            : "Start Track Recording",
+                            systemImage: isRecordingTrack ? "stop.circle.fill" : "record.circle")
+                            { close(onToggleTrackRecording) }
+                        row("Export GPX Track…", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                            { close(onExportGPX) }
                         divider
                         row("About & Credits", systemImage: "info.circle")         { close(onAbout) }
                     }

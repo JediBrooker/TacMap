@@ -46,14 +46,16 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        NSLocationWhenInUseUsageDescription: TacMap shows your live position on the map and reads it as an MGRS grid reference.
-        # NOTE: No background location. The app only requests
-        # When-In-Use authorization (see LocationService.swift) and does
-        # not enable allowsBackgroundLocationUpdates. Declaring
-        # UIBackgroundModes:[location] or the "Always" usage string
-        # without a persistent-location feature triggers App Store
-        # rejection under guideline 2.5.4 — re-add both only when
-        # background route logging actually ships.
+        NSLocationWhenInUseUsageDescription: TacMap shows your live position on the map, reads it as an MGRS grid reference, and records GPX patrol tracks.
+        # Background location is declared for GPX track recording — the
+        # persistent-location feature guideline 2.5.4 requires before
+        # UIBackgroundModes:[location] is acceptable. We stay on
+        # When-In-Use authorization and only flip
+        # allowsBackgroundLocationUpdates ON while a track is recording
+        # (TrackRecorder start/stop), so there's no background access
+        # outside an explicit user-started recording.
+        UIBackgroundModes:
+          - location
         ITSAppUsesNonExemptEncryption: false
         # Surface the app's Documents folder in the Files app so the user can
         # drop GeoPDFs into TacticalMaps from Files → "On My iPhone".

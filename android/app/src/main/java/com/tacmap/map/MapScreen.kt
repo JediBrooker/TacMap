@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Gesture
@@ -46,9 +47,11 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -135,6 +138,8 @@ fun MapScreen(
     val cameraLat by vm.cameraLat.collectAsState()
     val cameraLng by vm.cameraLng.collectAsState()
     val centreElevation by vm.centreElevation.collectAsState()
+    val isRecordingTrack by vm.trackRecorder.isRecording.collectAsState()
+    val trackPoints by vm.trackRecorder.points.collectAsState()
     val mapSource by vm.mapSource.collectAsState()
     val waypointStore = remember { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
@@ -742,6 +747,33 @@ fun MapScreen(
                             )
                         },
                         leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) }
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (isRecordingTrack) "Stop Track Recording (${trackPoints.size} pts)"
+                                else "Start Track Recording"
+                            )
+                        },
+                        onClick = {
+                            hamburgerOpen = false
+                            if (isRecordingTrack) vm.trackRecorder.stop() else vm.trackRecorder.start()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (isRecordingTrack) Icons.Default.Stop else Icons.Default.FiberManualRecord,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Export GPX Track") },
+                        onClick = {
+                            hamburgerOpen = false
+                            shareGpx(context = context, points = trackPoints)
+                        },
+                        leadingIcon = { Icon(Icons.Default.Timeline, contentDescription = null) }
                     )
                     HorizontalDivider()
                     DropdownMenuItem(

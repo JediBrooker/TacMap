@@ -27,6 +27,15 @@ final class LocationService: NSObject, ObservableObject {
 
     func start() { manager.startUpdatingLocation() }
     func stop()  { manager.stopUpdatingLocation() }
+
+    /// Enable background fixes only while a GPX track is recording. Requires
+    /// UIBackgroundModes:[location] (declared in Info.plist) — toggling it off
+    /// when not recording keeps us off background location the rest of the time.
+    /// Safe under When-In-Use authorization (shows the system blue bar).
+    func setBackgroundUpdates(_ enabled: Bool) {
+        manager.allowsBackgroundLocationUpdates = enabled
+        manager.showsBackgroundLocationIndicator = enabled
+    }
 }
 
 extension LocationService: CLLocationManagerDelegate {

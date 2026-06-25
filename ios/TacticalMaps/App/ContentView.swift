@@ -50,6 +50,7 @@ struct ContentView: View {
     @StateObject private var visibility      = LayerVisibility()
     @StateObject private var mapVM           = MapViewModel()
     @StateObject private var calibration     = CalibrationSession()
+    @StateObject private var trackRecorder   = TrackRecorder()
 
     /// Injected from the app gate so the menu can show trial status + offer
     /// the unlock on demand (the paywall otherwise only appears once the
@@ -68,6 +69,7 @@ struct ContentView: View {
     @State private var showMBTilesImporter = false
     @State private var showGeoJSONImporter = false
     @State private var showKMLImporter     = false
+    @State private var showGPXExporter     = false
     @State private var importMessage: String? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
@@ -242,6 +244,22 @@ struct ContentView: View {
                                 onExport:    {
                                     drawingsPanelOpen = false
                                     showExportSheet = true
+                                },
+                                isRecordingTrack: trackRecorder.isRecording,
+                                trackPointCount: trackRecorder.points.count,
+                                onToggleTrackRecording: {
+                                    drawingsPanelOpen = false
+                                    if trackRecorder.isRecording {
+                                        trackRecorder.stop()
+                                        locationService.setBackgroundUpdates(false)
+                                    } else {
+                                        trackRecorder.start()
+                                        locationService.setBackgroundUpdates(true)
+                                    }
+                                },
+                                onExportGPX: {
+                                    drawingsPanelOpen = false
+                                    showGPXExporter = true
                                 },
                                 onAbout:     {
                                     drawingsPanelOpen = false
@@ -431,6 +449,14 @@ struct ContentView: View {
         .sheet(isPresented: $showExportSheet) {
             ExportSheet(waypointStore: waypointStore, drawingStore: drawingStore)
                 .padSheetSizing()
+        }
+        .sheet(isPresented: $showGPXExporter) {
+            GPXExportSheet(points: trackRecorder.points)
+                .padSheetSizing()
+        }
+        // Feed every fix into the track recorder; it ignores them unless recording.
+        .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
+            trackRecorder.ingest(loc)
         }
         .sheet(isPresented: $showSearchSheet) {
             SearchSheet(mapVM: mapVM)

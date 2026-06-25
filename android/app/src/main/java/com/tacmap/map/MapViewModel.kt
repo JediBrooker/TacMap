@@ -11,6 +11,7 @@ import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfSessionStore
 import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LocationService
+import com.tacmap.models.TrackRecorder
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +39,10 @@ import kotlin.math.abs
 class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     val locationService = LocationService(app)
+
+    /** GPX patrol-track recorder. Fed every fix from [onUserLocation]; only
+     *  accumulates while recording. */
+    val trackRecorder = TrackRecorder()
 
     // Camera centre published by MapScreen on every camera-idle event.
     private val _cameraLat = MutableStateFlow(0.0)
@@ -199,6 +204,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun onUserLocation(loc: Location) {
         lastUserLocation = loc
+        trackRecorder.onLocation(loc)
         if (!hasInitialFix) {
             hasInitialFix = true
             // Centre on the user on the first fix — unless a bounded map
