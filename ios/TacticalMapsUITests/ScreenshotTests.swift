@@ -147,4 +147,119 @@ final class ScreenshotTests: XCTestCase {
         sleep(2)
         snap("layers")
     }
+
+    // MARK: - Marketing set (1.1.0 — new features)
+
+    /// Taps the first button whose label CONTAINS `text` (case-insensitive),
+    /// so menu rows with trailing ellipses ("Unit Sync…", "Import / Export…")
+    /// match without hard-coding the exact glyph.
+    @discardableResult
+    private func tapContaining(_ text: String, timeout: TimeInterval = 10) -> Bool {
+        let pred = NSPredicate(format: "label CONTAINS[c] %@", text)
+        let b = app.buttons.matching(pred).firstMatch
+        guard b.waitForExistence(timeout: timeout) else {
+            NSLog("[shots] no button containing: \(text)")
+            return false
+        }
+        b.tap()
+        return true
+    }
+
+    /// Dismiss whatever sheet/sub-page is up: try a close-style button, else
+    /// drag the sheet down. Best-effort so the run never aborts on one sheet.
+    private func dismissSheet() {
+        for label in ["Close", "Done", "Cancel"] {
+            let b = app.buttons[label]
+            if b.exists && b.isHittable { b.tap(); sleep(1); return }
+        }
+        let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.10))
+        let bottom = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96))
+        top.press(forDuration: 0.1, thenDragTo: bottom)
+        sleep(1)
+    }
+
+    /// One run that captures the full 1.1.0 marketing set. Every step is
+    /// best-effort (guarded), so a single missing control can't abort the rest.
+    func testCaptureMarketing() {
+        // 01 — live HUD: MGRS + UTM + mils compass over the basemap.
+        snap("m01-hud")
+
+        // 02 — the consolidated command menu.
+        openMenu()
+        sleep(1)
+        snap("m02-menu")
+        _ = tap("Close")
+        sleep(1)
+
+        // 03 — Unit Sync (the flagship): join a room so it shows Connected.
+        openMenu()
+        _ = tapContaining("Unit Sync")
+        sleep(2)
+        let codeField = app.textFields.firstMatch
+        if codeField.waitForExistence(timeout: 6) {
+            codeField.tap(); sleep(1)
+            codeField.typeText("WOLFPACK-6")
+            sleep(1)
+            _ = tapContaining("Join")     // "Join / create room"
+            sleep(5)                       // WebSocket handshake to the live relay
+        }
+        snap("m03-unit-sync")
+        dismissSheet()
+
+        // 04 — Weather + UAV flight-safety.
+        openMenu()
+        _ = tapContaining("Weather")
+        sleep(3)               // open-meteo fetch
+        snap("m04-weather")
+        dismissSheet()
+
+        // 05 — Layers & Labels: basemap selector + terrain heatmap.
+        openMenu()
+        _ = tap("Layers and Labels")
+        sleep(2)
+        snap("m05-layers")
+        dismissSheet()
+
+        // 06 — Import / Export sub-page (the new grouping).
+        openMenu()
+        _ = tapContaining("Import / Export")
+        sleep(2)
+        snap("m06-import-export")
+        dismissSheet()         // back out of the sub-page / menu
+
+        // 07 — APP-6 symbol builder with live preview.
+        openMenu()
+        _ = tap("Symbology")
+        _ = tap("Add at Crosshair")
+        sleep(1)
+        snap("m07-symbol-builder")
+        _ = tap("Save")
+        sleep(1)
+        _ = tap("Done")
+        sleep(1)
+
+        // 08 — a second hostile unit + assembly-area, for a populated map.
+        panMap(dx: 0.16, dy: -0.12)
+        addSymbol {
+            if tap("Affiliation", timeout: 6) { sleep(1); _ = tap("Hostile", timeout: 6); sleep(1) }
+        }
+        panMap(dx: -0.18, dy: 0.14)
+        addSymbol { _ = tap("Tasks", timeout: 6); sleep(1) }
+        panMap(dx: 0.02, dy: -0.02)
+        sleep(2)
+        snap("m08-symbols")
+
+        // 09 — GPX recording: the live REC indicator on the map.
+        openMenu()
+        _ = tapContaining("Start Track Recording")
+        sleep(2)
+        snap("m09-recording")
+
+        // 10 — search (place name or full / partial MGRS).
+        openMenu()
+        _ = tapContaining("Search")
+        sleep(2)
+        snap("m10-search")
+        dismissSheet()
+    }
 }
