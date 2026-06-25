@@ -15,6 +15,7 @@ struct HamburgerMenu: View {
     let onDrawings:      () -> Void
     let onLayers:        () -> Void
     let onMeasure:       () -> Void
+    let onWeather:       () -> Void
     let onImport:        () -> Void
     let onImportTiles:   () -> Void
     let onImportGeoJSON: () -> Void
@@ -71,6 +72,7 @@ struct HamburgerMenu: View {
                         row("Drawings",        systemImage: "scribble.variable")   { close(onDrawings) }
                         row("Layers and Labels", systemImage: "square.3.stack.3d") { close(onLayers) }
                         row("Measure",         systemImage: "ruler")               { close(onMeasure) }
+                        row("Weather & UAV Safety", systemImage: "wind")            { close(onWeather) }
                         divider
                         row("Import PDF Map…", systemImage: "doc.badge.plus")      { close(onImport) }
                         row("Import Offline Tiles…", systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }

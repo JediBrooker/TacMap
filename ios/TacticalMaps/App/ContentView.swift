@@ -70,6 +70,7 @@ struct ContentView: View {
     @State private var showGeoJSONImporter = false
     @State private var showKMLImporter     = false
     @State private var showGPXExporter     = false
+    @State private var showWeatherSheet    = false
     @State private var importMessage: String? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
@@ -224,6 +225,10 @@ struct ContentView: View {
                                     drawingsPanelOpen = false
                                     drawingSession.cancel()
                                     measureSession.start()
+                                },
+                                onWeather:   {
+                                    drawingsPanelOpen = false
+                                    showWeatherSheet = true
                                 },
                                 onImport:    {
                                     drawingsPanelOpen = false
@@ -452,6 +457,10 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showGPXExporter) {
             GPXExportSheet(points: trackRecorder.points)
+                .padSheetSizing()
+        }
+        .sheet(isPresented: $showWeatherSheet) {
+            WeatherSheet(coordinate: mapVM.cameraCentre)
                 .padSheetSizing()
         }
         // Feed every fix into the track recorder; it ignores them unless recording.

@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -162,6 +163,8 @@ fun MapScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLayersSheet by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
+    /// Weather/UAV widget target = (lat, lng) of the map centre, null when closed.
+    var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     /// Lock toggle — when true, NO graphic (symbol or drawing) can be
     /// moved by any gesture. An extra guard against accidental drags.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -696,6 +699,14 @@ fun MapScreen(
                         },
                         leadingIcon = { Icon(Icons.Default.Straighten, contentDescription = null) }
                     )
+                    DropdownMenuItem(
+                        text = { Text("Weather & UAV Safety") },
+                        onClick = {
+                            hamburgerOpen = false
+                            weatherTarget = vm.headerCoordinate
+                        },
+                        leadingIcon = { Icon(Icons.Default.Air, contentDescription = null) }
+                    )
                     HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text("Import PDF Map") },
@@ -968,6 +979,10 @@ fun MapScreen(
 
     if (showAboutDialog) {
         AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    weatherTarget?.let { (lat, lng) ->
+        WeatherDialog(lat = lat, lng = lng, onDismiss = { weatherTarget = null })
     }
 
     if (showLayersSheet) {
