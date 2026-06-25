@@ -61,6 +61,16 @@ So two devices with the same join code converge; the server (and anyone who only
 learns the `roomId`) cannot decrypt. This scheme is implemented in the client
 increments; the backend is intentionally oblivious to it.
 
+## Deployed instance
+
+Live relay: **`wss://tacmap-sync.christianbrooker.workers.dev/room/<roomId>`**
+(health: `https://tacmap-sync.christianbrooker.workers.dev/health` → `ok`).
+
+Verified end-to-end against the deployed Durable Object (two-client WebSocket
+test): snapshot-on-connect, peer broadcast with the opaque `ct` preserved, no
+self-echo, last-write-wins (stale `v` dropped, newer `v` wins), and
+store-and-forward (a late joiner receives current state in its snapshot).
+
 ## Run / deploy
 
 ```bash
