@@ -218,6 +218,35 @@ struct Coordinate2D: Codable, Hashable {
     var longitude: Double
 }
 
+/// Tactical line-graphic style for a polyline — decorates the stroke as a NATO
+/// operational graphic. `.plain` (or nil) is an ordinary stroked line.
+enum LineGraphic: String, Codable, Hashable, CaseIterable {
+    case plain            // ordinary line
+    case phaseLine        // dashed control line (PL / report line)
+    case boundary         // line with perpendicular tick marks
+    case forwardEdge      // crenellated FLOT / FEBA / forward line of troops
+    case axisOfAdvance    // line with an arrowhead at the end
+
+    var displayName: String {
+        switch self {
+        case .plain:         return "Plain line"
+        case .phaseLine:     return "Phase line"
+        case .boundary:      return "Boundary"
+        case .forwardEdge:   return "Forward line (FLOT)"
+        case .axisOfAdvance: return "Axis of advance"
+        }
+    }
+    var symbolName: String {
+        switch self {
+        case .plain:         return "line.diagonal"
+        case .phaseLine:     return "ellipsis"
+        case .boundary:      return "xmark"
+        case .forwardEdge:   return "waveform.path"
+        case .axisOfAdvance: return "arrow.up.right"
+        }
+    }
+}
+
 /// Style follows the Mapbox simplestyle-spec keys (`stroke`, `stroke-width`,
 /// `fill`, `fill-opacity`) so the GeoJSON export renders out-of-the-box in
 /// GitHub, geojson.io, Mapbox, Felt, Leaflet, etc.
@@ -232,6 +261,8 @@ struct DrawingStyle: Codable, Hashable {
     var fillOpacity: Double = 0.2
     /// Optional dash pattern (in points, alternating on/off). Solid line if nil.
     var dashPattern: [Double]? = nil
+    /// Tactical line-graphic decoration (FLOT, boundary, axis…). nil = plain.
+    var lineGraphic: LineGraphic? = nil
 
     static let `default` = DrawingStyle()
 

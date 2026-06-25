@@ -44,11 +44,22 @@ extension MapContainerView.Coordinator {
         let selectionBoost: CGFloat = isSelected ? 3.0 : 0.0
 
         if let line = overlay as? MKPolyline {
+            // Decorated tactical graphics (FLOT/FEBA, boundary, axis) get a
+            // custom renderer that draws crenellations / ticks / arrowheads.
+            if !inProgress, let g = style.lineGraphic,
+               g == .forwardEdge || g == .boundary || g == .axisOfAdvance {
+                return TacticalLineRenderer(polyline: line, style: style,
+                                            graphic: g, selectionBoost: selectionBoost)
+            }
             let r = MKPolylineRenderer(polyline: line)
             r.strokeColor = UIColor(hex: style.strokeColorHex)
             r.lineWidth   = CGFloat(style.strokeWidth) + selectionBoost
-            r.lineDashPattern = effectiveDashPattern(for: style,
-                                                     inProgress: inProgress)
+            // Phase line = dashed control line; otherwise honour the saved dash.
+            if !inProgress, style.lineGraphic == .phaseLine {
+                r.lineDashPattern = [10, 6]
+            } else {
+                r.lineDashPattern = effectiveDashPattern(for: style, inProgress: inProgress)
+            }
             return r
         }
         if let poly = overlay as? MKPolygon {

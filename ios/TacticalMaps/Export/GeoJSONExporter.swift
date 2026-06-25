@@ -146,6 +146,9 @@ enum GeoJSONExporter {
             if let f = shape.style.fillColorHex { props["fill"] = f }
             props["fill-opacity"] = shape.style.fillOpacity
         }
+        if let lg = shape.style.lineGraphic, lg != .plain {
+            props["tacticalmaps:line_graphic"] = lg.rawValue
+        }
 
         var geometry: [String: Any]
         switch shape.kind {
