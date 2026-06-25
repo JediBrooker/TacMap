@@ -34,17 +34,14 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FiberManualRecord
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
@@ -54,7 +51,6 @@ import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
@@ -166,6 +162,7 @@ fun MapScreen(
     var showSearchDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLayersSheet by remember { mutableStateOf(false) }
+    var showImportExportSheet by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
     /// Weather/UAV widget target = (lat, lng) of the map centre, null when closed.
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
@@ -634,6 +631,19 @@ fun MapScreen(
             }
         )
 
+        // Live track-recording badge — only while recording. Centred just
+        // below the header, between the hamburger and compass. Tap to stop.
+        if (isRecordingTrack) {
+            RecordingIndicator(
+                pointCount = trackPoints.size,
+                onStop = { vm.trackRecorder.stop() },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 104.dp)
+            )
+        }
+
         // Hamburger (left) + Compass (right), pinned just below the
         // MGRS header (which is ~96dp tall after the recent tighten).
         Row(
@@ -725,56 +735,15 @@ fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Air, contentDescription = null) }
                     )
                     HorizontalDivider()
+                    // All file import/export is gathered behind one item that
+                    // opens a bottom sheet, keeping the main menu short.
                     DropdownMenuItem(
-                        text = { Text("Import PDF Map") },
+                        text = { Text("Import / Export") },
                         onClick = {
                             hamburgerOpen = false
-                            pdfImportLauncher.launch(arrayOf("application/pdf"))
+                            showImportExportSheet = true
                         },
-                        leadingIcon = { Icon(Icons.Default.PictureAsPdf, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Import Offline Tiles") },
-                        onClick = {
-                            hamburgerOpen = false
-                            // MBTiles has no standard MIME type — show all files.
-                            mbtilesImportLauncher.launch(arrayOf("*/*"))
-                        },
-                        leadingIcon = { Icon(Icons.Default.Map, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Import GeoJSON") },
-                        onClick = {
-                            hamburgerOpen = false
-                            geoJsonImportLauncher.launch(arrayOf("application/geo+json", "application/json", "*/*"))
-                        },
-                        leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Import KML / KMZ") },
-                        onClick = {
-                            hamburgerOpen = false
-                            // KML/KMZ have no reliable MIME registration across providers — show all files.
-                            kmlImportLauncher.launch(arrayOf(
-                                "application/vnd.google-earth.kml+xml",
-                                "application/vnd.google-earth.kmz",
-                                "*/*"
-                            ))
-                        },
-                        leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Export GeoJSON") },
-                        onClick = {
-                            hamburgerOpen = false
-                            shareGeoJson(
-                                context = context,
-                                waypoints = waypoints,
-                                drawings = drawingDocument.features,
-                                layers = drawingDocument.layers
-                            )
-                        },
-                        leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) }
+                        leadingIcon = { Icon(Icons.Default.ImportExport, contentDescription = null) }
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
@@ -794,14 +763,6 @@ fun MapScreen(
                                 contentDescription = null
                             )
                         }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Export GPX Track") },
-                        onClick = {
-                            hamburgerOpen = false
-                            shareGpx(context = context, points = trackPoints)
-                        },
-                        leadingIcon = { Icon(Icons.Default.Timeline, contentDescription = null) }
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
@@ -1109,6 +1070,47 @@ fun MapScreen(
                 vm.restoreOnlineBasemap()
             },
             onDismiss = { showLayersSheet = false }
+        )
+    }
+
+    if (showImportExportSheet) {
+        ImportExportSheet(
+            onImportPdf = {
+                showImportExportSheet = false
+                pdfImportLauncher.launch(arrayOf("application/pdf"))
+            },
+            onImportTiles = {
+                showImportExportSheet = false
+                // MBTiles has no standard MIME type — show all files.
+                mbtilesImportLauncher.launch(arrayOf("*/*"))
+            },
+            onImportGeoJson = {
+                showImportExportSheet = false
+                geoJsonImportLauncher.launch(arrayOf("application/geo+json", "application/json", "*/*"))
+            },
+            onImportKml = {
+                showImportExportSheet = false
+                // KML/KMZ have no reliable MIME registration across providers — show all files.
+                kmlImportLauncher.launch(arrayOf(
+                    "application/vnd.google-earth.kml+xml",
+                    "application/vnd.google-earth.kmz",
+                    "*/*"
+                ))
+            },
+            onExportGeoJson = {
+                showImportExportSheet = false
+                shareGeoJson(
+                    context = context,
+                    waypoints = waypoints,
+                    drawings = drawingDocument.features,
+                    layers = drawingDocument.layers
+                )
+            },
+            onExportGpx = {
+                showImportExportSheet = false
+                shareGpx(context = context, points = trackPoints)
+            },
+            onDismiss = { showImportExportSheet = false }
         )
     }
 

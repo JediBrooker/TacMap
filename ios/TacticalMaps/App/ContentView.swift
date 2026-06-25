@@ -203,6 +203,19 @@ struct ContentView: View {
                     )
                     .padding(.horizontal, 12)
 
+                    // Live track-recording badge — only while recording. Tap to
+                    // stop (mirrors the menu toggle + clears background updates).
+                    if trackRecorder.isRecording {
+                        RecordingIndicator(
+                            pointCount: trackRecorder.points.count,
+                            onStop: {
+                                trackRecorder.stop()
+                                locationService.setBackgroundUpdates(false)
+                            }
+                        )
+                        .padding(.top, 8)
+                    }
+
                     // Hamburger (left) + compass (right).
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 8) {

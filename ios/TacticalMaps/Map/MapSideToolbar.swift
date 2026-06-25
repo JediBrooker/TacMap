@@ -76,19 +76,16 @@ struct HamburgerMenu: View {
                         row("Measure",         systemImage: "ruler")               { close(onMeasure) }
                         row("Weather & UAV Safety", systemImage: "wind")            { close(onWeather) }
                         divider
-                        row("Import PDF Map…", systemImage: "doc.badge.plus")      { close(onImport) }
-                        row("Import Offline Tiles…", systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }
-                        row("Import GeoJSON…", systemImage: "square.and.arrow.down") { close(onImportGeoJSON) }
-                        row("Import KML / KMZ…", systemImage: "globe.desk")          { close(onImportKML) }
-                        row("Export GeoJSON…", systemImage: "square.and.arrow.up")   { close(onExport) }
+                        // All file import/export lives behind one row so the
+                        // main menu stays short — pushes a sub-page within the
+                        // sheet's NavigationStack (no sheet-over-sheet races).
+                        navRow("Import / Export…", systemImage: "square.and.arrow.up.on.square")
                         divider
                         row(isRecordingTrack
                             ? "Stop Track Recording (\(trackPointCount) pts)"
                             : "Start Track Recording",
                             systemImage: isRecordingTrack ? "stop.circle.fill" : "record.circle")
                             { close(onToggleTrackRecording) }
-                        row("Export GPX Track…", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
-                            { close(onExportGPX) }
                         divider
                         row("Unit Sync…", systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
                         row("App Lock…", systemImage: "lock.shield")               { close(onAppLock) }
@@ -149,6 +146,66 @@ struct HamburgerMenu: View {
         .buttonStyle(.plain)
     }
 
+    /// A `row` that pushes the Import / Export sub-page instead of running an
+    /// action. Styled to match `row`, with a trailing disclosure chevron.
+    @ViewBuilder
+    private func navRow(_ label: String, systemImage: String) -> some View {
+        NavigationLink {
+            importExportPage
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: 28, alignment: .center)
+                Text(label)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 54)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Sub-page listing every file import/export action, grouped into Import
+    /// and Export. Rows reuse `close` so picking one dismisses the whole sheet
+    /// and runs the action from `onDismiss` (same as the top-level rows).
+    @ViewBuilder
+    private var importExportPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                sectionHeader("Import")
+                row("PDF Map…", systemImage: "doc.badge.plus")               { close(onImport) }
+                row("Offline Tiles…", systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }
+                row("GeoJSON…", systemImage: "square.and.arrow.down")         { close(onImportGeoJSON) }
+                row("KML / KMZ…", systemImage: "globe.desk")                  { close(onImportKML) }
+                divider
+                sectionHeader("Export")
+                row("GeoJSON…", systemImage: "square.and.arrow.up")           { close(onExport) }
+                row("GPX Track…", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                    { close(onExportGPX) }
+            }
+        }
+        .navigationTitle("Import / Export")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var divider: some View {
         Rectangle()
             .fill(Color.gray.opacity(0.25))
@@ -171,6 +228,45 @@ struct HamburgerMenu: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 40)
+    }
+}
+
+/// Red "REC" pill shown while a GPX track is recording, so the live recording
+/// state is obvious without opening the menu. The dot pulses; tapping the pill
+/// stops the recording (the menu can also start/stop it).
+struct RecordingIndicator: View {
+    let pointCount: Int
+    let onStop: () -> Void
+    @State private var pulse = false
+
+    var body: some View {
+        Button(action: onStop) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 9, height: 9)
+                    .opacity(pulse ? 0.25 : 1.0)
+                Text("REC")
+                    .font(.system(size: 12, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(.white)
+                Text("· \(pointCount) pt\(pointCount == 1 ? "" : "s")")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color(red: 0.84, green: 0.18, blue: 0.18).opacity(0.95), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Recording track — \(pointCount) points. Tap to stop.")
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
     }
 }
 
