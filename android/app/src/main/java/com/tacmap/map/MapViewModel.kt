@@ -250,6 +250,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    val headerUtm: String get() {
+        val (lat, lng) = headerCoordinate
+        return MgrsFormatter.formatUtm(lat, lng)
+    }
+
     val headerCoordinate: Pair<Double, Double>
         get() = if (_isBrowsing.value) {
             _cameraLat.value to _cameraLng.value

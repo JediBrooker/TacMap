@@ -50,6 +50,7 @@ fun MgrsHeader(
     modifier: Modifier = Modifier,
     elevation: Double? = null,
     elevationApprox: Boolean = false,
+    utm: String? = null,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -111,6 +112,17 @@ fun MgrsHeader(
                     fontFamily = FontFamily.Monospace,
                     lineHeight = 12.sp
                 )
+            }
+        }
+        utm?.let { utmText ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("UTM", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp,
+                     fontWeight = FontWeight.Bold, lineHeight = 12.sp)
+                Text(utmText, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
+                     fontFamily = FontFamily.Monospace, lineHeight = 12.sp)
             }
         }
         Row(

@@ -168,6 +168,7 @@ struct ContentView: View {
                     MGRSHeaderView(
                         mgrs: mapVM.headerMGRS,
                         wgs84: mapVM.headerWGS84,
+                        utm: mapVM.headerUTM,
                         isBrowsing: mapVM.isBrowsing,
                         accuracy: locationService.lastAccuracy,
                         // Crosshair elevation: prefer the DEM lookup so panning

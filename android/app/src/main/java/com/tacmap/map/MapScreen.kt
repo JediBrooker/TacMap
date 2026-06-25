@@ -594,6 +594,7 @@ fun MapScreen(
             accuracy = lastLocation?.accuracy?.toDouble(),
             elevation = centreElevation?.metres,
             elevationApprox = centreElevation?.isStale == true,
+            utm = vm.headerUtm,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()

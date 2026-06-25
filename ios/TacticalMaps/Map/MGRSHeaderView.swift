@@ -11,6 +11,8 @@ import UIKit
 struct MGRSHeaderView: View {
     let mgrs: String
     let wgs84: String
+    /// User-facing UTM readout (e.g. "33N 450000mE 6700000mN"). nil hides the row.
+    var utm: String? = nil
     let isBrowsing: Bool
     let accuracy: CLLocationAccuracy?
     let elevation: CLLocationDistance?
@@ -47,6 +49,18 @@ struct MGRSHeaderView: View {
                 Text(elevationText)
                     .font(.caption2.weight(.semibold).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.85))
+            }
+
+            if let utm {
+                HStack(spacing: 8) {
+                    Text("UTM")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                    Text(utm)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.85))
+                    Spacer(minLength: 4)
+                }
             }
 
             HStack(spacing: 6) {

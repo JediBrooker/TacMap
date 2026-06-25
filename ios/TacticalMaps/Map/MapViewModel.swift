@@ -143,6 +143,10 @@ final class MapViewModel: ObservableObject {
                       abs(c.longitude), c.longitude >= 0 ? "E" : "W")
     }
 
+    var headerUTM: String {
+        MGRSFormatter.utm(from: headerCoordinate)
+    }
+
     private var headerCoordinate: CLLocationCoordinate2D {
         if isBrowsing { return cameraCentre }
         return lastUserCoordinate ?? cameraCentre

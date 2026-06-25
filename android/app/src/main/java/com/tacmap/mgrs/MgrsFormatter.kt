@@ -25,6 +25,15 @@ object MgrsFormatter {
         return if (spaced) compact.withDisplaySpacing() else compact
     }
 
+    /** User-facing UTM grid readout, e.g. `"33N 450000mE 6700000mN"`.
+     *  Hemisphere from the latitude sign (UTM N/S); zone + easting + northing
+     *  from NGA's `toUTM()`. */
+    fun formatUtm(lat: Double, lng: Double): String {
+        val utm = MGRS.from(Point.point(lng, lat)).toUTM()
+        val hemi = if (lat >= 0) "N" else "S"
+        return "%02d%s %.0fmE %.0fmN".format(utm.zone, hemi, utm.easting, utm.northing)
+    }
+
     /** Decode a string like `56H LH 12345 67890` to a (lat, lng).
      *  Returns null on parse failure. */
     fun parse(s: String): Pair<Double, Double>? = try {
