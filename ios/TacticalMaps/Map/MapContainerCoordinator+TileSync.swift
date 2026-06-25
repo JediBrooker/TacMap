@@ -3,8 +3,8 @@ import MapKit
 // MARK: - Raster basemap overlay (offline MBTiles OR online OpenStreetMap)
 //
 // Adds/removes the MKTileOverlay that serves a raster basemap when the active
-// source is an OfflineTileMapSource (local MBTiles) or an OpenStreetMapMapSource
-// (online OSM tiles). Both replace the satellite base (canReplaceMapContent).
+// source is an OfflineTileMapSource (local MBTiles) or an OnlineRasterBasemapSource
+// (Esri imagery / OpenTopoMap). Both replace the satellite base (canReplaceMapContent).
 // The overlay persists across refresh() (which filters MKTileOverlay out of its
 // teardown) so tiles don't reload on every model change.
 extension MapContainerView.Coordinator {
@@ -14,9 +14,9 @@ extension MapContainerView.Coordinator {
         let newID: UUID?
         let makeOverlay: (() -> MKTileOverlay)?
         switch source {
-        case let s as OfflineTileMapSource:   newID = s.id; makeOverlay = { s.makeOverlay() }
-        case let s as OpenStreetMapMapSource: newID = s.id; makeOverlay = { s.makeOverlay() }
-        default:                              newID = nil;  makeOverlay = nil
+        case let s as OfflineTileMapSource:       newID = s.id; makeOverlay = { s.makeOverlay() }
+        case let s as OnlineRasterBasemapSource:  newID = s.id; makeOverlay = { s.makeOverlay() }
+        default:                                  newID = nil;  makeOverlay = nil
         }
 
         // Remove when the source changed or is no longer a raster source.

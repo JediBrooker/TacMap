@@ -68,7 +68,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
 import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
-import com.tacmap.calibration.OpenStreetMapSourceAndroid
+import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.mgrs.MgrsGridRenderer
@@ -283,7 +283,7 @@ fun GoogleMapScreen(
                 /// it's "floating" on Google Maps.
                 mapType = if (mapSource is PdfMapSource ||
                     mapSource is OfflineTileMapSourceAndroid ||
-                    mapSource is OpenStreetMapSourceAndroid
+                    mapSource is OnlineRasterMapSourceAndroid
                 ) MapType.NONE
                     else MapType.SATELLITE,
                 /// Google Maps' built-in blue user-location dot.
@@ -327,9 +327,9 @@ fun GoogleMapScreen(
                 TileOverlay(tileProvider = provider)
             }
 
-            (mapSource as? OpenStreetMapSourceAndroid)?.let { osm ->
-                /// Online OSM raster tiles over MapType.NONE.
-                val provider = remember(osm.id) { OsmTileProvider() }
+            (mapSource as? OnlineRasterMapSourceAndroid)?.let { raster ->
+                /// Online raster basemap (Esri imagery / OpenTopoMap) over MapType.NONE.
+                val provider = remember(raster.id) { RasterTileProvider(raster.style) }
                 TileOverlay(tileProvider = provider)
             }
 

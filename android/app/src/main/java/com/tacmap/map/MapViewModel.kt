@@ -4,8 +4,9 @@ import android.app.Application
 import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.MapSource
-import com.tacmap.calibration.OpenStreetMapSourceAndroid
+import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.SatelliteMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfSessionStore
@@ -26,6 +27,10 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+
+/** User-selectable online basemap: native Google satellite, Esri imagery, or
+ *  OpenTopoMap terrain. */
+enum class BaseMap { SATELLITE, ESRI_SATELLITE, TERRAIN }
 
 /**
  * Owns map camera, browse-mode toggle, and the MGRS readout shown in the header.
@@ -71,18 +76,26 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private val _mapSource = MutableStateFlow<MapSource>(SatelliteMapSourceAndroid())
     val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
 
-    /** Which online basemap to return to when an imported map is unloaded.
-     *  false = Satellite (default), true = OpenStreetMap. */
-    private var preferOsmBasemap = false
-    private fun onlineBasemap(): MapSource =
-        if (preferOsmBasemap) OpenStreetMapSourceAndroid() else SatelliteMapSourceAndroid()
+    /** Which online basemap to return to when an imported map is unloaded. */
+    private var preferredBaseMap = BaseMap.SATELLITE
+    private fun baseMapSource(choice: BaseMap): MapSource = when (choice) {
+        BaseMap.SATELLITE -> SatelliteMapSourceAndroid()
+        BaseMap.ESRI_SATELLITE -> OnlineRasterMapSourceAndroid(BasemapStyle.ESRI_SATELLITE)
+        BaseMap.TERRAIN -> OnlineRasterMapSourceAndroid(BasemapStyle.TERRAIN)
+    }
+    private fun onlineBasemap(): MapSource = baseMapSource(preferredBaseMap)
 
-    /** Switch the online basemap (Satellite ⇄ OpenStreetMap). Also clears any
-     *  imported PDF so the chosen basemap actually shows. */
-    fun selectBaseMap(osm: Boolean) {
-        preferOsmBasemap = osm
-        _mapSource.value = onlineBasemap()
+    /** Switch the online basemap. Also clears any imported PDF so the chosen
+     *  basemap actually shows. */
+    fun selectBaseMap(choice: BaseMap) {
+        preferredBaseMap = choice
+        _mapSource.value = baseMapSource(choice)
         pdfSessionStore.clear()
+    }
+
+    /** Return to the preferred online basemap (e.g. after unloading offline tiles). */
+    fun restoreOnlineBasemap() {
+        _mapSource.value = onlineBasemap()
     }
 
     /**

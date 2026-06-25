@@ -42,8 +42,8 @@ fun LayersSheet(
     onUnitLabelsChange: (Boolean) -> Unit,
     onTaskLabelsChange: (Boolean) -> Unit,
     onDrawingLabelsChange: (Boolean) -> Unit,
-    osmBasemapActive: Boolean,
-    onSelectBaseMap: (osm: Boolean) -> Unit,
+    activeBaseMap: BaseMap,
+    onSelectBaseMap: (BaseMap) -> Unit,
     hasPdfMap: Boolean,
     hasOfflineTiles: Boolean,
     onCalibratePdf: () -> Unit,
@@ -75,13 +75,18 @@ fun LayersSheet(
             val importedMapActive = hasPdfMap || hasOfflineTiles
             BasemapRow(
                 label = "Satellite",
-                selected = !osmBasemapActive && !importedMapActive,
-                onClick = { onSelectBaseMap(false) }
+                selected = activeBaseMap == BaseMap.SATELLITE && !importedMapActive,
+                onClick = { onSelectBaseMap(BaseMap.SATELLITE) }
             )
             BasemapRow(
-                label = "OpenStreetMap",
-                selected = osmBasemapActive && !importedMapActive,
-                onClick = { onSelectBaseMap(true) }
+                label = "Satellite (Esri)",
+                selected = activeBaseMap == BaseMap.ESRI_SATELLITE && !importedMapActive,
+                onClick = { onSelectBaseMap(BaseMap.ESRI_SATELLITE) }
+            )
+            BasemapRow(
+                label = "Terrain (OpenTopoMap)",
+                selected = activeBaseMap == BaseMap.TERRAIN && !importedMapActive,
+                onClick = { onSelectBaseMap(BaseMap.TERRAIN) }
             )
             if (importedMapActive) {
                 Text(

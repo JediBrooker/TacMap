@@ -18,9 +18,14 @@ struct AcknowledgementsView: View {
                         url: URL(string: "https://www.apple.com/legal/internet-services/maps/terms-en.html")
                     )
                     LinkRow(
-                        title: "OpenStreetMap",
-                        subtitle: "© OpenStreetMap contributors — basemap tiles under the Open Database License (ODbL).",
-                        url: URL(string: "https://www.openstreetmap.org/copyright")
+                        title: "OpenTopoMap (Terrain basemap)",
+                        subtitle: "© OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors (ODbL).",
+                        url: URL(string: "https://opentopomap.org/about")
+                    )
+                    LinkRow(
+                        title: "Esri World Imagery (Satellite basemap)",
+                        subtitle: "Esri, Maxar, Earthstar Geographics, and the GIS User Community.",
+                        url: URL(string: "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9")
                     )
                     LinkRow(
                         title: "Open-Meteo Elevation API",

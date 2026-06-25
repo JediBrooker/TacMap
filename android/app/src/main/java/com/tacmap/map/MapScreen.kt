@@ -108,7 +108,8 @@ import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.Datum
 import com.tacmap.calibration.GeoPdfParser
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
-import com.tacmap.calibration.OpenStreetMapSourceAndroid
+import com.tacmap.calibration.BasemapStyle
+import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.calibration.Wgs84Coordinate
@@ -1058,8 +1059,14 @@ fun MapScreen(
             onUnitLabelsChange = { unitLabelsVisible = it },
             onTaskLabelsChange = { taskLabelsVisible = it },
             onDrawingLabelsChange = { drawingLabelsVisible = it },
-            osmBasemapActive = mapSource is OpenStreetMapSourceAndroid,
-            onSelectBaseMap = { osm -> vm.selectBaseMap(osm) },
+            activeBaseMap = mapSource.let { ms ->
+                when (ms) {
+                    is OnlineRasterMapSourceAndroid ->
+                        if (ms.style == BasemapStyle.TERRAIN) BaseMap.TERRAIN else BaseMap.ESRI_SATELLITE
+                    else -> BaseMap.SATELLITE
+                }
+            },
+            onSelectBaseMap = { vm.selectBaseMap(it) },
             hasPdfMap = pdfSource != null,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
             onCalibratePdf = {
@@ -1099,7 +1106,7 @@ fun MapScreen(
             },
             onUnloadOfflineTiles = {
                 showLayersSheet = false
-                vm.selectBaseMap(osm = mapSource is OpenStreetMapSourceAndroid)
+                vm.restoreOnlineBasemap()
             },
             onDismiss = { showLayersSheet = false }
         )

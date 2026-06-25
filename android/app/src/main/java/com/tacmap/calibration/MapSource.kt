@@ -6,7 +6,7 @@ import java.util.UUID
 /**
  * Abstract basemap source. Online basemaps plus imported maps:
  *  - [SatelliteMapSourceAndroid] — Google satellite imagery (default).
- *  - [OpenStreetMapSourceAndroid] — online OSM raster tiles (street/topo).
+ *  - [OnlineRasterMapSourceAndroid] — Esri imagery / OpenTopoMap raster tiles.
  *  - [PdfMapSource] in `.geoPDF` mode — calibration parsed from GeoPDF tags.
  *  - [PdfMapSource] in `.calibratedPdf` mode — user-fitted via 3+ fiduciaries.
  *  - [OfflineTileMapSourceAndroid] — sideloaded MBTiles raster.
@@ -21,7 +21,21 @@ sealed interface MapSource {
     val calibration: Calibration?
 }
 
-enum class MapSourceKind { SATELLITE, OPEN_STREET_MAP, GEO_PDF, CALIBRATED_PDF, OFFLINE_TILES }
+enum class MapSourceKind { SATELLITE, ONLINE_RASTER, GEO_PDF, CALIBRATED_PDF, OFFLINE_TILES }
+
+/** Online raster basemap styles (no API key). Mirrors iOS `BasemapStyle`. */
+enum class BasemapStyle(val displayName: String, val urlTemplate: String, val maxZoom: Int) {
+    ESRI_SATELLITE(
+        "Satellite (Esri)",
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        19
+    ),
+    TERRAIN(
+        "Terrain (OpenTopoMap)",
+        "https://tile.opentopomap.org/{z}/{x}/{y}.png",
+        17
+    )
+}
 
 @Serializable
 data class Wgs84Coordinate(
@@ -74,12 +88,12 @@ class SatelliteMapSourceAndroid : MapSource {
     override val calibration: Calibration? = null
 }
 
-/** Online OpenStreetMap raster basemap (street/topo). Rendered via an OSM tile
- *  overlay; no API key, subject to the OSMF tile-usage policy. */
-class OpenStreetMapSourceAndroid : MapSource {
+/** Online raster basemap (Esri World Imagery or OpenTopoMap terrain), rendered
+ *  via an XYZ tile overlay. No API key. */
+class OnlineRasterMapSourceAndroid(val style: BasemapStyle) : MapSource {
     override val id: String = UUID.randomUUID().toString()
-    override val displayName = "OpenStreetMap"
-    override val kind = MapSourceKind.OPEN_STREET_MAP
+    override val displayName = style.displayName
+    override val kind = MapSourceKind.ONLINE_RASTER
     override val coverage: Wgs84Bounds? = null
     override val calibration: Calibration? = null
 }

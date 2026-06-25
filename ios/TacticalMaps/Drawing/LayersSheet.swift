@@ -108,16 +108,22 @@ struct LayersSheet: View {
                 Section("Basemap") {
                     let importedActive = mapVM.mapSource is PDFMapSource
                         || mapVM.mapSource is OfflineTileMapSource
-                    basemapRow(title: "Apple Satellite",
+                    basemapRow(title: "Satellite (Apple)",
                                systemImage: "globe.americas.fill",
                                isActive: mapVM.mapSource is AppleSatelliteMapSource) {
                         mapVM.mapSource = AppleSatelliteMapSource()
                         PDFSessionStore.clear()
                     }
-                    basemapRow(title: "OpenStreetMap",
-                               systemImage: "map.fill",
-                               isActive: mapVM.mapSource is OpenStreetMapMapSource) {
-                        mapVM.mapSource = OpenStreetMapMapSource()
+                    basemapRow(title: "Satellite (Esri)",
+                               systemImage: "globe.badge.chevron.backward",
+                               isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .esriSatellite) {
+                        mapVM.mapSource = OnlineRasterBasemapSource(.esriSatellite)
+                        PDFSessionStore.clear()
+                    }
+                    basemapRow(title: "Terrain (OpenTopoMap)",
+                               systemImage: "mountain.2.fill",
+                               isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .terrain) {
+                        mapVM.mapSource = OnlineRasterBasemapSource(.terrain)
                         PDFSessionStore.clear()
                     }
                     if importedActive {
