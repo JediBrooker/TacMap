@@ -333,4 +333,72 @@ final class ScreenshotTests: XCTestCase {
             snap(name)
         }
     }
+
+    /// Capture the GeoPDF-import hero: import a US Topo GeoPDF (pre-copied into
+    /// the app's Documents, so it shows in Files under "On My iPhone › TacMap")
+    /// then overlay the re-centred NATO situation. Device location is set to the
+    /// PDF/situation centre so "Centre on My Location" frames it.
+    func testCaptureGeoPdf() {
+        sleep(2)
+        // 1) import the GeoPDF. "PDF Map…" lives inside the Import / Export
+        //    sub-page (navRow), so open that first.
+        openMenu()
+        _ = tapContaining("Import / Export")
+        sleep(2)
+        _ = tapContaining("PDF Map")
+        sleep(3)
+
+        // The document picker opens at its remembered location. The seeded GeoPDF
+        // lives in the app's own Documents → surfaced under "On My iPhone/iPad ›
+        // TacMap". Navigate there if the file isn't already on screen.
+        func fileQuery() -> XCUIElement {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS[c] %@", "FortIrwin")).firstMatch
+        }
+        func tapFirst(containing text: String, timeout: TimeInterval = 5) -> Bool {
+            let e = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
+            guard e.waitForExistence(timeout: timeout) else { return false }
+            e.tap(); return true
+        }
+        if !fileQuery().waitForExistence(timeout: 4) {
+            // iPhone: bottom tab "Browse" → Locations list. iPad: the sidebar is
+            // already shown, so this is a no-op.
+            let browse = app.buttons["Browse"]
+            if browse.waitForExistence(timeout: 4) { browse.tap(); sleep(1) }
+            // "On My iPhone" / "On My iPad" → TacMap (the app's Documents container)
+            _ = tapFirst(containing: "On My i"); sleep(1)
+            let folder = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label MATCHES[c] %@", "TacMap")).firstMatch
+            if folder.waitForExistence(timeout: 5) { folder.tap() }
+            sleep(1)
+        }
+        let file = fileQuery()
+        if file.waitForExistence(timeout: 8) { file.tap() }
+        sleep(7)                       // import + georeference + persist + fly to PDF
+        dismissSheet()
+        // 2) join the re-centred situation
+        openMenu()
+        _ = tapContaining("Unit Sync")
+        sleep(2)
+        let codeField = app.textFields.firstMatch
+        if codeField.waitForExistence(timeout: 6) {
+            codeField.tap(); sleep(1); codeField.typeText("ROMEO-19"); sleep(1)
+            _ = tapContaining("Join"); sleep(8)
+        }
+        dismissSheet()
+        // 3) labels on
+        openMenu()
+        _ = tap("Layers and Labels")
+        sleep(2)
+        for label in ["Unit Labels", "Task Labels", "Drawing Labels"] {
+            let sw = app.switches[label]
+            if sw.waitForExistence(timeout: 3), (sw.value as? String) == "0" { sw.tap(); sleep(1) }
+        }
+        dismissSheet()
+        // 4) centre on device location (= PDF/situation centre)
+        _ = tapContaining("Centre on My Location")
+        sleep(5)
+        snap("pdf-hero")
+    }
 }
