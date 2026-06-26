@@ -12,6 +12,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import com.tacmap.drawings.DrawingFeature
+import com.tacmap.drawings.DrawingLayer
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
@@ -42,6 +51,9 @@ fun LayersSheet(
     onUnitLabelsChange: (Boolean) -> Unit,
     onTaskLabelsChange: (Boolean) -> Unit,
     onDrawingLabelsChange: (Boolean) -> Unit,
+    drawingLayers: List<DrawingLayer>,
+    drawingFeatures: List<DrawingFeature>,
+    onSetLayerVisible: (String, Boolean) -> Unit,
     activeBaseMap: BaseMap,
     onSelectBaseMap: (BaseMap) -> Unit,
     hasPdfMap: Boolean,
@@ -70,6 +82,15 @@ fun LayersSheet(
             ToggleRow("Unit Labels", unitLabelsVisible, onUnitLabelsChange)
             ToggleRow("Task Labels", taskLabelsVisible, onTaskLabelsChange)
             ToggleRow("Drawing Labels", drawingLabelsVisible, onDrawingLabelsChange)
+
+            SectionHeader("Drawing Layers")
+            drawingLayers.forEach { layer ->
+                DrawingLayerRow(
+                    layer = layer,
+                    count = drawingFeatures.count { it.layerId == layer.id },
+                    onVisibleChange = { onSetLayerVisible(layer.id, it) }
+                )
+            }
 
             SectionHeader("Basemap")
             val importedMapActive = hasPdfMap || hasOfflineTiles
@@ -164,5 +185,31 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
     ) {
         Text(label, fontSize = 15.sp)
         Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+/// A drawing layer row: colour swatch + name + drawing count, with a
+/// visibility toggle — mirrors the iOS Layers sheet "Drawing Layers" section.
+/// Toggle off to hide a layer without deleting its drawings.
+@Composable
+private fun DrawingLayerRow(layer: DrawingLayer, count: Int, onVisibleChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(18.dp).clip(CircleShape).background(Color(layer.color)))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(layer.name, fontSize = 15.sp)
+                Text(
+                    "$count drawing${if (count == 1) "" else "s"}",
+                    fontSize = 11.sp,
+                    color = Color(0xFF8A938A)
+                )
+            }
+        }
+        Switch(checked = layer.isVisible, onCheckedChange = onVisibleChange)
     }
 }

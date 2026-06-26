@@ -26,6 +26,11 @@ const uuid = () => crypto.randomUUID();
 
 // --- situation builders (centre = device location, Blue Mountains) ---
 const C = { lon: 150.305, lat: -33.700 };
+// Optional re-centre: shift every coordinate by (CENTER - C) so the same
+// situation can be dropped onto an imported map elsewhere (env CENTER_LON/LAT).
+const DLON = (process.env.CENTER_LON ? parseFloat(process.env.CENTER_LON) : C.lon) - C.lon;
+const DLAT = (process.env.CENTER_LAT ? parseFloat(process.env.CENTER_LAT) : C.lat) - C.lat;
+const ox = (v) => +(v + DLON).toFixed(6), oy = (v) => +(v + DLAT).toFixed(6);
 function unit(name, aff, ech, fn, lon, lat, hq = false) {
   const props = {
     name, source: "symbol", kind: "military",
@@ -37,7 +42,7 @@ function unit(name, aff, ech, fn, lon, lat, hq = false) {
   if (hq) props["tacticalmaps:is_hq"] = true;
   return { kind: "waypoint",
     feature: { type: "Feature", id: uuid(),
-      geometry: { type: "Point", coordinates: [lon, lat] }, properties: props } };
+      geometry: { type: "Point", coordinates: [ox(lon), oy(lat)] }, properties: props } };
 }
 function line(name, coords, stroke, width = 3, graphic = null) {
   const props = { name, source: "drawing", kind: "polyline",
@@ -46,7 +51,7 @@ function line(name, coords, stroke, width = 3, graphic = null) {
   if (graphic) props["tacticalmaps:line_graphic"] = graphic;
   return { kind: "drawing",
     feature: { type: "Feature", id: uuid(),
-      geometry: { type: "LineString", coordinates: coords }, properties: props } };
+      geometry: { type: "LineString", coordinates: coords.map(([x, y]) => [ox(x), oy(y)]) }, properties: props } };
 }
 // Tactical task graphic (control measure) — a point symbol from the app's
 // AppSymbols assets (asset = the rawValue). rotation is clockwise degrees
@@ -59,7 +64,7 @@ function task(name, asset, lon, lat, rotation = 0, scale = 1.0) {
   scale = scale * TASK_SCALE;
   return { kind: "waypoint",
     feature: { type: "Feature", id: uuid(),
-      geometry: { type: "Point", coordinates: [lon, lat] },
+      geometry: { type: "Point", coordinates: [ox(lon), oy(lat)] },
       properties: { name, source: "symbol", kind: "control_measure",
         "tacticalmaps:category": "controlMeasure",
         "tacticalmaps:tcm_asset": asset, "tacticalmaps:tcm_name": name,
@@ -72,7 +77,7 @@ function area(name, coords, stroke, fill, fillOpacity = 0.16, width = 3) {
   const ring = coords.slice(); ring.push(coords[0]);
   return { kind: "drawing",
     feature: { type: "Feature", id: uuid(),
-      geometry: { type: "Polygon", coordinates: [ring] },
+      geometry: { type: "Polygon", coordinates: [ring.map(([x, y]) => [ox(x), oy(y)])] },
       properties: { name, source: "drawing", kind: "polygon",
         "tacticalmaps:category": "drawing", "tacticalmaps:kind": "polygon",
         stroke, "stroke-width": width, fill, "fill-opacity": fillOpacity } } };

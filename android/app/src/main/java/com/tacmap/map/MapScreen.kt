@@ -1020,6 +1020,9 @@ fun MapScreen(
             onUnitLabelsChange = { unitLabelsVisible = it },
             onTaskLabelsChange = { taskLabelsVisible = it },
             onDrawingLabelsChange = { drawingLabelsVisible = it },
+            drawingLayers = drawingDocument.layers,
+            drawingFeatures = drawingDocument.features,
+            onSetLayerVisible = { id, v -> drawingStore.setLayerVisible(id, v) },
             activeBaseMap = mapSource.let { ms ->
                 when (ms) {
                     is OnlineRasterMapSourceAndroid ->
