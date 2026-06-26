@@ -298,4 +298,39 @@ final class ScreenshotTests: XCTestCase {
         sleep(6)
         snap("hero")
     }
+
+    /// Capture each basemap (Satellite / Esri / OpenTopoMap terrain) as a clean
+    /// map, for the "Satellite or terrain" fan slide. OTM rate-limits its tiles,
+    /// so the terrain step waits a long time for them to stream in.
+    func testCaptureBasemaps() {
+        sleep(2)
+        let maps: [(String, String, UInt32)] = [
+            ("Satellite (Apple)", "bm-satellite", 8),
+            ("Satellite (Esri)", "bm-esri", 14),
+            ("Terrain (OpenTopoMap)", "bm-terrain", 95)
+        ]
+        for (label, name, wait) in maps {
+            openMenu()
+            _ = tap("Layers and Labels")
+            sleep(1)
+            let pred = NSPredicate(format: "label CONTAINS[c] %@", label)
+            let row = app.buttons.matching(pred).firstMatch
+            var tries = 0
+            while !row.isHittable && tries < 6 { app.swipeUp(); sleep(1); tries += 1 }
+            if row.exists { row.tap() } else { _ = tapContaining(label) }
+            sleep(1)
+            dismissSheet()
+            if name == "bm-terrain" {
+                // OpenTopoMap rate-limits; nudge the map repeatedly so MapKit
+                // keeps re-requesting tiles until they fill in (~3.5 min).
+                for _ in 0..<12 {
+                    panMap(dx: 0.06, dy: 0.05); sleep(8)
+                    panMap(dx: -0.06, dy: -0.05); sleep(8)
+                }
+            } else {
+                sleep(wait)
+            }
+            snap(name)
+        }
+    }
 }
