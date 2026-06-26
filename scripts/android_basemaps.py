@@ -58,11 +58,14 @@ adb("shell","settings","put","secure","location_mode","3")
 adb("emu","geo","fix","150.305","-33.700")
 adb("shell","am","start","-n",ACT); time.sleep(9)
 adb("emu","geo","fix","150.305","-33.700"); time.sleep(2)
-print(f"size={sh('wm size').strip()}")
-_m = re.search(r'(\d+)x(\d+)', sh('wm size'))
-if _m:
-    SCREEN_W, SCREEN_H = int(_m.group(1)), int(_m.group(2))
-    print(f"detected {SCREEN_W}x{SCREEN_H}")
+import struct
+def screen_dims():
+    """Actual rendered W×H from a screencap (wm size reports the physical panel,
+    wrong when a landscape-native tablet is rotated to portrait)."""
+    png = adb("exec-out", "screencap", "-p").stdout
+    return struct.unpack(">I", png[16:20])[0], struct.unpack(">I", png[20:24])[0]
+SCREEN_W, SCREEN_H = screen_dims()
+print(f"detected {SCREEN_W}x{SCREEN_H}")
 CX, CY = SCREEN_W // 2, int(SCREEN_H * 0.49)
 tapt("Centre on My Location", p=3); time.sleep(2)
 # zoom in one notch so terrain detail reads
