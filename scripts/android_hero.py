@@ -121,6 +121,12 @@ adb("emu", "geo", "fix", "150.305", "-33.700"); time.sleep(2)
 for lbl in ["While using the app", "Allow", "OK"]:
     if tap_text(lbl, pause=1.5): break
 print(f"size={sh('wm size').strip()}")
+# adapt to the actual screen (phone vs tablet) — derive map centre + edge x
+_m = re.search(r'(\d+)x(\d+)', sh('wm size'))
+if _m:
+    W = int(_m.group(1)); H = int(_m.group(2))
+    CX, CY = W // 2, int(H * 0.49)
+    print(f"detected {W}x{H} centre={CX},{CY}")
 
 # 1) keep the default Google Satellite basemap (the release cert is now
 #    whitelisted on the Maps key, so it authenticates + renders) and turn

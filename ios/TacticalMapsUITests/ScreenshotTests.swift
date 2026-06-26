@@ -275,7 +275,7 @@ final class ScreenshotTests: XCTestCase {
         let codeField = app.textFields.firstMatch
         if codeField.waitForExistence(timeout: 6) {
             codeField.tap(); sleep(1)
-            codeField.typeText("DAGGER-15")
+            codeField.typeText("INDIA-11")
             sleep(1)
             _ = tapContaining("Join")
             sleep(8)               // connect + snapshot + render the situation
