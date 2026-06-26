@@ -51,7 +51,12 @@ function line(name, coords, stroke, width = 3, graphic = null) {
 // Tactical task graphic (control measure) — a point symbol from the app's
 // AppSymbols assets (asset = the rawValue). rotation is clockwise degrees
 // (0 = canonical; the axis/SBF arrows point EAST at 0, so 270 points north).
+// TASK_SCALE multiplies every task-graphic scale (env var, default 1.0 so iOS
+// is untouched). Android renders control measures larger at its hero zoom, so
+// the Android capture pushes with TASK_SCALE≈0.6 for a cleaner, matching look.
+const TASK_SCALE = parseFloat(process.env.TASK_SCALE || "1");
 function task(name, asset, lon, lat, rotation = 0, scale = 1.0) {
+  scale = scale * TASK_SCALE;
   return { kind: "waypoint",
     feature: { type: "Feature", id: uuid(),
       geometry: { type: "Point", coordinates: [lon, lat] },
