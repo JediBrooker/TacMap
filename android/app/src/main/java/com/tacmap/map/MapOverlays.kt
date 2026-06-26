@@ -224,9 +224,16 @@ internal fun DrawingShape(
                 DraftSeedMarker(effective.first())
                 return
             }
+            // Tactical line graphic: decorate the geometry (crenellated forward
+            // line, boundary ticks, axis arrowhead) or dash a phase line.
+            val lg = feature.lineGraphic ?: com.tacmap.drawings.LineGraphic.PLAIN
+            val mainPoints = if (lg == com.tacmap.drawings.LineGraphic.FORWARD_EDGE)
+                TacticalLineGeo.crenellate(effective) else effective
+            val linePattern = if (lg == com.tacmap.drawings.LineGraphic.PHASE_LINE)
+                listOf(Dash(width * 3f), Gap(width * 2f)) else pattern
             if (selected) {
                 Polyline(
-                    points = effective,
+                    points = mainPoints,
                     color = haloColor.copy(alpha = 0.55f),
                     width = haloWidth,
                     clickable = false,
@@ -234,13 +241,24 @@ internal fun DrawingShape(
                 )
             }
             Polyline(
-                points = effective,
+                points = mainPoints,
                 color = strokeColor,
                 width = width,
-                pattern = pattern,
+                pattern = linePattern,
                 clickable = clickable,
                 onClick = { handleClick() }
             )
+            if (lg == com.tacmap.drawings.LineGraphic.BOUNDARY) {
+                TacticalLineGeo.boundaryTicks(effective).forEach { tick ->
+                    Polyline(points = tick, color = strokeColor, width = width, clickable = false)
+                }
+            }
+            if (lg == com.tacmap.drawings.LineGraphic.AXIS_OF_ADVANCE) {
+                val head = TacticalLineGeo.arrowHead(effective)
+                if (head.size >= 2) {
+                    Polyline(points = head, color = strokeColor, width = width, clickable = false)
+                }
+            }
         }
         DrawingGeometry.POLYGON -> {
             if (effective.size < 2 && !isDraft) return

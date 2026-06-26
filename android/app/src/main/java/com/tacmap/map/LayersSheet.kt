@@ -11,7 +11,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -34,13 +36,18 @@ fun LayersSheet(
     unitLabelsVisible: Boolean,
     taskLabelsVisible: Boolean,
     drawingLabelsVisible: Boolean,
+    terrainHeatmapVisible: Boolean,
     onMgrsGridChange: (Boolean) -> Unit,
+    onTerrainHeatmapChange: (Boolean) -> Unit,
     onUnitLabelsChange: (Boolean) -> Unit,
     onTaskLabelsChange: (Boolean) -> Unit,
     onDrawingLabelsChange: (Boolean) -> Unit,
+    activeBaseMap: BaseMap,
+    onSelectBaseMap: (BaseMap) -> Unit,
     hasPdfMap: Boolean,
     hasOfflineTiles: Boolean,
     onCalibratePdf: () -> Unit,
+    onGenerateTiles: () -> Unit,
     onUnloadPdf: () -> Unit,
     onUnloadOfflineTiles: () -> Unit,
     onDismiss: () -> Unit,
@@ -57,11 +64,37 @@ fun LayersSheet(
 
             SectionHeader("Overlays")
             ToggleRow("MGRS Grid", mgrsGridVisible, onMgrsGridChange)
+            ToggleRow("Terrain Heat-map", terrainHeatmapVisible, onTerrainHeatmapChange)
 
             SectionHeader("Labels")
             ToggleRow("Unit Labels", unitLabelsVisible, onUnitLabelsChange)
             ToggleRow("Task Labels", taskLabelsVisible, onTaskLabelsChange)
             ToggleRow("Drawing Labels", drawingLabelsVisible, onDrawingLabelsChange)
+
+            SectionHeader("Basemap")
+            val importedMapActive = hasPdfMap || hasOfflineTiles
+            BasemapRow(
+                label = "Satellite",
+                selected = activeBaseMap == BaseMap.SATELLITE && !importedMapActive,
+                onClick = { onSelectBaseMap(BaseMap.SATELLITE) }
+            )
+            BasemapRow(
+                label = "Satellite (Esri)",
+                selected = activeBaseMap == BaseMap.ESRI_SATELLITE && !importedMapActive,
+                onClick = { onSelectBaseMap(BaseMap.ESRI_SATELLITE) }
+            )
+            BasemapRow(
+                label = "Terrain (OpenTopoMap)",
+                selected = activeBaseMap == BaseMap.TERRAIN && !importedMapActive,
+                onClick = { onSelectBaseMap(BaseMap.TERRAIN) }
+            )
+            if (importedMapActive) {
+                Text(
+                    "An imported map is active — pick a basemap to switch back to it.",
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
 
             if (hasPdfMap || hasOfflineTiles) {
                 SectionHeader("Imported Map")
@@ -70,6 +103,15 @@ fun LayersSheet(
                         onClick = onCalibratePdf,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                     ) { Text("Calibrate PDF Map") }
+                    OutlinedButton(
+                        onClick = onGenerateTiles,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    ) { Text("Generate Offline Tiles") }
+                    Text(
+                        "Bakes this calibrated map into an offline tile set on-device — no desktop tools needed.",
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
                     OutlinedButton(
                         onClick = onUnloadPdf,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -96,6 +138,21 @@ private fun SectionHeader(title: String) {
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
     )
+}
+
+@Composable
+private fun BasemapRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontSize = 15.sp)
+        RadioButton(selected = selected, onClick = onClick)
+    }
 }
 
 @Composable

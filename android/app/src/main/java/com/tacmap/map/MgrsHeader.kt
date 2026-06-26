@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationSearching
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +49,10 @@ fun MgrsHeader(
     isBrowsing: Boolean,
     accuracy: Double?,
     modifier: Modifier = Modifier,
+    elevation: Double? = null,
+    elevationApprox: Boolean = false,
+    utm: String? = null,
+    syncConnected: Boolean = false,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -99,6 +104,28 @@ fun MgrsHeader(
                  fontWeight = FontWeight.Bold, lineHeight = 12.sp)
             Text(wgs84, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
                  fontFamily = FontFamily.Monospace, lineHeight = 12.sp)
+            elevation?.let { metres ->
+                Text("·", color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
+                     lineHeight = 12.sp)
+                Text(
+                    (if (elevationApprox) "~" else "") + "%.0f m MSL".format(metres),
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 12.sp
+                )
+            }
+        }
+        utm?.let { utmText ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("UTM", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp,
+                     fontWeight = FontWeight.Bold, lineHeight = 12.sp)
+                Text(utmText, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
+                     fontFamily = FontFamily.Monospace, lineHeight = 12.sp)
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -119,6 +146,23 @@ fun MgrsHeader(
                 lineHeight = 13.sp
             )
             Spacer(Modifier.weight(1f))
+            if (syncConnected) {
+                Icon(
+                    Icons.Default.Sync,
+                    contentDescription = null,
+                    tint = SyncBlue,
+                    modifier = Modifier.size(12.dp)
+                )
+                Spacer(Modifier.size(4.dp))
+                Text(
+                    "Unit Sync",
+                    color = SyncBlue,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 12.sp
+                )
+                Spacer(Modifier.weight(1f))
+            }
             Text(
                 accuracy?.let { "Accuracy ±%.0fm".format(it) } ?: "Accuracy N/A",
                 color = Color.White.copy(alpha = 0.75f),
@@ -130,3 +174,5 @@ fun MgrsHeader(
         }
     }
 }
+
+private val SyncBlue = Color(0xFF4FA8FF)

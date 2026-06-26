@@ -41,4 +41,20 @@ class MgrsFormatterTest {
         assertNull(MgrsFormatter.parse(""))
         assertNull(MgrsFormatter.parse("H"))
     }
+
+    @Test
+    fun formatUtmNorthernHemisphere() {
+        // San Francisco → UTM zone 10 N.
+        val s = MgrsFormatter.formatUtm(37.7749, -122.4194)
+        assertTrue("unexpected UTM: $s", Regex("""^\d{2}[NS] \d+mE \d+mN$""").matches(s))
+        assertTrue("expected zone 10N: $s", s.startsWith("10N "))
+    }
+
+    @Test
+    fun formatUtmSouthernHemisphere() {
+        // Sydney → UTM zone 56 S.
+        val s = MgrsFormatter.formatUtm(-33.8688, 151.2093)
+        assertTrue("unexpected UTM: $s", Regex("""^\d{2}S \d+mE \d+mN$""").matches(s))
+        assertTrue("expected zone 56S: $s", s.startsWith("56S "))
+    }
 }

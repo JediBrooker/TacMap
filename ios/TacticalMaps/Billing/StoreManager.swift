@@ -1,5 +1,6 @@
 import Foundation
 import StoreKit
+import UIKit
 
 /// StoreKit 2 wrapper for the single one-time, non-consumable unlock that
 /// permanently removes the trial gate.
@@ -27,7 +28,17 @@ final class StoreManager: ObservableObject {
     @Published private(set) var isPurchased = false
     @Published private(set) var product: Product?
     @Published private(set) var purchasing = false
+    @Published private(set) var restoring = false
+    /// Set after a Restore attempt so the paywall can show the outcome; the UI
+    /// clears it once shown.
+    @Published var restoreOutcome: String?
     @Published private(set) var loadState: ProductLoadState = .loading
+
+    /// True for TestFlight / Sandbox builds (receipt is `sandboxReceipt`), where
+    /// in-app purchases are FREE — used to reassure testers they won't be charged.
+    var isSandbox: Bool {
+        Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    }
 
     /// Hard ceiling on the product fetch so a stalled StoreKit request can't
     /// hang the paywall forever.
@@ -94,20 +105,30 @@ final class StoreManager: ObservableObject {
     }
 
     /// "Restore purchase" — re-sync with the App Store and re-read entitlements.
+    /// Always reports an outcome so the button never feels like it did nothing.
     func restore() async {
+        restoring = true
+        defer { restoring = false }
+        let wasPurchased = isPurchased
         try? await AppStore.sync()
         await refreshEntitlement()
+        restoreOutcome = isPurchased
+            ? (wasPurchased ? "Already unlocked." : "Purchase restored.")
+            : "No previous purchase found on this Apple ID."
     }
 
-    /// Present the App Store's own code-redemption sheet for promo codes
-    /// (App Store Connect → your IAP → "Promo Codes", up to 100 free per
-    /// version). A redeemed code grants the real `unlock` entitlement and
-    /// produces a normal transaction that `listenForTransactions` already
-    /// picks up, flipping `isPurchased` — so no app-side validation is needed.
-    /// This is Apple's UI, so it's review-safe (no guideline 3.1.1 risk).
-    /// No-op in the Simulator / StoreKit local testing.
+    /// Open the App Store's "Redeem Gift Card or Code" screen.
+    ///
+    /// App Store **promo codes** for a NON-consumable IAP can only be redeemed
+    /// in the App Store app — Apple's in-app `presentCodeRedemptionSheet()` is
+    /// for *subscription offer codes* only, which this app doesn't have, so it
+    /// would dead-end. Instead we deep-link to the store's redeem screen (the
+    /// iOS mirror of Android's `play.google.com/redeem`); the user pastes the
+    /// code there. A successful redemption produces a normal transaction that
+    /// `listenForTransactions` / restore picks up, flipping `isPurchased`.
     func presentRedeemSheet() {
-        SKPaymentQueue.default().presentCodeRedemptionSheet()
+        guard let url = URL(string: "https://apps.apple.com/redeem") else { return }
+        UIApplication.shared.open(url)
     }
 
     /// Grant the unlock if a verified, non-revoked entitlement exists.

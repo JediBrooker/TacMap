@@ -4,20 +4,33 @@ import android.app.Application
 import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.MapSource
-import com.tacmap.calibration.OpenStreetMapSourceAndroid
+import com.tacmap.calibration.OnlineRasterMapSourceAndroid
+import com.tacmap.calibration.SatelliteMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfSessionStore
 import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LocationService
+import com.tacmap.models.TrackRecorder
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+
+/** User-selectable online basemap: native Google satellite, Esri imagery, or
+ *  OpenTopoMap terrain. */
+enum class BaseMap { SATELLITE, ESRI_SATELLITE, TERRAIN }
 
 /**
  * Owns map camera, browse-mode toggle, and the MGRS readout shown in the header.
@@ -32,6 +45,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     val locationService = LocationService(app)
 
+    /** GPX patrol-track recorder. Fed every fix from [onUserLocation]; only
+     *  accumulates while recording. */
+    val trackRecorder = TrackRecorder()
+
     // Camera centre published by MapScreen on every camera-idle event.
     private val _cameraLat = MutableStateFlow(0.0)
     val cameraLat: StateFlow<Double> = _cameraLat.asStateFlow()
@@ -44,10 +61,42 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private val _mapBearingDegrees = MutableStateFlow(0.0)
     val mapBearingDegrees: StateFlow<Double> = _mapBearingDegrees.asStateFlow()
 
+    /**
+     * Live terrain-elevation reading for the current map centre (metres MSL +
+     * staleness), fetched from Open-Meteo's Copernicus DEM via
+     * [ElevationService], debounced so we only hit the network once the user
+     * stops panning. null until the first reading resolves. Mirrors iOS.
+     */
+    private val _centreElevation = MutableStateFlow<ElevationReading?>(null)
+    val centreElevation: StateFlow<ElevationReading?> = _centreElevation.asStateFlow()
+    private val elevationService = ElevationService()
+
     private val pdfSessionStore = PdfSessionStore(app)
 
-    private val _mapSource = MutableStateFlow<MapSource>(OpenStreetMapSourceAndroid())
+    private val _mapSource = MutableStateFlow<MapSource>(SatelliteMapSourceAndroid())
     val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
+
+    /** Which online basemap to return to when an imported map is unloaded. */
+    private var preferredBaseMap = BaseMap.SATELLITE
+    private fun baseMapSource(choice: BaseMap): MapSource = when (choice) {
+        BaseMap.SATELLITE -> SatelliteMapSourceAndroid()
+        BaseMap.ESRI_SATELLITE -> OnlineRasterMapSourceAndroid(BasemapStyle.ESRI_SATELLITE)
+        BaseMap.TERRAIN -> OnlineRasterMapSourceAndroid(BasemapStyle.TERRAIN)
+    }
+    private fun onlineBasemap(): MapSource = baseMapSource(preferredBaseMap)
+
+    /** Switch the online basemap. Also clears any imported PDF so the chosen
+     *  basemap actually shows. */
+    fun selectBaseMap(choice: BaseMap) {
+        preferredBaseMap = choice
+        _mapSource.value = baseMapSource(choice)
+        pdfSessionStore.clear()
+    }
+
+    /** Return to the preferred online basemap (e.g. after unloading offline tiles). */
+    fun restoreOnlineBasemap() {
+        _mapSource.value = onlineBasemap()
+    }
 
     /**
      * Set the active map source AND, when it has coverage, fly the camera
@@ -85,7 +134,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun unloadPdfMap() {
-        _mapSource.value = OpenStreetMapSourceAndroid()
+        _mapSource.value = onlineBasemap()
         pdfSessionStore.clear()
     }
 
@@ -118,6 +167,28 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             locationService.lastLocation.collect { loc -> loc?.let(::onUserLocation) }
         }
+        observeElevation()
+    }
+
+    /**
+     * Fetch the centre elevation whenever the camera settles. Debounced 400ms
+     * (matches iOS) and de-duped to ~11 m so a tiny jitter doesn't re-hit the
+     * network. `collectLatest` cancels an in-flight fetch when the centre moves
+     * again, so only the latest position resolves.
+     */
+    @OptIn(FlowPreview::class)
+    private fun observeElevation() {
+        viewModelScope.launch {
+            combine(_cameraLat, _cameraLng) { lat, lng -> lat to lng }
+                .filter { (lat, lng) -> lat != 0.0 || lng != 0.0 }
+                .debounce(400)
+                .distinctUntilChanged { (oLat, oLng), (nLat, nLng) ->
+                    abs(oLat - nLat) < 0.0001 && abs(oLng - nLng) < 0.0001
+                }
+                .collectLatest { (lat, lng) ->
+                    _centreElevation.value = elevationService.reading(lat, lng)
+                }
+        }
     }
 
     /** Called by MapScreen on every camera idle event. `byUser` distinguishes
@@ -146,6 +217,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun onUserLocation(loc: Location) {
         lastUserLocation = loc
+        trackRecorder.onLocation(loc)
         if (!hasInitialFix) {
             hasInitialFix = true
             // Centre on the user on the first fix — unless a bounded map
@@ -189,6 +261,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             abs(lat), if (lat >= 0) "N" else "S",
             abs(lng), if (lng >= 0) "E" else "W"
         )
+    }
+
+    val headerUtm: String get() {
+        val (lat, lng) = headerCoordinate
+        return MgrsFormatter.formatUtm(lat, lng)
     }
 
     val headerCoordinate: Pair<Double, Double>

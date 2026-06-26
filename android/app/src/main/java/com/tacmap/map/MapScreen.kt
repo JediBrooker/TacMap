@@ -29,28 +29,31 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -101,7 +104,8 @@ import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.Datum
 import com.tacmap.calibration.GeoPdfParser
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
-import com.tacmap.calibration.OpenStreetMapSourceAndroid
+import com.tacmap.calibration.BasemapStyle
+import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.calibration.Wgs84Coordinate
@@ -134,6 +138,9 @@ fun MapScreen(
     val pendingTarget by vm.pendingCameraTarget.collectAsState()
     val cameraLat by vm.cameraLat.collectAsState()
     val cameraLng by vm.cameraLng.collectAsState()
+    val centreElevation by vm.centreElevation.collectAsState()
+    val isRecordingTrack by vm.trackRecorder.isRecording.collectAsState()
+    val trackPoints by vm.trackRecorder.points.collectAsState()
     val mapSource by vm.mapSource.collectAsState()
     val waypointStore = remember { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
@@ -155,7 +162,19 @@ fun MapScreen(
     var showSearchDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLayersSheet by remember { mutableStateOf(false) }
+    var showImportExportSheet by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
+    /// Weather/UAV widget target = (lat, lng) of the map centre, null when closed.
+    var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    var showAppLockSetup by remember { mutableStateOf(false) }
+    val appLock = remember { com.tacmap.app.AppLock(context) }
+    var showSyncDialog by remember { mutableStateOf(false) }
+    val syncManager = remember {
+        com.tacmap.sync.SyncManager(waypointStore, drawingStore, scope, context)
+    }
+    val syncStatus by syncManager.status.collectAsState()
+    /// (done, total) while baking a calibrated PDF into offline tiles; null when idle.
+    var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     /// Lock toggle — when true, NO graphic (symbol or drawing) can be
     /// moved by any gesture. An extra guard against accidental drags.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -167,6 +186,7 @@ fun MapScreen(
     var taskLabelsVisible by rememberPersistedBoolean("taskLabels", false)
     var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
     var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
+    var terrainHeatmapVisible by rememberPersistedBoolean("terrainHeatmap", false)
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
     var isFreeDrawMode by remember { mutableStateOf(false) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
@@ -261,6 +281,41 @@ fun MapScreen(
                     existingLayers = drawingDocument.layers,
                     fallbackLayerId = fallback
                 )
+            }.getOrElse { e ->
+                Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            parsed.newLayers.forEach { drawingStore.addLayerVerbatim(it) }
+            parsed.drawings.forEach { drawingStore.addFeature(it) }
+            parsed.waypoints.forEach { waypointStore.add(it) }
+            Toast.makeText(
+                context,
+                "Imported ${parsed.waypoints.size} waypoint(s) and ${parsed.drawings.size} drawing(s)",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val kmlImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val fallback = drawingDocument.layers
+                .firstOrNull { it.id == activeDrawingLayerId }?.id
+                ?: drawingDocument.layers.firstOrNull()?.id
+                ?: com.tacmap.drawings.DrawingDocument.DEFAULT_LAYER_ID
+            // Read bytes (not text) so a KMZ zip survives intact.
+            val parsed = runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        com.tacmap.export.KmlImporter.parseStream(
+                            input = stream,
+                            existingLayers = drawingDocument.layers,
+                            fallbackLayerId = fallback
+                        )
+                    } ?: throw IllegalStateException("Couldn't read file")
+                }
             }.getOrElse { e ->
                 Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
                 return@launch
@@ -467,6 +522,7 @@ fun MapScreen(
                 },
                 calibrationInputEnabled = isCalibratingPdf,
                 mgrsGridVisible = mgrsGridVisible,
+                terrainHeatmapVisible = terrainHeatmapVisible,
                 unitLabelsVisible = unitLabelsVisible,
                 taskLabelsVisible = taskLabelsVisible,
                 drawingLabelsVisible = drawingLabelsVisible,
@@ -548,6 +604,10 @@ fun MapScreen(
             wgs84 = vm.headerWgs84,
             isBrowsing = isBrowsing,
             accuracy = lastLocation?.accuracy?.toDouble(),
+            elevation = centreElevation?.metres,
+            elevationApprox = centreElevation?.isStale == true,
+            utm = vm.headerUtm,
+            syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
@@ -570,6 +630,19 @@ fun MapScreen(
                 )
             }
         )
+
+        // Live track-recording badge — only while recording. Centred just
+        // below the header, between the hamburger and compass. Tap to stop.
+        if (isRecordingTrack) {
+            RecordingIndicator(
+                pointCount = trackPoints.size,
+                onStop = { vm.trackRecorder.stop() },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 104.dp)
+            )
+        }
 
         // Hamburger (left) + Compass (right), pinned just below the
         // MGRS header (which is ~96dp tall after the recent tighten).
@@ -653,46 +726,61 @@ fun MapScreen(
                         },
                         leadingIcon = { Icon(Icons.Default.Straighten, contentDescription = null) }
                     )
+                    DropdownMenuItem(
+                        text = { Text("Weather & UAV Safety") },
+                        onClick = {
+                            hamburgerOpen = false
+                            weatherTarget = vm.headerCoordinate
+                        },
+                        leadingIcon = { Icon(Icons.Default.Air, contentDescription = null) }
+                    )
+                    HorizontalDivider()
+                    // All file import/export is gathered behind one item that
+                    // opens a bottom sheet, keeping the main menu short.
+                    DropdownMenuItem(
+                        text = { Text("Import / Export") },
+                        onClick = {
+                            hamburgerOpen = false
+                            showImportExportSheet = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.ImportExport, contentDescription = null) }
+                    )
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("Import PDF Map") },
-                        onClick = {
-                            hamburgerOpen = false
-                            pdfImportLauncher.launch(arrayOf("application/pdf"))
-                        },
-                        leadingIcon = { Icon(Icons.Default.PictureAsPdf, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Import Offline Tiles") },
-                        onClick = {
-                            hamburgerOpen = false
-                            // MBTiles has no standard MIME type — show all files.
-                            mbtilesImportLauncher.launch(arrayOf("*/*"))
-                        },
-                        leadingIcon = { Icon(Icons.Default.Map, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Import GeoJSON") },
-                        onClick = {
-                            hamburgerOpen = false
-                            geoJsonImportLauncher.launch(arrayOf("application/geo+json", "application/json", "*/*"))
-                        },
-                        leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Export GeoJSON") },
-                        onClick = {
-                            hamburgerOpen = false
-                            shareGeoJson(
-                                context = context,
-                                waypoints = waypoints,
-                                drawings = drawingDocument.features,
-                                layers = drawingDocument.layers
+                        text = {
+                            Text(
+                                if (isRecordingTrack) "Stop Track Recording (${trackPoints.size} pts)"
+                                else "Start Track Recording"
                             )
                         },
-                        leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) }
+                        onClick = {
+                            hamburgerOpen = false
+                            if (isRecordingTrack) vm.trackRecorder.stop() else vm.trackRecorder.start()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (isRecordingTrack) Icons.Default.Stop else Icons.Default.FiberManualRecord,
+                                contentDescription = null
+                            )
+                        }
                     )
                     HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("Unit Sync") },
+                        onClick = {
+                            hamburgerOpen = false
+                            showSyncDialog = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Sync, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("App Lock") },
+                        onClick = {
+                            hamburgerOpen = false
+                            showAppLockSetup = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }
+                    )
                     DropdownMenuItem(
                         text = { Text("About & Credits") },
                         onClick = {
@@ -887,21 +975,90 @@ fun MapScreen(
         AboutDialog(onDismiss = { showAboutDialog = false })
     }
 
+    weatherTarget?.let { (lat, lng) ->
+        WeatherDialog(lat = lat, lng = lng, onDismiss = { weatherTarget = null })
+    }
+
+    if (showAppLockSetup) {
+        com.tacmap.app.AppLockSetupDialog(appLock = appLock, onDismiss = { showAppLockSetup = false })
+    }
+
+    if (showSyncDialog) {
+        com.tacmap.sync.SyncDialog(manager = syncManager, onDismiss = { showSyncDialog = false })
+    }
+
+    tilingProgress?.let { (done, total) ->
+        AlertDialog(
+            onDismissRequest = { /* non-cancelable while baking */ },
+            confirmButton = {},
+            title = { Text("Generating offline tiles") },
+            text = {
+                Column {
+                    @Suppress("DEPRECATION")
+                    LinearProgressIndicator(
+                        progress = if (total > 0) done.toFloat() / total else 0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        if (total > 0) "$done / $total tiles" else "Preparing…",
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+        )
+    }
+
     if (showLayersSheet) {
         LayersSheet(
             mgrsGridVisible = mgrsGridVisible,
             unitLabelsVisible = unitLabelsVisible,
             taskLabelsVisible = taskLabelsVisible,
             drawingLabelsVisible = drawingLabelsVisible,
+            terrainHeatmapVisible = terrainHeatmapVisible,
             onMgrsGridChange = { mgrsGridVisible = it },
+            onTerrainHeatmapChange = { terrainHeatmapVisible = it },
             onUnitLabelsChange = { unitLabelsVisible = it },
             onTaskLabelsChange = { taskLabelsVisible = it },
             onDrawingLabelsChange = { drawingLabelsVisible = it },
+            activeBaseMap = mapSource.let { ms ->
+                when (ms) {
+                    is OnlineRasterMapSourceAndroid ->
+                        if (ms.style == BasemapStyle.TERRAIN) BaseMap.TERRAIN else BaseMap.ESRI_SATELLITE
+                    else -> BaseMap.SATELLITE
+                }
+            },
+            onSelectBaseMap = { vm.selectBaseMap(it) },
             hasPdfMap = pdfSource != null,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
             onCalibratePdf = {
                 showLayersSheet = false
                 startPdfCalibration()
+            },
+            onGenerateTiles = {
+                val pdf = pdfSource
+                showLayersSheet = false
+                if (pdf == null) {
+                    Toast.makeText(context, "Load a PDF map first", Toast.LENGTH_SHORT).show()
+                } else {
+                    scope.launch {
+                        tilingProgress = 0 to 0
+                        val path = com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
+                            tilingProgress = p.done to p.total
+                        }
+                        tilingProgress = null
+                        if (path != null) {
+                            com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
+                                ?.let { vm.setMapSource(it) }
+                            Toast.makeText(context, "Offline tiles ready", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Couldn't generate tiles — calibrate the PDF first (3+ fiduciaries).",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
             },
             onUnloadPdf = {
                 showLayersSheet = false
@@ -910,9 +1067,50 @@ fun MapScreen(
             },
             onUnloadOfflineTiles = {
                 showLayersSheet = false
-                vm.setMapSource(OpenStreetMapSourceAndroid())
+                vm.restoreOnlineBasemap()
             },
             onDismiss = { showLayersSheet = false }
+        )
+    }
+
+    if (showImportExportSheet) {
+        ImportExportSheet(
+            onImportPdf = {
+                showImportExportSheet = false
+                pdfImportLauncher.launch(arrayOf("application/pdf"))
+            },
+            onImportTiles = {
+                showImportExportSheet = false
+                // MBTiles has no standard MIME type — show all files.
+                mbtilesImportLauncher.launch(arrayOf("*/*"))
+            },
+            onImportGeoJson = {
+                showImportExportSheet = false
+                geoJsonImportLauncher.launch(arrayOf("application/geo+json", "application/json", "*/*"))
+            },
+            onImportKml = {
+                showImportExportSheet = false
+                // KML/KMZ have no reliable MIME registration across providers — show all files.
+                kmlImportLauncher.launch(arrayOf(
+                    "application/vnd.google-earth.kml+xml",
+                    "application/vnd.google-earth.kmz",
+                    "*/*"
+                ))
+            },
+            onExportGeoJson = {
+                showImportExportSheet = false
+                shareGeoJson(
+                    context = context,
+                    waypoints = waypoints,
+                    drawings = drawingDocument.features,
+                    layers = drawingDocument.layers
+                )
+            },
+            onExportGpx = {
+                showImportExportSheet = false
+                shareGpx(context = context, points = trackPoints)
+            },
+            onDismiss = { showImportExportSheet = false }
         )
     }
 

@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.TacticalMaps" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">@android:color/black</item>
+        <!-- No android:statusBarColor / navigationBarColor here: those setters are
+             deprecated on Android 15 (SDK 35). Edge-to-edge is enabled in code via
+             enableEdgeToEdge(); the bars stay transparent and content draws behind
+             them (the header uses statusBarsPadding()). -->
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@android:color/black</item>
     </style>

@@ -21,6 +21,15 @@ enum MGRSFormatter {
         return spaced ? formatted(raw) : raw.replacingOccurrences(of: " ", with: "")
     }
 
+    /// User-facing UTM grid readout, e.g. `"33N 450000mE 6700000mN"`.
+    /// Hemisphere from the latitude sign (UTM N/S); zone + easting + northing
+    /// from NGA's `toUTM()`.
+    static func utm(from coordinate: CLLocationCoordinate2D) -> String {
+        let u = MGRS.from(coordinate).toUTM()
+        let hemi = coordinate.latitude >= 0 ? "N" : "S"
+        return String(format: "%02d%@ %.0fmE %.0fmN", u.zone, hemi, u.easting, u.northing)
+    }
+
     /// Decode `"56HLH 13225 37516"` (or the no-space form) back to WGS84.
     ///
     /// **Crash safety**: NGA's `MGRS.parse` calls `fatalError` on inputs that

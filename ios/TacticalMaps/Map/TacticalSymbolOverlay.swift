@@ -363,6 +363,11 @@ final class BubbleView: UIView {
                 rotation: waypoint.rotation,
                 color: waypoint.taskColor
             )
+            // Task graphics are BLACK line art. A strong white halo keeps the
+            // black legible on dark satellite imagery (white outline on black).
+            imageView.layer.shadowColor = UIColor.white.cgColor
+            imageView.layer.shadowRadius = 5.0
+            imageView.layer.shadowOpacity = 1.0
         case .military(let spec):
             imageView.image = MilitarySymbolRenderer.image(for: spec, size: 44)
         case .generic:

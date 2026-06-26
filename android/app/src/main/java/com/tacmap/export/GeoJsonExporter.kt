@@ -120,6 +120,7 @@ object GeoJsonExporter {
                 put("fill_color", feature.fillColor.argbHex())
                 put("stroke_width", feature.strokeWidth)
                 put("stroke_style", feature.strokeStyle.name.lowercase())
+                feature.lineGraphic?.let { put("tacticalmaps:line_graphic", it.wire) }
                 put("scale_x", feature.scaleX)
                 put("scale_y", feature.scaleY)
                 put("rotation_degrees", feature.rotationDegrees)

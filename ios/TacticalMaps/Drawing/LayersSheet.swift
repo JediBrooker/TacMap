@@ -14,6 +14,7 @@ struct LayersSheet: View {
     @State private var showingNewLayerSheet = false
     @State private var pendingDeleteLayer: DrawingLayer? = nil
     @State private var renamingLayer: DrawingLayer? = nil
+    @State private var tilingProgress: PDFTiler.Progress? = nil
 
     var body: some View {
         NavigationStack {
@@ -23,6 +24,7 @@ struct LayersSheet: View {
                     Toggle("Drawings",      isOn: $visibility.drawingsVisible)
                     Toggle("User Location", isOn: $visibility.userLocationVisible)
                     Toggle("MGRS Grid",     isOn: $visibility.mgrsGridVisible)
+                    Toggle("Terrain Heat-map", isOn: $visibility.terrainHeatmapVisible)
                 }
 
                 Section("Labels") {
@@ -58,6 +60,21 @@ struct LayersSheet: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                        if let p = tilingProgress {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ProgressView(value: p.total > 0 ? Double(p.done) / Double(p.total) : 0)
+                                Text(p.total > 0 ? "Generating offline tiles — \(p.done)/\(p.total)" : "Preparing…")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Button {
+                                generateTiles(from: pdfSource)
+                            } label: {
+                                Label("Generate Offline Tiles…", systemImage: "square.stack.3d.down.right")
+                            }
+                            Text("Bakes this calibrated map into an offline tile set on-device — no desktop tools.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                         Button(role: .destructive) {
                             mapVM.mapSource = AppleSatelliteMapSource()
                             /// Clear the persisted entry too, otherwise the
@@ -89,13 +106,28 @@ struct LayersSheet: View {
                 }
 
                 Section("Basemap") {
-                    HStack {
-                        Image(systemName: "globe.americas.fill")
-                        Text("Apple Satellite")
-                        Spacer()
-                        Text(mapVM.mapSource is AppleSatelliteMapSource
-                             ? "Active"
-                             : "Hidden while an imported map is loaded")
+                    let importedActive = mapVM.mapSource is PDFMapSource
+                        || mapVM.mapSource is OfflineTileMapSource
+                    basemapRow(title: "Satellite (Apple)",
+                               systemImage: "globe.americas.fill",
+                               isActive: mapVM.mapSource is AppleSatelliteMapSource) {
+                        mapVM.mapSource = AppleSatelliteMapSource()
+                        PDFSessionStore.clear()
+                    }
+                    basemapRow(title: "Satellite (Esri)",
+                               systemImage: "globe.badge.chevron.backward",
+                               isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .esriSatellite) {
+                        mapVM.mapSource = OnlineRasterBasemapSource(.esriSatellite)
+                        PDFSessionStore.clear()
+                    }
+                    basemapRow(title: "Terrain (OpenTopoMap)",
+                               systemImage: "mountain.2.fill",
+                               isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .terrain) {
+                        mapVM.mapSource = OnlineRasterBasemapSource(.terrain)
+                        PDFSessionStore.clear()
+                    }
+                    if importedActive {
+                        Text("An imported map is active — pick a basemap to switch back to it.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -136,6 +168,47 @@ struct LayersSheet: View {
                 Button("Cancel", role: .cancel) { renamingLayer = nil }
             }
         }
+    }
+
+    /// Bake the calibrated PDF into an offline MBTiles set off the main thread,
+    /// then swap the active source to the generated tiles.
+    private func generateTiles(from pdf: PDFMapSource) {
+        tilingProgress = PDFTiler.Progress(done: 0, total: 0)
+        Task.detached(priority: .userInitiated) {
+            let url = PDFTiler.generate(source: pdf) { p in
+                Task { @MainActor in tilingProgress = p }
+            }
+            await MainActor.run {
+                tilingProgress = nil
+                if let url, let source = OfflineTileMapSource(url: url) {
+                    mapVM.mapSource = source
+                    PDFSessionStore.clear()
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func basemapRow(title: String,
+                            systemImage: String,
+                            isActive: Bool,
+                            select: @escaping () -> Void) -> some View {
+        Button(action: select) {
+            HStack {
+                Image(systemName: systemImage)
+                    .frame(width: 24)
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if isActive {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

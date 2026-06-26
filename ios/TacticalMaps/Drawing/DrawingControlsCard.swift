@@ -35,6 +35,10 @@ struct DrawingControlsCard: View {
                 widthRow(for: shape)
                 heightRow(for: shape)
             }
+            // Tactical line-graphic picker for line shapes (FLOT, boundary…).
+            if shape.kind == .polyline || shape.kind == .freedraw {
+                lineGraphicRow(for: shape)
+            }
             actionRow(for: shape)
         }
         .padding(.horizontal, 12)
@@ -65,6 +69,42 @@ struct DrawingControlsCard: View {
             }
             Button("Cancel", role: .cancel) { }
         }
+    }
+
+    // MARK: Tactical line graphic
+
+    /// Pick a NATO line-graphic style for a line shape — plain, phase line,
+    /// boundary, forward line (FLOT/FEBA), or axis of advance.
+    private func lineGraphicRow(for shape: DrawingShape) -> some View {
+        let current = shape.style.lineGraphic ?? .plain
+        return Menu {
+            ForEach(LineGraphic.allCases, id: \.self) { g in
+                Button {
+                    var updated = shape
+                    updated.style.lineGraphic = (g == .plain) ? nil : g
+                    drawingStore.update(updated)
+                } label: {
+                    Label(g.displayName, systemImage: g.symbolName)
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: current.symbolName)
+                    .font(.system(size: 14, weight: .medium))
+                Text(current.displayName)
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .frame(maxWidth: .infinity)
+            .background(.white.opacity(0.08), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Header — name + close

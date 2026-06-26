@@ -134,6 +134,38 @@ internal fun shareGeoJson(
     }
 }
 
+internal fun shareGpx(
+    context: Context,
+    points: List<com.tacmap.models.TrackPoint>
+) {
+    if (points.isEmpty()) {
+        Toast.makeText(context, "No track recorded yet.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val gpx = com.tacmap.export.GpxExporter.export(points)
+    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+    val exportFile = File(exportDir, "TacMap-track-${System.currentTimeMillis()}.gpx")
+    exportFile.writeText(gpx)
+    val exportUri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        exportFile
+    )
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/gpx+xml"
+        putExtra(Intent.EXTRA_SUBJECT, exportFile.name)
+        putExtra(Intent.EXTRA_TITLE, exportFile.name)
+        putExtra(Intent.EXTRA_STREAM, exportUri)
+        clipData = ClipData.newUri(context.contentResolver, exportFile.name, exportUri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    runCatching {
+        context.startActivity(Intent.createChooser(intent, "Export GPX"))
+    }.onFailure {
+        Toast.makeText(context, "No app available to export GPX.", Toast.LENGTH_SHORT).show()
+    }
+}
+
 internal fun importPdfMapSource(
     context: Context,
     sourceUri: Uri,

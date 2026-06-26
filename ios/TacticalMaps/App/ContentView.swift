@@ -50,6 +50,7 @@ struct ContentView: View {
     @StateObject private var visibility      = LayerVisibility()
     @StateObject private var mapVM           = MapViewModel()
     @StateObject private var calibration     = CalibrationSession()
+    @StateObject private var trackRecorder   = TrackRecorder()
 
     /// Injected from the app gate so the menu can show trial status + offer
     /// the unlock on demand (the paywall otherwise only appears once the
@@ -67,6 +68,12 @@ struct ContentView: View {
     @State private var showImporter        = false
     @State private var showMBTilesImporter = false
     @State private var showGeoJSONImporter = false
+    @State private var showKMLImporter     = false
+    @State private var showGPXExporter     = false
+    @State private var showWeatherSheet    = false
+    @State private var showAppLockSheet    = false
+    @State private var showSyncSheet       = false
+    @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: String? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
@@ -164,6 +171,8 @@ struct ContentView: View {
                     MGRSHeaderView(
                         mgrs: mapVM.headerMGRS,
                         wgs84: mapVM.headerWGS84,
+                        utm: mapVM.headerUTM,
+                        syncConnected: syncManager.status == .connected,
                         isBrowsing: mapVM.isBrowsing,
                         accuracy: locationService.lastAccuracy,
                         // Crosshair elevation: prefer the DEM lookup so panning
@@ -194,6 +203,19 @@ struct ContentView: View {
                     )
                     .padding(.horizontal, 12)
 
+                    // Live track-recording badge — only while recording. Tap to
+                    // stop (mirrors the menu toggle + clears background updates).
+                    if trackRecorder.isRecording {
+                        RecordingIndicator(
+                            pointCount: trackRecorder.points.count,
+                            onStop: {
+                                trackRecorder.stop()
+                                locationService.setBackgroundUpdates(false)
+                            }
+                        )
+                        .padding(.top, 8)
+                    }
+
                     // Hamburger (left) + compass (right).
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -222,6 +244,10 @@ struct ContentView: View {
                                     drawingSession.cancel()
                                     measureSession.start()
                                 },
+                                onWeather:   {
+                                    drawingsPanelOpen = false
+                                    showWeatherSheet = true
+                                },
                                 onImport:    {
                                     drawingsPanelOpen = false
                                     showImporter = true
@@ -234,9 +260,37 @@ struct ContentView: View {
                                     drawingsPanelOpen = false
                                     showGeoJSONImporter = true
                                 },
+                                onImportKML: {
+                                    drawingsPanelOpen = false
+                                    showKMLImporter = true
+                                },
                                 onExport:    {
                                     drawingsPanelOpen = false
                                     showExportSheet = true
+                                },
+                                isRecordingTrack: trackRecorder.isRecording,
+                                trackPointCount: trackRecorder.points.count,
+                                onToggleTrackRecording: {
+                                    drawingsPanelOpen = false
+                                    if trackRecorder.isRecording {
+                                        trackRecorder.stop()
+                                        locationService.setBackgroundUpdates(false)
+                                    } else {
+                                        trackRecorder.start()
+                                        locationService.setBackgroundUpdates(true)
+                                    }
+                                },
+                                onExportGPX: {
+                                    drawingsPanelOpen = false
+                                    showGPXExporter = true
+                                },
+                                onSync:      {
+                                    drawingsPanelOpen = false
+                                    showSyncSheet = true
+                                },
+                                onAppLock:   {
+                                    drawingsPanelOpen = false
+                                    showAppLockSheet = true
                                 },
                                 onAbout:     {
                                     drawingsPanelOpen = false
@@ -427,6 +481,29 @@ struct ContentView: View {
             ExportSheet(waypointStore: waypointStore, drawingStore: drawingStore)
                 .padSheetSizing()
         }
+        .sheet(isPresented: $showGPXExporter) {
+            GPXExportSheet(points: trackRecorder.points)
+                .padSheetSizing()
+        }
+        .sheet(isPresented: $showWeatherSheet) {
+            WeatherSheet(coordinate: mapVM.cameraCentre)
+                .padSheetSizing()
+        }
+        .sheet(isPresented: $showAppLockSheet) {
+            AppLockSetupView()
+                .padSheetSizing()
+        }
+        .sheet(isPresented: $showSyncSheet) {
+            SyncSheet(manager: syncManager)
+                .padSheetSizing()
+        }
+        .task {
+            syncManager.configure(waypointStore: waypointStore, drawingStore: drawingStore)
+        }
+        // Feed every fix into the track recorder; it ignores them unless recording.
+        .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
+            trackRecorder.ingest(loc)
+        }
         .sheet(isPresented: $showSearchSheet) {
             SearchSheet(mapVM: mapVM)
                 .padSheetSizing()
@@ -486,6 +563,19 @@ struct ContentView: View {
                     handleMBTilesImport(result)
                 }
         )
+        .background(
+            EmptyView()
+                .fileImporter(
+                    isPresented: $showKMLImporter,
+                    allowedContentTypes: [
+                        UTType(filenameExtension: "kml") ?? .xml,
+                        UTType(filenameExtension: "kmz") ?? .zip
+                    ],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleKMLImport(result)
+                }
+        )
         .alert("Import",
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),
@@ -531,6 +621,39 @@ struct ContentView: View {
                     "\(parsed.drawings.count == 1 ? "" : "s")."
             } catch {
                 importMessage = "Couldn't parse this file as GeoJSON: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func handleKMLImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let err):
+            importMessage = "Import failed: \(err.localizedDescription)"
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let didStart = url.startAccessingSecurityScopedResource()
+            defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let fallback = drawingStore.activeLayerID
+                    ?? drawingStore.layers.first?.id
+                    ?? DrawingLayer.legacyFallbackID
+                let parsed = try KMLImporter.parse(
+                    data,
+                    existingLayers: drawingStore.layers,
+                    fallbackLayerID: fallback
+                )
+                for layer in parsed.newLayers {
+                    drawingStore.addLayerVerbatim(layer)
+                }
+                for shape in parsed.drawings { drawingStore.add(shape) }
+                for wp in parsed.waypoints { waypointStore.add(wp) }
+                importMessage = "Imported \(parsed.waypoints.count) waypoint" +
+                    "\(parsed.waypoints.count == 1 ? "" : "s") and " +
+                    "\(parsed.drawings.count) drawing" +
+                    "\(parsed.drawings.count == 1 ? "" : "s")."
+            } catch {
+                importMessage = "Couldn't parse this file as KML: \(error.localizedDescription)"
             }
         }
     }

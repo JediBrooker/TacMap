@@ -35,8 +35,8 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.0.3"
+        versionCode = 18
+        versionName = "1.1.0"
 
         vectorDrawables { useSupportLibrary = true }
 
@@ -89,7 +89,10 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    // Pin a current fragment (a transitive dep otherwise resolves to the
+    // long-outdated 1.1.0 that Play flags). 1.8.x targets modern SDKs.
+    implementation("androidx.fragment:fragment:1.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
 
@@ -125,6 +128,9 @@ dependencies {
 
     // JSON / GeoJSON export.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // WebSocket client for real-time unit sync.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // PDF parsing — used to extract OGC GeoPDF / Adobe LGIDict
     // georeferencing dictionaries so imported GeoPDFs land in the

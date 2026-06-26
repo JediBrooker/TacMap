@@ -12,9 +12,13 @@ import MGRS
 extension MapContainerView.Coordinator {
 
     func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-        // Offline MBTiles raster basemap.
+        // Offline MBTiles / OSM raster basemap.
         if let tile = overlay as? MKTileOverlay {
             return MKTileOverlayRenderer(tileOverlay: tile)
+        }
+        // Auto terrain heat-map.
+        if let heatmap = overlay as? TerrainHeatmapOverlay {
+            return TerrainHeatmapRenderer(heatmap: heatmap)
         }
         // PDF basemap is no longer an MKOverlay — it's a UIImageView
         // subview (see syncPDFOverlay). This delegate handles drawings only.
@@ -40,11 +44,22 @@ extension MapContainerView.Coordinator {
         let selectionBoost: CGFloat = isSelected ? 3.0 : 0.0
 
         if let line = overlay as? MKPolyline {
+            // Decorated tactical graphics (FLOT/FEBA, boundary, axis) get a
+            // custom renderer that draws crenellations / ticks / arrowheads.
+            if !inProgress, let g = style.lineGraphic,
+               g == .forwardEdge || g == .boundary || g == .axisOfAdvance {
+                return TacticalLineRenderer(polyline: line, style: style,
+                                            graphic: g, selectionBoost: selectionBoost)
+            }
             let r = MKPolylineRenderer(polyline: line)
             r.strokeColor = UIColor(hex: style.strokeColorHex)
             r.lineWidth   = CGFloat(style.strokeWidth) + selectionBoost
-            r.lineDashPattern = effectiveDashPattern(for: style,
-                                                     inProgress: inProgress)
+            // Phase line = dashed control line; otherwise honour the saved dash.
+            if !inProgress, style.lineGraphic == .phaseLine {
+                r.lineDashPattern = [10, 6]
+            } else {
+                r.lineDashPattern = effectiveDashPattern(for: style, inProgress: inProgress)
+            }
             return r
         }
         if let poly = overlay as? MKPolygon {

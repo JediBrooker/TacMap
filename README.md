@@ -256,9 +256,9 @@ Full design + math in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
   in place; logger UI + GPX export TBD.
 - **iCloud sync** for waypoints + drawings.
 - **Android feature parity** — drawing, search, waypoints + APP-6 symbols,
-  GeoPDF import & fiduciary calibration, GeoJSON import/export, and the offline
-  MBTiles basemap are all wired on Android now. The main iOS-only item left is
-  the live DEM elevation readout in the HUD.
+  GeoPDF import & fiduciary calibration, GeoJSON import/export, KML/KMZ import,
+  the offline MBTiles basemap, and the live DEM elevation readout in the HUD are
+  all wired on Android now.
 
 ---
 

@@ -192,6 +192,9 @@ enum GeoJSONImporter {
         if let fill   = props["fill"]   as? String { style.fillColorHex   = fill }
         if let w      = props["stroke-width"] as? Double { style.strokeWidth = w }
         if let o      = props["fill-opacity"] as? Double { style.fillOpacity = o }
+        if let lg = (props["tacticalmaps:line_graphic"] as? String).flatMap(LineGraphic.init(rawValue:)) {
+            style.lineGraphic = lg
+        }
 
         let name = props["name"] as? String
         let notes = props["description"] as? String

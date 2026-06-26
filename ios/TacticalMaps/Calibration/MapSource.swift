@@ -26,7 +26,7 @@ protocol MapSource: AnyObject {
     var calibration: Calibration? { get }
 }
 
-enum MapSourceKind: String, Codable { case appleSatellite, geoPDF, calibratedPDF, offlineTiles }
+enum MapSourceKind: String, Codable { case appleSatellite, onlineRaster, geoPDF, calibratedPDF, offlineTiles }
 
 /// Calibration metadata for a PDF source.
 enum Calibration {

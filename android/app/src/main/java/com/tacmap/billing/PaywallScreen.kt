@@ -113,7 +113,7 @@ fun PaywallScreen(
             Text("Restore purchase", color = HudOrange, fontSize = 14.sp)
         }
         TextButton(onClick = onRedeem) {
-            Text("Redeem code", color = HudOrange, fontSize = 14.sp)
+            Text("Redeem code on Google Play", color = HudOrange, fontSize = 14.sp)
         }
         Spacer(Modifier.height(20.dp))
         Text(

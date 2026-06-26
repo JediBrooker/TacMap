@@ -33,6 +33,10 @@ final class LayerVisibility: ObservableObject {
     /// current zoom.
     @Published var mgrsGridVisible:      Bool = false { didSet { d.set(mgrsGridVisible,      forKey: K.mgrsGrid) } }
 
+    /// Auto terrain heat-map (DEM shading). Off by default — it fetches DEM
+    /// samples over the network when enabled.
+    @Published var terrainHeatmapVisible: Bool = false { didSet { d.set(terrainHeatmapVisible, forKey: K.terrainHeatmap) } }
+
     private let d = UserDefaults.standard
 
     private enum K {
@@ -44,6 +48,7 @@ final class LayerVisibility: ObservableObject {
         static let unitLabels    = "layers.unitLabelsVisible"
         static let taskLabels    = "layers.taskLabelsVisible"
         static let mgrsGrid      = "layers.mgrsGridVisible"
+        static let terrainHeatmap = "layers.terrainHeatmapVisible"
     }
 
     init() {
@@ -60,5 +65,6 @@ final class LayerVisibility: ObservableObject {
         unitLabelsVisible    = restore(K.unitLabels,    default: false)
         taskLabelsVisible    = restore(K.taskLabels,    default: false)
         mgrsGridVisible      = restore(K.mgrsGrid,      default: false)
+        terrainHeatmapVisible = restore(K.terrainHeatmap, default: false)
     }
 }
