@@ -25,34 +25,99 @@ the screenshots in `docs/store/`.
 
 ---
 
-## Full description (both stores)
+## Full description
 
-**TacMap is a field-grade tactical map for your phone — buy it once and own it. No subscription, no account, nothing collected.**
+Both stores render plain text only (markdown asterisks show up literally), so
+the paste-ready copy below uses line breaks and `•` bullets that display
+correctly. The two versions are intentionally near-identical for consistent
+branding, with platform-correct tweaks (device wording, biometrics, pricing).
+Both are well under the 4,000-character limit.
 
-Built for military, SAR, and back-country use where the network isn't there and the map has to be right.
+### Apple App Store
 
-**Works offline, anywhere on Earth**
-- Import any **GeoPDF** or scanned defence map sheet and georeference it on-device
-- Calibrate any image map with a quick 3-point fix (reports accuracy in metres)
-- Load **MBTiles** offline tile sets — no regional lock-in, no curated-country list
+```
+TacMap is a field-grade tactical map for your phone — buy it once and own it. No subscription. No account. Nothing collected.
 
-**Military-grade tooling**
-- Live **MGRS** readout (10-digit) plus WGS84 lat/long
-- **NATO APP-6** symbology — affiliation × echelon × function, HQ, and tactical control measures
-- Drawing tools: points, lines, areas and free-draw, with per-shape colour, width and opacity, on named layers
-- Distance, area and bearing measurement in degrees **and NATO mils**
+Built for military, search-and-rescue, and back-country use, where the network isn't there and the map still has to be right.
 
-**Open by design — your data stays yours**
-- Import **and** export **GeoJSON** (RFC 7946) — round-trips through QGIS, ArcGIS, Felt, Leaflet, Google Earth
-- Import **KML / KMZ** from Google Earth and ATAK exports
-- No proprietary lock-in: everything you draw exports to formats your unit already uses
 
-**Runs on the gear you already field**
-- Universal iPhone + iPad / broad Android support — not gated behind the newest OS
-- All processing on-device. **Zero data collected.**
+WORKS OFFLINE, ANYWHERE ON EARTH
+• Import any GeoPDF or scanned defence map sheet and georeference it on-device
+• Calibrate any image map with a quick 3-point fix — reports its accuracy in metres so you know you can trust it
+• Sideload MBTiles offline tile sets — no regional lock-in, no curated country list, no network required
+• Terrain heatmap overlay — DEM-shaded elevation visualisation you can toggle on the fly
 
-**Pay once — A$5 / US$4.99**
+MILITARY-GRADE TOOLING
+• Live MGRS readout to 10 figures, plus WGS84 lat/long, UTM, and elevation at the crosshair
+• NATO mils compass (6400) with true-north marker
+• NATO APP-6 symbology — build any unit from affiliation × echelon × function, add an HQ flag, and place tactical control measures and task graphics (block, breach, seize, screen, axis of advance, phase lines, boundaries, FLOT/FEBA, and more)
+• Drawing tools: points, lines, areas, and freehand sketch — each with its own colour, width, and opacity, organised on named layers
+• Distance, area, and bearing measurement in degrees AND NATO mils
+• Full undo/redo
+
+SHARE THE PICTURE, IN REAL TIME
+• Unit Sync — share drawings and symbols live across devices over an end-to-end encrypted channel
+• The relay never sees your plaintext; a connected indicator on the header shows you're linked up
+• Weather + UAV flight-safety widget — live wind, gusts, visibility, and a SAFE / CAUTION / DANGER drone-flight read for the map centre
+
+OPEN BY DESIGN — YOUR DATA STAYS YOURS
+• Import and export GeoJSON (RFC 7946) — round-trips cleanly through QGIS, ArcGIS, Felt, Leaflet, and Google Earth
+• Import KML / KMZ from Google Earth and ATAK exports
+• Record and export GPX tracks
+• No proprietary format. Everything you draw exports to the tools your unit already uses.
+
+RUNS ON THE GEAR YOU ALREADY FIELD
+• Universal iPhone and iPad
+• Optional Face ID / Touch ID lock to secure the app
+• All processing on-device. Zero data collected — no telemetry, no ads, no third-party SDKs.
+
+
+PAY ONCE — US$4.99
 3-day free trial, then a one-time unlock. No subscription, ever.
+```
+
+### Google Play
+
+```
+TacMap is a field-grade tactical map for your phone — buy it once and own it. No subscription. No account. Nothing collected.
+
+Built for military, search-and-rescue, and back-country use, where the network isn't there and the map still has to be right.
+
+
+WORKS OFFLINE, ANYWHERE ON EARTH
+• Import any GeoPDF or scanned defence map sheet and georeference it on-device
+• Calibrate any image map with a quick 3-point fix — reports its accuracy in metres so you know you can trust it
+• Sideload MBTiles offline tile sets — no regional lock-in, no curated country list, no network required
+• Terrain heatmap overlay — DEM-shaded elevation visualisation you can toggle on the fly
+
+MILITARY-GRADE TOOLING
+• Live MGRS readout to 10 figures, plus WGS84 lat/long, UTM, and elevation at the crosshair
+• NATO mils compass (6400) with true-north marker
+• NATO APP-6 symbology — build any unit from affiliation × echelon × function, add an HQ flag, and place tactical control measures and task graphics (block, breach, seize, screen, axis of advance, phase lines, boundaries, FLOT/FEBA, and more)
+• Drawing tools: points, lines, areas, and freehand sketch — each with its own colour, width, and opacity, organised on named layers
+• Distance, area, and bearing measurement in degrees AND NATO mils
+• Full undo/redo
+
+SHARE THE PICTURE, IN REAL TIME
+• Unit Sync — share drawings and symbols live across devices over an end-to-end encrypted channel
+• The relay never sees your plaintext; a connected indicator on the header shows you're linked up
+• Weather + UAV flight-safety widget — live wind, gusts, visibility, and a SAFE / CAUTION / DANGER drone-flight read for the map centre
+
+OPEN BY DESIGN — YOUR DATA STAYS YOURS
+• Import and export GeoJSON (RFC 7946) — round-trips cleanly through QGIS, ArcGIS, Felt, Leaflet, and Google Earth
+• Import KML / KMZ from Google Earth and ATAK exports
+• Record and export GPX tracks
+• No proprietary format. Everything you draw exports to the tools your unit already uses.
+
+RUNS ON THE GEAR YOU ALREADY FIELD
+• Broad Android support — not gated behind the newest OS version
+• Optional PIN or biometric lock to secure the app
+• All processing on-device. Zero data collected — no telemetry, no ads, no third-party SDKs.
+
+
+PAY ONCE — A$5
+3-day free trial, then a one-time unlock. No subscription, ever.
+```
 
 ---
 
@@ -60,6 +125,9 @@ Built for military, SAR, and back-country use where the network isn't there and 
 `mgrs,nato,app-6,tactical,offline,map,gis,geojson,kml,geopdf,military,grid,utm,navigation,sar`
 
 ## What's New (release note snippet)
+- **New: Unit Sync** — share your drawings and symbols live across devices over an end-to-end encrypted channel. The relay never sees your plaintext.
+- **New: Weather + UAV flight-safety** — live wind, gusts and visibility with a SAFE / CAUTION / DANGER drone-flight read for the map centre.
+- **New: terrain heatmap** — toggle a DEM-shaded elevation overlay from the Layers sheet.
 - **New: import KML / KMZ** from Google Earth and ATAK.
 - Faster offline map handling and field-readability polish.
 
@@ -75,3 +143,7 @@ Built for military, SAR, and back-country use where the network isn't there and 
 - **"Runs on the gear you already field"** — counters the competitor's high OS
   floor without naming it.
 - **"Zero data collected"** — reinforces the privacy stance and OPSEC posture.
+- **Real-time Unit Sync, Weather + UAV safety, and terrain heatmap** — all
+  shipped on both platforms in 1.1.0 and verified in code; the E2E-encrypted
+  ("relay never sees plaintext") framing doubles as a privacy/OPSEC selling
+  point rather than just a feature line.
