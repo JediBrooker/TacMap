@@ -48,6 +48,21 @@ function line(name, coords, stroke, width = 3, graphic = null) {
     feature: { type: "Feature", id: uuid(),
       geometry: { type: "LineString", coordinates: coords }, properties: props } };
 }
+// Tactical task graphic (control measure) — a point symbol from the app's
+// AppSymbols assets (asset = the rawValue). rotation is clockwise degrees
+// (0 = canonical; the axis/SBF arrows point EAST at 0, so 270 points north).
+function task(name, asset, lon, lat, rotation = 0, scale = 1.0) {
+  return { kind: "waypoint",
+    feature: { type: "Feature", id: uuid(),
+      geometry: { type: "Point", coordinates: [lon, lat] },
+      properties: { name, source: "symbol", kind: "control_measure",
+        "tacticalmaps:category": "controlMeasure",
+        "tacticalmaps:tcm_asset": asset, "tacticalmaps:tcm_name": name,
+        rotation, scale_x: scale, scale_y: scale,
+        "tacticalmaps:rotation_deg": rotation,
+        "tacticalmaps:scale_x": scale, "tacticalmaps:scale_y": scale } } };
+}
+
 function area(name, coords, stroke, fill, fillOpacity = 0.16, width = 3) {
   const ring = coords.slice(); ring.push(coords[0]);
   return { kind: "drawing",
@@ -67,16 +82,12 @@ function ellipse(cx, cy, rx, ry, n = 14) {
 }
 
 const SITUATION = [
-  // Objectives (in enemy depth, north) + assembly area (rear, south)
+  // Objectives (in enemy depth, north)
   area("OBJ FALCON", ellipse(150.3018, -33.6948, 0.0016, 0.0010, 16), "#E2A400", "#E2A400", 0.16, 3),
   area("OBJ HILL 223", ellipse(150.3086, -33.6948, 0.0016, 0.0010, 16), "#E2A400", "#E2A400", 0.16, 3),
-  area("AA EAGLE", [
-    [150.3016, -33.7044], [150.3046, -33.7044],
-    [150.3048, -33.7062], [150.3014, -33.7062],
-  ], "#1E8A34", "#1E8A34", 0.10, 2),
-  // Boundaries (friendly sectors) — tick-marked line graphic, up to the FEBA
-  line("BDRY", [[150.3030, -33.7060], [150.3028, -33.7010]], "#E9F0E8", 3, "boundary"),
-  line("BDRY", [[150.3072, -33.7060], [150.3074, -33.7008]], "#E9F0E8", 3, "boundary"),
+  // Bright colours so they read on dark satellite: friendly blue/white, enemy red.
+  // Boundary (between the two assault companies) — tick-marked line graphic
+  line("BDRY", [[150.3050, -33.7058], [150.3050, -33.7008]], "#E9F0E8", 3, "boundary"),
   // Line of departure (phase line, dashed)
   line("LD / LC", [[150.2998, -33.7028], [150.3102, -33.7028]], "#E2A400", 3, "phaseLine"),
   // Friendly FEBA — crenellated forward line, teeth toward enemy (W->E => left-normal north)
@@ -85,18 +96,26 @@ const SITUATION = [
   // Enemy forward line — crenellated, teeth toward friendly (E->W => left-normal south)
   line("EN FLOT", [[150.3104, -33.6970], [150.3082, -33.6964], [150.3050, -33.6974],
                    [150.3020, -33.6964], [150.2996, -33.6970]], "#FF5A4A", 4, "forwardEdge"),
-  // Axes of advance — arrowhead toward each objective
-  line("AXIS DAGGER", [[150.3022, -33.7042], [150.3020, -33.7006], [150.3018, -33.6962]], "#FF5A4A", 4, "axisOfAdvance"),
-  line("AXIS SABRE",  [[150.3078, -33.7042], [150.3080, -33.7006], [150.3086, -33.6962]], "#FF5A4A", 4, "axisOfAdvance"),
-  // Enemy formations (on the objectives + forward of the line)
+  // ---- TASK GRAPHICS (control measures) — size = 64 * scale * zoomScale,
+  //      and the hero zoomScale is ~0.3, so use big scales to read well ----
+  // Axes of advance (big arrows) — rotate 270 so the east-facing asset points north
+  task("AXIS DAGGER", "axisOfMainAttack",       150.3024, -33.6992, 270, 11.0),
+  task("AXIS SABRE",  "axisOfSupportingAttack", 150.3078, -33.6992, 270, 10.0),
+  // Support by fire — WEST of the westernmost enemy unit (OBJ FALCON), at 90 deg
+  // to the enemy front, firing east onto it (rotation 0 = arrows point east)
+  task("SBF 1", "supportByFire", 150.2996, -33.6946, 0, 3.0),
+  // Seize the high ground (on OBJ HILL 223)
+  task("SEIZE", "seize", 150.3090, -33.6948, 0, 8.0),
+  // Guard the open western flank (rotate 90 -> oriented N-S)
+  task("GUARD", "guard", 150.2992, -33.7008, 90, 9.0),
+  // Enemy formations (on the objectives)
   unit("EN", "hostile", "company", "infantry", 150.3018, -33.6946),
   unit("EN", "hostile", "company", "infantry", 150.3086, -33.6946),
-  unit("EN", "hostile", "platoon", "infantry", 150.3052, -33.6960),
   // Friendly assault (south of the FEBA), advancing north
   unit("BN HQ", "friend", "battalionRegiment", "infantry", 150.3050, -33.7056, true),
-  unit("A COY", "friend", "company", "infantry", 150.3024, -33.7036),
-  unit("B COY", "friend", "company", "infantry", 150.3076, -33.7036),
-  unit("C SQN", "friend", "company", "armour", 150.3092, -33.7048),
+  unit("A COY", "friend", "company", "infantry", 150.3024, -33.7040),
+  unit("B COY", "friend", "company", "infantry", 150.3076, -33.7040),
+  unit("C SQN", "friend", "company", "armour", 150.3098, -33.7048),
 ];
 
 const ws = new WebSocket(url);

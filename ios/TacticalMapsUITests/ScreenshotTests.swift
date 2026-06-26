@@ -275,7 +275,7 @@ final class ScreenshotTests: XCTestCase {
         let codeField = app.textFields.firstMatch
         if codeField.waitForExistence(timeout: 6) {
             codeField.tap(); sleep(1)
-            codeField.typeText("DAGGER-7")
+            codeField.typeText("DAGGER-15")
             sleep(1)
             _ = tapContaining("Join")
             sleep(8)               // connect + snapshot + render the situation
@@ -283,7 +283,8 @@ final class ScreenshotTests: XCTestCase {
         dismissSheet()
         sleep(2)
 
-        // Turn on map labels so unit designations + control-measure names show.
+        // Turn on map labels (stay on the default Apple Satellite basemap, which
+        // loads reliably — graphics are bright/white so they read on it).
         openMenu()
         _ = tap("Layers and Labels")
         sleep(2)
@@ -294,7 +295,7 @@ final class ScreenshotTests: XCTestCase {
             }
         }
         dismissSheet()
-        sleep(3)
+        sleep(6)
         snap("hero")
     }
 }
