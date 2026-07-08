@@ -751,8 +751,8 @@ struct MilitarySymbolView: View {
         for i in 0..<8 {
             let theta = Double(i) * .pi / 4
             spokes.move(to:    CGPoint(x: cx, y: cy))
-            spokes.addLine(to: CGPoint(x: cx + r * cos(theta),
-                                       y: cy + r * sin(theta)))
+            spokes.addLine(to: CGPoint(x: cx + r * CGFloat(cos(theta)),
+                                       y: cy + r * CGFloat(sin(theta))))
         }
         ctx.stroke(spokes, with: .color(.black), lineWidth: 1.2)
     }
