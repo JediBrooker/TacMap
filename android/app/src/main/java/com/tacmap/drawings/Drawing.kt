@@ -54,6 +54,10 @@ data class DrawingLayer(
 data class DrawingFeature(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
+    /** Free-text notes — round-trips with iOS DrawingShape.notes via GeoJSON
+     *  `description`; without it, iOS drawing notes are dropped and then erased
+     *  on the next sync round-trip. */
+    val notes: String? = null,
     val geometry: DrawingGeometry,
     val points: List<DrawingPoint>,
     @SerialName("layer_id") val layerId: String = DrawingDocument.DEFAULT_LAYER_ID,

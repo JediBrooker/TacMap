@@ -3,10 +3,14 @@ package com.tacmap.app
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.foundation.layout.Box
@@ -42,6 +46,24 @@ class MainActivity : ComponentActivity() {
         trial = TrialManager(this)
         billing = BillingManager(this).also { it.start() }
         locked.value = appLock.isEnabled
+
+        // OPSEC screen-capture protection: keep the map (with live position) out
+        // of the recents thumbnail, screenshots and screen recordings. Reactively
+        // follows the user's setting.
+        val opsec = (application as TacticalApp).opsec
+        lifecycleScope.launch {
+            opsec.blockScreenCapture.collect { block ->
+                if (block) {
+                    window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    setRecentsScreenshotEnabled(!block)
+                }
+            }
+        }
+
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {

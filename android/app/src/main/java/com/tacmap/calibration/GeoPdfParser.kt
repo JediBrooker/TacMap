@@ -14,6 +14,7 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
 
 private const val TAG = "GeoPdfParser"
 
@@ -74,6 +75,20 @@ object GeoPdfParser {
         }.onFailure {
             Log.w(TAG, "GeoPDF parse failed: ${it.message}")
         }.getOrNull()
+    }
+
+    /**
+     * First-page rotation in degrees (0/90/180/270), or 0 if it can't be read.
+     * Nothing in the calibration/tiling pipeline accounts for /Rotate, so the
+     * import flow rejects a non-zero result rather than silently misregistering.
+     */
+    fun pageRotation(context: Context, uri: Uri): Int {
+        ensureInit(context)
+        val file = uriToFile(uri) ?: return 0
+        if (!file.exists()) return 0
+        return runCatching {
+            PDDocument.load(file).use { doc -> doc.getPage(0)?.rotation ?: 0 }
+        }.getOrDefault(0)
     }
 
     /// Adobe / OGC viewports — searches a page or catalog dictionary.
@@ -179,18 +194,44 @@ object GeoPdfParser {
             val reg = dict.getDictionaryObject(COSName.getPDFName("Registration")) as? COSArray
                 ?: continue
             val list = mutableListOf<GeoCorrespondence>()
+            var unsupported = false
             for (i in 0 until reg.size()) {
                 val pair = reg.getObject(i) as? COSArray ?: continue
                 if (pair.size() < 4) continue
                 val pdfX = pair.numAt(0) ?: continue
                 val pdfY = pair.numAt(1) ?: continue
-                val lat = pair.numAt(2) ?: continue
-                val lon = pair.numAt(3) ?: continue
-                list += GeoCorrespondence(pdfX, pdfY, lat, lon)
+                // LGIDict Registration map coords are [mapX mapY] in the CRS
+                // named by the sibling /Projection (OGC order is [lon lat]). The
+                // old code read them as [lat lon] — swapped — and treated a
+                // projected easting/northing as raw lat/lon. Interpret them by
+                // geographic range instead, and bail on a projected CRS we can't
+                // invert on Android rather than emit wrong georeferencing.
+                val mapX = pair.numAt(2) ?: continue
+                val mapY = pair.numAt(3) ?: continue
+                val latLon = geographicLatLon(mapX, mapY)
+                if (latLon == null) { unsupported = true; break }
+                list += GeoCorrespondence(pdfX, pdfY, latLon.first, latLon.second)
             }
-            if (list.size >= 3) return list
+            if (!unsupported && list.size >= 3) return list
         }
         return null
+    }
+
+    /**
+     * Interpret an LGIDict Registration map-coordinate pair as (latitude,
+     * longitude), or null when it isn't a geographic coordinate — i.e. a
+     * projected easting/northing (values outside ±180) that Android has no
+     * inverse for. OGC order is [lon lat]; the range checks additionally
+     * auto-correct a lat/lon-swapped sheet (latitude must be within ±90).
+     */
+    private fun geographicLatLon(x: Double, y: Double): Pair<Double, Double>? {
+        if (abs(x) > 180.0 || abs(y) > 180.0) return null // projected — unsupported here
+        return when {
+            abs(x) <= 90.0 && abs(y) <= 90.0 -> y to x     // OGC order: x=lon, y=lat
+            abs(x) > 90.0 && abs(y) <= 90.0 -> y to x       // x can only be lon
+            abs(x) <= 90.0 && abs(y) > 90.0 -> x to y       // y can only be lon (swapped sheet)
+            else -> null                                    // both > 90: not valid lat/lon
+        }
     }
 
     private fun COSArray.numAt(index: Int): Double? =

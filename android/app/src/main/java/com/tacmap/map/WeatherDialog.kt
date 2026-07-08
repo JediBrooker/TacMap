@@ -32,9 +32,11 @@ import androidx.compose.ui.unit.sp
 fun WeatherDialog(lat: Double, lng: Double, onDismiss: () -> Unit) {
     var reading by remember { mutableStateOf<WeatherReading?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var attempt by remember { mutableStateOf(0) }
     val service = remember { WeatherService() }
 
-    LaunchedEffect(lat, lng) {
+    LaunchedEffect(lat, lng, attempt) {
+        loading = true
         reading = service.reading(lat, lng)
         loading = false
     }
@@ -52,7 +54,13 @@ fun WeatherDialog(lat: Double, lng: Double, onDismiss: () -> Unit) {
                         CircularProgressIndicator()
                         Text("Fetching conditions…")
                     }
-                    reading == null -> Text("Couldn't fetch conditions. Check your connection and try again.")
+                    reading == null -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "Couldn't fetch conditions. If online lookups are off " +
+                                "(Privacy & OPSEC), enable them; otherwise check your connection."
+                        )
+                        TextButton(onClick = { attempt++ }) { Text("Retry") }
+                    }
                     else -> {
                         val r = reading!!
                         RiskBanner(UAVAssessment.risk(r))

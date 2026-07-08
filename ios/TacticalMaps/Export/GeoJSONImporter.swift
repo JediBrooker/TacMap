@@ -15,6 +15,31 @@ enum GeoJSONImporter {
         /// Layers referenced by imported drawings that don't exist in the
         /// store yet. Caller should add them before importing the shapes.
         var newLayers: [DrawingLayer] = []
+        /// Features skipped because their coordinates were non-finite or out of
+        /// range — surfaced in the import summary rather than silently dropped.
+        var invalidSkipped: Int = 0
+    }
+
+    /// A single lon/lat pair is valid when both are finite and in range.
+    private static func validLonLat(_ lon: Double, _ lat: Double) -> Bool {
+        lon.isFinite && lat.isFinite && abs(lat) <= 90 && abs(lon) <= 180
+    }
+
+    /// Every coordinate in a GeoJSON geometry is finite and in range.
+    private static func geometryValid(_ geometry: [String: Any]) -> Bool {
+        switch geometry["type"] as? String {
+        case "Point":
+            guard let c = geometry["coordinates"] as? [Double], c.count >= 2 else { return false }
+            return validLonLat(c[0], c[1])
+        case "LineString":
+            guard let arr = geometry["coordinates"] as? [[Double]], !arr.isEmpty else { return false }
+            return arr.allSatisfy { $0.count >= 2 && validLonLat($0[0], $0[1]) }
+        case "Polygon":
+            guard let rings = geometry["coordinates"] as? [[[Double]]] else { return false }
+            return rings.allSatisfy { $0.allSatisfy { $0.count >= 2 && validLonLat($0[0], $0[1]) } }
+        default:
+            return false
+        }
     }
 
     enum ImportError: Error {
@@ -42,6 +67,9 @@ enum GeoJSONImporter {
         for feature in features {
             guard let geometry = feature["geometry"] as? [String: Any],
                   let geomType = geometry["type"] as? String else { continue }
+            // Reject non-finite / out-of-range coordinates so a corrupt file
+            // can't drop a symbol at NaN or off the globe.
+            guard geometryValid(geometry) else { result.invalidSkipped += 1; continue }
             let props = feature["properties"] as? [String: Any] ?? [:]
             let category = resolveCategory(props)
 
@@ -120,28 +148,30 @@ enum GeoJSONImporter {
                                        fallback: UUID) -> UUID {
         let idStr = (props["tacticalmaps:layer_id"] as? String)
             ?? (props["layer_id"] as? String)
+        // Case-insensitive id match (Android lowercase vs iOS uppercase UUIDs).
         if let idStr,
-           let layer = existingLayersByID[idStr] {
+           let layer = existingLayersByID.first(where: { $0.key.caseInsensitiveCompare(idStr) == .orderedSame })?.value {
             return layer.id
         }
-        if let idStr,
-           let uuid = UUID(uuidString: idStr) {
-            let name = (props["tacticalmaps:layer"] as? String)
-                ?? (props["layer_name"] as? String)
-                ?? "Imported"
-            let color = (props["tacticalmaps:layer_color"] as? String)
-                ?? (props["layer_color"] as? String)
-                ?? "#FFA500"
-            let layer = DrawingLayer(id: uuid, name: name, defaultColorHex: color)
-            existingLayersByID[uuid.uuidString] = layer
-            newLayers.append(layer)
-            return uuid
-        }
+        // Before minting a NEW layer for an unknown id, adopt an existing layer
+        // with the same NAME — otherwise a device with default layers under
+        // different (per-install) ids proliferates duplicate "Friendly"/"Enemy"
+        // layers on every cross-device import/sync.
         let name = (props["tacticalmaps:layer"] as? String)
             ?? (props["layer_name"] as? String)
         if let name,
            let match = existingLayersByID.values.first(where: { $0.name == name }) {
             return match.id
+        }
+        if let idStr,
+           let uuid = UUID(uuidString: idStr) {
+            let color = (props["tacticalmaps:layer_color"] as? String)
+                ?? (props["layer_color"] as? String)
+                ?? "#FFA500"
+            let layer = DrawingLayer(id: uuid, name: name ?? "Imported", defaultColorHex: color)
+            existingLayersByID[uuid.uuidString] = layer
+            newLayers.append(layer)
+            return uuid
         }
         return fallback
     }
@@ -188,10 +218,22 @@ enum GeoJSONImporter {
         guard !coords.isEmpty else { return nil }
 
         var style = DrawingStyle()
-        if let stroke = props["stroke"] as? String { style.strokeColorHex = stroke }
-        if let fill   = props["fill"]   as? String { style.fillColorHex   = fill }
-        if let w      = props["stroke-width"] as? Double { style.strokeWidth = w }
-        if let o      = props["fill-opacity"] as? Double { style.fillOpacity = o }
+        // simplestyle first, then the Android legacy keys (stroke_color etc. are
+        // #AARRGGBB — drop the alpha to our #RRGGBB) so Android drawings keep
+        // their styling when imported here.
+        if let stroke = (props["stroke"] as? String) ?? rgbFromArgb(props["stroke_color"] as? String) {
+            style.strokeColorHex = stroke
+        }
+        if let fill = (props["fill"] as? String) ?? rgbFromArgb(props["fill_color"] as? String) {
+            style.fillColorHex = fill
+        }
+        if let w = doubleValue(props["stroke-width"]) ?? doubleValue(props["stroke_width"]) {
+            style.strokeWidth = w
+        }
+        if let o = doubleValue(props["fill-opacity"]) { style.fillOpacity = o }
+        // Dash: shared namespaced key, falling back to the Android legacy key.
+        let strokeStyle = (props["tacticalmaps:stroke_style"] as? String) ?? (props["stroke_style"] as? String)
+        if strokeStyle?.lowercased() == "dashed" { style.dashPattern = [8, 4] }
         if let lg = (props["tacticalmaps:line_graphic"] as? String).flatMap(LineGraphic.init(rawValue:)) {
             style.lineGraphic = lg
         }
@@ -199,6 +241,7 @@ enum GeoJSONImporter {
         let name = props["name"] as? String
         let notes = props["description"] as? String
         let id = (feature["id"] as? String).flatMap { UUID(uuidString: $0) } ?? UUID()
+        let createdAt = parseDate(props["tacticalmaps:created_at"]) ?? parseDate(props["created_at"])
 
         return DrawingShape(
             id: id,
@@ -207,8 +250,30 @@ enum GeoJSONImporter {
             kind: kind,
             coordinates: coords,
             style: style,
+            createdAt: createdAt ?? .now,
             layerID: layerID
         )
+    }
+
+    /// Android's `#AARRGGBB` → our `#RRGGBB` (drop the alpha byte).
+    private static func rgbFromArgb(_ hex: String?) -> String? {
+        guard var h = hex else { return nil }
+        h = h.hasPrefix("#") ? String(h.dropFirst()) : h
+        if h.count == 8 { return "#" + h.suffix(6) }
+        if h.count == 6 { return "#" + h }
+        return nil
+    }
+
+    /// Parse an ISO-8601 instant into a Date (created_at round-trip). Tolerates
+    /// both fractional-second (`…:00.123Z`, e.g. Android's ISO_INSTANT) and
+    /// whole-second forms — otherwise Android-authored objects reset their
+    /// creation time to import time (and re-sync churns).
+    private static func parseDate(_ any: Any?) -> Date? {
+        guard let s = any as? String else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = fractional.date(from: s) { return d }
+        return ISO8601DateFormatter().date(from: s)
     }
 
     private static func parseWaypoint(feature: [String: Any],
@@ -227,8 +292,10 @@ enum GeoJSONImporter {
         let kind: WaypointKind
         switch category {
         case "military":
+            // Unknown/corrupt affiliation → .unknown (unresolved), NOT .friend:
+            // fail-to-friendly could mask a hostile contact on a mixed import.
             let aff = (props["tacticalmaps:affiliation"] as? String)
-                .flatMap(SymbolAffiliation.init(rawValue:)) ?? .friend
+                .flatMap(SymbolAffiliation.init(rawValue:)) ?? .unknown
             let ech = (props["tacticalmaps:echelon"] as? String)
                 .flatMap(SymbolEchelon.init(rawValue:)) ?? .platoon
             let fn  = (props["tacticalmaps:function"] as? String)
@@ -261,6 +328,9 @@ enum GeoJSONImporter {
         let scaleY = doubleValue(props["tacticalmaps:scale_y"])
             ?? doubleValue(props["scale_y"])
             ?? 1
+        let taskColor = (props["tacticalmaps:task_color"] as? String)
+            .flatMap { TaskColor(rawValue: $0.lowercased()) } ?? .black
+        let createdAt = parseDate(props["tacticalmaps:created_at"]) ?? parseDate(props["created_at"])
         return Waypoint(id: id,
                         name: name,
                         notes: notes,
@@ -270,7 +340,9 @@ enum GeoJSONImporter {
                         rotation: rotation,
                         scaleX: scaleX,
                         scaleY: scaleY,
-                        layerID: layerID)
+                        taskColor: taskColor,
+                        layerID: layerID,
+                        createdAt: createdAt ?? .now)
     }
 
     private static func parseGenericPoint(feature: [String: Any],

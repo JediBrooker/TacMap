@@ -166,6 +166,41 @@ internal fun shareGpx(
     }
 }
 
+/** Export all waypoints + drawings as a single GeoJSON file and share via Intent (Fix #4). */
+internal fun exportAllData(
+    context: Context,
+    waypoints: List<com.tacmap.waypoints.Waypoint>,
+    drawings: List<DrawingFeature>,
+    layers: List<com.tacmap.drawings.DrawingLayer>
+) {
+    if (waypoints.isEmpty() && drawings.isEmpty()) {
+        Toast.makeText(context, "Nothing to export.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val geoJson = GeoJsonExporter.export(waypoints, drawings, layers)
+    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+    val exportFile = File(exportDir, "TacMap-AllData-${System.currentTimeMillis()}.geojson")
+    exportFile.writeText(geoJson)
+    val exportUri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        exportFile
+    )
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/geo+json"
+        putExtra(Intent.EXTRA_SUBJECT, exportFile.name)
+        putExtra(Intent.EXTRA_TITLE, exportFile.name)
+        putExtra(Intent.EXTRA_STREAM, exportUri)
+        clipData = ClipData.newUri(context.contentResolver, exportFile.name, exportUri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    runCatching {
+        context.startActivity(Intent.createChooser(intent, "Export All Data"))
+    }.onFailure {
+        Toast.makeText(context, "No app available to share the export.", Toast.LENGTH_SHORT).show()
+    }
+}
+
 internal fun importPdfMapSource(
     context: Context,
     sourceUri: Uri,
@@ -198,7 +233,7 @@ internal fun importPdfMapSource(
     // can never correct on re-import — exactly what stranded the sheet at the
     // wrong longitude after the GeoPDF viewport fix. Auto correspondences leave
     // the MGRS field blank; manual ones don't — that's how we tell them apart.
-    PdfSessionStore(context).calibration(baseName)
+    PdfSessionStore(context).calibration(dest, baseName)
         ?.takeIf { saved -> saved.fids.any { it.mgrs.isNotBlank() } }
         ?.let { saved -> return base.calibrated(saved.transform, saved.fids) }
 

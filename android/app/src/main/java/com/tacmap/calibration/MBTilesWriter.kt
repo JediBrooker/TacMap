@@ -3,6 +3,7 @@ package com.tacmap.calibration
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import java.io.File
+import java.util.Locale
 
 /**
  * Writes an MBTiles file (OSGeo spec): a SQLite DB with a `metadata` key/value
@@ -12,6 +13,12 @@ import java.io.File
  */
 class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
 
+    /** True once any insert failed (e.g. disk full). Callers MUST check this
+     *  before treating the bake as complete — otherwise a half-written file is
+     *  mistaken for a finished basemap and the source PDF gets discarded. */
+    var hadError = false
+        private set
+
     fun writeMetadata(
         name: String,
         format: String = "png",
@@ -20,9 +27,9 @@ class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
         bounds: Wgs84Bounds
     ) {
         fun put(key: String, value: String) {
-            db.insert("metadata", null, ContentValues().apply {
-                put("name", key); put("value", value)
-            })
+            if (db.insert("metadata", null, ContentValues().apply {
+                    put("name", key); put("value", value)
+                }) == -1L) hadError = true
         }
         put("name", name)
         put("format", format)
@@ -30,10 +37,12 @@ class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
         put("version", "1.0")
         put("minzoom", minZoom.toString())
         put("maxzoom", maxZoom.toString())
-        // MBTiles bounds metadata: "minLon,minLat,maxLon,maxLat".
+        // MBTiles bounds metadata: "minLon,minLat,maxLon,maxLat". Locale.US so a
+        // comma-decimal locale can't corrupt the comma-separated field.
         put(
             "bounds",
             "%f,%f,%f,%f".format(
+                Locale.US,
                 bounds.southwest.longitude, bounds.southwest.latitude,
                 bounds.northeast.longitude, bounds.northeast.latitude
             )
@@ -43,12 +52,13 @@ class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
     /** Store one XYZ tile (converted to MBTiles' TMS row scheme). */
     fun putTile(z: Int, x: Int, y: Int, data: ByteArray) {
         val tmsRow = (1 shl z) - 1 - y
-        db.insertWithOnConflict("tiles", null, ContentValues().apply {
+        val rowId = db.insertWithOnConflict("tiles", null, ContentValues().apply {
             put("zoom_level", z)
             put("tile_column", x)
             put("tile_row", tmsRow)
             put("tile_data", data)
         }, SQLiteDatabase.CONFLICT_REPLACE)
+        if (rowId == -1L) hadError = true
     }
 
     fun beginBatch() = db.beginTransaction()

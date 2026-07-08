@@ -35,6 +35,10 @@ final class MGRSFormatterTests: XCTestCase {
             "56HLH123",           // 3 trailing digits (odd)
             "56ILH1234",          // band letter I is not permitted
             "560HLH",             // 3-digit zone
+            "56ALH1234",          // band A is UPS, not a valid UTM band → NGA fatalError
+            "56YLH1234",          // band Y is UPS, not a valid UTM band
+            "00HLH1234",          // zone 00
+            "61HLH1234",          // zone 61 (>60)
         ]
         for s in invalid {
             XCTAssertFalse(MGRSFormatter.looksLikeMGRS(s), "expected invalid: \(s)")

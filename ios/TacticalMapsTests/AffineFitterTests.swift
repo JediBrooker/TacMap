@@ -68,6 +68,35 @@ final class AffineFitterTests: XCTestCase {
         }
     }
 
+    func testFit_nearColinearThrowsDegenerate() {
+        // Almost (not exactly) on a line, at realistic pixel scale: the old
+        // absolute-determinant guard passed these because the normal-equations
+        // determinant is large at pixel magnitudes, yet the perpendicular
+        // direction is unconstrained. The scale-invariant guard must reject them.
+        let fids = [
+            Fiduciary(pdfX: 0,    pdfY: 0, mgrs: "", latitude: 0,    longitude: 0),
+            Fiduciary(pdfX: 1000, pdfY: 1, mgrs: "", latitude: 0.01, longitude: 1),
+            Fiduciary(pdfX: 2000, pdfY: 0, mgrs: "", latitude: 0,    longitude: 2),
+        ]
+        XCTAssertThrowsError(try AffineFitter.fit(fids)) { error in
+            guard case AffineFitError.degenerate = error else {
+                return XCTFail("expected .degenerate for near-colinear points, got \(error)")
+            }
+        }
+    }
+
+    func testFit_threePointsNotCrossValidated_fourAre() throws {
+        let three = [
+            fiduciary(x: 0,    y: 0,   using: known),
+            fiduciary(x: 1000, y: 0,   using: known),
+            fiduciary(x: 0,    y: 800, using: known),
+        ]
+        XCTAssertFalse(try AffineFitter.fit(three).crossValidated,
+                       "a 3-point fit is exact — RMS is not evidence of accuracy")
+        let four = three + [fiduciary(x: 1000, y: 800, using: known)]
+        XCTAssertTrue(try AffineFitter.fit(four).crossValidated)
+    }
+
     func testFit_tooFewFiduciariesThrows() {
         let fids = [
             Fiduciary(pdfX: 0, pdfY: 0, mgrs: "", latitude: 0, longitude: 0),

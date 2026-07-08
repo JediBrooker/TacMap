@@ -15,7 +15,7 @@ final class DatumTests: XCTestCase {
         XCTAssertEqual(Datum.gda2020.toWGS84(sydney).longitude, sydney.longitude, accuracy: 1e-12)
     }
 
-    func testGDA94ShiftHasExpectedMagnitude() {
+    func testGDA94ShiftHasExpectedMagnitudeAndDirection() {
         // GDA94 → GDA2020 (≈ WGS84) is ~1.8 m across Australia. A magnitude in
         // this band confirms the ellipsoid conversion, units, and rotation
         // scaling are all right (a units bug would be off by orders of magnitude).
@@ -25,6 +25,11 @@ final class DatumTests: XCTestCase {
         let metres = (dLat * dLat + dLon * dLon).squareRoot()
         XCTAssertGreaterThan(metres, 1.0, "shift too small: \(metres) m")
         XCTAssertLessThan(metres, 2.5, "shift too large: \(metres) m")
+        // GDA2020 (≈WGS84) sits ~1.8 m NORTH-EAST of GDA94 (Geoscience
+        // Australia). Assert each component's sign so a transposed / sign-flipped
+        // Helmert rotation is caught — magnitude alone would pass either way.
+        XCTAssertGreaterThan(dLat, 0, "expected a northward shift")
+        XCTAssertGreaterThan(dLon, 0, "expected an eastward shift")
     }
 
     func testECEFRoundTripIsStable() {
@@ -34,5 +39,98 @@ final class DatumTests: XCTestCase {
         let shifted = Datum.gda94.toWGS84(sydney)
         XCTAssertEqual(shifted.latitude, sydney.latitude, accuracy: 0.001)   // within ~100 m
         XCTAssertEqual(shifted.longitude, sydney.longitude, accuracy: 0.001)
+    }
+
+    // MARK: - M29: GeoPDF legacy-datum geocentric-translation shifts
+
+    /// Horizontal displacement (m) that `DatumShift.toWGS84` applies at a point.
+    private func shiftMetres(lat: Double, lon: Double, code: String) -> Double {
+        let w = DatumShift.toWGS84(lat: lat, lon: lon, datumCode: code)
+        let dLat = (w.lat - lat) * 111_320.0
+        let dLon = (w.lon - lon) * 111_320.0 * cos(lat * .pi / 180)
+        return (dLat * dLat + dLon * dLon).squareRoot()
+    }
+
+    func testModernDatumsAreIdentity() {
+        // WGS84 / GDA94 / NAD83 are coincident with WGS84 to sub-metre — the
+        // fast-path must return the input byte-for-byte (zero shift).
+        for code in ["WE", "WD", "GD", "NA", "ZZ" /* unknown → identity */] {
+            let w = DatumShift.toWGS84(lat: 51.5, lon: -0.12, datumCode: code)
+            XCTAssertEqual(w.lat, 51.5, accuracy: 1e-12, "\(code) should be identity")
+            XCTAssertEqual(w.lon, -0.12, accuracy: 1e-12, "\(code) should be identity")
+        }
+    }
+
+    func testLegacyDatumShiftsMatchKnownHorizontalOffsets() {
+        // Expected values are the *horizontal* surface shift the 3-parameter
+        // geocentric translation produces at each point (measured on the real
+        // simulator). They're much smaller than the raw |dx,dy,dz| translation
+        // because most of a translation projects into ellipsoidal height, which
+        // we discard. They line up with published datum offsets — notably Tokyo's
+        // famous ~450 m. Tight bands here catch a params typo (10× / sign flip
+        // would land far outside) without being brittle. Points are inside each
+        // datum's region of validity.
+        XCTAssertEqual(shiftMetres(lat: 51.48, lon:  -0.10, code: "OS"), 140, accuracy: 25) // OSGB36, London
+        XCTAssertEqual(shiftMetres(lat: 43.30, lon:   5.40, code: "EU"), 145, accuracy: 25) // ED50, Marseille
+        XCTAssertEqual(shiftMetres(lat: 39.00, lon: -95.00, code: "NS"),  22, accuracy: 8)  // NAD27, Kansas
+        XCTAssertEqual(shiftMetres(lat: 35.68, lon: 139.77, code: "TC"), 464, accuracy: 50) // Tokyo, Tokyo (~450 m)
+        XCTAssertEqual(shiftMetres(lat: 46.95, lon:   7.44, code: "CH"), 164, accuracy: 30) // CH1903, Bern
+        XCTAssertEqual(shiftMetres(lat: 48.85, lon:   2.35, code: "NT"),  54, accuracy: 15) // NTF, Paris
+        XCTAssertEqual(shiftMetres(lat: 55.75, lon:  37.62, code: "KK"), 127, accuracy: 25) // SK-42, Moscow
+    }
+
+    func testDatumShiftPreservesLatLonWellFormed() {
+        // The shifted coordinate must stay a valid lat/lon (no NaN / wraparound
+        // from a broken ECEF round-trip) and near the input.
+        let w = DatumShift.toWGS84(lat: 51.48, lon: -0.10, datumCode: "OS")
+        XCTAssertTrue(w.lat.isFinite && w.lon.isFinite)
+        XCTAssertEqual(w.lat, 51.48, accuracy: 0.01)   // within ~1 km
+        XCTAssertEqual(w.lon, -0.10, accuracy: 0.01)
+    }
+
+    // MARK: - M29 (inline /Datum dict): embedded ellipsoid + ToWGS84 params
+
+    /// Horizontal displacement (m) applied by the explicit-params overload — the
+    /// path a GeoPDF's inline `/Datum` dictionary feeds.
+    private func shiftMetres(lat: Double, lon: Double, ellipsoid: Ellipsoid,
+                             dx: Double, dy: Double, dz: Double) -> Double {
+        let w = DatumShift.toWGS84(lat: lat, lon: lon, sourceEllipsoid: ellipsoid, dx: dx, dy: dy, dz: dz)
+        let dLat = (w.lat - lat) * 111_320.0
+        let dLon = (w.lon - lon) * 111_320.0 * cos(lat * .pi / 180)
+        return (dLat * dLat + dLon * dLon).squareRoot()
+    }
+
+    func testFortIrwinInlineNAD83ShiftIsSmallButNonZero() {
+        // TacMap-FortIrwin-USTopo.pdf expresses /Datum as a dictionary:
+        //   /Ellipsoid /SemiMajorAxis 6378137 /InvFlattening 298.257222101  (GRS80)
+        //   /ToWGS84   /dx 0.9738 /dy -1.9453 /dz -0.5486
+        // NAD83 ≈ WGS84, so the shift at Fort Irwin (~35.3°N, 116.7°W) is a few
+        // metres — but no longer *zero* (the dictionary form used to fall through
+        // to WGS84 identity, ignoring these params).
+        let grs80 = Ellipsoid(a: 6_378_137, f: 1.0 / 298.257222101)
+        let m = shiftMetres(lat: 35.30, lon: -116.70, ellipsoid: grs80,
+                            dx: 0.9738, dy: -1.9453, dz: -0.5486)
+        XCTAssertGreaterThan(m, 0.3, "expected a small non-zero NAD83→WGS84 shift, got \(m) m")
+        XCTAssertLessThan(m, 5.0, "NAD83→WGS84 should be a few metres, got \(m) m")
+    }
+
+    func testInlineParamsMatchNamedCodeForSameDatum() {
+        // The inline-dictionary path and the named-code path must agree when they
+        // describe the same datum: OSGB36 = Airy1830 + (446.448, -125.157, 542.06).
+        let byName = DatumShift.toWGS84(lat: 51.48, lon: -0.10, datumCode: "OS")
+        let byDict = DatumShift.toWGS84(lat: 51.48, lon: -0.10,
+                                        sourceEllipsoid: .airy1830,
+                                        dx: 446.448, dy: -125.157, dz: 542.06)
+        XCTAssertEqual(byName.lat, byDict.lat, accuracy: 1e-9)
+        XCTAssertEqual(byName.lon, byDict.lon, accuracy: 1e-9)
+    }
+
+    func testInlineZeroTranslationIsIdentity() {
+        // A /Datum dict with no /ToWGS84 (dx=dy=dz=0) must be a byte-for-byte
+        // identity fast-path.
+        let w = DatumShift.toWGS84(lat: 35.3, lon: -116.7,
+                                   sourceEllipsoid: .grs80, dx: 0, dy: 0, dz: 0)
+        XCTAssertEqual(w.lat, 35.3, accuracy: 1e-12)
+        XCTAssertEqual(w.lon, -116.7, accuracy: 1e-12)
     }
 }

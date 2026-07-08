@@ -39,6 +39,17 @@ enum ImportedMapFileCopier {
         }
         return next
     }
+
+    /// Application Support directory for imported maps. Maps are stored here
+    /// (not Documents/) so they stay hidden from Files.app and get stronger
+    /// file protection.
+    static func importedMapsDirectory(fileManager: FileManager = .default) throws -> URL {
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = appSupport.appendingPathComponent("ImportedMaps", isDirectory: true)
+        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true,
+                                        attributes: [.protectionKey: FileProtectionType.complete])
+        return dir
+    }
 }
 
 struct ContentView: View {
@@ -75,6 +86,10 @@ struct ContentView: View {
     @State private var showSyncSheet       = false
     @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: String? = nil
+    /// Brief toast shown when a remote sync update arrives (conflict notification).
+    @State private var syncToast: String? = nil
+    /// Share sheet URL for "Export All Data".
+    @State private var exportAllURL: URL? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
     @State private var showLayersSheet     = false
@@ -95,7 +110,8 @@ struct ContentView: View {
                     measureSession: measureSession,
                     visibility: visibility,
                     calibration: calibration,
-                    graphicsLocked: graphicsLocked
+                    graphicsLocked: graphicsLocked,
+                    peers: syncManager.peers
                 )
                 .ignoresSafeArea()
 
@@ -138,281 +154,11 @@ struct ContentView: View {
                     CrosshairOverlay().allowsHitTesting(false)
                 }
 
-                // Freehand capture overlay. Sits above the map but below the
-                // HUD VStack so toolbar buttons remain interactive. Converts
-                // every drag point to a map coordinate and streams it into the
-                // session; auto-commits when the finger lifts.
-                if drawingSession.activeKind == .freedraw {
-                    Color.clear
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .gesture(
-                            // GLOBAL (screen-absolute) space: the map is
-                            // full-screen (ignoresSafeArea), so its
-                            // `screenToCoordinate` expects screen points.
-                            // `.local` here resolves against the
-                            // GeometryReader's safe-area-inset origin, which
-                            // shifted every captured point ~50pt up the screen
-                            // (the line drew above the finger).
-                            DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                                .onChanged { value in
-                                    guard let convert = mapVM.screenToCoordinate else { return }
-                                    drawingSession.addFreeDrawPoint(convert(value.location))
-                                }
-                                .onEnded { _ in
-                                    if let shape = drawingSession.finish() {
-                                        drawingStore.add(shape)
-                                    }
-                                }
-                        )
-                }
+                freehandCaptureOverlay
 
-                VStack(spacing: 0) {
-                    MGRSHeaderView(
-                        mgrs: mapVM.headerMGRS,
-                        wgs84: mapVM.headerWGS84,
-                        utm: mapVM.headerUTM,
-                        syncConnected: syncManager.status == .connected,
-                        isBrowsing: mapVM.isBrowsing,
-                        accuracy: locationService.lastAccuracy,
-                        // Crosshair elevation: prefer the DEM lookup so panning
-                        // around shows real terrain heights; fall back to the
-                        // GPS-reported altitude only if the DEM hasn't replied yet.
-                        elevation: mapVM.centreElevation ?? locationService.lastAltitude,
-                        // "~" marks an approximate height served from the offline
-                        // cache when the DEM network call can't reach Open-Meteo.
-                        elevationIsApproximate: mapVM.centreElevationIsApproximate,
-                        coordinate: mapVM.isBrowsing
-                            ? mapVM.cameraCentre
-                            : locationService.lastLocation?.coordinate,
-                        onDropPin: { coord, mgrs in
-                            // Drop a generic waypoint at this MGRS — auto-named
-                            // with the MGRS string so the user can see where the
-                            // pin came from. The active layer takes ownership.
-                            let layerID = drawingStore.activeLayerID
-                                ?? drawingStore.layers.first?.id
-                                ?? DrawingLayer.legacyFallbackID
-                            let wp = Waypoint(
-                                name: mgrs,
-                                coordinate: coord,
-                                kind: .generic,
-                                layerID: layerID
-                            )
-                            waypointStore.add(wp)
-                        }
-                    )
-                    .padding(.horizontal, 12)
+                hudOverlay(bottomInset: geo.safeAreaInsets.bottom)
 
-                    // Live track-recording badge — only while recording. Tap to
-                    // stop (mirrors the menu toggle + clears background updates).
-                    if trackRecorder.isRecording {
-                        RecordingIndicator(
-                            pointCount: trackRecorder.points.count,
-                            onStop: {
-                                trackRecorder.stop()
-                                locationService.setBackgroundUpdates(false)
-                            }
-                        )
-                        .padding(.top, 8)
-                    }
-
-                    // Hamburger (left) + compass (right).
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HamburgerMenu(
-                                isPurchased: store.isPurchased,
-                                trialDaysRemaining: trial.daysRemaining(),
-                                onUnlock: { showPaywallSheet = true },
-                                onSearch:    {
-                                    drawingsPanelOpen = false
-                                    showSearchSheet = true
-                                },
-                                onWaypoints: {
-                                    drawingsPanelOpen = false
-                                    showWaypointSheet = true
-                                },
-                                onDrawings:  {
-                                    showDrawingsSheet = false
-                                    drawingsPanelOpen.toggle()
-                                },
-                                onLayers:    {
-                                    drawingsPanelOpen = false
-                                    showLayersSheet = true
-                                },
-                                onMeasure:   {
-                                    drawingsPanelOpen = false
-                                    drawingSession.cancel()
-                                    measureSession.start()
-                                },
-                                onWeather:   {
-                                    drawingsPanelOpen = false
-                                    showWeatherSheet = true
-                                },
-                                onImport:    {
-                                    drawingsPanelOpen = false
-                                    showImporter = true
-                                },
-                                onImportTiles: {
-                                    drawingsPanelOpen = false
-                                    showMBTilesImporter = true
-                                },
-                                onImportGeoJSON: {
-                                    drawingsPanelOpen = false
-                                    showGeoJSONImporter = true
-                                },
-                                onImportKML: {
-                                    drawingsPanelOpen = false
-                                    showKMLImporter = true
-                                },
-                                onExport:    {
-                                    drawingsPanelOpen = false
-                                    showExportSheet = true
-                                },
-                                isRecordingTrack: trackRecorder.isRecording,
-                                trackPointCount: trackRecorder.points.count,
-                                onToggleTrackRecording: {
-                                    drawingsPanelOpen = false
-                                    if trackRecorder.isRecording {
-                                        trackRecorder.stop()
-                                        locationService.setBackgroundUpdates(false)
-                                    } else {
-                                        trackRecorder.start()
-                                        locationService.setBackgroundUpdates(true)
-                                    }
-                                },
-                                onExportGPX: {
-                                    drawingsPanelOpen = false
-                                    showGPXExporter = true
-                                },
-                                onSync:      {
-                                    drawingsPanelOpen = false
-                                    showSyncSheet = true
-                                },
-                                onAppLock:   {
-                                    drawingsPanelOpen = false
-                                    showAppLockSheet = true
-                                },
-                                onAbout:     {
-                                    drawingsPanelOpen = false
-                                    showAboutSheet = true
-                                }
-                            )
-
-                            if drawingsPanelOpen {
-                                DrawingsPanel(
-                                    drawingStore: drawingStore,
-                                    session: drawingSession,
-                                    onShowAll: {
-                                        drawingsPanelOpen = false
-                                        showDrawingsSheet = true
-                                    },
-                                    onDismiss: { drawingsPanelOpen = false }
-                                )
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                            }
-                        }
-                        Spacer()
-                        VStack(spacing: 6) {
-                            CompassChip(heading: mapVM.heading) { mapVM.resetNorth() }
-                            if canUndo || canRedo {
-                                UndoRedoButtons(
-                                    canUndo: canUndo,
-                                    canRedo: canRedo,
-                                    onUndo: { undoManager?.undo() },
-                                    onRedo: { undoManager?.redo() }
-                                )
-                            }
-                            LockButton(locked: graphicsLocked) {
-                                graphicsLocked.toggle()
-                                // Locking clears any open selection so its
-                                // controls card + vertex handles disappear.
-                                if graphicsLocked {
-                                    mapVM.selectedWaypointID = nil
-                                    mapVM.selectedDrawingID = nil
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .animation(.easeInOut(duration: 0.18), value: drawingsPanelOpen)
-                    .animation(.easeInOut(duration: 0.18), value: canUndo)
-                    .animation(.easeInOut(duration: 0.18), value: canRedo)
-
-                    Spacer(minLength: 0)
-
-                    if calibration.isCalibrating {
-                        CalibrationOverlay(
-                            session: calibration,
-                            onFinish: finishCalibration,
-                            onCancel: { calibration.cancel() }
-                        )
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
-                    } else if drawingSession.isDrawing {
-                        DrawToolbar(session: drawingSession) {
-                            if let shape = drawingSession.finish() {
-                                drawingStore.add(shape)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
-                    } else if measureSession.isActive {
-                        MeasureToolbar(session: measureSession)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, max(geo.safeAreaInsets.bottom, 8) + 6)
-                    } else {
-                        if let id = mapVM.selectedWaypointID {
-                            // Floating controls card for the currently-
-                            // tapped waypoint. Slides up from the bottom
-                            // edge and covers the centre-on-location pill
-                            // — we reclaim that ~40pt strip for the W/H
-                            // sliders. The user can dismiss the card
-                            // (X in the corner, or tap the map) to get
-                            // the pill back.
-                            SymbolControlsCard(
-                                waypointStore: waypointStore,
-                                drawingStore: drawingStore,
-                                mapVM: mapVM,
-                                waypointID: id,
-                                onDismiss: { mapVM.selectedWaypointID = nil }
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, max(geo.safeAreaInsets.bottom - 32, 0))
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                        } else if let id = mapVM.selectedDrawingID {
-                            DrawingControlsCard(
-                                drawingStore: drawingStore,
-                                drawingID: id,
-                                onDismiss: { mapVM.selectedDrawingID = nil }
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, max(geo.safeAreaInsets.bottom - 32, 0))
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                        } else {
-                            // Centre pill only when no card is open.
-                            // Vertically centred on the MKMapView
-                            // "Maps / Legal" attribution chip (pill bottom
-                            // sits ~32pt above the screen bottom).
-                            CentreButton {
-                                mapVM.centreOnUser(locationService.lastLocation)
-                            }
-                            .offset(y: max(geo.safeAreaInsets.bottom - 32, 0))
-                        }
-                    }
-                }
-                .animation(.easeInOut(duration: 0.18),
-                           value: mapVM.selectedWaypointID)
-                .animation(.easeInOut(duration: 0.18),
-                           value: mapVM.selectedDrawingID)
-                // HUD sits flush below the dynamic island. We let it bleed slightly
-                // into the safe-area region by using a small negative-ish padding,
-                // ignoring the safe area entirely on the top edge — the box's
-                // rounded corners tuck under the island shape naturally.
-                // Bottom inset is applied per-control above so the centre-on-
-                // location pill can sit closer to the screen edge than the
-                // calibration / draw toolbars (which want a full safe-area gap).
-                .padding(.top, 4)
+                syncToastOverlay
             }
         }
         .task {
@@ -498,7 +244,16 @@ struct ContentView: View {
                 .padSheetSizing()
         }
         .task {
-            syncManager.configure(waypointStore: waypointStore, drawingStore: drawingStore)
+            syncManager.configure(waypointStore: waypointStore,
+                                  drawingStore: drawingStore,
+                                  locationService: locationService)
+        }
+        // Remote sync update toast (conflict notification).
+        .onReceive(syncManager.remoteUpdateSubject) { message in
+            syncToast = message
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                if syncToast == message { syncToast = nil }
+            }
         }
         // Feed every fix into the track recorder; it ignores them unless recording.
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
@@ -584,11 +339,318 @@ struct ContentView: View {
         } message: { msg in
             Text(msg)
         }
+        .sheet(isPresented: Binding(
+            get: { exportAllURL != nil },
+            set: { if !$0 { exportAllURL = nil } }
+        )) {
+            if let url = exportAllURL {
+                ShareSheetView(activityItems: [url])
+                    .padSheetSizing()
+            }
+        }
+    }
+
+    /// Freehand capture overlay. Sits above the map but below the
+    /// HUD VStack so toolbar buttons remain interactive. Converts
+    /// every drag point to a map coordinate and streams it into the
+    /// session; auto-commits when the finger lifts.
+    @ViewBuilder
+    private var freehandCaptureOverlay: some View {
+        if drawingSession.activeKind == .freedraw {
+            Color.clear
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                        .onChanged { value in
+                            guard let convert = mapVM.screenToCoordinate else { return }
+                            drawingSession.addFreeDrawPoint(convert(value.location))
+                        }
+                        .onEnded { _ in
+                            if let shape = drawingSession.finish() {
+                                drawingStore.add(shape)
+                            }
+                        }
+                )
+        }
+    }
+
+    /// The full HUD: header, hamburger menu, compass, bottom toolbar /
+    /// selection cards, recording indicator. Extracted from body to keep
+    /// the ZStack under Swift's type-checker complexity budget.
+    @ViewBuilder
+    private func hudOverlay(bottomInset: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            MGRSHeaderView(
+                mgrs: mapVM.headerMGRS,
+                wgs84: mapVM.headerWGS84,
+                utm: mapVM.headerUTM,
+                syncConnected: syncManager.status == .connected,
+                isBrowsing: mapVM.isBrowsing,
+                accuracy: locationService.lastAccuracy,
+                elevation: mapVM.centreElevation ?? locationService.lastAltitude,
+                elevationIsApproximate: mapVM.centreElevationIsApproximate,
+                coordinate: mapVM.isBrowsing
+                    ? mapVM.cameraCentre
+                    : locationService.lastLocation?.coordinate,
+                onDropPin: { coord, mgrs in
+                    let layerID = drawingStore.activeLayerID
+                        ?? drawingStore.layers.first?.id
+                        ?? DrawingLayer.legacyFallbackID
+                    let wp = Waypoint(
+                        name: mgrs,
+                        coordinate: coord,
+                        kind: .generic,
+                        layerID: layerID
+                    )
+                    waypointStore.add(wp)
+                }
+            )
+            .padding(.horizontal, 12)
+
+            if trackRecorder.isRecording {
+                RecordingIndicator(
+                    pointCount: trackRecorder.points.count,
+                    onStop: {
+                        trackRecorder.stop()
+                        locationService.setBackgroundUpdates(false)
+                    }
+                )
+                .padding(.top, 8)
+            }
+
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HamburgerMenu(
+                        isPurchased: store.isPurchased,
+                        trialDaysRemaining: trial.daysRemaining(),
+                        onUnlock: { showPaywallSheet = true },
+                        onSearch:    {
+                            drawingsPanelOpen = false
+                            showSearchSheet = true
+                        },
+                        onWaypoints: {
+                            drawingsPanelOpen = false
+                            showWaypointSheet = true
+                        },
+                        onDrawings:  {
+                            showDrawingsSheet = false
+                            drawingsPanelOpen.toggle()
+                        },
+                        onLayers:    {
+                            drawingsPanelOpen = false
+                            showLayersSheet = true
+                        },
+                        onMeasure:   {
+                            drawingsPanelOpen = false
+                            drawingSession.cancel()
+                            measureSession.start()
+                        },
+                        onWeather:   {
+                            drawingsPanelOpen = false
+                            showWeatherSheet = true
+                        },
+                        onImport:    {
+                            drawingsPanelOpen = false
+                            showImporter = true
+                        },
+                        onImportTiles: {
+                            drawingsPanelOpen = false
+                            showMBTilesImporter = true
+                        },
+                        onImportGeoJSON: {
+                            drawingsPanelOpen = false
+                            showGeoJSONImporter = true
+                        },
+                        onImportKML: {
+                            drawingsPanelOpen = false
+                            showKMLImporter = true
+                        },
+                        onExport:    {
+                            drawingsPanelOpen = false
+                            showExportSheet = true
+                        },
+                        isRecordingTrack: trackRecorder.isRecording,
+                        trackPointCount: trackRecorder.points.count,
+                        onToggleTrackRecording: {
+                            drawingsPanelOpen = false
+                            if trackRecorder.isRecording {
+                                trackRecorder.stop()
+                                locationService.setBackgroundUpdates(false)
+                            } else {
+                                trackRecorder.start()
+                                locationService.setBackgroundUpdates(true)
+                            }
+                        },
+                        onExportGPX: {
+                            drawingsPanelOpen = false
+                            showGPXExporter = true
+                        },
+                        onExportAll: {
+                            drawingsPanelOpen = false
+                            exportAllData()
+                        },
+                        onSync:      {
+                            drawingsPanelOpen = false
+                            showSyncSheet = true
+                        },
+                        onAppLock:   {
+                            drawingsPanelOpen = false
+                            showAppLockSheet = true
+                        },
+                        onAbout:     {
+                            drawingsPanelOpen = false
+                            showAboutSheet = true
+                        }
+                    )
+
+                    UnitLabelsToggle(active: visibility.unitLabelsVisible) {
+                        visibility.unitLabelsVisible.toggle()
+                    }
+
+                    if drawingsPanelOpen {
+                        DrawingsPanel(
+                            drawingStore: drawingStore,
+                            session: drawingSession,
+                            onShowAll: {
+                                drawingsPanelOpen = false
+                                showDrawingsSheet = true
+                            },
+                            onDismiss: { drawingsPanelOpen = false }
+                        )
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                Spacer()
+                VStack(spacing: 6) {
+                    CompassChip(heading: mapVM.heading) { mapVM.resetNorth() }
+                    if canUndo || canRedo {
+                        UndoRedoButtons(
+                            canUndo: canUndo,
+                            canRedo: canRedo,
+                            onUndo: { undoManager?.undo() },
+                            onRedo: { undoManager?.redo() }
+                        )
+                    }
+                    LockButton(locked: graphicsLocked) {
+                        graphicsLocked.toggle()
+                        if graphicsLocked {
+                            mapVM.selectedWaypointID = nil
+                            mapVM.selectedDrawingID = nil
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .animation(.easeInOut(duration: 0.18), value: drawingsPanelOpen)
+            .animation(.easeInOut(duration: 0.18), value: canUndo)
+            .animation(.easeInOut(duration: 0.18), value: canRedo)
+
+            Spacer(minLength: 0)
+
+            hudBottomBar(bottomInset: bottomInset)
+        }
+        .animation(.easeInOut(duration: 0.18),
+                   value: mapVM.selectedWaypointID)
+        .animation(.easeInOut(duration: 0.18),
+                   value: mapVM.selectedDrawingID)
+        .padding(.top, 4)
+    }
+
+    /// Bottom toolbar area: calibration, drawing, measure, selection cards,
+    /// or the centre-on-location pill. Extracted to keep hudOverlay under
+    /// the type-checker limit.
+    @ViewBuilder
+    private func hudBottomBar(bottomInset: CGFloat) -> some View {
+        if calibration.isCalibrating {
+            CalibrationOverlay(
+                session: calibration,
+                onFinish: finishCalibration,
+                onCancel: { calibration.cancel() }
+            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, max(bottomInset, 8) + 6)
+        } else if drawingSession.isDrawing {
+            DrawToolbar(session: drawingSession) {
+                if let shape = drawingSession.finish() {
+                    drawingStore.add(shape)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, max(bottomInset, 8) + 6)
+        } else if measureSession.isActive {
+            MeasureToolbar(session: measureSession)
+                .padding(.horizontal, 12)
+                .padding(.bottom, max(bottomInset, 8) + 6)
+        } else {
+            if let id = mapVM.selectedWaypointID {
+                SymbolControlsCard(
+                    waypointStore: waypointStore,
+                    drawingStore: drawingStore,
+                    mapVM: mapVM,
+                    waypointID: id,
+                    onDismiss: { mapVM.selectedWaypointID = nil }
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, max(bottomInset - 32, 0))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let id = mapVM.selectedDrawingID {
+                DrawingControlsCard(
+                    drawingStore: drawingStore,
+                    drawingID: id,
+                    onDismiss: { mapVM.selectedDrawingID = nil }
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, max(bottomInset - 32, 0))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                CentreButton {
+                    mapVM.centreOnUser(locationService.lastLocation)
+                }
+                .offset(y: max(bottomInset - 32, 0))
+            }
+        }
+    }
+
+    /// Brief overlay toast shown when a remote sync change arrives.
+    @ViewBuilder
+    private var syncToastOverlay: some View {
+        if let toast = syncToast {
+            VStack {
+                Spacer()
+                Text(toast)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(.black.opacity(0.78), in: Capsule())
+                    .padding(.bottom, 80)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            .allowsHitTesting(false)
+            .animation(.easeInOut(duration: 0.25), value: syncToast)
+        }
     }
 
     private func refreshUndoState() {
         canUndo = undoManager?.canUndo ?? false
         canRedo = undoManager?.canRedo ?? false
+    }
+
+    /// Export all waypoints + drawings + layers to a GeoJSON file and present
+    /// the system share sheet.
+    private func exportAllData() {
+        do {
+            let url = try GeoJSONExporter.exportToFile(
+                waypoints: waypointStore.waypoints,
+                drawings: drawingStore.shapes,
+                layers: drawingStore.layers
+            )
+            exportAllURL = url
+        } catch {
+            importMessage = "Export failed: \(error.localizedDescription)"
+        }
     }
 
     private func handleGeoJSONImport(_ result: Result<[URL], Error>) {

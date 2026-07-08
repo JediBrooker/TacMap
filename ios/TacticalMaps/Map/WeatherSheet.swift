@@ -10,6 +10,7 @@ struct WeatherSheet: View {
 
     @State private var reading: WeatherReading? = nil
     @State private var loading = true
+    @State private var reloadToken = 0
     private let service = WeatherService()
 
     private var risk: UAVRisk { reading.map { UAVAssessment.risk(for: $0) } ?? .safe }
@@ -17,6 +18,10 @@ struct WeatherSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 18) {
+                // Which location this report is for.
+                Text(MGRSFormatter.string(from: coordinate))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
                 if loading {
                     HStack { ProgressView(); Text("Fetching conditions…") }
                         .foregroundStyle(.secondary)
@@ -32,9 +37,14 @@ struct WeatherSheet: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
-                    Label("Couldn't fetch conditions. Check your connection and try again.",
-                          systemImage: "wifi.slash")
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Couldn't fetch conditions. If online lookups are off (Privacy & OPSEC), enable them; otherwise check your connection.",
+                              systemImage: "wifi.slash")
+                            .foregroundStyle(.secondary)
+                        Button { reloadToken += 1 } label: {
+                            Label("Retry", systemImage: "arrow.clockwise")
+                        }
+                    }
                 }
                 Spacer()
             }
@@ -42,7 +52,8 @@ struct WeatherSheet: View {
             .navigationTitle("Weather & UAV Safety")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
-            .task {
+            .task(id: reloadToken) {
+                loading = true
                 reading = await service.reading(for: coordinate)
                 loading = false
             }

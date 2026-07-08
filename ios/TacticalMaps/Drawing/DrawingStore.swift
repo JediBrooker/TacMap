@@ -17,6 +17,16 @@ final class DrawingStore: ObservableObject {
     /// the first layer.
     @Published var activeLayerID: UUID?
 
+    /// Non-nil when the on-disk drawings file was unreadable (and quarantined)
+    /// or a save failed. Surfaced by the UI so the user knows their drawings
+    /// were preserved / a save didn't reach disk, instead of a blank map being
+    /// silently mistaken for "no data".
+    @Published var loadError: String?
+
+    /// Persisted-document schema version. Bump when the on-disk shape changes so
+    /// old files migrate instead of being mistaken for corruption.
+    private static let currentSchema = 1
+
     /// Set by ContentView from `@Environment(\.undoManager)` after the
     /// view appears. Weak so the store doesn't extend the window's lifetime.
     weak var undoManager: UndoManager?
@@ -156,41 +166,56 @@ final class DrawingStore: ObservableObject {
     // MARK: - Persistence
 
     private struct Persisted: Codable {
+        /// nil == written before schema versioning; treat as v1. Optional so
+        /// existing files (which lack the key) still decode — otherwise the very
+        /// upgrade meant to protect data would fail to decode and wipe it.
+        var schemaVersion: Int?
         var layers: [DrawingLayer]
         var shapes: [DrawingShape]
         var activeLayerID: UUID?
     }
 
-    private func load() {
-        guard let data = try? Data(contentsOf: url) else {
-            seedFreshInstall()
-            return
+    /// Decode either the current `Persisted` schema or the legacy flat
+    /// `[DrawingShape]` array, returning whether a legacy migration happened.
+    /// Throws if the bytes match neither — so `SafeStore` quarantines rather
+    /// than the caller silently discarding.
+    private static func decodeAny(_ data: Data) throws -> (Persisted, migrated: Bool) {
+        let dec = JSONDecoder()
+        if let payload = try? dec.decode(Persisted.self, from: data) {
+            return (payload, false)
         }
+        let legacyShapes = try dec.decode([DrawingShape].self, from: data)
+        let migrated = Persisted(
+            schemaVersion: currentSchema,
+            layers: DrawingLayer.seedDefaults,
+            shapes: legacyShapes.map { shape in
+                var s = shape
+                s.layerID = DrawingLayer.legacyFallbackID
+                return s
+            },
+            activeLayerID: DrawingLayer.seedDefaults.first?.id
+        )
+        return (migrated, true)
+    }
 
-        // Try the new multi-layer schema first.
-        if let payload = try? JSONDecoder().decode(Persisted.self, from: data) {
+    private func load() {
+        switch SafeStore.read(url, decode: { try Self.decodeAny($0) }) {
+        case .loaded(let (payload, migrated)):
             layers = payload.layers
             shapes = payload.shapes
             activeLayerID = payload.activeLayerID ?? layers.first?.id
             ensureSeedLayers()
-            return
+            if migrated { persist() } // upgrade the on-disk format once
+        case .empty:
+            seedFreshInstall()
+        case .corrupt(let quarantine, _):
+            // Preserve, don't overwrite: the unreadable file is set aside and
+            // the user is told, instead of the next edit persisting an empty
+            // document over the only copy.
+            loadError = "Saved drawings could not be read and were set aside "
+                + "(\(quarantine?.lastPathComponent ?? "recovery copy")). Starting with an empty map."
+            seedFreshInstall()
         }
-
-        // Fall back to the legacy flat `[DrawingShape]` schema.
-        if let legacyShapes = try? JSONDecoder().decode([DrawingShape].self, from: data) {
-            layers = DrawingLayer.seedDefaults
-            shapes = legacyShapes.map { shape in
-                var s = shape
-                s.layerID = DrawingLayer.legacyFallbackID
-                return s
-            }
-            activeLayerID = layers.first?.id
-            persist()
-            return
-        }
-
-        // Corrupted file — fall through to fresh seed.
-        seedFreshInstall()
     }
 
     /// First-time install: seed the four default layers so the user has
@@ -216,13 +241,17 @@ final class DrawingStore: ObservableObject {
 
     private func persist() {
         do {
-            let payload = Persisted(layers: layers,
+            let payload = Persisted(schemaVersion: Self.currentSchema,
+                                    layers: layers,
                                     shapes: shapes,
                                     activeLayerID: activeLayerID)
             let data = try JSONEncoder().encode(payload)
-            try data.write(to: url, options: .atomic)
+            try SafeStore.write(data, to: url)
+            if loadError?.hasPrefix("Could not save") == true { loadError = nil }
         } catch {
+            // Do not swallow: the user is editing but nothing is reaching disk.
             print("[DrawingStore] persist failed: \(error)")
+            loadError = "Could not save drawings to disk: \(error.localizedDescription)"
         }
     }
 }

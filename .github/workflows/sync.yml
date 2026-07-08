@@ -1,0 +1,52 @@
+name: Sync Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sync/**'
+      - '.github/workflows/sync.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sync/**'
+      - '.github/workflows/sync.yml'
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Typecheck + bundle
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sync
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck
+
+      - name: Bundle (wrangler dry-run — no deploy, no auth)
+        run: |
+          set -o pipefail
+          npm run check
+
+      - name: Unit tests (if present)
+        run: |
+          set -o pipefail
+          # No-op until the vitest suite lands; kept so adding tests wires in
+          # automatically. `--if-present` never fails when the script is absent.
+          npm test --if-present

@@ -59,6 +59,7 @@ fun SearchDialog(
     var query by remember { mutableStateOf("") }
     var placeResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+    var placesUnavailable by remember { mutableStateOf(false) }
     val localResults = remember(query, waypoints, drawings, cameraLat, cameraLng) {
         buildSearchResults(query, waypoints, drawings, cameraLat, cameraLng)
     }
@@ -75,7 +76,9 @@ fun SearchDialog(
         }
         delay(350)
         isSearching = true
-        placeResults = searchPlaces(context, trimmed, cameraLat, cameraLng)
+        val fetched = searchPlaces(context, trimmed, cameraLat, cameraLng)
+        placesUnavailable = fetched == null // null = geocoder absent / errored
+        placeResults = fetched ?: emptyList()
         isSearching = false
     }
 
@@ -114,6 +117,15 @@ fun SearchDialog(
                                 modifier = Modifier.padding(vertical = 8.dp),
                                 fontSize = 12.sp,
                                 color = Color(0xFFBDBDBD)
+                            )
+                        }
+                    } else if (placesUnavailable && query.trim().length >= 2) {
+                        item(key = "places-unavailable") {
+                            Text(
+                                "Place search unavailable offline — MGRS, grid and lat/lon search still work.",
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                fontSize = 12.sp,
+                                color = Color(0xFFEF9A9A)
                             )
                         }
                     }
@@ -256,17 +268,20 @@ internal fun buildSearchResults(
     return results.distinctBy { it.id }.take(20)
 }
 
+/** Returns null when place search is UNAVAILABLE (no geocoder / it errored,
+ *  e.g. offline) so the caller can say so, vs an empty list = searched, no
+ *  matches. */
 private suspend fun searchPlaces(
     context: Context,
     query: String,
     cameraLat: Double,
     cameraLng: Double
-): List<SearchResult> = withContext(Dispatchers.IO) {
-    if (!Geocoder.isPresent()) return@withContext emptyList()
+): List<SearchResult>? = withContext(Dispatchers.IO) {
+    if (!Geocoder.isPresent()) return@withContext null
     val geocoder = Geocoder(context)
     val addresses = runCatching {
         geocoder.getFromLocationNameNearCamera(query, cameraLat, cameraLng)
-    }.getOrNull().orEmpty()
+    }.getOrElse { return@withContext null }.orEmpty()
 
     addresses
         .filter { it.hasLatitude() && it.hasLongitude() }

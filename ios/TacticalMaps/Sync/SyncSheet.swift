@@ -25,6 +25,78 @@ struct SyncSheet: View {
                             Label("Leave room", systemImage: "xmark.circle")
                         }
                     }
+
+                    // Identity section — visible only while connected to a room.
+                    Section("Your Identity") {
+                        TextField("Callsign", text: $manager.presenceConfig.callsign)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.characters)
+
+                        Picker("Affiliation", selection: $manager.presenceConfig.affiliation) {
+                            Text("Friendly").tag("friend")
+                            Text("Hostile").tag("hostile")
+                            Text("Neutral").tag("neutral")
+                            Text("Unknown").tag("unknown")
+                        }
+                        .pickerStyle(.menu)
+
+                        Picker("Echelon", selection: $manager.presenceConfig.echelon) {
+                            Text("Team / Crew").tag("team")
+                            Text("Section").tag("section")
+                            Text("Platoon").tag("platoon")
+                            Text("Company").tag("company")
+                            Text("Battalion / Regiment").tag("battalionRegiment")
+                            Text("Brigade").tag("brigade")
+                            Text("Division").tag("division")
+                        }
+                        .pickerStyle(.menu)
+
+                        Picker("Function", selection: $manager.presenceConfig.function) {
+                            Text("Infantry").tag("infantry")
+                            Text("Armour").tag("armour")
+                            Text("Artillery").tag("artillery")
+                            Text("Cavalry").tag("cavalry")
+                            Text("Engineer").tag("engineer")
+                            Text("Signals").tag("signal")
+                            Text("Medical").tag("medical")
+                            Text("Reconnaissance").tag("recce")
+                            Text("Mechanised Infantry").tag("mechInfantry")
+                            Text("Motorised Infantry").tag("motorisedInfantry")
+                            Text("Anti-Tank").tag("antiTank")
+                            Text("Air Defence").tag("airDefence")
+                            Text("Aviation (Rotary)").tag("aviation")
+                            Text("Aviation (Fixed-Wing)").tag("aviationFixed")
+                            Text("Mortar").tag("mortar")
+                            Text("CBRN Defence").tag("cbrn")
+                            Text("Electronic Warfare").tag("electronicWarfare")
+                            Text("Special Forces").tag("specialForces")
+                            Text("Military Police").tag("militaryPolice")
+                            Text("Supply").tag("logistics")
+                            Text("Maintenance").tag("maintenance")
+                            Text("Transportation").tag("transportation")
+                            Text("Combat Service Support").tag("css")
+                        }
+                        .pickerStyle(.menu)
+
+                        Toggle("Headquarters", isOn: $manager.presenceConfig.isHQ)
+
+                        Toggle("Share my location", isOn: $manager.presenceConfig.shareLocation)
+                    }
+
+                    if !manager.peers.isEmpty {
+                        Section("Members Online (\(manager.peers.count))") {
+                            ForEach(Array(manager.peers.values).sorted(by: { $0.callsign < $1.callsign })) { peer in
+                                HStack {
+                                    Text(peer.callsign.isEmpty ? peer.clientId.prefix(8) + "..." : peer.callsign)
+                                        .font(.body)
+                                    Spacer()
+                                    Text(peer.affiliation.capitalized)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
                 } else {
                     Section("Join a unit room") {
                         TextField("Unit join code", text: $code)
@@ -54,7 +126,7 @@ struct SyncSheet: View {
     private var statusText: String {
         switch manager.status {
         case .connected:  return "Connected"
-        case .connecting: return "Connecting…"
+        case .connecting: return "Connecting..."
         case .offline:    return "Offline"
         }
     }

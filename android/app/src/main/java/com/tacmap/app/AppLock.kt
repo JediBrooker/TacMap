@@ -8,7 +8,12 @@ import java.security.SecureRandom
  * Optional app-access lock (4-digit PIN). A deterrent for a lost/borrowed
  * device — NOT full at-rest OPSEC. The PIN is never stored: we keep a random
  * salt plus a stretched SHA-256 hash (120k rounds) so the tiny PIN space isn't
- * trivially recovered from the stored value.
+ * trivially recovered from the stored value. Stored in app-private prefs with
+ * `allowBackup=false` (manifest), so it is not written to cloud backups.
+ *
+ * Online guessing is throttled with an escalating lockout, and disabling or
+ * changing the PIN requires the current one — a lock can't be silently removed
+ * by someone who doesn't know it.
  *
  * PIN-only for now; biometric unlock is a follow-up (needs androidx.biometric).
  */
@@ -23,17 +28,61 @@ class AppLock(context: Context) {
         prefs.edit()
             .putString(KEY_SALT, salt.toHex())
             .putString(KEY_HASH, hash(pin, salt).toHex())
+            .remove(KEY_FAILS)
+            .remove(KEY_LOCKED_UNTIL)
             .apply()
     }
 
-    fun clear() {
-        prefs.edit().remove(KEY_SALT).remove(KEY_HASH).apply()
+    /** Change the PIN, requiring the current one. Returns false (no change) if
+     *  the current PIN is wrong or the lock is throttled. */
+    fun changePin(currentPin: String, newPin: String): Boolean {
+        if (!verify(currentPin)) return false
+        setPin(newPin)
+        return true
+    }
+
+    /** Disable the lock, requiring the current PIN. Returns false if wrong. */
+    fun disable(currentPin: String): Boolean {
+        if (!isEnabled) { clearAll(); return true }
+        if (!verify(currentPin)) return false
+        clearAll()
+        return true
+    }
+
+    private fun clearAll() {
+        prefs.edit()
+            .remove(KEY_SALT).remove(KEY_HASH)
+            .remove(KEY_FAILS).remove(KEY_LOCKED_UNTIL)
+            .apply()
+    }
+
+    /** Milliseconds remaining on the current lockout, or 0 if attempts allowed. */
+    fun lockoutRemainingMs(): Long {
+        val until = prefs.getLong(KEY_LOCKED_UNTIL, 0L)
+        return (until - System.currentTimeMillis()).coerceAtLeast(0L)
     }
 
     fun verify(pin: String): Boolean {
+        if (lockoutRemainingMs() > 0L) return false // throttled — reject without checking
         val salt = prefs.getString(KEY_SALT, null)?.fromHex() ?: return false
         val stored = prefs.getString(KEY_HASH, null)?.fromHex() ?: return false
-        return constantTimeEquals(hash(pin, salt), stored)
+        return if (constantTimeEquals(hash(pin, salt), stored)) {
+            prefs.edit().remove(KEY_FAILS).remove(KEY_LOCKED_UNTIL).apply()
+            true
+        } else {
+            registerFailure()
+            false
+        }
+    }
+
+    private fun registerFailure() {
+        val fails = prefs.getInt(KEY_FAILS, 0) + 1
+        val editor = prefs.edit().putInt(KEY_FAILS, fails)
+        if (fails >= FREE_ATTEMPTS) {
+            val idx = (fails - FREE_ATTEMPTS).coerceAtMost(LOCKOUT_LADDER_MS.size - 1)
+            editor.putLong(KEY_LOCKED_UNTIL, System.currentTimeMillis() + LOCKOUT_LADDER_MS[idx])
+        }
+        editor.apply()
     }
 
     private fun hash(pin: String, salt: ByteArray): ByteArray {
@@ -57,6 +106,10 @@ class AppLock(context: Context) {
     private companion object {
         const val KEY_SALT = "salt.v1"
         const val KEY_HASH = "hash.v1"
+        const val KEY_FAILS = "fails.v1"
+        const val KEY_LOCKED_UNTIL = "lockeduntil.v1"
         const val ITERATIONS = 120_000
+        const val FREE_ATTEMPTS = 5
+        val LOCKOUT_LADDER_MS = longArrayOf(30_000, 60_000, 300_000, 900_000, 3_600_000)
     }
 }

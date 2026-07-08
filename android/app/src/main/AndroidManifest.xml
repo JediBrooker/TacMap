@@ -6,6 +6,13 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Foreground service that keeps a GPX track recording while the app is
+         backgrounded / the screen is locked (TrackRecordingService). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Ongoing "recording" notification (Android 13+ runtime-prompts). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Google Play Billing: the one-time "unlock_full" purchase. -->
     <uses-permission android:name="com.android.vending.BILLING" />
 
@@ -49,5 +56,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name="com.tacmap.models.TrackRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
 </manifest>

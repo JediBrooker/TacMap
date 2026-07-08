@@ -24,7 +24,10 @@ private const val LAYER_PREFS = "layer_prefs"
 fun rememberPersistedBoolean(key: String, default: Boolean): MutableState<Boolean> {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(LAYER_PREFS, Context.MODE_PRIVATE) }
-    val state = remember { mutableStateOf(prefs.getBoolean(key, default)) }
+    // Key the remembered state on `key`: without it, reusing this composable
+    // with a different key kept the first key's value and then wrote it back to
+    // the new key on the first change.
+    val state = remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
     LaunchedEffect(key) {
         snapshotFlow { state.value }
             .drop(1) // skip the restored initial value

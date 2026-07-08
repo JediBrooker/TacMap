@@ -1,6 +1,7 @@
 package com.tacmap.drawings
 
 import android.content.Context
+import com.tacmap.util.SafeStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,14 @@ class DrawingStore(context: Context) {
 
     private val _document = MutableStateFlow(DrawingDocument())
     val document: StateFlow<DrawingDocument> = _document.asStateFlow()
+
+    /** Non-null when the on-disk drawings file was unreadable and had to be
+     *  quarantined. Surfaced by the UI so the user knows their drawings were
+     *  preserved (not silently discarded) rather than blank == "no data". */
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+
+    fun acknowledgeLoadError() { _loadError.value = null }
 
     private val undoStack = ArrayDeque<DrawingDocument>()
     private val redoStack = ArrayDeque<DrawingDocument>()
@@ -124,13 +133,21 @@ class DrawingStore(context: Context) {
     }
 
     private fun load() {
-        if (!file.exists()) return
-        runCatching { json.decodeFromString<DrawingDocument>(file.readText()) }
-            .onSuccess { _document.value = it.withDefaultLayers() }
+        when (val r = SafeStore.readOrQuarantine(file) { json.decodeFromString<DrawingDocument>(it) }) {
+            is SafeStore.LoadResult.Loaded -> _document.value = r.value.withDefaultLayers()
+            is SafeStore.LoadResult.Empty -> Unit // fresh install — keep the default document
+            is SafeStore.LoadResult.Corrupt ->
+                // Do NOT overwrite: the unreadable file is preserved as
+                // drawings.json.corrupt-* and the user is told, instead of the
+                // next edit silently persisting an empty document over it.
+                _loadError.value = "Saved drawings could not be read and were set aside " +
+                    "(${r.quarantinedTo?.name ?: "recovery copy"}). Starting with an empty map."
+        }
     }
 
     private fun persist() {
-        runCatching { file.writeText(json.encodeToString(_document.value)) }
+        runCatching { SafeStore.writeAtomically(file, json.encodeToString(_document.value)) }
+            .onFailure { _loadError.value = "Could not save drawings to disk: ${it.message}" }
     }
 
     private fun DrawingDocument.withDefaultLayers(): DrawingDocument {

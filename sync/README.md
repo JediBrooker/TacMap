@@ -49,17 +49,53 @@ Server → client:
 
 ## End-to-end encryption (client responsibility)
 
-The unit shares a **join code** (a high-entropy secret). On each device:
+The unit shares a **join code** (a high-entropy secret, ~80 bits, generated
+on-device). On each device the key hierarchy is derived in a single PBKDF2 pass
+followed by purpose-keyed HMACs:
 
-- `roomId = base64url(SHA-256("tacmap-room|" + joinCode))` — used only for
-  routing. Knowing it lets you relay ciphertext, never read it.
-- `roomKey = HKDF(joinCode, info="tacmap-e2e")` — the symmetric key. Each object
-  is sealed with an AEAD (e.g. AES-GCM / ChaCha20-Poly1305) under `roomKey` with
-  a fresh nonce; `ct` carries nonce‖ciphertext.
+1. `master = PBKDF2-HMAC-SHA256(joinCode, "tacmap-sync-salt-v2", 210000)` — 32 bytes.
+   The high iteration count makes offline brute-force of a captured `roomId`
+   impractical even for a short code.
+2. `roomId   = base64url(HMAC-SHA256(master, "tacmap-roomid-v2"))` — 43 chars.
+   Used only for routing; knowing it lets you relay ciphertext, never read it.
+3. `roomKey  = HMAC-SHA256(master, "tacmap-roomkey-v2")` — 32-byte symmetric key.
+   Each object is sealed with AES-256-GCM under `roomKey` with a fresh random
+   96-bit nonce; `ct` carries nonce‖ciphertext‖tag.
+4. `authToken = base64url(HMAC-SHA256(master, "tacmap-auth-v2"))` — 43 chars.
+   Sent in the `Authorization: Bearer` header on every WebSocket handshake.
+   The relay pins the first token it sees per room (trust-on-first-use) and
+   rejects any socket that doesn't match — a leaked `roomId` alone cannot
+   connect.
 
 So two devices with the same join code converge; the server (and anyone who only
 learns the `roomId`) cannot decrypt. This scheme is implemented in the client
-increments; the backend is intentionally oblivious to it.
+increments (iOS `SyncCrypto.swift`, Android `SyncCrypto.kt`); the backend is
+intentionally oblivious to the content.
+
+## Security properties & accepted limitations
+
+Documented so the trade-offs are explicit rather than surprising:
+
+- **AEAD nonce reuse (random 96-bit nonce).** Each object is sealed with a fresh
+  cryptographically-random 12-byte nonce. With a single per-room key, the
+  birthday bound puts collision risk below 2⁻³² only under ~2³² messages
+  (`√(2·2⁹⁶·2⁻³²)`); a unit exchanges a few thousand objects over a room's life,
+  so the margin is enormous. We keep random nonces (not a counter) deliberately:
+  a counter would have to survive app reinstalls and multi-device races without
+  ever repeating, which is *harder* to get right than random at this volume. A
+  room that somehow approached that scale should rotate its join code.
+- **No forward secrecy / post-compromise security.** The room key is derived
+  deterministically from the long-lived join code, so a device (or join code)
+  compromised today exposes past *and* future traffic for that code. This is the
+  price of a zero-server-trust, offline-capable, no-account design (no key
+  exchange to run when devices are off-grid). **Mitigation: rotating the join
+  code** re-keys the room — do it on suspected compromise or personnel change.
+  A future increment could layer per-epoch ratcheting keyed off a rotation
+  counter without changing the relay.
+- **`ping` wakes the Durable Object.** A protocol-level `ping` costs one DO
+  wake + `pong`. Clients rely on the WebSocket transport's own keepalive where
+  possible and only send protocol pings when needed; the per-socket rate limit
+  bounds the cost of a client that pings aggressively.
 
 ## Deployed instance
 

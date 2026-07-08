@@ -97,8 +97,15 @@ actor ElevationService {
     /// Fetch an elevation reading. Returns nil only when the value is genuinely
     /// unknown (no network *and* nothing close enough cached).
     func reading(for coordinate: CLLocationCoordinate2D) async -> ElevationReading? {
+        // OPSEC: elevation lookups transmit the coordinate to a third party
+        // (Open-Meteo), so only proceed when the user has opted in.
+        guard OpsecSettings.shared.onlineLookups else { return nil }
         // Skip the well-known sentinel (cameraCentre starts at 0,0).
         if coordinate.latitude == 0 && coordinate.longitude == 0 { return nil }
+        // Coarsen to ~110 m (3 dp) so the exact map centre isn't disclosed.
+        let coordinate = CLLocationCoordinate2D(
+            latitude: (coordinate.latitude * 1000).rounded() / 1000,
+            longitude: (coordinate.longitude * 1000).rounded() / 1000)
 
         // Exact hit on a previous DEM fetch — fresh, the terrain doesn't move.
         if let exact = cache.exact(coordinate) {

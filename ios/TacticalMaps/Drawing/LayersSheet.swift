@@ -15,6 +15,11 @@ struct LayersSheet: View {
     @State private var pendingDeleteLayer: DrawingLayer? = nil
     @State private var renamingLayer: DrawingLayer? = nil
     @State private var tilingProgress: PDFTiler.Progress? = nil
+    @State private var tilingTask: Task<Void, Never>? = nil
+    @State private var tilingError: String? = nil
+    /// A persisted-but-not-currently-active imported map, so the user can switch
+    /// back to it after picking an online basemap.
+    @State private var restorablePDF: PDFMapSource? = nil
 
     var body: some View {
         NavigationStack {
@@ -61,10 +66,14 @@ struct LayersSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                         if let p = tilingProgress {
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 ProgressView(value: p.total > 0 ? Double(p.done) / Double(p.total) : 0)
                                 Text(p.total > 0 ? "Generating offline tiles — \(p.done)/\(p.total)" : "Preparing…")
                                     .font(.caption2).foregroundStyle(.secondary)
+                                Button(role: .cancel) { tilingTask?.cancel() } label: {
+                                    Label("Cancel", systemImage: "xmark.circle")
+                                }
+                                .font(.caption)
                             }
                         } else {
                             Button {
@@ -105,33 +114,12 @@ struct LayersSheet: View {
                     }
                 }
 
-                Section("Basemap") {
-                    let importedActive = mapVM.mapSource is PDFMapSource
-                        || mapVM.mapSource is OfflineTileMapSource
-                    basemapRow(title: "Satellite (Apple)",
-                               systemImage: "globe.americas.fill",
-                               isActive: mapVM.mapSource is AppleSatelliteMapSource) {
-                        mapVM.mapSource = AppleSatelliteMapSource()
-                        PDFSessionStore.clear()
-                    }
-                    basemapRow(title: "Satellite (Esri)",
-                               systemImage: "globe.badge.chevron.backward",
-                               isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .esriSatellite) {
-                        mapVM.mapSource = OnlineRasterBasemapSource(.esriSatellite)
-                        PDFSessionStore.clear()
-                    }
-                    basemapRow(title: "Terrain (OpenTopoMap)",
-                               systemImage: "mountain.2.fill",
-                               isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .terrain) {
-                        mapVM.mapSource = OnlineRasterBasemapSource(.terrain)
-                        PDFSessionStore.clear()
-                    }
-                    if importedActive {
-                        Text("An imported map is active — pick a basemap to switch back to it.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                basemapSection
+            }
+            .onAppear {
+                // Offer a "switch back" to a persisted imported map that isn't
+                // the current source.
+                if !(mapVM.mapSource is PDFMapSource) { restorablePDF = PDFSessionStore.load() }
             }
             .navigationTitle("Layers and Labels")
             .toolbar {
@@ -167,6 +155,12 @@ struct LayersSheet: View {
                 }
                 Button("Cancel", role: .cancel) { renamingLayer = nil }
             }
+            .alert("Offline tiles",
+                   isPresented: Binding(get: { tilingError != nil },
+                                        set: { if !$0 { tilingError = nil } }),
+                   presenting: tilingError) { _ in
+                Button("OK", role: .cancel) { tilingError = nil }
+            } message: { msg in Text(msg) }
         }
     }
 
@@ -174,17 +168,63 @@ struct LayersSheet: View {
     /// then swap the active source to the generated tiles.
     private func generateTiles(from pdf: PDFMapSource) {
         tilingProgress = PDFTiler.Progress(done: 0, total: 0)
-        Task.detached(priority: .userInitiated) {
+        tilingTask = Task.detached(priority: .userInitiated) {
             let url = PDFTiler.generate(source: pdf) { p in
                 Task { @MainActor in tilingProgress = p }
             }
+            let cancelled = Task.isCancelled
             await MainActor.run {
                 tilingProgress = nil
+                tilingTask = nil
+                if cancelled { return } // user cancelled — no error, no swap
                 if let url, let source = OfflineTileMapSource(url: url) {
                     mapVM.mapSource = source
                     PDFSessionStore.clear()
                     dismiss()
+                } else {
+                    // Don't fail silently — the bake didn't produce a usable set.
+                    tilingError = "Couldn't generate offline tiles. Check that the device has free storage and try again."
                 }
+            }
+        }
+    }
+
+    /// Extracted so the outer body stays within the SwiftUI type-checker's
+    /// complexity budget.
+    @ViewBuilder
+    private var basemapSection: some View {
+        Section("Basemap") {
+            let importedActive = mapVM.mapSource is PDFMapSource
+                || mapVM.mapSource is OfflineTileMapSource
+            // Switching basemap only CHANGES the shown layer — it no longer
+            // clears the imported map's persisted session, so the imported map
+            // stays re-loadable (below) and still restores on next launch. Use
+            // "Unload…" above to actually remove it.
+            basemapRow(title: "Satellite (Apple)",
+                       systemImage: "globe.americas.fill",
+                       isActive: mapVM.mapSource is AppleSatelliteMapSource) {
+                mapVM.mapSource = AppleSatelliteMapSource()
+            }
+            basemapRow(title: "Satellite (Esri)",
+                       systemImage: "globe.badge.chevron.backward",
+                       isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .esriSatellite) {
+                mapVM.mapSource = OnlineRasterBasemapSource(.esriSatellite)
+            }
+            basemapRow(title: "Terrain (OpenTopoMap)",
+                       systemImage: "mountain.2.fill",
+                       isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .terrain) {
+                mapVM.mapSource = OnlineRasterBasemapSource(.terrain)
+            }
+            if !importedActive, let stored = restorablePDF {
+                let title = "Imported map (" + stored.displayName + ")"
+                basemapRow(title: title, systemImage: "doc.viewfinder", isActive: false) {
+                    mapVM.mapSource = stored
+                }
+            }
+            if importedActive {
+                Text("An imported map is active — pick a basemap above to view it instead; the imported map stays available to switch back to.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -250,6 +290,8 @@ struct LayersSheet: View {
                 set: { drawingStore.setLayerVisible(layer, $0) }
             ))
             .labelsHidden()
+            .accessibilityLabel("\(layer.name) visibility")
+            .accessibilityValue(layer.visible ? "Visible" : "Hidden")
         }
         .contentShape(Rectangle())
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {

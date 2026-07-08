@@ -24,11 +24,16 @@ class DatumTest {
     }
 
     @Test
-    fun gda94ShiftHasExpectedMagnitude() {
+    fun gda94ShiftHasExpectedMagnitudeAndDirection() {
         val (lat, lng) = Datum.GDA94.toWgs84(sydneyLat, sydneyLng)
-        val dLat = (lat - sydneyLat) * 111_320.0
-        val dLng = (lng - sydneyLng) * 111_320.0 * cos(sydneyLat * Math.PI / 180)
-        val metres = sqrt(dLat * dLat + dLng * dLng)
+        val dLatM = (lat - sydneyLat) * 111_320.0
+        val dLngM = (lng - sydneyLng) * 111_320.0 * cos(sydneyLat * Math.PI / 180)
+        val metres = sqrt(dLatM * dLatM + dLngM * dLngM)
         assertTrue("shift $metres m out of expected ~1.8 m band", metres in 1.0..2.5)
+        // GDA2020 (≈WGS84) coordinates sit ~1.8 m to the NORTH-EAST of GDA94
+        // (Geoscience Australia). Asserting the sign of each component — not just
+        // the magnitude — so a transposed/sign-flipped Helmert matrix is caught.
+        assertTrue("expected a northward shift, got ${dLatM} m", dLatM > 0.0)
+        assertTrue("expected an eastward shift, got ${dLngM} m", dLngM > 0.0)
     }
 }

@@ -473,7 +473,13 @@ enum GeoPDFReader {
         var scaleFactor:     Double = 1.0
         var stdParallel1:    Double = 0
         var stdParallel2:    Double = 0
+        // Resolved source datum: an ellipsoid + a geocentric translation to WGS84.
+        // Populated from either an inline /Datum dictionary (USGS US Topo & many
+        // OGC GeoPDFs) or a 2-letter /Datum name. `datumCode` is a human label
+        // for logging only.
         var datumCode:       String = "WE"
+        var srcEllipsoid = Ellipsoid.wgs84
+        var datumDx = 0.0, datumDy = 0.0, datumDz = 0.0
 
         // Read a Double that may be encoded as PDF number, PDF string, or via
         // dictName fallback.
@@ -497,7 +503,35 @@ enum GeoPDFReader {
             if let v = dictReal(pDict, "ScaleFactor")         { scaleFactor     = v }
             if let v = dictReal(pDict, "StandardParallelOne") { stdParallel1    = v }
             if let v = dictReal(pDict, "StandardParallelTwo") { stdParallel2    = v }
-            if let d = dictName(pDict, "Datum")               { datumCode       = d.uppercased() }
+
+            // Datum: an inline /Datum dictionary carries the source /Ellipsoid
+            // (SemiMajorAxis + InvFlattening) and the /ToWGS84 dx/dy/dz translation
+            // directly — the form USGS US Topo and many OGC GeoPDFs use. Only when
+            // /Datum is instead a bare 2-letter OGC name do we look it up in the
+            // DatumShift table. Reading the embedded params means a legacy-datum
+            // sheet in dictionary form gets its true 50–250 m shift (previously it
+            // fell through to WGS84 identity).
+            var datumDict: CGPDFDictionaryRef?
+            if CGPDFDictionaryGetDictionary(pDict, "Datum", &datumDict), let dDict = datumDict {
+                datumCode = dictString(dDict, "Description") ?? "inline"
+                var ellDict: CGPDFDictionaryRef?
+                if CGPDFDictionaryGetDictionary(dDict, "Ellipsoid", &ellDict), let eDict = ellDict,
+                   let a = dictReal(eDict, "SemiMajorAxis"), a > 0,
+                   let invF = dictReal(eDict, "InvFlattening"), invF > 0 {
+                    srcEllipsoid = Ellipsoid(a: a, f: 1.0 / invF)
+                }
+                var t2w: CGPDFDictionaryRef?
+                if CGPDFDictionaryGetDictionary(dDict, "ToWGS84", &t2w), let tDict = t2w {
+                    datumDx = dictReal(tDict, "dx") ?? 0
+                    datumDy = dictReal(tDict, "dy") ?? 0
+                    datumDz = dictReal(tDict, "dz") ?? 0
+                }
+            } else if let d = dictName(pDict, "Datum") {
+                let p = DatumShift.params(for: d.uppercased())
+                srcEllipsoid = p.ellipsoid
+                datumDx = p.dx; datumDy = p.dy; datumDz = p.dz
+                datumCode = d.uppercased()
+            }
         }
 
         // /Display dict often carries the easy-to-use UTM mapping (Zone, Hemi)
@@ -527,8 +561,10 @@ enum GeoPDFReader {
         var lats: [Double] = []
         var lons: [Double] = []
 
-        // Build a Projection from what we parsed and dispatch.
-        let ellipsoid = Ellipsoid.forDatumCode(datumCode)
+        // Build a Projection from what we parsed and dispatch. The inverse runs on
+        // the source datum's ellipsoid (resolved above); `DatumShift` then removes
+        // the datum offset to land on WGS84.
+        let ellipsoid = srcEllipsoid
         let projection: Projection? = {
             switch projectionType {
             case "LL", "LongLat":
@@ -593,9 +629,15 @@ enum GeoPDFReader {
                 NSLog("[GeoPDF] corner \(idx) inverse failed (E=\(pt.x), N=\(pt.y))")
                 return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
             }
-            NSLog("[GeoPDF] corner \(idx): E=\(pt.x) N=\(pt.y) -> lat=\(g.lat) lon=\(g.lon)")
-            lats.append(g.lat)
-            lons.append(g.lon)
+            // Shift off the source datum onto WGS84 (identity for modern datums;
+            // removes the 50–250 m offset for legacy datums, whether named by a
+            // 2-letter code or carried as an inline /Datum ToWGS84 dictionary).
+            let w = DatumShift.toWGS84(lat: g.lat, lon: g.lon,
+                                       sourceEllipsoid: srcEllipsoid,
+                                       dx: datumDx, dy: datumDy, dz: datumDz)
+            NSLog("[GeoPDF] corner \(idx): E=\(pt.x) N=\(pt.y) -> lat=\(w.lat) lon=\(w.lon) (datum \(datumCode))")
+            lats.append(w.lat)
+            lons.append(w.lon)
         }
 
         guard let minLon = lons.min(), let maxLon = lons.max(),

@@ -168,7 +168,10 @@ extension MapContainerView.Coordinator {
             let coord = mv.convert(pt, toCoordinateFrom: mv)
             measureSession.addPoint(coord)
             refresh(on: mv,
-                    waypoints: Array(mv.annotations.compactMap { ($0 as? WaypointAnnotation)?.waypoint }),
+                    // Waypoints render via the SwiftUI overlay, not MKMapView
+                    // annotations, so mv.annotations is empty here — take them
+                    // from the store instead of reconstructing an empty list.
+                    waypoints: waypointStore.waypoints,
                     drawings:  drawingStore.visibleShapes,
                     session:   drawingSession,
                     visibility: nil)
@@ -183,7 +186,10 @@ extension MapContainerView.Coordinator {
                 drawingStore.add(shape)
             }
             refresh(on: mv,
-                    waypoints: Array(mv.annotations.compactMap { ($0 as? WaypointAnnotation)?.waypoint }),
+                    // Waypoints render via the SwiftUI overlay, not MKMapView
+                    // annotations, so mv.annotations is empty here — take them
+                    // from the store instead of reconstructing an empty list.
+                    waypoints: waypointStore.waypoints,
                     drawings:  drawingStore.visibleShapes,
                     session:   drawingSession,
                     visibility: nil)

@@ -1,6 +1,7 @@
 package com.tacmap.waypoints
 
 import android.content.Context
+import com.tacmap.util.SafeStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +20,14 @@ class WaypointStore(context: Context) {
 
     private val _waypoints = MutableStateFlow<List<Waypoint>>(emptyList())
     val waypoints: StateFlow<List<Waypoint>> = _waypoints.asStateFlow()
+
+    /** Non-null when the on-disk waypoints file was unreadable and quarantined,
+     *  so the UI can tell the user their waypoints were preserved rather than
+     *  silently emptied. */
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+
+    fun acknowledgeLoadError() { _loadError.value = null }
 
     private val undoStack = ArrayDeque<List<Waypoint>>()
     private val redoStack = ArrayDeque<List<Waypoint>>()
@@ -73,12 +82,17 @@ class WaypointStore(context: Context) {
     }
 
     private fun load() {
-        if (!file.exists()) return
-        runCatching { json.decodeFromString<List<Waypoint>>(file.readText()) }
-            .onSuccess { _waypoints.value = it }
+        when (val r = SafeStore.readOrQuarantine(file) { json.decodeFromString<List<Waypoint>>(it) }) {
+            is SafeStore.LoadResult.Loaded -> _waypoints.value = r.value
+            is SafeStore.LoadResult.Empty -> Unit
+            is SafeStore.LoadResult.Corrupt ->
+                _loadError.value = "Saved waypoints could not be read and were set aside " +
+                    "(${r.quarantinedTo?.name ?: "recovery copy"}). Starting with no waypoints."
+        }
     }
 
     private fun persist() {
-        runCatching { file.writeText(json.encodeToString(_waypoints.value)) }
+        runCatching { SafeStore.writeAtomically(file, json.encodeToString(_waypoints.value)) }
+            .onFailure { _loadError.value = "Could not save waypoints to disk: ${it.message}" }
     }
 }

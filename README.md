@@ -279,10 +279,20 @@ App Store review yet. If you do, see the checklist for the Apple-side steps
 
 ## Privacy
 
-We collect **nothing**. No accounts, no telemetry, no third-party SDKs, no
-advertising IDs. Only outbound HTTPS calls are to Apple's Maps service (basemap
-tiles + search) and Open-Meteo (elevation). Full disclosure in
-[`docs/PRIVACY_POLICY.md`](docs/PRIVACY_POLICY.md).
+No accounts, no analytics, no advertising IDs, no data collection by us. What
+differs per platform is the SDKs each app links and the hosts it talks to:
+
+- **iOS** — Apple Maps (basemap tiles + place search), Open-Meteo
+  (elevation/weather), and the optional end-to-end-encrypted sync relay if a
+  unit turns it on. No third-party analytics SDKs.
+- **Android** — Google Maps SDK + Play Services Location (basemap + GPS),
+  Google Play Billing and Block Store (one-time unlock purchase / trial stamp),
+  Open-Meteo (elevation/weather), and the optional sync relay. These are
+  Google/first-party SDKs, not analytics or ad SDKs.
+
+Elevation/weather lookups send the queried coordinate to Open-Meteo over
+HTTPS — see the OPSEC note in [`docs/PRIVACY_POLICY.md`](docs/PRIVACY_POLICY.md),
+kept in lockstep with this section.
 
 ---
 

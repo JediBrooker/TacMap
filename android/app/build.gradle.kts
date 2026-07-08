@@ -11,8 +11,15 @@ val localProperties = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY")
+    ?: providers.gradleProperty("MAPS_API_KEY").orNull?.takeIf { it.isNotBlank() }
     ?: System.getenv("MAPS_API_KEY")
     ?: ""
+
+// CI injects a monotonic build number via -PVERSION_CODE so releases don't
+// require a manual bump; local/dev and the default fall back to the pinned
+// value below. Only the marketing versionName stays hardcoded.
+val injectedVersionCode: Int? = providers.gradleProperty("VERSION_CODE").orNull
+    ?.trim()?.takeIf { it.isNotEmpty() }?.toInt()
 
 val releaseStoreFilePath = providers.gradleProperty("TACTICALMAPS_RELEASE_STORE_FILE")
     .orElse(providers.environmentVariable("TACTICALMAPS_RELEASE_STORE_FILE"))
@@ -35,7 +42,7 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
+        versionCode = injectedVersionCode ?: 18
         versionName = "1.1.0"
 
         vectorDrawables { useSupportLibrary = true }

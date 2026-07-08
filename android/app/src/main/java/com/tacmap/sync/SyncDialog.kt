@@ -2,11 +2,19 @@ package com.tacmap.sync
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -15,22 +23,54 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tacmap.waypoints.SymbolAffiliation
+import com.tacmap.waypoints.SymbolEchelon
+import com.tacmap.waypoints.SymbolFunction
 
 /** Join / create a unit sync room and show connection status. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
     val status by manager.status.collectAsState()
     val room by manager.room.collectAsState()
     var code by remember { mutableStateOf(room ?: "") }
 
+    // Local copies of the presence config fields, initialised from the manager.
+    var callsign by remember { mutableStateOf(manager.presenceConfig.callsign) }
+    var shareLocation by remember { mutableStateOf(manager.presenceConfig.shareLocation) }
+    var affiliation by remember { mutableStateOf(manager.presenceConfig.affiliation) }
+    var echelon by remember { mutableStateOf(manager.presenceConfig.echelon) }
+    var function by remember { mutableStateOf(manager.presenceConfig.function) }
+    var isHQ by remember { mutableStateOf(manager.presenceConfig.isHQ) }
+
+    fun commitConfig() {
+        manager.presenceConfig = PresenceConfig(
+            callsign = callsign,
+            shareLocation = shareLocation,
+            affiliation = affiliation,
+            echelon = echelon,
+            function = function,
+            isHQ = isHQ
+        )
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        onDismissRequest = {
+            commitConfig()
+            onDismiss()
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                commitConfig()
+                onDismiss()
+            }) { Text("Done") }
+        },
         title = { Text("Unit Sync") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -61,6 +101,92 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Join / create room") }
                 }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                // ----- Your Identity -----
+                Text("Your Identity", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+
+                OutlinedTextField(
+                    value = callsign,
+                    onValueChange = { callsign = it; commitConfig() },
+                    label = { Text("Callsign") },
+                    placeholder = { Text("Alpha 1-1") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Affiliation dropdown
+                PresenceDropdown(
+                    label = "Affiliation",
+                    selected = affiliation.displayName,
+                    options = SymbolAffiliation.entries.map { it.displayName },
+                    onSelect = { idx ->
+                        affiliation = SymbolAffiliation.entries[idx]
+                        commitConfig()
+                    }
+                )
+
+                // Echelon dropdown
+                PresenceDropdown(
+                    label = "Echelon",
+                    selected = echelon.displayName,
+                    options = SymbolEchelon.entries.map { it.displayName },
+                    onSelect = { idx ->
+                        echelon = SymbolEchelon.entries[idx]
+                        commitConfig()
+                    }
+                )
+
+                // Function dropdown (common subset)
+                val commonFunctions = listOf(
+                    SymbolFunction.INFANTRY,
+                    SymbolFunction.ARMOUR,
+                    SymbolFunction.ARTILLERY,
+                    SymbolFunction.RECCE,
+                    SymbolFunction.ENGINEER,
+                    SymbolFunction.SIGNAL,
+                    SymbolFunction.LOGISTICS,
+                    SymbolFunction.MEDICAL,
+                    SymbolFunction.AIR_DEFENCE,
+                    SymbolFunction.AVIATION
+                )
+                PresenceDropdown(
+                    label = "Function",
+                    selected = function.displayName,
+                    options = commonFunctions.map { it.displayName },
+                    onSelect = { idx ->
+                        function = commonFunctions[idx]
+                        commitConfig()
+                    }
+                )
+
+                // HQ switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Headquarters", fontSize = 13.sp)
+                    Switch(
+                        checked = isHQ,
+                        onCheckedChange = { isHQ = it; commitConfig() }
+                    )
+                }
+
+                // Share location switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Share my location", fontSize = 13.sp)
+                    Switch(
+                        checked = shareLocation,
+                        onCheckedChange = { shareLocation = it; commitConfig() }
+                    )
+                }
+
                 Text(
                     "Everyone who enters the same code shares a live, end-to-end-encrypted map. " +
                         "The relay only ever sees ciphertext.",
@@ -70,4 +196,45 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
             }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PresenceDropdown(
+    label: String,
+    selected: String,
+    options: List<String>,
+    onSelect: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth(),
+            singleLine = true
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEachIndexed { index, option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelect(index)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
 }

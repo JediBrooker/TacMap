@@ -8,6 +8,7 @@ struct DrawToolbar: View {
 
     @State private var showingNameAlert = false
     @State private var draftName: String = ""
+    @State private var showCancelConfirm = false
 
     var body: some View {
         if let kind = session.activeKind {
@@ -41,11 +42,12 @@ struct DrawToolbar: View {
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
                         .font(.subheadline.weight(.semibold))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 34, height: 34)
                         .background(.white.opacity(0.10), in: Circle())
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
                 .disabled(session.inProgressCoordinates.isEmpty)
                 .opacity(session.inProgressCoordinates.isEmpty ? 0.4 : 1)
 
@@ -53,15 +55,18 @@ struct DrawToolbar: View {
                 // Compact paddings let both fit alongside the tool icons
                 // on a portrait phone.
                 Button {
-                    session.cancel()
+                    // Don't discard placed points on a stray tap — confirm first.
+                    if session.inProgressCoordinates.isEmpty { session.cancel() }
+                    else { showCancelConfirm = true }
                 } label: {
                     Image(systemName: "xmark")
                         .font(.subheadline.weight(.semibold))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 34, height: 34)
                         .background(.white.opacity(0.10), in: Circle())
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
                 .accessibilityLabel("Cancel")
 
                 Button("Finish", action: onFinish)
@@ -94,6 +99,12 @@ struct DrawToolbar: View {
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text("Leave blank to keep the default name (\(session.activeKind?.displayName ?? "")).")
+            }
+            .alert("Discard drawing?", isPresented: $showCancelConfirm) {
+                Button("Discard", role: .destructive) { session.cancel() }
+                Button("Keep drawing", role: .cancel) { }
+            } message: {
+                Text("This will discard the \(session.inProgressCoordinates.count) point(s) you've placed.")
             }
         }
     }

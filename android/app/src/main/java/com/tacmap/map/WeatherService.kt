@@ -1,11 +1,13 @@
 package com.tacmap.map
 
+import com.tacmap.settings.OpsecSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.roundToInt
 
 /** Current-conditions reading from Open-Meteo (same provider as elevation).
  *  Units: °C, m/s, metres. */
@@ -76,9 +78,17 @@ class WeatherService {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun reading(lat: Double, lng: Double): WeatherReading? {
+        // OPSEC gate (mirrors iOS WeatherService): a weather lookup transmits the
+        // coordinate to a third party (Open-Meteo), so only proceed when the user
+        // has opted in. Without this, opening the dialog leaked the map-centre
+        // position even with online lookups off (the default).
+        if (OpsecSettings.shared?.onlineLookups?.value != true) return null
         if (lat == 0.0 && lng == 0.0) return null
+        // Coarsen to ~110 m (3 dp) so the exact position isn't disclosed.
+        val cLat = (lat * 1000).roundToInt() / 1000.0
+        val cLng = (lng * 1000).roundToInt() / 1000.0
         val url = "https://api.open-meteo.com/v1/forecast" +
-            "?latitude=$lat&longitude=$lng" +
+            "?latitude=$cLat&longitude=$cLng" +
             "&current=temperature_2m,wind_speed_10m,wind_gusts_10m,weather_code" +
             "&hourly=visibility&wind_speed_unit=ms&forecast_days=1&timezone=auto"
 

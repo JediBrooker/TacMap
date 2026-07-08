@@ -4,7 +4,12 @@
   "name": "tacmap-sync",
   "main": "src/index.ts",
   "compatibility_date": "2025-09-01",
-  "observability": { "enabled": true },
+  // Observability is OFF: request logs would capture the /room/<id> path, and
+  // the room id is the sole routing credential for an "E2E-blind" relay, so
+  // logging it would hand infrastructure operators a capability to the room.
+  // Self-hosters MUST keep this disabled (or scrub the path) for the same
+  // reason. See sync/README.md.
+  "observability": { "enabled": false },
   "durable_objects": {
     "bindings": [
       { "name": "SYNC_ROOM", "class_name": "SyncRoom" }

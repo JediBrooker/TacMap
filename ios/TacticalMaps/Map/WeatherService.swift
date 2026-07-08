@@ -80,7 +80,14 @@ actor WeatherService {
     }
 
     func reading(for coordinate: CLLocationCoordinate2D) async -> WeatherReading? {
+        // OPSEC: weather lookups transmit the coordinate to a third party
+        // (Open-Meteo), so only proceed when the user has opted in.
+        guard OpsecSettings.shared.onlineLookups else { return nil }
         if coordinate.latitude == 0 && coordinate.longitude == 0 { return nil }
+        // Coarsen to ~110 m (3 dp) so the exact position isn't disclosed.
+        let coordinate = CLLocationCoordinate2D(
+            latitude: (coordinate.latitude * 1000).rounded() / 1000,
+            longitude: (coordinate.longitude * 1000).rounded() / 1000)
 
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
         components?.queryItems = [

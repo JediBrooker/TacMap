@@ -21,6 +21,10 @@ final class MBTilesStore {
     let url: URL
     private(set) var metadata = Metadata()
     private var db: OpaquePointer?
+    /// MapKit calls `tileData` concurrently from several `MKTileOverlay.loadTile`
+    /// worker threads. The single SQLite connection is not safe to drive from
+    /// multiple threads at once, so serialise every query behind this lock.
+    private let lock = NSLock()
 
     init?(url: URL) {
         self.url = url
@@ -29,10 +33,29 @@ final class MBTilesStore {
             db = nil
             return nil
         }
+        // Reject files that aren't actually MBTiles: sqlite3_open succeeds on any
+        // path, so without this a garbage/corrupt file would load as a "valid"
+        // but blank basemap. Require the mandatory `tiles` table.
+        guard hasTable("tiles") else {
+            sqlite3_close(db)
+            db = nil
+            return nil
+        }
         loadMetadata()
     }
 
     deinit { sqlite3_close(db) }
+
+    private func hasTable(_ name: String) -> Bool {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+            -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        return sqlite3_step(stmt) == SQLITE_ROW
+    }
 
     private func loadMetadata() {
         var stmt: OpaquePointer?
@@ -63,6 +86,8 @@ final class MBTilesStore {
     func tileData(z: Int, x: Int, y: Int) -> Data? {
         guard z >= 0, z < 32 else { return nil }
         let tmsRow = (1 << z) - 1 - y
+        lock.lock()
+        defer { lock.unlock() }
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(

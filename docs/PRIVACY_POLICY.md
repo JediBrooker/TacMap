@@ -1,6 +1,6 @@
 # TacticalMaps — Privacy Policy
 
-*Last updated: 24 May 2026*  
+*Last updated: 8 July 2026*  
 *Effective: at first installation of the app*
 
 This Privacy Policy describes how the TacticalMaps mobile application
@@ -29,6 +29,8 @@ this confusing for users. TacticalMaps **does not**:
   reporting, which is governed by their own privacy policies and which
   you can disable in your device settings)
 - Collect, store, or transmit your historical location, route, or movement
+  (the optional Unit Sync location sharing described in §3b is real-time,
+  ephemeral, end-to-end encrypted, and user-initiated — see that section)
 - Track which buttons you tap, how long you use the app, or anything else
   about your behaviour
 - Read your contacts, photos (other than via the system Files / Share
@@ -80,27 +82,75 @@ be.
 
 ---
 
+## 3b. Unit Sync — optional real-time team sharing
+
+If you choose to use the **Unit Sync** feature, the App opens a WebSocket
+connection to our relay server at
+`tacmap-sync.christianbrooker.workers.dev` (hosted on Cloudflare Workers).
+This is **entirely opt-in** — the feature is off by default and no
+connection is made unless you enter a join code.
+
+### What is transmitted
+
+| Data | Encrypted? | Stored on server? |
+|---|---|---|
+| **Waypoints, drawings, and layers** you create while syncing | Yes — AES-256-GCM, end-to-end encrypted with a key derived from the join code. The relay **never** holds the key and **cannot** decrypt the content. | Ciphertext only, per-room, deleted when all devices disconnect or after 7 days of inactivity |
+| **Your GPS position, callsign, unit type, heading, speed** (only if you enable "Share my location") | Yes — same AES-256-GCM encryption. The relay sees only opaque ciphertext. | **Not stored** — relayed in-memory to connected peers and discarded |
+| **A random device identifier** (UUID, not linked to your Apple/Google account) | No (used for message routing) | In-memory only while the socket is open |
+
+### What is NOT transmitted
+
+- Your Apple ID, Google account, email, phone number, or any real-world
+  identity — there are no accounts
+- Your location history — presence is a 5-second heartbeat, not a track;
+  the relay does not log or store it
+- Any data from other apps on your device
+
+### End-to-end encryption
+
+The relay is **E2E-blind by design**. The encryption key is derived
+on-device from the unit join code via PBKDF2 (210,000 iterations) and
+never leaves the device. The relay cannot read your waypoints, drawings,
+location, callsign, or unit composition — it only routes opaque
+ciphertext between devices that share the same join code.
+
+### How to disable
+
+You can stop sharing at any time:
+
+- **Location sharing**: toggle "Share my location" off in the Unit Sync
+  dialog. Your position is no longer broadcast; existing peers are
+  notified you have left.
+- **All sync**: tap "Leave room" to disconnect entirely. No further data
+  is sent or received.
+- **Never used**: if you never enter a join code, no sync connection is
+  ever made and none of the above applies.
+
+---
+
 ## 4. Permissions we request
 
 ### iOS
 
 - **Location — While Using the App** (`NSLocationWhenInUseUsageDescription`).
-  Required to display your live position and the live MGRS readout. You can
-  decline; the App still works but the “Your Location” mode shows nothing
-  and the centre-on-me button is inactive.
+  Required to display your live position, the live MGRS readout, and
+  (optionally) to broadcast your position to your unit via Unit Sync. You
+  can decline; the App still works but the “Your Location” mode shows
+  nothing and live presence sharing is unavailable.
 - **Location — Always** (`NSLocationAlwaysAndWhenInUseUsageDescription`)
   is declared so future versions can offer optional background track logging.
   **v1.0 does not use background location.** Even if you grant Always
   permission today, the App will not record or transmit your location in
   the background.
 - **Files / Documents picker.** Used only when you import a PDF map.
-- **Share Sheet.** Used only when you export a GeoJSON file.
+- **Share Sheet.** Used when you export GeoJSON or share data.
 
 ### Android
 
 - **`ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION`**. Same reasons as iOS
-  Location — live position display and MGRS readout.
-- **`INTERNET`**. To make the network requests listed in §3 above.
+  Location — live position display, MGRS readout, and optional Unit Sync
+  presence sharing.
+- **`INTERNET`**. To make the network requests listed in §3 and §3b above.
 
 You can revoke any permission at any time via your device’s Settings.
 
@@ -108,11 +158,12 @@ You can revoke any permission at any time via your device’s Settings.
 
 ## 5. Data exports you initiate
 
-When you tap **☰ → Export GeoJSON**, the App serialises your waypoints and
-drawings into a `.geojson` file in the App’s temporary directory and presents
-it to the iOS / Android Share Sheet. **We do not upload that file.** It goes
-only to whichever destination you choose (Files, Mail, AirDrop, Messages,
-etc.). The receiving app is governed by its own privacy policy.
+When you tap **Export GeoJSON** or **Export All Data**, the App serialises
+your waypoints and drawings into a `.geojson` file in the App’s temporary
+directory and presents it to the iOS / Android Share Sheet. **We do not
+upload that file.** It goes only to whichever destination you choose
+(Files, Mail, AirDrop, Messages, etc.). The receiving app is governed by
+its own privacy policy.
 
 ---
 

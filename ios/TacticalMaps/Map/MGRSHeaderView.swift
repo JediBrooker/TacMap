@@ -35,10 +35,12 @@ struct MGRSHeaderView: View {
                 .foregroundStyle(.white.opacity(0.7))
 
             Text(mgrs)
-                .font(.system(size: 26, weight: .bold, design: .monospaced))
+                // Text-style (not fixed 26pt) so the primary grid readout scales
+                // with Dynamic Type for large-text users; still shrinks to fit.
+                .font(.system(.title, design: .monospaced).weight(.bold))
                 .foregroundStyle(Color(red: 0.55, green: 0.95, blue: 0.55))
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.5)
 
             HStack(spacing: 8) {
                 Text("WGS84")

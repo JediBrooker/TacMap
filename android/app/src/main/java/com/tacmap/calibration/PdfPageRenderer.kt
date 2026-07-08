@@ -68,13 +68,7 @@ object PdfPageRenderer {
         openDescriptor(context, uri).use { descriptor ->
             PdfRenderer(descriptor).use { renderer ->
                 renderer.openPage(0).use { page ->
-                    val safePageRect = RectF(
-                        pageRect.left.coerceIn(0f, page.width.toFloat()),
-                        pageRect.top.coerceIn(0f, page.height.toFloat()),
-                        pageRect.right.coerceIn(0f, page.width.toFloat()),
-                        pageRect.bottom.coerceIn(0f, page.height.toFloat())
-                    )
-                    require(safePageRect.width() > 0f && safePageRect.height() > 0f) {
+                    require(pageRect.width() > 0f && pageRect.height() > 0f) {
                         "PDF render region must have positive size."
                     }
 
@@ -84,9 +78,14 @@ object PdfPageRenderer {
                         Bitmap.Config.ARGB_8888
                     )
                     bitmap.eraseColor(Color.WHITE)
+                    // Map the requested region (which may extend past the page
+                    // edge for tiles that straddle the sheet boundary) onto the
+                    // whole tile. PdfRenderer only paints where page content
+                    // exists, so off-page margins stay white and on-page content
+                    // keeps its correct scale — no edge-tile stretching.
                     val matrix = Matrix().apply {
                         setRectToRect(
-                            safePageRect,
+                            pageRect,
                             RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat()),
                             Matrix.ScaleToFit.FILL
                         )
@@ -99,6 +98,56 @@ object PdfPageRenderer {
                     )
                     bitmap
                 }
+            }
+        }
+
+    /** One horizontal render strip: [pageRect] (PDF-pixel space, y-down) mapped
+     *  onto the [dest] band of the output tile. */
+    data class RenderStrip(val pageRect: RectF, val dest: RectF)
+
+    /**
+     * Render a tile as a stack of horizontal [strips]. Each strip maps its own
+     * PDF region onto its destination band, so a tile spanning several degrees of
+     * latitude stays Web-Mercator-correct (a single region+FILL would warp it —
+     * tile rows are linear in Mercator-Y, not latitude). Small high-zoom tiles
+     * pass a single strip and cost exactly what [renderFirstPageRegion] did.
+     *
+     * Each strip re-opens page 0 (only one page may be open at a time; a second
+     * `render` on the same open page throws on some devices) — cheap next to the
+     * one-time PDF parse, and multi-strip tiles occur only at the few lowest zooms.
+     */
+    fun renderFirstPageStrips(
+        context: Context,
+        uri: Uri,
+        strips: List<RenderStrip>,
+        outputWidth: Int,
+        outputHeight: Int
+    ): Bitmap =
+        openDescriptor(context, uri).use { descriptor ->
+            PdfRenderer(descriptor).use { renderer ->
+                val bitmap = Bitmap.createBitmap(
+                    outputWidth.coerceAtLeast(1),
+                    outputHeight.coerceAtLeast(1),
+                    Bitmap.Config.ARGB_8888
+                )
+                bitmap.eraseColor(Color.WHITE)
+                for (s in strips) {
+                    if (s.pageRect.width() <= 0f || s.pageRect.height() <= 0f) continue
+                    if (s.dest.width() <= 0f || s.dest.height() <= 0f) continue
+                    val matrix = Matrix().apply {
+                        setRectToRect(s.pageRect, s.dest, Matrix.ScaleToFit.FILL)
+                    }
+                    val clip = Rect(
+                        s.dest.left.roundToInt(),
+                        s.dest.top.roundToInt(),
+                        s.dest.right.roundToInt(),
+                        s.dest.bottom.roundToInt()
+                    )
+                    renderer.openPage(0).use { page ->
+                        page.render(bitmap, clip, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    }
+                }
+                bitmap
             }
         }
 

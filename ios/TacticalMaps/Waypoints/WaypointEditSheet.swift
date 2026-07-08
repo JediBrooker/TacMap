@@ -43,7 +43,7 @@ struct WaypointEditSheet: View {
             _scaleY        = State(initialValue: wp.scaleY)
             switch wp.kind {
             case .generic:
-                _category = State(initialValue: .military)
+                _category = State(initialValue: .generic)
             case .military(let spec):
                 _category       = State(initialValue: .military)
                 _affiliation    = State(initialValue: spec.affiliation)
@@ -103,6 +103,9 @@ struct WaypointEditSheet: View {
                 }
 
                 switch category {
+                case .generic:
+                    EmptyView() // a plain point — no symbol configuration
+
                 case .military:
                     Section("Military Unit (APP-6C)") {
                         // Affiliation is only 4 options — popup menu
@@ -287,6 +290,10 @@ struct WaypointEditSheet: View {
                 Text("This will permanently remove “\(label)”.")
             }
         }
+        // Block interactive swipe-to-dismiss: this is an edit form, so an
+        // accidental swipe must not silently discard the user's changes. They
+        // exit explicitly via Cancel or Save.
+        .interactiveDismissDisabled()
         // The default iPad form-sheet is too small — the APP-6C unit options
         // (affiliation / echelon / function / HQ) fall below the fold. On
         // iOS 18+ present it as a large "page" sheet on iPad so the whole
@@ -297,6 +304,7 @@ struct WaypointEditSheet: View {
     /// Current kind derived from the live editor state.
     private var currentKind: WaypointKind {
         switch category {
+        case .generic:        return .generic
         case .military:       return .military(.init(affiliation: affiliation,
                                                      echelon: echelon,
                                                      function: function,
@@ -374,10 +382,11 @@ struct WaypointEditSheet: View {
 
 /// Top-level category in the edit sheet picker.
 private enum KindCategory: String, CaseIterable, Hashable {
-    case military, controlMeasure
+    case generic, military, controlMeasure
 
     var displayName: String {
         switch self {
+        case .generic:        return "Point"
         case .military:       return "Military"
         case .controlMeasure: return "Tasks"
         }

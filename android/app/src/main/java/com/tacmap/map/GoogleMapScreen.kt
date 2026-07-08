@@ -77,7 +77,13 @@ import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.drawings.DrawingStrokeStyle
+import com.tacmap.sync.PresencePeer
+import com.tacmap.waypoints.MilitarySymbolSpec
+import com.tacmap.waypoints.SymbolAffiliation
+import com.tacmap.waypoints.SymbolEchelon
+import com.tacmap.waypoints.SymbolFunction
 import com.tacmap.waypoints.Waypoint
+import com.tacmap.waypoints.WaypointKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.delay
@@ -119,6 +125,7 @@ fun GoogleMapScreen(
     unitLabelsVisible: Boolean = true,
     taskLabelsVisible: Boolean = true,
     drawingLabelsVisible: Boolean = true,
+    peers: Map<String, PresencePeer> = emptyMap(),
     selectedDrawingId: String? = null,
     selectedWaypointId: String? = null,
     calibrationFiduciaries: List<com.tacmap.calibration.Fiduciary> = emptyList(),
@@ -410,7 +417,20 @@ fun GoogleMapScreen(
                 onWaypointTap = { wp -> currentOnMarkerTap.value(wp) },
                 onWaypointMoved = { wp, lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
             )
+
+            // Presence peer symbols — rendered as GroundOverlays like waypoints,
+            // counter-rotated to stay upright with the map bearing.
+            PresenceOverlays(
+                peers = peers,
+                cameraPositionState = cameraPositionState
+            )
         }
+
+        // Presence callsign labels — projected Compose overlays on top of the map
+        PresenceLabelsOverlay(
+            peers = peers,
+            cameraPositionState = cameraPositionState
+        )
 
         /// Waypoint name labels (units / tasks) — Compose Text
         /// overlays projected to screen coords each frame. Units +
@@ -523,5 +543,131 @@ fun GoogleMapScreen(
 /// that start. `didDrag` flips to true once the finger has moved past
 /// the tap slop — lift-with-didDrag-false fires the tap callback.
 
+/// Presence peer symbols rendered as GroundOverlays inside the GoogleMap
+/// content lambda. Each peer's APP-6 symbol is drawn using
+/// SymbolIconFactory, counter-rotated with the map bearing to stay
+/// upright — same pattern as WaypointGroundOverlays.
+@Composable
+internal fun PresenceOverlays(
+    peers: Map<String, PresencePeer>,
+    cameraPositionState: CameraPositionState
+) {
+    val context = LocalContext.current
+    val density = context.resources.displayMetrics.density
+    val zoom by remember(cameraPositionState) {
+        androidx.compose.runtime.derivedStateOf { cameraPositionState.position.zoom }
+    }
+    val mapBearing by remember(cameraPositionState) {
+        androidx.compose.runtime.derivedStateOf { cameraPositionState.position.bearing }
+    }
 
+    peers.values.forEach { peer ->
+        androidx.compose.runtime.key(peer.clientId) {
+            val spec = MilitarySymbolSpec(
+                affiliation = SymbolAffiliation.entries.firstOrNull {
+                    it.name.equals(peer.affiliation, ignoreCase = true)
+                } ?: SymbolAffiliation.FRIEND,
+                echelon = SymbolEchelon.entries.firstOrNull {
+                    it.name.equals(peer.echelon, ignoreCase = true)
+                } ?: SymbolEchelon.TEAM,
+                function = SymbolFunction.entries.firstOrNull {
+                    it.name.equals(peer.function, ignoreCase = true)
+                } ?: SymbolFunction.INFANTRY,
+                isHeadquarters = peer.isHQ
+            )
+            val peerWaypoint = remember(spec) {
+                Waypoint(
+                    id = peer.clientId,
+                    name = peer.callsign,
+                    latitude = peer.lat,
+                    longitude = peer.lon,
+                    kind = WaypointKind.Military(spec)
+                )
+            }
+            val drawable = remember(spec) {
+                SymbolIconFactory.drawableFor(context, peerWaypoint)
+            }
+            val rawW = drawable.intrinsicWidth.coerceAtLeast(1)
+            val rawH = drawable.intrinsicHeight.coerceAtLeast(1)
+            val bmp = remember(spec) {
+                val b = Bitmap.createBitmap(rawW, rawH, Bitmap.Config.ARGB_8888)
+                drawable.setBounds(0, 0, rawW, rawH)
+                drawable.draw(Canvas(b))
+                BitmapDescriptorFactory.fromBitmap(b)
+            }
+
+            val position = LatLng(peer.lat, peer.lon)
+            val metersPerPixel = remember(zoom, peer.lat, density) {
+                40075016.686 *
+                    kotlin.math.cos(Math.toRadians(peer.lat)) /
+                    (256.0 * Math.pow(2.0, zoom.toDouble()) * density)
+            }
+            val widthMeters = (rawW * metersPerPixel).toFloat().coerceIn(1f, 1_000_000f)
+            val heightMeters = (widthMeters * rawH / rawW).coerceAtLeast(1f)
+
+            GroundOverlay(
+                position = GroundOverlayPosition.create(position, widthMeters, heightMeters),
+                image = bmp,
+                anchor = Offset(0.5f, 0.5f),
+                bearing = mapBearing,
+                clickable = false,
+                zIndex = 1.5f
+            )
+        }
+    }
+}
+
+/// Callsign labels for presence peers — projected Compose overlays
+/// positioned below the peer's symbol, same as WaypointLabelsOverlay.
+@Composable
+internal fun PresenceLabelsOverlay(
+    peers: Map<String, PresencePeer>,
+    cameraPositionState: CameraPositionState
+) {
+    cameraPositionState.position
+    val projection = cameraPositionState.projection ?: return
+
+    peers.values.forEach { peer ->
+        val trimmed = peer.callsign.trim()
+        if (trimmed.isEmpty()) return@forEach
+        val screen = projection.toScreenLocation(LatLng(peer.lat, peer.lon))
+        // Position the label 24px below the symbol centre
+        ScreenAnchoredPresenceLabel(
+            screenX = screen.x,
+            screenY = screen.y + 24,
+            text = trimmed
+        )
+    }
+}
+
+@Composable
+private fun ScreenAnchoredPresenceLabel(screenX: Int, screenY: Int, text: String) {
+    androidx.compose.ui.layout.Layout(
+        content = {
+            Text(
+                text = text,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier
+                    .background(
+                        Color(0xFF1565C0).copy(alpha = 0.85f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                    )
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            )
+        }
+    ) { measurables, constraints ->
+        val child = measurables.firstOrNull()
+            ?: return@Layout layout(0, 0) {}
+        val placeable = child.measure(constraints.copy(minWidth = 0, minHeight = 0))
+        layout(0, 0) {
+            placeable.place(
+                x = screenX - placeable.width / 2,
+                y = screenY
+            )
+        }
+    }
+}
 

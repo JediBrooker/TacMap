@@ -36,23 +36,36 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Run unit tests
+      - name: Run unit tests (debug + release)
         working-directory: android
-        env:
-          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        shell: bash
         run: |
-          ./gradlew --no-daemon testDebugUnitTest -PMAPS_API_KEY="${MAPS_API_KEY:-}"
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest testReleaseUnitTest
 
       - name: Assemble debug APK
         working-directory: android
-        env:
-          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        shell: bash
         run: |
-          # CI builds without a real Maps key still compile + assemble; the map
-          # just renders blank at runtime. Use repo secret MAPS_API_KEY to
-          # enable real tiles in CI artefacts.
+          set -o pipefail
+          # Built WITHOUT a Maps key on purpose: the uploaded artefact is public
+          # (this is a public repo), so we never bake a real key into it — the map
+          # just renders blank in the CI APK. Monotonic version code from the run
+          # number (offset so it always exceeds the pinned default).
           ./gradlew --no-daemon assembleDebug \
-            -PMAPS_API_KEY="${MAPS_API_KEY:-}"
+            -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
+
+      - name: Assemble release APK (R8 / resource shrink smoke test)
+        working-directory: android
+        shell: bash
+        run: |
+          set -o pipefail
+          # Exercises R8 + resource shrinking so ProGuard-rule regressions
+          # (e.g. kotlinx.serialization stripping) fail CI instead of only
+          # crashing the shipped Play build. Unsigned + no Maps key is fine — the
+          # signing config is conditional on TACTICALMAPS_RELEASE_* being present.
+          ./gradlew --no-daemon assembleRelease \
+            -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
 
       - name: Upload APK artefact
         if: success()

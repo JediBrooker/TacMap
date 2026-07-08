@@ -23,10 +23,13 @@ enum GeoJSONExporter {
         for wp in waypoints      { features.append(feature(for: wp, layer: layerByID[wp.layerID])) }
         for shape in drawings    { features.append(feature(for: shape, layer: layerByID[shape.layerID])) }
 
+        // NOTE: no wall-clock `generated_at` here — per-object export must be a
+        // pure function of object state so sync change-detection doesn't see a
+        // "change" on every serialisation. (User-facing file exports carry a
+        // timestamp in the filename instead.)
         let collection: [String: Any] = [
             "type":      "FeatureCollection",
             "generator": "TacMap iOS prototype \(generatorVersion)",
-            "generated_at": ISO8601DateFormatter().string(from: .now),
             "features":  features
         ]
 
@@ -69,8 +72,11 @@ enum GeoJSONExporter {
             "tacticalmaps:created_at": ISO8601DateFormatter().string(from: wp.createdAt)
         ]
         props["created_at"] = props["tacticalmaps:created_at"]
-        props["layer_id"] = wp.layerID.uuidString
-        props["tacticalmaps:layer_id"] = wp.layerID.uuidString
+        // Task/control-measure colour — shared lowercase token set so it
+        // round-trips across platforms (black/blue/red/green/yellow).
+        props["tacticalmaps:task_color"] = wp.taskColor.rawValue
+        props["layer_id"] = wire(wp.layerID)
+        props["tacticalmaps:layer_id"] = wire(wp.layerID)
         if let layer {
             props["layer_name"] = layer.name
             props["tacticalmaps:layer"] = layer.name
@@ -111,7 +117,7 @@ enum GeoJSONExporter {
 
         return [
             "type": "Feature",
-            "id":   wp.id.uuidString,
+            "id":   wire(wp.id),
             "geometry": [
                 "type":        "Point",
                 "coordinates": [wp.longitude, wp.latitude]
@@ -119,6 +125,11 @@ enum GeoJSONExporter {
             "properties": props
         ]
     }
+
+    /// Canonical wire form of a UUID: lowercase. Swift's `uuidString` is
+    /// uppercase while Android/Java emit lowercase; emitting lowercase on both
+    /// keeps the id byte-identical across a round-trip so sync doesn't churn.
+    private static func wire(_ id: UUID) -> String { id.uuidString.lowercased() }
 
     private static func feature(for shape: DrawingShape, layer: DrawingLayer? = nil) -> [String: Any] {
         var props: [String: Any] = [
@@ -132,28 +143,35 @@ enum GeoJSONExporter {
         if let n = shape.name  { props["name"]        = n }
         if let n = shape.notes { props["description"] = n }
         if let layer {
-            props["layer_id"]                 = layer.id.uuidString
+            props["layer_id"]                 = wire(layer.id)
             props["layer_name"]               = layer.name
             props["tacticalmaps:layer"]       = layer.name
-            props["tacticalmaps:layer_id"]    = layer.id.uuidString
+            props["tacticalmaps:layer_id"]    = wire(layer.id)
             props["tacticalmaps:layer_color"] = layer.defaultColorHex
         }
 
-        // simplestyle-spec keys.
+        // simplestyle-spec keys (interoperable + read by the Android importer).
         props["stroke"]       = shape.style.strokeColorHex
         props["stroke-width"] = shape.style.strokeWidth
+        props["tacticalmaps:stroke_unit"] = "dp"
         if shape.kind == .polygon {
             if let f = shape.style.fillColorHex { props["fill"] = f }
             props["fill-opacity"] = shape.style.fillOpacity
         }
+        // Dash round-trips via a shared namespaced key (both platforms emit/read).
+        props["tacticalmaps:stroke_style"] = shape.style.dashPattern != nil ? "dashed" : "solid"
         if let lg = shape.style.lineGraphic, lg != .plain {
             props["tacticalmaps:line_graphic"] = lg.rawValue
         }
 
+        // Export the RENDERED geometry — rotation + scale baked in (matching
+        // Android) — so a rotated/stretched shape lands correctly in other tools
+        // and sync diffs actually reflect a transform edit.
+        let baked = shape.effectiveCoordinates
         var geometry: [String: Any]
         switch shape.kind {
         case .point:
-            let c = shape.coordinates.first ?? Coordinate2D(latitude: 0, longitude: 0)
+            let c = baked.first ?? Coordinate2D(latitude: 0, longitude: 0)
             geometry = [
                 "type":        "Point",
                 "coordinates": [c.longitude, c.latitude]
@@ -162,12 +180,12 @@ enum GeoJSONExporter {
         case .polyline, .freedraw:
             geometry = [
                 "type":        "LineString",
-                "coordinates": shape.coordinates.map { [$0.longitude, $0.latitude] }
+                "coordinates": baked.map { [$0.longitude, $0.latitude] }
             ]
 
         case .polygon:
             // GeoJSON rings must be closed (first == last). Close implicitly.
-            var coords = shape.coordinates.map { [$0.longitude, $0.latitude] }
+            var coords = baked.map { [$0.longitude, $0.latitude] }
             if let first = coords.first, let last = coords.last, first != last {
                 coords.append(first)
             }
@@ -179,7 +197,7 @@ enum GeoJSONExporter {
 
         return [
             "type":       "Feature",
-            "id":         shape.id.uuidString,
+            "id":         wire(shape.id),
             "geometry":   geometry,
             "properties": props
         ]

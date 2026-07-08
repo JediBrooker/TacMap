@@ -20,15 +20,23 @@ import kotlin.math.sin
  */
 object GeoJsonExporter {
 
+    /**
+     * @param density display density used to convert the stored stroke width
+     *   (Google-Maps **pixels**) to the density-independent **dp** that the
+     *   portable `stroke-width` key carries (matching iOS points and the
+     *   simplestyle-spec's CSS-px intent). Defaults to 1f — an identity
+     *   conversion for callers/tests that don't have a display to reference.
+     */
     fun export(
         waypoints: List<Waypoint>,
         drawings: List<DrawingFeature> = emptyList(),
-        layers: List<DrawingLayer> = emptyList()
+        layers: List<DrawingLayer> = emptyList(),
+        density: Float = 1f
     ): String {
         val layersById = layers.associateBy { it.id }
         val features = JsonArray(
             waypoints.map { waypointFeature(it, layersById[it.layerId]) } +
-                drawings.map { drawingFeature(it, layersById[it.layerId]) }
+                drawings.map { drawingFeature(it, layersById[it.layerId], density) }
         )
 
         val collection = buildJsonObject {
@@ -83,6 +91,9 @@ object GeoJsonExporter {
                     put("tacticalmaps:scale_y", wp.scaleY)
                 }
             }
+            // Task/control-measure colour — shared lowercase token set (matches
+            // iOS): round-trips the symbol colour across platforms.
+            put("tacticalmaps:task_color", wp.taskColor.name.lowercase())
 
             wp.notes?.let {
                 put("notes", it)
@@ -92,19 +103,31 @@ object GeoJsonExporter {
                 put("elevation_m", it)
                 put("tacticalmaps:elevation_m", it)
             }
-            val createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(wp.createdAt))
+            val createdAt = isoSeconds(wp.createdAt)
             put("created_at", createdAt)
             put("tacticalmaps:created_at", createdAt)
         }
     }
 
-    private fun drawingFeature(feature: DrawingFeature, layer: DrawingLayer?): JsonObject =
+    /** ISO-8601 truncated to whole seconds — canonical with iOS's exporter (no
+     *  fractional seconds), so the same object serialises identically on both
+     *  platforms and cross-platform sync doesn't churn on created_at. */
+    private fun isoSeconds(epochMs: Long): String =
+        DateTimeFormatter.ISO_INSTANT.format(
+            Instant.ofEpochMilli(epochMs).truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
+        )
+
+    private fun drawingFeature(feature: DrawingFeature, layer: DrawingLayer?, density: Float): JsonObject =
         buildJsonObject {
             put("type", "Feature")
             put("id", feature.id)
             put("geometry", feature.geometryJson())
             putJsonObject("properties") {
                 put("name", feature.name)
+                feature.notes?.let {
+                    put("notes", it)
+                    put("description", it) // simplestyle + iOS DrawingShape.notes
+                }
                 put("source", "drawing")
                 put("kind", feature.geometry.name.lowercase())
                 put("tacticalmaps:category", "drawing")
@@ -116,15 +139,33 @@ object GeoJsonExporter {
                     put("tacticalmaps:layer", it.name)
                     put("tacticalmaps:layer_color", it.color.rgbHex())
                 }
+                // simplestyle-spec keys — read by iOS and external tools (colours
+                // as #RRGGBB, opacity separate). Emitting these is what makes
+                // Android drawings keep their styling on an iOS import.
+                put("stroke", feature.strokeColor.rgbHex())
+                // Portable key in dp (px ÷ density) so iOS + external tools render
+                // the line at the same physical width. The legacy `stroke_width`
+                // below stays in raw px for older Android readers.
+                put("stroke-width", if (density > 0f) feature.strokeWidth / density else feature.strokeWidth)
+                if (feature.geometry == DrawingGeometry.POLYGON) {
+                    put("fill", feature.fillColor.rgbHex())
+                    put("fill-opacity", ((feature.fillColor ushr 24) and 0xFF) / 255.0)
+                }
+                put("tacticalmaps:stroke_style", feature.strokeStyle.name.lowercase())
+                put("tacticalmaps:stroke_unit", "dp")
+                // Legacy Android keys kept for backward-compatible reads.
                 put("stroke_color", feature.strokeColor.argbHex())
                 put("fill_color", feature.fillColor.argbHex())
                 put("stroke_width", feature.strokeWidth)
                 put("stroke_style", feature.strokeStyle.name.lowercase())
                 feature.lineGraphic?.let { put("tacticalmaps:line_graphic", it.wire) }
-                put("scale_x", feature.scaleX)
-                put("scale_y", feature.scaleY)
-                put("rotation_degrees", feature.rotationDegrees)
-                val createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(feature.createdAt))
+                // Geometry is exported already baked (rotation/scale applied), so
+                // the transform is identity on the wire — re-import must not apply
+                // it a second time.
+                put("scale_x", 1.0)
+                put("scale_y", 1.0)
+                put("rotation_degrees", 0.0)
+                val createdAt = isoSeconds(feature.createdAt)
                 put("created_at", createdAt)
                 put("tacticalmaps:created_at", createdAt)
             }

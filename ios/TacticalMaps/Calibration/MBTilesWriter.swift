@@ -11,6 +11,12 @@ final class MBTilesWriter {
     // SQLite wants to copy the bound blob/text before the statement is reset.
     private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
+    /// Set true the moment any SQL step/exec returns an error (e.g. disk full).
+    /// Callers MUST check this before treating the bake as successful — otherwise
+    /// a half-written file is mistaken for a complete offline basemap and the
+    /// source PDF gets discarded.
+    private(set) var hadError = false
+
     init?(path: String) {
         try? FileManager.default.removeItem(atPath: path)
         guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK else {
@@ -42,14 +48,14 @@ final class MBTilesWriter {
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db,
             "INSERT OR REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)",
-            -1, &stmt, nil) == SQLITE_OK else { return }
+            -1, &stmt, nil) == SQLITE_OK else { hadError = true; return }
         sqlite3_bind_int(stmt, 1, Int32(z))
         sqlite3_bind_int(stmt, 2, Int32(x))
         sqlite3_bind_int(stmt, 3, Int32(tmsRow))
         data.withUnsafeBytes { raw in
             sqlite3_bind_blob(stmt, 4, raw.baseAddress, Int32(data.count), SQLITE_TRANSIENT)
         }
-        sqlite3_step(stmt)
+        if sqlite3_step(stmt) != SQLITE_DONE { hadError = true }
     }
 
     func begin()  { exec("BEGIN TRANSACTION;") }
@@ -63,13 +69,13 @@ final class MBTilesWriter {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, "INSERT INTO metadata (name, value) VALUES (?,?)", -1, &stmt, nil) == SQLITE_OK
-        else { return }
+        else { hadError = true; return }
         sqlite3_bind_text(stmt, 1, key, -1, SQLITE_TRANSIENT)
         sqlite3_bind_text(stmt, 2, value, -1, SQLITE_TRANSIENT)
-        sqlite3_step(stmt)
+        if sqlite3_step(stmt) != SQLITE_DONE { hadError = true }
     }
 
     private func exec(_ sql: String) {
-        sqlite3_exec(db, sql, nil, nil, nil)
+        if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK { hadError = true }
     }
 }
