@@ -25,7 +25,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select latest Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
 
       - name: Xcode + Simulator runtime info
         run: |
@@ -59,20 +61,11 @@ jobs:
         working-directory: ios
         shell: bash
         run: |
-          # `shell: bash` runs with `-eo pipefail`, so a xcodebuild failure
-          # piped into xcbeautify still fails the step. Belt-and-braces:
           set -o pipefail
-          # Pick whichever iPhone simulator is available on the runner.
-          DEST=$(xcrun simctl list devices available | grep -E 'iPhone (15|16|17) Pro \(' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-          if [ -z "$DEST" ]; then
-            echo "::warning::No iPhone 15/16/17 Pro simulator found; using first available iPhone"
-            DEST=$(xcrun simctl list devices available | grep -E 'iPhone .* \([A-F0-9-]+\)' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-          fi
-          echo "Building for simulator $DEST"
           xcodebuild \
             -project TacticalMaps.xcodeproj \
             -scheme TacticalMaps \
-            -destination "id=$DEST" \
+            -destination "generic/platform=iOS Simulator" \
             -clonedSourcePackagesDirPath /tmp/spm-cache \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
@@ -93,15 +86,17 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          DEST=$(xcrun simctl list devices available | grep -E 'iPhone (15|16|17) Pro \(' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          DEST=$(xcrun simctl list devices available \
+            | grep -oE 'iPhone [0-9]+ Pro \([A-F0-9-]+\)' \
+            | tail -1 \
+            | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
           if [ -z "$DEST" ]; then
-            echo "::warning::No iPhone 15/16/17 Pro simulator found; using first available iPhone"
-            DEST=$(xcrun simctl list devices available | grep -E 'iPhone .* \([A-F0-9-]+\)' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+            DEST=$(xcrun simctl list devices available \
+              | grep -oE 'iPhone [0-9]+ \([A-F0-9-]+\)' \
+              | tail -1 \
+              | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
           fi
           echo "Testing on simulator $DEST"
-          # Only the logic suite gates CI. The UI-test target exists purely to
-          # capture App Store screenshots (see scripts/ios_screenshots.sh) and
-          # is driven on demand with -only-testing, so skip it here.
           xcodebuild \
             -project TacticalMaps.xcodeproj \
             -scheme TacticalMaps \
