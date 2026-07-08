@@ -3,19 +3,44 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  TacticalMaps does not track users, does not collect any data, and
-	  does not use any of Apple's "required-reason" APIs (UserDefaults,
-	  file timestamps, disk space, active keyboards, system boot time).
-	  Location data is used only on-device to drive the live MGRS
-	  read-out and is never transmitted off the device.
+	  TacMap does not track users and shows no ads. Location is used on-device
+	  for the live MGRS read-out, GPX track recording, and map centring. It is
+	  NOT transmitted off-device by default. When the user explicitly enables
+	  "Online terrain & weather lookups" (off by default), the queried
+	  coordinate — coarsened to ~110 m — is sent to Open-Meteo to fetch
+	  elevation/weather; that transmission is declared below.
+
+	  Required-reason API: the app uses UserDefaults for settings/preferences.
 	-->
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
 	<key>NSPrivacyCollectedDataTypes</key>
-	<array/>
+	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePreciseLocation</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
-	<array/>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

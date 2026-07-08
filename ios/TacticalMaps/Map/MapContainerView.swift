@@ -24,6 +24,9 @@ struct MapContainerView: UIViewRepresentable {
     /// no whole-shape or waypoint drag, no vertex insert / move / delete.
     /// Mirrored onto the Coordinator every `updateUIView`.
     var graphicsLocked: Bool
+    /// Remote unit members broadcasting their position via the sync relay.
+    /// Rendered as presence annotations on the map.
+    var peers: [String: PresencePeer] = [:]
 
     func makeUIView(context: Context) -> MKMapView {
         let mv = MKMapView()
@@ -152,6 +155,8 @@ struct MapContainerView: UIViewRepresentable {
             && !mv.selectedAnnotations.isEmpty {
             context.coordinator.deselectAll(on: mv)
         }
+        // Sync presence annotations from remote peers.
+        context.coordinator.syncPresenceAnnotations(on: mv, peers: peers)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -393,6 +398,40 @@ struct MapContainerView: UIViewRepresentable {
         /// ID of the waypoint currently being dragged via long-press.
         /// Only one of (waypoint, drawing) drags at a time.
         var draggingWaypointID: UUID?
+
+        /// Currently-rendered presence annotations, keyed by clientId.
+        var presenceAnnotations: [String: PresenceAnnotation] = [:]
+
+        /// Diff current presence annotations against the given peers dictionary
+        /// and add/update/remove annotations as needed.
+        func syncPresenceAnnotations(on mv: MKMapView, peers: [String: PresencePeer]) {
+            let currentIDs = Set(presenceAnnotations.keys)
+            let newIDs = Set(peers.keys)
+
+            // Remove annotations for peers that left.
+            for id in currentIDs.subtracting(newIDs) {
+                if let ann = presenceAnnotations.removeValue(forKey: id) {
+                    mv.removeAnnotation(ann)
+                }
+            }
+
+            // Add or update annotations for current peers.
+            for (id, peer) in peers {
+                if let existing = presenceAnnotations[id] {
+                    // Update coordinate in place (KVO-compliant).
+                    let newCoord = CLLocationCoordinate2D(latitude: peer.lat, longitude: peer.lon)
+                    if abs(existing.coordinate.latitude - newCoord.latitude) > 1e-8
+                        || abs(existing.coordinate.longitude - newCoord.longitude) > 1e-8 {
+                        existing.coordinate = newCoord
+                    }
+                } else {
+                    // New peer — add annotation.
+                    let ann = PresenceAnnotation(peer)
+                    presenceAnnotations[id] = ann
+                    mv.addAnnotation(ann)
+                }
+            }
+        }
 
 
         // MARK: Refresh

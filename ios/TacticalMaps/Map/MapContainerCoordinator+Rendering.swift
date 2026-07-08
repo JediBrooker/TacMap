@@ -192,6 +192,45 @@ extension MapContainerView.Coordinator {
             view.centerOffset = .zero
             return view
         }
+        if let pa = annotation as? PresenceAnnotation {
+            let id = "presence-peer"
+            let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
+                ?? MKAnnotationView(annotation: pa, reuseIdentifier: id)
+            view.annotation = pa
+
+            // Build a MilitarySymbolSpec from the peer's fields and render it
+            // as a small symbol image.
+            let spec = Self.specFromPeer(pa.peer)
+            view.image = MilitarySymbolRenderer.image(for: spec, size: 40)
+            view.canShowCallout = false
+            view.isDraggable = false
+            view.isUserInteractionEnabled = false
+            view.displayPriority = .defaultHigh
+
+            // Callsign label below the symbol.
+            view.subviews.forEach { $0.removeFromSuperview() }
+            let callsign = pa.peer.callsign
+            if !callsign.isEmpty {
+                let label = UILabel()
+                label.text = callsign
+                label.font = .systemFont(ofSize: 10, weight: .bold)
+                label.textColor = .white
+                label.textAlignment = .center
+                label.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+                label.layer.cornerRadius = 3
+                label.clipsToBounds = true
+                label.sizeToFit()
+                let pad: CGFloat = 4
+                label.frame.size.width += pad * 2
+                // Centre the label below the symbol image.
+                if let img = view.image {
+                    label.center = CGPoint(x: img.size.width / 2,
+                                           y: img.size.height + label.frame.height / 2 + 2)
+                }
+                view.addSubview(label)
+            }
+            return view
+        }
         if let h = annotation as? DrawingVertexHandleAnnotation {
             let id = h.isMidpoint ? "drawing-vertex-mid" : "drawing-vertex-handle"
             let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
@@ -345,6 +384,20 @@ extension MapContainerView.Coordinator {
             (text as NSString).draw(at: CGPoint(x: pad, y: pad),
                                     withAttributes: baseAttrs)
         }
+    }
+
+    /// Build a `MilitarySymbolSpec` from a presence peer's string-coded fields.
+    /// Falls back to friend/team/infantry if any field is unrecognised.
+    static func specFromPeer(_ peer: PresencePeer) -> MilitarySymbolSpec {
+        let affiliation = SymbolAffiliation(rawValue: peer.affiliation) ?? .friend
+        let echelon = SymbolEchelon(rawValue: peer.echelon) ?? .team
+        let function = SymbolFunction(rawValue: peer.function) ?? .infantry
+        return MilitarySymbolSpec(
+            affiliation: affiliation,
+            echelon: echelon,
+            function: function,
+            isHeadquarters: peer.isHQ
+        )
     }
 
     /// Bigger, fatter vertex-edit handle. Solid orange for real

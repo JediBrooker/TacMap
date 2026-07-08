@@ -26,6 +26,7 @@ struct HamburgerMenu: View {
     let trackPointCount: Int
     let onToggleTrackRecording: () -> Void
     let onExportGPX:     () -> Void
+    let onExportAll:     () -> Void
     let onSync:          () -> Void
     let onAppLock:       () -> Void
     let onAbout:         () -> Void
@@ -188,6 +189,7 @@ struct HamburgerMenu: View {
                 divider
                 sectionHeader("Export")
                 row("GeoJSON…", systemImage: "square.and.arrow.up")           { close(onExport) }
+                row("Export All Data…", systemImage: "square.and.arrow.up.on.square") { close(onExportAll) }
                 row("GPX Track…", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                     { close(onExportGPX) }
             }
@@ -294,6 +296,28 @@ struct LockButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(locked ? "Graphics locked — tap to unlock"
                                    : "Lock graphics in place")
+    }
+}
+
+struct UnitLabelsToggle: View {
+    let active: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            Image(systemName: "tag.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .background(
+                    (active ? Color.blue.opacity(0.88) : Color.black.opacity(0.80)),
+                    in: Circle()
+                )
+                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                .foregroundStyle(.white)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(active ? "Hide unit labels" : "Show unit labels")
     }
 }
 

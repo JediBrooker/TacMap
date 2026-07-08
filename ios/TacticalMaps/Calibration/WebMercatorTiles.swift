@@ -43,6 +43,13 @@ enum WebMercatorTiles {
     }
 
     /// Inclusive integer tile range covering a WGS84 box at zoom z, clamped to grid.
+    ///
+    /// Antimeridian note: a box crossing ±180° (minLon > maxLon) yields minX >
+    /// maxX, so `count` is 0 and the caller (`PDFTiler`) treats the bake as
+    /// failed rather than tiling wrong ground. Full wrap-around tiling is
+    /// intentionally unsupported — the linear calibration affine cannot represent
+    /// the ±180° discontinuity (that needs unwrapped-longitude fiduciaries fixed
+    /// upstream, not a tiler workaround).
     static func tileRange(minLat: Double, maxLat: Double,
                           minLon: Double, maxLon: Double, z: Int) -> Range {
         let maxIdx = (1 << z) - 1

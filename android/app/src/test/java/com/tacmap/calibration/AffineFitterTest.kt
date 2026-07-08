@@ -1,6 +1,7 @@
 package com.tacmap.calibration
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -50,6 +51,32 @@ class AffineFitterTest {
         } catch (_: AffineFitError.Degenerate) {
             // expected
         }
+    }
+
+    @Test
+    fun nearColinearThrowsDegenerate() {
+        // Almost (not exactly) on a line at realistic pixel scale — the old
+        // absolute-determinant guard passed these; the scale-invariant guard
+        // must reject them (the perpendicular direction is unconstrained).
+        val fids = listOf(
+            Fiduciary(pdfX = 0.0,    pdfY = 0.0, mgrs = "", latitude = 0.0,  longitude = 0.0),
+            Fiduciary(pdfX = 1000.0, pdfY = 1.0, mgrs = "", latitude = 0.01, longitude = 1.0),
+            Fiduciary(pdfX = 2000.0, pdfY = 0.0, mgrs = "", latitude = 0.0,  longitude = 2.0),
+        )
+        try {
+            AffineFitter.fit(fids)
+            fail("expected AffineFitError.Degenerate for near-colinear points")
+        } catch (_: AffineFitError.Degenerate) {
+            // expected
+        }
+    }
+
+    @Test
+    fun threePointsNotCrossValidatedFourAre() {
+        val three = listOf(fid(0.0, 0.0), fid(1000.0, 0.0), fid(0.0, 800.0))
+        assertFalse(AffineFitter.fit(three).crossValidated)
+        val four = three + fid(1000.0, 800.0)
+        assertTrue(AffineFitter.fit(four).crossValidated)
     }
 
     @Test

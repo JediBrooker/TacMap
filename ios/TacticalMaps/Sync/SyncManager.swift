@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import CryptoKit
+import CoreLocation
 
 /// Real-time shared-tactical-picture sync client (iOS). Mirrors the Android
 /// `SyncManager`: connects to the E2E-blind relay for a join-code room and keeps
@@ -12,14 +13,23 @@ import CryptoKit
 /// feature properties. Merge is last-write-wins on a per-object Lamport version;
 /// echo is suppressed by tracking the last serialised form per id.
 ///
-/// NOTE: compile-verified; convergence / no-echo should be confirmed on devices
-/// against the live relay.
+/// Also manages ephemeral presence: broadcasts the device's location + callsign
+/// every 5 seconds when `presenceConfig.shareLocation` is true, and tracks
+/// remote peers' positions for display as map annotations.
 @MainActor
 final class SyncManager: ObservableObject {
     enum Status { case offline, connecting, connected }
 
     @Published private(set) var status: Status = .offline
     @Published private(set) var room: String?
+    @Published var peers: [String: PresencePeer] = [:]
+    @Published var presenceConfig = PresenceConfig() {
+        didSet { savePresenceConfig() }
+    }
+
+    /// Fires a short description string whenever a remote sync change is applied,
+    /// so the UI can show a brief conflict/update notification.
+    let remoteUpdateSubject = PassthroughSubject<String, Never>()
 
     static let relayBase = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
 
@@ -27,6 +37,8 @@ final class SyncManager: ObservableObject {
     // referencing the other @StateObject stores at declaration).
     private var waypointStore: WaypointStore!
     private var drawingStore: DrawingStore!
+    /// Injected after construction so presence can read the current GPS fix.
+    private(set) var locationService: LocationService?
 
     private var task: URLSessionWebSocketTask?
     private var roomKey: SymmetricKey?
@@ -40,6 +52,11 @@ final class SyncManager: ObservableObject {
     private var kindById: [String: String] = [:]
     private var observers = Set<AnyCancellable>()
 
+    /// Timer that broadcasts `loc` messages every 5 seconds.
+    private var presenceTimer: Timer?
+    /// Timer that sweeps stale peers every 30 seconds.
+    private var stalenessTimer: Timer?
+
     init() {
         if let existing = UserDefaults.standard.string(forKey: "sync.clientId") {
             clientId = existing
@@ -48,14 +65,35 @@ final class SyncManager: ObservableObject {
             UserDefaults.standard.set(id, forKey: "sync.clientId")
             clientId = id
         }
+        loadPresenceConfig()
     }
 
     /// Inject the shared stores once the view hierarchy exists. Safe to call
     /// repeatedly; only the first call binds.
-    func configure(waypointStore: WaypointStore, drawingStore: DrawingStore) {
+    func configure(waypointStore: WaypointStore,
+                   drawingStore: DrawingStore,
+                   locationService: LocationService? = nil) {
         guard self.waypointStore == nil else { return }
         self.waypointStore = waypointStore
         self.drawingStore = drawingStore
+        self.locationService = locationService
+    }
+
+    // MARK: - Presence config persistence
+
+    private static let presenceConfigKey = "sync.presenceConfig"
+
+    private func savePresenceConfig() {
+        if let data = try? JSONEncoder().encode(presenceConfig) {
+            UserDefaults.standard.set(data, forKey: Self.presenceConfigKey)
+        }
+    }
+
+    private func loadPresenceConfig() {
+        if let data = UserDefaults.standard.data(forKey: Self.presenceConfigKey),
+           let config = try? JSONDecoder().decode(PresenceConfig.self, from: data) {
+            presenceConfig = config
+        }
     }
 
     // MARK: API
@@ -70,17 +108,20 @@ final class SyncManager: ObservableObject {
         room = code
         connect()
         observeStores()
+        startPresenceTimers()
     }
 
     func leave() {
         wantConnected = false
         observers.removeAll()
+        stopPresenceTimers()
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         roomKey = nil
         room = nil
         status = .offline
         versions.removeAll(); lastContent.removeAll(); kindById.removeAll()
+        peers.removeAll()
     }
 
     // MARK: Connection
@@ -168,7 +209,7 @@ final class SyncManager: ObservableObject {
 
     private func sendPut(id: String, v: Int, kind: String, content: String) {
         guard let key = roomKey,
-              let sealed = SyncCrypto.seal(key, Data(content.utf8)) else { return }
+              let sealed = SyncCrypto.seal(key, Data(content.utf8), aad: SyncCrypto.aad(id: id, v: v, kind: kind)) else { return }
         send(["t": "put", "id": id, "v": v, "by": clientId, "kind": kind,
               "ct": sealed.base64EncodedString()])
     }
@@ -183,6 +224,62 @@ final class SyncManager: ObservableObject {
         task?.send(.string(text)) { _ in }
     }
 
+    // MARK: - Presence broadcasting
+
+    /// Sends the device's current GPS position + presenceConfig fields as a
+    /// `loc` message. Called every 5 seconds by the presence timer while
+    /// connected and `presenceConfig.shareLocation` is true.
+    func sendPresence() {
+        guard status == .connected,
+              presenceConfig.shareLocation,
+              let key = roomKey,
+              let loc = locationService?.lastLocation else { return }
+
+        let payload: [String: Any] = [
+            "callsign": presenceConfig.callsign,
+            "affiliation": presenceConfig.affiliation,
+            "echelon": presenceConfig.echelon,
+            "function": presenceConfig.function,
+            "isHQ": presenceConfig.isHQ,
+            "lat": loc.coordinate.latitude,
+            "lon": loc.coordinate.longitude,
+            "heading": max(0, loc.course),
+            "speed": max(0, loc.speed),
+            "ts": Date().timeIntervalSince1970
+        ]
+        guard let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+              let sealed = SyncCrypto.seal(key, payloadData, aad: Data("loc|\(clientId)".utf8)) else { return }
+        send(["t": "loc", "clientId": clientId, "ct": sealed.base64EncodedString()])
+    }
+
+    private func startPresenceTimers() {
+        // Broadcast own location every 5 seconds.
+        presenceTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.sendPresence()
+            }
+        }
+        // Sweep stale peers every 30 seconds.
+        stalenessTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.sweepStalePeers()
+            }
+        }
+    }
+
+    private func stopPresenceTimers() {
+        presenceTimer?.invalidate()
+        presenceTimer = nil
+        stalenessTimer?.invalidate()
+        stalenessTimer = nil
+    }
+
+    /// Remove peers whose last `loc` update is older than 45 seconds.
+    private func sweepStalePeers() {
+        let cutoff = Date().addingTimeInterval(-45)
+        peers = peers.filter { $0.value.receivedAt > cutoff }
+    }
+
     // MARK: Inbound
 
     private func handleMessage(_ text: String) {
@@ -191,13 +288,53 @@ final class SyncManager: ObservableObject {
         switch obj["t"] as? String {
         case "snapshot":
             for item in (obj["items"] as? [[String: Any]] ?? []) { applyRecord(item) }
+            // Populate peers from the snapshot's members array.
+            if let members = obj["members"] as? [[String: Any]] {
+                for member in members {
+                    applyPresence(member)
+                }
+            }
         case "put":
             applyRecord(obj)
         case "del":
             applyDelete(id: obj["id"] as? String ?? "", v: intValue(obj["v"]))
+        case "loc":
+            applyPresence(obj)
+        case "leave":
+            if let cid = obj["clientId"] as? String {
+                peers.removeValue(forKey: cid)
+            }
         default:
             break
         }
+    }
+
+    /// Decrypt and parse an incoming `loc` message (or a member from the
+    /// `snapshot`) and update the `peers` dictionary.
+    private func applyPresence(_ obj: [String: Any]) {
+        guard let cid = obj["clientId"] as? String, !cid.isEmpty else { return }
+        guard cid != clientId else { return }
+        guard let key = roomKey,
+              let ctB64 = obj["ct"] as? String,
+              let blob = Data(base64Encoded: ctB64),
+              let plain = SyncCrypto.open(key, blob, aad: Data("loc|\(cid)".utf8)),
+              let p = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
+
+        let peer = PresencePeer(
+            clientId: cid,
+            callsign: p["callsign"] as? String ?? "",
+            affiliation: p["affiliation"] as? String ?? "unknown",
+            echelon: p["echelon"] as? String ?? "team",
+            function: p["function"] as? String ?? "infantry",
+            isHQ: p["isHQ"] as? Bool ?? false,
+            lat: doubleValue(p["lat"]),
+            lon: doubleValue(p["lon"]),
+            heading: doubleValue(p["heading"]),
+            speed: doubleValue(p["speed"]),
+            ts: doubleValue(p["ts"]),
+            receivedAt: Date()
+        )
+        peers[cid] = peer
     }
 
     private func applyRecord(_ rec: [String: Any]) {
@@ -206,10 +343,11 @@ final class SyncManager: ObservableObject {
         if let known = versions[id], known >= v, lastContent[id] != nil { return } // stale
         clock = max(clock, v)
         if (rec["deleted"] as? Bool) == true { applyDelete(id: id, v: v); return }
+        let recKind = rec["kind"] as? String ?? "unknown"
         guard let key = roomKey,
               let ctB64 = rec["ct"] as? String,
               let blob = Data(base64Encoded: ctB64),
-              let plain = SyncCrypto.open(key, blob) else { return }
+              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: id, v: v, kind: recKind)) else { return }
 
         let fallback = drawingStore.activeLayerID ?? drawingStore.layers.first?.id ?? DrawingLayer.legacyFallbackID
         guard let parsed = try? GeoJSONImporter.parse(plain, existingLayers: drawingStore.layers,
@@ -223,6 +361,10 @@ final class SyncManager: ObservableObject {
         versions[id] = v
         kindById[id] = parsed.waypoints.isEmpty ? "drawing" : "waypoint"
         lastContent[id] = reexport(id: id)
+
+        // Notify the UI that a remote change was applied.
+        let kind = parsed.waypoints.isEmpty ? "Drawing" : "Waypoint"
+        remoteUpdateSubject.send("\(kind) updated by another device")
     }
 
     private func applyDelete(id: String, v: Int) {
@@ -236,6 +378,8 @@ final class SyncManager: ObservableObject {
         }
         versions[id] = v
         lastContent[id] = nil; kindById[id] = nil
+
+        remoteUpdateSubject.send("Object removed by another device")
     }
 
     private func upsert(waypoint wp: Waypoint) {
@@ -264,6 +408,13 @@ final class SyncManager: ObservableObject {
         if let i = any as? Int { return i }
         if let d = any as? Double { return Int(d) }
         if let n = any as? NSNumber { return n.intValue }
+        return 0
+    }
+
+    private func doubleValue(_ any: Any?) -> Double {
+        if let d = any as? Double { return d }
+        if let i = any as? Int { return Double(i) }
+        if let n = any as? NSNumber { return n.doubleValue }
         return 0
     }
 }

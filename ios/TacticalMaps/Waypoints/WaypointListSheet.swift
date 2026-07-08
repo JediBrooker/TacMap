@@ -11,6 +11,7 @@ struct WaypointListSheet: View {
 
     @State private var editing: Waypoint? = nil
     @State private var creatingAt: CLLocationCoordinate2D? = nil
+    @State private var pendingDelete: Waypoint? = nil
 
     var body: some View {
         NavigationStack {
@@ -34,9 +35,12 @@ struct WaypointListSheet: View {
                                 } label: { Label("Fly to", systemImage: "location.viewfinder") }
                                     .tint(.blue)
                             }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            // allowsFullSwipe: false — a full swipe must not
+                            // delete mission data outright; the user taps Delete,
+                            // then confirms.
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
-                                    waypointStore.remove(wp)
+                                    pendingDelete = wp
                                 } label: { Label("Delete", systemImage: "trash") }
                             }
                         }
@@ -68,6 +72,16 @@ struct WaypointListSheet: View {
                     defaultCoordinate: coord,
                     defaultScale: mapVM.defaultControlMeasureScale
                 )
+            }
+            .confirmationDialog(
+                "Delete “\(pendingDelete?.name ?? "")”?",
+                isPresented: Binding(get: { pendingDelete != nil },
+                                     set: { if !$0 { pendingDelete = nil } }),
+                titleVisibility: .visible,
+                presenting: pendingDelete
+            ) { wp in
+                Button("Delete", role: .destructive) { waypointStore.remove(wp); pendingDelete = nil }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
             }
         }
     }

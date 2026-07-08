@@ -4,12 +4,15 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log2
+import kotlin.math.roundToInt
 
 /**
  * Bakes a calibrated [PdfMapSource] into an offline MBTiles raster pyramid
@@ -45,8 +48,13 @@ object PdfTiler {
         if (total == 0) return@withContext null
 
         val dir = File(context.filesDir, "offline_tiles").apply { mkdirs() }
-        val outPath = File(dir, "tacmap-${System.currentTimeMillis()}.mbtiles").absolutePath
-        val writer = MBTilesWriter.create(outPath) ?: return@withContext null
+        val outFile = File(dir, "tacmap-${System.currentTimeMillis()}.mbtiles")
+        // Bake into a .partial temp and only publish on full success, so an
+        // interrupted run can't leave a truncated file that later loads as a
+        // "valid" but incomplete basemap.
+        val tmpFile = File(dir, "${outFile.name}.partial")
+        val outPath = outFile.absolutePath
+        val writer = MBTilesWriter.create(tmpFile.absolutePath) ?: return@withContext null
         writer.writeMetadata(
             name = source.displayName,
             minZoom = minZoom,
@@ -57,15 +65,20 @@ object PdfTiler {
         var done = 0
         try {
             for (z in minZoom..maxZoom) {
+                // Honour cancellation (Cancel button) — stop promptly instead of
+                // baking every zoom level after the user backed out.
+                ensureActive()
                 val range = WebMercatorTiles.tileRange(coverage, z)
                 writer.beginBatch()
                 for (tx in range.minX..range.maxX) {
                     for (ty in range.minY..range.maxY) {
-                        val rect = pdfPixelRect(inverse, WebMercatorTiles.tileBounds(z, tx, ty), info)
-                        if (rect != null) {
-                            val png = runCatching {
-                                val bmp = PdfPageRenderer.renderFirstPageRegion(
-                                    context, source.uri, rect, TILE, TILE
+                        val box = WebMercatorTiles.tileBounds(z, tx, ty)
+                        // Whole-tile off-page gate; strips re-derive per-band rects.
+                        if (pdfPixelRect(inverse, box, info) != null) {
+                            val strips = buildStrips(inverse, box, z, ty, info)
+                            val png = if (strips.isEmpty()) null else runCatching {
+                                val bmp = PdfPageRenderer.renderFirstPageStrips(
+                                    context, source.uri, strips, TILE, TILE
                                 )
                                 val bytes = ByteArrayOutputStream().use {
                                     bmp.compress(Bitmap.CompressFormat.PNG, 100, it); it.toByteArray()
@@ -82,11 +95,26 @@ object PdfTiler {
                 writer.commitBatch()
             }
             onProgress(Progress(total, total))
-            outPath
-        } catch (_: Throwable) {
-            null
-        } finally {
             writer.close()
+            // A tile/metadata write failed mid-bake (e.g. disk full) — don't
+            // pass a half-baked file off as a complete basemap.
+            if (writer.hadError) {
+                tmpFile.delete()
+                null
+            } else {
+                File(outPath).delete()
+                if (tmpFile.renameTo(File(outPath))) outPath else { tmpFile.delete(); null }
+            }
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            // Cancelled by the user — clean up the temp and propagate so the
+            // caller's coroutine ends without reporting a failure.
+            writer.close()
+            tmpFile.delete()
+            throw c
+        } catch (_: Throwable) {
+            writer.close()
+            tmpFile.delete()
+            null
         }
     }
 
@@ -95,23 +123,88 @@ object PdfTiler {
         inverse: AffineTransform2D,
         box: Wgs84Bounds,
         info: PdfPageInfo
+    ): RectF? = pageRectForBand(
+        inverse,
+        west = box.southwest.longitude, east = box.northeast.longitude,
+        north = box.northeast.latitude, south = box.southwest.latitude,
+        info = info
+    )
+
+    /**
+     * Split a tile into ≤¼°-latitude horizontal strips, each mapped through the
+     * calibration affine at its *true* latitude edges (recovered from
+     * Web-Mercator tile-Y via [WebMercatorTiles.tileYToLat]). A single
+     * region+FILL over the whole tile would warp any tile spanning more than ~2°
+     * of latitude (large sheets at low zoom); strips cut the residual to
+     * sub-pixel. Small high-zoom tiles yield a single strip → identical cost.
+     */
+    private fun buildStrips(
+        inverse: AffineTransform2D,
+        box: Wgs84Bounds,
+        z: Int,
+        ty: Int,
+        info: PdfPageInfo
+    ): List<PdfPageRenderer.RenderStrip> {
+        val north = box.northeast.latitude
+        val south = box.southwest.latitude
+        val west = box.southwest.longitude
+        val east = box.northeast.longitude
+        val strips = ceil((north - south) / 0.25).toInt().coerceIn(1, 16)
+        val out = ArrayList<PdfPageRenderer.RenderStrip>(strips)
+        for (i in 0 until strips) {
+            // Rounded integer pixel bands so adjacent strips abut with no seam.
+            val topPx = (i.toDouble() * TILE / strips).roundToInt()
+            val botPx = ((i + 1).toDouble() * TILE / strips).roundToInt()
+            if (botPx <= topPx) continue
+            // Strip i covers tile-Y [ty+i/strips, ty+(i+1)/strips]; convert those
+            // Mercator edges back to their true latitudes.
+            val bandNorth = WebMercatorTiles.tileYToLat(ty + i.toDouble() / strips, z)
+            val bandSouth = WebMercatorTiles.tileYToLat(ty + (i + 1).toDouble() / strips, z)
+            val pageRect = pageRectForBand(inverse, west, east, bandNorth, bandSouth, info)
+                ?: continue // strip fully off-page — leave it white
+            out += PdfPageRenderer.RenderStrip(
+                pageRect = pageRect,
+                dest = RectF(0f, topPx.toFloat(), TILE.toFloat(), botPx.toFloat())
+            )
+        }
+        return out
+    }
+
+    /** PDF-pixel rect (y-down) for one lat/lon band, or null if it doesn't
+     *  meaningfully overlap the page. */
+    private fun pageRectForBand(
+        inverse: AffineTransform2D,
+        west: Double, east: Double, north: Double, south: Double,
+        info: PdfPageInfo
     ): RectF? {
         // inverse.apply(lon, lat) -> Wgs84Coordinate carrying (pdfX as longitude, pdfY as latitude).
         val corners = listOf(
-            inverse.apply(box.southwest.longitude, box.southwest.latitude),
-            inverse.apply(box.northeast.longitude, box.southwest.latitude),
-            inverse.apply(box.northeast.longitude, box.northeast.latitude),
-            inverse.apply(box.southwest.longitude, box.northeast.latitude)
+            inverse.apply(west, south),
+            inverse.apply(east, south),
+            inverse.apply(east, north),
+            inverse.apply(west, north)
         )
         val xs = corners.map { it.longitude }
         val ys = corners.map { it.latitude }
-        var left = xs.min(); var right = xs.max()
-        var top = ys.min(); var bottom = ys.max()
+        val left = xs.min(); val right = xs.max()
         val w = info.pageWidth.toDouble(); val h = info.pageHeight.toDouble()
-        if (right < 0 || left > w || bottom < 0 || top > h) return null
-        left = left.coerceIn(0.0, w); right = right.coerceIn(0.0, w)
-        top = top.coerceIn(0.0, h); bottom = bottom.coerceIn(0.0, h)
-        if (right - left < 1.0 || bottom - top < 1.0) return null
+        // The calibration affine works in PDF user space (y-up, origin at the
+        // page's bottom-left, per the GeoPDF georeferencing dictionaries), but
+        // Android's PdfRenderer draws in a y-down bitmap space (origin top-left).
+        // Flip Y here — feeding y-up coordinates straight to the renderer
+        // mirrored every generated tile north-for-south. (iOS does the same flip
+        // inside its CoreGraphics context; this brings Android to parity.)
+        val top = h - ys.max()
+        val bottom = h - ys.min()
+        // Skip bands that don't overlap the page at all.
+        if (right <= 0.0 || left >= w || bottom <= 0.0 || top >= h) return null
+        // Require a non-trivial ON-PAGE overlap so we don't emit an all-margin band.
+        val ovW = minOf(w, right) - maxOf(0.0, left)
+        val ovH = minOf(h, bottom) - maxOf(0.0, top)
+        if (ovW < 0.5 || ovH < 0.5) return null
+        // Return the FULL (unclamped) rect: the renderer maps it onto the tile
+        // band, so on-page content keeps its true scale/position and off-page
+        // margins stay white.
         return RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
     }
 

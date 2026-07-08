@@ -13,9 +13,19 @@ enum MGRSFormatter {
     /// Default precision: 1 metre (5+5 digits).
     static let defaultPrecision: GridType = .METER
 
+    /// Out-of-UTM-range marker for polar latitudes, or nil when in range.
+    static func outOfRangeMarker(_ latitude: Double) -> String? {
+        if latitude > 84.0 { return "N/A (>84°N)" }
+        if latitude < -80.0 { return "N/A (<80°S)" }
+        return nil
+    }
+
     static func string(from coordinate: CLLocationCoordinate2D,
                        precision: GridType = defaultPrecision,
                        spaced: Bool = true) -> String {
+        // UTM/MGRS is only defined 80°S–84°N; beyond that NGA clamps to a grid
+        // ~110 km off, so show an explicit out-of-range marker instead.
+        if let m = outOfRangeMarker(coordinate.latitude) { return m }
         let mgrs = MGRS.from(coordinate)
         let raw = mgrs.coordinate(precision)
         return spaced ? formatted(raw) : raw.replacingOccurrences(of: " ", with: "")
@@ -25,6 +35,7 @@ enum MGRSFormatter {
     /// Hemisphere from the latitude sign (UTM N/S); zone + easting + northing
     /// from NGA's `toUTM()`.
     static func utm(from coordinate: CLLocationCoordinate2D) -> String {
+        if let m = outOfRangeMarker(coordinate.latitude) { return m }
         let u = MGRS.from(coordinate).toUTM()
         let hemi = coordinate.latitude >= 0 ? "N" : "S"
         return String(format: "%02d%@ %.0fmE %.0fmN", u.zone, hemi, u.easting, u.northing)
@@ -52,8 +63,13 @@ enum MGRSFormatter {
     /// so we never feed malformed input to `MGRS.parse`.
     static func looksLikeMGRS(_ s: String) -> Bool {
         guard !s.isEmpty else { return false }
-        let utm = #"^\d{1,2}[A-HJ-NP-Z][A-HJ-NP-Z]{2}(\d{2}|\d{4}|\d{6}|\d{8}|\d{10})?$"#
-        let ups = #"^[ABYZ][A-Z]{2}(\d{2}|\d{4}|\d{6}|\d{8}|\d{10})?$"#
+        // Zone 1–60 (not 00 or >60) and latitude band C–X excluding I/O — the
+        // old `\d{1,2}` + `[A-HJ-NP-Z]` band admitted zone 00/61–99 and bands
+        // A/B/Y/Z, shapes NGA's non-throwing parser fatalErrors on. Square
+        // letters exclude I/O; the easting/northing group stays optional (a bare
+        // 100km square is a valid, if coarse, location).
+        let utm = #"^(0?[1-9]|[1-5]\d|60)[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-Z](\d{2}|\d{4}|\d{6}|\d{8}|\d{10})?$"#
+        let ups = #"^[ABYZ][A-HJ-NP-Z][A-HJ-NP-Z](\d{2}|\d{4}|\d{6}|\d{8}|\d{10})?$"#
         for pattern in [utm, ups] {
             guard let rx = try? NSRegularExpression(pattern: pattern) else { continue }
             let range = NSRange(s.startIndex..., in: s)

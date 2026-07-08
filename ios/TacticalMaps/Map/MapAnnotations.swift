@@ -96,3 +96,18 @@ final class DrawingPointAnnotation: NSObject, MKAnnotation {
     var title: String? { shape.name ?? shape.kind.displayName }
     var subtitle: String? { shape.notes }
 }
+
+/// Ephemeral presence annotation showing a remote unit member's position on the
+/// map. Rendered as a small military symbol with a callsign label below.
+/// Not selectable or draggable — presence markers are read-only.
+final class PresenceAnnotation: NSObject, MKAnnotation {
+    let peer: PresencePeer
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+
+    init(_ peer: PresencePeer) {
+        self.peer = peer
+        self.coordinate = CLLocationCoordinate2D(latitude: peer.lat, longitude: peer.lon)
+    }
+
+    var title: String? { peer.callsign.isEmpty ? nil : peer.callsign }
+}

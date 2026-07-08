@@ -63,12 +63,8 @@ enum PDFSessionStore {
             UserDefaults.standard.removeObject(forKey: key)
             return nil
         }
-        guard let docsDir = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first else { return nil }
-        let url = docsDir.appendingPathComponent(dto.fileName)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            NSLog("[PDFSessionStore] file vanished, clearing: \(url.path)")
+        guard let url = resolveImportedMap(named: dto.fileName) else {
+            NSLog("[PDFSessionStore] file vanished, clearing: \(dto.fileName)")
             UserDefaults.standard.removeObject(forKey: key)
             return nil
         }
@@ -94,6 +90,28 @@ enum PDFSessionStore {
 
     static func clear() {
         UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    /// Resolve an imported map by file name. New location is Application Support
+    /// (private); a copy still in the legacy Documents location is migrated there
+    /// on first access so existing sessions aren't lost.
+    private static func resolveImportedMap(named fileName: String) -> URL? {
+        let fm = FileManager.default
+        if let dir = try? ImportedMapFileCopier.importedMapsDirectory() {
+            let url = dir.appendingPathComponent(fileName)
+            if fm.fileExists(atPath: url.path) { return url }
+            // Migrate a legacy Documents copy into the private directory.
+            if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let legacy = docs.appendingPathComponent(fileName)
+                if fm.fileExists(atPath: legacy.path), (try? fm.moveItem(at: legacy, to: url)) != nil {
+                    try? fm.setAttributes(
+                        [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                        ofItemAtPath: url.path)
+                    return url
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - Per-PDF calibration library

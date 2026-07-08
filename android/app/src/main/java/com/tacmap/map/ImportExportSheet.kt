@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -51,6 +52,7 @@ fun ImportExportSheet(
     onImportKml: () -> Unit,
     onExportGeoJson: () -> Unit,
     onExportGpx: () -> Unit,
+    onExportAllData: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -69,6 +71,7 @@ fun ImportExportSheet(
             sectionLabel("EXPORT")
             sheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson)
             sheetRow(Icons.Default.Timeline, "GPX Track", onExportGpx)
+            sheetRow(Icons.Default.SelectAll, "Export All Data", onExportAllData)
         }
     }
 }

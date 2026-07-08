@@ -3,7 +3,9 @@ package com.tacmap.map
 import android.graphics.Bitmap
 import android.graphics.Color
 import com.tacmap.calibration.Wgs84Bounds
+import com.tacmap.settings.OpsecSettings
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -29,6 +31,10 @@ class TerrainHeatmapService {
     /** Sample [grid]x[grid] elevations over [bounds] and return a coloured,
      *  upscaled bitmap, or null on failure. */
     suspend fun generate(bounds: Wgs84Bounds, grid: Int = 24): Bitmap? = withContext(Dispatchers.IO) {
+        // OPSEC gate (mirrors iOS TerrainHeatmapService): sampling the DEM
+        // transmits the region's coordinates to a third party (Open-Meteo), so
+        // only proceed when the user has opted into online lookups.
+        if (OpsecSettings.shared?.onlineLookups?.value != true) return@withContext null
         val south = bounds.southwest.latitude
         val north = bounds.northeast.latitude
         val west = bounds.southwest.longitude
@@ -51,6 +57,9 @@ class TerrainHeatmapService {
         val elev = DoubleArray(grid * grid) { Double.NaN }
         var i = 0
         while (i < elev.size) {
+            // Honour cancellation: if the user panned away or turned the heatmap
+            // off, stop hitting the network instead of finishing every batch.
+            ensureActive()
             val end = minOf(i + 100, elev.size)   // Open-Meteo: <=100 points/request
             val latStr = (i until end).joinToString(",") { lat[it].toString() }
             val lonStr = (i until end).joinToString(",") { lon[it].toString() }

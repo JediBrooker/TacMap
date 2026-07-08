@@ -66,7 +66,11 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         else { return coordinates }
         let lat0 = coordinates.map(\.latitude ).reduce(0, +) / Double(coordinates.count)
         let lon0 = coordinates.map(\.longitude).reduce(0, +) / Double(coordinates.count)
-        let rad = rotation * .pi / 180
+        // Negate so positive rotation is CLOCKWISE on screen — matching Android
+        // drawings (Drawing.kt effectivePoints uses -rotationDegrees) and both
+        // platforms' control-measure renderers. Without this, iOS drawings
+        // rotated the opposite way to everything else.
+        let rad = -rotation * .pi / 180
         let cosR = cos(rad), sinR = sin(rad)
         // Apply a cos(latitude) correction so a 90° rotation actually
         // looks square on screen at non-equatorial latitudes (without it

@@ -9,12 +9,24 @@ import org.junit.Test
 
 class SyncCryptoTest {
 
+    private val aad = SyncCrypto.aad("obj-1", 7L, "waypoint")
+
     @Test
     fun roomIdIsStableUrlSafeAndCodeSpecific() {
         val a = SyncCrypto.roomId("alpha-bravo-charlie")
         assertEquals("same code -> same id", a, SyncCrypto.roomId("alpha-bravo-charlie"))
         assertTrue("url-safe base64", a.all { it.isLetterOrDigit() || it == '-' || it == '_' })
         assertNotEquals("different code -> different id", a, SyncCrypto.roomId("delta-echo"))
+    }
+
+    @Test
+    fun roomIdRoomKeyAndAuthTokenAreDistinct() {
+        val keys = SyncCrypto.deriveRoom("unit-7")
+        // Three independent derivations from the same master — the routing id,
+        // the AEAD key, and the writer-auth token must not coincide.
+        assertNotEquals(keys.roomId, keys.authToken)
+        assertEquals(32, keys.roomKey.size)
+        assertTrue(keys.authToken.isNotEmpty())
     }
 
     @Test
@@ -26,23 +38,35 @@ class SyncCryptoTest {
     fun sealOpenRoundTrips() {
         val key = SyncCrypto.roomKey("unit-7-key")
         val plaintext = """{"id":"abc","name":"OP North"}""".toByteArray(Charsets.UTF_8)
-        val blob = SyncCrypto.seal(key, plaintext)
+        val blob = SyncCrypto.seal(key, plaintext, aad)
         // iv(12) + ct + tag(16) — strictly larger than the plaintext.
         assertTrue(blob.size >= plaintext.size + 28)
-        assertArrayEquals(plaintext, SyncCrypto.open(key, blob))
+        assertArrayEquals(plaintext, SyncCrypto.open(key, blob, aad))
     }
 
     @Test
     fun wrongKeyFailsToOpen() {
-        val blob = SyncCrypto.seal(SyncCrypto.roomKey("code-one"), "secret".toByteArray())
-        assertNull(SyncCrypto.open(SyncCrypto.roomKey("code-two"), blob))
+        val blob = SyncCrypto.seal(SyncCrypto.roomKey("code-one"), "secret".toByteArray(), aad)
+        assertNull(SyncCrypto.open(SyncCrypto.roomKey("code-two"), blob, aad))
+    }
+
+    @Test
+    fun wrongAadFailsToOpen() {
+        // A relay that swapped this blob onto a different object id / version
+        // reconstructs a different AAD, so authentication fails.
+        val key = SyncCrypto.roomKey("k")
+        val blob = SyncCrypto.seal(key, "payload".toByteArray(), aad)
+        val otherAad = SyncCrypto.aad("obj-2", 7L, "waypoint")
+        assertNull(SyncCrypto.open(key, blob, otherAad))
+        // Same AAD still opens.
+        assertArrayEquals("payload".toByteArray(), SyncCrypto.open(key, blob, aad))
     }
 
     @Test
     fun tamperedBlobFailsToOpen() {
         val key = SyncCrypto.roomKey("k")
-        val blob = SyncCrypto.seal(key, "payload".toByteArray())
+        val blob = SyncCrypto.seal(key, "payload".toByteArray(), aad)
         blob[blob.size - 1] = (blob[blob.size - 1] + 1).toByte()  // flip a tag bit
-        assertNull(SyncCrypto.open(key, blob))
+        assertNull(SyncCrypto.open(key, blob, aad))
     }
 }

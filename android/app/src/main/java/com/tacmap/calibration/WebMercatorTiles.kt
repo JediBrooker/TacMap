@@ -55,6 +55,14 @@ object WebMercatorTiles {
     /**
      * Inclusive integer tile range (minX..maxX, minY..maxY) covering `bounds`
      * at zoom `z`. Clamped to the valid 0..(2^z - 1) grid.
+     *
+     * Antimeridian note: a box that crosses ±180° (west longitude > east) yields
+     * minX > maxX, so [TileRange.count] is 0 and the caller ([PdfTiler]) treats
+     * the bake as failed rather than producing wrong tiles. Full wrap-around
+     * tiling is intentionally unsupported: the calibration affine is linear in
+     * longitude and cannot represent the ±180° discontinuity, so a sheet
+     * straddling the date line would need unwrapped-longitude fiduciaries fixed
+     * upstream, not a tiler workaround.
      */
     fun tileRange(bounds: Wgs84Bounds, z: Int): TileRange {
         val max = (1 shl z) - 1

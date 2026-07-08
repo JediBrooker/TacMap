@@ -199,11 +199,14 @@ struct SearchSheet: View {
                 }
             }
         } catch {
+            // Superseded by a newer query (or otherwise cancelled) — stay silent
+            // instead of flashing "Search failed: cancelled".
+            if Task.isCancelled || error is CancellationError { return }
             await MainActor.run {
                 isSearching = false
                 places = []
                 let ns = error as NSError
-                // MKError.unknown (-1) for cancelled or no-results — stay silent.
+                // MKError.unknown for cancelled or no-results — stay silent.
                 if ns.domain != MKError.errorDomain || ns.code > 0 {
                     statusMessage = "Search failed: \(error.localizedDescription)"
                 }

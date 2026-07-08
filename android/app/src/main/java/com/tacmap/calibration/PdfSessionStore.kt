@@ -61,8 +61,12 @@ class PdfSessionStore(private val context: Context) {
             .onSuccess { prefs.edit().putString(KEY_PDF, it).apply() }
             .onFailure { Log.w(TAG, "Couldn't encode PDF for persistence: ${it.message}") }
         // Also remember it in the per-PDF library so switching PDFs and back
-        // restores this one's own calibration.
-        saveToLibrary(source.displayName, calibration)
+        // restores this one's own calibration. Keyed by the file's CONTENT hash,
+        // not its display name: two different sheets that happen to share a
+        // filename must NOT inherit each other's affine.
+        val key = runCatching { contentKeyFor(File(source.uri.path ?: return)) }.getOrNull()
+            ?: source.displayName // fall back to name only if the file is unreadable
+        saveToLibrary(key, calibration)
     }
 
     fun load(): PdfMapSource? {
@@ -94,16 +98,22 @@ class PdfSessionStore(private val context: Context) {
         prefs.edit().remove(KEY_PDF).apply()
     }
 
-    // Per-PDF calibration library keyed by display name — restores each PDF's
-    // own fiduciaries + affine when the user re-imports / switches PDFs.
-    fun calibration(displayName: String): Calibration.Fiduciaries? {
-        val cal = loadLibrary()[displayName] ?: return null
+    /**
+     * Per-PDF calibration library. Looks up by the file's content hash first
+     * (so the correct affine follows the actual bytes, even if the display name
+     * collides with a different sheet), falling back to a legacy display-name
+     * key for entries saved before content-hash keying.
+     */
+    fun calibration(file: File?, displayName: String): Calibration.Fiduciaries? {
+        val lib = loadLibrary()
+        val byHash = file?.let { f -> runCatching { contentKeyFor(f) }.getOrNull()?.let { lib[it] } }
+        val cal = byHash ?: lib[displayName] ?: return null
         return Calibration.Fiduciaries(cal.fids, cal.transform)
     }
 
-    private fun saveToLibrary(displayName: String, cal: Calibration.Fiduciaries) {
+    private fun saveToLibrary(key: String, cal: Calibration.Fiduciaries) {
         val lib = loadLibrary().toMutableMap()
-        lib[displayName] = PersistedCalibration(cal.fids, cal.transform)
+        lib[key] = PersistedCalibration(cal.fids, cal.transform)
         runCatching { json.encodeToString(lib) }
             .onSuccess { prefs.edit().putString(KEY_LIBRARY, it).apply() }
             .onFailure { Log.w(TAG, "Couldn't encode PDF calibration library: ${it.message}") }
@@ -113,6 +123,20 @@ class PdfSessionStore(private val context: Context) {
         val raw = prefs.getString(KEY_LIBRARY, null) ?: return emptyMap()
         return runCatching { json.decodeFromString<Map<String, PersistedCalibration>>(raw) }
             .getOrDefault(emptyMap())
+    }
+
+    /** SHA-256 of the file's bytes, streamed so large PDFs don't load whole. */
+    private fun contentKeyFor(file: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { ins ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = ins.read(buf)
+                if (n < 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        return "sha256:" + md.digest().joinToString("") { b -> "%02x".format(b) }
     }
 
     private companion object {

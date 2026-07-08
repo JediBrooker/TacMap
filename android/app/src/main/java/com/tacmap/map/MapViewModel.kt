@@ -13,6 +13,7 @@ import com.tacmap.calibration.PdfSessionStore
 import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LocationService
 import com.tacmap.models.TrackRecorder
+import com.tacmap.models.TrackRecordingService
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -45,9 +46,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     val locationService = LocationService(app)
 
+    /** App-scoped OPSEC/privacy settings (screen-capture, online lookups, relay). */
+    val opsec = (app as com.tacmap.app.TacticalApp).opsec
+
     /** GPX patrol-track recorder. Fed every fix from [onUserLocation]; only
-     *  accumulates while recording. */
-    val trackRecorder = TrackRecorder()
+     *  accumulates while recording. Persists each fix to disk (survives process
+     *  death) and recovers an un-discarded track on construction. */
+    val trackRecorder = TrackRecorder(app)
 
     // Camera centre published by MapScreen on every camera-idle event.
     private val _cameraLat = MutableStateFlow(0.0)
@@ -176,6 +181,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
      * network. `collectLatest` cancels an in-flight fetch when the centre moves
      * again, so only the latest position resolves.
      */
+    /** Round a coordinate to ~110 m so online lookups don't disclose the exact
+     *  map centre. */
+    private fun coarsen(v: Double): Double = Math.round(v * 1000.0) / 1000.0
+
     @OptIn(FlowPreview::class)
     private fun observeElevation() {
         viewModelScope.launch {
@@ -186,7 +195,15 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                     abs(oLat - nLat) < 0.0001 && abs(oLng - nLng) < 0.0001
                 }
                 .collectLatest { (lat, lng) ->
-                    _centreElevation.value = elevationService.reading(lat, lng)
+                    // OPSEC: elevation lookups transmit the queried coordinate to
+                    // a third party (Open-Meteo). Only do so when the user has
+                    // opted in, and coarsen to ~110 m (3 dp) so the exact map
+                    // centre isn't disclosed even then.
+                    if (!opsec.onlineLookups.value) {
+                        _centreElevation.value = null
+                    } else {
+                        _centreElevation.value = elevationService.reading(coarsen(lat), coarsen(lng))
+                    }
                 }
         }
     }
@@ -214,6 +231,19 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private val _resetNorthRequests = Channel<Unit>(Channel.BUFFERED)
     val resetNorthRequests: Flow<Unit> = _resetNorthRequests.receiveAsFlow()
     fun requestResetNorth() { _resetNorthRequests.trySend(Unit) }
+
+    /** Start GPX recording and bring up the foreground service so the track
+     *  keeps logging while the app is backgrounded / the screen is locked. */
+    fun startTrackRecording() {
+        trackRecorder.start()
+        TrackRecordingService.start(getApplication<android.app.Application>())
+    }
+
+    /** Stop recording and tear down the foreground service. */
+    fun stopTrackRecording() {
+        trackRecorder.stop()
+        TrackRecordingService.stop(getApplication<android.app.Application>())
+    }
 
     private fun onUserLocation(loc: Location) {
         lastUserLocation = loc

@@ -12,11 +12,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,12 +29,25 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlin.math.ceil
 
-/** Full-screen unlock gate shown when an App Lock PIN is set. */
+/** Full-screen unlock gate shown when an App Lock PIN is set. Throttles repeated
+ *  failures with an escalating lockout (see [AppLock]). */
 @Composable
 fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    var lockoutMs by remember { mutableLongStateOf(appLock.lockoutRemainingMs()) }
+
+    // Tick the lockout countdown down to zero.
+    LaunchedEffect(Unit) {
+        while (true) {
+            lockoutMs = appLock.lockoutRemainingMs()
+            delay(500)
+        }
+    }
+    val lockedOut = lockoutMs > 0L
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
@@ -46,12 +60,19 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
             Text("TacMap Locked", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             OutlinedTextField(
                 value = pin,
+                enabled = !lockedOut,
                 onValueChange = { v ->
                     val digits = v.filter { it.isDigit() }.take(4)
                     pin = digits
                     error = false
                     if (digits.length == 4) {
-                        if (appLock.verify(digits)) onUnlocked() else { error = true; pin = "" }
+                        if (appLock.verify(digits)) {
+                            onUnlocked()
+                        } else {
+                            pin = ""
+                            lockoutMs = appLock.lockoutRemainingMs()
+                            error = lockoutMs == 0L
+                        }
                     }
                 },
                 label = { Text("Enter PIN") },
@@ -60,15 +81,24 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
             )
-            if (error) Text("Incorrect PIN", color = Color(0xFFEF5350), fontSize = 12.sp)
+            if (lockedOut) {
+                Text(
+                    "Too many attempts. Try again in ${ceil(lockoutMs / 1000.0).toInt()}s",
+                    color = Color(0xFFFFB74D), fontSize = 12.sp
+                )
+            } else if (error) {
+                Text("Incorrect PIN", color = Color(0xFFEF5350), fontSize = 12.sp)
+            }
         }
     }
 }
 
-/** Enable / change / disable the App Lock PIN. */
+/** Enable / change / disable the App Lock PIN. Changing or disabling an existing
+ *  PIN requires entering the current one. */
 @Composable
 fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
     var enabled by remember { mutableStateOf(appLock.isEnabled) }
+    var currentPin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
@@ -79,17 +109,61 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
         title = { Text("App Lock") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                androidx.compose.foundation.layout.Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Switch(checked = enabled, onCheckedChange = {
-                        enabled = it
-                        if (!it) { appLock.clear(); message = "App Lock disabled." }
-                    })
-                    Text("Require a PIN to open TacMap")
-                }
                 if (enabled) {
+                    Text("App Lock is on.", fontSize = 13.sp)
+                    OutlinedTextField(
+                        value = currentPin,
+                        onValueChange = { currentPin = it.filter { c -> c.isDigit() }.take(4); message = null },
+                        label = { Text("Current PIN") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                    )
+                    OutlinedTextField(
+                        value = newPin,
+                        onValueChange = { newPin = it.filter { c -> c.isDigit() }.take(4) },
+                        label = { Text("New PIN (to change)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                    )
+                    OutlinedTextField(
+                        value = confirmPin,
+                        onValueChange = { confirmPin = it.filter { c -> c.isDigit() }.take(4) },
+                        label = { Text("Confirm new PIN") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                    )
+                    TextButton(
+                        enabled = currentPin.length == 4 && newPin.length == 4 && confirmPin.length == 4,
+                        onClick = {
+                            when {
+                                newPin != confirmPin -> message = "New PINs don't match."
+                                appLock.changePin(currentPin, newPin) -> {
+                                    currentPin = ""; newPin = ""; confirmPin = ""
+                                    message = "PIN changed."
+                                }
+                                appLock.lockoutRemainingMs() > 0 -> message = "Too many attempts. Try again shortly."
+                                else -> message = "Current PIN is incorrect."
+                            }
+                        }
+                    ) { Text("Change PIN") }
+                    TextButton(
+                        enabled = currentPin.length == 4,
+                        onClick = {
+                            if (appLock.disable(currentPin)) {
+                                enabled = false
+                                currentPin = ""; newPin = ""; confirmPin = ""
+                                message = "App Lock disabled."
+                            } else {
+                                message = if (appLock.lockoutRemainingMs() > 0)
+                                    "Too many attempts. Try again shortly."
+                                else "Current PIN is incorrect."
+                            }
+                        }
+                    ) { Text("Turn Off App Lock") }
+                } else {
                     OutlinedTextField(
                         value = newPin,
                         onValueChange = { newPin = it.filter { c -> c.isDigit() }.take(4) },
@@ -111,13 +185,14 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                         onClick = {
                             if (newPin == confirmPin) {
                                 appLock.setPin(newPin)
+                                enabled = true
                                 newPin = ""; confirmPin = ""
-                                message = "PIN saved. TacMap locks on next launch."
+                                message = "App Lock enabled. TacMap locks when backgrounded."
                             } else {
                                 message = "PINs don't match."
                             }
                         }
-                    ) { Text("Save PIN") }
+                    ) { Text("Enable App Lock") }
                 }
                 message?.let { Text(it, fontSize = 12.sp, color = Color.Gray) }
                 Text(

@@ -57,7 +57,11 @@ jobs:
 
       - name: Build (Debug, iPhone Simulator)
         working-directory: ios
+        shell: bash
         run: |
+          # `shell: bash` runs with `-eo pipefail`, so a xcodebuild failure
+          # piped into xcbeautify still fails the step. Belt-and-braces:
+          set -o pipefail
           # Pick whichever iPhone simulator is available on the runner.
           DEST=$(xcrun simctl list devices available | grep -E 'iPhone (15|16|17) Pro \(' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
           if [ -z "$DEST" ]; then
@@ -73,26 +77,41 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build | xcbeautify --renderer github-actions || (cat -; exit 1)
+            build 2>&1 | tee build.log | xcbeautify --renderer github-actions
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-log
+          path: ios/build.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Run unit tests (iPhone Simulator)
         working-directory: ios
+        shell: bash
         run: |
+          set -o pipefail
           DEST=$(xcrun simctl list devices available | grep -E 'iPhone (15|16|17) Pro \(' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
           if [ -z "$DEST" ]; then
             echo "::warning::No iPhone 15/16/17 Pro simulator found; using first available iPhone"
             DEST=$(xcrun simctl list devices available | grep -E 'iPhone .* \([A-F0-9-]+\)' | head -n1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
           fi
           echo "Testing on simulator $DEST"
+          # Only the logic suite gates CI. The UI-test target exists purely to
+          # capture App Store screenshots (see scripts/ios_screenshots.sh) and
+          # is driven on demand with -only-testing, so skip it here.
           xcodebuild \
             -project TacticalMaps.xcodeproj \
             -scheme TacticalMaps \
             -destination "id=$DEST" \
             -clonedSourcePackagesDirPath /tmp/spm-cache \
             -derivedDataPath build \
+            -skip-testing:TacticalMapsUITests \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            test | xcbeautify --renderer github-actions || (cat -; exit 1)
+            test 2>&1 | tee test.log | xcbeautify --renderer github-actions
 
       - name: Upload .app artefact
         if: success()

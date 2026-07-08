@@ -26,7 +26,12 @@ struct AffineTransform2D: Hashable, Codable {
     /// the matrix is singular.
     func inverted() -> AffineTransform2D? {
         let det = a * e - b * d
-        guard abs(det) > 1e-12 else { return nil }
+        // Scale-invariant singularity test: |det| / (‖row1‖·‖row2‖) is the sine
+        // of the angle between the two basis vectors ∈ [0,1]. An absolute 1e-12
+        // on `det` — ≈ degrees²/pixel² (~1e-10 at fine scale) — falsely rejected
+        // valid high-zoom calibrations as singular.
+        let rowScale = hypot(a, b) * hypot(d, e)
+        guard rowScale > 0, abs(det) > 1e-9 * rowScale else { return nil }
         let invDet = 1 / det
         // Inverse of [[a b][d e]] applied to translation
         let ia =  e * invDet
@@ -56,12 +61,19 @@ enum AffineFitter {
         /// Root-mean-square residual in metres. Useful to surface in the UI so users
         /// know how trustworthy the calibration is.
         let rmsMetres: Double
+        /// False for an exactly-determined 3-point fit: it passes through all
+        /// three points so its RMS is ~0 regardless of accuracy — not evidence
+        /// the map is correct. True once N≥4 over-constrains the fit.
+        let crossValidated: Bool
     }
 
     static func fit(_ fiduciaries: [Fiduciary]) throws -> Result {
         guard fiduciaries.count >= 3 else {
             throw AffineFitError.tooFewFiduciaries(minimum: 3)
         }
+        // Reject coincident / (near-)colinear control points: the affine's
+        // perpendicular direction is then unconstrained and extrapolates wildly.
+        guard !isDegenerate(fiduciaries) else { throw AffineFitError.degenerate }
 
         // Solve for [a b c] from x-coords (lon) and [d e f] from y-coords (lat) separately.
         let (a, b, c) = try lsq(points: fiduciaries.map { ($0.pdfX, $0.pdfY, $0.longitude) })
@@ -75,7 +87,28 @@ enum AffineFitter {
             sumSq += squareDistanceMetres(predicted, fid.wgs84)
         }
         let rms = sqrt(sumSq / Double(fiduciaries.count))
-        return Result(transform: t, rmsMetres: rms)
+        return Result(transform: t, rmsMetres: rms, crossValidated: fiduciaries.count >= 4)
+    }
+
+    /// True when the fiduciaries are coincident or (near-)colinear. Uses the
+    /// ratio of the covariance eigenvalues of the PDF-space points — scale
+    /// invariant, unlike an absolute determinant threshold.
+    private static func isDegenerate(_ fids: [Fiduciary]) -> Bool {
+        let n = Double(fids.count)
+        var mx = 0.0, my = 0.0
+        for f in fids { mx += f.pdfX; my += f.pdfY }
+        mx /= n; my /= n
+        var sxx = 0.0, syy = 0.0, sxy = 0.0
+        for f in fids {
+            let dx = f.pdfX - mx, dy = f.pdfY - my
+            sxx += dx * dx; syy += dy * dy; sxy += dx * dy
+        }
+        let tr = sxx + syy
+        if tr <= 0 { return true } // all points coincident
+        let disc = sqrt(max(0.0, tr * tr - 4.0 * (sxx * syy - sxy * sxy)))
+        let l1 = (tr + disc) / 2.0
+        let l2 = (tr - disc) / 2.0
+        return l1 <= 0 || l2 / l1 < 1e-6
     }
 
     /// Closed-form LSQ for `target = a*x + b*y + c` over N points.

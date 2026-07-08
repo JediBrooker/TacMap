@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sqrt
 
 /**
@@ -26,7 +27,12 @@ data class AffineTransform2D(
 
     fun inverted(): AffineTransform2D? {
         val det = a * e - b * d
-        if (abs(det) < 1e-12) return null
+        // Scale-invariant singularity test: |det| / (‖row1‖·‖row2‖) is the sine
+        // of the angle between the two basis vectors ∈ [0,1]. The old absolute
+        // 1e-12 on `det` — which is ≈ degrees²/pixel² (~1e-10 at fine scale) —
+        // falsely rejected valid high-zoom calibrations as singular.
+        val rowScale = hypot(a, b) * hypot(d, e)
+        if (rowScale <= 0.0 || abs(det) <= 1e-9 * rowScale) return null
         val inv = 1.0 / det
         val ia =  e * inv
         val ib = -b * inv
@@ -48,7 +54,11 @@ data class AffineFitResult(
     val transform: AffineTransform2D,
     /** RMS residual in metres. Surface this to users so they know how trustworthy
      *  the calibration is. */
-    val rmsMetres: Double
+    val rmsMetres: Double,
+    /** False for an exactly-determined 3-point fit: it passes through all three
+     *  points so its RMS is ~0 regardless of accuracy — not evidence the map is
+     *  correct. True once N≥4 over-constrains the fit and the RMS is meaningful. */
+    val crossValidated: Boolean
 )
 
 /**
@@ -61,7 +71,11 @@ data class AffineFitResult(
 object AffineFitter {
 
     fun fit(fids: List<Fiduciary>): AffineFitResult {
-        require(fids.size >= 3) { throw AffineFitError.TooFewFiduciaries }
+        if (fids.size < 3) throw AffineFitError.TooFewFiduciaries
+        // Reject control points that lie on (or almost on) a single line: the
+        // affine's perpendicular direction is then unconstrained and it
+        // extrapolates wildly — a wrong map that still fits the fiduciaries.
+        if (isDegenerate(fids)) throw AffineFitError.Degenerate
 
         val (a, b, c) = lsq(fids.map { Triple(it.pdfX, it.pdfY, it.longitude) })
         val (d, e, f) = lsq(fids.map { Triple(it.pdfX, it.pdfY, it.latitude) })
@@ -72,8 +86,33 @@ object AffineFitter {
             val predicted = t.apply(fid.pdfX, fid.pdfY)
             sumSq += squareMetres(predicted, fid.wgs84)
         }
-        return AffineFitResult(t, sqrt(sumSq / fids.size))
+        return AffineFitResult(t, sqrt(sumSq / fids.size), crossValidated = fids.size >= 4)
     }
+
+    /** True when the fiduciaries are coincident or (near-)colinear. Uses the
+     *  ratio of the covariance eigenvalues of the PDF-space points, which is
+     *  scale-invariant — unlike an absolute determinant threshold, which is
+     *  meaningless at pixel-coordinate magnitudes. */
+    private fun isDegenerate(fids: List<Fiduciary>): Boolean {
+        val n = fids.size.toDouble()
+        var mx = 0.0; var my = 0.0
+        for (f in fids) { mx += f.pdfX; my += f.pdfY }
+        mx /= n; my /= n
+        var sxx = 0.0; var syy = 0.0; var sxy = 0.0
+        for (f in fids) {
+            val dx = f.pdfX - mx; val dy = f.pdfY - my
+            sxx += dx * dx; syy += dy * dy; sxy += dx * dy
+        }
+        val tr = sxx + syy
+        if (tr <= 0.0) return true // all points coincident
+        val disc = sqrt(maxOf(0.0, tr * tr - 4.0 * (sxx * syy - sxy * sxy)))
+        val l1 = (tr + disc) / 2.0
+        val l2 = (tr - disc) / 2.0
+        return l1 <= 0.0 || l2 / l1 < MIN_SPREAD_RATIO
+    }
+
+    /** Minor/major spread ratio below which the points count as colinear. */
+    private const val MIN_SPREAD_RATIO = 1e-6
 
     private fun lsq(points: List<Triple<Double, Double, Double>>): Triple<Double, Double, Double> {
         var sx = 0.0; var sy = 0.0; var sxx = 0.0; var syy = 0.0; var sxy = 0.0

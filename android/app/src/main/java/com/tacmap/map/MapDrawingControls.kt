@@ -133,19 +133,23 @@ internal fun DrawingFeatureEditBar(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.08f))
-            ) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Close drawing controls",
-                    tint = Color.White.copy(alpha = 0.58f),
-                    modifier = Modifier.size(16.dp)
-                )
+            // Keep the compact 30dp circle visual, but let the IconButton keep its
+            // full ≥48dp touch target (M32) by sizing the inner Box, not the button.
+            IconButton(onClick = onDismiss) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close drawing controls",
+                        tint = Color.White.copy(alpha = 0.58f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
 

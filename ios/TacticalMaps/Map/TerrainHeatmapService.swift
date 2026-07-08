@@ -13,6 +13,9 @@ actor TerrainHeatmapService {
 
     /// Sample a grid×grid DEM over `region` and return a coloured, upscaled image.
     func generate(region: MKCoordinateRegion, grid: Int = 24) async -> UIImage? {
+        // OPSEC: the heat-map samples the region's DEM from a third party
+        // (Open-Meteo), transmitting the coordinates — opt-in only.
+        guard OpsecSettings.shared.onlineLookups else { return nil }
         guard grid >= 2 else { return nil }
         let north = region.center.latitude + region.span.latitudeDelta / 2
         let south = region.center.latitude - region.span.latitudeDelta / 2

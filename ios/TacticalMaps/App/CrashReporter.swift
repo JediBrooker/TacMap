@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Minimal, **local-only** crash capture — no telemetry SDK, nothing leaves the
 /// device (consistent with the privacy policy). Installs an uncaught-exception
@@ -8,6 +9,12 @@ import Foundation
 ///
 /// This is the privacy-preserving answer to "a field app shouldn't crash
 /// silently": the user opts in to sharing by exporting the file themselves.
+///
+/// Signal-handler safety: the fatal-signal path uses ONLY async-signal-safe
+/// calls (`open`/`write`/`close`/`backtrace_symbols_fd`) over a path and buffers
+/// computed at install time — no Foundation, no allocation, no locks. The richer
+/// Foundation-based report is used only for `NSSetUncaughtExceptionHandler`,
+/// which runs in a normal Obj-C context, not a signal handler.
 enum CrashReporter {
 
     private static var fileURL: URL? {
@@ -18,21 +25,54 @@ enum CrashReporter {
         return dir?.appendingPathComponent("last_crash.log")
     }
 
+    // Pre-computed at install so the signal handler never touches FileManager or
+    // allocates. `pathBytes` is a null-terminated C string.
+    private static var pathBytes: [CChar] = []
+    private static let preamble = Array("TacMap fatal signal ".utf8)
+    private static let newline: [UInt8] = [0x0A]
+    private static var numBuf = [UInt8](repeating: 0, count: 12)
+    private static var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 64)
+
     /// Install the handlers. Call once at launch.
     static func install() {
         NSSetUncaughtExceptionHandler { exception in
             let frames = exception.callStackSymbols.prefix(24).joined(separator: "\n")
             CrashReporter.write("Uncaught \(exception.name.rawValue): \(exception.reason ?? "")\n\n\(frames)")
         }
+        if let path = fileURL?.path {
+            pathBytes = path.utf8CString.map { $0 }
+        }
         for sig in [SIGABRT, SIGILL, SIGSEGV, SIGFPE, SIGBUS, SIGTRAP] {
             signal(sig) { s in
-                CrashReporter.write("Fatal signal \(s)\n\n" +
-                    Thread.callStackSymbols.prefix(24).joined(separator: "\n"))
+                CrashReporter.writeSignalReport(s)
                 // Re-raise with the default handler so the OS still records it.
                 signal(s, SIG_DFL)
                 raise(s)
             }
         }
+    }
+
+    /// Async-signal-safe crash write. `open`, `write`, `close` and
+    /// `backtrace_symbols_fd` are all on the async-signal-safe list; the path and
+    /// scratch buffers were allocated at install time.
+    private static func writeSignalReport(_ s: Int32) {
+        guard !pathBytes.isEmpty else { return }
+        let fd = pathBytes.withUnsafeBufferPointer {
+            open($0.baseAddress!, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+        }
+        guard fd >= 0 else { return }
+        preamble.withUnsafeBufferPointer { _ = Darwin.write(fd, $0.baseAddress, $0.count) }
+        // Signal number → ASCII, written in place (no allocation).
+        var n = Int(s)
+        var i = numBuf.count
+        if n == 0 { i -= 1; numBuf[i] = UInt8(ascii: "0") }
+        while n > 0 && i > 0 { i -= 1; numBuf[i] = UInt8(ascii: "0") + UInt8(n % 10); n /= 10 }
+        numBuf.withUnsafeBufferPointer { _ = Darwin.write(fd, $0.baseAddress!.advanced(by: i), $0.count - i) }
+        newline.withUnsafeBufferPointer { _ = Darwin.write(fd, $0.baseAddress, $0.count) }
+        // Symbolicated backtrace, written directly to the fd.
+        let count = frames.withUnsafeMutableBufferPointer { backtrace($0.baseAddress, Int32($0.count)) }
+        frames.withUnsafeMutableBufferPointer { backtrace_symbols_fd($0.baseAddress, count, fd) }
+        close(fd)
     }
 
     /// The previous run's crash report, if any.
@@ -57,10 +97,8 @@ enum CrashReporter {
         if let url = fileURL { try? FileManager.default.removeItem(at: url) }
     }
 
-    // Async-signal-safety note: writing a file from a signal handler isn't
-    // strictly async-signal-safe, but for a single best-effort *local* crash
-    // log (no networking, no heavy allocation) this is the pragmatic trade-off
-    // most lightweight in-app crash loggers make.
+    /// Rich report path — Foundation-based, used only for the Obj-C exception
+    /// handler which runs in a normal (non-signal) context.
     private static func write(_ body: String) {
         guard let url = fileURL else { return }
         let stamp = ISO8601DateFormatter().string(from: Date())

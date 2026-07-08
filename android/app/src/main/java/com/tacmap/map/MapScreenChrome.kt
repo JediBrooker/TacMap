@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Redo
@@ -35,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -51,6 +54,7 @@ import com.tacmap.calibration.Datum
 @Composable
 internal fun CircleHudButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
     onClick: () -> Unit
 ) {
     Box(
@@ -61,7 +65,7 @@ internal fun CircleHudButton(
         contentAlignment = Alignment.Center
     ) {
         IconButton(onClick = onClick) {
-            Icon(icon, contentDescription = null, tint = Color.White,
+            Icon(icon, contentDescription = contentDescription, tint = Color.White,
                  modifier = Modifier.size(20.dp))
         }
     }
@@ -81,7 +85,8 @@ internal fun CompassChip(mapOrientationDegrees: Double, onTap: () -> Unit = {}) 
             .size(56.dp)
             .clip(CircleShape)
             .background(Color(0xCC000000))
-            .clickable { onTap() },
+            .clickable(onClickLabel = "Reset map to north") { onTap() }
+            .semantics { contentDescription = "Compass, $mils mils" },
         contentAlignment = Alignment.Center
     ) {
         Canvas(
@@ -189,6 +194,28 @@ internal fun LockButton(
 }
 
 @Composable
+internal fun UnitLabelsToggle(
+    active: Boolean,
+    onToggle: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (active) Color(0xCC1565C0) else Color(0xCC000000))
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Icons.Default.Flag,
+            contentDescription = if (active) "Hide unit labels" else "Show unit labels",
+            tint = Color.White,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+@Composable
 private fun UndoRedoChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean,
@@ -282,6 +309,9 @@ internal fun CalibrationInputDialog(
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
+        // Don't discard a precisely-placed calibration point on a stray tap
+        // outside the dialog — require an explicit Cancel or Save.
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         onDismissRequest = onDismiss,
         title = { Text("Fiduciary #$fiduciaryNumber") },
         text = {

@@ -173,6 +173,19 @@ fun MapScreen(
         com.tacmap.sync.SyncManager(waypointStore, drawingStore, scope, context)
     }
     val syncStatus by syncManager.status.collectAsState()
+    val presencePeers by syncManager.peers.collectAsState()
+
+    // Wire the location provider so SyncManager can send presence updates.
+    syncManager.locationProvider = { vm.locationService.lastLocation.value }
+
+    // Snackbar for remote sync conflict notifications (Fix #3).
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        syncManager.remoteUpdates.collect { msg ->
+            snackbarHostState.showSnackbar(msg, duration = androidx.compose.material3.SnackbarDuration.Short)
+        }
+    }
+
     /// (done, total) while baking a calibrated PDF into offline tiles; null when idle.
     var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     /// Lock toggle — when true, NO graphic (symbol or drawing) can be
@@ -526,6 +539,7 @@ fun MapScreen(
                 unitLabelsVisible = unitLabelsVisible,
                 taskLabelsVisible = taskLabelsVisible,
                 drawingLabelsVisible = drawingLabelsVisible,
+                peers = presencePeers,
                 selectedDrawingId = selectedDrawingId,
                 selectedWaypointId = selectedWaypointId,
                 calibrationFiduciaries = calibrationFiduciaries,
@@ -655,8 +669,9 @@ fun MapScreen(
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Box {
-                CircleHudButton(Icons.Default.Menu) { hamburgerOpen = true }
+                CircleHudButton(Icons.Default.Menu, "Menu") { hamburgerOpen = true }
                 DropdownMenu(
                     expanded = hamburgerOpen,
                     onDismissRequest = { hamburgerOpen = false }
@@ -791,6 +806,8 @@ fun MapScreen(
                     )
                 }
             }
+            UnitLabelsToggle(active = unitLabelsVisible) { unitLabelsVisible = !unitLabelsVisible }
+            }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 CompassChip(
                     mapOrientationDegrees = mapBearingDegrees,
@@ -891,6 +908,14 @@ fun MapScreen(
                     .padding(bottom = 24.dp)
             )
         }
+
+        // Snackbar for remote sync conflict notifications
+        androidx.compose.material3.SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 80.dp)
+        )
     }
 
     if (showWaypointSheet) {
@@ -1112,6 +1137,15 @@ fun MapScreen(
             onExportGpx = {
                 showImportExportSheet = false
                 shareGpx(context = context, points = trackPoints)
+            },
+            onExportAllData = {
+                showImportExportSheet = false
+                exportAllData(
+                    context = context,
+                    waypoints = waypoints,
+                    drawings = drawingDocument.features,
+                    layers = drawingDocument.layers
+                )
             },
             onDismiss = { showImportExportSheet = false }
         )
