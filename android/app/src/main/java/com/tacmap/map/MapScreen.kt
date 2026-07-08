@@ -770,7 +770,7 @@ fun MapScreen(
                         },
                         onClick = {
                             hamburgerOpen = false
-                            if (isRecordingTrack) vm.trackRecorder.stop() else vm.trackRecorder.start()
+                            if (isRecordingTrack) vm.stopTrackRecording() else vm.startTrackRecording()
                         },
                         leadingIcon = {
                             Icon(

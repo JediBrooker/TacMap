@@ -12,7 +12,6 @@ import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfSessionStore
 import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LocationService
-import com.tacmap.models.TrackRecorder
 import com.tacmap.models.TrackRecordingService
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
@@ -49,10 +48,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     /** App-scoped OPSEC/privacy settings (screen-capture, online lookups, relay). */
     val opsec = (app as com.tacmap.app.TacticalApp).opsec
 
-    /** GPX patrol-track recorder. Fed every fix from [onUserLocation]; only
-     *  accumulates while recording. Persists each fix to disk (survives process
-     *  death) and recovers an un-discarded track on construction. */
-    val trackRecorder = TrackRecorder(app)
+    val trackRecorder = (app as com.tacmap.app.TacticalApp).trackRecorder
 
     // Camera centre published by MapScreen on every camera-idle event.
     private val _cameraLat = MutableStateFlow(0.0)

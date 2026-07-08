@@ -1,33 +1,42 @@
 package com.tacmap.models
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.Looper
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.tacmap.app.TacticalApp
 
 /**
- * Foreground service that keeps the process alive and location delivery running
- * while a GPX track is recording and the app is backgrounded or the screen is
- * locked. It does NOT request locations itself — [LocationService] keeps
- * streaming fixes into [TrackRecorder] (which persists each one) for as long as
- * this service holds the app in the foreground, so a patrol track no longer
- * gaps or vanishes when the phone goes in a pocket.
+ * Foreground service that keeps GPS location delivery alive while a GPX track
+ * is recording and the app is backgrounded or the screen is locked.
  *
- * NOTE: this needs on-device verification (foreground-service behaviour can't be
- * exercised by the JVM unit tests). Failure to start the service degrades
- * gracefully — foreground recording + the on-disk log still capture points.
+ * Runs its own [LocationCallback] so fixes keep flowing into the app-scoped
+ * [TrackRecorder] even when the Activity (and its ViewModel) is destroyed.
  */
 class TrackRecordingService : Service() {
 
+    private var locationCallback: LocationCallback? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -36,8 +45,37 @@ class TrackRecordingService : Service() {
             @Suppress("DEPRECATION")
             startForeground(NOTIF_ID, notification)
         }
+
+        if (locationCallback == null && hasLocationPermission()) {
+            val recorder = (application as TacticalApp).trackRecorder
+            val client = LocationServices.getFusedLocationProviderClient(this)
+            val cb = object : LocationCallback() {
+                override fun onLocationResult(result: LocationResult) {
+                    result.lastLocation?.let { recorder.onLocation(it) }
+                }
+            }
+            val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L)
+                .setMinUpdateIntervalMillis(500L)
+                .build()
+            client.requestLocationUpdates(req, cb, Looper.getMainLooper())
+            locationCallback = cb
+        }
+
         return START_STICKY
     }
+
+    override fun onDestroy() {
+        locationCallback?.let {
+            LocationServices.getFusedLocationProviderClient(this)
+                .removeLocationUpdates(it)
+        }
+        locationCallback = null
+        super.onDestroy()
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
 
     private fun buildNotification(): Notification {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
