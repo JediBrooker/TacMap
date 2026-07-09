@@ -5,15 +5,10 @@ import Combine
 
 /// State machine for an in-progress fiduciary calibration of a PDF source.
 ///
-/// Flow:
-///   1. `start(for:)` flips the app into calibration mode for a specific
-///      `PDFMapSource`.
-///   2. The user taps known features on the PDF. Each tap is converted to a
-///      PDF user-space point and held as `pendingTap` while a sheet asks for
-///      the MGRS coordinate of that point.
-///   3. `confirmFiduciary(mgrs:)` saves the (pdfPoint, lat/lon) pair.
-///   4. Once 3+ fiduciaries are placed the user taps Finish; we run
-///      `AffineFitter` and the resulting transform is applied to the source.
+/// Basically: start(for:) enters calibration mode, user taps known features
+/// on the PDF, each tap becomes a pendingTap while we ask for MGRS coords,
+/// confirmFiduciary saves the (pdfPoint, lat/lon) pair. Once 3+ fiduciaries
+/// are placed user taps Finish and we run AffineFitter.
 final class CalibrationSession: ObservableObject {
 
     /// Geometry of a tap that's awaiting MGRS entry.
@@ -30,19 +25,19 @@ final class CalibrationSession: ObservableObject {
     @Published private(set) var pendingTap: PendingTap? = nil
     @Published private(set) var lastFitRMSMetres: Double? = nil
 
-    /// Datum the sheet's grid references are in. Defaults to WGS84 (a no-op);
-    /// set to GDA94/GDA2020 for Australian MGA sheets so fiduciary coordinates
-    /// are shifted to WGS84 before storing. See `Datum`.
+    /// Datum the sheet's grid references are in. Defaults to WGS84 (no-op);
+    /// set to GDA94/GDA2020 for Aussie MGA sheets so fiduciary coords get
+    /// shifted to WGS84 before storing. See `Datum`.
     @Published var datum: Datum = .wgs84
 
-    /// The source being calibrated. Held weakly so we don't keep the old
-    /// source alive after replacement.
+    /// Source being calibrated. Weak ref so we don't keep the old source
+    /// alive after replacement.
     private(set) weak var source: PDFMapSource?
 
     func start(for source: PDFMapSource) {
         self.source = source
-        // Seed with any existing fiduciaries so the user can refine instead of
-        // start over.
+        // Seed with existing fiduciaries so user can refine instead of
+        // starting over.
         self.fiduciaries = source.fiduciaries ?? []
         self.pendingTap = nil
         self.lastFitRMSMetres = nil
@@ -57,7 +52,7 @@ final class CalibrationSession: ObservableObject {
         lastFitRMSMetres = nil
     }
 
-    /// User tapped a feature. We hold the geometry; the sheet collects MGRS.
+    /// User tapped a feature. Hold the geometry, sheet collects MGRS.
     func recordTap(pdfPoint: CGPoint, screenPoint: CGPoint) {
         pendingTap = PendingTap(pdfPoint: pdfPoint, screenPoint: screenPoint)
     }
@@ -72,8 +67,8 @@ final class CalibrationSession: ObservableObject {
     func confirmFiduciary(mgrs: String, label: String? = nil) -> Bool {
         guard let pending = pendingTap,
               let parsed = MGRSFormatter.coordinate(from: mgrs) else { return false }
-        // The MGRS is in the sheet's datum; shift to WGS84 before storing so
-        // every overlay (and the GeoJSON export) is in one consistent datum.
+        // MGRS is in the sheet's datum, shift to WGS84 before storing so
+        // overlays and GeoJSON export all use one consistent datum.
         let coord = datum.toWGS84(parsed)
         let fid = Fiduciary(
             pdfX: Double(pending.pdfPoint.x),

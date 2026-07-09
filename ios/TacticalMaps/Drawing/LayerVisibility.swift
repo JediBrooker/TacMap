@@ -1,19 +1,18 @@
 import Foundation
 import Combine
 
-/// Shared object controlling which overlays/labels are rendered on the map.
-/// Bound from `LayersSheet` toggles and consumed by `MapContainerView`.
+/// Controls which overlays/labels are rendered on the map.
+/// Bound from `LayersSheet` toggles, consumed by `MapContainerView`.
 ///
-/// Every toggle persists to `UserDefaults` so the user's choices survive
-/// quitting and relaunching the app. (Previously these were in-memory only
-/// and reset to defaults on every launch.)
+/// All toggles persist to UserDefaults now so they survive app restart.
+/// (Used to be memory-only and reset every launch, which was annoying.)
 final class LayerVisibility: ObservableObject {
     @Published var waypointsVisible:     Bool = true  { didSet { d.set(waypointsVisible,     forKey: K.waypoints) } }
     @Published var drawingsVisible:      Bool = true  { didSet { d.set(drawingsVisible,      forKey: K.drawings) } }
     @Published var userLocationVisible:  Bool = true  { didSet { d.set(userLocationVisible,  forKey: K.userLocation) } }
-    /// Imported PDF overlay (GeoPDF basemap). Defaults on; users can toggle
-    /// off to compare against satellite, or to hide a temporarily misaligned
-    /// PDF without unloading it.
+    /// PDF overlay (GeoPDF basemap). On by default, user can toggle off
+    /// to compare against satellite or hide a misaligned PDF without
+    /// unloading it.
     @Published var pdfOverlayVisible:    Bool = true  { didSet { d.set(pdfOverlayVisible,    forKey: K.pdfOverlay) } }
 
     /// Whether the name-label pill is rendered alongside each drawing.
@@ -21,19 +20,17 @@ final class LayerVisibility: ObservableObject {
     /// Whether the name-label pill is rendered under each military / generic
     /// waypoint icon.
     @Published var unitLabelsVisible:    Bool = false { didSet { d.set(unitLabelsVisible,    forKey: K.unitLabels) } }
-    /// Whether the name-label is rendered inside each tactical control
-    /// measure (task graphic). Separate from units because tasks have
-    /// different rendering geometry — labels sit inside the bubble, not
-    /// below it — and users often want one toggled without the other.
+    /// Name-label inside each task graphic. Seperate toggle from units
+    /// b/c tasks render labels inside the bubble (not below it) and
+    /// users often want one on without the other.
     @Published var taskLabelsVisible:    Bool = false { didSet { d.set(taskLabelsVisible,    forKey: K.taskLabels) } }
 
-    /// MGRS military grid overlay. Defaults off because the grid is a
-    /// performance- and visual-cost feature most users won't want on by
-    /// default; render detail (100km → 10km → 1km) auto-selects from
-    /// current zoom.
+    /// MGRS grid overlay. Off by default, its a perf + visual cost most
+    /// users won't want. Render detail (100km / 10km / 1km) auto-selects
+    /// from zoom level.
     @Published var mgrsGridVisible:      Bool = false { didSet { d.set(mgrsGridVisible,      forKey: K.mgrsGrid) } }
 
-    /// Auto terrain heat-map (DEM shading). Off by default — it fetches DEM
+    /// Terrain heat-map (DEM shading). Off by default, fetches DEM
     /// samples over the network when enabled.
     @Published var terrainHeatmapVisible: Bool = false { didSet { d.set(terrainHeatmapVisible, forKey: K.terrainHeatmap) } }
 

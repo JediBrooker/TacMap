@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Capture a REAL Android hero screenshot: the NATO tactical situation (pushed to a
-Unit Sync room by scripts/sync_push_situation.mjs) rendered by the live app over
-the Esri Satellite basemap.
+Capture a REAL Android hero screenshot: NATO tactical situation (pushed to a
+Unit Sync room by scripts/sync_push_situation.mjs) rendered by the live app
+over Esri Satellite basemap.
 
-The Google base layer is blank on locally-signed builds (Maps key whitelisted to
-the Play signing cert), but the Esri basemap is a TileOverlay that needs no key,
-and the markers/polylines/polygons render on top of it regardless — so this is a
-genuine capture, no compositing.
+Google base layer is blank on locally-signed builds (Maps key whitelisted to
+Play signing cert), but Esri basemap is a TileOverlay that needs no key and
+markers/polylines/polygons render on top regardless - so this is a genuine
+capture, no compositing.
 
     python3 scripts/android_hero.py <apk> <out_dir> <room_code>
 """
@@ -79,13 +79,13 @@ def ensure_map(tries=5):
 
 def double_tap(x, y):
     adb("shell", "input", "tap", str(x), str(y))
-    adb("shell", "input", "tap", str(x), str(y))   # back-to-back = zoom in one level
+    adb("shell", "input", "tap", str(x), str(y))   # two taps back-to-back = zoom in
     time.sleep(3.5)
 
 def enable_label_switches():
-    """In the Layers sheet, turn ON Unit/Task/Drawing label switches.
-    Each ToggleRow is [Text | Switch] SpaceBetween; the Switch is a checkable
-    node at the right edge on the same row — tap it only if not already on."""
+    """Turn ON the label switches in the Layers sheet.
+    Each ToggleRow is [Text | Switch] SpaceBetween; Switch is a checkable
+    node at the right edge on same row. Only tap if not already on."""
     for label in ["Unit Labels", "Task Labels", "Drawing Labels"]:
         root = dump()
         if root is None: continue
@@ -94,7 +94,7 @@ def enable_label_switches():
             if n.get("text", "").strip() == label and n.get("bounds"):
                 ly = center(n.get("bounds"))[1]; break
         if ly is None: print(f"  [!] label row not found: {label}"); continue
-        # find the nearest checkable node on that row
+        # find nearest checkable node on that row
         best = None
         for n in root.iter("node"):
             if n.get("checkable") == "true" and n.get("bounds"):
@@ -121,23 +121,23 @@ adb("emu", "geo", "fix", "150.305", "-33.700"); time.sleep(2)
 for lbl in ["While using the app", "Allow", "OK"]:
     if tap_text(lbl, pause=1.5): break
 print(f"size={sh('wm size').strip()}")
-# adapt to the actual screen (phone vs tablet) — derive map centre + edge x
+# adapt to actual screen (phone vs tablet) - derive map centre + edge x
 _m = re.search(r'(\d+)x(\d+)', sh('wm size'))
 if _m:
     W = int(_m.group(1)); H = int(_m.group(2))
     CX, CY = W // 2, int(H * 0.49)
     print(f"detected {W}x{H} centre={CX},{CY}")
 
-# 1) keep the default Google Satellite basemap (the release cert is now
-#    whitelisted on the Maps key, so it authenticates + renders) and turn
-#    the unit/task/drawing labels on while the Layers sheet is open
+# 1) keep default Google Satellite basemap (release cert is whitelisted
+#    on the Maps key now so it authenticates + renders). Turn labels on
+#    while we have the Layers sheet open
 ensure_map()
 if tap_hamburger() and tap_text("Layers and Labels"):
     enable_label_switches()
 back(1); time.sleep(1)           # close the sheet
 ensure_map(); time.sleep(10)     # let Google satellite tiles stream in
 
-# 3) join the Unit Sync room (renders the pushed situation; indicator -> Connected)
+# 3) join Unit Sync room - renders the pushed situation, indicator -> Connected
 if tap_hamburger() and tap_text("Unit Sync"):
     root = dump(); field = None
     for n in (root.iter("node") if root is not None else []):
@@ -152,7 +152,7 @@ if tap_hamburger() and tap_text("Unit Sync"):
     back(1); time.sleep(1)        # close the dialog
 ensure_map(); time.sleep(4)
 
-# 4) recentre on device location, then capture at three zoom levels to pick framing
+# 4) recentre on device location, capture at three zoom levels so we can pick framing
 tap_text("Centre on My Location", pause=3.0)
 time.sleep(3)
 snap("a01-hero-z0")

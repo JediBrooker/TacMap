@@ -17,9 +17,9 @@ class DrawingStore(context: Context) {
     private val _document = MutableStateFlow(DrawingDocument())
     val document: StateFlow<DrawingDocument> = _document.asStateFlow()
 
-    /** Non-null when the on-disk drawings file was unreadable and had to be
-     *  quarantined. Surfaced by the UI so the user knows their drawings were
-     *  preserved (not silently discarded) rather than blank == "no data". */
+    /** Non-null when on-disk drawings file was unreadable and got quarantined.
+     *  Surfaced by UI so user knows their drawings were preserved (not silently
+     *  discarded) rather than thinking blank means "no data". */
     private val _loadError = MutableStateFlow<String?>(null)
     val loadError: StateFlow<String?> = _loadError.asStateFlow()
 
@@ -75,10 +75,9 @@ class DrawingStore(context: Context) {
     }
 
     /**
-     * Insert a layer verbatim (preserves the supplied id + colour). Used
-     * by GeoJSON import so feature.layerId references resolve correctly
-     * after a round-trip. If a layer with the same id already exists,
-     * this is a no-op.
+     * Insert a layer verbatim (preserves supplied id + colour). Used by
+     * GeoJSON import so feature.layerId references resolve correctly
+     * after round-trip. No-op if layer with same id already exists.
      */
     fun addLayerVerbatim(layer: DrawingLayer) {
         if (_document.value.layers.any { it.id == layer.id }) return
@@ -97,8 +96,8 @@ class DrawingStore(context: Context) {
         persist()
     }
 
-    /** Updates a feature for visual feedback during a continuous gesture (e.g. slider
-     *  drag) without pushing to the undo stack. Call [updateFeature] at gesture end. */
+    /** Update feature for visual feedback during a gesture (e.g. slider drag)
+     *  without pushing to undo stack. Call [updateFeature] at gesture end. */
     fun updateFeatureNoUndo(feature: DrawingFeature) {
         _document.value = _document.value.copy(
             features = _document.value.features.map { if (it.id == feature.id) feature else it }
@@ -135,11 +134,11 @@ class DrawingStore(context: Context) {
     private fun load() {
         when (val r = SafeStore.readOrQuarantine(file) { json.decodeFromString<DrawingDocument>(it) }) {
             is SafeStore.LoadResult.Loaded -> _document.value = r.value.withDefaultLayers()
-            is SafeStore.LoadResult.Empty -> Unit // fresh install — keep the default document
+            is SafeStore.LoadResult.Empty -> Unit // fresh install, keep default document
             is SafeStore.LoadResult.Corrupt ->
-                // Do NOT overwrite: the unreadable file is preserved as
-                // drawings.json.corrupt-* and the user is told, instead of the
-                // next edit silently persisting an empty document over it.
+                // Do NOT overwrite: unreadable file is preserved as
+                // drawings.json.corrupt-* and user is told. Otherwise the next
+                // edit would silently persist an empty doc over it.
                 _loadError.value = "Saved drawings could not be read and were set aside " +
                     "(${r.quarantinedTo?.name ?: "recovery copy"}). Starting with an empty map."
         }

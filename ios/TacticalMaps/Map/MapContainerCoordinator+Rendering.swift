@@ -5,10 +5,10 @@ import MGRS
 
 // MARK: - Overlay renderers + annotation views
 //
-// How the map draws each overlay (drawing strokes/fills, MGRS grid lines) and
-// each annotation (waypoints, drawing points/labels, vertex dots + edit
-// handles, grid labels), plus the UIImage renderers backing the custom
-// annotation views. Extracted verbatim from MapContainerView.swift.
+// How the map draws each overlay (drawing strokes/fills, MGRS grid lines)
+// and each annotation (waypoints, drawing points/labels, vertex dots + edit
+// handles, grid labels). Also the UIImage renderers for custom annotation
+// views. Pulled out of MapContainerView.swift.
 extension MapContainerView.Coordinator {
 
     func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -20,13 +20,13 @@ extension MapContainerView.Coordinator {
         if let heatmap = overlay as? TerrainHeatmapOverlay {
             return TerrainHeatmapRenderer(heatmap: heatmap)
         }
-        // PDF basemap is no longer an MKOverlay — it's a UIImageView
-        // subview (see syncPDFOverlay). This delegate handles drawings only.
+        // PDF basemap is no longer an MKOverlay, it's a UIImageView
+        // subview now (see syncPDFOverlay). This delegate handles drawings only.
 
         let key = ObjectIdentifier(overlay)
-        // MGRS grid line — pick stroke width from grid type, colour
-        // is a shared neutral dark-grey ink so the grid matches
-        // across iOS / Android and stays readable on any basemap.
+        // MGRS grid line. Pick stroke width from grid type, colour
+        // is a shared neutral dark-grey ink so grid matches across
+        // iOS / Android and stays readable on any basemap.
         if let gridType = mgrsGridTypeByOverlay[key],
            let line = overlay as? MKPolyline {
             let r = MKPolylineRenderer(polyline: line)
@@ -36,16 +36,15 @@ extension MapContainerView.Coordinator {
         }
         let style = styleByOverlay[key] ?? .default
         let inProgress = inProgressOverlayIDs.contains(key)
-        // Selection glow: when this overlay's shape is the one whose
-        // controls card is open, bump the stroke width so the shape
-        // visibly "lifts" off the map.
+        // Selection glow - if this shape's controls card is open,
+        // bump stroke width so it visibly "lifts" off the map.
         let isSelected = shapeIDByOverlay[key]
             .map { $0 == mapVM.selectedDrawingID } ?? false
         let selectionBoost: CGFloat = isSelected ? 3.0 : 0.0
 
         if let line = overlay as? MKPolyline {
-            // Decorated tactical graphics (FLOT/FEBA, boundary, axis) get a
-            // custom renderer that draws crenellations / ticks / arrowheads.
+            // Decorated tactical graphics (FLOT/FEBA, boundary, axis) get
+            // a custom renderer for crenellations / ticks / arrowheads.
             if !inProgress, let g = style.lineGraphic,
                g == .forwardEdge || g == .boundary || g == .axisOfAdvance {
                 return TacticalLineRenderer(polyline: line, style: style,
@@ -77,10 +76,10 @@ extension MapContainerView.Coordinator {
         return MKOverlayRenderer(overlay: overlay)
     }
 
-    /// Resolve the dash pattern for an overlay's renderer.
-    /// - In-progress shapes always render dashed (preview convention),
-    ///   regardless of the user's solid/dashed toggle.
-    /// - Finalized shapes honour `style.dashPattern` — nil means solid.
+    /// Resolve dash pattern for an overlay renderer.
+    /// In-progress shapes always render dashed (preview convention)
+    /// regardless of user's solid/dashed toggle. Finalized shapes
+    /// honour style.dashPattern, nil = solid.
     private func effectiveDashPattern(for style: DrawingStyle,
                                       inProgress: Bool) -> [NSNumber]? {
         if inProgress {
@@ -91,18 +90,15 @@ extension MapContainerView.Coordinator {
 
     func mapView(_ mv: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
         if let wp = annotation as? WaypointAnnotation {
-            // Military kinds get a custom APP-6 image so the frame /
-            // function / echelon are drawn properly. Everything else
-            // (generic waypoint, tactical control measures) keeps the
-            // teardrop MKMarker pin with an SF Symbol glyph.
+            // Military kinds get a custom APP-6 image so frame /
+            // function / echelon draw properly. Everything else keeps
+            // the teardrop MKMarker pin with an SF Symbol glyph.
             if let spec = wp.waypoint.kind.militarySpec {
                 let id = "waypoint-military"
-                // Military symbols use a plain MKAnnotationView (no
-                // halo, no enlarged bounds). The user explicitly
-                // didn't want the entire unit graphic to glow —
-                // adding a CALayer shadow to the whole image was
-                // too much. Future work could halo only the
-                // echelon indicator above the frame.
+                // Plain MKAnnotationView (no halo, no enlarged bounds).
+                // Adding a CALayer shadow to the whole image looked
+                // terrible. Could maybe halo just the echelon
+                // indicator above the frame someday.
                 let view = mv.dequeueReusableAnnotationView(withIdentifier: id)
                     ?? MKAnnotationView(annotation: wp, reuseIdentifier: id)
                 view.annotation = wp
@@ -113,10 +109,9 @@ extension MapContainerView.Coordinator {
                 return view
             }
             // Tactical control measures are rendered by
-            // `TacticalSymbolOverlay` (a SwiftUI overlay above
-            // the map view), not by MKMapView's annotation
-            // pipeline. They're filtered out before they ever
-            // become annotations — see `refresh()`.
+            // TacticalSymbolOverlay (SwiftUI overlay above map),
+            // not MKMapView annotations. They get filtered out
+            // before ever becoming annotations - see refresh().
             let id = "waypoint"
             let view = mv.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView
                 ?? MKMarkerAnnotationView(annotation: wp, reuseIdentifier: id)
@@ -145,9 +140,8 @@ extension MapContainerView.Coordinator {
             view.canShowCallout = false
             view.isUserInteractionEnabled = false
             view.displayPriority = .required
-            // Render the pill as a single UIImage — much more reliable
-            // than building subviews, which MapKit sometimes drops on
-            // annotation reuse.
+            // Render pill as UIImage. Way more reliable than subviews
+            // which MapKit sometimes just drops on annotation reuse.
             view.image = Self.renderLabelPill(text: lbl.text)
             if let img = view.image {
                 view.bounds = CGRect(origin: .zero, size: img.size)
@@ -178,9 +172,9 @@ extension MapContainerView.Coordinator {
             view.annotation = g
             view.canShowCallout = false
             view.isUserInteractionEnabled = false
-            // .required so MapKit never declutters grid labels away
-            // — a sparse grid with hidden numbers is worse than a
-            // dense one where the user can still read the values.
+            // .required so MapKit never declutters grid labels.
+            // A sparse grid with hidden numbers is worse than a
+            // dense one where you can still read the values.
             view.displayPriority = .required
             view.collisionMode = .none
             view.image = Self.renderMGRSLabel(text: g.text,
@@ -239,11 +233,10 @@ extension MapContainerView.Coordinator {
             view.canShowCallout = false
             view.isUserInteractionEnabled = true
             // MapKit's built-in drag is a long-press-then-drag that
-            // never fires reliably on small custom annotation
-            // views, so we drive the drag ourselves via a
-            // UIPanGestureRecognizer below. Keep isDraggable off
-            // so the system doesn't install its own competing
-            // recogniser.
+            // basically never works reliably on small custom views,
+            // so we hand-roll it via UIPanGestureRecognizer below.
+            // Keep isDraggable off so system doesn't install its
+            // own competing recogniser.
             view.isDraggable = false
             view.displayPriority = .required
             view.image = h.isMidpoint
@@ -254,23 +247,23 @@ extension MapContainerView.Coordinator {
             }
             view.centerOffset = .zero
 
-            // Strip any recogniser left over from a recycled view
-            // so handlers don't stack on reuse.
+            // Strip leftover recognisers from recycled views so
+            // handlers don't stack up on reuse.
             view.gestureRecognizers?.forEach { view.removeGestureRecognizer($0) }
 
-            // Pan = drag. Fires on the very first movement so the
-            // user can pick up the handle immediately, OR continue
-            // a drag that started after a hold (long-press and
-            // pan recognise simultaneously below).
+            // Pan = drag. Fires on first movement so user can grab
+            // the handle immediately, or continue a drag that
+            // started after a hold (long-press and pan recognise
+            // simultaneously below).
             let pan = UIPanGestureRecognizer(target: self, action: #selector(handleVertexPan(_:)))
             pan.delegate = self
             view.addGestureRecognizer(pan)
 
-            // Long-press = delete (real vertices only — midpoint
-            // handles don't represent a stored vertex so there's
-            // nothing to remove). The handler only acts on .ended
-            // and only if NO movement happened during the press,
-            // so hold-then-drag is correctly treated as a drag.
+            // Long-press = delete. Real vertices only, midpoint
+            // handles don't represent a stored vertex so nothing
+            // to remove. Handler only acts on .ended and only if
+            // NO movement occured during press, so hold-then-drag
+            // is correctly treated as a drag.
             if !h.isMidpoint {
                 let lp = UILongPressGestureRecognizer(target: self, action: #selector(handleVertexLongPress(_:)))
                 lp.minimumPressDuration = 0.55
@@ -283,7 +276,7 @@ extension MapContainerView.Coordinator {
         return nil
     }
 
-    /// Render the drawing-name pill as a UIImage so it survives MapKit's
+    /// Render drawing-name pill as UIImage so it survives MapKit's
     /// annotation-view reuse cycle.
     private static func renderLabelPill(text: String) -> UIImage {
         let font = UIFont.systemFont(ofSize: 11, weight: .semibold)
@@ -305,7 +298,7 @@ extension MapContainerView.Coordinator {
             cg.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
             cg.setLineWidth(0.5)
             cg.strokePath()
-            // Text — slight shadow for legibility.
+            // Text, slight shadow for legibility.
             let textAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: UIColor.white,
@@ -320,9 +313,8 @@ extension MapContainerView.Coordinator {
         }
     }
 
-    /// Filled dot rendered at each tapped vertex during a measure or
-    /// draw session, so the user can see exactly where their taps
-    /// landed before the polyline closes the gap.
+    /// Filled dot at each tapped vertex during measure/draw so you
+    /// can see exactly where taps landed before the polyline closes.
     private static func renderVertexDot(color: UIColor) -> UIImage {
         let size = CGSize(width: 12, height: 12)
         let renderer = UIGraphicsImageRenderer(size: size)
@@ -336,11 +328,10 @@ extension MapContainerView.Coordinator {
         }
     }
 
-    /// MGRS grid label drawn as bare dark-grey bold text with a
-    /// subtle white "drop shadow" halo for legibility on busy
-    /// basemaps. No pill background. When `rotated` is true the
-    /// text is drawn sideways so it lines up with vertical
-    /// (easting) grid lines.
+    /// MGRS grid label - bare dark-grey bold text with a subtle white
+    /// halo for legibility on busy basemaps. No pill background.
+    /// When rotated the text is drawn sideways to line up with
+    /// vertical (easting) grid lines.
     private static func renderMGRSLabel(text: String, fontSize: CGFloat, rotated: Bool) -> UIImage {
         let font = UIFont.systemFont(ofSize: fontSize, weight: .bold)
         let baseAttrs: [NSAttributedString.Key: Any] = [
@@ -351,9 +342,8 @@ extension MapContainerView.Coordinator {
         let pad: CGFloat = 3
         let drawW = textSize.width  + pad * 2
         let drawH = textSize.height + pad * 2
-        // Rotated labels need the canvas swapped to fit the
-        // rotated text — width becomes the original height + pad,
-        // height becomes the original width.
+        // Rotated labels need canvas swapped to fit. Width becomes
+        // original height + pad, height becomes original width.
         let canvasSize = rotated
             ? CGSize(width: drawH, height: drawW)
             : CGSize(width: drawW, height: drawH)
@@ -362,12 +352,12 @@ extension MapContainerView.Coordinator {
             let cg = ctx.cgContext
             if rotated {
                 // Rotate -90° around centre so easting labels run
-                // along the line (text reads bottom→top).
+                // along the line (text reads bottom-to-top).
                 cg.translateBy(x: canvasSize.width / 2, y: canvasSize.height / 2)
                 cg.rotate(by: -.pi / 2)
                 cg.translateBy(x: -drawW / 2, y: -drawH / 2)
             }
-            // Soft white halo via four offset white passes — keeps
+            // Soft white halo via four offset white passes. Keeps
             // dark-grey digits readable on dark satellite tiles
             // without adding a visible pill.
             let haloAttrs: [NSAttributedString.Key: Any] = [
@@ -386,8 +376,8 @@ extension MapContainerView.Coordinator {
         }
     }
 
-    /// Build a `MilitarySymbolSpec` from a presence peer's string-coded fields.
-    /// Falls back to friend/team/infantry if any field is unrecognised.
+    /// Build a MilitarySymbolSpec from a presence peer's string fields.
+    /// Falls back to friend/team/infantry if anything is unrecognised.
     static func specFromPeer(_ peer: PresencePeer) -> MilitarySymbolSpec {
         let affiliation = SymbolAffiliation(rawValue: peer.affiliation) ?? .friend
         let echelon = SymbolEchelon(rawValue: peer.echelon) ?? .team

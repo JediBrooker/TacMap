@@ -2,15 +2,15 @@
 """
 Render the Google Play 512x512 hi-res icon for TacticalMaps.
 
-This reproduces the Android *adaptive launcher icon* — background colour
-`launcher_background` (#151916) composited with the foreground vector in
-`app/src/main/res/drawable/ic_launcher_foreground.xml` — so the store icon
-matches what users see on their device home screen.
+Reproduces the Android adaptive launcher icon - launcher_background (#151916)
+composited with the foreground vector from
+app/src/main/res/drawable/ic_launcher_foreground.xml. So the store icon
+matches what users actually see on their home screen.
 
-The adaptive foreground lives in a 108x108 viewport but only the central
-72x72 "safe zone" is shown after the launcher's mask + zoom. We map that
-safe zone (viewport 18..90) onto the full 512px canvas so the framing
-matches the installed icon rather than floating tiny in a sea of background.
+Adaptive foreground lives in 108x108 viewport but only the central 72x72
+"safe zone" shows after the launcher's mask + zoom. We map that safe zone
+(viewport 18..90) onto the full 512px canvas so framing matches the
+installed icon instead of floating tiny in a sea of background.
 
 Supersampled 4x then downscaled for clean edges. No external assets.
 
@@ -22,7 +22,7 @@ import os
 from PIL import Image, ImageDraw
 
 OUT_SIZE = 512
-SS = 4                      # supersample factor
+SS = 4                      # supersample factor for clean edges
 CANVAS = OUT_SIZE * SS
 
 # Adaptive safe zone: viewport coords 18..90 (72 wide) -> 0..CANVAS
@@ -31,12 +31,12 @@ SCALE = CANVAS / VP_SPAN
 
 
 def t(x, y):
-    """viewport (108-space) -> canvas pixels."""
+    """viewport (108-space) -> canvas px"""
     return ((x - VP_MIN) * SCALE, (y - VP_MIN) * SCALE)
 
 
 def w(width):
-    """viewport stroke width -> canvas pixels."""
+    """viewport stroke width -> canvas px"""
     return width * SCALE
 
 
@@ -76,7 +76,7 @@ def main():
     rect(d, 24, 27, 48, 81, LEFT)
     rect(d, 50, 27, 84, 81, RIGHT)
 
-    # 4: faint MGRS grid (semi-transparent -> own layer, then composite)
+    # 4: faint MGRS grid (semi-transparent, needs its own layer then composite)
     grid = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
     for gx in (32, 44, 56, 68, 80):
@@ -93,7 +93,7 @@ def main():
     rr = w(5)
     d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=ORANGE)
 
-    # 7: white frame (semi-transparent -> own layer)
+    # 7: white frame (semi-transparent, own layer again)
     frame = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     fd = ImageDraw.Draw(frame)
     for (x0, y0, x1, y1) in (

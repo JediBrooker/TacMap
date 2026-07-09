@@ -3,26 +3,24 @@ import MapKit
 import MGRS
 import Grid
 
-/// Generates MGRS grid line polylines + per-line grid-square labels
-/// covering a visible map region. Detail (100km / 10km / 1km) is
-/// picked from the map's current zoom: zoomed all the way out, only
-/// the 100km lines render; zoom in and the finer grids appear
-/// progressively.
+/// Builds MGRS grid polylines + per-line labels for the visible map region.
+/// Detail level (100km / 10km / 1km) depends on zoom: zoomed way out
+/// you only get 100km lines, zoom in and finer grids show up.
 ///
-/// Label placement follows the convention used on military 1:50,000
-/// topo sheets — eastings on vertical lines, northings on horizontal
-/// lines, centred along the visible portion of each line.
+/// Label placement follows the mil topo sheet convention - eastings on
+/// vertical lines, northings on horizontal, centred on the visible
+/// portion of each line.
 enum MGRSGridRenderer {
 
-    /// One polyline + its grid-type tag, ready for MKMapView to consume.
+    /// One polyline + its grid-type tag for MKMapView.
     struct LineSegment {
         let polyline: MKPolyline
         let gridType: GridType
     }
 
-    /// One axis-specific label centred on a grid line. `isVertical`
-    /// drives the rendering orientation (vertical lines get the easting
-    /// label rotated to match the line, horizontal lines stay flat).
+    /// Label for one axis, centred on a grid line. `isVertical` controls
+    /// render orientation - vertical lines get easting label rotated,
+    /// horizontal ones stay flat.
     struct LabelMark {
         let text: String
         let coordinate: CLLocationCoordinate2D
@@ -30,34 +28,33 @@ enum MGRSGridRenderer {
         let isVertical: Bool
     }
 
-    /// Tactical-mode neutral dark-grey ink used for both lines and labels.
+    /// Neutral dark-grey ink for lines and labels in tactical mode.
     static let inkColor = UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 0.85)
     static let labelTextColor = UIColor(red: 0.16, green: 0.16, blue: 0.16, alpha: 1.0)
 
-    /// One-time Grids configuration: NGA's defaults disable the 10km
-    /// labeler and gate the 100km labeler to zoom ≥ 6. We never use
-    /// the library's per-square labels (we emit our own per-line ones),
-    /// but we DO use the Grids configuration for line generation.
+    /// One-time Grids setup. NGA's defaults disable the 10km labeler and
+    /// gate 100km labeler to zoom >= 6. We don't use the library's
+    /// per-square labels (we roll our own per-line ones), but we do need
+    /// the Grids config for line generation.
     private static let configuredGrids = Grids()
 
-    /// Generate every visible grid line + per-line label for the
-    /// supplied map region. `mapWidthPoints` is the on-screen width
-    /// used to convert the region into a tile-zoom level the NGA
-    /// library understands.
+    /// Build all visible grid lines + per-line labels for the given region.
+    /// `mapWidthPoints` is on-screen width, used to figure out tile-zoom
+    /// for the NGA library.
     static func build(for region: MKCoordinateRegion,
                       mapWidthPoints: CGFloat) -> (lines: [LineSegment], labels: [LabelMark]) {
-        // Clamp to the range the NGA grid library accepts. A cold-launch or
-        // world-spanning region can otherwise hand GridZones a longitude at
-        // exactly ±180 (→ UTM zone 61) or a polar latitude, tripping the
-        // library's zone-number assertion (a hard crash in debug). UTM is
+        // Clamp to what the NGA grid library accepts. On cold-launch or
+        // world-spanning region, GridZones can get a longitude at exactly
+        // +/-180 (gives UTM zone 61) or a polar lat, and the library's
+        // zone-number assertion blows up (hard crash in debug). UTM is
         // defined for lon [-180, 180) and lat [-80, 84].
         let west  = (region.center.longitude - region.span.longitudeDelta / 2).clamped(to: -180 ... 179.9999)
         let east  = (region.center.longitude + region.span.longitudeDelta / 2).clamped(to: -180 ... 179.9999)
         let south = (region.center.latitude  - region.span.latitudeDelta  / 2).clamped(to: -80 ... 84)
         let north = (region.center.latitude  + region.span.latitudeDelta  / 2).clamped(to: -80 ... 84)
 
-        // Approximate tile zoom from horizontal span. MapKit doesn't expose
-        // a tile-zoom number, so back into it from degrees-per-pixel.
+        // Approximate tile zoom from horizontal span. MapKit doesn't give us
+        // a tile-zoom number so we back into it from degrees-per-pixel.
         let degreesPerPoint = region.span.longitudeDelta / Double(max(mapWidthPoints, 1))
         let zoom = Int((log2(360.0 / (256.0 * degreesPerPoint))).rounded())
             .clamped(to: 0...20)
@@ -90,17 +87,16 @@ enum MGRSGridRenderer {
                     let polyline = MKPolyline(coordinates: &coords, count: 2)
                     lineOut.append(LineSegment(polyline: polyline, gridType: type))
 
-                    // Direction in UTM metres — only here can we tell
-                    // easting-axis vs northing-axis without longitude
-                    // bands distorting things.
+                    // Direction in UTM metres. Only here can we tell
+                    // easting vs northing axis without longitude bands
+                    // messing things up.
                     let mLine = line.toMeters()
                     let dE = abs(mLine.point1.longitude - mLine.point2.longitude)
                     let dN = abs(mLine.point1.latitude  - mLine.point2.latitude)
                     let isVertical = dE < dN
 
-                    // Midpoint as the label anchor. Use the degrees
-                    // version so the label coordinate is the geographic
-                    // centre of the segment.
+                    // Midpoint for label anchor. Use degrees version so
+                    // the label sits at geographic center of the segment.
                     let midLat = (p1.latitude  + p2.latitude)  / 2
                     let midLng = (p1.longitude + p2.longitude) / 2
                     let midCoord = CLLocationCoordinate2D(latitude: midLat, longitude: midLng)
@@ -121,10 +117,10 @@ enum MGRSGridRenderer {
         return (lineOut, labelOut)
     }
 
-    /// Format the easting/northing value for a single grid line. 1km
-    /// lines get 2-digit numbers (e.g. "20"), 10km lines get a single
-    /// digit, 100km lines get the column or row letter so the user can
-    /// read the full square ID off the intersection.
+    /// Format easting/northing for a single grid line. 1km lines get
+    /// 2-digit numbers (e.g. "20"), 10km get a single digit, 100km
+    /// get the column or row letter so you can read the full square
+    /// ID off the intersection.
     private static func lineLabelText(gridType: GridType, mgrs: MGRS, isVertical: Bool) -> String {
         switch gridType {
         case .HUNDRED_KILOMETER:
@@ -140,8 +136,8 @@ enum MGRSGridRenderer {
         }
     }
 
-    /// Stroke width per grid type. Coarser grids draw heavier so the
-    /// 100km cells stand out against the 10km / 1km sub-grids.
+    /// Stroke width per grid type. Coarser grids get thicker lines so
+    /// 100km cells don't get lost in the 10km / 1km sub-grids.
     static func lineWidth(for type: GridType) -> CGFloat {
         switch type {
         case .HUNDRED_KILOMETER: return 2.0
@@ -151,9 +147,8 @@ enum MGRSGridRenderer {
         }
     }
 
-    /// Label text size in points. 100km labels read at any zoom; finer
-    /// grids get smaller text so they don't clutter the screen when the
-    /// user is zoomed all the way in.
+    /// Label font size. 100km labels are readable at any zoom, finer
+    /// grids get smaller text so they don't clutter when zoomed way in.
     static func labelFontSize(for type: GridType) -> CGFloat {
         switch type {
         case .HUNDRED_KILOMETER: return 14

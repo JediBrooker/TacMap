@@ -19,21 +19,19 @@ import kotlin.math.abs
 private const val TAG = "GeoPdfParser"
 
 /**
- * Pulls embedded georeferencing out of a GeoPDF without asking the user to drop
- * fiduciaries by hand. Two flavours are supported:
+ * Pulls embedded georeferencing out of a GeoPDF so the user doesn't have
+ * to drop fiduciaries by hand. Two flavours supported:
  *
- *  - **OGC GeoPDF / Adobe GeoPDF** (the modern format, ~2009 onward): the page
- *    or document catalog has a `/VP` array of Viewport dictionaries; each
- *    viewport carries a `/Measure` dictionary with `/Subtype /GEO`, a
- *    `/GPTS` array of `[lat lon ...]` pairs, and an `/LPTS` array of
- *    `[x y ...]` pairs normalised to the viewport's `/BBox`.
- *  - **TerraGo / legacy LGIDict**: the page's `/LGIDict` dictionary holds
- *    `Neatline` (the polygon enclosing the map face) and `CTM`/`Registration`
- *    (point pairs). Many older GeoPDFs use only this form.
+ *  - OGC / Adobe GeoPDF (modern, ~2009+): page or catalog has a `/VP`
+ *    array of Viewport dicts; each carries a `/Measure` with `/Subtype /GEO`,
+ *    `/GPTS` (lat lon pairs), and `/LPTS` (x y pairs normalised to `/BBox`).
+ *  - TerraGo / legacy LGIDict: page's `/LGIDict` has `Neatline` (polygon
+ *    around the map face) and `CTM`/`Registration` (point pairs). Lots of
+ *    older GeoPDFs only have this.
  *
- * Both formats yield (PDF user-space point) → (WGS84 lat/lon) correspondences,
- * which we hand to [AffineFitter] to derive the same six-coefficient affine
- * the manual fiduciary flow uses.
+ * Both formats give us (PDF user-space point) -> (WGS84 lat/lon)
+ * correspondences that we feed to [AffineFitter] for the same six-coeff
+ * affine the manual fiduciary flow produces.
  */
 object GeoPdfParser {
     private var initialised = false
@@ -46,10 +44,9 @@ object GeoPdfParser {
     }
 
     /**
-     * Attempts to extract georeferencing from the first page of [uri].
-     * Returns `null` if the PDF has no recognisable GeoPDF metadata, in
-     * which case the import flow falls back to the user-driven
-     * fiduciary calibration UI.
+     * Try to extract georeferencing from first page of [uri].
+     * Returns null if there's no recognisable GeoPDF metadata, in which
+     * case we fall back to user-driven fiduciary calibration.
      */
     fun parse(context: Context, uri: Uri): GeoPdfResult? {
         ensureInit(context)
@@ -78,9 +75,9 @@ object GeoPdfParser {
     }
 
     /**
-     * First-page rotation in degrees (0/90/180/270), or 0 if it can't be read.
-     * Nothing in the calibration/tiling pipeline accounts for /Rotate, so the
-     * import flow rejects a non-zero result rather than silently misregistering.
+     * First-page rotation in degrees (0/90/180/270), or 0 if unreadable.
+     * Nothing in calibration/tiling handles /Rotate, so the import flow
+     * rejects non-zero rather than silently misregistering the sheet.
      */
     fun pageRotation(context: Context, uri: Uri): Int {
         ensureInit(context)
@@ -91,15 +88,15 @@ object GeoPdfParser {
         }.getOrDefault(0)
     }
 
-    /// Adobe / OGC viewports — searches a page or catalog dictionary.
-    ///
-    /// A page often carries SEVERAL viewports: the map neatline PLUS small
-    /// marginalia insets (adjoining-sheets index, state locator). We must NOT
-    /// take the first usable one — QTopo sheets list the adjoining-sheets inset
-    /// first, and that inset is georeferenced against a 145°E prime meridian, so
-    /// trusting it drops the import off the coast of West Africa. The map body
-    /// is always the LARGEST viewport by BBox area, so keep the candidate with
-    /// the greatest area.
+    // Adobe / OGC viewports - searches a page or catalog dictionary.
+    //
+    // A page often has SEVERAL viewports: the map neatline plus small
+    // marginalia insets (adjoining-sheets index, state locator). We can't
+    // just take the first usable one b/c QTopo sheets list the adjoining-sheets
+    // inset first, and that inset is georeferenced against 145 deg E prime
+    // meridian so trusting it drops the import off the coast of West Africa.
+    // The map body is always the LARGEST viewport by BBox area, so we pick
+    // the candidate with greatest area.
     private fun extractAdobeViewports(parent: COSDictionary): List<GeoCorrespondence>? {
         val vp = parent.getDictionaryObject(COSName.getPDFName("VP")) as? COSArray ?: return null
         var best: List<GeoCorrespondence>? = null
@@ -118,16 +115,12 @@ object GeoPdfParser {
             val by0 = bbox.numAt(1) ?: continue
             val bx1 = bbox.numAt(2) ?: continue
             val by1 = bbox.numAt(3) ?: continue
-            /// The two BBox numbers are diagonal corners specified
-            /// in the SAME ORDER they pair with LPTS — i.e.
-            /// LPTS(0, 0) → first corner, LPTS(1, 1) → second
-            /// corner. This handles both the standard
-            /// `[llx lly urx ury]` form (corners are lower-left and
-            /// upper-right, Y deltas positive) AND the TerraGo /
-            /// raster-style form where the second corner has a
-            /// smaller Y (negative delta, page rendered "Y-down").
-            /// Treating the two corners as just "endpoints of the
-            /// LPTS axis" gets the right answer in both cases.
+            // BBox corners are diagonal, specified in same order they pair
+            // with LPTS - i.e. LPTS(0,0) -> first corner, LPTS(1,1) -> second.
+            // Works for both the standard [llx lly urx ury] form AND the
+            // TerraGo / raster-style form where second corner has smaller Y
+            // (negative delta, Y-down). Just treating them as "endpoints of
+            // the LPTS axis" gets the right answer either way.
             val dx = bx1 - bx0
             val dy = by1 - by0
             if (kotlin.math.abs(dx) < 1e-9 || kotlin.math.abs(dy) < 1e-9) continue
@@ -159,10 +152,10 @@ object GeoPdfParser {
         return best
     }
 
-    /// GPTS longitudes are measured from the GCS prime meridian — almost always
-    /// Greenwich (0), but some QTopo insets declare e.g. `PRIMEM["…",145.0]`.
-    /// Without adding that offset the longitudes come out ~145° too small.
-    /// Parses the offset from the Measure's /GCS /WKT string.
+    // GPTS longitudes are relative to the GCS prime meridian, almost always
+    // Greenwich (0) but some QTopo insets declare e.g. PRIMEM["...",145.0].
+    // Without adding that offset the longitudes come out ~145 deg too small.
+    // Parses the offset from the Measure's /GCS /WKT string.
     private fun primeMeridianOffset(measure: COSDictionary): Double {
         val gcs = measure.getDictionaryObject(COSName.getPDFName("GCS")) as? COSDictionary ?: return 0.0
         val wkt = (gcs.getDictionaryObject(COSName.getPDFName("WKT")) as? COSString)?.string ?: return 0.0
@@ -170,16 +163,16 @@ object GeoPdfParser {
         return match.groupValues[1].toDoubleOrNull() ?: 0.0
     }
 
-    /// Convenience overload — page-level extraction.
+    // convenience overload for page-level extraction
     private fun extractAdobeViewports(page: PDPage): List<GeoCorrespondence>? =
         extractAdobeViewports(page.cosObject)
 
-    /// Legacy TerraGo LGIDict (older GeoPDFs).
-    ///
-    /// LGIDict carries `Neatline` (the polygon enclosing the map
-    /// face) and `Registration` (point pairs as `[PDFx PDFy lat lon]`).
-    /// We pull the registration list directly — that's the same shape
-    /// of (PDF point, geographic point) the modern format provides.
+    // Legacy TerraGo LGIDict (older GeoPDFs).
+    //
+    // LGIDict has `Neatline` (polygon around the map face) and
+    // `Registration` (point pairs as [PDFx PDFy lat lon]).
+    // We just pull the registration list directly, same shape of
+    // (PDF point, geographic point) as the modern format.
     private fun extractLegacyLgiDict(page: PDPage): List<GeoCorrespondence>? {
         val lgi = page.cosObject.getDictionaryObject(COSName.getPDFName("LGIDict")) as? COSBase
             ?: return null
@@ -201,11 +194,11 @@ object GeoPdfParser {
                 val pdfX = pair.numAt(0) ?: continue
                 val pdfY = pair.numAt(1) ?: continue
                 // LGIDict Registration map coords are [mapX mapY] in the CRS
-                // named by the sibling /Projection (OGC order is [lon lat]). The
-                // old code read them as [lat lon] — swapped — and treated a
-                // projected easting/northing as raw lat/lon. Interpret them by
-                // geographic range instead, and bail on a projected CRS we can't
-                // invert on Android rather than emit wrong georeferencing.
+                // from the sibling /Projection (OGC order = [lon lat]). Old code
+                // read them as [lat lon] (swapped) and treated projected
+                // easting/northing as raw lat/lon. Now we interpret by geographic
+                // range instead, and bail on projected CRS we can't invert on
+                // Android rather than emitting wrong georeferencing.
                 val mapX = pair.numAt(2) ?: continue
                 val mapY = pair.numAt(3) ?: continue
                 val latLon = geographicLatLon(mapX, mapY)
@@ -218,14 +211,13 @@ object GeoPdfParser {
     }
 
     /**
-     * Interpret an LGIDict Registration map-coordinate pair as (latitude,
-     * longitude), or null when it isn't a geographic coordinate — i.e. a
-     * projected easting/northing (values outside ±180) that Android has no
-     * inverse for. OGC order is [lon lat]; the range checks additionally
-     * auto-correct a lat/lon-swapped sheet (latitude must be within ±90).
+     * Interpret an LGIDict Registration map-coordinate pair as (lat, lon),
+     * or null if it's a projected easting/northing (values outside +/-180)
+     * that we can't invert on Android. OGC order is [lon lat]; range
+     * checks also auto-correct a lat/lon-swapped sheet (lat must be +/-90).
      */
     private fun geographicLatLon(x: Double, y: Double): Pair<Double, Double>? {
-        if (abs(x) > 180.0 || abs(y) > 180.0) return null // projected — unsupported here
+        if (abs(x) > 180.0 || abs(y) > 180.0) return null // projected coords, not supported here
         return when {
             abs(x) <= 90.0 && abs(y) <= 90.0 -> y to x     // OGC order: x=lon, y=lat
             abs(x) > 90.0 && abs(y) <= 90.0 -> y to x       // x can only be lon

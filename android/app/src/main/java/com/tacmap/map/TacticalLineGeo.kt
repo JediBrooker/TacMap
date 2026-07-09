@@ -6,19 +6,18 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 
-/// Geographic-space decoration for NATO tactical line graphics — the Android
-/// analogue of the iOS TacticalLineRenderer. Produces the extra geometry
-/// (crenellated forward line, boundary ticks, axis arrowhead) that the Google
-/// Maps Polyline renderer then strokes. Sizes are in metres, so the decoration
-/// is map-anchored (scales with zoom).
+/// Geographic-space decoration for NATO tactical lines - Android equivalent
+/// of iOS TacticalLineRenderer. Produces crenellated FLOT lines, boundary
+/// ticks, axis arrowheads etc that the Polyline renderer strokes. Sizes in
+/// metres so decoration scales with zoom.
 object TacticalLineGeo {
     private const val M_PER_DEG = 111_320.0
     private fun mPerLng(lat: Double) = M_PER_DEG * cos(Math.toRadians(lat)).coerceAtLeast(1e-6)
 
     private data class Samp(val p: LatLng, val nx: Double, val ny: Double, val s: Double)
 
-    /// Walk the polyline at `stepM` spacing → point + left-normal (metre space)
-    /// + cumulative arc length in metres.
+    /// Walk the polyline at stepM spacing, get point + left-normal + cumulative
+    /// arc length. All in metre space.
     private fun sample(pts: List<LatLng>, stepM: Double): List<Samp> {
         val out = ArrayList<Samp>()
         var s = 0.0
@@ -46,7 +45,7 @@ object TacticalLineGeo {
     private fun offset(p: LatLng, nx: Double, ny: Double, d: Double) =
         LatLng(p.latitude + (ny * d) / M_PER_DEG, p.longitude + (nx * d) / mPerLng(p.latitude))
 
-    /// Square-wave (battlement) line — FLOT / FEBA forward edge.
+    /// Square-wave (battlement) line for FLOT / FEBA forward edge.
     fun crenellate(pts: List<LatLng>, toothM: Double = 35.0, periodM: Double = 72.0): List<LatLng> {
         if (pts.size < 2) return pts
         val half = periodM / 2
@@ -55,7 +54,7 @@ object TacticalLineGeo {
         }
     }
 
-    /// Perpendicular tick marks at intervals — a boundary line.
+    /// Perpendicular tick marks at intervals. Boundary line style.
     fun boundaryTicks(pts: List<LatLng>, spacingM: Double = 95.0, lenM: Double = 26.0): List<List<LatLng>> {
         if (pts.size < 2) return emptyList()
         val ticks = ArrayList<List<LatLng>>()
@@ -67,7 +66,7 @@ object TacticalLineGeo {
         return ticks
     }
 
-    /// Arrowhead polyline (wing → tip → wing) at the line's end.
+    /// Arrowhead (wing-tip-wing) at end of the line.
     fun arrowHead(pts: List<LatLng>, sizeM: Double = 60.0): List<LatLng> {
         if (pts.size < 2) return emptyList()
         val tip = pts.last(); val prev = pts[pts.size - 2]

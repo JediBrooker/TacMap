@@ -6,7 +6,7 @@ struct TacticalMapsApp: App {
     private let trial = TrialManager()
 
     init() {
-        // Local-only crash capture (no telemetry) so field crashes aren't silent.
+        // Local-only crash capture (no telemetry). Field crashes shouldn't be silent.
         CrashReporter.install()
         // Start the trial clock on first launch.
         TrialManager().startIfNeeded()
@@ -21,27 +21,26 @@ struct TacticalMapsApp: App {
     }
 }
 
-/// Decides between the full app and the paywall: the app is available while
-/// the unlock is purchased *or* the free trial is still running. Re-checks
-/// when the app returns to the foreground (so a trial that lapsed while
-/// backgrounded gates on resume).
+/// Decides between full app and the paywall. App is available while
+/// unlock is purchased or the free trial is still running. Re-checks
+/// on foreground so a trial that lapsed while backgrounded gates on resume.
 private struct RootGate: View {
     @ObservedObject var store: StoreManager
     let trial: TrialManager
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var opsec = OpsecSettings.shared
     @State private var now = Date()
-    /// Locked when an App Lock PIN is set; cleared after a successful unlock,
-    /// re-armed when the app backgrounds.
+    /// Locked when App Lock PIN is set. Cleared after successful unlock,
+    /// re-armed when app backgrounds.
     @State private var locked = AppLock.isEnabled
 
     var body: some View {
         ZStack {
             if store.isPurchased || trial.isTrialActive(now: now) {
-                // ContentView owns the LocationService / TrackRecorder session
-                // state. It stays mounted underneath the lock so backgrounding
-                // (which arms the lock) does NOT deinit it — a track that is
-                // recording keeps recording, and background location stays on.
+                // ContentView owns LocationService / TrackRecorder session
+                // state. Stays mounted underneath the lock so backgrounding
+                // (which arms the lock) does NOT deinit it - a track that's
+                // recording keeps recording and background location stays on.
                 ContentView(store: store)
             } else {
                 PaywallView(
@@ -51,15 +50,15 @@ private struct RootGate: View {
                 )
             }
 
-            // Privacy screen: an opaque cover whenever the app isn't active
-            // (armed on .inactive, before the app-switcher snapshot is taken) so
-            // the map with the live position is never captured in the thumbnail.
+            // Privacy screen: opaque cover whenever app isn't active
+            // (armed on .inactive, before app-switcher snapshot) so
+            // the map with live position is never in the thumbnail.
             if opsec.privacyScreen && scenePhase != .active && !locked {
                 PrivacyCoverView()
             }
 
-            // Opaque lock overlay: covers the map (and its live position) while
-            // locked without tearing down the view below it.
+            // Opaque lock overlay. Covers the map (and live position) while
+            // locked without tearing down the view underneath.
             if locked {
                 LockView { locked = false }
                     .transition(.opacity)
@@ -77,8 +76,8 @@ private struct RootGate: View {
     }
 }
 
-/// Opaque branded cover used as the privacy screen (app-switcher snapshot) so
-/// the map and live position are never captured in the thumbnail.
+/// Opaque branded cover for the privacy screen (app-switcher snapshot).
+/// Map and live position are never captured in the thumbnail.
 private struct PrivacyCoverView: View {
     var body: some View {
         ZStack {

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Capture the GeoPDF-import hero: an imported US Topo (GeoPDF) basemap with the
-NATO situation overlaid (black symbology on the topo, like the satellite hero).
+"""Capture the GeoPDF-import hero: imported US Topo (GeoPDF) basemap with NATO
+situation overlaid (black symbology on topo, like the satellite hero).
 
-Device location is set to the situation/PDF centre so "Centre on My Location"
-frames it deterministically (the US Topo collar offsets the PDF's auto-fly, so
-we don't rely on it). The GeoPDF must already be at /sdcard/Download/<pdf>, and
-the situation pushed (re-centred) to <room>.
+Device location is set to situation/PDF centre so "Centre on My Location"
+frames it deterministically. The US Topo collar offsets the PDF's auto-fly
+so we don't rely on that. GeoPDF must already be at /sdcard/Download/<pdf>,
+and the situation pushed (re-centred) to <room>.
 
     python3 scripts/android_pdf_hero.py <apk> <out_dir> <room> <pdf_basename> <lon> <lat>
 """

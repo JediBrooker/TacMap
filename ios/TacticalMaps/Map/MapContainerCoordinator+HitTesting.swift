@@ -3,20 +3,20 @@ import UIKit
 
 // MARK: - Screen-space hit testing
 //
-// Tap / press hit-tests against the tactical-symbol overlay, drawings, and the
-// vertex-edit handles. Extracted verbatim from MapContainerView.swift; the pure
-// geometry these rely on lives in MapGeometry.
+// Tap / press hit-tests against tactical-symbol overlay, drawings, and
+// vertex-edit handles. Pulled out of MapContainerView.swift; the pure
+// geometry stuff lives in MapGeometry.
 extension MapContainerView.Coordinator {
 
-    /// Hit-test the tactical-symbol overlay using the published
-    /// screen positions and per-kind sizes. The overlay itself is
-    /// non-interactive (touches pass through to MKMapView so pinch
-    /// works), so selection has to happen from here.
+    /// Hit-test tactical-symbol overlay using published screen
+    /// positions and per-kind sizes. Overlay is non-interactive
+    /// (touches pass through to MKMapView for pinch etc) so
+    /// selection has to happen from here.
     func waypointHitTest(at pt: CGPoint) -> UUID? {
         let positions = mapVM.waypointScreenPositions
         let zoom = mapVM.zoomScaleFactor
-        // Most-recent-on-top: walk the waypoints in reverse to
-        // match the overlay's draw order.
+        // Walk waypoints in reverse to match overlay draw order
+        // (most recent on top).
         for wp in waypointStore.waypoints.reversed() {
             guard let centre = positions[wp.id] else { continue }
             let size = waypointBubbleSize(for: wp, zoomScale: zoom)
@@ -27,10 +27,10 @@ extension MapContainerView.Coordinator {
                 height: size.height
             )
             guard frame.contains(pt) else { continue }
-            // Control measures: extra alpha-mask test so taps in
-            // the transparent corners of a hexagonal/triangle
-            // graphic fall through. Military / generic glyphs fill
-            // their frame solidly so a rect check is enough.
+            // Control measures need extra alpha-mask test so taps in
+            // transparent corners of hexagonal/triangle graphics
+            // fall through. Military / generic glyphs fill their
+            // frame solidly so rect check is fine.
             if case .controlMeasure(let measure) = wp.kind {
                 let local = CGPoint(x: pt.x - frame.minX, y: pt.y - frame.minY)
                 let normalized = CGPoint(
@@ -48,8 +48,8 @@ extension MapContainerView.Coordinator {
         return nil
     }
 
-    /// Mirror of TacticalSymbolOverlay.bubbleSize so the tap
-    /// hit-test sees the same bubble geometry the overlay draws.
+    /// Mirror of TacticalSymbolOverlay.bubbleSize. Has to match
+    /// exactly or tap hit-test and visual don't line up.
     private func waypointBubbleSize(for wp: Waypoint, zoomScale: CGFloat) -> CGSize {
         switch wp.kind {
         case .controlMeasure:
@@ -63,9 +63,9 @@ extension MapContainerView.Coordinator {
         }
     }
 
-    /// True if the press began on (or close to) any vertex-edit
-    /// handle annotation. Used by the whole-shape drag gesture to
-    /// step aside and let the handle's own drag run instead.
+    /// True if press began on or near a vertex-edit handle. Used
+    /// by whole-shape drag gesture to step aside and let the
+    /// handle's own drag run instead.
     func pressIsOnVertexHandle(at pt: CGPoint, on mv: MKMapView) -> Bool {
         let tol: CGFloat = 22
         for ann in mv.annotations {
@@ -76,9 +76,9 @@ extension MapContainerView.Coordinator {
         return false
     }
 
-    /// Return the midpoint ("+" insertion) handle nearest to the
-    /// tap point, or nil if the tap missed all of them. Skips real
-    /// vertices so tap-to-insert and tap-on-vertex don't collide.
+    /// Nearest midpoint "+" handle to the tap, or nil if missed.
+    /// Skips real vertices so tap-to-insert and tap-on-vertex
+    /// don't collide.
     func midpointHandleHitTest(at pt: CGPoint, on mv: MKMapView)
         -> DrawingVertexHandleAnnotation?
     {
@@ -97,9 +97,9 @@ extension MapContainerView.Coordinator {
         return best
     }
 
-    /// Hit-test the visible drawings against a screen-space tap. Returns
-    /// the topmost shape within the tap tolerance, or nil. Uses a 20pt
-    /// screen-space tolerance so thin strokes still feel tappable.
+    /// Hit-test visible drawings against a screen-space tap. Returns
+    /// topmost shape within tolerance, or nil. 20pt tolerance so
+    /// thin strokes are still tappable.
     func drawingHitTest(at tap: CGPoint, on mv: MKMapView) -> DrawingShape? {
         let tolerance: CGFloat = 20
         for shape in drawingStore.visibleShapes.reversed() {

@@ -47,9 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.calibration.Datum
 
-// HUD chrome (round buttons, mils compass) + PDF-calibration UI extracted
-// verbatim from MapScreen.kt. The composables MapScreen calls are `internal`;
-// calibrationStatus stays `private`. Behaviour is unchanged.
+// HUD chrome (round buttons, mils compass) + PDF-calibration UI.
+// Extracted from MapScreen.kt. Behaviour unchanged.
 
 @Composable
 internal fun CircleHudButton(
@@ -73,11 +72,9 @@ internal fun CircleHudButton(
 
 @Composable
 internal fun CompassChip(mapOrientationDegrees: Double, onTap: () -> Unit = {}) {
-    /// `mapOrientationDegrees` is the camera bearing — the compass
-    /// bearing of where screen-up points (0 = north up, 90 = east up).
-    /// The displayed mils reading matches that bearing; the needle
-    /// rotates counter to it so it keeps pointing at true north as
-    /// the map turns.
+    /// mapOrientationDegrees = camera bearing (0 = north up, 90 = east up).
+    /// Mils reading matches that bearing, needle rotates counter to it
+    /// so it keeps pointing at true north as map turns.
     val screenUpBearingDegrees = normalizedDegrees(mapOrientationDegrees)
     val mils = ((screenUpBearingDegrees * (6400.0 / 360.0)).toInt()) % 6400
     Box(
@@ -142,7 +139,7 @@ internal fun CompassChip(mapOrientationDegrees: Double, onTap: () -> Unit = {}) 
     }
 }
 
-/** Undo / redo button pair — appears below the compass chip. */
+/** Undo/redo buttons, below the compass chip. */
 @Composable
 internal fun UndoRedoButtons(
     canUndo: Boolean,
@@ -168,9 +165,8 @@ internal fun UndoRedoButtons(
     }
 }
 
-/** Lock toggle — freezes ALL graphics (symbols + drawings) so no gesture
- *  can move them. Sits below the undo/redo buttons; always visible. Turns
- *  amber when engaged. */
+/** Lock toggle - freezes all graphics so no gesture can move them.
+ *  Below undo/redo, always visible. Turns amber when engaged. */
 @Composable
 internal fun LockButton(
     locked: Boolean,
@@ -309,8 +305,8 @@ internal fun CalibrationInputDialog(
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
-        // Don't discard a precisely-placed calibration point on a stray tap
-        // outside the dialog — require an explicit Cancel or Save.
+        // Don't discard a carefully placed calibration point on a stray
+        // tap outside the dialog. Require explicit Cancel or Save.
         properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         onDismissRequest = onDismiss,
         title = { Text("Fiduciary #$fiduciaryNumber") },

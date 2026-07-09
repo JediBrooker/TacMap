@@ -31,9 +31,8 @@ import kotlin.math.hypot
 import kotlin.math.min
 
 /**
- * Renders Android map marker drawables. Military units use SVGs generated
- * from spatialillusions/milsymbol; tactical control measures use the
- * shared AppSymbols catalogue under android assets/appsymbols.
+ * Renders map marker drawables. Military units = SVGs from milsymbol,
+ * tactical control measures = shared AppSymbols assets under appsymbols/.
  */
 object SymbolIconFactory {
     private const val MILSYMBOL_MARKER_SCALE = 1.0f
@@ -73,11 +72,9 @@ object SymbolIconFactory {
         }
     }
 
-    /// Visible (non-transparent) bounds of the rendered icon bitmap.
-    /// Used to anchor labels just below the icon's visible bottom
-    /// regardless of any transparent padding the SVG / asset baked in.
-    /// Result is cached per icon-kind key so the per-pixel scan only
-    /// runs once.
+    /// Visible (non-transparent) bounds of the icon bitmap. Used to
+    /// anchor labels below the visible bottom regardless of padding.
+    /// Cached so the per-pixel scan only runs once per kind.
     fun visibleBoundsFor(context: Context, waypoint: Waypoint): Rect {
         val key = cacheKey(context, waypoint)
         visibleBoundsCache[key]?.let { return it }
@@ -432,9 +429,8 @@ object SymbolIconFactory {
         val cy = canvasSide / 2f
         val dest = RectF(cx - symbolW / 2f, cy - symbolH / 2f, cx + symbolW / 2f, cy + symbolH / 2f)
         val source = controlMeasureSource(context, measure)
-        // Black is the asset's native colour — skip the filter. The other
-        // colours recolour every opaque pixel (and feather the anti-aliased
-        // edges) via SRC_IN, preserving the glyph's alpha.
+        // Black = asset's native colour, skip filter. Other colours recolour
+        // opaque pixels via SRC_IN, preserving alpha on the edges.
         val tintPaint = if (color != TaskColor.BLACK) {
             Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
                 colorFilter = PorterDuffColorFilter(color.argb, PorterDuff.Mode.SRC_IN)

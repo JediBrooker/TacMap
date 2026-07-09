@@ -1,17 +1,16 @@
 import Foundation
 import SQLite3
 
-/// Read-only reader for an MBTiles file — a SQLite database of raster map tiles
-/// (the OSGeo MBTiles spec). Serves tiles by XYZ coordinate (converting to the
-/// TMS row scheme MBTiles stores) plus the bounds + zoom metadata. This is the
-/// data layer behind an offline raster basemap: the user sideloads a `.mbtiles`
-/// generated from a GeoPDF/raster (e.g. via `gdal_translate` + `gdal2tiles`) and
-/// the app serves it with no network.
+/// Read-only reader for an MBTiles file (SQLite DB of raster map tiles, OSGeo
+/// spec). Serves tiles by XYZ coordinate (converting to TMS row scheme that
+/// MBTiles uses) plus bounds + zoom metadata. Data layer behind offline raster
+/// basemaps: user sideloads a .mbtiles generated from a GeoPDF/raster (e.g.
+/// via gdal_translate + gdal2tiles) and app serves it with no network.
 final class MBTilesStore {
 
     struct Metadata {
         var name: String?
-        var format: String?          // "png", "jpg", …
+        var format: String?          // "png", "jpg", etc
         var minZoom: Int?
         var maxZoom: Int?
         /// WGS84 extent from the `bounds` metadata: minLon, minLat, maxLon, maxLat.
@@ -21,9 +20,9 @@ final class MBTilesStore {
     let url: URL
     private(set) var metadata = Metadata()
     private var db: OpaquePointer?
-    /// MapKit calls `tileData` concurrently from several `MKTileOverlay.loadTile`
-    /// worker threads. The single SQLite connection is not safe to drive from
-    /// multiple threads at once, so serialise every query behind this lock.
+    /// MapKit calls tileData concurrently from multiple MKTileOverlay.loadTile
+    /// threads. Single SQLite connection isn't thread-safe so just serialise
+    /// every query behind this lock.
     private let lock = NSLock()
 
     init?(url: URL) {
@@ -33,9 +32,9 @@ final class MBTilesStore {
             db = nil
             return nil
         }
-        // Reject files that aren't actually MBTiles: sqlite3_open succeeds on any
-        // path, so without this a garbage/corrupt file would load as a "valid"
-        // but blank basemap. Require the mandatory `tiles` table.
+        // Reject files that arent actually MBTiles: sqlite3_open succeeds on any
+        // path, so without this check a garbage/corrupt file would load as a
+        // "valid" but blank basemap. Require the mandatory `tiles` table.
         guard hasTable("tiles") else {
             sqlite3_close(db)
             db = nil

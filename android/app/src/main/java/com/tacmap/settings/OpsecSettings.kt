@@ -6,15 +6,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * App-scoped operational-security / privacy settings, backed by app-private
- * prefs and exposed as StateFlows so the UI, the Activity window, and the
- * networking layer all observe the same source of truth.
+ * App-scoped OPSEC / privacy settings. Backed by app-private prefs,
+ * exposed as StateFlows so UI, Activity window, and networking layer
+ * all see the same source of truth.
  *
- * Defaults are chosen OPSEC-first for a field tool:
- *  - [blockScreenCapture] ON — the map (with live position) is kept out of the
- *    recents thumbnail and screenshots/screen-recordings by default.
- *  - [onlineLookups] OFF — elevation / weather / terrain lookups transmit the
- *    queried coordinate to a third party (Open-Meteo), so they are opt-in.
+ * Defaults are OPSEC-first for a field tool:
+ *  - [blockScreenCapture] ON - map (with live position) stays out of
+ *    recents thumbnail and screenshots/recordings by default.
+ *  - [onlineLookups] OFF - elevation / weather / terrain lookups send
+ *    coords to a third party (Open-Meteo), so opt-in only.
  */
 class OpsecSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("opsec", Context.MODE_PRIVATE)
@@ -47,13 +47,13 @@ class OpsecSettings(context: Context) {
     }
 
     companion object {
-        /** The app-scoped instance, set on construction. Lets the networking
-         *  layer (Weather / Elevation / Terrain-heatmap services, which have no
-         *  DI context) honour the [onlineLookups] OPSEC gate at the point of the
-         *  outbound request. Mirrors iOS `OpsecSettings.shared`. */
+        /** App-scoped instance, set on construction. Lets the networking layer
+         *  (Weather / Elevation / Terrain services, no DI context) check the
+         *  [onlineLookups] OPSEC gate before making outbound requests.
+         *  Mirrors iOS `OpsecSettings.shared`. */
         @Volatile var shared: OpsecSettings? = null
 
-        /** Default relay. Self-hosters can override in settings. */
+        /** Default relay. Self-hosters can point this elsewhere in settings. */
         const val DEFAULT_RELAY = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
         private const val KEY_SCREEN = "block_screen_capture"
         private const val KEY_ONLINE = "online_lookups"

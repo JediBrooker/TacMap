@@ -1,18 +1,17 @@
 import SwiftUI
 
-/// Small icon view used in pickers / lists.
-/// - Military units: full APP-6 unit symbol via `MilitarySymbolView`.
-/// - Tactical control measures: milsymbol-style shape + abbreviation via
-///   `TacticalControlMeasureSymbolView`.
-/// - Generic waypoint: falls back to an SF Symbol.
+/// Small icon view for pickers/lists.
+/// Military units -> full APP-6 symbol via MilitarySymbolView
+/// Control measures -> TacticalControlMeasureSymbolView
+/// Generic -> SF Symbol fallback
 struct WaypointKindIcon: View {
     let kind: WaypointKind
     var size: CGFloat = 32
-    /// Clockwise rotation in degrees. Only applied to tactical control
-    /// measures (military unit symbols and SF Symbols are not rotated).
+    /// Clockwise rotation in degrees. Only applied to control measures,
+    /// military units and SF Symbols don't rotate.
     var rotation: Double = 0
-    /// Tint for tactical task graphics. Defaults to black; the controls
-    /// card passes the waypoint's `taskColor` so the preview recolours.
+    /// Tint for task graphics. Controls card passes the waypoint's
+    /// taskColor so preview recolours to match.
     var taskColor: TaskColor = .black
 
     var body: some View {

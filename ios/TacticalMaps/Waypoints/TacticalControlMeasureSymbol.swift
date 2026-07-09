@@ -1,17 +1,16 @@
 import SwiftUI
 import UIKit
 
-/// Renders a `TacticalControlMeasure` from the bundled PNG / SVG asset
-/// under `Assets.xcassets/AppSymbols/`. Pure black symbol on a
-/// transparent background. View bounds match the symbol size exactly
-/// so SwiftUI hit-testing in the overlay matches the visible pixels
-/// — no padding-induced tap hijack.
+/// Renders a TacticalControlMeasure from bundled PNG/SVG asset under
+/// AppSymbols/. Pure black on transparent. View bounds match symbol
+/// size exactly so SwiftUI hit-testing lines up with visible pixels,
+/// no padding-induced tap hijack.
 struct TacticalControlMeasureSymbolView: View {
     let measure: TacticalControlMeasure
     /// Clockwise rotation in degrees. 0 = canonical orientation.
     var rotation: Double = 0
-    /// Tint for the glyph. The asset is template-rendered, so this
-    /// recolours the black line art. Defaults to black.
+    /// Tint for the glyph. Asset is template-rendered so this
+    /// recolours the black line art.
     var color: Color = .black
     var size: CGFloat = 56
 
@@ -28,8 +27,8 @@ struct TacticalControlMeasureSymbolView: View {
 
 @MainActor
 enum TacticalControlMeasureRenderer {
-    /// Canonical symbol size in points. Symbol scaling at runtime
-    /// happens via the annotation view's transform.
+    /// Canonical size in points. Runtime scaling happens via the
+    /// annotation view's transform.
     static let baseSize: CGFloat = 64
 
     private struct Key: Hashable {

@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// 12-colour palette offered to the user when drawing. Hues are chosen to
-/// stay legible on both Apple satellite imagery and rasterised GeoPDFs at
-/// the line widths the app uses (1.5–10 pt). Hex strings are stored in
-/// `DrawingStyle.strokeColorHex` and round-trip through GeoJSON export
-/// unchanged.
+/// 12-colour palette for drawing. Hues picked to stay legible on satellite
+/// imagery and rasterised GeoPDFs at the stroke widths we use (1.5-10 pt).
+/// Hex strings go into `DrawingStyle.strokeColorHex` and survive GeoJSON
+/// round-trip unchanged.
 enum DrawingPalette {
 
     struct Swatch: Identifiable, Hashable {
@@ -23,8 +22,7 @@ enum DrawingPalette {
     /// Default colour for a fresh drawing session.
     static let `default` = swatches[0]
 
-    /// Ordered list of available swatches. Order is the grid order the
-    /// palette menu will use — 4 columns × 3 rows.
+    /// Swatches in grid order (4 cols x 3 rows in the palette menu).
     static let swatches: [Swatch] = [
         .init("Orange",  "#FFA500"),
         .init("Red",     "#E03434"),
@@ -40,8 +38,7 @@ enum DrawingPalette {
         .init("Black",   "#1A1A1A"),
     ]
 
-    /// Look up a swatch by hex (case-insensitive). Used to map a persisted
-    /// `DrawingStyle.strokeColorHex` back to its display name.
+    /// Look up swatch by hex (case-insensitive) to get its display name.
     static func swatch(forHex hex: String) -> Swatch? {
         let needle = hex.uppercased()
         return swatches.first { $0.hex.uppercased() == needle }

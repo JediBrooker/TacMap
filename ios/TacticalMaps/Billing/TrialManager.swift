@@ -1,18 +1,15 @@
 import Foundation
 
-/// Tracks the free-trial window. Drop-in replacement for the old
-/// UserDefaults version — same API (`startIfNeeded`, `isTrialActive`,
-/// `daysRemaining`), so no call-site changes in TacticalMapsApp/ContentView.
+/// Tracks the free-trial window. Drop-in replacement for the old UserDefaults
+/// version, same API (`startIfNeeded`, `isTrialActive`, `daysRemaining`) so
+/// no call-site changes needed.
 ///
-/// Differences from the old version:
-///  1. The first-launch timestamp lives in the **Keychain**, which survives
-///     app deletion → a reinstall does NOT restart the trial.
-///  2. A monotonically-increasing "latest seen" timestamp is also stored, so
-///     winding the device clock backwards can't extend the trial: the
-///     effective "now" is max(wall clock, latest seen).
-///  3. UserDefaults is still written as a mirror for fast/legacy reads and to
-///     migrate existing installs (an existing UserDefaults stamp seeds the
-///     Keychain so current trial users aren't reset).
+/// vs the old version: first-launch timestamp now lives in Keychain so it
+/// survives app deletion (reinstall doesn't restart trial). Also stores a
+/// monotonic "latest seen" timestamp so rolling the clock back can't extend
+/// the trial. UserDefaults still gets written as a mirror for legacy reads
+/// and to migrate existing installs (their UD stamp seeds the Keychain so
+/// they don't get reset).
 struct TrialManager {
     static let trialDays = 3
 
@@ -22,8 +19,8 @@ struct TrialManager {
     private static let dayInterval: TimeInterval = 24 * 60 * 60
     private let defaults = UserDefaults.standard
 
-    /// First-launch timestamp. Resolution order:
-    /// Keychain → legacy UserDefaults (migrated in) → stamp now.
+    /// First-launch timestamp. Checks Keychain first, then falls back to
+    /// legacy UserDefaults (migrates it in), then stamps a new one.
     private var firstLaunch: Date {
         if let stored = KeychainStore.date(for: Self.kcFirstLaunch) { return stored }
         if let legacy = defaults.object(forKey: Self.legacyKey) as? Date {
@@ -40,8 +37,8 @@ struct TrialManager {
         firstLaunch.addingTimeInterval(Double(Self.trialDays) * Self.dayInterval)
     }
 
-    /// Clock-rollback guard: returns the later of the wall clock and the
-    /// latest timestamp we've ever observed, advancing the stored value.
+    /// Clock-rollback guard. Returns whichever is later: wall clock or the
+    /// highest timestamp we've ever seen. Advances the stored value.
     private func effectiveNow(_ now: Date) -> Date {
         let seen = KeychainStore.date(for: Self.kcLatestSeen) ?? .distantPast
         let effective = max(now, seen)

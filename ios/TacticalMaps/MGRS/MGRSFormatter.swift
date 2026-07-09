@@ -3,17 +3,17 @@ import CoreLocation
 import MGRS
 import Grid
 
-/// Bridge to NGA's `mgrs-ios`. All overlays store WGS84; MGRS is presentation-only.
+/// Wrapper around NGA's `mgrs-ios`. Overlays store WGS84, this is just for display.
 ///
-/// Returns the canonical 3-token form: `"<GZD> <easting> <northing>"`, e.g.
-/// `"56HLH 13225 37516"`. The NGA library returns the digits run together; we
-/// post-process to insert the spaces.
+/// Returns the 3-part form `"<GZD> <easting> <northing>"`, e.g.
+/// `"56HLH 13225 37516"`. NGA gives us the digits mushed together so
+/// we split them up here.
 enum MGRSFormatter {
 
-    /// Default precision: 1 metre (5+5 digits).
+    /// 1m precision (5+5 digits).
     static let defaultPrecision: GridType = .METER
 
-    /// Out-of-UTM-range marker for polar latitudes, or nil when in range.
+    /// Returns an out-of-range string for polar lats, nil if we're good.
     static func outOfRangeMarker(_ latitude: Double) -> String? {
         if latitude > 84.0 { return "N/A (>84°N)" }
         if latitude < -80.0 { return "N/A (<80°S)" }
@@ -23,16 +23,16 @@ enum MGRSFormatter {
     static func string(from coordinate: CLLocationCoordinate2D,
                        precision: GridType = defaultPrecision,
                        spaced: Bool = true) -> String {
-        // UTM/MGRS is only defined 80°S–84°N; beyond that NGA clamps to a grid
-        // ~110 km off, so show an explicit out-of-range marker instead.
+        // UTM/MGRS only covers 80S to 84N. Past that NGA clamps to a grid
+        // thats like 110 km off, so just show an explicit marker instead.
         if let m = outOfRangeMarker(coordinate.latitude) { return m }
         let mgrs = MGRS.from(coordinate)
         let raw = mgrs.coordinate(precision)
         return spaced ? formatted(raw) : raw.replacingOccurrences(of: " ", with: "")
     }
 
-    /// User-facing UTM grid readout, e.g. `"33N 450000mE 6700000mN"`.
-    /// Hemisphere from the latitude sign (UTM N/S); zone + easting + northing
+    /// UTM grid readout for display, e.g. `"33N 450000mE 6700000mN"`.
+    /// Hemisphere comes from lat sign (N/S), zone + easting + northing
     /// from NGA's `toUTM()`.
     static func utm(from coordinate: CLLocationCoordinate2D) -> String {
         if let m = outOfRangeMarker(coordinate.latitude) { return m }
@@ -43,10 +43,10 @@ enum MGRSFormatter {
 
     /// Decode `"56HLH 13225 37516"` (or the no-space form) back to WGS84.
     ///
-    /// **Crash safety**: NGA's `MGRS.parse` calls `fatalError` on inputs that
-    /// don't even look MGRS-shaped (a single "H", garbage like "hello", etc.)
-    /// — and it's non-throwing, so there's nothing to catch. We pre-validate
-    /// with a regex so the library is only called on right-shaped strings.
+    /// NGA's `MGRS.parse` calls `fatalError` on strings that don't look
+    /// MGRS-shaped at all (a single "H", garbage like "hello", etc.) and
+    /// its non-throwing, so nothing to catch. We pre-validate with a regex
+    /// so the library only ever sees right-shaped strings.
     static func coordinate(from mgrs: String) -> CLLocationCoordinate2D? {
         let compact = mgrs
             .replacingOccurrences(of: " ", with: "")
@@ -56,18 +56,18 @@ enum MGRSFormatter {
         return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
     }
 
-    /// True only for strings that match a full MGRS shape — zone (1–2 digits)
-    /// + band letter + 2-letter 100km square + an even number of digits
+    /// True only for strings that match a full MGRS shape: zone (1-2 digits)
+    /// + band letter + 2-letter 100km square + even number of digits
     /// (2, 4, 6, 8 or 10). Also accepts UPS polar (4 letters + digits).
-    /// Anything else — partial typing, place names, gibberish — returns false
-    /// so we never feed malformed input to `MGRS.parse`.
+    /// Partial typing, place names, gibberish all return false so we
+    /// never feed junk to `MGRS.parse`.
     static func looksLikeMGRS(_ s: String) -> Bool {
         guard !s.isEmpty else { return false }
-        // Zone 1–60 (not 00 or >60) and latitude band C–X excluding I/O — the
-        // old `\d{1,2}` + `[A-HJ-NP-Z]` band admitted zone 00/61–99 and bands
-        // A/B/Y/Z, shapes NGA's non-throwing parser fatalErrors on. Square
-        // letters exclude I/O; the easting/northing group stays optional (a bare
-        // 100km square is a valid, if coarse, location).
+        // Zone 1-60 (not 00 or >60), band C-X excluding I/O. The old
+        // `\d{1,2}` + `[A-HJ-NP-Z]` pattern let through zone 00/61-99
+        // and bands A/B/Y/Z, which NGA's non-throwing parser just
+        // fatalErrors on. Square letters also exclude I/O; easting/northing
+        // group is optional (bare 100km square is a valid location).
         let utm = #"^(0?[1-9]|[1-5]\d|60)[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-Z](\d{2}|\d{4}|\d{6}|\d{8}|\d{10})?$"#
         let ups = #"^[ABYZ][A-HJ-NP-Z][A-HJ-NP-Z](\d{2}|\d{4}|\d{6}|\d{8}|\d{10})?$"#
         for pattern in [utm, ups] {
@@ -80,10 +80,10 @@ enum MGRSFormatter {
 
     // MARK: - Formatting
 
-    /// Insert spaces so the GZD+square prefix and the easting/northing halves are
-    /// visually separated. `"56HLH1322537516"` -> `"56HLH 13225 37516"`.
+    /// Insert spaces so GZD+square prefix and easting/northing halves
+    /// are visually seperated. `"56HLH1322537516"` -> `"56HLH 13225 37516"`.
     static func formatted(_ raw: String) -> String {
-        // Strip any existing whitespace first so we always work from a canonical form.
+        // Nuke any existing whitespace so we always start from a clean form.
         let compact = raw.replacingOccurrences(of: " ", with: "")
 
         // Try UTM-zone form: 1–2 digits, latitude band letter, 2-letter 100km square,
@@ -99,7 +99,7 @@ enum MGRSFormatter {
             return splitDigits(prefix: m[0], digits: m[1])
         }
 
-        // Unknown shape — hand back unchanged so we never hide the real coordinate.
+        // Unknown shape, just hand it back unchanged so we don't hide the real coordinate.
         return compact
     }
 

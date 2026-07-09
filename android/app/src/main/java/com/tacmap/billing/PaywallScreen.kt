@@ -34,13 +34,12 @@ private val HudGreen = Color(0xFF8CF28C)
 private val HudOrange = Color(0xFFF2A24A)
 
 /**
- * Full-screen paywall shown once the free trial has lapsed and the unlock
- * has not been purchased. Blocks the app until the user buys the one-time
- * unlock or restores a previous purchase.
+ * Full-screen paywall. Shows after trial lapses if user hasn't purchased.
+ * Blocks the app untill they buy or restore.
  *
- * @param priceText localized price from Play (e.g. "$5.00"); null while loading.
- * @param trialDaysRemaining >0 means the trial is still running (soft prompt);
- *        0 means it has expired (hard gate copy).
+ * @param priceText localized price from Play (e.g. "$5.00"), null while loading.
+ * @param trialDaysRemaining >0 = trial still running (soft prompt),
+ *        0 = expired (hard gate).
  */
 @Composable
 fun PaywallScreen(

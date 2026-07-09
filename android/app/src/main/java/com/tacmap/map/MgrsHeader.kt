@@ -34,12 +34,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Position-agnostic MGRS readout card. Caller decides where in the
- * layout it sits and applies any safe-area / status-bar padding.
- *
- * Tap → copy the MGRS string to clipboard.
- * Long-press → invokes [onDropPin] with the displayed coordinate so the
- * caller can drop a waypoint at that exact spot.
+ * MGRS readout card. Caller decides where it sits in the layout.
+ * Tap = copy MGRS to clipboard. Long-press = drop a waypoint at the
+ * displayed coordinate.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -76,8 +73,8 @@ fun MgrsHeader(
                     }
                 }
             )
-            // Tight padding so the header doesn't dominate the map —
-            // matches the iOS card's vertical 5pt / horizontal 14pt.
+            // Tight padding so it doesn't dominate the map. Matches
+            // the iOS card's 5pt vertical / 14pt horizontal.
             .padding(horizontal = 14.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)

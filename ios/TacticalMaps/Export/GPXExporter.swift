@@ -1,7 +1,7 @@
 import Foundation
 
-/// Serialises a recorded track into GPX 1.1 (the universal GPS-exchange format
-/// read by Garmin, Strava, Gaia, QGIS, Google Earth, etc.).
+/// Serialises a recorded track into GPX 1.1.
+/// Garmin, Strava, Gaia, QGIS, Google Earth all read this.
 enum GPXExporter {
 
     private static let isoFormatter: ISO8601DateFormatter = {

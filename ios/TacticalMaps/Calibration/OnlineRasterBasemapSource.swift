@@ -1,9 +1,9 @@
 import Foundation
 import MapKit
 
-/// Online raster basemap styles (alternatives to the native Apple satellite).
-/// Each is a standard XYZ tile service requiring no API key, served via an
-/// `MKTileOverlay`. Mirrors the Android `BasemapStyle`.
+/// Online raster basemap styles (alternatives to native Apple satellite).
+/// Standard XYZ tile services, no API key needed, served via MKTileOverlay.
+/// Mirrors Android BasemapStyle.
 enum BasemapStyle: String, CaseIterable {
     case esriSatellite
     case terrain
@@ -15,8 +15,8 @@ enum BasemapStyle: String, CaseIterable {
         }
     }
 
-    /// MKTileOverlay URL template. `{z}/{x}/{y}` are substituted by name, so the
-    /// Esri `{z}/{y}/{x}` order is fine.
+    /// MKTileOverlay URL template. {z}/{x}/{y} substituted by name so the
+    /// Esri {z}/{y}/{x} order is fine.
     var urlTemplate: String {
         switch self {
         case .esriSatellite:
@@ -34,9 +34,9 @@ enum BasemapStyle: String, CaseIterable {
     }
 }
 
-/// A basemap backed by an online raster XYZ tile service (Esri imagery or
-/// OpenTopoMap terrain). Served via an `MKTileOverlay` with
-/// `canReplaceMapContent` so it fully covers the base. No API key.
+/// Basemap backed by an online raster XYZ tile service (Esri imagery or
+/// OpenTopoMap terrain). Served via MKTileOverlay with canReplaceMapContent
+/// so it fully covers the base. No API key.
 final class OnlineRasterBasemapSource: MapSource {
     let id = UUID()
     let style: BasemapStyle

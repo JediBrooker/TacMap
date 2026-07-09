@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Composite a RICH NATO APP-6 operational overlay onto a HUD backdrop, in the
-style of a real division/corps operations graphic: crenellated FLOT/FEBA
-forward lines (the signature comb graphic), echelon unit symbols (friend
-rectangles / hostile diamonds, bde/div), boundaries with echelon labels,
-boxed objectives, a strongpoint, and axes of advance.
+Composite a rich NATO APP-6 operational overlay onto a HUD backdrop, in the
+style of a real div/corps ops graphic: crenellated FLOT/FEBA forward lines
+(the signature comb graphic), echelon unit symbols (friend rectangles /
+hostile diamonds, bde/div), boundaries w/ echelon labels, boxed objectives,
+a strongpoint, and axes of advance.
 
-The app's own drawing tools render plain polylines — they have no crenellated
-FLOT/boundary graphics — so this is a designed marketing composite over the
-app's real HUD chrome (header, MGRS/UTM readout, crosshair, controls).
+The app's own drawing tools only render plain polylines, no crenellated
+FLOT/boundary graphics. So this is a designed marketing composite over
+the app's real HUD chrome (header, MGRS/UTM readout, crosshair, controls).
 
     python3 scripts/tactical_overlay_hero.py <base.png> <out.png> <sync_y_frac>
 """
@@ -35,7 +35,7 @@ def label(x, y, text, anchor="lm", size=24, fill=WHITE):
     d.text((x, y), text, font=font("bold", int(size*S)), fill=fill, anchor=anchor,
            stroke_width=max(3,int(4*S)), stroke_fill=(0,0,0,235))
 
-# ---- geometry: resample a polyline with cumulative arc-length + left normal ----
+# ---- geometry: resample polyline with cumulative arc-length + left normal ----
 def resample(pts, step):
     out=[]; s=0.0
     for i in range(len(pts)-1):
@@ -48,8 +48,8 @@ def resample(pts, step):
     x,y=pts[-1]; out.append((x,y,0,0,s)); return out
 
 def crenellate(pts, color, width, period, height, side=1):
-    """Square-wave (battlement) line — the FLOT/FEBA forward-line graphic.
-    Drawn with a dark halo so it reads on dark satellite imagery."""
+    """Square-wave (battlement) line, the FLOT/FEBA forward-line graphic.
+    Dark halo so it reads on dark satellite imagery."""
     samp=resample(pts, max(2, 3*S)); path=[]
     half=period/2.0
     for (x,y,nx,ny,s) in samp:
@@ -135,28 +135,28 @@ def strongpoint(nx,ny,nr,color=FRIENDLINE):
     d.ellipse([cx-r,cy-r,cx+r,cy+r], outline=color, width=int(4*S))
 
 # ============ THE SITUATION (division attack, enemy north) ============
-# Boxed objectives in enemy depth (clear of the header + compass/lock chips)
+# boxed objectives in enemy depth (keep clear of header + compass/lock chips)
 objective(0.15,0.235,0.37,0.335,"OBJ FALCON")
 objective(0.50,0.225,0.72,0.330,"OBJ HILL 223")
-# Boundaries (friendly sectors) up to the FEBA
+# boundaries (friendly sectors) up to FEBA
 boundary([(0.36,0.90),(0.355,0.71),(0.36,0.575)], "XX")
 boundary([(0.66,0.90),(0.665,0.71),(0.66,0.565)], "XX")
-# Enemy forward line of resistance (red battlements, teeth toward friendly/south)
+# enemy forward line of resistance (red battlements, teeth toward friendly/south)
 crenellate([P(0.06,0.44),P(0.30,0.475),P(0.53,0.44),P(0.76,0.475),P(0.94,0.445)],
            RED, 6*S, period=46*S, height=22*S, side=1)
-# Friendly FEBA (blue battlements, teeth toward enemy/north)
+# friendly FEBA (blue battlements, teeth toward enemy/north)
 crenellate([P(0.05,0.565),P(0.30,0.535),P(0.52,0.585),P(0.74,0.535),P(0.95,0.565)],
            FRIENDLINE, 6*S, period=46*S, height=22*S, side=-1)
-# Axes of advance (red), friendly -> objectives
+# axes of advance (red), friendly -> objectives
 arrow([P(0.265,0.62),P(0.27,0.49),P(0.265,0.345)], RED, 6*S)
 arrow([P(0.62,0.62),P(0.625,0.49),P(0.62,0.34)], RED, 6*S)
-# Friendly fortified locality (strongpoint), west flank
+# friendly strongpoint, west flank
 strongpoint(0.135,0.75,0.05)
-# Enemy formations (on the objectives + forward of the line)
+# enemy formations (on objectives + forward of line)
 unit(0.255,0.292,"hostile","X",name="EN")
 unit(0.615,0.282,"hostile","XX",name="EN")
 unit(0.45,0.40,"hostile","X",name="EN")
-# Friendly formations (south of the FEBA)
+# friendly formations south of FEBA
 unit(0.20,0.68,"friend","X",name="1 BDE")
 unit(0.50,0.655,"friend","X",name="2 BDE")
 unit(0.81,0.68,"friend","X",name="3 BDE")
@@ -164,7 +164,7 @@ unit(0.35,0.775,"friend","II",fn="armour",name="C SQN")
 unit(0.66,0.78,"friend","II",name="2 RAR")
 unit(0.50,0.86,"friend","XX",hq=True,name="DIV HQ")
 
-# ---- Unit Sync indicator in the header (blue chip on the Live-Location row) ----
+# ---- Unit Sync indicator in header (blue chip on Live-Location row) ----
 def sync_chip(cy):
     cx=W*0.5; blue=(79,168,255,255); ix=cx-72*S
     d.ellipse([ix-3*S,cy-3*S,ix+3*S,cy+3*S], fill=blue)

@@ -1,13 +1,13 @@
 import MapKit
 import UIKit
 
-/// Renders a polyline as a NATO tactical line graphic — a crenellated forward
-/// line (FLOT/FEBA), a boundary with tick marks, or an axis of advance with an
-/// arrowhead. Plain / phase lines keep the stock `MKPolylineRenderer`.
+/// Renders a polyline as a NATO tactical line graphic - crenellated forward
+/// line (FLOT/FEBA), boundary with tick marks, or axis of advance with
+/// arrowhead. Plain / phase lines just use the stock `MKPolylineRenderer`.
 ///
-/// All decoration sizes are in screen points, divided by `zoomScale` so they
-/// stay a constant on-screen size as the map zooms. A dark halo is drawn under
-/// the stroke so the graphic reads on any basemap.
+/// Decoration sizes are in screen points, divided by `zoomScale` so they
+/// stay constant on-screen as the map zooms. Dark halo under the stroke
+/// so it reads on any basemap.
 final class TacticalLineRenderer: MKOverlayRenderer {
 
     private let coords: [CLLocationCoordinate2D]
@@ -62,8 +62,7 @@ final class TacticalLineRenderer: MKOverlayRenderer {
 
     // MARK: geometry
 
-    /// Sample the polyline at `step` spacing, returning point + unit left-normal
-    /// + cumulative arc length.
+    /// Walk the polyline at `step` intervals, returns point + left-normal + arc length.
     private func sample(_ pts: [CGPoint], step: CGFloat) -> [(p: CGPoint, n: CGVector, s: CGFloat)] {
         var out: [(CGPoint, CGVector, CGFloat)] = []
         var s: CGFloat = 0
@@ -84,7 +83,7 @@ final class TacticalLineRenderer: MKOverlayRenderer {
         return out
     }
 
-    /// Square-wave (battlement) path — the FLOT/FEBA forward-line graphic.
+    /// Square-wave (battlement) path - the FLOT/FEBA forward-line graphic.
     private func crenellated(_ pts: [CGPoint], period: CGFloat, height: CGFloat) -> CGPath {
         let samp = sample(pts, step: max(1, period / 8))
         let half = period / 2
@@ -99,7 +98,7 @@ final class TacticalLineRenderer: MKOverlayRenderer {
         return p
     }
 
-    /// Perpendicular tick marks at intervals — a boundary line.
+    /// Perpendicular tick marks at intervals - boundary line decoration.
     private func boundaryTicks(_ pts: [CGPoint], spacing: CGFloat, len: CGFloat) -> CGPath {
         let samp = sample(pts, step: max(1, spacing / 6))
         let p = CGMutablePath()

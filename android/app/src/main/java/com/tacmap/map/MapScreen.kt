@@ -164,7 +164,7 @@ fun MapScreen(
     var showLayersSheet by remember { mutableStateOf(false) }
     var showImportExportSheet by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
-    /// Weather/UAV widget target = (lat, lng) of the map centre, null when closed.
+    /// weather/UAV widget target = (lat, lng) of map centre, null when closed
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var showAppLockSetup by remember { mutableStateOf(false) }
     val appLock = remember { com.tacmap.app.AppLock(context) }
@@ -186,15 +186,15 @@ fun MapScreen(
         }
     }
 
-    /// (done, total) while baking a calibrated PDF into offline tiles; null when idle.
+    /// (done, total) while baking PDF into offline tiles, null when idle
     var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    /// Lock toggle — when true, NO graphic (symbol or drawing) can be
-    /// moved by any gesture. An extra guard against accidental drags.
+    /// lock toggle - when true no graphic can be moved. Extra guard
+    /// against accidental drags in the field.
     var graphicsLocked by remember { mutableStateOf(false) }
     var activeDrawingLayerId by remember { mutableStateOf(DrawingDocument.DEFAULT_LAYER_ID) }
     val measureSession = remember { MeasureSession() }
-    // Persisted to SharedPreferences so layer toggles survive app relaunch
-    // (previously plain remember{} state that reset on every launch).
+    // persisted to SharedPrefs so layer toggles survive app relaunch
+    // (previously plain remember{} that reset every launch, annoying)
     var unitLabelsVisible by rememberPersistedBoolean("unitLabels", false)
     var taskLabelsVisible by rememberPersistedBoolean("taskLabels", false)
     var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
@@ -390,8 +390,8 @@ fun MapScreen(
         ?: drawingDocument.layers.firstOrNull()?.id
         ?: DrawingDocument.DEFAULT_LAYER_ID
     val draftDrawing = when {
-        // Measure tool takes precedence — render its polyline as a draft
-        // overlay so the user can see the path they're laying down.
+        // measure tool takes precedence - render its polyline as draft
+        // overlay so user can see the path they're laying down
         measureSession.isActive && measureSession.points.size >= 1 -> DrawingFeature(
             name = "",
             geometry = DrawingGeometry.LINE,
@@ -444,9 +444,9 @@ fun MapScreen(
     }
 
     fun handleDrawingTap(lat: Double, lng: Double) {
-        // Measure-mode tap is captured here too — when active it intercepts
-        // taps before the drawing branch so the user can lay down a route
-        // without picking a draw tool.
+        // measure-mode tap intercepted here too - when active it grabs taps
+        // before drawing branch so user can lay down a route without
+        // picking a draw tool
         if (measureSession.isActive) {
             measureSession.addPoint(lat, lng)
             return
@@ -610,9 +610,8 @@ fun MapScreen(
 
         CrosshairOverlay()
 
-        // MGRS header — anchored to the top edge but offset by the
-        // status-bar / camera-cutout inset so the dynamic island /
-        // hole-punch doesn't cover it.
+        // MGRS header - anchored to top edge, offset by status-bar inset
+        // so dynamic island / hole-punch doesn't cover it
         MgrsHeader(
             mgrs = vm.headerMgrs,
             wgs84 = vm.headerWgs84,
@@ -645,8 +644,7 @@ fun MapScreen(
             }
         )
 
-        // Live track-recording badge — only while recording. Centred just
-        // below the header, between the hamburger and compass. Tap to stop.
+        // live track-recording badge, only while recording. Tap to stop.
         if (isRecordingTrack) {
             RecordingIndicator(
                 pointCount = trackPoints.size,
@@ -658,8 +656,7 @@ fun MapScreen(
             )
         }
 
-        // Hamburger (left) + Compass (right), pinned just below the
-        // MGRS header (which is ~96dp tall after the recent tighten).
+        // hamburger (left) + compass (right), pinned below MGRS header
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -750,8 +747,7 @@ fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Air, contentDescription = null) }
                     )
                     HorizontalDivider()
-                    // All file import/export is gathered behind one item that
-                    // opens a bottom sheet, keeping the main menu short.
+                    // all import/export behind one item, keeps menu short
                     DropdownMenuItem(
                         text = { Text("Import / Export") },
                         onClick = {
@@ -1109,7 +1105,7 @@ fun MapScreen(
             },
             onImportTiles = {
                 showImportExportSheet = false
-                // MBTiles has no standard MIME type — show all files.
+                // MBTiles has no standard MIME type, show all files.
                 mbtilesImportLauncher.launch(arrayOf("*/*"))
             },
             onImportGeoJson = {
@@ -1118,7 +1114,7 @@ fun MapScreen(
             },
             onImportKml = {
                 showImportExportSheet = false
-                // KML/KMZ have no reliable MIME registration across providers — show all files.
+                // KML/KMZ have no reliable MIME registration across providers, show all files.
                 kmlImportLauncher.launch(arrayOf(
                     "application/vnd.google-earth.kml+xml",
                     "application/vnd.google-earth.kmz",

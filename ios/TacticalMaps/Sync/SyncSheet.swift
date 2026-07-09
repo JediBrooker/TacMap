@@ -26,7 +26,7 @@ struct SyncSheet: View {
                         }
                     }
 
-                    // Identity section — visible only while connected to a room.
+                    // Identity section, only visible while connected to a room.
                     Section("Your Identity") {
                         TextField("Callsign", text: $manager.presenceConfig.callsign)
                             .autocorrectionDisabled()

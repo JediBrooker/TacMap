@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Floating bottom HUD shown while a `DrawingSessionViewModel` is active.
-/// Replaces the centre-on-location button during drawing mode.
+/// Floating bottom HUD while a drawing session is active.
+/// Replaces the centre-on-location button in drawing mode.
 struct DrawToolbar: View {
     @ObservedObject var session: DrawingSessionViewModel
     let onFinish: () -> Void
@@ -12,10 +12,9 @@ struct DrawToolbar: View {
 
     var body: some View {
         if let kind = session.activeKind {
-            // Sized to fit iPhone portrait widths. The "active tool" pill
-            // shows just the icon (label is redundant once you've tapped
-            // the tool); the point counter sits alongside it. Cancel
-            // collapses to an icon on narrow widths.
+            // Sized for iPhone portrait. Active tool pill just shows the
+            // icon (label is redundant once tapped), point counter sits
+            // next to it. Cancel collapses to icon on narrow widths.
             HStack(spacing: 6) {
                 Image(systemName: kind.sfSymbol)
                     .font(.caption.weight(.bold))
@@ -51,11 +50,10 @@ struct DrawToolbar: View {
                 .disabled(session.inProgressCoordinates.isEmpty)
                 .opacity(session.inProgressCoordinates.isEmpty ? 0.4 : 1)
 
-                // fixedSize + lineLimit(1) keep these as single-line pills.
-                // Compact paddings let both fit alongside the tool icons
-                // on a portrait phone.
+                // fixedSize + lineLimit(1) keep these as single-line pills,
+                // compact padding so both fit next to tool icons on phone.
                 Button {
-                    // Don't discard placed points on a stray tap — confirm first.
+                    // don't nuke placed points on a stray tap, confirm first
                     if session.inProgressCoordinates.isEmpty { session.cancel() }
                     else { showCancelConfirm = true }
                 } label: {
@@ -109,8 +107,8 @@ struct DrawToolbar: View {
         }
     }
 
-    /// "Tag" button. Outline icon when no name set, filled with a tiny
-    /// label preview when set. Tap opens an alert with a TextField.
+    /// "Tag" button - outline when no name, filled w/ tiny label preview
+    /// when set. Tap opens an alert with a TextField.
     private var nameButton: some View {
         Button {
             draftName = session.shapeName
@@ -140,11 +138,9 @@ struct DrawToolbar: View {
         .accessibilityValue(session.shapeName.isEmpty ? "Unset" : session.shapeName)
     }
 
-    /// Toggle between solid and dashed stroke for the finalized line /
-    /// polygon outline. While drawing, the in-progress preview is always
-    /// rendered dashed — this toggle only affects the committed shape.
-    /// The icon draws the actual stroke style (solid bar vs three short
-    /// dashes) so the affordance reads without a label.
+    /// Solid vs dashed stroke toggle. Only affects the committed shape,
+    /// not the in-progress preview (that's always dashed). The icon
+    /// shows the actual stroke style so it reads without a label.
     private var strokeStyleToggle: some View {
         Button {
             session.isDashed.toggle()
@@ -173,8 +169,7 @@ struct DrawToolbar: View {
         .accessibilityValue(session.isDashed ? "Dashed" : "Solid")
     }
 
-    /// Tappable circle showing the current stroke colour. Tapping opens a
-    /// menu of the 12 palette swatches.
+    /// Colour swatch circle, opens the 12-colour palette menu on tap.
     private var colorSwatchMenu: some View {
         Menu {
             ForEach(DrawingPalette.swatches) { swatch in

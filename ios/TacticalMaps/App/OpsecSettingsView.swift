@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Privacy / operational-security settings: privacy screen, opt-in online
-/// lookups, and the (self-hostable) sync relay URL.
+/// Privacy / OPSEC settings: privacy screen, opt-in online lookups,
+/// and the self-hostable sync relay URL.
 struct OpsecSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var opsec = OpsecSettings.shared

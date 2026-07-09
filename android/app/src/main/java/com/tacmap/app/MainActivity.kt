@@ -33,12 +33,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var billing: BillingManager
     private val appLock by lazy { AppLock(this) }
 
-    /// True when the App Lock PIN gate must be shown. Armed on launch and on
-    /// every pause, so returning to the app re-prompts.
+    // True when PIN gate needs to show. Armed on launch + every pause
+    // so coming back to the app re-prompts.
     private val locked = mutableStateOf(false)
 
-    // Bumped on resume so the trial-expiry gate re-evaluates when the user
-    // returns to the app (e.g. days later) without a cold restart.
+    // bump on resume so trial-expiry check re-fires when user comes back
+    // (e.g. days later) without a cold restart
     private val resumeTick = mutableLongStateOf(System.currentTimeMillis())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,9 +47,8 @@ class MainActivity : ComponentActivity() {
         billing = BillingManager(this).also { it.start() }
         locked.value = appLock.isEnabled
 
-        // OPSEC screen-capture protection: keep the map (with live position) out
-        // of the recents thumbnail, screenshots and screen recordings. Reactively
-        // follows the user's setting.
+        // OPSEC: keep the map (w/ live position) out of recents thumbnail,
+        // screenshots, screen recordings. Follows user's setting reactively.
         val opsec = (application as TacticalApp).opsec
         lifecycleScope.launch {
             opsec.blockScreenCapture.collect { block ->
@@ -85,7 +84,7 @@ class MainActivity : ComponentActivity() {
                             trialDaysRemaining = trial.daysRemaining(now),
                             onUnlock = { showPaywall = true },
                         )
-                        // On-demand paywall (from the menu's Unlock row during trial).
+                        // on-demand paywall from the menu Unlock row during trial
                         if (showPaywall && !purchased) {
                             PaywallScreen(
                                 priceText = price,
@@ -112,25 +111,24 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Re-arm the App Lock so returning to the app re-prompts for the PIN.
+        // re-arm app lock so coming back requires PIN again
         if (appLock.isEnabled) locked.value = true
     }
 
     override fun onResume() {
         super.onResume()
-        // Re-evaluate the trial window and re-check entitlement on return.
-        // This also picks up an unlock granted by a Play promo code the user
-        // redeemed while away (via "Redeem code" → Play Store).
+        // re-check trial window + entitlement on return. Also picks up
+        // an unlock from a Play promo code redeemed while we were backgrounded.
         resumeTick.longValue = System.currentTimeMillis()
         billing.restore()
     }
 
     /**
-     * Open the Play Store's own code-redemption screen for promo codes
-     * (Play Console → your in-app product → Promotions). A redeemed code
-     * grants the real `unlock_full` entitlement, which [BillingManager.restore]
-     * picks up on return — no app-side code validation, and store-safe.
-     * Falls back to the browser if the Play Store app isn't installed.
+     * Opens the Play Store promo code redemption screen
+     * (Play Console > in-app product > Promotions). Redeemed code grants
+     * the real `unlock_full` entitlement that [BillingManager.restore]
+     * picks up on return - no app-side validation needed.
+     * Falls back to browser if Play Store app isnt installed.
      */
     private fun openPlayRedeem() {
         val redeem = Uri.parse("https://play.google.com/redeem")

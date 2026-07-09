@@ -2,9 +2,9 @@ import XCTest
 import Foundation
 @testable import TacticalMaps
 
-/// GeoJSON is the canonical export format and the only thing that leaves the
-/// app. These tests pin the FeatureCollection shape: `[lon, lat]` ordering,
-/// the geometry types, and the implicit polygon ring closure.
+/// GeoJSON is the only export format that leaves the app. Tests pin the
+/// FeatureCollection shape - [lon, lat] ordering, geometry types, and
+/// implicit polygon ring closure.
 final class GeoJSONExporterTests: XCTestCase {
 
     private func parse(_ json: String) throws -> [String: Any] {
@@ -47,12 +47,12 @@ final class GeoJSONExporterTests: XCTestCase {
         let features = try XCTUnwrap(root["features"] as? [[String: Any]])
         XCTAssertEqual(features.count, 3)
 
-        // Waypoint → Point with [lon, lat] ordering.
+        // Waypoint becomes a Point with [lon, lat] ordering.
         let wpGeom = try XCTUnwrap(features[0]["geometry"] as? [String: Any])
         XCTAssertEqual(wpGeom["type"] as? String, "Point")
         assertCoord(nums(wpGeom["coordinates"]), [-122.4194, 37.7749], accuracy: 1e-7)
 
-        // Polyline → LineString, vertices in [lon, lat] order.
+        // Polyline to LineString, vertices in [lon, lat] order.
         let lineGeom = try XCTUnwrap(features[1]["geometry"] as? [String: Any])
         XCTAssertEqual(lineGeom["type"] as? String, "LineString")
         let lineCoords = numPairs(lineGeom["coordinates"])
@@ -60,7 +60,7 @@ final class GeoJSONExporterTests: XCTestCase {
         assertCoord(lineCoords[0], [2, 1])
         assertCoord(lineCoords[1], [4, 3])
 
-        // Polygon → single ring, closed implicitly (first == last).
+        // Polygon to single ring, closed implicitly (first == last).
         let polyGeom = try XCTUnwrap(features[2]["geometry"] as? [String: Any])
         XCTAssertEqual(polyGeom["type"] as? String, "Polygon")
         let rings = polyGeom["coordinates"] as? [Any]
@@ -137,7 +137,7 @@ final class GeoJSONExporterTests: XCTestCase {
         XCTAssertEqual(importedControl.scaleY, 0.75, accuracy: 1e-9)
     }
 
-    /// Per-object export must be deterministic — no wall-clock `generated_at`.
+    /// Per-object export must be deterministic, no wall-clock generated_at.
     func testExport_isDeterministic() throws {
         let wp = Waypoint(name: "A", latitude: 1, longitude: 2, kind: .generic)
         let e1 = try GeoJSONExporter.export(waypoints: [wp])
@@ -145,9 +145,9 @@ final class GeoJSONExporterTests: XCTestCase {
         XCTAssertEqual(e1, e2)
     }
 
-    /// Strongest parity guarantee: export → import → export is byte-identical.
-    /// Proves determinism, baked-geometry-with-identity-transform, lowercase
-    /// UUID ids, and style / dash / task-colour / created_at round-trip.
+    // Strongest parity gaurantee: export, import, export again = byte-identical.
+    // Proves determinism, baked geometry w/ identity transform, lowercase UUID
+    // ids, and style / dash / task-colour / created_at all round-trip.
     func testRoundTrip_exportImportExportIsIdempotent() throws {
         let layer = DrawingLayer(id: UUID(uuidString: "AABBCCDD-1111-2222-3333-444455556666")!,
                                  name: "Alpha", defaultColorHex: "#112233")

@@ -1,8 +1,8 @@
 import Foundation
 
-/// Pure Web-Mercator (EPSG:3857) XYZ tile math — the slippy-map scheme MBTiles
-/// and OSM/Google tiles use. Swift mirror of the Android `WebMercatorTiles`
-/// (kept in lockstep). XYZ: tile (0,0) is the north-west corner, y increases south.
+/// Pure Web-Mercator (EPSG:3857) XYZ tile math, the slippy-map scheme MBTiles
+/// and OSM/Google tiles use. Swift mirror of Android WebMercatorTiles (kept in
+/// lockstep). XYZ: tile (0,0) is NW corner, y increases south.
 enum WebMercatorTiles {
 
     private static let maxLat = 85.05112878   // Web-Mercator clamp
@@ -44,19 +44,19 @@ enum WebMercatorTiles {
 
     /// Inclusive integer tile range covering a WGS84 box at zoom z, clamped to grid.
     ///
-    /// Antimeridian note: a box crossing ±180° (minLon > maxLon) yields minX >
-    /// maxX, so `count` is 0 and the caller (`PDFTiler`) treats the bake as
-    /// failed rather than tiling wrong ground. Full wrap-around tiling is
-    /// intentionally unsupported — the linear calibration affine cannot represent
-    /// the ±180° discontinuity (that needs unwrapped-longitude fiduciaries fixed
-    /// upstream, not a tiler workaround).
+    /// Antimeridian note: box crossing +/-180 deg (minLon > maxLon) yields
+    /// minX > maxX so count is 0 and PDFTiler treats the bake as failed rather
+    /// than tiling wrong ground. Full wrap-around tiling is intentionally not
+    /// supported - the linear calibration affine can't represent the +/-180 deg
+    /// discontinuity (needs unwrapped-longitude fiduciaries fixed upstream, not
+    /// a tiler workaround).
     static func tileRange(minLat: Double, maxLat: Double,
                           minLon: Double, maxLon: Double, z: Int) -> Range {
         let maxIdx = (1 << z) - 1
         func clamp(_ v: Int) -> Int { min(max(v, 0), maxIdx) }
         let minX = clamp(Int(floor(lonToTileX(minLon, z))))
         let maxX = clamp(Int(floor(lonToTileX(maxLon, z))))
-        let minY = clamp(Int(floor(latToTileY(maxLat, z))))   // north → smaller y
+        let minY = clamp(Int(floor(latToTileY(maxLat, z))))   // north = smaller y
         let maxY = clamp(Int(floor(latToTileY(minLat, z))))
         return Range(z: z, minX: minX, maxX: maxX, minY: minY, maxY: maxY)
     }

@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Capture the full single-device marketing set from a booted Android emulator
-in ONE session (release APK so Google Maps renders). Resolution-aware, so it
-runs unchanged on the phone (tm_phone, portrait) and the tablet (tm_tablet,
-rotated to portrait).
+"""Capture full single-device marketing set from a booted Android emulator
+in ONE session (release APK so Google Maps renders). Resolution-aware so it
+runs unchanged on phone (tm_phone, portrait) and tablet (tm_tablet, rotated
+to portrait).
 
-Captures, against the live NATO situation joined from <room>:
+Captures against the live NATO situation joined from <room>:
     hero          wide tactical picture on Google Satellite
     symbols       zoomed-in APP-6 symbology ("Mark the ground")
-    unit-sync     the Unit Sync sheet, Connected
-    recording     the live REC breadcrumb indicator
+    unit-sync     Unit Sync sheet, Connected
+    recording     live REC breadcrumb indicator
     weather       Weather & UAV safety sheet
     import-export Import / Export sheet
-    symbol-builder the APP-6 editor (affiliation / echelon / function + preview)
+    symbol-builder APP-6 editor (affiliation / echelon / function + preview)
     search        Search sheet
 
-The basemaps fan (scripts/android_basemaps.py) and the GeoPDF hero
-(scripts/android_pdf_hero.py) are captured separately.
+Basemaps fan (android_basemaps.py) and GeoPDF hero (android_pdf_hero.py)
+are captured seperately.
 
     python3 scripts/android_capture_set.py <apk> <out_dir> <room>
 """
@@ -23,7 +23,7 @@ import re, subprocess, sys, time, xml.etree.ElementTree as ET
 
 APK, OUT, ROOM = sys.argv[1], sys.argv[2], sys.argv[3]
 PKG, ACT = "com.tacmap", "com.tacmap/.app.MainActivity"
-LON, LAT = "150.305", "-33.700"          # Blue Mountains = the situation centre
+LON, LAT = "150.305", "-33.700"          # Blue Mountains, situation centre
 
 def adb(*a, **k): return subprocess.run(["adb", *a], capture_output=True, **k)
 def sh(c): return adb("shell", *c.split()).stdout.decode("utf-8", "replace")
@@ -74,8 +74,8 @@ for lbl in ["While using", "Allow", "OK"]:
     if tapt(lbl, 1.2): break
 import struct
 def screen_dims():
-    """Actual rendered W×H from a screencap (wm size reports the physical panel,
-    which is wrong when a landscape-native tablet is rotated to portrait)."""
+    """Actual rendered WxH from screencap. wm size gives the physical panel
+    which is wrong when landscape tablet is rotated to portrait."""
     png = adb("exec-out", "screencap", "-p").stdout
     return struct.unpack(">I", png[16:20])[0], struct.unpack(">I", png[20:24])[0]
 W, H = screen_dims()
@@ -96,8 +96,8 @@ for n in nodes():
     if n.get("class", "").endswith("EditText") and n.get("bounds"): ef = ctr(n.get("bounds")); break
 if ef:
     tap(*ef, p=1.0); adb("shell", "input", "text", ROOM); time.sleep(1.2)
-    adb("shell", "input", "keyevent", "4"); time.sleep(1.0)        # BACK dismisses the soft keyboard
-    btn = None                                                     # tap "Join / create room" by node
+    adb("shell", "input", "keyevent", "4"); time.sleep(1.0)        # BACK kills the soft keyboard
+    btn = None                                                     # find "Join / create room" button by node
     for n in nodes():
         if "join / create" in n.get("text", "").lower() and n.get("bounds"): btn = ctr(n.get("bounds")); break
     if btn: tap(*btn, p=2.0)

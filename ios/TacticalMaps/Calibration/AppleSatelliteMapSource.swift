@@ -1,8 +1,8 @@
 import Foundation
 import MapKit
 
-/// Fallback source when no PDF has been imported. Renders the standard MapKit
-/// satellite imagery — no calibration required.
+/// Fallback source when no PDF has been imported. Just renders standard MapKit
+/// satellite imagery, no calibration needed.
 final class AppleSatelliteMapSource: MapSource {
     let id = UUID()
     let displayName = "Apple Satellite"

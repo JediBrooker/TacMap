@@ -2,14 +2,14 @@ import XCTest
 import CoreGraphics
 @testable import TacticalMaps
 
-/// The fiduciary calibration solve is the highest-stakes math in the app:
-/// a sign error here silently puts every overlay in the wrong place. These
-/// tests generate fiduciaries from a *known* affine and assert the fitter
-/// recovers it, plus cover the degenerate / too-few / inverse paths.
+/// Fiduciary calibration is the highest-stakes math in the app - a sign
+/// error here silently puts every overlay in the wrong place. Tests
+/// generate fiduciaries from a known affine and check the fitter recovers
+/// it. Also covers degenerate / too-few / inverse paths.
 final class AffineFitterTests: XCTestCase {
 
-    /// Translation + scale + a little rotation/shear so every coefficient is
-    /// exercised (not just the diagonal).
+    // Translation + scale + some rotation/shear so we exercise every
+    // coefficient, not just the diagonal.
     private let known = AffineTransform2D(
         a: 0.0001, b: 0.00002, c: -122.5,
         d: -0.00003, e: 0.00009, f: 37.7
@@ -35,7 +35,7 @@ final class AffineFitterTests: XCTestCase {
         XCTAssertEqual(result.transform.d, known.d, accuracy: 1e-9)
         XCTAssertEqual(result.transform.e, known.e, accuracy: 1e-9)
         XCTAssertEqual(result.transform.f, known.f, accuracy: 1e-5)
-        // Fiduciaries lie exactly on the affine → residual ~0.
+        // Fiduciaries lie exactly on the affine, so residual should be ~0.
         XCTAssertLessThan(result.rmsMetres, 1e-4)
     }
 
@@ -69,10 +69,10 @@ final class AffineFitterTests: XCTestCase {
     }
 
     func testFit_nearColinearThrowsDegenerate() {
-        // Almost (not exactly) on a line, at realistic pixel scale: the old
-        // absolute-determinant guard passed these because the normal-equations
-        // determinant is large at pixel magnitudes, yet the perpendicular
-        // direction is unconstrained. The scale-invariant guard must reject them.
+        // Nearly colinear at realistic pixel scale. The old absolute-determinant
+        // guard let these through b/c the normal-equations determinant is huge at
+        // pixel magnitudes, but the perpendicular direction is basically
+        // unconstrained. Scale-invariant guard should reject.
         let fids = [
             Fiduciary(pdfX: 0,    pdfY: 0, mgrs: "", latitude: 0,    longitude: 0),
             Fiduciary(pdfX: 1000, pdfY: 1, mgrs: "", latitude: 0.01, longitude: 1),
@@ -92,7 +92,7 @@ final class AffineFitterTests: XCTestCase {
             fiduciary(x: 0,    y: 800, using: known),
         ]
         XCTAssertFalse(try AffineFitter.fit(three).crossValidated,
-                       "a 3-point fit is exact — RMS is not evidence of accuracy")
+                       "a 3-point fit is exact, RMS is not evidence of accuracy")
         let four = three + [fiduciary(x: 1000, y: 800, using: known)]
         XCTAssertTrue(try AffineFitter.fit(four).crossValidated)
     }

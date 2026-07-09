@@ -2,11 +2,10 @@ import MapKit
 
 // MARK: - Raster basemap overlay (offline MBTiles OR online OpenStreetMap)
 //
-// Adds/removes the MKTileOverlay that serves a raster basemap when the active
-// source is an OfflineTileMapSource (local MBTiles) or an OnlineRasterBasemapSource
-// (Esri imagery / OpenTopoMap). Both replace the satellite base (canReplaceMapContent).
-// The overlay persists across refresh() (which filters MKTileOverlay out of its
-// teardown) so tiles don't reload on every model change.
+// Adds/removes the MKTileOverlay for raster basemaps (OfflineTileMapSource
+// or OnlineRasterBasemapSource). Both replace satellite (canReplaceMapContent).
+// Overlay persists across refresh() which filters MKTileOverlay out of its
+// teardown, so tiles dont reload on every model change.
 extension MapContainerView.Coordinator {
 
     func syncTileOverlay(on mv: MKMapView, source: MapSource) {
@@ -26,9 +25,9 @@ extension MapContainerView.Coordinator {
             tileSourceID = nil
         }
 
-        // Add when a new raster source becomes active. Added above labels so it
-        // covers the satellite basemap; drawings + the MGRS grid are added after
-        // this in add-order, so they stay on top.
+        // Add when new raster source becomes active. Above labels so it
+        // covers satellite basemap. Drawings + MGRS grid are added after
+        // this so they stay on top.
         if tileOverlay == nil, let make = makeOverlay {
             let overlay = make()
             mv.addOverlay(overlay, level: .aboveLabels)

@@ -4,14 +4,14 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 /**
- * Abstract basemap source. Online basemaps plus imported maps:
- *  - [SatelliteMapSourceAndroid] — Google satellite imagery (default).
- *  - [OnlineRasterMapSourceAndroid] — Esri imagery / OpenTopoMap raster tiles.
- *  - [PdfMapSource] in `.geoPDF` mode — calibration parsed from GeoPDF tags.
- *  - [PdfMapSource] in `.calibratedPdf` mode — user-fitted via 3+ fiduciaries.
- *  - [OfflineTileMapSourceAndroid] — sideloaded MBTiles raster.
+ * Abstract basemap source. Online basemaps + imported maps:
+ *  - [SatelliteMapSourceAndroid] - Google satellite imagery (default).
+ *  - [OnlineRasterMapSourceAndroid] - Esri imagery / OpenTopoMap tiles.
+ *  - [PdfMapSource] in geoPDF mode - calibration parsed from GeoPDF tags.
+ *  - [PdfMapSource] in calibratedPdf mode - user-fitted via 3+ fiduciaries.
+ *  - [OfflineTileMapSourceAndroid] - sideloaded MBTiles raster.
  *
- * Overlays are stored in WGS84 and travel between sources unchanged.
+ * Overlays stored in WGS84, travel between sources unchanged.
  */
 sealed interface MapSource {
     val id: String
@@ -23,7 +23,7 @@ sealed interface MapSource {
 
 enum class MapSourceKind { SATELLITE, ONLINE_RASTER, GEO_PDF, CALIBRATED_PDF, OFFLINE_TILES }
 
-/** Online raster basemap styles (no API key). Mirrors iOS `BasemapStyle`. */
+/** Online raster basemap styles (no API key). Mirrors iOS BasemapStyle. */
 enum class BasemapStyle(val displayName: String, val urlTemplate: String, val maxZoom: Int) {
     ESRI_SATELLITE(
         "Satellite (Esri)",
@@ -58,10 +58,10 @@ data class Wgs84Bounds(
     val longitudeSpan: Double get() = northeast.longitude - southwest.longitude
 
     /**
-     * True when (lat, lng) falls inside these bounds. Handles bounds that
-     * cross the antimeridian (southwest.longitude > northeast.longitude),
-     * where a plain `lng in sw..ne` range would be empty and wrongly
-     * report every point as outside.
+     * True when (lat, lng) is inside these bounds. Handles antimeridian
+     * crossing (southwest.longitude > northeast.longitude) where a
+     * naive `lng in sw..ne` range would be empty and wrongly report
+     * every point as outside.
      */
     fun contains(lat: Double, lng: Double): Boolean {
         if (lat < southwest.latitude || lat > northeast.latitude) return false
@@ -73,13 +73,13 @@ data class Wgs84Bounds(
     }
 }
 
-/** Calibration state for a PDF source. */
+/** Calibration state for a PDF source */
 sealed interface Calibration {
     data class Parsed(val crs: String, val transform: AffineTransform2D) : Calibration
     data class Fiduciaries(val fids: List<Fiduciary>, val transform: AffineTransform2D) : Calibration
 }
 
-/** Default online basemap: Google satellite imagery (rendered via MapType.SATELLITE). */
+/** Default basemap: Google satellite (MapType.SATELLITE). */
 class SatelliteMapSourceAndroid : MapSource {
     override val id: String = UUID.randomUUID().toString()
     override val displayName = "Satellite"
@@ -88,8 +88,8 @@ class SatelliteMapSourceAndroid : MapSource {
     override val calibration: Calibration? = null
 }
 
-/** Online raster basemap (Esri World Imagery or OpenTopoMap terrain), rendered
- *  via an XYZ tile overlay. No API key. */
+/** Online raster basemap (Esri World Imagery or OpenTopoMap terrain),
+ *  rendered via XYZ tile overlay. No API key needed. */
 class OnlineRasterMapSourceAndroid(val style: BasemapStyle) : MapSource {
     override val id: String = UUID.randomUUID().toString()
     override val displayName = style.displayName

@@ -32,15 +32,15 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlin.math.ceil
 
-/** Full-screen unlock gate shown when an App Lock PIN is set. Throttles repeated
- *  failures with an escalating lockout (see [AppLock]). */
+/** Full-screen PIN gate when App Lock is on. Escalating lockout on
+ *  repeated failures (see [AppLock]). */
 @Composable
 fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
     var lockoutMs by remember { mutableLongStateOf(appLock.lockoutRemainingMs()) }
 
-    // Tick the lockout countdown down to zero.
+    // tick lockout countdown to zero
     LaunchedEffect(Unit) {
         while (true) {
             lockoutMs = appLock.lockoutRemainingMs()
@@ -93,8 +93,8 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
     }
 }
 
-/** Enable / change / disable the App Lock PIN. Changing or disabling an existing
- *  PIN requires entering the current one. */
+/** Setup dialog for App Lock PIN. Changing or disabling an existing
+ *  PIN requires the current one. */
 @Composable
 fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
     var enabled by remember { mutableStateOf(appLock.isEnabled) }

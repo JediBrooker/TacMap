@@ -103,11 +103,10 @@ fun SymbolEditorDialog(
             decorFitsSystemWindows = false
         )
     ) {
-        /// `DialogProperties.decorFitsSystemWindows = false` alone isn't
-        /// enough on every Compose / device combination — explicitly tell
-        /// the dialog's underlying Window not to inset for system bars so
-        /// `WindowInsets.systemBars` reports the real bottom inset, and
-        /// our padding below leaves room for the gesture pill.
+        /// decorFitsSystemWindows=false alone doesn't work on every
+        /// device/Compose combo, so also tell the Window directly. Otherwise
+        /// WindowInsets.systemBars lies about the bottom inset and
+        /// the gesture pill clips our buttons.
         val dialogView = LocalView.current
         SideEffect {
             (dialogView.parent as? DialogWindowProvider)?.window?.let {
@@ -138,14 +137,9 @@ fun SymbolEditorDialog(
                 EditorTopBar(
                     title = title,
                     subtitle = currentKind.displayName,
-                    /// Render a LIVE preview of the actual symbol the
-                    /// user is about to place — the rendered military
-                    /// frame / function glyph for units, or the task
-                    /// graphic for tactical tasks. Updates whenever
-                    /// affiliation / echelon / function / HQ / task
-                    /// changes below. Generic waypoints fall back to
-                    /// the pin glyph because there's no per-instance
-                    /// symbol to show.
+                    /// Live preview of the symbol about to be placed.
+                    /// Updates whenever affiliation/echelon/function/HQ
+                    /// changes. Generic waypoints just show the pin.
                     kind = currentKind,
                     fallbackIcon = when (mode) {
                         SymbolEditorMode.MILITARY -> Icons.Default.Security
@@ -205,11 +199,9 @@ fun SymbolEditorDialog(
                         }
                     }
 
-                    /// Action buttons live inside the scrollable LazyColumn
-                    /// so they always sit directly under the last form
-                    /// field rather than pinned to the screen bottom, where
-                    /// the gesture pill clipped them on devices whose
-                    /// dialog window doesn't honour edge-to-edge insets.
+                    /// Buttons inside the scrollable column so they sit
+                    /// under the last field, not pinned to screen bottom
+                    /// where the gesture pill clips them on some devices.
                     item {
                         Row(
                             modifier = Modifier
@@ -283,17 +275,13 @@ private fun EditorTopBar(
     }
 }
 
-/// White-backed tile that shows the symbol that will be placed if the
-/// user taps "Place". For military units this is the rendered SIDC
-/// frame + function glyph; for tactical tasks it's the task graphic.
-/// The background is white in both cases — military glyphs already
-/// render on white in the SDIC spec, and task graphics are black on
-/// transparent so they need a non-dark backdrop to actually read.
+/// White tile showing the symbol that'll be placed. Military = rendered
+/// SIDC frame + glyph, tasks = the task graphic. White bg for both b/c
+/// task graphics are black-on-transparent and unreadable on dark.
 ///
-/// The rendered bitmaps include transparent padding around the
-/// visible glyph (HQ-pole reserve, echelon dot space, etc.). We
-/// crop to the visible-pixel bounding box before scaling so the
-/// glyph fills the tile instead of huddling in one corner.
+/// The bitmaps have transparent padding (HQ pole reserve, echelon dots
+/// etc) so we crop to visible pixels before scaling. Otherwise the
+/// glyph huddles in one corner of the tile.
 @Composable
 private fun SymbolPreviewTile(
     kind: WaypointKind,
@@ -308,16 +296,14 @@ private fun SymbolPreviewTile(
             longitude = 0.0,
             kind = kind
         )
-        /// The factory already rasterised the glyph into a BitmapDrawable,
-        /// so reuse its bitmap instead of allocating and re-drawing into a
-        /// throwaway copy. (Don't recycle it — it's owned by the factory's
-        /// icon cache.)
+        /// Reuse the factory's already-rasterised bitmap instead of
+        /// allocating a throwaway copy. Don't recycle it tho, the
+        /// factory's cache owns it.
         val drawable = SymbolIconFactory.drawableFor(context, placeholder)
         val full = (drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
             ?: return@remember null
-        /// Crop transparent padding so ContentScale.Fit scales the
-        /// VISIBLE glyph (not the bitmap-frame-including-padding) up
-        /// to fill the preview tile.
+        /// Crop transparent padding so Fit scales the visible glyph,
+        /// not the whole padded bitmap.
         val visible = SymbolIconFactory.visibleBoundsFor(context, placeholder)
         if (visible.width() in 1..(full.width) && visible.height() in 1..(full.height)) {
             android.graphics.Bitmap.createBitmap(

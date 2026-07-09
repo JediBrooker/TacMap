@@ -2,26 +2,25 @@ import Foundation
 import CryptoKit
 import CommonCrypto
 
-/// End-to-end crypto for unit sync. A unit shares a **join code**; from it each
-/// device derives three values via ONE expensive password-stretch:
+/// E2E crypto for unit sync. Everyone in a unit shares a join code,
+/// and from that we derive three values via one PBKDF2 stretch:
 ///
-///   master     = PBKDF2-HMAC-SHA256(joinCode, salt, iterations) — 32 B
-///   roomId     = base64url(HMAC(master, "…roomid…"))  — routing id (relay-visible)
-///   roomKey    = HMAC(master, "…roomkey…")            — AES-256-GCM key (never sent)
-///   authToken  = base64url(HMAC(master, "…auth…"))    — writer-auth bearer token
+///   master    = PBKDF2-HMAC-SHA256(joinCode, salt, 210k iters) - 32 bytes
+///   roomId    = base64url(HMAC(master, "...roomid..."))  - routing id (relay sees this)
+///   roomKey   = HMAC(master, "...roomkey...")             - AES-256-GCM key (never sent)
+///   authToken = base64url(HMAC(master, "...auth..."))    - bearer token for writer auth
 ///
-/// Password stretching (PBKDF2) is the point: a memorable join code is otherwise
-/// brute-forceable offline against retained ciphertext. Because roomId is now
-/// downstream of the same 210k-iteration PBKDF2, it is no longer a *cheap*
-/// offline verifier and is unguessable without the code; authToken travels only
-/// in the WebSocket handshake header (never the URL/logs), so a leaked roomId
-/// alone cannot write to a room.
+/// The whole point of PBKDF2 is that a short join code would otherwise be
+/// brute-forceable offline against retained ciphertext. Since roomId is also
+/// behind the same 210k-iteration stretch, its not a cheap offline verifier
+/// either, and is unguessable without the code. authToken only travels in the
+/// WebSocket handshake header (not URL/logs), so a leaked roomId alone can't
+/// write to a room.
 ///
-/// Objects are sealed AES-256-GCM with the routing metadata bound in as AEAD
-/// associated data. `AES.GCM.SealedBox.combined` is `nonce(12) ‖ ct ‖ tag(16)` —
-/// byte-identical to the Android `SyncCrypto` layout, so iOS and Android on the
-/// same join code interoperate (join codes are ASCII, so the PBKDF2 byte
-/// encoding matches).
+/// Objects are sealed with AES-256-GCM, routing metadata bound as AEAD
+/// associated data. `AES.GCM.SealedBox.combined` = `nonce(12) || ct || tag(16)`,
+/// byte-identical to Android's `SyncCrypto` layout so both platforms interoperate
+/// on the same join code (codes are ASCII so PBKDF2 bytes match).
 enum SyncCrypto {
     private static let salt = "tacmap-sync-salt-v2"
     private static let pbkdf2Iterations: UInt32 = 210_000
@@ -70,17 +69,17 @@ enum SyncCrypto {
         Data(HMAC<SHA256>.authenticationCode(for: Data(label.utf8), using: key))
     }
 
-    /// AEAD associated data binding ciphertext to its routing metadata.
+    /// AEAD associated data - binds ciphertext to routing metadata.
     static func aad(id: String, v: Int, kind: String) -> Data {
         Data("\(id)|\(v)|\(kind)".utf8)
     }
 
-    /// Seal plaintext → `nonce ‖ ct ‖ tag`, authenticating [aad]; nil on failure.
+    /// Seal plaintext into nonce+ct+tag, authenticating [aad]. nil on failure.
     static func seal(_ key: SymmetricKey, _ plaintext: Data, aad: Data) -> Data? {
         try? AES.GCM.seal(plaintext, using: key, authenticating: aad).combined
     }
 
-    /// Open `nonce ‖ ct ‖ tag` → plaintext, or nil on tamper / wrong key / AAD mismatch.
+    /// Open nonce+ct+tag back to plaintext, nil if tampered / wrong key / AAD mismatch.
     static func open(_ key: SymmetricKey, _ blob: Data, aad: Data) -> Data? {
         guard let box = try? AES.GCM.SealedBox(combined: blob) else { return nil }
         return try? AES.GCM.open(box, using: key, authenticating: aad)

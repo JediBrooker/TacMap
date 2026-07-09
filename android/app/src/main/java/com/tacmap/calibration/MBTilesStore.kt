@@ -3,13 +3,13 @@ package com.tacmap.calibration
 import android.database.sqlite.SQLiteDatabase
 
 /**
- * Read-only reader for an MBTiles file — a SQLite database of raster map tiles
- * (the OSGeo MBTiles spec). Mirrors the iOS MBTilesStore: serves tiles by XYZ
- * coordinate (converting to the TMS row scheme MBTiles stores) plus the bounds
- * and zoom metadata. The data layer behind an offline raster basemap.
+ * Read-only reader for MBTiles - a SQLite DB of raster map tiles (OSGeo
+ * MBTiles spec). Mirrors iOS MBTilesStore: serves tiles by XYZ coordinate
+ * (converting to TMS row scheme that MBTiles stores) plus bounds and zoom
+ * metadata. The data layer behind offline raster basemaps.
  *
- * Note: backed by android.database.sqlite, so the TMS↔XYZ flip is covered by
- * the iOS MBTilesStoreTests (shared logic) rather than a host JVM unit test.
+ * Note: backed by android.database.sqlite so the TMS/XYZ flip is covered
+ * by iOS MBTilesStoreTests (shared logic) rather than a host JVM test.
  */
 class MBTilesStore private constructor(private val db: SQLiteDatabase) {
 
@@ -39,7 +39,7 @@ class MBTilesStore private constructor(private val db: SQLiteDatabase) {
                     "minzoom" -> minZoom = value.toIntOrNull()
                     "maxzoom" -> maxZoom = value.toIntOrNull()
                     "bounds" -> {
-                        // MBTiles bounds metadata is "minLon,minLat,maxLon,maxLat".
+                        // MBTiles bounds: "minLon,minLat,maxLon,maxLat"
                         val p = value.split(",").mapNotNull { it.trim().toDoubleOrNull() }
                         if (p.size == 4) {
                             bounds = Wgs84Bounds(
@@ -54,8 +54,8 @@ class MBTilesStore private constructor(private val db: SQLiteDatabase) {
         return Metadata(name, format, minZoom, maxZoom, bounds)
     }
 
-    /** Raster tile bytes for an XYZ tile, or null if absent. MBTiles rows are
-     *  TMS (y flipped vs XYZ): `tmsRow = (2^z - 1) - y`. */
+    /** Tile bytes for an XYZ tile, or null if not found. MBTiles rows use
+     *  TMS (y flipped vs XYZ): tmsRow = (2^z - 1) - y. */
     fun tileData(z: Int, x: Int, y: Int): ByteArray? {
         if (z < 0 || z >= 32) return null
         val tmsRow = (1 shl z) - 1 - y

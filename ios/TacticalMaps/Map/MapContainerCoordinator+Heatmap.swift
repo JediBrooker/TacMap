@@ -2,11 +2,11 @@ import MapKit
 
 // MARK: - Auto terrain heat-map overlay
 //
-// When enabled, samples the visible region's DEM (debounced) and pins a coloured
-// heat-map overlay to it. Mirrors the Android GroundOverlay behaviour.
+// When enabled, samples visible region's DEM (debounced) and pins a coloured
+// heat-map overlay to it. Mirrors Android GroundOverlay behaviour.
 extension MapContainerView.Coordinator {
 
-    /// Toggle the heat-map. Enabling kicks off a refresh; disabling removes it.
+    /// Toggle heat-map on/off. Enabling kicks off a refresh, disabling nukes it.
     func setHeatmapEnabled(_ enabled: Bool, on mv: MKMapView) {
         guard enabled != heatmapEnabled else { return }
         heatmapEnabled = enabled
@@ -18,7 +18,7 @@ extension MapContainerView.Coordinator {
         }
     }
 
-    /// Debounced regenerate for the current region (call on the main thread).
+    /// Debounced regenerate for current region. Call on main thread.
     func scheduleHeatmapRefresh(on mv: MKMapView) {
         guard heatmapEnabled else { return }
         heatmapTask?.cancel()

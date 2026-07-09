@@ -3,9 +3,9 @@ import CoreLocation
 import MGRS
 import Grid
 
-/// Reference ellipsoid for a projection. We only carry the two values
-/// (`a` semi-major, `f` flattening) needed by Snyder's formulas; everything
-/// else (e², e'², secondary radii) is derived.
+/// Reference ellipsoid for a projection. Only carries two values
+/// (a semi-major, f flattening) needed by Snyder's formulas; everything
+/// else (e^2, e'^2, secondary radii) is derived.
 struct Ellipsoid: Hashable {
     /// Semi-major axis (m).
     let a: Double
@@ -27,10 +27,10 @@ struct Ellipsoid: Hashable {
     static let clarke1880IGN     = Ellipsoid(a: 6378249.2,   f: 1.0/293.4660213)   // NTF (legacy France)
     static let krassovsky1940    = Ellipsoid(a: 6378245.0,   f: 1.0/298.3)         // SK-42 (former USSR)
 
-    /// Map an OGC GeoPDF 2-letter datum code to its associated ellipsoid.
-    /// Returns WGS84 for unknowns. The ellipsoid fixes the *shape* of the
-    /// inverse projection; `DatumShift.toWGS84` then translates the result onto
-    /// WGS84 so legacy datums line up with the satellite basemap.
+    /// Map an OGC GeoPDF 2-letter datum code to its ellipsoid. Returns WGS84
+    /// for unknowns. The ellipsoid fixes the shape of the inverse projection;
+    /// DatumShift.toWGS84 then translates the result onto WGS84 so legacy
+    /// datums line up with satellite basemap.
     static func forDatumCode(_ code: String) -> Ellipsoid {
         switch code.uppercased() {
         case "WE", "WD":         return .wgs84
@@ -47,28 +47,28 @@ struct Ellipsoid: Hashable {
     }
 }
 
-/// 3-parameter geocentric-translation datum shifts (M29) for the legacy datums
-/// we decode out of GeoPDF LGIDicts.
+/// 3-parameter geocentric-translation datum shifts for legacy datums we
+/// decode out of GeoPDF LGIDicts.
 ///
-/// `Projection.inverse` returns lat/lon on the *source* datum's ellipsoid.
-/// Without a shift, legacy datums (OSGB36, NAD27, Tokyo, ED50, NTF, SK-42) land
-/// 50–250 m from their true WGS84 position — enough to put a grid reference in
-/// the wrong field. We apply the pure translation part of the Helmert transform
-/// (Molodensky-Badekas without rotation/scale): it is *unambiguous* — additive
-/// in ECEF, with none of the rotation-sign-convention traps of the 7-parameter
-/// form — and closes the gap to ~5–20 m, which is well inside the visual
-/// tolerance of the basemap. Modern datums (WGS84, GDA94/GRS80, NAD83) are
-/// coincident with WGS84 to sub-metre and use a zero shift (identity fast-path).
+/// Projection.inverse returns lat/lon on the source datum's ellipsoid.
+/// Without a shift, legacy datums (OSGB36, NAD27, Tokyo, ED50, NTF, SK-42)
+/// land 50-250m from their true WGS84 position - enough to put a grid ref
+/// in the wrong field. We apply the pure translation part of the Helmert
+/// transform (Molodensky-Badekas w/o rotation/scale): unambiguous, additive
+/// in ECEF, none of the rotation-sign-convention traps of the 7-param form.
+/// Gets us to ~5-20m which is well inside visual tolerance of the basemap.
+/// Modern datums (WGS84, GDA94/GRS80, NAD83) are coincident with WGS84 to
+/// sub-metre and just use a zero shift (identity fast-path).
 enum DatumShift {
 
-    /// `(sourceEllipsoid, dx, dy, dz)` keyed by OGC 2-letter datum code, where
-    /// the translation takes source-ellipsoid ECEF → WGS84 ECEF (EPSG `towgs84`
-    /// order/sign). Unlisted codes fall through to a zero shift (identity).
+    /// (sourceEllipsoid, dx, dy, dz) keyed by OGC 2-letter datum code, where
+    /// translation takes source-ellipsoid ECEF -> WGS84 ECEF (EPSG towgs84
+    /// order/sign). Unlisted codes fall through to zero shift (identity).
     static func params(for code: String) -> (ellipsoid: Ellipsoid, dx: Double, dy: Double, dz: Double) {
         switch code.uppercased() {
         case "WE", "WD":       return (.wgs84, 0, 0, 0)
-        case "GD":             return (.grs80, 0, 0, 0)                                // GDA94 ≈ WGS84
-        case "NA":             return (.grs80, 0, 0, 0)                                // NAD83 ≈ WGS84
+        case "GD":             return (.grs80, 0, 0, 0)                                // GDA94 ~= WGS84
+        case "NA":             return (.grs80, 0, 0, 0)                                // NAD83 ~= WGS84
         case "OB", "OG", "OS": return (.airy1830,          446.448, -125.157, 542.06) // OSGB36
         case "EU":             return (.international1924, -87.0,    -98.0,  -121.0)   // ED50 (mean)
         case "NS":             return (.clarke1866,         -8.0,    160.0,   176.0)   // NAD27 (CONUS)
@@ -80,20 +80,18 @@ enum DatumShift {
         }
     }
 
-    /// Shift a coordinate produced by `Projection.inverse` (expressed on the
-    /// source datum, named by its 2-letter OGC code) to WGS84. A zero-translation
-    /// datum returns the input unchanged, so modern sheets are byte-for-byte
-    /// untouched.
+    /// Shift a coord from Projection.inverse (on source datum, named by its
+    /// 2-letter OGC code) to WGS84. Zero-translation datum returns input
+    /// unchanged so modern sheets are untouched.
     static func toWGS84(lat: Double, lon: Double, datumCode code: String) -> (lat: Double, lon: Double) {
         let (src, dx, dy, dz) = params(for: code)
         return toWGS84(lat: lat, lon: lon, sourceEllipsoid: src, dx: dx, dy: dy, dz: dz)
     }
 
-    /// Shift a coordinate to WGS84 using an *explicit* source ellipsoid and
-    /// geocentric-translation (dx, dy, dz). Used for GeoPDFs that carry the datum
-    /// as an inline `/Datum` dictionary with an embedded `/ToWGS84` — the form
-    /// USGS US Topo and many OGC GeoPDFs use — instead of a 2-letter code. A
-    /// zero translation is an identity fast-path.
+    /// Shift a coord to WGS84 using explicit source ellipsoid and geocentric
+    /// translation (dx, dy, dz). For GeoPDFs that carry datum as an inline
+    /// /Datum dict with embedded /ToWGS84 (USGS US Topo, many OGC GeoPDFs)
+    /// instead of a 2-letter code. Zero translation is an identity fast-path.
     static func toWGS84(lat: Double, lon: Double,
                         sourceEllipsoid: Ellipsoid,
                         dx: Double, dy: Double, dz: Double) -> (lat: Double, lon: Double) {
@@ -102,7 +100,7 @@ enum DatumShift {
         return ecefToGeodetic(x: x + dx, y: y + dy, z: z + dz, ellipsoid: .wgs84)
     }
 
-    /// Geodetic (deg, height 0) → ECEF on the given ellipsoid.
+    /// Geodetic (deg, height 0) -> ECEF on given ellipsoid.
     private static func geodeticToECEF(lat: Double, lon: Double, ellipsoid e: Ellipsoid) -> (Double, Double, Double) {
         let phi = lat * .pi / 180, lam = lon * .pi / 180
         let sinPhi = sin(phi), cosPhi = cos(phi)
@@ -110,7 +108,7 @@ enum DatumShift {
         return (N * cosPhi * cos(lam), N * cosPhi * sin(lam), N * (1 - e.e2) * sinPhi)
     }
 
-    /// ECEF → geodetic (deg) on the given ellipsoid (Bowring fixed-point, h≈0).
+    /// ECEF -> geodetic (deg) on given ellipsoid (Bowring fixed-point, h~=0).
     private static func ecefToGeodetic(x: Double, y: Double, z: Double, ellipsoid e: Ellipsoid) -> (lat: Double, lon: Double) {
         let lon = atan2(y, x)
         let p = (x * x + y * y).squareRoot()
@@ -124,24 +122,24 @@ enum DatumShift {
     }
 }
 
-/// All map projections we decode out of LGIDict / Measure dictionaries.
+/// All map projections we decode from LGIDict / Measure dictionaries.
 ///
-/// `inverse(easting:northing:)` returns lat/lon *on the source datum's
-/// ellipsoid*. For modern datums (GDA94, NAD83, ETRS89) that is WGS84 to
-/// sub-metre; for legacy datums (OSGB36, NAD27, Tokyo, NTF) the caller must
-/// finish with `DatumShift.toWGS84(...)` to remove the 50–250 m offset.
+/// inverse(easting:northing:) returns lat/lon on the source datum's ellipsoid.
+/// For modern datums (GDA94, NAD83, ETRS89) that's WGS84 to sub-metre; for
+/// legacy datums (OSGB36, NAD27, Tokyo, NTF) caller must finish with
+/// DatumShift.toWGS84(...) to remove the 50-250m offset.
 enum Projection {
 
     /// Geographic: x = longitude, y = latitude (degrees).
     case longLat
 
-    /// Universal Transverse Mercator — routed through NGA's UTM helper.
+    /// Universal Transverse Mercator, routed through NGA's UTM helper.
     case utm(zone: Int, hemisphere: Hemisphere, ellipsoid: Ellipsoid = .wgs84)
 
     /// General Transverse Mercator with arbitrary central meridian + scale.
-    /// Snyder pp. 60–64 (inverse series). Covers UK OSGB36, NZ NZTM2000,
-    /// Swiss CH1903+, Irish ITM, German DHDN, French Lambert… wait, France
-    /// is LCC. Anyway: this case handles non-UTM TM.
+    /// Snyder pp. 60-64 (inverse series). Covers UK OSGB36, NZ NZTM2000,
+    /// Swiss CH1903+, Irish ITM, German DHDN, French Lambert... wait, France
+    /// is LCC. Anyway this case handles non-UTM TM.
     case transverseMercator(centralMeridian: Double,   // degrees
                              originLatitude: Double,   // degrees
                              falseEasting: Double,     // metres
@@ -150,9 +148,9 @@ enum Projection {
                              ellipsoid: Ellipsoid)
 
     /// Lambert Conformal Conic with two standard parallels. Snyder pp.
-    /// 104–110. Used by French IGN (RGF93 Lambert-93, the four older
-    /// Lambert zones), US state plane (most states), Canadian NRCan,
-    /// Spanish IGN, many ICAO aviation charts.
+    /// 104-110. Used by French IGN (RGF93 Lambert-93, older Lambert zones),
+    /// US state plane (most states), Canadian NRCan, Spanish IGN, many ICAO
+    /// aviation charts.
     case lambertConformalConic(stdParallel1: Double,   // degrees
                                 stdParallel2: Double,   // degrees
                                 originLatitude: Double, // degrees
@@ -162,8 +160,8 @@ enum Projection {
                                 ellipsoid: Ellipsoid)
 
     /// Convert projection-native (easting, northing) to WGS84 (lat, lon)
-    /// degrees. Returns nil only when the projection math diverges (e.g.
-    /// north pole for Mercator) — not for normal terrestrial inputs.
+    /// degrees. Returns nil only when projection math diverges (e.g. north
+    /// pole for Mercator), not for normal terrestrial inputs.
     func inverse(easting x: Double, northing y: Double) -> (lat: Double, lon: Double)? {
         switch self {
         case .longLat:
@@ -224,9 +222,9 @@ enum Projection {
             + (1097*e1_4/512) * sin(8*mu)
 
         let sP1 = sin(phi1), cP1 = cos(phi1), tP1 = tan(phi1)
-        // Near the pole cos(phi1) → 0 and the longitude series divides by it,
-        // producing non-finite garbage. The contract is to return nil when the
-        // math diverges, so bail instead of handing back a bogus coordinate.
+        // Near the pole cos(phi1) -> 0 and the longitude series divides by it,
+        // producing non-finite garbage. Bail out instead of handing back bogus
+        // coordinates.
         guard abs(cP1) > 1e-12 else { return nil }
         let onemE2sin2 = 1 - e2*sP1*sP1
         let N1 = a / sqrt(onemE2sin2)
@@ -283,8 +281,8 @@ enum Projection {
         let m1 = m(phi1), m2 = m(phi2)
         let t0 = t(phi0), t1 = t(phi1), t2 = t(phi2)
 
-        // For "1-parallel" LCC where phi1 == phi2 the formula reduces to
-        // n = sin(phi1). Use that to avoid the log(m1/m2) divide-by-zero.
+        // For "1-parallel" LCC where phi1 == phi2 formula reduces to
+        // n = sin(phi1). Use that to dodge the log(m1/m2) divide-by-zero.
         let n: Double
         if abs(phi1 - phi2) < 1e-10 {
             n = sin(phi1)

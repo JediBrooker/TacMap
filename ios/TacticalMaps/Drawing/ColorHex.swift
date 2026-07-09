@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// `Color(hex: "#RRGGBB")` / `"#RRGGBBAA"`. Returns `.white` on parse failure
-/// so styles never crash the renderer.
+/// `Color(hex: "#RRGGBB")` / `"#RRGGBBAA"`. Falls back to white on parse
+/// failure so we never crash the renderer with a bad colour string.
 extension Color {
     init(hex: String) {
         let s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -29,7 +29,7 @@ extension Color {
 }
 
 extension UIColor {
-    /// Convenience bridge for use inside MapKit overlay renderers.
+    /// Bridge for MapKit overlay renderers that need UIColor.
     convenience init(hex: String, alpha: Double = 1.0) {
         let swiftColor = Color(hex: hex).opacity(alpha)
         self.init(swiftColor)

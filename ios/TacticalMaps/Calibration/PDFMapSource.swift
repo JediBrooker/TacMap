@@ -3,17 +3,16 @@ import UIKit
 import MapKit
 import PDFKit
 
-/// PDF-backed map source. After import, the map renders this PDF as a
-/// `UIImageView` subview pinned to the PDF’s geographic bounds.
+/// PDF-backed map source. After import the map renders this PDF as a
+/// UIImageView subview pinned to the PDF’s geographic bounds.
 ///
 /// Bounds come from one of three sources, in order:
-///  1. **OGC GeoPDF (LGIDict) or Adobe Geospatial (/VP/Measure)** via
-///     `GeoPDFReader`.
-///  2. **Known-sheet table** — hardcoded bounds for the demo Holsworthy sheet.
-///  3. **Camera-centre fallback** — 10km square around current camera.
+///  1. OGC GeoPDF (LGIDict) or Adobe Geospatial (/VP/Measure) via GeoPDFReader.
+///  2. Known-sheet table - hardcoded bounds for the demo Holsworthy sheet.
+///  3. Camera-centre fallback - 10km square around current camera.
 ///
-/// Bounds can also be *re-derived* at runtime by `applyCalibration(_:_:)`
-/// which feeds a least-squares affine fit from user-placed fiduciaries.
+/// Bounds can also be re-derived at runtime by applyCalibration which feeds
+/// a least-squares affine fit from user-placed fiduciaries.
 final class PDFMapSource: MapSource {
     let id = UUID()
     let displayName: String
@@ -23,8 +22,8 @@ final class PDFMapSource: MapSource {
     let url: URL
     private(set) var bounds: GeoPDFReader.Bounds?
 
-    /// PDF-page rect actually rasterised into `cachedImage`. Mirrors
-    /// `bounds?.pdfCropRect` when set, else the media box.
+    /// PDF-page rect actually rasterised into cachedImage. Mirrors
+    /// bounds?.pdfCropRect when set, else the media box.
     private(set) var pdfRenderRect: CGRect = .zero
 
     /// Fiduciaries from the most recent calibration, if any.
@@ -32,10 +31,10 @@ final class PDFMapSource: MapSource {
 
     private var cachedImage: UIImage?
 
-    /// Affine (PDF user-space → WGS84) used to PLACE the page on the map with
-    /// true rotation + scale, instead of stretching it to the lat/lon box.
-    /// A manual fiduciary calibration wins; otherwise the GeoPDF auto-fit
-    /// affine from `bounds`. nil → the overlay falls back to a bbox stretch.
+    /// Affine (PDF user-space -> WGS84) used to place the page on the map with
+    /// true rotation + scale instead of stretching to lat/lon box. Manual
+    /// fiduciary calibration wins, otherwise GeoPDF auto-fit affine from
+    /// bounds. nil means overlay falls back to bbox stretch.
     var placementTransform: AffineTransform2D? {
         if case .fiduciaries(_, let t)? = calibration { return t }
         return bounds?.placementAffine
@@ -68,14 +67,14 @@ final class PDFMapSource: MapSource {
         return page.bounds(for: .mediaBox)
     }
 
-    /// The rasterised page if it's already been rendered — `nil` if not yet,
-    /// WITHOUT triggering a (blocking) rasterisation. Lets the overlay sync
-    /// render off the main thread and attach the page when it's ready.
+    /// The rasterised page if already rendered, nil if not yet. Does NOT
+    /// trigger a blocking rasterisation. Lets the overlay sync render off
+    /// main thread and attach the page when its ready.
     var cachedRenderedImage: UIImage? { cachedImage }
 
-    /// Cached PDF rasterisation, cropped to the LGIDict Neatline if known.
-    /// Heavy (decodes the page to a bitmap) — call OFF the main thread on first
-    /// use; subsequent calls return the cache.
+    /// Cached PDF rasterisation, cropped to LGIDict Neatline if known.
+    /// Heavy (decodes page to bitmap) - call off main thread on first use;
+    /// subsequent calls just return the cache.
     func renderedImage() -> UIImage? {
         if let cached = cachedImage { return cached }
         guard let img = PDFRasteriser.render(url: url,
@@ -85,10 +84,9 @@ final class PDFMapSource: MapSource {
         return img
     }
 
-    /// Replace the geographic bounds using an affine fit from user fiduciaries.
-    /// Map UI is expected to swap this source for a fresh `PDFMapSource` so
-    /// that the new bounds take effect (the overlay view caches the bounds
-    /// at init).
+    /// Replace geographic bounds using an affine fit from user fiduciaries.
+    /// Map UI is expected to swap this source for a fresh PDFMapSource so
+    /// new bounds take effect (overlay view caches bounds at init).
     func applyCalibration(transform: AffineTransform2D,
                           fiduciaries: [Fiduciary]) {
         // Apply the affine to the 4 corners of the rendered rect to derive

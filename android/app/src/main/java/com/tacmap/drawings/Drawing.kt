@@ -25,9 +25,9 @@ enum class DrawingStrokeStyle(val displayName: String) {
     @SerialName("dashed") DASHED("Dashed")
 }
 
-/// NATO tactical line-graphic style for a line feature. `wire` matches the
-/// iOS rawValue so it round-trips through GeoJSON (tacticalmaps:line_graphic)
-/// and Unit Sync. PLAIN (or null) is an ordinary stroked line.
+// NATO tactical line-graphic style for a line feature. `wire` matches the
+// iOS rawValue so it round-trips through GeoJSON (tacticalmaps:line_graphic)
+// and Unit Sync. PLAIN (or null) = ordinary stroked line.
 @Serializable
 enum class LineGraphic(val wire: String, val displayName: String) {
     @SerialName("plain")         PLAIN("plain", "Plain line"),
@@ -54,9 +54,9 @@ data class DrawingLayer(
 data class DrawingFeature(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
-    /** Free-text notes — round-trips with iOS DrawingShape.notes via GeoJSON
-     *  `description`; without it, iOS drawing notes are dropped and then erased
-     *  on the next sync round-trip. */
+    /** Free-text notes. Round-trips with iOS DrawingShape.notes via GeoJSON
+     *  `description`; without this field iOS drawing notes get dropped and
+     *  then erased on the next sync round-trip. */
     val notes: String? = null,
     val geometry: DrawingGeometry,
     val points: List<DrawingPoint>,
@@ -71,9 +71,9 @@ data class DrawingFeature(
     @SerialName("rotation_degrees") val rotationDegrees: Double = 0.0,
     @SerialName("created_at_epoch_ms") val createdAt: Long = System.currentTimeMillis()
 ) {
-    /// Coordinates with rotation + scale applied around the centroid.
-    /// Vertex-edit handles render against these so the dots line up
-    /// with the rendered polyline / polygon.
+    // Coordinates with rotation + scale baked in around centroid.
+    // Vertex-edit handles render against these so dots line up with
+    // the rendered polyline/polygon.
     val effectivePoints: List<DrawingPoint>
         get() {
             if (points.size < 2 && geometry != DrawingGeometry.POINT) return points
@@ -98,9 +98,9 @@ data class DrawingFeature(
             }
         }
 
-    /// Bake any pending rotation/scale into `points` and reset the
-    /// transform. Called automatically by the vertex-edit helpers so
-    /// the user's dragged handle position matches what gets persisted.
+    // Bake pending rotation/scale into `points` and reset transform.
+    // Called automatically by vertex-edit helpers so the dragged
+    // handle position matches what gets persisted.
     fun bakedTransform(): DrawingFeature {
         if (scaleX == 1.0 && scaleY == 1.0 && rotationDegrees == 0.0) return this
         return copy(
@@ -111,9 +111,9 @@ data class DrawingFeature(
         )
     }
 
-    /// Move the vertex at `index` to a new coordinate. Returns the
-    /// updated feature (with any transform baked) or the receiver
-    /// unchanged if the index is out of range.
+    // Move vertex at `index` to new coordinate. Returns updated
+    // feature (with transform baked) or receiver unchanged if index
+    // is out of range.
     fun withVertexMoved(index: Int, lat: Double, lng: Double): DrawingFeature {
         val baked = bakedTransform()
         if (index < 0 || index >= baked.points.size) return baked
@@ -123,8 +123,8 @@ data class DrawingFeature(
         return baked.copy(points = updated)
     }
 
-    /// Insert a new vertex at `index`, shifting later points right.
-    /// Used when a midpoint handle is dragged or tapped.
+    // Insert vertex at `index`, shifting later points right.
+    // Used when midpoint handle is dragged or tapped.
     fun withVertexInserted(index: Int, lat: Double, lng: Double): DrawingFeature {
         val baked = bakedTransform()
         if (index < 0 || index > baked.points.size) return baked
@@ -134,8 +134,8 @@ data class DrawingFeature(
         return baked.copy(points = updated)
     }
 
-    /// Remove the vertex at `index`. Returns null when removing would
-    /// drop the feature below its kind's minimum vertex count.
+    // Remove vertex at `index`. Returns null if removing would drop
+    // below minimum vertex count for this geometry kind.
     fun withVertexRemovedOrNull(index: Int): DrawingFeature? {
         val baked = bakedTransform()
         val minCount = when (baked.geometry) {
@@ -150,9 +150,9 @@ data class DrawingFeature(
         )
     }
 
-    /// Anchor point for a name-label on the map. Centroid for polygons,
-    /// mid-segment for polylines, the single coordinate for points.
-    /// Returns null if the feature has no usable coordinates.
+    // Anchor point for name-label on the map. Centroid for polygons,
+    // mid-segment for polylines, single coordinate for points.
+    // Null if no usable coordinates.
     val labelAnchor: DrawingPoint?
         get() {
             if (points.isEmpty()) return null

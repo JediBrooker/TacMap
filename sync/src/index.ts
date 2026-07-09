@@ -1,56 +1,56 @@
 /// <reference types="@cloudflare/workers-types" />
 
 /**
- * TacMap sync backend — an end-to-end-**blind** relay for the shared tactical
- * picture. One Durable Object per unit "room"; clients connect over WebSocket
- * and exchange opaque encrypted blobs. The server only ever sees ciphertext
- * plus minimal routing metadata (a random object id, a version, and a coarse
- * `kind`) — the E2E keys are derived on devices from the unit join-code and
- * never leave them (see README + the client increments).
+ * TacMap sync backend - an E2E-blind relay for the shared tactical picture.
+ * One Durable Object per unit "room"; clients connect over WebSocket and
+ * exchange opaque encrypted blobs. Server only ever sees ciphertext plus
+ * minimal routing metadata (random object id, version, coarse `kind`).
+ * E2E keys are derived on-device from the unit join-code and never leave
+ * (see README + client increments).
  *
- * Access control (the relay stays blind to content but is NOT blind to who may
- * write):
- *  - The room id in the URL is a 256-bit value derived from the join code via
- *    210k-iteration PBKDF2, so it is unguessable without the code.
- *  - Every socket must present a separate writer-auth token in the
- *    `Authorization: Bearer` handshake header (never in the URL, so it never
- *    lands in infra logs). The room pins the first token it sees and rejects any
- *    socket that doesn't match — a leaked room id alone can neither read the
- *    snapshot nor write to the room.
+ * Access control (relay is content-blind but NOT blind to who may write):
+ *  - Room id in the URL is 256-bit, derived from join code via 210k-iter
+ *    PBKDF2 - unguessable without the code.
+ *  - Every socket must present a seperate writer-auth token in the
+ *    Authorization: Bearer handshake header (never in URL so it never
+ *    hits infra logs). Room pins the first token it sees and rejects any
+ *    socket that doesn't match. A leaked room id alone can't read the
+ *    snapshot or write to the room.
  *
- * Abuse limits: bounded `v`, per-room object cap, per-socket message rate limit,
- * per-room connection cap, and a per-message ciphertext ceiling keep a single
- * client from inflating Durable-Object storage/billing or DoS-ing a room.
+ * Abuse limits: bounded `v`, per-room object cap, per-socket rate limit,
+ * per-room connection cap, and per-message ciphertext ceiling keep a
+ * single client from inflating DO storage/billing or DoS-ing a room.
  *
- * Storage gives offline store-and-forward: the DO keeps the latest blob per
- * object id (last-write-wins by version, client-id tie-break) so a device that
- * was offline catches up via a snapshot on reconnect. Self-hostable: this is a
- * stock Worker + DO — a unit can `wrangler deploy` it to their own account.
+ * Storage gives offline store-and-forward: DO keeps latest blob per
+ * object id (last-write-wins by version, client-id tie-break) so a
+ * device that was offline catches up via snapshot on reconnect.
+ * Self-hostable: stock Worker + DO, a unit can just wrangler deploy
+ * to their own account.
  */
 
 export interface Env {
   SYNC_ROOM: DurableObjectNamespace
 }
 
-// Room ids are the 256-bit (43-char base64url) output of the client PBKDF2 → so
-// require ≥32 chars: rejects short/guessable ids and raises the enumeration bar.
+// Room ids are 256-bit (43-char base64url) output of client PBKDF2, so
+// require >=32 chars. Rejects short/guessable ids, raises enumeration bar.
 const ROOM_RE = /^\/room\/([A-Za-z0-9_-]{32,128})$/
 
-// Web origins permitted to open a socket. Empty by default: TacMap ships only
-// native clients, which never send an `Origin` header. A self-hoster adding a
-// browser client would list its origin(s) here (e.g. "https://map.example.mil").
+// Web origins allowed to open a socket. Empty b/c TacMap ships only native
+// clients which never send Origin. A self-hoster adding a browser client
+// would list its origin(s) here (e.g. "https://map.example.mil").
 const ALLOWED_ORIGINS = new Set<string>([])
 
 // Abuse ceilings.
 const MAX_CONNECTIONS = 64          // sockets per room
 const MAX_OBJECTS = 5000            // stored objects per room (live only)
-const MAX_V = 1e12                  // sane Lamport/HLC upper bound
+const MAX_V = 1e12                  // sane lamport/HLC upper bound
 const CT_MAX = 700_000             // ~512 KiB ciphertext (DO value limit)
 const RATE_WINDOW_MS = 10_000
 const RATE_MAX_MSGS = 200           // per socket per window
-const SNAPSHOT_CHUNK = 100          // objects per snapshot message
+const SNAPSHOT_CHUNK = 100          // objects per snapshot msg
 const TOMBSTONE_TTL_MS = 7 * 24 * 60 * 60 * 1000  // 7 days
-const GC_INTERVAL_MS = 6 * 60 * 60 * 1000         // run GC every 6 hours
+const GC_INTERVAL_MS = 6 * 60 * 60 * 1000         // GC every 6h
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -63,12 +63,11 @@ export default {
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket upgrade", { status: 426 })
     }
-    // Cross-site WebSocket hijacking defense: browsers always attach an `Origin`
-    // header to WS handshakes and cannot set the `Authorization` header on one,
-    // so an Origin-bearing request is a drive-by from a web page, never a real
-    // TacMap client. Native clients send no Origin and always pass; a self-hosted
-    // web client would be added to ALLOWED_ORIGINS. Belt-and-suspenders on top of
-    // the bearer-token check, which such a request would also fail.
+    // CSWSH defense: browsers always attach Origin to WS handshakes and can't
+    // set Authorization header on one, so an Origin-bearing request is a
+    // drive-by from a web page, never a real TacMap client. Native clients
+    // send no Origin and always pass. Self-hosted web client would go in
+    // ALLOWED_ORIGINS. Belt-and-suspenders on top of bearer-token check.
     const origin = req.headers.get("Origin")
     if (origin !== null && !ALLOWED_ORIGINS.has(origin)) {
       return new Response("Forbidden origin", { status: 403 })
@@ -78,29 +77,29 @@ export default {
   },
 }
 
-/** One stored object: opaque ciphertext + the metadata needed to route + merge. */
+/** One stored object: opaque ciphertext + metadata for routing + merge. */
 interface SyncRecord {
   id: string
   v: number        // logical version (client Lamport/HLC clock)
-  by: string       // client id — deterministic tie-break for equal versions
+  by: string       // client id, deterministic tie-break for equal versions
   kind: string     // coarse type hint: "waypoint" | "drawing" | "layer"
   ct: string       // base64 ciphertext (server never decrypts)
   deleted: boolean // tombstone so deletes reach late joiners
   deletedAt?: number // epoch-ms when this record became a tombstone (for GC)
 }
 
-/** Per-socket state carried across hibernation. Includes rate-limit counters
- *  and the optional presence identity the client announced at join time. */
+/** Per-socket state carried across hibernation. Rate-limit counters +
+ *  optional presence identity the client announced at join time. */
 interface SocketState {
   windowStart: number
   msgs: number
   presence?: PresenceInfo
 }
 
-/** Opaque encrypted presence blob. The relay is E2E-blind to presence content
- *  (location, callsign, unit composition) — it stores only the client id
- *  (a random UUID, not PII) for routing `leave` broadcasts, and the ciphertext
- *  for relaying to peers and including in snapshots. */
+/** Opaque encrypted presence blob. Relay is E2E-blind to presence content
+ *  (location, callsign, unit composition). Only stores client id (random
+ *  UUID, not PII) for routing leave broadcasts, and the ciphertext for
+ *  relaying to peers and including in snapshots. */
 interface PresenceInfo {
   clientId: string
   ct: string           // base64 AEAD ciphertext of the presence payload
@@ -130,23 +129,23 @@ export class SyncRoom {
   }
 
   async fetch(req: Request): Promise<Response> {
-    // Writer-auth: the bearer token proves possession of the join-code-derived
-    // auth key without revealing it (the relay stays content-blind). It rides in
-    // a header, never the URL, so it never reaches request logs.
+    // Writer-auth: bearer token proves possession of the join-code-derived
+    // auth key without revealing it (relay stays content-blind). In a header
+    // not the URL, so it never hits request logs.
     const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "")
     if (token.length < 20 || token.length > 200) {
       return new Response("Unauthorized", { status: 401 })
     }
     const pinned = await this.state.storage.get<string>("meta:auth")
     if (pinned === undefined) {
-      // Trust-on-first-use: the first client (who must already know the room id,
-      // itself only derivable from the join code) pins the token for the room.
+      // TOFU: first client (who must already know the room id, itself only
+      // derivable from join code) pins the token for the room.
       await this.state.storage.put("meta:auth", token)
     } else if (!constantTimeEqual(pinned, token)) {
       return new Response("Forbidden", { status: 403 })
     }
 
-    // Cap concurrent connections so one room can't be used to exhaust the DO.
+    // cap concurrent connections so one room can't exhaust the DO
     if (this.state.getWebSockets().length >= MAX_CONNECTIONS) {
       return new Response("Room full", { status: 503 })
     }
@@ -154,7 +153,7 @@ export class SyncRoom {
     const pair = new WebSocketPair()
     const client = pair[0]
     const server = pair[1]
-    // Hibernatable WebSocket — the DO can evict from memory between messages.
+    // hibernatable WS - DO can evict from memory between messages
     this.state.acceptWebSocket(server)
     server.serializeAttachment({ windowStart: 0, msgs: 0 } satisfies SocketState)
     await this.sendSnapshot(server)
@@ -204,7 +203,7 @@ export class SyncRoom {
   }
 
   async webSocketError(_ws: WebSocket, _err: unknown): Promise<void> {
-    // Nothing to do — the socket is torn down by the runtime.
+    // nothing to do, runtime tears down the socket
   }
 
   async alarm(): Promise<void> {
@@ -249,8 +248,8 @@ export class SyncRoom {
 
   // ----- Core -----
 
-  /** Sliding-window per-socket rate limit. Returns false when the socket has
-   *  exceeded its message budget for the current window. */
+  /** Sliding-window per-socket rate limit. Returns false when socket has
+   *  blown its message budget for the current window. */
   private allow(ws: WebSocket): boolean {
     const now = Date.now()
     const s = (ws.deserializeAttachment() as SocketState | null) ?? { windowStart: now, msgs: 0 }
@@ -270,16 +269,16 @@ export class SyncRoom {
     const kind = typeof msg.kind === "string" ? msg.kind.slice(0, 32) : "unknown"
     const ct = typeof msg.ct === "string" ? msg.ct : ""
     if (typeof id !== "string" || id.length === 0 || id.length > 256) return
-    // Bound `v`: a non-negative safe integer within a sane window. Without this,
-    // an attacker (or a client clock bug) could send v = Number.MAX_VALUE and
-    // permanently pin a record so no honest update ever wins last-write-wins.
+    // bound v: non-negative safe integer within a sane window. Without this
+    // an attacker (or clock bug) could send v = MAX_VALUE and permanently
+    // pin a record so no honest update ever wins LWW.
     if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0 || v > MAX_V) return
     if (!deleted && ct.length === 0) return
     if (ct.length > CT_MAX) return
 
     const key = "obj:" + id
     const existing = await this.state.storage.get<SyncRecord>(key)
-    if (existing && !isNewer({ v, by }, existing)) return // stale — drop
+    if (existing && !isNewer({ v, by }, existing)) return // stale, drop it
 
     const wasLive = existing != null && !existing.deleted
     const willLive = !deleted
@@ -315,7 +314,7 @@ export class SyncRoom {
         ws.send(JSON.stringify(payload))
       }
     } catch {
-      /* socket closed before snapshot — ignore */
+      /* socket closed before snapshot, ignore */
     }
   }
 

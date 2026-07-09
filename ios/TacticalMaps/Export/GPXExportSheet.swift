@@ -36,7 +36,7 @@ struct GPXExportSheet: View {
                     Text(error).foregroundStyle(.red)
                 }
 
-                Text("Format: GPX 1.1 — opens in Garmin, Strava, Gaia GPS, QGIS, Google Earth, and most GPS tools.")
+                Text("Format: GPX 1.1 - opens in Garmin, Strava, Gaia GPS, QGIS, Google Earth, and most GPS tools.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

@@ -7,28 +7,28 @@ import java.io.IOException
 /**
  * Durable JSON persistence primitives shared by every on-device store.
  *
- * Two guarantees the previous `file.writeText` / `runCatching { decode }`
- * pattern did not provide, and which matter because the data here is mission
- * data (waypoints, drawings, calibrations):
+ * Two guarantees the old `file.writeText` / `runCatching { decode }` pattern
+ * didn't provide, and they matter b/c this is mission data (waypoints,
+ * drawings, calibrations):
  *
- *  - [writeAtomically] writes to a sibling temp file, fsyncs it, then renames
- *    over the target. A crash / process-kill / power-loss mid-write can never
- *    leave the primary file truncated — the rename is atomic, so a reader sees
- *    either the old bytes or the complete new bytes, never a half-written file.
+ *  - [writeAtomically] writes to a sibling temp file, fsyncs, then renames
+ *    over the target. Crash / process-kill / power-loss mid-write can never
+ *    leave the primary file truncated - rename is atomic so a reader sees
+ *    either old bytes or complete new bytes, never a half-written file.
  *
  *  - [readOrQuarantine] never treats an unreadable-but-present file as "no
- *    data". On a decode failure it moves the file aside as
- *    `<name>.corrupt-<epochMs>` and returns [LoadResult.Corrupt], so the caller
- *    surfaces an error instead of seeding-then-overwriting the only copy.
+ *    data". On decode failure it moves the file aside as
+ *    <name>.corrupt-<epochMs> and returns [LoadResult.Corrupt] so the caller
+ *    surfaces an error instead of clobbering the only copy.
  */
 object SafeStore {
 
     sealed class LoadResult<out T> {
-        /** File does not exist — a genuine fresh install. */
+        /** file doesn't exist, genuine fresh install */
         object Empty : LoadResult<Nothing>()
-        /** File decoded cleanly. */
+        /** file decoded cleanly */
         data class Loaded<T>(val value: T) : LoadResult<T>()
-        /** File existed but could not be read/decoded; it was preserved. */
+        /** file existed but couldn't be read/decoded; preserved as quarantine */
         data class Corrupt(val quarantinedTo: File?, val error: Throwable) : LoadResult<Nothing>()
     }
 
@@ -40,10 +40,10 @@ object SafeStore {
         FileOutputStream(tmp).use { fos ->
             fos.write(text.toByteArray(Charsets.UTF_8))
             fos.flush()
-            fos.fd.sync() // force bytes to stable storage before the rename
+            fos.fd.sync() // fsync before rename so we don't lose data on crash
         }
         if (!tmp.renameTo(file)) {
-            // Some filesystems refuse rename-over-existing; fall back explicitly.
+            // some filesystems won't rename over existing, so delete + rename as fallback
             if (!file.delete() || !tmp.renameTo(file)) {
                 tmp.delete()
                 throw IOException("Atomic rename failed for ${file.absolutePath}")

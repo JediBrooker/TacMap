@@ -1,10 +1,10 @@
 #!/usr/bin/env swift
 //
-// Generates the App Store-ready 1024×1024 icon for TacticalMaps.
-// Xcode synthesises the smaller sizes from the single 1024 PNG via the
-// asset catalog's universal slot.
+// Generates the App Store 1024x1024 icon for TacticalMaps.
+// Xcode synthesises the smaller sizes from this single 1024 PNG via
+// the asset catalog's universal slot.
 //
-// Run:  swift scripts/generate_icon.swift  (from the project root)
+// Run:  swift scripts/generate_icon.swift  (from project root)
 //
 
 import Foundation
@@ -22,7 +22,7 @@ guard let ctx = CGContext(
     space: cs, bitmapInfo: bmpInfo
 ) else { fatalError("context") }
 
-// Flip Y so coordinates are top-left origin (read more naturally).
+// flip Y so coords are top-left origin, reads more naturally
 ctx.translateBy(x: 0, y: size)
 ctx.scaleBy(x: 1, y: -1)
 
@@ -57,7 +57,7 @@ while y < size {
 }
 ctx.strokePath()
 
-// Stronger crosshair midlines (mark the "true" centre grid)
+// stronger midlines marking the true centre of the grid
 ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.08))
 ctx.setLineWidth(2)
 ctx.move(to: CGPoint(x: size/2, y: 0))
@@ -90,7 +90,7 @@ ctx.strokeEllipse(in: CGRect(x: cx - ringR, y: cy - ringR, width: ringR*2, heigh
 ctx.setFillColor(orange)
 ctx.fillEllipse(in: CGRect(x: cx - 24, y: cy - 24, width: 48, height: 48))
 
-// --- North marker (red triangle pointing up) ---
+// --- north marker (red triangle pointing up) ---
 let red = CGColor(red: 0.92, green: 0.22, blue: 0.22, alpha: 1.0)
 ctx.setFillColor(red)
 ctx.move(to: CGPoint(x: cx, y: cy - armLen - 90))
@@ -99,7 +99,7 @@ ctx.addLine(to: CGPoint(x: cx + 60, y: cy - armLen + 10))
 ctx.closePath()
 ctx.fillPath()
 
-// --- Tactical green corner accents (MGRS-readout green) ---
+// --- tactical green corner accents (MGRS-readout green) ---
 let green = CGColor(red: 0.55, green: 0.95, blue: 0.55, alpha: 1.0)
 ctx.setStrokeColor(green)
 ctx.setLineWidth(16)

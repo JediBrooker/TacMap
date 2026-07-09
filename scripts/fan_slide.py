@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Compose a "fan" marketing slide — three device screenshots fanned in one
-tile on the branded background. Used for the "Satellite or terrain" slide so
-all three basemaps (Satellite / Esri / Terrain) show at once.
+"""Compose a "fan" marketing slide - three device screenshots fanned out on
+the branded background. Used for the "Satellite or terrain" slide so all
+three basemaps (Satellite / Esri / Terrain) show at once.
 
-Reuses scripts/store_screenshots.py for the brand background, fonts and bezel.
+Reuses store_screenshots.py for brand background, fonts and bezel.
 
     python3 scripts/fan_slide.py <config.json>
 
@@ -48,7 +48,7 @@ def label_pill(text, accent, size):
 
 def render_fan(cfg):
     W, H = cfg["W"], cfg["H"]
-    S = min(W, H)   # size text/margins off the short side so landscape works too
+    S = min(W, H)   # size text/margins off short side so landscape works
     accent = ss.ACCENTS.get(cfg.get("accent", "green"), ss.GREEN)
     img = ss.background(W, H, accent).convert("RGBA")
     d = ImageDraw.Draw(img, "RGBA")
@@ -83,7 +83,7 @@ def render_fan(cfg):
     area_bot = H - int(H * 0.05)
     cy = (area_top + area_bot) // 2
     cxL, cxR, cxC = W // 2 - offx, W // 2 + offx, W // 2
-    dy = int(H * 0.025)   # side phones sit a touch lower
+    dy = int(H * 0.025)   # side phones sit a bit lower
     seq = [(fL, -ang, cxL, cy + dy, left),
            (fR,  ang, cxR, cy + dy, right),
            (fC,   0,  cxC, cy,      centre)]   # centre last = on top
@@ -97,7 +97,7 @@ def render_fan(cfg):
         img = Image.alpha_composite(img, shadow)
         img.paste(rot, (sx, sy), rot)
 
-    # labels — pinned along the bottom band, left/centre/right
+    # labels pinned along the bottom band, left/centre/right
     psize = int(S * 0.030)
     ly = area_bot - int(H * 0.006)
     for px, meta in [(cxL, left), (cxR, right), (cxC, centre)]:

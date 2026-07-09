@@ -4,13 +4,11 @@ import Combine
 import Grid
 import MGRS
 
-/// `UIViewRepresentable` wrapper around `MKMapView`. Hosts the satellite map,
-/// waypoint annotations, and drawing overlays (polyline/polygon/point).
+/// UIViewRepresentable wrapper for MKMapView. Satellite map + waypoint
+/// annotations + drawing overlays (polyline/polygon/point).
 ///
-/// Gesture model:
-/// - Pan/pinch flip the VM into browse mode (header reads map centre).
-/// - Single tap, *only while drawing mode is active*, adds a vertex to the
-///   in-progress shape.
+/// Pan/pinch flips VM into browse mode (header reads map centre).
+/// Single tap while drawing adds a vertex to the in-progress shape.
 struct MapContainerView: UIViewRepresentable {
     @ObservedObject var mapVM: MapViewModel
     @ObservedObject var locationService: LocationService
@@ -20,12 +18,10 @@ struct MapContainerView: UIViewRepresentable {
     @ObservedObject var measureSession: MeasureSession
     @ObservedObject var visibility: LayerVisibility
     @ObservedObject var calibration: CalibrationSession
-    /// When true, ALL graphic interaction is frozen — no select / tap-to-open,
-    /// no whole-shape or waypoint drag, no vertex insert / move / delete.
-    /// Mirrored onto the Coordinator every `updateUIView`.
+    /// When true, ALL graphic interaction is frozen - no select/tap-to-open,
+    /// no drag, no vertex insert/move/delete. Synced to Coordinator each updateUIView.
     var graphicsLocked: Bool
-    /// Remote unit members broadcasting their position via the sync relay.
-    /// Rendered as presence annotations on the map.
+    /// Remote peers broadcasting position via sync relay. Shown as presence annotations.
     var peers: [String: PresencePeer] = [:]
 
     func makeUIView(context: Context) -> MKMapView {
@@ -34,18 +30,16 @@ struct MapContainerView: UIViewRepresentable {
         mv.showsUserLocation = visibility.userLocationVisible
         mv.showsCompass = false   // we render our own
         mv.showsScale = false
-        // Back to satellite — PDF now renders via MKTileOverlay path which is
+        // Back to satellite, PDF now renders via MKTileOverlay path which is
         // independent of base-map type.
         mv.mapType = .satellite
         mv.pointOfInterestFilter = .excludingAll
-        // Lock the camera flat. MapKit can apply 3D tilt at deep zoom on
-        // satellite imagery, which visually distorts annotation views —
-        // making fixed-pixel symbols *look* like they're growing or
-        // shrinking as the user zooms. Locking pitch keeps the camera
-        // straight-down so annotations render at their canonical size.
+        // Lock camera flat - MapKit applies 3D tilt at deep zoom on satellite
+        // which makes fixed-pixel symbols look like they grow/shrink. Keeping
+        // pitch locked = straight-down camera, annotations stay canonical size.
         mv.isPitchEnabled = false
 
-        // Pan/pinch → browse mode signal.
+        // Pan/pinch -> browse mode signal.
         let pan   = UIPanGestureRecognizer(target: context.coordinator,
                                            action: #selector(Coordinator.userTouchedMap))
         let pinch = UIPinchGestureRecognizer(target: context.coordinator,
@@ -55,10 +49,9 @@ struct MapContainerView: UIViewRepresentable {
         mv.addGestureRecognizer(pan)
         mv.addGestureRecognizer(pinch)
 
-        // Disable MKMapView's built-in rotation (which pivots around the
-        // midpoint of the two fingers and drags the map sideways), and add
-        // our own that pivots around the camera's current centre coordinate
-        // — so the map spins in place around the screen centre.
+        // Kill MapKit's built-in rotation (pivots around finger midpoint,
+        // drags map sideways) and use our own that pivots around camera
+        // centre so the map spins in place.
         mv.isRotateEnabled = false
         let rotation = UIRotationGestureRecognizer(
             target: context.coordinator,
@@ -67,7 +60,7 @@ struct MapContainerView: UIViewRepresentable {
         rotation.delegate = context.coordinator
         mv.addGestureRecognizer(rotation)
 
-        // Single-tap → add vertex while drawing.
+        // Single-tap -> add vertex while drawing.
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                          action: #selector(Coordinator.handleTap(_:)))
         tap.delegate = context.coordinator
@@ -77,16 +70,14 @@ struct MapContainerView: UIViewRepresentable {
         }) {
             tap.require(toFail: dt)
         }
-        // Don't swallow the touch — MKMapView's internal annotation tap
-        // recognizer needs it too so `didSelect` fires when the user
-        // taps a control-measure symbol.
+        // Don't swallow the touch - MKMapView's annotation tap recognizer
+        // needs it too so didSelect fires when user taps a control-measure.
         tap.cancelsTouchesInView = false
         mv.addGestureRecognizer(tap)
         context.coordinator.tapGesture = tap
 
-        // Long-press-drag → reposition a drawing under the finger. We
-        // disable the map's scroll while a drag is active so the user is
-        // actually dragging the shape, not panning the basemap.
+        // Long-press-drag to reposition a drawing. Disables map scroll
+        // while dragging so the shape moves, not the basemap.
         let press = UILongPressGestureRecognizer(target: context.coordinator,
                                                  action: #selector(Coordinator.handleDrawingDrag(_:)))
         press.minimumPressDuration = 0.35
@@ -100,8 +91,8 @@ struct MapContainerView: UIViewRepresentable {
         context.coordinator.cameraRequestSink = mapVM.cameraRequests.sink { region in
             mv.setRegion(region, animated: true)
         }
-        // Compass tap → smooth animate camera heading back to 0° (north up),
-        // keeping the current centre, altitude, and pitch.
+        // Compass tap - smoothly animate heading back to 0 (north up),
+        // keeps current centre, altitude, pitch.
         context.coordinator.resetNorthSink = mapVM.resetNorthRequests.sink { [weak mv] _ in
             guard let mv else { return }
             let cam = MKMapCamera(
@@ -134,9 +125,9 @@ struct MapContainerView: UIViewRepresentable {
                                            visible: visibility.pdfOverlayVisible)
         context.coordinator.syncTileOverlay(on: mv, source: mapVM.mapSource)
         context.coordinator.setHeatmapEnabled(visibility.terrainHeatmapVisible, on: mv)
-        // Sync the MGRS-grid toggle through to the coordinator and
-        // rebuild — flipping the switch must take effect without
-        // waiting for the next pan/zoom.
+        // Sync MGRS-grid toggle to coordinator and rebuild. Flipping
+        // the switch needs to take effect immediately, can't wait for
+        // next pan/zoom.
         let mgrsChanged = context.coordinator.mgrsGridVisibleFlag != visibility.mgrsGridVisible
         context.coordinator.mgrsGridVisibleFlag = visibility.mgrsGridVisible
         if mgrsChanged { context.coordinator.refreshMGRSGrid(on: mv) }
@@ -147,10 +138,9 @@ struct MapContainerView: UIViewRepresentable {
                                     visibility: visibility)
         // Sync calibration markers + clear when not calibrating.
         context.coordinator.syncCalibrationMarkers()
-        // Mirror MapVM's selection state onto MKMapView. When ContentView
-        // dismisses the floating controls card (sets the ID to nil), we
-        // tell MapKit to deselect the annotation so the user can re-tap
-        // it later to bring the card back.
+        // Mirror VM selection state onto MKMapView. When ContentView
+        // dismisses the controls card (sets ID to nil), deselect on
+        // MapKit side so user can re-tap to bring it back.
         if mapVM.selectedWaypointID == nil
             && !mv.selectedAnnotations.isEmpty {
             context.coordinator.deselectAll(on: mv)
@@ -186,56 +176,54 @@ struct MapContainerView: UIViewRepresentable {
         weak var drawingDragPress: UILongPressGestureRecognizer?
         weak var attachedMapView: MKMapView?
 
-        /// Style lookup keyed by overlay identity (MKPolyline/MKPolygon don't
-        /// carry style metadata themselves).
+        /// Style lookup by overlay identity - MKPolyline/MKPolygon don't
+        /// carry style metadata themselves so we stash it here.
         var styleByOverlay: [ObjectIdentifier: DrawingStyle] = [:]
         var inProgressOverlayIDs: Set<ObjectIdentifier> = []
-        /// Drawing-shape id keyed by overlay identity. Lets the renderer
-        /// thicken the stroke for whichever shape is currently selected.
+        /// Drawing-shape id by overlay identity so renderer can
+        /// thicken stroke for the selected shape.
         var shapeIDByOverlay: [ObjectIdentifier: UUID] = [:]
-        /// MGRS-grid polyline lookup: which grid-type each registered
-        /// overlay represents. Used by the renderer to pick stroke
-        /// colour/width per level, and by the refresh routine to remove
-        /// only grid polylines when toggling the overlay or panning.
+        /// Which grid-type each overlay represents. Renderer uses this
+        /// to pick stroke colour/width, and refresh uses it to nuke
+        /// just grid polylines when toggling or panning.
         var mgrsGridTypeByOverlay: [ObjectIdentifier: GridType] = [:]
         var mgrsOverlayIDs: Set<ObjectIdentifier> = []
         var lastMGRSFingerprint: String = ""
-        /// Active MGRS label annotations — tracked separately so the
-        /// refresh routine can yank just the grid labels without
-        /// touching drawing or waypoint annotations.
+        /// Active MGRS label annotations, tracked separately so we can
+        /// yank just the grid labels without clobbering drawing or
+        /// waypoint annotations.
         var mgrsLabelAnnotations: [MGRSGridLabelAnnotation] = []
-        /// Subview-based grid renderer, used ONLY while a PDF basemap is
-        /// active (MKOverlay grid lines render beneath the PDF image subview
-        /// and would be hidden). nil on the plain-basemap path.
+        /// Subview-based grid renderer, only used while PDF basemap is active
+        /// b/c MKOverlay grid lines render beneath the PDF image subview
+        /// and would be hidden. nil on plain-basemap path.
         var mgrsGridOverlayView: MGRSGridOverlayView?
-        /// Subview that redraws drawing/measure/in-progress vector shapes ABOVE
-        /// the PDF image (MKOverlay shapes render beneath it). nil without a PDF.
+        /// Redraws drawing/measure/in-progress shapes ABOVE the PDF image
+        /// since MKOverlay shapes render beneath it. nil without a PDF.
         var pdfDrawingsView: DrawingsOverlayView?
 
-        /// PDF overlay rendered as a UIImageView subview (bypasses MKOverlay
-        /// because iOS 26 MapKit silently refuses to draw custom overlays on
-        /// satellite imagery). Keyed by the source's UUID.
+        /// PDF overlay as UIImageView subview. Bypasses MKOverlay b/c iOS 26
+        /// MapKit silently refuses to draw custom overlays on satellite.
+        /// Keyed by source UUID.
         var pdfImageView: PDFImageOverlayView?
         var pdfSourceID: UUID?
-        /// Source whose page bitmap is currently being rasterised off the main
-        /// thread, so repeated `syncPDFOverlay` calls don't kick off duplicates.
+        /// Source being rasterised off main thread so repeated
+        /// syncPDFOverlay calls don't kick off duplicates.
         var pdfRasterizingSourceID: UUID?
 
-        /// Raster basemap overlay (offline MBTiles or online OSM) + the id of the
-        /// source it belongs to. Persists across refresh() (see MapContainerCoordinator+TileSync).
+        /// Raster basemap overlay (offline MBTiles or online OSM) + source id.
+        /// Persists across refresh(), see MapContainerCoordinator+TileSync.
         var tileOverlay: MKTileOverlay?
         var tileSourceID: UUID?
 
-        /// Auto terrain heat-map: a geo-anchored DEM overlay refreshed (debounced)
-        /// when the region changes while enabled. Persists across refresh().
+        /// Terrain heat-map overlay, refreshed (debounced) on region change
+        /// while enabled. Persists across refresh().
         var heatmapOverlay: TerrainHeatmapOverlay?
         var heatmapEnabled = false
         let heatmapService = TerrainHeatmapService()
         var heatmapTask: Task<Void, Never>?
 
-        /// Dark UIView covering the satellite while a PDF is loaded so the
-        /// imported map is the only visible content. Removed when the PDF is
-        /// hidden or unloaded.
+        /// Dark mask over satellite while PDF is loaded so only the
+        /// imported map is visible. Removed when PDF hidden or unloaded.
         var basemapMask: UIView?
 
         var nextRegionChangeIsUserDriven = false
@@ -245,20 +233,18 @@ struct MapContainerView: UIViewRepresentable {
         let selectionHaptic = UIImpactFeedbackGenerator(style: .light)
 
         /// Fingerprint of the last (waypoints, drawings, in-progress
-        /// session, visibility) tuple we rendered. `refresh()` is a no-op
-        /// when the fingerprint hasn't changed — this matters because
-        /// `updateUIView` fires whenever ANY published value on the VM
-        /// changes (incl. the symbol-selection state), and otherwise we
-        /// would tear down + re-add every annotation on every selection,
-        /// which immediately deselects the just-tapped annotation and
-        /// closes the rotate / resize card.
+        /// session, visibility) tuple we rendered. refresh() no-ops when
+        /// unchanged - this matters b/c updateUIView fires on ANY VM
+        /// publish (incl selection state), and tearing down + re-adding
+        /// every annotation on each selection would immediately deselect
+        /// the just-tapped one and close the controls card.
         private var lastRefreshFingerprint: String = ""
 
         /// True while refresh() is tearing down + re-adding annotations.
-        /// MapKit fires `didDeselect` when an annotation is removed; we
-        /// suppress the selection-state clear during a refresh so the
-        /// controls card stays open while the user drags a slider (which
-        /// publishes a new waypoint rotation/scale and triggers refresh).
+        /// MapKit fires didDeselect when an annotation is removed, so we
+        /// suppress the selection clear during refresh. Otherwise the
+        /// controls card closes while user drags a slider (which triggers
+        /// refresh via the published rotation/scale).
         var isRebuildingAnnotations = false
 
         init(mapVM: MapViewModel,
@@ -288,41 +274,37 @@ struct MapContainerView: UIViewRepresentable {
             if heatmapEnabled { scheduleHeatmapRefresh(on: mv) }
         }
 
-        /// Fires on every render frame during pan/zoom/rotate — the only delegate
-        /// callback that captures rotation gestures. We also use this to keep
-        /// the PDF image view glued to its geographic bounds in real time.
+        /// Fires every render frame during pan/zoom/rotate - only delegate
+        /// callback that catches rotation. Also keeps PDF image view glued
+        /// to its geo bounds in real time.
         func mapViewDidChangeVisibleRegion(_ mv: MKMapView) {
             mapVM.mapCameraDidChange(heading: mv.camera.heading)
             mapVM.currentMetresPerPoint = metresPerPoint(in: mv)
             pdfImageView?.updateFrame(in: mv)
-            // Keep the subview grid + drawings (PDF basemap path) glued to the
-            // map every frame; no-op on the MKOverlay path.
+            // Keep subview grid + drawings (PDF path) glued to map each frame.
+            // No-op on MKOverlay path.
             reprojectMGRSGridOverlay()
             reprojectPDFDrawings()
             publishOverlayState(in: mv)
         }
 
-        /// Cached waypoint list captured on each `refresh()` so the
-        /// camera-change callbacks can recompute screen positions
-        /// without going back through updateUIView.
+        /// Cached waypoints from last refresh() so camera-change
+        /// callbacks can recompute screen positions without going
+        /// back through updateUIView.
         private var currentWaypoints: [Waypoint] = []
 
-        /// Republish per-waypoint screen positions + the current zoom
-        /// scale factor for `TacticalSymbolOverlay` to consume. Runs
-        /// on every camera change so the SwiftUI overlay's symbols
-        /// track the map as it pans and zooms.
+        /// Republish per-waypoint screen positions + zoom scale factor
+        /// for TacticalSymbolOverlay. Runs on every camera change so
+        /// the SwiftUI overlay tracks pan/zoom.
         ///
-        /// The actual mutation of `@Published` properties is deferred
-        /// to the next runloop tick because some call paths reach
-        /// this from inside `updateUIView` (via `refresh()`), and
-        /// SwiftUI forbids mutating observable state synchronously
-        /// during a view-update pass — it triggers the "Publishing
-        /// changes from within view updates is not allowed" warning
-        /// and an infinite re-render loop.
+        /// Deferred to next runloop tick b/c some paths hit this from
+        /// inside updateUIView (via refresh()), and SwiftUI doesn't
+        /// let you mutate observable state during a view-update pass.
+        /// Triggers the "Publishing changes from within view updates"
+        /// warning + infinite re-render loop if you dont defer.
         private func publishOverlayState(in mv: MKMapView) {
-            // Publish screen positions for EVERY waypoint kind —
-            // tactical control measures, military units, and generic
-            // pins. The SwiftUI overlay renders them all.
+            // Publish screen positions for all waypoint kinds -
+            // control measures, military units, generic pins.
             var positions: [UUID: CGPoint] = [:]
             for wp in currentWaypoints {
                 positions[wp.id] = mv.convert(wp.coordinate, toPointTo: mv)
@@ -344,66 +326,57 @@ struct MapContainerView: UIViewRepresentable {
             }
         }
 
-        /// Convert the current map region into a unit scale where
-        /// `1.0` corresponds to the reference zoom (1 metre per point).
-        /// Halve metresPerPoint (zoom in) → scale 2.0. Double it (zoom
-        /// out) → scale 0.5. Clamped to [0.005, 50] so symbols stay
-        /// visible from "single building" zoom all the way out to a
-        /// continental view.
+        /// Convert map region to unit scale: 1.0 = reference zoom
+        /// (1m/pt). Halving metresPerPoint (zoom in) gives 2.0, doubling
+        /// (zoom out) gives 0.5. Clamped to [0.005, 50] so symbols are
+        /// visible from building-level all the way out to continental.
         func currentZoomScaleFactor(for mv: MKMapView) -> CGFloat {
             MapGeometry.zoomScaleFactor(metresPerPoint: metresPerPoint(in: mv),
                                         reference: referenceMetresPerPoint)
         }
 
-        /// Pure metres-per-point at the current camera, no clamping.
-        /// Used by `defaultScaleForNewSymbol` to size new symbols
-        /// relative to the screen at placement time.
+        /// Raw metres-per-point at current camera, no clamping. Used to
+        /// size new symbols relative to screen at placement time.
         func metresPerPoint(in mv: MKMapView) -> Double {
             MapGeometry.metresPerPoint(latitudeDelta: mv.region.span.latitudeDelta,
                                        viewHeightPoints: Double(mv.bounds.height))
         }
 
-        /// Reference zoom where `waypoint.scale = 1.0` renders at the
-        /// symbol's base point size. Lower = bigger symbols at all
-        /// zooms; higher = smaller.
+        /// Reference zoom where scale 1.0 = symbol's base point size.
+        /// Lower = bigger symbols, higher = smaller.
         private let referenceMetresPerPoint: Double = 1.0
 
         // MARK: Drawing tap
 
 
-        /// Tracks whether each in-flight vertex-handle long-press has
-        /// seen any movement. Lets the handler defer the delete action
-        /// to lift-time and skip it if the user's finger moved (which
-        /// means the pan recogniser is also active — the user is
-        /// dragging, not deleting).
+        /// Tracks whether each vertex-handle long-press has seen movement.
+        /// Handler defers delete to lift-time and skips if finger moved
+        /// (pan recogniser is also active = user is dragging not deleting).
         var vertexLongPressMoved: [ObjectIdentifier: Bool] = [:]
 
 
 
         // MARK: Drag-to-move drawings
 
-        /// ID of the drawing currently being dragged via long-press, plus
-        /// the last touch coordinate (so each .changed event applies an
-        /// incremental delta).
+        /// Drawing being dragged via long-press + last touch coord
+        /// so each .changed applies an incremental delta.
         var draggingDrawingID: UUID?
         var lastDragCoord: CLLocationCoordinate2D?
 
         // MARK: MGRS grid overlay
 
-        /// Snapshot of the toggle so refreshMGRSGrid can read it without
-        /// taking the LayerVisibility object as a parameter on every
-        /// region-change callback.
+        /// Snapshot of the toggle so refreshMGRSGrid can read it
+        /// without needing LayerVisibility on every region-change.
         var mgrsGridVisibleFlag: Bool = false
 
-        /// ID of the waypoint currently being dragged via long-press.
-        /// Only one of (waypoint, drawing) drags at a time.
+        /// Waypoint being dragged via long-press. Only one drag at a time
+        /// (either waypoint or drawing, not both).
         var draggingWaypointID: UUID?
 
         /// Currently-rendered presence annotations, keyed by clientId.
         var presenceAnnotations: [String: PresenceAnnotation] = [:]
 
-        /// Diff current presence annotations against the given peers dictionary
-        /// and add/update/remove annotations as needed.
+        /// Diff presence annotations against peers dict, add/update/remove.
         func syncPresenceAnnotations(on mv: MKMapView, peers: [String: PresencePeer]) {
             let currentIDs = Set(presenceAnnotations.keys)
             let newIDs = Set(peers.keys)
@@ -425,7 +398,7 @@ struct MapContainerView: UIViewRepresentable {
                         existing.coordinate = newCoord
                     }
                 } else {
-                    // New peer — add annotation.
+                    // new peer, add annotation
                     let ann = PresenceAnnotation(peer)
                     presenceAnnotations[id] = ann
                     mv.addAnnotation(ann)
@@ -436,15 +409,13 @@ struct MapContainerView: UIViewRepresentable {
 
         // MARK: Refresh
 
-        /// Rebuilds all annotations + overlays from the current model. Cheap
-        /// enough for prototype scale; for a production app, diff instead.
+        /// Rebuild all annotations + overlays from current model. Cheap
+        /// enough for now, a real app would diff instead.
         ///
-        /// Short-circuits when the (waypoints, drawings, session, visibility)
-        /// fingerprint hasn't changed since the last call. This matters
-        /// because `updateUIView` fires on every `MapViewModel` publication,
-        /// including pure UI state like `selectedControlMeasureWaypointID`,
-        /// and rebuilding all annotations during the same runloop tick as
-        /// `didSelect` would immediately deselect the just-tapped one.
+        /// Short-circuits when the fingerprint hasn't changed. This matters
+        /// b/c updateUIView fires on every VM publication, including pure
+        /// UI state like selectedControlMeasureWaypointID, and rebuilding
+        /// during the same tick as didSelect would deselect the tapped one.
         func refresh(on mv: MKMapView,
                      waypoints: [Waypoint],
                      drawings:  [DrawingShape],
@@ -457,21 +428,19 @@ struct MapContainerView: UIViewRepresentable {
                 measureSession: measureSession,
                 visibility: visibility
             )
-            // Always cache so the per-frame overlay-position publisher
-            // has the latest list, even when the fingerprint is the
-            // same and we early-out below.
+            // Always cache so overlay-position publisher has the latest
+            // list even when we bail out early below.
             currentWaypoints = waypoints
-            // Also republish so SwiftUI overlay catches new waypoints
-            // / removals immediately (camera-change publisher won't
-            // fire until the next interaction).
+            // Also republish so SwiftUI overlay catches new/removed
+            // waypoints immediately - camera-change won't fire til
+            // next interaction.
             publishOverlayState(in: mv)
 
             if fingerprint == lastRefreshFingerprint { return }
             lastRefreshFingerprint = fingerprint
 
-            // Capture the currently-selected waypoint annotation so we
-            // can re-select it after we tear annotations down — the
-            // user might be in the middle of dragging the rotate slider.
+            // Capture selected waypoint so we can re-select after
+            // tearing annotations down, user might be mid-slider drag.
             let selectedID = mapVM.selectedWaypointID
 
             isRebuildingAnnotations = true
@@ -499,9 +468,8 @@ struct MapContainerView: UIViewRepresentable {
 
             self.labelsVisible = visibility?.drawingLabelsVisible ?? true
 
-            // --- Overlays --- (keep the offline-tile basemap and the terrain
-            // heat-map; they persist across refreshes so they don't reload on
-            // every model change)
+            // --- Overlays --- keep tile basemap + terrain heatmap, they
+            // persist across refreshes so they dont reload every change
             mv.removeOverlays(mv.overlays.filter {
                 !($0 is MKTileOverlay) && !($0 is TerrainHeatmapOverlay)
             })
@@ -509,12 +477,10 @@ struct MapContainerView: UIViewRepresentable {
             inProgressOverlayIDs.removeAll()
             shapeIDByOverlay.removeAll()
 
-            // ALL waypoint kinds are rendered by TacticalSymbolOverlay
-            // (a SwiftUI overlay above the map) — keep them all out
-            // of the MKAnnotation pipeline so MapKit doesn't manage
-            // their views and gesture handling is consistent across
-            // kinds. Selection / drag are handled by the overlay
-            // itself.
+            // All waypoint kinds rendered by TacticalSymbolOverlay
+            // (SwiftUI overlay above map) - keep out of MKAnnotation
+            // pipeline so MapKit doesnt manage their views. Selection
+            // and drag handled by the overlay itself.
             _ = selectedID  // No re-selection needed (no MKAnnotations).
 
             // Add finished drawings if visible.
@@ -534,9 +500,8 @@ struct MapContainerView: UIViewRepresentable {
                 addShape(pseudo, to: mv, inProgress: true)
             }
 
-            // Measure-tool polyline. Drawn dashed in the tactical-orange
-            // accent so it reads as a "tool" overlay distinct from saved
-            // drawings.
+            // Measure-tool polyline, dashed in tactical-orange to look
+            // like a tool overlay not a saved drawing.
             if measureSession.isActive && measureSession.points.count >= 2 {
                 let coords = measureSession.points
                 let line = MKPolyline(coordinates: coords, count: coords.count)
@@ -552,11 +517,10 @@ struct MapContainerView: UIViewRepresentable {
                 mv.addOverlay(line)
             }
 
-            // The PDF basemap is a UIImageView subview ON TOP of the map, so the
-            // MKOverlay shapes above (drawings, in-progress, measure) render
-            // beneath it and vanish. While a PDF is active, re-draw those vector
-            // shapes into a subview layered ABOVE the PDF (the symbols/labels are
-            // annotations and already sit on top, so they're unaffected).
+            // PDF basemap is a UIImageView ON TOP of the map, so MKOverlay
+            // shapes (drawings, in-progress, measure) render beneath it and
+            // vanish. While PDF active, redraw vectors into a subview above
+            // the PDF. Symbols/labels are annotations so they're fine.
             if pdfImageView != nil {
                 var vectors: [PDFVectorShape] = []
                 if visibility?.drawingsVisible ?? true {
@@ -595,9 +559,8 @@ struct MapContainerView: UIViewRepresentable {
                 removePDFDrawingsView()
             }
 
-            // Vertex dots: every tapped point during drawing/measuring
-            // gets a small marker so the user can see where their taps
-            // landed even before the polyline connects two of them.
+            // Vertex dots - small marker at each tap point so user can
+            // see where taps landed before the polyline connects them.
             let drawColor = UIColor(hex: drawingSession.strokeColorHex)
             let measureColor = UIColor(red: 1, green: 0.65, blue: 0.18, alpha: 1)
             if drawingSession.isDrawing {
@@ -615,23 +578,21 @@ struct MapContainerView: UIViewRepresentable {
                 }
             }
 
-            // Vertex-edit handles for the currently selected polyline /
-            // polygon. We render them at the EFFECTIVE coordinates so the
-            // handles sit on top of the rendered shape. Mutations bake the
-            // rotation/scale transform before persisting (see
-            // `DrawingShape.setEffectiveVertex`).
+            // Vertex-edit handles for selected polyline/polygon. Rendered
+            // at EFFECTIVE coords so handles sit on the actual shape.
+            // Mutations bake the transform before persisting
+            // (see DrawingShape.setEffectiveVertex).
             if let selectedID = mapVM.selectedDrawingID,
                let shape = drawings.first(where: { $0.id == selectedID }) {
                 let coords = shape.clEffectiveCoordinates
-                // Free-hand strokes (captured & stored as a many-point polyline)
-                // have far too many vertices to edit meaningfully, so they get
-                // NO vertex handles — still selectable/movable/deletable via the
-                // controls card, just not vertex-editable. Detect by point count
-                // (matches the Android > 20 heuristic).
+                // Freehand strokes have way too many vertices for meaningful
+                // editing so they get no vertex handles. Still selectable /
+                // movable / deletable via controls card, just not vertex-editable.
+                // Detect by point count (matches Android's >20 heuristic).
                 let isFreehand = shape.kind == .freedraw
                     || (shape.kind == .polyline && coords.count > 20)
                 if !isFreehand && (shape.kind == .polyline || shape.kind == .polygon) {
-                    // Real vertex handles — draggable, long-press to delete.
+                    // real vertex handles - draggable, long-press to delete
                     for (i, c) in coords.enumerated() {
                         let h = DrawingVertexHandleAnnotation(
                             shapeID: shape.id,
@@ -641,9 +602,9 @@ struct MapContainerView: UIViewRepresentable {
                         )
                         mv.addAnnotation(h)
                     }
-                    // Midpoint insertion handles. Polylines: between each
-                    // adjacent pair. Polygons: also between last and first
-                    // so the user can split the closing segment.
+                    // Midpoint handles for inserting new verts. Polylines get
+                    // them between adjacent pairs, polygons also between
+                    // last->first so you can split the closing segment.
                     let segmentCount = shape.kind == .polygon ? coords.count : coords.count - 1
                     for i in 0..<max(segmentCount, 0) {
                         let a = coords[i]
@@ -664,11 +625,10 @@ struct MapContainerView: UIViewRepresentable {
             }
         }
 
-        /// Compact identity string used to decide whether `refresh()`
-        /// has work to do. Includes every field that affects what we
-        /// render — coords, kind, rotation, scale, name, notes-presence,
-        /// elevation-presence — so any meaningful mutation produces a
-        /// new string and triggers a rebuild.
+        /// Compact fingerprint for refresh() short-circuit. Includes
+        /// everything that affects rendering: coords, kind, rotation,
+        /// scale, name, notes, elevation. Any real mutation produces a
+        /// new string and triggers rebuild.
         private func makeRefreshFingerprint(waypoints: [Waypoint],
                                                    drawings:  [DrawingShape],
                                                    session:   DrawingSessionViewModel,
@@ -682,9 +642,9 @@ struct MapContainerView: UIViewRepresentable {
                 parts.append("w|\(w.id.uuidString)|\(w.latitude)|\(w.longitude)|\(w.kindFingerprint)|\(w.rotation)|\(w.scaleX)|\(w.scaleY)|\(w.taskColor.rawValue)|\(w.name)|\(notes)|\(elev)")
             }
             for d in drawings {
-                // Hash every vertex so mid-shape edits (drag a single
-                // handle, insert/delete a midpoint) invalidate the
-                // cached fingerprint. Cheap — drawing counts are tiny.
+                // Hash every vertex so single-handle drags and midpoint
+                // insert/delete invalidate the fingerprint. Cheap since
+                // drawing counts are always tiny.
                 var coordsHash = Hasher()
                 for c in d.coordinates {
                     coordsHash.combine(c.latitude)
@@ -699,18 +659,17 @@ struct MapContainerView: UIViewRepresentable {
             return parts.joined(separator: ";")
         }
 
-        /// Snapshot of the current label-visibility toggle. Captured in
-        /// `refresh()` so addShape's label-add branch can read it.
+        /// Current label-visibility toggle, captured in refresh() so
+        /// addShape can check it.
         private var labelsVisible: Bool = true
 
         private func addShape(_ shape: DrawingShape, to mv: MKMapView, inProgress: Bool) {
-            // In-progress shapes are drawn as-typed; finished shapes use
-            // their effective coordinates (rotation + W/H applied).
+            // In-progress = raw coords; finished = effective coords
+            // (rotation + W/H baked in).
             let coords = inProgress ? shape.clCoordinates : shape.clEffectiveCoordinates
 
-            // Drop a label annotation if the user named the shape (only
-            // for finished shapes; in-progress drawings have no name yet)
-            // and the user hasn't hidden drawing labels via the Layers sheet.
+            // Add label if shape has a name (finished only, in-progress
+            // has no name yet) and labels arent hidden via Layers sheet.
             if !inProgress,
                labelsVisible,
                let name = shape.name?.trimmingCharacters(in: .whitespaces),
@@ -743,8 +702,8 @@ struct MapContainerView: UIViewRepresentable {
                 if !inProgress { shapeIDByOverlay[ObjectIdentifier(poly)] = shape.id }
                 if inProgress { inProgressOverlayIDs.insert(ObjectIdentifier(poly)) }
                 mv.addOverlay(poly)
-                // For in-progress polygon, also draw the open edge as a dashed polyline
-                // so the user can see what they're tracing before closing the ring.
+                // For in-progress polygon also draw open edge as dashed polyline
+                // so user sees what they're tracing before closing the ring.
                 if inProgress {
                     let line = MKPolyline(coordinates: coords, count: coords.count)
                     styleByOverlay[ObjectIdentifier(line)] = shape.style

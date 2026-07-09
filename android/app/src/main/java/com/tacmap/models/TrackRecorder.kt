@@ -18,16 +18,14 @@ data class TrackPoint(
 )
 
 /**
- * Accumulates GPS fixes into a track while recording. Fed by [MapViewModel]
- * from [LocationService] updates.
+ * Accumulates GPS fixes into a track. Fed from MapViewModel via
+ * LocationService.
  *
- * Durability: every accepted fix is appended and fsync'd to
- * `filesDir/tracks/recording.ndjson` via [TrackLog] as it arrives, so process
- * death (OS reclaim, crash, reboot) can lose at most the single in-flight fix —
- * never the whole track. On construction any track left on disk from a session
- * that ended without a clean discard is recovered so the user can export or
- * discard it. Gapless background recording (screen locked) is kept alive by
- * [TrackRecordingService].
+ * Every fix is fsync'd to tracks/recording.ndjson via TrackLog so
+ * process death only loses the single in-flight fix, never the whole
+ * track. On construction we recover any leftover track from a session
+ * that died mid-recording. Background recording kept alive by
+ * TrackRecordingService.
  */
 class TrackRecorder(context: Context) {
 
@@ -39,12 +37,12 @@ class TrackRecorder(context: Context) {
     private val _points = MutableStateFlow<List<TrackPoint>>(emptyList())
     val points: StateFlow<List<TrackPoint>> = _points.asStateFlow()
 
-    /** True when points were recovered from a previous, un-discarded session
-     *  (e.g. the app was killed mid-recording). The UI can offer export/clear. */
+    /** True if we recovered points from a previous session that got killed
+     *  mid-recording. UI can offer export/clear. */
     private val _recovered = MutableStateFlow(false)
     val recovered: StateFlow<Boolean> = _recovered.asStateFlow()
 
-    /** Minimum spacing between stored fixes (m) — drops GPS jitter. */
+    /** Min spacing between fixes (m). Drops GPS jitter. */
     private val minSpacingMetres = 2.0
 
     init {
@@ -64,8 +62,8 @@ class TrackRecorder(context: Context) {
 
     fun stop() {
         _isRecording.value = false
-        // The log file is intentionally kept: a completed-but-unexported track
-        // must also survive process death until the user exports or discards.
+        // Intentionally keep the log file - a completed track must survive
+        // until user exports or discards it.
     }
 
     /** Clear the current (recorded or recovered) track and remove its file. */
@@ -89,7 +87,7 @@ class TrackRecorder(context: Context) {
             timeEpochMs = if (loc.time > 0) loc.time else System.currentTimeMillis()
         )
         _points.value = _points.value + point
-        // Persist BEFORE returning so a fix is durable the moment it's shown.
+        // Persist before returning so the fix is durable the moment its shown.
         runCatching { TrackLog.append(logFile, point) }
     }
 

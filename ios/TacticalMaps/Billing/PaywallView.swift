@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Full-screen paywall shown once the free trial has lapsed and the unlock
-/// has not been purchased. Blocks the app until the user buys the one-time
-/// unlock or restores a previous purchase.
+/// Full-screen paywall. Shows up when trial expires and user hasn't bought
+/// the unlock yet. Blocks everything untill they buy or restore.
 struct PaywallView: View {
     @ObservedObject var store: StoreManager
     /// >0 while the trial is still running; 0 once it has expired.

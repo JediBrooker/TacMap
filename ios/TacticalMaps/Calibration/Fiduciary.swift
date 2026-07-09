@@ -2,12 +2,12 @@ import Foundation
 import CoreLocation
 import CoreGraphics
 
-/// One known correspondence between a point in PDF page coordinates and a real-world
-/// MGRS grid reference. A minimum of three are required to fit an affine transform;
-/// more produce a least-squares best fit and an RMS residual you can show the user.
+/// One known correspondence between a PDF page point and a real-world MGRS grid
+/// reference. Need at least three to fit an affine; more gives you a least-squares
+/// best fit and an RMS residual to show the user.
 ///
-/// Stored as primitive doubles (mirrors the Android model and avoids tangles with
-/// CLLocationCoordinate2D/CGPoint not being Hashable).
+/// Stored as primitive doubles b/c it mirrors the Android model and avoids the
+/// CLLocationCoordinate2D/CGPoint not-Hashable headache.
 struct Fiduciary: Identifiable, Codable, Hashable {
     let id: UUID
     /// PDF user-space (origin bottom-left, units = points).

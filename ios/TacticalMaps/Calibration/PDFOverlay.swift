@@ -3,9 +3,9 @@ import MapKit
 import PDFKit
 import CoreLocation
 
-/// Rasterises a PDF's first page once and exposes the result as a UIImage.
-/// Used by `PDFImageOverlayView` to draw the PDF directly into the map view's
-/// subview hierarchy — sidesteps iOS 26 MapKit's broken MKOverlay /
+/// Rasterises a PDF's first page once and exposes result as a UIImage.
+/// Used by PDFImageOverlayView to draw the PDF directly into map view's
+/// subview hierarchy. Sidesteps iOS 26 MapKit's broken MKOverlay /
 /// MKTileOverlay paths for satellite imagery.
 enum PDFRasteriser {
 
@@ -45,9 +45,9 @@ enum PDFRasteriser {
     }
 }
 
-/// UIImageView pinned to the PDF's geographic bounds. Updates its frame on
-/// every map camera change so it stays correctly positioned over the satellite.
-/// Also hosts fiduciary marker subviews during calibration.
+/// UIImageView pinned to PDF's geographic bounds. Updates frame on every
+/// camera change so it stays positioned correctly over satellite. Also hosts
+/// fiduciary marker subviews during calibration.
 final class PDFImageOverlayView: UIImageView {
     let pdfSW: CLLocationCoordinate2D
     let pdfNE: CLLocationCoordinate2D
@@ -56,13 +56,13 @@ final class PDFImageOverlayView: UIImageView {
     /// coordinate conversions used by fiduciary calibration.
     let pdfRenderRect: CGRect
 
-    /// Affine (PDF user-space → WGS84) for rotation/scale-correct placement.
-    /// When set, `updateFrame` projects the page's true corners through it;
-    /// when nil it falls back to the axis-aligned lat/lon stretch.
+    /// Affine (PDF user-space -> WGS84) for rotation/scale-correct placement.
+    /// When set, updateFrame projects page's true corners through it;
+    /// nil falls back to axis-aligned lat/lon stretch.
     let placementTransform: AffineTransform2D?
 
     /// Per-fiduciary marker subviews, indexed by fiduciary id so we can
-    /// reposition them on layout without rebuilding.
+    /// reposition on layout without rebuilding them.
     private var markers: [UUID: UIView] = [:]
     /// Pending-tap crosshair shown between tap and MGRS confirmation.
     private var pendingMarker: UIView?
@@ -79,18 +79,18 @@ final class PDFImageOverlayView: UIImageView {
         super.init(image: image)
         self.contentMode = .scaleToFill
         // Default false (taps fall through to MKMapView for pan/zoom/draw).
-        // MapContainerView toggles this on while a CalibrationSession is
-        // active so taps hit-test this view and we can convert them to PDF coords.
+        // MapContainerView flips this on while CalibrationSession is active
+        // so taps hit-test this view and we can convert to PDF coords.
         self.isUserInteractionEnabled = false
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// Pin the image to the PDF's geographic bounds. Uses **all four corners**
-    /// to derive a rotation-invariant size, then re-applies the map heading
-    /// via affine transform so the image spins WITH the map instead of being
-    /// crushed into an axis-aligned bounding box.
+    /// Pin image to PDF's geographic bounds. Uses all four corners to derive
+    /// a rotation-invariant size, then re-applies map heading via affine
+    /// transform so image spins with the map instead of getting crushed
+    /// into an axis-aligned bbox.
     func updateFrame(in mapView: MKMapView) {
         // Preferred path: place via the embedded affine so the sheet sits at its
         // true rotation (grid convergence) + scale and lines up with the MGRS
@@ -108,7 +108,7 @@ final class PDFImageOverlayView: UIImageView {
         let nePt = mapView.convert(ne, toPointTo: mapView)
         let swPt = mapView.convert(sw, toPointTo: mapView)
 
-        // Side lengths in screen space — these are invariant under rotation,
+        // Side lengths in screen space, invariant under rotation
         // unlike an axis-aligned bounding box of two opposite corners.
         let width  = hypot(nePt.x - nwPt.x, nePt.y - nwPt.y)
         let height = hypot(swPt.x - nwPt.x, swPt.y - nwPt.y)
@@ -132,8 +132,8 @@ final class PDFImageOverlayView: UIImageView {
         self.center = centreScreen
 
         // Then rotate to match the map heading.
-        // heading=0° (north-up) → identity.
-        // heading=90° (east-up) → image visually rotated 90° clockwise on screen
+        // heading=0 (north-up) = identity.
+        // heading=90 (east-up) = image visually rotated 90 deg clockwise on screen
         // (positive rotationAngle in UIKit = clockwise because y-down).
         let heading = mapView.camera.heading
         if abs(heading) > 0.001 {
@@ -141,12 +141,11 @@ final class PDFImageOverlayView: UIImageView {
         }
     }
 
-    /// Place the page using the embedded PDF→WGS84 affine: map the crop's four
-    /// true corners to geographic points, project them to screen, then size +
-    /// rotate the (axis-aligned) image rect onto that quad. The projected
-    /// corners already fold in the camera heading, so no separate heading term
-    /// is needed. Returns false on a degenerate projection so `updateFrame` can
-    /// fall back to the lat/lon stretch.
+    /// Place page using the embedded PDF->WGS84 affine: map crop's four true
+    /// corners to geo points, project to screen, then size + rotate the
+    /// axis-aligned image rect onto that quad. Projected corners already fold
+    /// in camera heading so no seperate heading term needed. Returns false on
+    /// degenerate projection so updateFrame can fall back to lat/lon stretch.
     private func applyAffinePlacement(_ t: AffineTransform2D, in mapView: MKMapView) -> Bool {
         let r = pdfRenderRect
         // The image is rasterised from the crop with a Y-flip, so image-top maps
@@ -174,9 +173,9 @@ final class PDFImageOverlayView: UIImageView {
 
     // MARK: - Tap ↔ PDF coordinate conversion
 
-    /// Convert a tap (in `mapView`'s coordinate space) to a point in PDF user
-    /// space (y-up, origin = bottom-left of `pdfRenderRect`). Returns nil if
-    /// the tap falls outside the rendered image.
+    /// Convert a tap (in mapView's coord space) to PDF user space point
+    /// (y-up, origin = bottom-left of pdfRenderRect). nil if tap is outside
+    /// the rendered image.
     func pdfPoint(forScreenTap tap: CGPoint, in mapView: MKMapView) -> CGPoint? {
         let local = self.convert(tap, from: mapView)
         guard self.bounds.contains(local) else { return nil }
@@ -190,7 +189,7 @@ final class PDFImageOverlayView: UIImageView {
         return CGPoint(x: pdfX, y: pdfY)
     }
 
-    /// Inverse of the above — PDF point to view-local. Used to place markers.
+    /// Inverse of the above. PDF point to view-local, used to place markers.
     func localPoint(forPDFPoint p: CGPoint) -> CGPoint {
         let fracX = (p.x - pdfRenderRect.minX) / pdfRenderRect.width
         let fracY = (pdfRenderRect.maxY - p.y) / pdfRenderRect.height
@@ -199,8 +198,8 @@ final class PDFImageOverlayView: UIImageView {
 
     // MARK: - Fiduciary markers
 
-    /// Sync marker subviews with the given fiduciaries + pending tap. Cheap
-    /// to call on every layout change.
+    /// Sync marker subviews with fiduciaries + pending tap. Cheap to call
+    /// on every layout change.
     func syncFiduciaryMarkers(_ fids: [Fiduciary], pendingPDFPoint: CGPoint?) {
         // Remove markers whose fiduciary was deleted.
         let liveIDs = Set(fids.map(\.id))

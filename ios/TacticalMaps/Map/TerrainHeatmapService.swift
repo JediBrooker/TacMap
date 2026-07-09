@@ -2,19 +2,19 @@ import Foundation
 import UIKit
 import MapKit
 
-/// Builds an automatic terrain heat-map for a region by sampling a grid of
-/// elevations from Open-Meteo's Copernicus DEM (same source as the elevation
-/// readout) and colouring blue (low) → red (high). No user-uploaded file — the
-/// differentiator vs the competitor's manual elevation-file import. Swift mirror
-/// of the Android `TerrainHeatmapService`.
+/// Auto terrain heatmap - samples a grid of elevations from Open-Meteo's
+/// Copernicus DEM (same source as elevation readout) and colours them
+/// blue (low) to red (high). No user-uploaded file needed, unlike the
+/// competitor's manual elevation-file import. Swift mirror of Android
+/// TerrainHeatmapService.
 actor TerrainHeatmapService {
 
     private struct Response: Decodable { let elevation: [Double] }
 
-    /// Sample a grid×grid DEM over `region` and return a coloured, upscaled image.
+    /// Sample a gridxgrid DEM over region and return a coloured image.
     func generate(region: MKCoordinateRegion, grid: Int = 24) async -> UIImage? {
         // OPSEC: the heat-map samples the region's DEM from a third party
-        // (Open-Meteo), transmitting the coordinates — opt-in only.
+        // (Open-Meteo), transmitting the coordinates. Opt-in only.
         guard OpsecSettings.shared.onlineLookups else { return nil }
         guard grid >= 2 else { return nil }
         let north = region.center.latitude + region.span.latitudeDelta / 2
@@ -63,7 +63,7 @@ actor TerrainHeatmapService {
         return renderImage(grid: grid, elev: elev, lo: lo, range: range)
     }
 
-    /// Render the grid into a grid×grid image; UIKit/MapKit scales it smoothly.
+    /// Render into a grid x grid image. UIKit/MapKit handles the upscaling.
     private func renderImage(grid: Int, elev: [Double?], lo: Double, range: Double) -> UIImage? {
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = 1

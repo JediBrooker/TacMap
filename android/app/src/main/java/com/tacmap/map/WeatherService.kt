@@ -19,14 +19,14 @@ data class WeatherReading(
     val weatherCode: Int?
 )
 
-/** Drone/UAV flight-safety risk; overall = worst of the components. */
+/** UAV flight-safety risk, overall = worst of all components. */
 enum class UAVRisk(val label: String) {
     SAFE("Safe to fly"),
     CAUTION("Marginal — caution"),
     DANGER("Do not fly")
 }
 
-/** Default UAV thresholds (small/consumer-drone oriented). Tunable later. */
+/** Default UAV thresholds, small/consumer drone oriented. Tunable later. */
 data class UAVThresholds(
     val windCautionMs: Double = 7.0, val windDangerMs: Double = 10.0,
     val gustCautionMs: Double = 8.0, val gustDangerMs: Double = 12.0,
@@ -36,7 +36,7 @@ data class UAVThresholds(
 )
 
 object UAVAssessment {
-    /** Worst-of-components risk for the reading. Missing values don't raise risk. */
+    /** Worst-of-components risk. Missing values don't raise risk. */
     fun risk(r: WeatherReading, t: UAVThresholds = UAVThresholds()): UAVRisk {
         var level = UAVRisk.SAFE
         fun bump(x: UAVRisk) { if (x.ordinal > level.ordinal) level = x }
@@ -78,13 +78,12 @@ class WeatherService {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun reading(lat: Double, lng: Double): WeatherReading? {
-        // OPSEC gate (mirrors iOS WeatherService): a weather lookup transmits the
-        // coordinate to a third party (Open-Meteo), so only proceed when the user
-        // has opted in. Without this, opening the dialog leaked the map-centre
-        // position even with online lookups off (the default).
+        // OPSEC: weather lookup transmits coord to Open-Meteo, only proceed
+        // if user opted in. Without this the dialog leaked map-centre even
+        // with online lookups off.
         if (OpsecSettings.shared?.onlineLookups?.value != true) return null
         if (lat == 0.0 && lng == 0.0) return null
-        // Coarsen to ~110 m (3 dp) so the exact position isn't disclosed.
+        // Coarsen to ~110m so exact position isn't disclosed.
         val cLat = (lat * 1000).roundToInt() / 1000.0
         val cLng = (lng * 1000).roundToInt() / 1000.0
         val url = "https://api.open-meteo.com/v1/forecast" +

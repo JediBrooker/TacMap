@@ -8,9 +8,9 @@ import CoreLocation
 ///   lat = d*x + e*y + f
 ///
 /// Stored as the 6 coefficients (a,b,c,d,e,f). For prototype scales this is good
-/// enough — it captures translation, rotation, scale, and (small) shear. For
-/// production-grade work over large areas, a projective (8-DoF) fit using the actual
-/// map projection is preferable, but requires the projection metadata from the PDF.
+/// enough, captures translation, rotation, scale, and (small) shear. For
+/// production-grade work over large areas a projective (8-DoF) fit using the actual
+/// map projection would be better, but you need the projection metadata from the PDF.
 struct AffineTransform2D: Hashable, Codable {
     let a, b, c: Double
     let d, e, f: Double
@@ -22,13 +22,13 @@ struct AffineTransform2D: Hashable, Codable {
         )
     }
 
-    /// Invert the transform (for screen-pixel → PDF-point lookups). Returns nil if
+    /// Invert the transform (screen-pixel to PDF-point lookups). Returns nil if
     /// the matrix is singular.
     func inverted() -> AffineTransform2D? {
         let det = a * e - b * d
-        // Scale-invariant singularity test: |det| / (‖row1‖·‖row2‖) is the sine
-        // of the angle between the two basis vectors ∈ [0,1]. An absolute 1e-12
-        // on `det` — ≈ degrees²/pixel² (~1e-10 at fine scale) — falsely rejected
+        // Scale-invariant singularity test: |det| / (||row1||*||row2||) is the sine
+        // of the angle between the two basis vectors in [0,1]. An absolute 1e-12
+        // on `det` (approx degrees^2/pixel^2, ~1e-10 at fine scale) falsely rejected
         // valid high-zoom calibrations as singular.
         let rowScale = hypot(a, b) * hypot(d, e)
         guard rowScale > 0, abs(det) > 1e-9 * rowScale else { return nil }
@@ -49,21 +49,21 @@ enum AffineFitError: Error {
     case degenerate     // points are colinear or coincident
 }
 
-/// Least-squares fit of an affine transform from N≥3 fiduciaries.
+/// Least-squares fit of an affine transform from N>=3 fiduciaries.
 ///
-/// The system is over-determined for N>3: we solve the normal equations
-/// `(Aᵀ A) x = Aᵀ b` for x and y independently (the two halves of the affine are
-/// uncoupled), which is the closed-form least-squares solution.
+/// Over-determined for N>3: we solve the normal equations
+/// (A^T A) x = A^T b for x and y independently (two halves of the affine are
+/// uncoupled). Just the closed-form least-squares solution, nothing fancy.
 enum AffineFitter {
 
     struct Result {
         let transform: AffineTransform2D
-        /// Root-mean-square residual in metres. Useful to surface in the UI so users
-        /// know how trustworthy the calibration is.
+        /// RMS residual in metres. Show this in the UI so users know how
+        /// trustworthy the calibration is.
         let rmsMetres: Double
-        /// False for an exactly-determined 3-point fit: it passes through all
-        /// three points so its RMS is ~0 regardless of accuracy — not evidence
-        /// the map is correct. True once N≥4 over-constrains the fit.
+        /// False for an exactly-determined 3-point fit - passes through all
+        /// three points so RMS is ~0 regardless of accuracy, not evidence
+        /// the map is correct. True once N>=4 over-constrains the fit.
         let crossValidated: Bool
     }
 
@@ -71,8 +71,8 @@ enum AffineFitter {
         guard fiduciaries.count >= 3 else {
             throw AffineFitError.tooFewFiduciaries(minimum: 3)
         }
-        // Reject coincident / (near-)colinear control points: the affine's
-        // perpendicular direction is then unconstrained and extrapolates wildly.
+        // Bail if control points are coincident or colinear - the affine's
+        // perpendicular direction is unconstrained and extrapolates wildly.
         guard !isDegenerate(fiduciaries) else { throw AffineFitError.degenerate }
 
         // Solve for [a b c] from x-coords (lon) and [d e f] from y-coords (lat) separately.
@@ -90,9 +90,9 @@ enum AffineFitter {
         return Result(transform: t, rmsMetres: rms, crossValidated: fiduciaries.count >= 4)
     }
 
-    /// True when the fiduciaries are coincident or (near-)colinear. Uses the
-    /// ratio of the covariance eigenvalues of the PDF-space points — scale
-    /// invariant, unlike an absolute determinant threshold.
+    /// True when fiduciaries are coincident or nearly colinear. Uses the
+    /// covariance eigenvalue ratio of PDF-space points, which is scale
+    /// invariant unlike an absolute determinant threshold.
     private static func isDegenerate(_ fids: [Fiduciary]) -> Bool {
         let n = Double(fids.count)
         var mx = 0.0, my = 0.0
@@ -113,7 +113,7 @@ enum AffineFitter {
 
     /// Closed-form LSQ for `target = a*x + b*y + c` over N points.
     private static func lsq(points: [(Double, Double, Double)]) throws -> (Double, Double, Double) {
-        // Build the 3x3 normal-equations matrix AᵀA and 3-vector AᵀB.
+        // Build the 3x3 normal-equations matrix A^T*A and 3-vector A^T*B.
         var sx = 0.0, sy = 0.0, sxx = 0.0, syy = 0.0, sxy = 0.0
         var sb = 0.0, sxb = 0.0, syb = 0.0
         let n = Double(points.count)
@@ -151,7 +151,7 @@ enum AffineFitter {
 
     private static func squareDistanceMetres(_ a: CLLocationCoordinate2D,
                                               _ b: CLLocationCoordinate2D) -> Double {
-        // Equirectangular approximation — plenty accurate for residuals over a
+        // Equirectangular approximation, plenty accurate for residuals over a
         // single map sheet.
         let R = 6_371_000.0
         let dLat = (b.latitude  - a.latitude)  * .pi / 180

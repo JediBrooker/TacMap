@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Floating compact card shown when the user taps a finished drawing on
-/// the map. Mirrors `SymbolControlsCard` for waypoints: name (tap to edit),
-/// colour, solid/dashed stroke, stroke width, delete.
+/// Compact card that pops up when user taps a finished drawing on the
+/// map. Same idea as `SymbolControlsCard` for waypoints: name, colour,
+/// solid/dashed, stroke width, delete.
 struct DrawingControlsCard: View {
     @ObservedObject var drawingStore: DrawingStore
     let drawingID: UUID
@@ -11,9 +11,8 @@ struct DrawingControlsCard: View {
     @State private var showDeleteConfirm = false
     @State private var showNameAlert     = false
     @State private var draftName: String = ""
-    /// Whether the rotation / width / height sliders are visible. They
-    /// take up most of the card's vertical space and aren't needed for
-    /// every edit, so they hide behind a "Transform" toggle by default.
+    /// Rotation / width / height sliders visibility. They eat most of
+    /// the card's vertical space so they hide behind a toggle.
     @State private var showTransforms    = false
 
     var body: some View {
@@ -25,11 +24,9 @@ struct DrawingControlsCard: View {
     private func card(for shape: DrawingShape) -> some View {
         VStack(spacing: 8) {
             header(for: shape)
-            // Rotation / width / height sliders live behind a toggle —
-            // the compact card just shows colour, dash, layer, delete
-            // unless the user explicitly asks to transform the shape.
-            // Points have no transform controls so the toggle is
-            // hidden for them too.
+            // Transform sliders behind a toggle - compact card only shows
+            // colour, dash, layer, delete unless user explicitly wants
+            // to transform. Points don't have transform controls obv.
             if shape.kind != .point && showTransforms {
                 rotationRow(for: shape)
                 widthRow(for: shape)
@@ -73,8 +70,8 @@ struct DrawingControlsCard: View {
 
     // MARK: Tactical line graphic
 
-    /// Pick a NATO line-graphic style for a line shape — plain, phase line,
-    /// boundary, forward line (FLOT/FEBA), or axis of advance.
+    /// NATO line-graphic picker for line shapes - plain, phase line,
+    /// boundary, FLOT/FEBA, or axis of advance.
     private func lineGraphicRow(for shape: DrawingShape) -> some View {
         let current = shape.style.lineGraphic ?? .plain
         return Menu {
@@ -107,13 +104,12 @@ struct DrawingControlsCard: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: Header — name + close
+    // MARK: Header - name + close
 
     private func header(for shape: DrawingShape) -> some View {
         let layerName = drawingStore.layer(id: shape.layerID)?.name
         return HStack(spacing: 10) {
-            // Filled tile mirroring the drawing's colour so the user
-            // gets a visual at-a-glance of the colour they're editing.
+            // filled tile showing the drawing colour at a glance
             ZStack {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(hex: shape.style.strokeColorHex).opacity(0.18))
@@ -172,9 +168,9 @@ struct DrawingControlsCard: View {
                     }
                     drawingStore.update(updated)
                 } label: {
-                    // .tint() on each row colours the Label's icon — without
-                    // this Menu items ignore Image.foregroundStyle() and the
-                    // dots render as the menu's monochrome tint.
+                    // .tint() on each row colours the Label's icon, without it
+                    // Menu items ignore foregroundStyle() and the dots are
+                    // all monochrome. annoying SwiftUI thing
                     Label(swatch.name,
                           systemImage: swatch.hex.caseInsensitiveCompare(shape.style.strokeColorHex) == .orderedSame
                               ? "largecircle.fill.circle"
@@ -192,8 +188,7 @@ struct DrawingControlsCard: View {
         .accessibilityLabel("Drawing colour")
     }
 
-    /// Toggle between solid and dashed. Icon-only — same affordance as
-    /// the DrawToolbar's stroke style toggle.
+    /// Solid vs dashed toggle. Same look as the DrawToolbar version.
     private func dashedToggle(for shape: DrawingShape) -> some View {
         Button {
             var updated = shape
@@ -220,10 +215,9 @@ struct DrawingControlsCard: View {
         .accessibilityValue(shape.style.dashPattern == nil ? "Solid" : "Dashed")
     }
 
-    /// Compact layer pill — colour swatch + name + item count, opens a menu
-    /// to reassign. The count covers both drawings and waypoints assigned
-    /// to that layer so users get a feel for what's there before moving
-    /// the current shape into it.
+    /// Layer pill - colour swatch + name + count, opens menu to reassign.
+    /// Count is just drawings on that layer so user can see how busy it
+    /// is before moving the current shape there.
     private func layerPill(for shape: DrawingShape) -> some View {
         let current = drawingStore.layer(id: shape.layerID) ?? drawingStore.layers.first
         return Menu {
@@ -266,7 +260,7 @@ struct DrawingControlsCard: View {
         drawingStore.shapes(in: layer.id).count
     }
 
-    // MARK: Geometric sliders — rotation, width, height
+    // MARK: Geometric sliders - rotation, width, height
 
     private func rotationRow(for shape: DrawingShape) -> some View {
         sliderRow(
@@ -338,8 +332,8 @@ struct DrawingControlsCard: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
             Slider(value: value, in: range, step: step, onEditingChanged: { editing in
-                // Group all per-tick undo registrations into one undo step
-                // so a single Undo undoes the whole drag, not each tick.
+                // group per-tick undo registrations into one step so Undo
+                // undoes the whole drag, not each individual tick
                 if editing {
                     drawingStore.undoManager?.beginUndoGrouping()
                 } else {
@@ -364,7 +358,7 @@ struct DrawingControlsCard: View {
         }
     }
 
-    // MARK: Action row — style controls on the left, delete on the right
+    // MARK: Action row - style controls + delete
 
     private func actionRow(for shape: DrawingShape) -> some View {
         HStack(spacing: 8) {
@@ -397,9 +391,7 @@ struct DrawingControlsCard: View {
         }
     }
 
-    /// Toggle the rotation / width / height sliders on or off. Icon
-    /// flips between "show" and "hide" so the user can tell at a
-    /// glance whether the sliders are currently expanded.
+    /// Show/hide the rotation + width + height sliders.
     private func transformToggle() -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.18)) {

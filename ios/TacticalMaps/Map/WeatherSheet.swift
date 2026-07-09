@@ -1,9 +1,9 @@
 import SwiftUI
 import CoreLocation
 
-/// Weather + UAV flight-safety widget for a coordinate. Tap "Weather" on the
-/// map-centre point and this fetches current conditions and shows a
-/// green/amber/red drone-safety assessment.
+/// Weather + UAV safety sheet for a coordinate. User taps "Weather"
+/// on map centre, we fetch conditions and show green/amber/red
+/// drone risk assesment.
 struct WeatherSheet: View {
     let coordinate: CLLocationCoordinate2D
     @Environment(\.dismiss) private var dismiss
@@ -18,7 +18,7 @@ struct WeatherSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 18) {
-                // Which location this report is for.
+                // location label
                 Text(MGRSFormatter.string(from: coordinate))
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)

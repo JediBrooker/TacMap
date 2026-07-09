@@ -26,9 +26,9 @@ import java.io.File
 import kotlin.math.abs
 
 /**
- * Loads the shared golden vectors in `testdata/` — the SAME files the iOS suite
- * reads — and asserts the Kotlin implementations match them, so the two native
- * ports of the affine solve, MGRS formatting, and GeoJSON geometry cannot
+ * Loads shared golden vectors in `testdata/` - the SAME files the iOS suite
+ * reads - and asserts Kotlin implementations match them, so the two native
+ * ports of affine solve, MGRS formatting, and GeoJSON geometry can't
  * silently drift apart. See `testdata/README.md`.
  */
 class SharedVectorsTest {
@@ -93,7 +93,7 @@ class SharedVectorsTest {
         Json.parseToJsonElement(GeoJsonExporter.export(wps, ds)).jsonObject["features"]!!
             .jsonArray.map { it.jsonObject["geometry"]!! }
 
-    /** Numeric-aware deep comparison (so `2` and `2.0` match). */
+    /** numeric-aware deep comparison so `2` and `2.0` match */
     private fun jsonNumEqual(a: JsonElement, b: JsonElement): Boolean = when {
         a is JsonObject && b is JsonObject ->
             a.keys == b.keys && a.keys.all { jsonNumEqual(a.getValue(it), b.getValue(it)) }

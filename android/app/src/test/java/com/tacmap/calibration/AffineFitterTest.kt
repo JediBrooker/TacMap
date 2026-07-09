@@ -8,9 +8,9 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * Mirror of the iOS AffineFitterTests. Generates fiduciaries from a known
- * affine and asserts the Kotlin solver recovers it, so the two platform
- * implementations cannot silently diverge.
+ * Mirror of iOS AffineFitterTests. Generates fiduciaries from a known
+ * affine and asserts Kotlin solver recovers it, so the two platform
+ * implementations can't silently diverge.
  */
 class AffineFitterTest {
 
@@ -55,9 +55,9 @@ class AffineFitterTest {
 
     @Test
     fun nearColinearThrowsDegenerate() {
-        // Almost (not exactly) on a line at realistic pixel scale — the old
-        // absolute-determinant guard passed these; the scale-invariant guard
-        // must reject them (the perpendicular direction is unconstrained).
+        // almost (not exactly) on a line at realistic pixel scale - the old
+        // absolute-determinant guard let these through; scale-invariant guard
+        // must reject them (perpendicular direction is unconstrained)
         val fids = listOf(
             Fiduciary(pdfX = 0.0,    pdfY = 0.0, mgrs = "", latitude = 0.0,  longitude = 0.0),
             Fiduciary(pdfX = 1000.0, pdfY = 1.0, mgrs = "", latitude = 0.01, longitude = 1.0),

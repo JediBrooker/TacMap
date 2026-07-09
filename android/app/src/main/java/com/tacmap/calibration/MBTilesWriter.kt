@@ -6,16 +6,17 @@ import java.io.File
 import java.util.Locale
 
 /**
- * Writes an MBTiles file (OSGeo spec): a SQLite DB with a `metadata` key/value
- * table and a `tiles` table of raster blobs. The write-side companion to
- * [MBTilesStore]; used by [PdfTiler] to bake a calibrated PDF into an offline
- * tile pyramid on-device (no desktop GDAL step).
+ * Writes an MBTiles file (OSGeo spec): SQLite DB with `metadata` key/value
+ * table and `tiles` table of raster blobs. Write-side companion to
+ * [MBTilesStore]; used by [PdfTiler] to bake a calibrated PDF into an
+ * offline tile pyramid on-device without needing desktop GDAL.
  */
 class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
 
-    /** True once any insert failed (e.g. disk full). Callers MUST check this
-     *  before treating the bake as complete — otherwise a half-written file is
-     *  mistaken for a finished basemap and the source PDF gets discarded. */
+    /** True once any insert failed (e.g. disk full). Callers MUST check
+     *  this before treating the bake as done - otherwise a half-written
+     *  file gets mistaken for a finished basemap and the source PDF gets
+     *  discarded. */
     var hadError = false
         private set
 
@@ -37,8 +38,8 @@ class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
         put("version", "1.0")
         put("minzoom", minZoom.toString())
         put("maxzoom", maxZoom.toString())
-        // MBTiles bounds metadata: "minLon,minLat,maxLon,maxLat". Locale.US so a
-        // comma-decimal locale can't corrupt the comma-separated field.
+        // MBTiles bounds: "minLon,minLat,maxLon,maxLat". Force Locale.US so
+        // a comma-decimal locale doesn't corrupt the comma-separated field.
         put(
             "bounds",
             "%f,%f,%f,%f".format(
@@ -49,7 +50,7 @@ class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
         )
     }
 
-    /** Store one XYZ tile (converted to MBTiles' TMS row scheme). */
+    /** Store one XYZ tile (converts to MBTiles TMS row scheme). */
     fun putTile(z: Int, x: Int, y: Int, data: ByteArray) {
         val tmsRow = (1 shl z) - 1 - y
         val rowId = db.insertWithOnConflict("tiles", null, ContentValues().apply {
@@ -67,7 +68,7 @@ class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
     fun close() = db.close()
 
     companion object {
-        /** Create (overwriting) an MBTiles file at [path]. */
+        /** Create (clobbers existing) an MBTiles file at [path]. */
         fun create(path: String): MBTilesWriter? = try {
             File(path).delete()
             val db = SQLiteDatabase.openOrCreateDatabase(path, null)

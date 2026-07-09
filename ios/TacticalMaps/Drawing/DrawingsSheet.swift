@@ -1,8 +1,8 @@
 import SwiftUI
 import MapKit
 
-/// Full-management view for saved drawings. Open via DrawingsPanel → "All
-/// Drawings". Supports per-row delete (explicit trash button + swipe action).
+/// Full list of saved drawings. Open via DrawingsPanel > "All Drawings".
+/// Per-row delete via trash button + swipe action.
 struct DrawingsSheet: View {
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var session: DrawingSessionViewModel
@@ -30,9 +30,8 @@ struct DrawingsSheet: View {
                     newRow(.point,    subtitle: "Drop a single labelled point")
                 }
 
-                // Group saved shapes by layer. Each non-empty layer becomes
-                // its own section so the user can scan a single layer's
-                // shapes without filtering.
+                // group by layer so user can scan one layer at a time
+                // without having to filter
                 ForEach(drawingStore.layers) { layer in
                     let shapesInLayer = drawingStore.shapes(in: layer.id)
                     if !shapesInLayer.isEmpty {
@@ -136,8 +135,8 @@ struct DrawingsSheet: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            // Inline rename button so users don't have to discover the
-            // swipe/long-press affordances.
+            // explicit rename button so users don't have to discover
+            // swipe or long-press
             Button {
                 renameDraft = shape.name ?? ""
                 renamingShape = shape

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// HUD overlay shown while a calibration session is active. Sits across the
-/// top of the screen, surfaces fiduciary count + Finish/Cancel actions.
+/// HUD overlay shown during a calibration session. Sits across top of
+/// screen, shows fiduciary count + Finish/Cancel buttons.
 struct CalibrationOverlay: View {
     @ObservedObject var session: CalibrationSession
     let onFinish: () -> Void
@@ -37,7 +37,7 @@ struct CalibrationOverlay: View {
             }
 
             if let rms = session.lastFitRMSMetres {
-                Text("Previous fit RMS: \(Int(rms))m — add more fiduciaries to refine")
+                Text("Previous fit RMS: \(Int(rms))m - add more fiduciaries to refine")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.6))
                     .frame(maxWidth: .infinity, alignment: .leading)

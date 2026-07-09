@@ -1,12 +1,12 @@
 import Foundation
 import Combine
 
-/// App-wide operational-security / privacy settings, persisted in UserDefaults
-/// and observable by SwiftUI. Defaults are OPSEC-first for a field tool:
-///  - `privacyScreen` ON — an opaque cover redacts the map (with live position)
-///    in the app-switcher snapshot whenever the app isn't active.
-///  - `onlineLookups` OFF — elevation / weather / terrain lookups transmit the
-///    queried coordinate to a third party (Open-Meteo), so they are opt-in.
+/// App-wide OPSEC / privacy settings. Persisted in UserDefaults, observable
+/// by SwiftUI. Defaults are OPSEC-first for a field tool:
+/// privacyScreen ON - opaque cover redacts map (with live position)
+/// in app-switcher snapshot whenever app isn't active.
+/// onlineLookups OFF - elevation/weather/terrain lookups transmit the
+/// queried coordinate to a third party (Open-Meteo) so they're opt-in.
 final class OpsecSettings: ObservableObject {
     static let shared = OpsecSettings()
 

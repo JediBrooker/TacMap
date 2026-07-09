@@ -5,16 +5,16 @@ import com.google.android.gms.maps.MapsInitializer
 import com.tacmap.models.TrackRecorder
 import com.tacmap.settings.OpsecSettings
 
-/** Application entry point — installs local-only crash capture as early as
- *  possible so a field crash isn't silent. */
+/** App entry point. Installs crash capture as early as possible so
+ *  field crashes don't go silent. */
 class TacticalApp : Application() {
 
-    /** App-scoped OPSEC/privacy settings shared by the Activity, UI, and network. */
+    /** App-scoped OPSEC settings, shared by Activity + UI + networking layer. */
     lateinit var opsec: OpsecSettings
         private set
 
-    /** App-scoped track recorder so the foreground service can feed fixes
-     *  even when the Activity (and its ViewModel) is destroyed. */
+    /** Track recorder lives here at app scope so the foreground service
+     *  can keep feeding fixes even after the Activity gets destroyed. */
     lateinit var trackRecorder: TrackRecorder
         private set
 
@@ -22,10 +22,9 @@ class TacticalApp : Application() {
         super.onCreate()
         opsec = OpsecSettings(this)
         trackRecorder = TrackRecorder(this)
-        // The Maps SDK 18+ "latest" renderer uses substantially more GL/Java
-        // heap during initialisation. Prefer the legacy renderer to keep peak
-        // memory below the largeHeap limit (512 MB) on constrained devices and
-        // emulators.
+        // Maps SDK 18+ "latest" renderer eats way more GL/Java heap on init.
+        // Use legacy renderer to keep peak memory under the largeHeap limit
+        // (512 MB) on constrained devices and emulators.
         MapsInitializer.initialize(this, MapsInitializer.Renderer.LEGACY, null)
         CrashReporter.install(this)
     }

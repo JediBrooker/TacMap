@@ -4,17 +4,13 @@ import UIKit
 /// NATO APP-6C symbology, drawn from primitives so we don't need a
 /// third-party APP-6 font or SVG library.
 ///
-/// A symbol is the product of three orthogonal dimensions:
+/// Basically three orthogonal axes:
+///   Affiliation - frame shape + fill colour (friend, hostile, neutral, unknown)
+///   Echelon - indicator above the frame (dots, bars, X's)
+///   Function - glyph inside the frame (infantry X, armour oval, recce slash, etc.)
 ///
-///   1. **Affiliation** — the frame shape and fill colour (friend,
-///      hostile, neutral, unknown).
-///   2. **Echelon** — the indicator above the frame (●, ●●, ●●●,
-///      I, II, III, X, XX, XXX).
-///   3. **Function** — the glyph drawn inside the frame (infantry X,
-///      armour oval, recce slash, artillery dot, engineer E, etc.).
-///
-/// `MilitarySymbolSpec` carries one selection per axis. `MilitarySymbolView`
-/// composes the three into a single SwiftUI Canvas draw.
+/// MilitarySymbolSpec holds one selection per axis, MilitarySymbolView
+/// composites them into a single Canvas draw.
 
 // MARK: - Affiliation
 
@@ -33,7 +29,7 @@ enum SymbolAffiliation: String, Codable, Hashable, CaseIterable {
         }
     }
 
-    /// APP-6C medium-intensity fill colour for the frame.
+    /// APP-6C fill colour for the frame (medium intensity).
     var fillColor: Color {
         switch self {
         case .friend:  return Color(red: 0x80/255, green: 0xE0/255, blue: 1.0)        // #80E0FF
@@ -73,7 +69,7 @@ enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
         }
     }
 
-    /// Compact glyph label (used as a fallback / debugging aid).
+    /// Fallback glyph label, mostly for debugging.
     var glyph: String {
         switch self {
         case .team:      return "Ø"
@@ -119,7 +115,7 @@ enum SymbolFunction: String, Codable, Hashable, CaseIterable {
     case logistics             // Supply  (rawValue kept for back-compat)
     case transportation        // Transportation
     case uav                   // Unmanned Air Vehicle
-    case unspecified           // — (no branch), always shown last
+    case unspecified           // (no branch), always shown last
 
     var displayName: String {
         switch self {
@@ -162,9 +158,8 @@ struct MilitarySymbolSpec: Hashable, Codable {
     var affiliation: SymbolAffiliation
     var echelon:     SymbolEchelon
     var function:    SymbolFunction
-    /// When true, the flagpole modifier is drawn from the bottom-left
-    /// corner of the frame extending downward — marking this symbol as
-    /// a Headquarters.
+    /// Flagpole modifier - drawn from bottom-left corner of frame
+    /// extending downward. Marks this as a Headquarters.
     var isHeadquarters: Bool
 
     init(affiliation: SymbolAffiliation,
@@ -202,23 +197,21 @@ struct MilitarySymbolSpec: Hashable, Codable {
 
 // MARK: - Rendering
 
-/// SwiftUI view that draws the APP-6C symbol. Use directly in lists / pickers,
-/// or hand to `MilitarySymbolRenderer.image(for:)` to bake into a UIImage for
-/// a MapKit annotation.
+/// Draws the APP-6C symbol in SwiftUI Canvas. Use in lists/pickers directly,
+/// or bake to UIImage via MilitarySymbolRenderer for MapKit annotations.
 struct MilitarySymbolView: View {
     let spec: MilitarySymbolSpec
     var size: CGFloat = 56
 
-    /// Extra vertical room reserved for the HQ flagpole modifier (when set).
+    /// Extra vertical room for the HQ flagpole (when set).
     private var poleReserve: CGFloat { spec.isHeadquarters ? size * 0.42 : 0 }
-    /// Hostile / neutral / unknown frames are square with side equal to the
-    /// friendly frame WIDTH (not height), so the diamond extends above and
-    /// below the friendly frame's vertical extent. Reserve extra space so
-    /// the bottom vertex isn't clipped.
+    /// Hostile/neutral/unknown frames are square with side = friendly frame
+    /// width (not height), so diamond extends past the friendly frame's
+    /// vertical extent. Need extra space so bottom vertex isn't clipped.
     private var diamondReserve: CGFloat {
         spec.affiliation == .friend ? 0 : size * 0.22
     }
-    /// Total canvas height — symbol frame + (optional) flagpole + diamond overflow.
+    /// Total canvas height: frame + flagpole (if HQ) + diamond overflow.
     private var canvasHeight: CGFloat { size + poleReserve + diamondReserve }
 
     var body: some View {
@@ -226,16 +219,14 @@ struct MilitarySymbolView: View {
             let w = canvasSize.width
             let h = canvasSize.height
             let poleH = poleReserve
-            // Echelon indicator (dots / bars / X's above the frame).
-            // Bumped from 0.22 → 0.28 of the available height so the
-            // marks are easier to read against satellite imagery,
-            // since adding a halo around just the indicator would
-            // require restructuring the renderer entirely.
+            // Echelon indicator (dots/bars/X's above the frame).
+            // Bumped from 0.22 to 0.28 so marks are easier to read
+            // against satellite imagery. Adding a halo just around
+            // the indicator would mean restructuring the renderer,
+            // so bigger marks it is.
             //
-            // Gap (between echelon band and frame top) reduced from
-            // 0.06 → 0.02 so the echelon sits closer to the frame —
-            // user feedback that the platoon dots were floating too
-            // far above the rest of the graphic.
+            // Gap reduced from 0.06 to 0.02 - user feedback said
+            // platoon dots were floating too far above the frame.
             let echelonH: CGFloat = (h - poleH) * 0.28
             let gap: CGFloat      = (h - poleH) * 0.02
 
@@ -251,12 +242,11 @@ struct MilitarySymbolView: View {
                 frameRect = CGRect(x: (w - frameW) / 2, y: frameTop,
                                    width: frameW, height: frameH)
             case .hostile, .neutral, .unknown:
-                // Square bounding box whose side equals the friendly frame
-                // WIDTH (same min(w-4, frameH*1.5) formula). This makes the
-                // diamond tip-to-tip the same as the friendly rectangle width,
-                // matching APP-6C proportions. The diamond is centred on the
-                // same y-midpoint as the friendly frame; the diamondReserve
-                // canvas extension absorbs the bottom-vertex overflow.
+                // Square bounding box, side = friendly frame width (same
+                // min(w-4, frameH*1.5) formula). Makes diamond tip-to-tip
+                // match friendly rect width per APP-6C proportions.
+                // Centred on same y-midpoint; diamondReserve absorbs
+                // the bottom-vertex overflow.
                 let side = min(w - 4, frameH * 1.5)
                 frameRect = CGRect(x: (w - side) / 2,
                                    y: frameTop + (frameH - side) / 2,
@@ -281,8 +271,8 @@ struct MilitarySymbolView: View {
             let echelonRect = CGRect(x: 0, y: 0, width: w, height: echelonH)
             drawEchelon(ctx: ctx, echelon: spec.echelon, in: echelonRect)
 
-            // HQ flagpole modifier: flows from the bottom-left corner of
-            // the frame straight down into the reserved strip below.
+            // HQ flagpole - just a line from bottom-left of frame
+            // straight down into the reserved strip.
             if spec.isHeadquarters {
                 var pole = Path()
                 pole.move(to:    CGPoint(x: frameRect.minX, y: frameRect.maxY))
@@ -315,7 +305,7 @@ struct MilitarySymbolView: View {
         ctx.stroke(path, with: .color(.black), lineWidth: 1.5)
     }
 
-    /// Four-lobed cloud shape used by APP-6 for Unknown affiliation.
+    /// Four-lobed cloud shape for Unknown affiliation (APP-6).
     private func drawQuatrefoil(ctx: GraphicsContext, in rect: CGRect) {
         let cx = rect.midX, cy = rect.midY
         let r  = rect.width / 2
@@ -348,8 +338,8 @@ struct MilitarySymbolView: View {
 
     private func drawFunction(ctx: GraphicsContext, function: SymbolFunction,
                               affiliation: SymbolAffiliation, in frame: CGRect) {
-        // Hostile diamond and unknown quatrefoil need an inscribed-square
-        // bounding box for any glyph that's not the canonical infantry X.
+        // Hostile diamond + unknown quatrefoil need an inscribed-square
+        // bbox for glyphs that aren't the canonical infantry X.
         let inset: CGFloat
         switch affiliation {
         case .friend:                    inset = 0
@@ -405,7 +395,7 @@ struct MilitarySymbolView: View {
             path.move(to:    CGPoint(x: frame.maxX, y: frame.minY))
             path.addLine(to: CGPoint(x: frame.minX, y: frame.maxY))
         case .hostile, .neutral:
-            // Diamond frame — diagonal X clipped to the inscribed square
+            // Diamond frame - clip diagonal X to inscribed square
             // so it stays inside the rotated frame.
             let cx = frame.midX, cy = frame.midY
             let h  = frame.width / 4
@@ -424,8 +414,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(path, with: .color(.black), lineWidth: 2)
     }
 
-    /// Tank-tread capsule (horizontal stadium shape, flatter than an oval).
-    /// Drawn outlined, no fill — matches the APP-6 armour basic icon.
+    /// Tank-tread capsule (horizontal stadium shape, flatter than oval).
+    /// Outlined, no fill - matches APP-6 armour basic icon.
     private func drawArmourCapsule(ctx: GraphicsContext, in rect: CGRect) {
         let capW = rect.width * 0.68
         let capH = rect.height * 0.42
@@ -436,8 +426,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(path, with: .color(.black), lineWidth: 2)
     }
 
-    /// Diagonal slash from lower-left to upper-right ("sabre belt").
-    /// Used by Reconnaissance and Cavalry.
+    /// Diagonal slash, lower-left to upper-right ("sabre belt").
+    /// Recce and Cavalry.
     private func drawRecceSlash(ctx: GraphicsContext, in rect: CGRect) {
         var path = Path()
         path.move(to:    CGPoint(x: rect.minX, y: rect.maxY))
@@ -445,9 +435,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(path, with: .color(.black), lineWidth: 2)
     }
 
-    /// Inverted V (apex at the top-centre, legs at the bottom-left and
-    /// bottom-right corners). APP-6 anti-tank — "concentrated piercing
-    /// action".
+    /// Inverted V, apex at top-centre, legs at bottom corners.
+    /// APP-6 anti-tank glyph.
     private func drawAntiTankVee(ctx: GraphicsContext, in rect: CGRect) {
         var p = Path()
         p.move(to:    CGPoint(x: rect.minX, y: rect.maxY))   // bottom-left
@@ -456,8 +445,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2.5)
     }
 
-    /// "Letter E on its side" — horizontal beam at TOP with three short
-    /// vertical legs descending from it (left, centre, right). APP-6 engineer.
+    /// "Letter E on its side" - horizontal beam at top with three short
+    /// vertical legs descending (left, centre, right). APP-6 engineer.
     private func drawEngineerBridge(ctx: GraphicsContext, in rect: CGRect) {
         let inset   = rect.width * 0.12
         let topY    = rect.minY + rect.height * 0.22
@@ -476,9 +465,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Stylised lightning flash — diagonal Z whose endpoints touch the
-    /// TOP-LEFT and BOTTOM-RIGHT corners of the frame, with a sharp
-    /// angular zig in the middle. APP-6 signals glyph.
+    /// Stylised lightning flash, basically a diagonal Z from top-left
+    /// to bottom-right with a sharp zig in the middle. APP-6 signals.
     private func drawSignalLightning(ctx: GraphicsContext, in rect: CGRect) {
         let p1 = CGPoint(x: rect.minX, y: rect.minY)                    // top-left corner
         let p2 = CGPoint(x: rect.maxX - rect.width * 0.32, y: rect.midY)
@@ -492,9 +480,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Single flat horizontal line spanning the FULL width of the frame,
-    /// positioned in the LOWER portion of the frame (around 75% down).
-    /// APP-6 Supply glyph — "side view of a road".
+    /// Flat horizontal line spanning full frame width, positioned at
+    /// about 75% down. APP-6 supply glyph ("side view of a road").
     private func drawSupplyLine(ctx: GraphicsContext, in rect: CGRect) {
         let y = rect.minY + rect.height * 0.75
         var p = Path()
@@ -503,9 +490,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Bowtie ▶◀ — two filled triangles meeting apex-to-apex at the
-    /// centre. APP-6 rotary-wing aviation ("blurred spinning helicopter
-    /// blades").
+    /// Bowtie - two filled triangles meeting apex-to-apex at centre.
+    /// APP-6 rotary-wing aviation (spinning helicopter blades).
     private func drawRotorBladesBowtie(ctx: GraphicsContext, in rect: CGRect) {
         let cx     = rect.midX
         let cy     = rect.midY
@@ -527,14 +513,14 @@ struct MilitarySymbolView: View {
         ctx.fill(right, with: .color(.black))
     }
 
-    /// Shallow protective dome sitting in the LOWER portion of the frame.
-    /// Endpoints at the bottom corners; apex at ~60% down from the top.
+    /// Shallow dome in the lower part of the frame. Endpoints at bottom
+    /// corners, apex ~60% down from top.
     private func drawAirDefenceDome(ctx: GraphicsContext, in rect: CGRect) {
         let leftEnd  = CGPoint(x: rect.minX, y: rect.maxY)
         let rightEnd = CGPoint(x: rect.maxX, y: rect.maxY)
-        // For a symmetric quad bezier the apex y is (startY + endY + 2*ctrlY)/4.
-        // Putting ctrlY at minY + 0.20*h gives an apex at 60% down — well
-        // inside the lower half of the frame.
+        // For a symmetric quad bezier apex y = (startY + endY + 2*ctrlY)/4.
+        // ctrlY at minY + 0.20*h gives apex at 60% down, well inside
+        // the lower half of frame.
         let control = CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.20)
         var p = Path()
         p.move(to: leftEnd)
@@ -542,8 +528,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// Small open circle at the bottom-centre, with a vertical arrow
-    /// rising from it — APP-6 mortar (projectile + high-arc trajectory).
+    /// Open circle at bottom-centre with vertical arrow rising from it.
+    /// APP-6 mortar (projectile + high-arc trajectory).
     private func drawMortarArrow(ctx: GraphicsContext, in rect: CGRect) {
         let cx       = rect.midX
         let circleR  = rect.height * 0.12
@@ -572,9 +558,9 @@ struct MilitarySymbolView: View {
         ctx.stroke(head, with: .color(.black), lineWidth: 2)
     }
 
-    /// APP-6 maintenance — horizontal shaft with semi-circle caps at each
-    /// end OPENING OUTWARD (curves bulge away from the centre, flat sides
-    /// face the centre). Shape:  (━━━━)
+    /// APP-6 maintenance - horizontal shaft with semicircle caps opening
+    /// outward at each end (curves bulge away from centre).
+    /// Shape: (━━━━)
     private func drawMaintenance(ctx: GraphicsContext, in rect: CGRect) {
         let cy     = rect.midY
         let capR   = rect.height * 0.18
@@ -585,7 +571,7 @@ struct MilitarySymbolView: View {
         shaft.move(to:    CGPoint(x: leftCx,  y: cy))
         shaft.addLine(to: CGPoint(x: rightCx, y: cy))
         ctx.stroke(shaft, with: .color(.black), lineWidth: 2)
-        // Left cap — semicircle bulging LEFT (away from centre).
+        // Left cap - semicircle bulging left (away from centre).
         var lcap = Path()
         lcap.addArc(center: CGPoint(x: leftCx, y: cy),
                     radius: capR,
@@ -593,7 +579,7 @@ struct MilitarySymbolView: View {
                     endAngle:   .degrees(270),
                     clockwise: false)
         ctx.stroke(lcap, with: .color(.black), lineWidth: 2)
-        // Right cap — semicircle bulging RIGHT (away from centre).
+        // Right cap - semicircle bulging right.
         var rcap = Path()
         rcap.addArc(center: CGPoint(x: rightCx, y: cy),
                     radius: capR,
@@ -603,8 +589,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(rcap, with: .color(.black), lineWidth: 2)
     }
 
-    /// Ammunition — vertical bullet / cartridge silhouette: flat bottom,
-    /// vertical sides, semicircular dome on top.
+    /// Ammunition - vertical bullet silhouette. Flat bottom, vertical
+    /// sides, semicircular dome on top.
     private func drawAmmunition(ctx: GraphicsContext, in rect: CGRect) {
         let bodyW = rect.width * 0.36
         let cx    = rect.midX
@@ -627,14 +613,14 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 1.5)
     }
 
-    /// Fixed-wing aviation — air-screw: two FAT pointed lenses (filled)
-    /// joined at the centre. Each lens has a sharp tip pointing outward
-    /// and bulges through the vertical centreline.
+    /// Fixed-wing aviation - air-screw, two fat filled lenses joined
+    /// at centre. Each lens has sharp tip pointing outward and bulges
+    /// through the vertical centreline.
     private func drawFixedWing(ctx: GraphicsContext, in rect: CGRect) {
         let cx = rect.midX, cy = rect.midY
         let halfW = rect.width  * 0.42
         let halfH = rect.height * 0.30
-        // Left lens — outer tip at far-left, inner tip at centre.
+        // Left lens - outer tip at far-left, inner tip at centre.
         var left = Path()
         left.move(to: CGPoint(x: cx - halfW, y: cy))
         left.addQuadCurve(to: CGPoint(x: cx, y: cy),
@@ -643,7 +629,7 @@ struct MilitarySymbolView: View {
                           control: CGPoint(x: cx - halfW * 0.5, y: cy + halfH))
         left.closeSubpath()
         ctx.fill(left, with: .color(.black))
-        // Right lens — mirror of left.
+        // Right lens - mirror of left.
         var right = Path()
         right.move(to: CGPoint(x: cx + halfW, y: cy))
         right.addQuadCurve(to: CGPoint(x: cx, y: cy),
@@ -654,8 +640,8 @@ struct MilitarySymbolView: View {
         ctx.fill(right, with: .color(.black))
     }
 
-    /// Bridging — bowtie ━━━ bowtie: horizontal line through the centre
-    /// with a small filled bowtie / hourglass shape at each end.
+    /// Bridging - horizontal line through centre with a small bowtie/
+    /// hourglass shape at each end.
     private func drawBridging(ctx: GraphicsContext, in rect: CGRect) {
         let cy = rect.midY
         let bowW = rect.width  * 0.18
@@ -688,10 +674,9 @@ struct MilitarySymbolView: View {
         ctx.stroke(line, with: .color(.black), lineWidth: 2)
     }
 
-    /// Radar — single continuous stroke: a small curved "hook" at the
-    /// bottom (the dish) flowing into a lightning-bolt zigzag rising up
-    /// and across the frame. One stylised shape, not two disconnected
-    /// pieces.
+    /// Radar - single continuous stroke. Small curved "hook" at bottom
+    /// (the dish) flowing into a lightning-bolt zigzag rising up across
+    /// the frame. One shape, not two seperate pieces.
     private func drawRadar(ctx: GraphicsContext, in rect: CGRect) {
         let bottomY = rect.maxY - rect.height * 0.18
         let topY    = rect.minY + rect.height * 0.18
@@ -699,7 +684,7 @@ struct MilitarySymbolView: View {
         var p = Path()
         // Start at the bottom of the dish hook.
         p.move(to: CGPoint(x: leftX + rect.width * 0.15, y: bottomY))
-        // Curve up and to the LEFT, then around — the dish opens upward.
+        // Curve up and to the left, then around. Dish opens upward.
         p.addQuadCurve(to: CGPoint(x: leftX, y: rect.midY + rect.height * 0.05),
                        control: CGPoint(x: leftX, y: bottomY))
         // Continue with the lightning zigzag: up-right, sharp angle, up-right.
@@ -709,20 +694,20 @@ struct MilitarySymbolView: View {
         ctx.stroke(p, with: .color(.black), lineWidth: 2)
     }
 
-    /// CBRN defence — two crossed retorts: each is a FAT FILLED lens at
-    /// ±45° with explicitly closed sub-paths so the fill actually renders.
+    /// CBRN defence - two crossed retorts at +/-45deg. Fat filled lenses
+    /// with explicitly closed subpaths so fill actually renders.
     private func drawCBRN(ctx: GraphicsContext, in rect: CGRect) {
         let cx = rect.midX, cy = rect.midY
         let L = min(rect.width, rect.height) * 0.40   // half-length along axis
-        let T = L * 0.55                              // half-thickness — much fatter
+        let T = L * 0.55                              // half-thickness, much fatter
 
         func filledLens(axisDx: Double, axisDy: Double,
                         perpDx: Double, perpDy: Double) {
             let p0 = CGPoint(x: cx - axisDx * L, y: cy - axisDy * L)
             let p1 = CGPoint(x: cx + axisDx * L, y: cy + axisDy * L)
-            // Pull the bezier control points well past the perpendicular
-            // midpoint so the visible curve actually bulges out (a quad
-            // bezier passes through only ¼ of its control offset).
+            // Pull bezier control points well past the perpendicular
+            // midpoint so the curve actually bulges out (quad bezier
+            // only passes through 1/4 of its control offset).
             let ctrlA = CGPoint(x: cx + perpDx * T * 2, y: cy + perpDy * T * 2)
             let ctrlB = CGPoint(x: cx - perpDx * T * 2, y: cy - perpDy * T * 2)
             var p = Path()
@@ -737,8 +722,8 @@ struct MilitarySymbolView: View {
         filledLens(axisDx:  s2, axisDy: -s2, perpDx:  s2, perpDy:  s2)
     }
 
-    /// Transportation — outlined wheel with EIGHT radial spokes (wagon-wheel
-    /// style). APP-6 transport glyph.
+    /// Transportation - outlined wheel with 8 radial spokes, wagon-wheel
+    /// style. APP-6 transport glyph.
     private func drawWheel(ctx: GraphicsContext, in rect: CGRect) {
         let d = min(rect.width, rect.height) * 0.72
         let r = d / 2
@@ -757,9 +742,8 @@ struct MilitarySymbolView: View {
         ctx.stroke(spokes, with: .color(.black), lineWidth: 1.2)
     }
 
-    /// Three small open circles in a row along the bottom inside edge of
-    /// the frame, representing the wheels of a wheeled APC. Used for
-    /// Mechanised Infantry (Wheeled APC).
+    /// Three small open circles along bottom edge of frame - wheels of
+    /// a wheeled APC. Mech Infantry (Wheeled).
     private func drawWheels(ctx: GraphicsContext, in rect: CGRect) {
         let r       = rect.height * 0.07
         let cy      = rect.maxY - r - 2
@@ -772,9 +756,9 @@ struct MilitarySymbolView: View {
         }
     }
 
-    /// Render a bundled SVG asset (from AppSymbols) into the glyph rect.
-    /// Asset is template-rendering so the black silhouette is preserved
-    /// against the affiliation frame fill.
+    /// Render bundled SVG asset (AppSymbols) into the glyph rect.
+    /// Template-rendered so black silhouette is preserved against
+    /// the affiliation frame fill.
     private func drawAsset(ctx: GraphicsContext, named: String, in rect: CGRect) {
         let img = ctx.resolve(Image(named).renderingMode(.original))
         // Letterbox the asset inside the glyph rect, preserving aspect.
@@ -790,8 +774,8 @@ struct MilitarySymbolView: View {
     }
 
     private func drawLetter(ctx: GraphicsContext, letter: String, in rect: CGRect) {
-        // Scale the font down for multi-letter labels so they fit inside
-        // the affiliation frame (CSS, EOD, SOF, etc.).
+        // Scale font down for multi-letter labels so they fit inside
+        // affiliation frame (CSS, EOD, SOF, etc).
         let count = letter.count
         let scale: CGFloat = count <= 1 ? 0.55 : count <= 2 ? 0.42 : 0.32
         let fontSize = min(rect.width, rect.height) * scale
@@ -801,9 +785,8 @@ struct MilitarySymbolView: View {
         ctx.draw(text, at: CGPoint(x: rect.midX, y: rect.midY), anchor: .center)
     }
 
-    /// Medical — thin stroked + sign: a horizontal line edge-to-edge and a
-    /// vertical line top-to-bottom, both drawn as 2pt strokes (not filled
-    /// bars).
+    /// Medical - thin stroked + sign, horizontal and vertical lines
+    /// edge-to-edge as 2pt strokes (not filled bars).
     private func drawMedicalCross(ctx: GraphicsContext, in rect: CGRect) {
         var p = Path()
         p.move(to:    CGPoint(x: rect.minX, y: rect.midY))
@@ -822,8 +805,8 @@ struct MilitarySymbolView: View {
 
         switch echelon {
         case .team:
-            // APP-6 Team/Crew (Ø): small open circle with a diagonal slash
-            // passing through it, centred above the frame.
+            // APP-6 Team/Crew: open circle with diagonal slash through
+            // it, centred above frame.
             let r = rect.height * 0.42   // was 0.35
             let ring = Path(ellipseIn: CGRect(x: cx - r, y: cy - r,
                                               width: r * 2, height: r * 2))
@@ -913,8 +896,7 @@ enum MilitarySymbolRenderer {
 
     private static var cache: [MilitarySymbolSpec: UIImage] = [:]
 
-    /// Returns a cached UIImage of the given symbol, suitable for use as
-    /// `MKAnnotationView.image`.
+    /// Cached UIImage for the symbol, used as MKAnnotationView.image.
     static func image(for spec: MilitarySymbolSpec, size: CGFloat = 56) -> UIImage? {
         if let cached = cache[spec] { return cached }
         let view = MilitarySymbolView(spec: spec, size: size)

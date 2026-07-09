@@ -26,11 +26,10 @@ data class RenderedPdfPage(
 )
 
 object PdfPageRenderer {
-    /// Larger than the original 2048 because the rendered bitmap is
-    /// stretched across the map's ground overlay and any zoom past
-    /// the per-pixel level of this bitmap shows up as blur. 4096
-    /// gives enough resolution for a few extra zoom steps while
-    /// staying well under the 64MB (4096*4096*4 ≈ 64MB) ARGB limit.
+    // Bumped from the original 2048 b/c the bitmap gets stretched across
+    // the map's ground overlay and any zoom past per-pixel shows as blur.
+    // 4096 gives enough resolution for a few extra zoom steps while
+    // staying under the 64MB (4096*4096*4 ~ 64MB) ARGB limit.
     private const val MAX_RENDER_DIMENSION_PX = 4096
 
     fun firstPageInfo(context: Context, uri: Uri): PdfPageInfo =
@@ -78,11 +77,11 @@ object PdfPageRenderer {
                         Bitmap.Config.ARGB_8888
                     )
                     bitmap.eraseColor(Color.WHITE)
-                    // Map the requested region (which may extend past the page
-                    // edge for tiles that straddle the sheet boundary) onto the
-                    // whole tile. PdfRenderer only paints where page content
-                    // exists, so off-page margins stay white and on-page content
-                    // keeps its correct scale — no edge-tile stretching.
+                    // Map the requested region onto the whole tile. Region can
+                    // extend past page edge for tiles that straddle the sheet
+                    // boundary. PdfRenderer only paints where page content exists
+                    // so off-page margins stay white and on-page content keeps
+                    // correct scale, no edge-tile stretching.
                     val matrix = Matrix().apply {
                         setRectToRect(
                             pageRect,
@@ -101,20 +100,20 @@ object PdfPageRenderer {
             }
         }
 
-    /** One horizontal render strip: [pageRect] (PDF-pixel space, y-down) mapped
-     *  onto the [dest] band of the output tile. */
+    /** One horizontal render strip: [pageRect] (PDF-pixel space, y-down)
+     *  mapped onto [dest] band of the output tile. */
     data class RenderStrip(val pageRect: RectF, val dest: RectF)
 
     /**
      * Render a tile as a stack of horizontal [strips]. Each strip maps its own
-     * PDF region onto its destination band, so a tile spanning several degrees of
-     * latitude stays Web-Mercator-correct (a single region+FILL would warp it —
-     * tile rows are linear in Mercator-Y, not latitude). Small high-zoom tiles
-     * pass a single strip and cost exactly what [renderFirstPageRegion] did.
+     * PDF region onto its dest band so a tile spanning several degrees of
+     * latitude stays Mercator-correct (a single region+FILL would warp it
+     * since tile rows are linear in Mercator-Y, not latitude). Small high-zoom
+     * tiles pass a single strip, same cost as [renderFirstPageRegion].
      *
-     * Each strip re-opens page 0 (only one page may be open at a time; a second
-     * `render` on the same open page throws on some devices) — cheap next to the
-     * one-time PDF parse, and multi-strip tiles occur only at the few lowest zooms.
+     * Each strip re-opens page 0 (only one page open at a time; a second
+     * `render` on the same page throws on some devices) - cheap next to
+     * the one-time PDF parse, and multi-strip tiles only happen at low zooms.
      */
     fun renderFirstPageStrips(
         context: Context,

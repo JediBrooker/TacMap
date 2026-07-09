@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Simulate a GPX-recording scene on a clean HUD capture: overlay a recorded
-breadcrumb track + the app's REC indicator. The app records & exports tracks
-but doesn't draw the live polyline on the map yet, so this visualises what a
+breadcrumb track + the app's REC indicator. App records & exports tracks
+but doesn't draw the live polyline on map yet, so this visualises what a
 recording in progress looks like for the store screenshot.
 
     python3 scripts/_recording_overlay.py <base.png> <out.png> <pts> <pillYfrac>
@@ -23,7 +23,7 @@ PILL_Y = float(sys.argv[4]) if len(sys.argv) > 4 else 0.175
 im = Image.open(base_path).convert("RGB")
 W, H = im.size
 
-# --- recorded route (normalised control points), winding to the crosshair ---
+# --- recorded route (normalised control points), winds toward crosshair ---
 ctrl = [(0.20,0.84),(0.31,0.80),(0.27,0.71),(0.40,0.69),(0.45,0.60),
         (0.35,0.555),(0.44,0.515),(0.505,0.475)]
 
@@ -51,7 +51,7 @@ d = ImageDraw.Draw(ov)
 d.line(path, fill=CY_HALO, width=int(W*0.024), joint="curve")
 d.line(path, fill=CY_MID,  width=int(W*0.013), joint="curve")
 d.line(path, fill=CY_CORE, width=max(3,int(W*0.0055)), joint="curve")
-# breadcrumb dots at the control points
+# breadcrumb dots at control points
 for x,y in [(int(a*W),int(b*H)) for a,b in ctrl[1:-1]]:
     r=int(W*0.009)
     d.ellipse([x-r,y-r,x+r,y+r], fill=(45,210,255,210), outline=(235,250,255,255), width=2)
@@ -59,7 +59,7 @@ ov = ov.filter(ImageFilter.GaussianBlur(0.6))
 im = Image.alpha_composite(im.convert("RGBA"), ov).convert("RGB")
 d = ImageDraw.Draw(im, "RGBA")
 
-# start flag (hollow ring) + live position dot (glowing) at the path ends
+# start flag (hollow ring) + live position dot (glowing) at path ends
 sx,sy = path[0]
 d.ellipse([sx-int(W*0.013),sy-int(W*0.013),sx+int(W*0.013),sy+int(W*0.013)], outline=(235,250,255,255), width=max(3,int(W*0.004)))
 ex,ey = path[-1]
@@ -68,7 +68,7 @@ for r,a in [(int(W*0.030),60),(int(W*0.020),110)]:
 r=int(W*0.012)
 d.ellipse([ex-r,ey-r,ex+r,ey+r], fill=(45,210,255,255), outline=(255,255,255,255), width=max(2,int(W*0.004)))
 
-# --- REC pill (faithful to the app's RecordingIndicator: red, dot, REC, pts) ---
+# --- REC pill (matches the app's RecordingIndicator: red, dot, REC, pts) ---
 recf = font("xbold", int(W*0.034))
 ptsf = font("mono", int(W*0.030))
 rec_txt, pts_txt = "REC", f"·  {PTS} pts"

@@ -1,9 +1,9 @@
 import SwiftUI
 import MapKit
 
-/// Sheet listing all saved waypoints. Tap a row to edit. “Add at Crosshair”
-/// drops a new waypoint at the current map centre and immediately opens the
-/// edit sheet so you can name + symbolise it.
+/// Lists all saved waypoints. Tap a row to edit. “Add at Crosshair” drops
+/// a new waypoint at map centre and opens the edit sheet so you can name
+/// and symbolise it.
 struct WaypointListSheet: View {
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var mapVM: MapViewModel
@@ -35,9 +35,9 @@ struct WaypointListSheet: View {
                                 } label: { Label("Fly to", systemImage: "location.viewfinder") }
                                     .tint(.blue)
                             }
-                            // allowsFullSwipe: false — a full swipe must not
-                            // delete mission data outright; the user taps Delete,
-                            // then confirms.
+                            // allowsFullSwipe: false - don't let a full swipe
+                            // nuke mission data outright, make them tap Delete
+                            // then confirm.
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     pendingDelete = wp

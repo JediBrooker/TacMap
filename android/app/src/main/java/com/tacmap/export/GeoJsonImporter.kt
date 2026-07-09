@@ -29,9 +29,9 @@ import kotlin.math.roundToInt
 /**
  * Parse a GeoJSON FeatureCollection back into TacticalMaps domain objects.
  *
- * Understands both the Android export schema (source / kind / layer_id)
- * and the iOS export schema (tacticalmaps:category / tacticalmaps:layer).
- * Foreign GeoJSON lands as generic shapes on the [fallbackLayerId].
+ * Understands both Android export schema (source / kind / layer_id) and
+ * iOS export schema (tacticalmaps:category / tacticalmaps:layer). Foreign
+ * GeoJSON just lands as generic shapes on [fallbackLayerId].
  */
 object GeoJsonImporter {
 
@@ -39,14 +39,14 @@ object GeoJsonImporter {
         val waypoints: List<Waypoint>,
         val drawings:  List<DrawingFeature>,
         val newLayers: List<DrawingLayer>,
-        /** Features skipped for non-finite / out-of-range coordinates. */
+        /** features skipped b/c of non-finite / out-of-range coordinates */
         val invalidSkipped: Int = 0
     )
 
     private fun validLonLat(lon: Double, lat: Double): Boolean =
         lon.isFinite() && lat.isFinite() && lat in -90.0..90.0 && lon in -180.0..180.0
 
-    /** True when every coordinate in a GeoJSON geometry is finite and in range. */
+    /** true if every coordinate in the geometry is finite and in range */
     private fun geometryValid(geometry: JsonObject): Boolean {
         val coords = geometry["coordinates"] ?: return false
         fun pair(el: JsonElement?): Boolean {
@@ -93,17 +93,17 @@ object GeoJsonImporter {
             val feat = (raw as? JsonObject) ?: continue
             val geometry = feat["geometry"] as? JsonObject ?: continue
             val geomType = geometry["type"]?.jsonPrimitive?.contentOrNull ?: continue
-            // Reject non-finite / out-of-range coordinates so a corrupt file
-            // can't drop a feature at NaN or off the globe.
+            // reject non-finite / out-of-range coords so a corrupt file
+            // can't drop a feature at NaN or off the globe
             if (!geometryValid(geometry)) { invalidSkipped++; continue }
             val props = (feat["properties"] as? JsonObject) ?: JsonObject(emptyMap())
             val featureId = feat["id"]?.jsonPrimitive?.contentOrNull ?: UUID.randomUUID().toString()
 
             val layerId = resolveLayerId(props, layersById, newLayers, fallbackLayerId)
 
-            // Detect what kind of feature this is. Try the namespaced
-            // iOS schema first, then the Android "source" flag, then
-            // fall back to geometry-only guesses.
+            // figure out what kind of feature this is - try namespaced iOS
+            // schema first, then Android "source" flag, then just guess
+            // from geometry
             val category = resolveCategory(props)
             val isDrawing = category == "drawing"
             val isWaypoint = category == "symbol" || category == "military"
@@ -142,8 +142,8 @@ object GeoJsonImporter {
         newLayers: MutableList<DrawingLayer>,
         fallback: String
     ): String {
-        // 1. Direct ID match (case-insensitive: Android lowercase vs iOS
-        //    uppercase UUIDs).
+        // direct ID match (case-insensitive: Android lowercase vs iOS
+        // uppercase UUIDs)
         val explicitId = props["layer_id"]?.jsonPrimitive?.contentOrNull
             ?: props["tacticalmaps:layer_id"]?.jsonPrimitive?.contentOrNull
         if (explicitId != null) {
@@ -151,17 +151,17 @@ object GeoJsonImporter {
                 ?.let { return it }
         }
 
-        // 2. Before minting a NEW layer for an unknown id, adopt an existing
-        //    layer with the same NAME — otherwise a device whose default layers
-        //    carry different (per-install) ids proliferates duplicate
-        //    "Friendly"/"Enemy" layers on every cross-device import/sync.
+        // before minting a NEW layer for an unknown id, adopt an existing
+        // layer with the same NAME - otherwise devices with different
+        // (per-install) default layer ids proliferate duplicate
+        // "Friendly"/"Enemy" layers on every cross-device import/sync
         val name = props["layer_name"]?.jsonPrimitive?.contentOrNull
             ?: props["tacticalmaps:layer"]?.jsonPrimitive?.contentOrNull
         if (name != null) {
             layersById.values.firstOrNull { it.name == name }?.let { return it.id }
         }
 
-        // 3. ID present but neither id nor name matched → create a new layer.
+        // ID present but neither id nor name matched, create new layer
         if (explicitId != null) {
             val color = (props["tacticalmaps:layer_color"]?.jsonPrimitive?.contentOrNull
                 ?: props["layer_color"]?.jsonPrimitive?.contentOrNull)
@@ -172,7 +172,7 @@ object GeoJsonImporter {
             return explicitId
         }
 
-        // 4. Default fallback.
+        // default fallback
         return fallback
     }
 
@@ -203,7 +203,7 @@ object GeoJsonImporter {
                 val rings = (coords as? JsonArray) ?: return null
                 val outer = (rings.firstOrNull() as? JsonArray) ?: return null
                 val pts = outer.mapNotNull { parseCoordinate(it) }.toMutableList()
-                // Drop closing repeat if present.
+                // drop closing repeat if present
                 if (pts.size >= 2 && pts.first() == pts.last()) pts.removeAt(pts.lastIndex)
                 if (pts.size < 3) return null
                 DrawingGeometry.POLYGON to pts
@@ -217,9 +217,9 @@ object GeoJsonImporter {
         val stroke = props["stroke"]?.jsonPrimitive?.contentOrNull?.let(::parseHexColor)
             ?: props["stroke_color"]?.jsonPrimitive?.contentOrNull?.let(::parseArgbHex)
             ?: 0xFFFFA000.toInt()
-        // simplestyle `fill` is #RRGGBB with a separate `fill-opacity`; compose
-        // the ARGB alpha from it (default 0.2, matching iOS) instead of forcing
-        // the fill fully opaque.
+        // simplestyle `fill` is #RRGGBB with separate `fill-opacity`, compose
+        // ARGB alpha from it (default 0.2, matching iOS) instead of forcing
+        // fill fully opaque
         val fillOpacity = props["fill-opacity"]?.jsonPrimitive?.doubleOrNull
         val fill = props["fill"]?.jsonPrimitive?.contentOrNull?.let { hex ->
                 val rgb = parseHexColor(hex) and 0x00FFFFFF
@@ -228,13 +228,12 @@ object GeoJsonImporter {
             }
             ?: props["fill_color"]?.jsonPrimitive?.contentOrNull?.let(::parseArgbHex)
             ?: 0x33FFA000
-        // Stroke width unit disambiguation (px vs dp):
-        //  - Explicit marker (tacticalmaps:stroke_unit == "dp"): treat
-        //    `stroke-width` as dp and scale to px. Removes all ambiguity,
-        //    including the density-1 edge case where dp == px numerically.
-        //  - No marker + two keys that DIFFER: new Android export (dp vs px).
-        //  - No marker + two keys EQUAL: old Android export (both px).
-        //  - dp-only `stroke-width`: iOS / external simplestyle (dp).
+        // stroke width unit disambiguation (px vs dp):
+        //  - explicit marker (stroke_unit == "dp"): treat stroke-width as dp,
+        //    scale to px. Removes all ambiguity incl density-1 edge case.
+        //  - no marker + two keys DIFFER: new Android export (dp vs px).
+        //  - no marker + two keys EQUAL: old Android export (both px).
+        //  - dp-only stroke-width: iOS / external simplestyle (dp).
         val strokeUnit = props["tacticalmaps:stroke_unit"]?.jsonPrimitive?.contentOrNull
         val simplestyleW = props["stroke-width"]?.jsonPrimitive?.doubleOrNull
         val legacyW = props["stroke_width"]?.jsonPrimitive?.doubleOrNull
@@ -269,7 +268,7 @@ object GeoJsonImporter {
         )
     }
 
-    /** Parse an ISO-8601 `created_at` back to epoch millis (round-trip). */
+    /** Parse ISO-8601 created_at back to epoch millis (round-trip). */
     private fun parseCreatedAt(props: JsonObject): Long? {
         val s = props["tacticalmaps:created_at"]?.jsonPrimitive?.contentOrNull
             ?: props["created_at"]?.jsonPrimitive?.contentOrNull
@@ -335,8 +334,8 @@ object GeoJsonImporter {
     }
 
     private fun parseMilSpec(props: JsonObject): MilitarySymbolSpec {
-        // Unknown/corrupt affiliation → UNKNOWN (unresolved), NOT FRIEND:
-        // fail-to-friendly could mask a hostile contact on a mixed import.
+        // unknown/corrupt affiliation -> UNKNOWN, NOT FRIEND.
+        // fail-to-friendly could mask a hostile contact on a mixed import
         val aff = parseAffiliation(props["tacticalmaps:affiliation"]?.jsonPrimitive?.contentOrNull)
             ?: SymbolAffiliation.UNKNOWN
         val ech = parseEchelon(props["tacticalmaps:echelon"]?.jsonPrimitive?.contentOrNull)
@@ -399,7 +398,7 @@ object GeoJsonImporter {
 
     // ----- Colour parsing -----
 
-    /** "#RRGGBB" → 0xFFRRGGBB Int. */
+    /** "#RRGGBB" -> 0xFFRRGGBB Int */
     private fun parseHexColor(hex: String): Int {
         val clean = hex.removePrefix("#")
         if (clean.length != 6) return 0xFFFFA000.toInt()
@@ -407,7 +406,7 @@ object GeoJsonImporter {
         return (0xFF000000 or rgb).toInt()
     }
 
-    /** "#AARRGGBB" → ARGB Int. Falls back to RGB-only parse. */
+    /** "#AARRGGBB" -> ARGB Int. Falls back to RGB-only parse. */
     private fun parseArgbHex(hex: String): Int {
         val clean = hex.removePrefix("#")
         return when (clean.length) {

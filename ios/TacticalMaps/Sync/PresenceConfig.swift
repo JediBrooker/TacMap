@@ -1,7 +1,7 @@
 import Foundation
 
-/// User-configurable identity for real-time presence broadcast on the sync relay.
-/// Persisted to UserDefaults so the callsign + symbol choices survive app restarts.
+/// Identity settings for presence broadcast on the sync relay. Saved to
+/// UserDefaults so callsign + symbol choices persist accross restarts.
 struct PresenceConfig: Codable, Equatable {
     var callsign: String = ""
     var shareLocation: Bool = false

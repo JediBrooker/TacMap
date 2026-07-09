@@ -5,9 +5,9 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 /**
- * Serialises a recorded track into GPX 1.1 — the universal GPS-exchange format
- * read by Garmin, Strava, Gaia GPS, QGIS, Google Earth, etc. A sibling to
- * [GeoJsonExporter]: still no proprietary lock-in.
+ * Serialises a recorded track to GPX 1.1, the universal GPS-exchange format
+ * (Garmin, Strava, Gaia GPS, QGIS, Google Earth, etc). Sibling to
+ * [GeoJsonExporter] - no proprietary lock-in.
  */
 object GpxExporter {
 

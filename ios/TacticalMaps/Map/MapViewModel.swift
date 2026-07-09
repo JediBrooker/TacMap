@@ -6,8 +6,8 @@ import Combine
 /// Owns map camera state, browse-mode toggle, MGRS readout, compass heading,
 /// and crosshair-elevation lookups.
 ///
-/// Browse mode = user has panned/zoomed away from their own position. While
-/// browsing the header reads the **map centre**; otherwise it reads the user.
+/// Browse mode = user panned/zoomed away from their position. While
+/// browsing the header reads the map centre, otherwise reads user location.
 final class MapViewModel: ObservableObject {
 
     // MARK: - Published state
@@ -19,71 +19,60 @@ final class MapViewModel: ObservableObject {
         didSet { NSLog("[MapVM] mapSource changed -> kind=\(mapSource.kind) name=\(mapSource.displayName)") }
     }
 
-    /// Latest terrain-elevation reading for the current `cameraCentre` (metres
-    /// + staleness). Fetched async from Open-Meteo via `ElevationService`, which
-    /// is offline-resilient: when the network drops, this holds the nearest
-    /// cached height marked stale rather than going blank.
+    /// Latest terrain-elevation reading for cameraCentre (metres + staleness).
+    /// Fetched async from Open-Meteo via ElevationService. Offline-resilient -
+    /// when network drops it holds the nearest cached height marked stale
+    /// instead of going blank.
     @Published var centreElevationReading: ElevationReading? = nil
 
-    /// Metres above sea level for the current centre, or nil if unknown.
-    /// Convenience so existing callers keep reading a plain `Double?`.
+    /// Metres ASL for current centre, nil if unknown. Just a convenience
+    /// so callers can keep reading a plain Double?.
     var centreElevation: Double? { centreElevationReading?.metres }
 
-    /// True when `centreElevation` is an approximate (offline) fallback rather
-    /// than a fresh DEM lookup — the HUD prefixes it with "~".
+    /// True when centreElevation is an offline fallback, not a fresh DEM
+    /// lookup. HUD prefixes with "~".
     var centreElevationIsApproximate: Bool { centreElevationReading?.isStale ?? false }
 
-    /// ID of the currently-selected waypoint of any kind (generic,
-    /// military, or tactical control measure). Set by the map's
-    /// `didSelect` delegate. Drives the floating controls card in
-    /// `ContentView`. nil = no selection.
+    /// Currently-selected waypoint (any kind: generic, military, or
+    /// control measure). Set by map's didSelect. Drives the floating
+    /// controls card in ContentView. nil = nothing selected.
     @Published var selectedWaypointID: UUID? = nil
 
-    /// ID of the currently-selected drawing (polyline / polygon / point).
-    /// Mutually exclusive with `selectedWaypointID` — setting one clears
-    /// the other in `ContentView`'s tap handler. Drives the floating
-    /// DrawingControlsCard.
+    /// Selected drawing (polyline/polygon/point). Mutually exclusive
+    /// with selectedWaypointID - setting one clears the other in
+    /// ContentView's tap handler. Drives DrawingControlsCard.
     @Published var selectedDrawingID: UUID? = nil
 
-    /// Current map metres-per-point (the smaller number is more zoomed in).
-    /// Updated by `MapContainerView.Coordinator` whenever the camera
-    /// changes. Drives `defaultControlMeasureScale` so newly-placed
-    /// tactical symbols enter at a screen-relative size that matches
-    /// the current zoom level.
+    /// Current map metres-per-point (smaller = more zoomed in). Updated
+    /// by MapContainerView.Coordinator on camera change. Drives
+    /// defaultControlMeasureScale so new tactical symbols enter at a
+    /// screen-relative size matching current zoom.
     @Published var currentMetresPerPoint: Double = 1.0
 
-    /// Screen position (in MKMapView's coordinate space, which is the
-    /// same as the SwiftUI overlay's coordinate space because both
-    /// fill the screen) for every tactical-control-measure waypoint.
-    /// Republished on every camera change by `MapContainerView.Coordinator`.
-    /// `TacticalSymbolOverlay` reads this and places each SwiftUI
-    /// symbol view at the right point.
+    /// Screen positions for every waypoint (MKMapView coord space, same
+    /// as SwiftUI overlay since both fill the screen). Republished on
+    /// every camera change. TacticalSymbolOverlay reads this to place
+    /// each symbol view.
     @Published var waypointScreenPositions: [UUID: CGPoint] = [:]
 
-    /// The current map's zoom-derived scale factor (the same value the
-    /// coordinator applies to the on-map symbol's transform). The
-    /// SwiftUI overlay multiplies this by each waypoint's `scale` to
-    /// pick the display size.
+    /// Zoom-derived scale factor (same value coordinator applies to
+    /// symbol transform). SwiftUI overlay multiplies by waypoint.scale
+    /// to get display size.
     @Published var zoomScaleFactor: CGFloat = 1.0
 
-    /// Bridge installed by `MapContainerView` so the SwiftUI overlay
-    /// can convert a screen point (e.g. the end of a drag) back to a
-    /// geographic coordinate without needing direct access to MKMapView.
+    /// Bridge from MapContainerView so SwiftUI overlay can convert
+    /// screen points (e.g. end of a drag) back to geo coords without
+    /// needing direct MKMapView access.
     var screenToCoordinate: ((CGPoint) -> CLLocationCoordinate2D)?
 
-    /// The waypoint scale value that, applied to a newly-placed tactical
-    /// control measure, makes the symbol render at roughly 10% of the
-    /// screen height at the *current* zoom level. The symbol then keeps
-    /// its geographic footprint as the user zooms in / out (so its
-    /// on-screen size scales naturally with the map).
+    /// Scale value for newly-placed tactical control measures so they
+    /// render at roughly 10% of screen height at current zoom. Symbol
+    /// keeps its geo footprint as user zooms in/out.
     ///
-    /// Math: the renderer produces a 68pt-wide bitmap (baseSize 64 +
-    /// 2*haloPadding 2). The annotation view's transform scale is
-    /// `waypoint.scale * zoomScale` where `zoomScale = 1.0 /
-    /// metresPerPoint` (referenceMetresPerPoint = 1.0). We want final
-    /// pixel width ≈ 80pt (≈10% of an 800pt screen), so:
-    ///   80 = 68 * waypoint.scale * (1.0 / metresPerPoint)
-    ///   waypoint.scale = (80 / 68) * metresPerPoint ≈ 1.18 * metresPerPoint
+    /// Math: renderer produces 68pt bitmap (64 base + 2*2 halo).
+    /// Transform = waypoint.scale * (1/metresPerPoint). We want ~80pt
+    /// final width (~10% of 800pt screen), so:
+    ///   waypoint.scale = (80/68) * metresPerPoint ~ 1.18 * metresPerPoint
     var defaultControlMeasureScale: Double {
         let raw = 1.18 * currentMetresPerPoint
         // Clamp to the slider range so the default is always editable.
@@ -101,8 +90,8 @@ final class MapViewModel: ObservableObject {
     private var elevationCancellable: AnyCancellable?
 
     init() {
-        // Debounce camera-centre changes; only ask the DEM once the user has
-        // stopped panning for 400ms. Skips no-op changes (<0.0001° ≈ 11m).
+        // Debounce camera-centre changes, only hit the DEM once user
+        // stops panning for 400ms. Skips no-op changes (<0.0001deg ~ 11m).
         elevationCancellable = $cameraCentre
             .removeDuplicates(by: Self.isApproximatelyEqual)
             .filter { !($0.latitude == 0 && $0.longitude == 0) }
@@ -122,8 +111,7 @@ final class MapViewModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let reading = await self.elevationService.reading(for: coord)
-            // Guard against stale responses: only commit if the camera hasn't
-            // moved meaningfully since we kicked off the request.
+            // Only commit if camera hasn't moved since we fired the request.
             if Self.isApproximatelyEqual(self.cameraCentre, coord) {
                 self.centreElevationReading = reading
             }
@@ -160,10 +148,9 @@ final class MapViewModel: ObservableObject {
         lastUserCoordinate = location.coordinate
         if !hasInitialFix {
             hasInitialFix = true
-            // Centre on the user on the first fix — unless a bounded map
-            // (PDF) is active and the user is off it, in which case keep
-            // the framing set at import/restore so an off-map PDF stays
-            // visible instead of being yanked away to the user.
+            // Centre on user on first fix, but if a bounded PDF is active
+            // and user is off it, keep the framing from import/restore
+            // so the PDF doesnt get yanked away.
             if let coverage = mapSource.coverage,
                !coverage.contains(location.coordinate) {
                 return
@@ -172,13 +159,12 @@ final class MapViewModel: ObservableObject {
         }
     }
 
-    /// Frame the camera for a freshly-set or restored map source: snap to
-    /// `userLocation` when it sits inside the source's coverage (so the
-    /// user immediately sees "I am here on this map"), otherwise frame the
-    /// whole coverage. No-op for unbounded sources (e.g. satellite).
+    /// Frame camera for a new or restored map source. Snaps to userLocation
+    /// if inside coverage, otherwise frames the whole coverage area.
+    /// No-op for unbounded sources (satellite etc).
     ///
-    /// Centralises what used to be inline in the import path so the restore
-    /// path frames consistently too.
+    /// Used to be inline in the import path, pulled out so restore
+    /// frames consistently too.
     func frameCamera(for source: MapSource, userLocation: CLLocationCoordinate2D?) {
         guard let coverage = source.coverage else { return }
         if let user = userLocation, coverage.contains(user) {
@@ -223,10 +209,9 @@ final class MapViewModel: ObservableObject {
 }
 
 extension MKCoordinateRegion {
-    /// True when `coordinate` falls within this region's lat/long span.
-    /// Uses the shortest angular distance in longitude so a span that
-    /// straddles the antimeridian (centre near ±180°) is handled
-    /// correctly instead of reporting every point as outside.
+    /// True when coordinate falls inside this region's lat/lng span.
+    /// Uses shortest angular distance in longitude so spans straddling
+    /// the antimeridian (centre near +/-180) work correctly.
     func contains(_ coordinate: CLLocationCoordinate2D) -> Bool {
         if abs(coordinate.latitude - center.latitude) > span.latitudeDelta / 2 {
             return false
