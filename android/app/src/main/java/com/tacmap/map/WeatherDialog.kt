@@ -23,11 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/**
- * Weather + UAV flight-safety widget for the map-centre coordinate. Fetches
- * current conditions from Open-Meteo and shows a green/amber/red drone-safety
- * assessment (worst-of-components against default thresholds).
- */
+/** Weather + UAV flight-safety widget. Fetches current conditions from
+ *  Open-Meteo and shows green/amber/red drone safety assessment. */
 @Composable
 fun WeatherDialog(lat: Double, lng: Double, onDismiss: () -> Unit) {
     var reading by remember { mutableStateOf<WeatherReading?>(null) }

@@ -1,13 +1,13 @@
 import Foundation
 import Security
 
-/// Minimal Keychain wrapper for the trial timestamps (first launch + the
-/// clock-rollback high-water mark). Generic-password items survive app
-/// deletion, which is the whole point: a reinstall sees the same trial clock.
+/// Minimal Keychain wrapper for trial timestamps (first launch + clock-rollback
+/// high-water mark). Generic-password items survive app deletion which is the
+/// whole point - reinstall sees the same trial clock.
 ///
-/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` keeps the items
-/// device-bound (not migrated via iCloud Keychain / encrypted backup to a
-/// different device), matching the Android Block Store config.
+/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` keeps items device-bound
+/// (won't migrate via iCloud Keychain or encrypted backup), matches the
+/// Android Block Store config.
 enum KeychainStore {
     private static let service = "com.tacticalmaps.app.entitlement"
 

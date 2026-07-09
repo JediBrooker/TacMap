@@ -210,7 +210,7 @@ fun DrawingLayersSheet(
 private fun FreeDrawIcon() {
     Canvas(Modifier.size(18.dp)) {
         val stroke = Stroke(width = size.minDimension * 0.11f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        // Double S-curve — clearly suggests freehand vs the straight line tool
+        // double S-curve so it looks freehand vs the straight line tool
         val path = Path().apply {
             moveTo(size.width * 0.05f, size.height * 0.50f)
             cubicTo(
@@ -240,7 +240,7 @@ private fun DrawingTypeIcon(geometry: DrawingGeometry) {
         when (geometry) {
             DrawingGeometry.POINT -> drawCircle(Color.White, radius = size.minDimension * 0.24f)
             DrawingGeometry.LINE -> {
-                // Straight line with endpoint nodes — distinct from the freehand curve
+                // straight line w/ endpoint nodes, visually distinct from freehand
                 val start = Offset(size.width * 0.15f, size.height * 0.78f)
                 val end = Offset(size.width * 0.85f, size.height * 0.22f)
                 drawLine(Color.White, start = start, end = end, strokeWidth = stroke.width, cap = StrokeCap.Round)

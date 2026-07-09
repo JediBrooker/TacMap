@@ -2,163 +2,199 @@
 """
 Generate the Google Play feature graphic (1024x500 PNG) for TacticalMaps.
 
-On-brand with the app: dark field background (#151916), tactical-green HUD
-type (#8CF28C), a faint MGRS grid + crosshair, a live-style grid reference,
-and NATO APP-6 military symbols (friend / hostile affiliation frames) placed
-as map markers — mirroring the app's milsymbol feature. No external assets:
-uses macOS system fonts and Pillow.
+Dark tactical theme with MGRS grid, NATO APP-6 symbols, and 1.2.0
+headline (Unit Sync with live presence). Uses brand fonts from
+scripts/fonts/.
 
     python3 scripts/generate_feature_graphic.py
     -> docs/store/android/feature-graphic.png
 """
 from __future__ import annotations
-import os
+import math, os
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1024, 500
 BG = (0x15, 0x19, 0x16)
 GREEN = (0x8C, 0xF2, 0x8C)
 ORANGE = (0xF2, 0xA2, 0x4A)
+BLUE = (0x5A, 0xA0, 0xFF)
 WHITE = (0xF2, 0xF5, 0xF2)
 GREY = (0xB8, 0xC4, 0xBC)
 DIM = (0x9A, 0xA6, 0x9E)
 GRID = (0x2A, 0x3A, 0x30)
 GRID_BRIGHT = (0x3A, 0x52, 0x44)
 
-# APP-6 affiliation colours (recognisable: friend = blue, hostile = red)
 FRIEND_FILL = (0x9F, 0xD8, 0xEE)
 FRIEND_FRAME = (0x12, 0x36, 0x4B)
 HOSTILE_FILL = (0xF0, 0xA6, 0xA6)
 HOSTILE_FRAME = (0x5E, 0x17, 0x17)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FONTS = os.path.join(ROOT, "scripts", "fonts")
 OUT = os.path.join(ROOT, "docs", "store", "android", "feature-graphic.png")
 
 
-def font(paths, size):
-    for p in paths:
-        if os.path.exists(p):
-            try:
-                return ImageFont.truetype(p, size)
-            except OSError:
-                pass
+def font(name, size):
+    p = os.path.join(FONTS, name)
+    if os.path.exists(p):
+        return ImageFont.truetype(p, size)
     return ImageFont.load_default()
 
 
-SANS_BOLD = ["/System/Library/Fonts/SFNS.ttf",
-             "/System/Library/Fonts/HelveticaNeue.ttc"]
-MONO = ["/System/Library/Fonts/Menlo.ttc",
-        "/System/Library/Fonts/SFNSMono.ttf"]
-
-f_title = font(SANS_BOLD, 92)
-f_tag = font(MONO, 25)
-f_mgrs = font(MONO, 33)
-f_small = font(MONO, 21)
-f_cap = font(MONO, 19)
+f_title = font("Archivo-ExtraBold.ttf", 88)
+f_subtitle = font("Archivo-SemiBold.ttf", 28)
+f_tag = font("JetBrainsMono-Medium.ttf", 21)
+f_mgrs = font("JetBrainsMono-Bold.ttf", 30)
+f_small = font("JetBrainsMono-Regular.ttf", 17)
+f_cap = font("JetBrainsMono-Medium.ttf", 16)
+f_pill = font("Archivo-Bold.ttf", 15)
 
 
-# ---- NATO APP-6 symbol primitives -------------------------------------------
 def friend_frame(d, cx, cy, w, h):
-    """Friendly affiliation = rectangle frame."""
     x0, y0, x1, y1 = cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
-    d.rectangle([x0, y0, x1, y1], fill=FRIEND_FILL, outline=FRIEND_FRAME, width=4)
+    d.rectangle([x0, y0, x1, y1], fill=FRIEND_FILL, outline=FRIEND_FRAME, width=3)
     return x0, y0, x1, y1
 
 
 def hostile_frame(d, cx, cy, s):
-    """Hostile affiliation = diamond (square on point)."""
     pts = [(cx, cy - s), (cx + s, cy), (cx, cy + s), (cx - s, cy)]
     d.polygon(pts, fill=HOSTILE_FILL)
-    d.line(pts + [pts[0]], fill=HOSTILE_FRAME, width=4)
+    d.line(pts + [pts[0]], fill=HOSTILE_FRAME, width=3)
     return cx - s * 0.62, cy - s * 0.62, cx + s * 0.62, cy + s * 0.62
 
 
 def icon_infantry(d, box, col):
     x0, y0, x1, y1 = box
-    d.line([(x0, y0), (x1, y1)], fill=col, width=4)
-    d.line([(x0, y1), (x1, y0)], fill=col, width=4)
+    d.line([(x0, y0), (x1, y1)], fill=col, width=3)
+    d.line([(x0, y1), (x1, y0)], fill=col, width=3)
 
 
 def icon_armour(d, box, col):
     x0, y0, x1, y1 = box
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    ew, eh = (x1 - x0) * 0.62, (y1 - y0) * 0.46
-    d.ellipse([cx - ew / 2, cy - eh / 2, cx + ew / 2, cy + eh / 2], outline=col, width=4)
+    ew, eh = (x1 - x0) * 0.6, (y1 - y0) * 0.44
+    d.ellipse([cx - ew / 2, cy - eh / 2, cx + ew / 2, cy + eh / 2], outline=col, width=3)
 
 
 def echelon_company(d, cx, top, col):
-    """Company echelon = single vertical bar above the frame."""
-    d.line([(cx, top - 20), (cx, top - 6)], fill=col, width=4)
+    d.line([(cx, top - 16), (cx, top - 4)], fill=col, width=3)
+
+
+def echelon_battalion(d, cx, top, col):
+    for dx in (-8, 0, 8):
+        d.line([(cx + dx, top - 16), (cx + dx, top - 4)], fill=col, width=3)
 
 
 def staff(d, cx, bottom, col):
-    """Short staff + anchor dot to the ground position."""
-    d.line([(cx, bottom), (cx, bottom + 22)], fill=col, width=3)
-    d.ellipse([cx - 5, bottom + 20, cx + 5, bottom + 30], fill=col)
+    d.line([(cx, bottom), (cx, bottom + 18)], fill=col, width=2)
+    d.ellipse([cx - 4, bottom + 16, cx + 4, bottom + 24], fill=col)
+
+
+def presence_marker(d, cx, cy, r, heading_deg, callsign, col=BLUE):
+    """Presence dot with heading wedge + callsign label."""
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=col, outline=WHITE, width=2)
+    rad = math.radians(heading_deg - 90)
+    tx = cx + (r + 10) * math.cos(rad)
+    ty = cy + (r + 10) * math.sin(rad)
+    d.line([(cx, cy), (tx, ty)], fill=col, width=2)
+    lw = d.textlength(callsign, font=f_cap)
+    d.text((cx - lw / 2, cy + r + 6), callsign, font=f_cap, fill=col)
+
+
+def pill(d, x, y, text, bg, fg):
+    """Rounded pill badge"""
+    tw = d.textlength(text, font=f_pill)
+    ph = 24
+    pw = tw + 20
+    d.rounded_rectangle([x, y, x + pw, y + ph], radius=ph // 2, fill=bg)
+    d.text((x + 10, y + 4), text, font=f_pill, fill=fg)
+    return pw
 
 
 def main():
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
 
-    # --- faint MGRS grid ---
+    # MGRS grid
     step = 64
     for x in range(0, W, step):
         d.line([(x, 0), (x, H)], fill=GRID, width=1)
     for y in range(0, H, step):
         d.line([(0, y), (W, y)], fill=GRID, width=1)
 
-    # --- faint compass + crosshair anchoring the symbol cluster ---
-    cx, cy = 828, 168
-    for rr in (96, 60, 26):
-        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], outline=GRID_BRIGHT, width=2)
-    d.line([(cx, 40), (cx, 470)], fill=GRID_BRIGHT, width=1)
-    d.line([(640, cy), (1020, cy)], fill=GRID_BRIGHT, width=1)
-    d.polygon([(cx, cy - 96 - 16), (cx - 8, cy - 96 + 2), (cx + 8, cy - 96 + 2)], fill=GREEN)
-    d.text((cx - 7, cy - 96 - 44), "N", font=f_cap, fill=GREEN)
+    # crosshair + compass rings on the right
+    cx, cy = 790, 180
+    for rr in (80, 50, 22):
+        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], outline=GRID_BRIGHT, width=1)
+    d.line([(cx, 70), (cx, 440)], fill=GRID_BRIGHT, width=1)
+    d.line([(640, cy), (960, cy)], fill=GRID_BRIGHT, width=1)
+    d.polygon([(cx, cy - 80 - 14), (cx - 7, cy - 80 + 2), (cx + 7, cy - 80 + 2)], fill=GREEN)
+    d.text((cx - 6, cy - 80 - 36), "N", font=f_cap, fill=GREEN)
 
-    # --- APP-6 markers (friend infantry hero, friend armour, hostile) ---
-    # friendly infantry, company echelon
-    fx, fy, fw, fh = 770, 250, 122, 86
-    box = friend_frame(d, fx, fy, fw, fh)
+    # NATO symbols
+    box = friend_frame(d, 730, 260, 100, 70)
     icon_infantry(d, box, FRIEND_FRAME)
-    echelon_company(d, fx, fy - fh / 2, FRIEND_FILL)
-    staff(d, fx, fy + fh / 2, FRIEND_FILL)
+    echelon_company(d, 730, 260 - 35, FRIEND_FILL)
+    staff(d, 730, 260 + 35, FRIEND_FILL)
 
-    # friendly armour
-    ax, ay, aw, ah = 936, 322, 112, 78
-    box = friend_frame(d, ax, ay, aw, ah)
+    box = friend_frame(d, 896, 326, 90, 64)
     icon_armour(d, box, FRIEND_FRAME)
-    staff(d, ax, ay + ah / 2, FRIEND_FILL)
+    staff(d, 896, 326 + 32, FRIEND_FILL)
 
-    # hostile infantry
-    hx, hy, hs = 716, 372, 56
-    box = hostile_frame(d, hx, hy, hs)
+    box = hostile_frame(d, 680, 380, 44)
     icon_infantry(d, box, HOSTILE_FRAME)
-    staff(d, hx, hy + hs, HOSTILE_FILL)
+    staff(d, 680, 380 + 44, HOSTILE_FILL)
 
-    # caption
-    d.text((648, 452), "NATO APP-6 SYMBOLOGY", font=f_cap, fill=GREEN)
+    # HQ marker w/ battalion echelon
+    box = friend_frame(d, 850, 428, 80, 56)
+    icon_infantry(d, box, FRIEND_FRAME)
+    echelon_battalion(d, 850, 428 - 28, FRIEND_FILL)
+    # HQ flag (small staff top-left)
+    hq_x, hq_y = 850 - 40, 428 - 28
+    d.line([(hq_x, hq_y), (hq_x, hq_y - 20)], fill=FRIEND_FILL, width=2)
 
-    # --- left column: wordmark + tagline + live grid ref ---
-    x0 = 60
-    d.text((x0, 86), "FIELD NAVIGATION", font=f_small, fill=ORANGE)
-    ty = 120
-    d.text((x0, ty), "Tactical", font=f_title, fill=WHITE)
-    tw = d.textlength("Tactical", font=f_title)
-    d.text((x0 + tw, ty), "Maps", font=f_title, fill=GREEN)
+    # presence markers (1.2.0 feature)
+    presence_marker(d, 760, 330, 8, 350, "ALPHA-1")
+    presence_marker(d, 870, 260, 8, 10, "BRAVO-2")
+    presence_marker(d, 820, 390, 8, 270, "CHARLIE-3")
 
-    d.text((x0, 236), "Live MGRS  ·  GeoPDF basemaps", font=f_tag, fill=GREY)
-    d.text((x0, 268), "APP-6 symbols  ·  GeoJSON export", font=f_tag, fill=GREY)
+    # phase line, amber dashed
+    for x in range(640, 980, 16):
+        if (x // 16) % 2 == 0:
+            d.line([(x, 300), (x + 12, 300)], fill=ORANGE, width=2)
+    d.text((644, 304), "PL SABRE", font=f_cap, fill=ORANGE)
 
-    chip_y = 314
-    label = "56HLH 13225 37516"
-    pad = 16
+    # left column: wordmark + tagline
+    x0 = 56
+    d.text((x0, 56), "TACTICAL MAPPING", font=f_small, fill=ORANGE)
+    ty = 82
+    d.text((x0, ty), "TacMap", font=f_title, fill=WHITE)
+
+    d.text((x0, 182), "One map, the whole unit.", font=f_subtitle, fill=GREEN)
+
+    # feature bullets
+    by = 228
+    d.text((x0, by), "Live MGRS  ·  NATO APP-6 symbols", font=f_tag, fill=GREY)
+    d.text((x0, by + 28), "Unit Sync  ·  E2E encrypted", font=f_tag, fill=GREY)
+    d.text((x0, by + 56), "GeoPDF import  ·  GeoJSON export", font=f_tag, fill=GREY)
+
+    # mgrs chip
+    chip_y = 340
+    label = "56HKH 50215 67845"
+    pad = 14
     lw = d.textlength(label, font=f_mgrs)
-    d.rounded_rectangle([x0, chip_y, x0 + lw + pad * 2, chip_y + 60],
-                        radius=10, outline=GREEN, width=2)
-    d.text((x0 + pad, chip_y + 13), label, font=f_mgrs, fill=GREEN)
-    d.text((x0, chip_y + 76), "0640 mils   ·   112 m MSL", font=f_small, fill=DIM)
+    d.rounded_rectangle([x0, chip_y, x0 + lw + pad * 2, chip_y + 50],
+                        radius=8, outline=GREEN, width=2)
+    d.text((x0 + pad, chip_y + 10), label, font=f_mgrs, fill=GREEN)
+
+    # status pills
+    py = 406
+    pw = pill(d, x0, py, "CONNECTED", (0x1A, 0x3D, 0x1A), GREEN)
+    pill(d, x0 + pw + 10, py, "E2E ENCRYPTED", (0x1A, 0x2D, 0x3D), BLUE)
+
+    # bottom tagline
+    d.text((x0, 450), "Buy once  ·  Works offline  ·  No subscription",
+           font=f_small, fill=DIM)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     img.save(OUT, "PNG")

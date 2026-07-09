@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// Top-left hamburger button. Opens a CUSTOM popover (not SwiftUI's
-/// system `Menu`) so each row is a full-width 54pt button with a 28pt
-/// icon — wide enough to hit reliably with a finger on a real phone.
-/// The system Menu's compact rows were hard to tap consistently per
-/// user feedback.
+/// Top-left hamburger. Custom popover instead of SwiftUI's system Menu
+/// b/c we need full-width 54pt buttons with 28pt icons - system Menu
+/// rows were too hard to tap on a real phone.
 struct HamburgerMenu: View {
     /// Billing: show trial status + an unlock entry point (hidden once bought).
     let isPurchased: Bool
@@ -32,8 +30,8 @@ struct HamburgerMenu: View {
     let onAbout:         () -> Void
 
     @State private var isOpen = false
-    /// Action chosen from a menu row. Run from the sheet's `onDismiss` so
-    /// it never races the dismiss animation (see `close`/`runPendingAction`).
+    /// Stashed action from menu row. Fires from onDismiss so it
+    /// doesn't race the dismiss animation.
     @State private var pendingAction: (() -> Void)?
 
     var body: some View {
@@ -42,11 +40,8 @@ struct HamburgerMenu: View {
         } label: {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 19, weight: .medium))
-                /// 48pt sits comfortably above Apple's 44pt minimum
-                /// tap target and matches the surrounding HUD chips
-                /// (compass, "Centre on My Location"), so the user
-                /// doesn't have to aim for a small button to open
-                /// the menu.
+                /// 48pt clears Apple's 44pt min tap target, matches the
+                /// surrounding HUD chips (compass, centre button).
                 .frame(width: 48, height: 48)
                 .background(.black.opacity(0.78), in: Circle())
                 .overlay(Circle().stroke(.white.opacity(0.08)))
@@ -55,11 +50,8 @@ struct HamburgerMenu: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Menu")
-        /// Single `.large` detent: nine 54pt rows + dividers + nav bar
-        /// don't fit a medium sheet on shorter iPhones (medium clipped
-        /// "About & Credits" off the bottom), so the sheet opens
-        /// full-height. Rows live in a ScrollView so every entry stays
-        /// reachable regardless.
+        /// Large detent only - medium sheet clips the bottom rows on
+        /// shorter iPhones. ScrollView so everything's reachable.
         .sheet(isPresented: $isOpen, onDismiss: runPendingAction) {
             NavigationStack {
                 ScrollView {
@@ -78,7 +70,7 @@ struct HamburgerMenu: View {
                         row("Weather & UAV Safety", systemImage: "wind")            { close(onWeather) }
                         divider
                         // All file import/export lives behind one row so the
-                        // main menu stays short — pushes a sub-page within the
+                        // main menu stays short. Pushes a sub-page within the
                         // sheet's NavigationStack (no sheet-over-sheet races).
                         navRow("Import / Export…", systemImage: "square.and.arrow.up.on.square")
                         divider
@@ -107,9 +99,8 @@ struct HamburgerMenu: View {
         }
     }
 
-    /// Stash the row's action and dismiss the sheet. The action fires from
-    /// `onDismiss` once the sheet has fully gone, so actions that present
-    /// another sheet (file importer, etc.) don't race the dismissal.
+    /// Stash action and dismiss. Action fires from onDismiss after
+    /// sheet is fully gone so file-importer sheets dont race it.
     private func close(_ action: @escaping () -> Void) {
         pendingAction = action
         isOpen = false
@@ -139,16 +130,15 @@ struct HamburgerMenu: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
-            /// 54pt tall: clears Apple's 44pt minimum with breathing
-            /// room and gives each finger-sized icon room to read.
+            /// 54pt tall, clears Apple's 44pt min with room to spare.
             .frame(height: 54)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    /// A `row` that pushes the Import / Export sub-page instead of running an
-    /// action. Styled to match `row`, with a trailing disclosure chevron.
+    /// Like row() but pushes the Import/Export sub-page instead of
+    /// running an action. Has trailing chevron.
     @ViewBuilder
     private func navRow(_ label: String, systemImage: String) -> some View {
         NavigationLink {
@@ -174,9 +164,8 @@ struct HamburgerMenu: View {
         .buttonStyle(.plain)
     }
 
-    /// Sub-page listing every file import/export action, grouped into Import
-    /// and Export. Rows reuse `close` so picking one dismisses the whole sheet
-    /// and runs the action from `onDismiss` (same as the top-level rows).
+    /// Import/Export sub-page. Rows reuse close() so picking one
+    /// dismisses the whole sheet, same as top-level rows.
     @ViewBuilder
     private var importExportPage: some View {
         ScrollView {
@@ -233,9 +222,8 @@ struct HamburgerMenu: View {
     }
 }
 
-/// Red "REC" pill shown while a GPX track is recording, so the live recording
-/// state is obvious without opening the menu. The dot pulses; tapping the pill
-/// stops the recording (the menu can also start/stop it).
+/// Red "REC" pill while GPX track is recording. Dot pulses, tapping
+/// stops the recording. Menu can also start/stop it.
 struct RecordingIndicator: View {
     let pointCount: Int
     let onStop: () -> Void
@@ -272,9 +260,8 @@ struct RecordingIndicator: View {
     }
 }
 
-/// Lock toggle. When on, every graphic is frozen — symbols and drawings
-/// can't be selected, dragged, or vertex-edited, and tapping one won't open
-/// its settings. Sits just under the undo/redo buttons in the right rail.
+/// Lock toggle. Freezes all graphics when on - no select, drag, or
+/// vertex-edit. Sits under the undo/redo buttons in right rail.
 struct LockButton: View {
     let locked: Bool
     let onToggle: () -> Void
@@ -321,10 +308,8 @@ struct UnitLabelsToggle: View {
     }
 }
 
-/// Top-right compass chip. Rotates the N marker live with the map's heading
-/// (so N always points to real-world north) and shows the heading as a
-/// NATO-mil reading (6400 mils per full circle) in the lower half.
-/// Tap the chip to smooth-animate the map back to heading = 0°.
+/// Top-right compass chip. N marker rotates live with map heading,
+/// lower half shows NATO mils (6400/circle). Tap to reset to north.
 struct CompassChip: View {
     /// Map heading in degrees (0 = north-up, 90 = east-up).
     let heading: Double
@@ -333,8 +318,8 @@ struct CompassChip: View {
 
     private let size: CGFloat = 56
 
-    /// NATO mils: 6400 per full circle (1° ≈ 17.78 mils). N=0000, E=1600,
-    /// S=3200, W=4800. Wraps via modulo so a brief reading of 6400 displays 0000.
+    /// NATO mils, 6400 per circle. N=0000 E=1600 S=3200 W=4800.
+    /// Wraps via modulo so 6400 displays as 0000.
     private var milsString: String {
         let positive = ((heading.truncatingRemainder(dividingBy: 360.0)) + 360.0)
             .truncatingRemainder(dividingBy: 360.0)
@@ -386,7 +371,7 @@ struct CompassChip: View {
                 }
                 .frame(width: size, height: size)
 
-                // Thin separator between the rotating face and the digit panel.
+                // Thin separator between rotating face and mils readout.
                 Rectangle()
                     .fill(.white.opacity(0.10))
                     .frame(width: size * 0.55, height: 0.5)

@@ -34,9 +34,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Overlay + label visibility toggles, plus imported-map management. Opened
- * from the "Layers" menu row — mirrors the iOS Layers sheet so the toggles
- * live here rather than cluttering the hamburger menu.
+ * Overlay + label toggles, plus imported-map management. Opened from
+ * "Layers" menu row - mirrors iOS so toggles live here instead of
+ * cluttering the hamburger menu.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -188,9 +188,8 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
     }
 }
 
-/// A drawing layer row: colour swatch + name + drawing count, with a
-/// visibility toggle — mirrors the iOS Layers sheet "Drawing Layers" section.
-/// Toggle off to hide a layer without deleting its drawings.
+/// Drawing layer row: colour swatch + name + count, visibility toggle.
+/// Mirrors iOS Layers sheet. Toggle off to hide without deleting.
 @Composable
 private fun DrawingLayerRow(layer: DrawingLayer, count: Int, onVisibleChange: (Boolean) -> Unit) {
     Row(

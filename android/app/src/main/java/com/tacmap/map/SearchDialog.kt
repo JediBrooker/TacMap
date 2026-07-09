@@ -268,9 +268,8 @@ internal fun buildSearchResults(
     return results.distinctBy { it.id }.take(20)
 }
 
-/** Returns null when place search is UNAVAILABLE (no geocoder / it errored,
- *  e.g. offline) so the caller can say so, vs an empty list = searched, no
- *  matches. */
+/** null = geocoder unavailable/errored (e.g. offline), empty list = searched
+ *  but no matches. Caller uses this to show the right message. */
 private suspend fun searchPlaces(
     context: Context,
     query: String,

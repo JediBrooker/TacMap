@@ -3,11 +3,11 @@ import UIKit
 
 // MARK: - Gesture handling
 //
-// All the gesture-recogniser targets installed in makeUIView: browse-mode
+// All the gesture recogniser targets from makeUIView: browse-mode
 // pan/pinch, centre-pivot rotation, drawing/measure taps, whole-shape drag,
-// and vertex-edit handle drag/delete. Extracted verbatim from
-// MapContainerView.swift; the recognisers' stored state lives on the
-// Coordinator (extensions can't add stored properties).
+// vertex-edit handle drag/delete. Pulled out of MapContainerView.swift;
+// recogniser stored state lives on Coordinator (extensions can't add
+// stored properties).
 extension MapContainerView.Coordinator {
 
     // MARK: Browse-mode gestures
@@ -16,9 +16,9 @@ extension MapContainerView.Coordinator {
         nextRegionChangeIsUserDriven = true
     }
 
-    /// Centre-pivot rotation. We keep MKMapView's `centerCoordinate`
-    /// pinned to the current screen-centre point and only mutate heading.
-    /// `g.rotation` is reset every change so we apply frame-to-frame deltas.
+    /// Centre-pivot rotation. Keep MKMapView's centerCoordinate pinned
+    /// to current screen centre, only mutate heading. g.rotation is
+    /// reset every change so we apply frame-to-frame deltas.
     @objc func handleRotation(_ g: UIRotationGestureRecognizer) {
         guard let mv = g.view as? MKMapView else { return }
         switch g.state {
@@ -50,10 +50,10 @@ extension MapContainerView.Coordinator {
         true
     }
 
-    /// Refuse to begin our long-press-drag recogniser when the
-    /// press lands on a vertex-edit handle. Otherwise our gesture
-    /// claims the touches and MapKit's annotation drag can never
-    /// fire — meaning the user can't actually move a vertex.
+    /// Don't begin our long-press-drag recogniser when the press
+    /// lands on a vertex-edit handle. Otherwise our gesture clobbers
+    /// the touches and MapKit's annotation drag can never fire, so
+    /// user can't actually move a vertex.
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         if g === drawingDragPress,
            let mv = g.view as? MKMapView {
@@ -67,11 +67,10 @@ extension MapContainerView.Coordinator {
 
     // MARK: Vertex-edit handle drag / delete
 
-    /// Direct pan-driven drag for a vertex-edit handle. Bypasses
-    /// MapKit's built-in (and unreliable for small custom views)
-    /// long-press-then-drag, so the user can pick up and move a
-    /// vertex with a single fluid gesture. While a drag is in
-    /// flight we disable the map's own scroll so the basemap
+    /// Direct pan-driven drag for vertex-edit handles. Bypasses
+    /// MapKit's built-in long-press-then-drag which is unreliable
+    /// for small custom views. User can just grab and move a vertex
+    /// in one gesture. We kill map scroll while dragging so basemap
     /// doesn't slide under the finger.
     @objc func handleVertexPan(_ pan: UIPanGestureRecognizer) {
         guard let view = pan.view as? MKAnnotationView,
@@ -88,8 +87,7 @@ extension MapContainerView.Coordinator {
             mv.isScrollEnabled = false
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         case .changed:
-            // Update the annotation's coordinate live so the
-            // handle visibly follows the finger.
+            // Update coordinate live so handle follows the finger.
             h.coordinate = coord
         case .ended, .cancelled, .failed:
             mv.isScrollEnabled = true
@@ -118,17 +116,16 @@ extension MapContainerView.Coordinator {
         case .began:
             if graphicsLocked { return }
             vertexLongPressMoved[key] = false
-            // Subtle "you're holding it" haptic so the user knows
-            // the hold has been registered — they can either lift
-            // (delete) or drag (move) from here.
+            // Subtle "you're holding it" haptic. From here they can
+            // either lift (delete) or drag (move).
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case .changed:
             vertexLongPressMoved[key] = true
         case .ended:
             let moved = vertexLongPressMoved[key] ?? false
             vertexLongPressMoved.removeValue(forKey: key)
-            // Movement during the hold means the user was dragging —
-            // the pan recogniser handled the move; skip delete.
+            // Movement during hold = user was dragging, pan recogniser
+            // handled it already. Skip delete.
             if moved { return }
             guard let view = g.view as? MKAnnotationView,
                   let h = view.annotation as? DrawingVertexHandleAnnotation,
@@ -154,7 +151,7 @@ extension MapContainerView.Coordinator {
         guard let mv = tap.view as? MKMapView else { return }
         let pt = tap.location(in: mv)
 
-        // Calibration mode wins — user is placing fiduciaries.
+        // Calibration mode wins, user is placing fiduciaries.
         if calibration.isCalibrating, let img = pdfImageView {
             if let pdfPoint = img.pdfPoint(forScreenTap: pt, in: mv) {
                 calibration.recordTap(pdfPoint: pdfPoint, screenPoint: pt)
@@ -168,9 +165,9 @@ extension MapContainerView.Coordinator {
             let coord = mv.convert(pt, toCoordinateFrom: mv)
             measureSession.addPoint(coord)
             refresh(on: mv,
-                    // Waypoints render via the SwiftUI overlay, not MKMapView
-                    // annotations, so mv.annotations is empty here — take them
-                    // from the store instead of reconstructing an empty list.
+                    // Waypoints render via SwiftUI overlay not MKMapView
+                    // annotations, so mv.annotations is empty here - just
+                    // grab them from the store.
                     waypoints: waypointStore.waypoints,
                     drawings:  drawingStore.visibleShapes,
                     session:   drawingSession,
@@ -178,7 +175,7 @@ extension MapContainerView.Coordinator {
             return
         }
 
-        // Drawing-mode taps add a vertex — never select existing shapes.
+        // Drawing-mode taps add a vertex, never select existing shapes.
         if drawingSession.isDrawing {
             let coord = mv.convert(pt, toCoordinateFrom: mv)
             let autoCommit = drawingSession.addPoint(coord)
@@ -186,9 +183,9 @@ extension MapContainerView.Coordinator {
                 drawingStore.add(shape)
             }
             refresh(on: mv,
-                    // Waypoints render via the SwiftUI overlay, not MKMapView
-                    // annotations, so mv.annotations is empty here — take them
-                    // from the store instead of reconstructing an empty list.
+                    // Waypoints render via SwiftUI overlay not MKMapView
+                    // annotations, so mv.annotations is empty here - just
+                    // grab them from the store.
                     waypoints: waypointStore.waypoints,
                     drawings:  drawingStore.visibleShapes,
                     session:   drawingSession,
@@ -196,17 +193,16 @@ extension MapContainerView.Coordinator {
             return
         }
 
-        // Locked → ignore all graphic taps (no vertex insert, no select);
-        // still let an empty-area tap dismiss a stray controls card.
+        // Locked - ignore all graphic taps (no vertex insert, no select).
+        // Still let empty-area tap dismiss a stray controls card tho.
         if graphicsLocked {
             if mapVM.selectedWaypointID != nil { mapVM.selectedWaypointID = nil }
             if mapVM.selectedDrawingID  != nil { mapVM.selectedDrawingID  = nil }
             return
         }
 
-        // Vertex-edit "+" midpoint handles: a single tap inserts
-        // a new vertex at the handle's current coordinate (a more
-        // discoverable affordance than the drag-the-plus path).
+        // Midpoint "+" handle tap inserts a new vertex at that
+        // coordinate. More discoverable than drag-the-plus.
         if let mid = midpointHandleHitTest(at: pt, on: mv),
            var shape = drawingStore.shapes.first(where: { $0.id == mid.shapeID }) {
             let coord = Coordinate2D(
@@ -219,10 +215,10 @@ extension MapContainerView.Coordinator {
             return
         }
 
-        // Hit-test against tactical symbols FIRST (drawn on top of
-        // drawings in the SwiftUI overlay), then against drawings.
-        // Bubbles are non-interactive so the tap arrives here even
-        // when the user taps directly on a symbol.
+        // Hit-test tactical symbols FIRST (they're drawn on top of
+        // drawings in the SwiftUI overlay), then drawings. Bubbles
+        // are non-interactive so tap arrives here even when user
+        // taps directly on a symbol.
         if let wpID = waypointHitTest(at: pt) {
             mapVM.selectedDrawingID = nil
             mapVM.selectedWaypointID = wpID
@@ -254,15 +250,14 @@ extension MapContainerView.Coordinator {
         switch press.state {
         case .began:
             if graphicsLocked { return }
-            // If the user pressed a vertex-edit handle for the
-            // currently selected drawing, defer to per-handle
-            // gestures (drag, long-press-to-delete) instead of
-            // grabbing the whole shape.
+            // If user pressed a vertex-edit handle for the selected
+            // drawing, bail out and let per-handle gestures (drag,
+            // long-press-to-delete) handle it instead.
             if pressIsOnVertexHandle(at: pt, on: mv) {
                 return
             }
             guard !drawingSession.isDrawing, !calibration.isCalibrating else { return }
-            // Waypoints sit on top of drawings — try them first.
+            // Waypoints sit on top of drawings, try them first.
             if let wpID = waypointHitTest(at: pt) {
                 draggingWaypointID = wpID
                 mv.isScrollEnabled = false

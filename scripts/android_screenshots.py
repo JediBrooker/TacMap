@@ -2,9 +2,9 @@
 """
 Capture raw Android marketing screenshots from a booted emulator.
 
-Text-driven via `uiautomator dump` (the Android analogue of XCUITest): the
-hamburger is found as the top-left clickable node; menu rows and sheet controls
-are found by their visible text. Best-effort — a missing control logs and skips.
+Text-driven via uiautomator dump (basically the Android version of XCUITest):
+hamburger is found as top-left clickable node, menu rows and sheet controls
+by their visible text. Best-effort - missing control just logs and skips.
 
     python3 scripts/android_screenshots.py <apk> <out_dir>
 """
@@ -59,7 +59,7 @@ def tap_text(text, pause=2.0, contains=True):
     print(f"  [!] not found: '{text}'"); return False
 
 def tap_hamburger(pause=2.0):
-    """Top-left clickable node = the menu button (no content-desc)."""
+    """Top-left clickable node = menu button (no content-desc on it)."""
     root = dump()
     best = None
     for n in root.iter("node"):
@@ -85,7 +85,7 @@ def back(n=1):
 # ---- run ----
 print("waiting for boot…"); wait_boot()
 time.sleep(4)
-adb("uninstall", PKG)  # release cert differs from any prior debug install
+adb("uninstall", PKG)  # nuke any prior debug install, release cert is different
 print("installing apk…"); print(adb("install", "-g", APK).stdout.decode()[-200:])
 adb("shell", "pm", "grant", PKG, "android.permission.ACCESS_FINE_LOCATION")
 adb("shell", "pm", "grant", PKG, "android.permission.ACCESS_COARSE_LOCATION")
@@ -116,10 +116,10 @@ def ensure_map(tries=5):
     adb("shell", "am", "start", "-n", ACT); time.sleep(3)
     return on_map()
 
-# 1) Layers sheet — capture it, then switch the basemap to Esri so the map
-#    renders. The Google base map is blank on locally-signed builds (the Maps
-#    key is whitelisted to the Play signing cert), but the Esri tile overlay
-#    draws regardless — and showcases that basemap.
+# 1) Layers sheet - capture it, then switch basemap to Esri so the map
+#    actually renders. Google base map is blank on locally-signed builds
+#    b/c the Maps key is whitelisted to the Play signing cert. Esri tile
+#    overlay draws regardless and showcases that basemap anyway.
 ensure_map()
 if tap_hamburger() and tap_text("Layers and Labels"):
     snap("a04-layers")
@@ -140,7 +140,7 @@ for label, name in [("Weather", "a03-weather"),
         snap(name)
     ensure_map()
 
-# 4) Unit Sync last — its dialog + keyboard are the messiest to dismiss.
+# 4) Unit Sync last - its dialog + keyboard are the messiest to dismiss
 print("-> Unit Sync")
 ensure_map()
 if tap_hamburger() and tap_text("Unit Sync"):
@@ -151,7 +151,7 @@ if tap_hamburger() and tap_text("Unit Sync"):
     if field:
         tap(*field, pause=1.0)
         adb("shell", "input", "text", "WOLFPACK-6"); time.sleep(1)
-        adb("shell", "input", "keyevent", "111"); time.sleep(1)  # close keyboard
+        adb("shell", "input", "keyevent", "111"); time.sleep(1)  # kill the keyboard
         tap_text("Join", pause=5.0)
     snap("a02-unit-sync")
 ensure_map()

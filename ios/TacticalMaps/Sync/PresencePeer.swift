@@ -1,8 +1,7 @@
 import Foundation
 
-/// A remote unit member whose location is being broadcast via the sync relay.
-/// Ephemeral — peers are removed when they send a `leave` message or go stale
-/// (no `loc` update for 45 seconds).
+/// Remote unit member broadcasting location via sync relay. Ephemeral -
+/// peers get removed on `leave` or when they go stale (no `loc` for 45s).
 struct PresencePeer: Identifiable {
     let clientId: String
     var callsign: String

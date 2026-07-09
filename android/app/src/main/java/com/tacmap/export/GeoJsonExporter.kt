@@ -15,17 +15,16 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Serialises waypoints and drawing layers into a GeoJSON FeatureCollection.
- * RFC 7946: coordinates are [longitude, latitude], CRS implicit WGS84.
+ * Serialises waypoints + drawing layers into a GeoJSON FeatureCollection.
+ * RFC 7946: coords are [longitude, latitude], CRS is implicit WGS84.
  */
 object GeoJsonExporter {
 
     /**
-     * @param density display density used to convert the stored stroke width
-     *   (Google-Maps **pixels**) to the density-independent **dp** that the
-     *   portable `stroke-width` key carries (matching iOS points and the
-     *   simplestyle-spec's CSS-px intent). Defaults to 1f — an identity
-     *   conversion for callers/tests that don't have a display to reference.
+     * @param density display density to convert stored stroke width (Google
+     *   Maps pixels) to density-independent dp that the portable `stroke-width`
+     *   key carries (matching iOS points and simplestyle-spec CSS-px intent).
+     *   Defaults to 1f, identity conversion for callers/tests with no display.
      */
     fun export(
         waypoints: List<Waypoint>,
@@ -91,8 +90,8 @@ object GeoJsonExporter {
                     put("tacticalmaps:scale_y", wp.scaleY)
                 }
             }
-            // Task/control-measure colour — shared lowercase token set (matches
-            // iOS): round-trips the symbol colour across platforms.
+            // task/control-measure colour, shared lowercase token set (matches
+            // iOS) so symbol colour round-trips across platforms
             put("tacticalmaps:task_color", wp.taskColor.name.lowercase())
 
             wp.notes?.let {
@@ -109,9 +108,9 @@ object GeoJsonExporter {
         }
     }
 
-    /** ISO-8601 truncated to whole seconds — canonical with iOS's exporter (no
-     *  fractional seconds), so the same object serialises identically on both
-     *  platforms and cross-platform sync doesn't churn on created_at. */
+    /** ISO-8601 truncated to whole seconds, same as iOS exporter (no fractional
+     *  seconds) so the same object serialises identically on both platforms and
+     *  cross-platform sync doesn't churn on created_at. */
     private fun isoSeconds(epochMs: Long): String =
         DateTimeFormatter.ISO_INSTANT.format(
             Instant.ofEpochMilli(epochMs).truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
@@ -139,13 +138,13 @@ object GeoJsonExporter {
                     put("tacticalmaps:layer", it.name)
                     put("tacticalmaps:layer_color", it.color.rgbHex())
                 }
-                // simplestyle-spec keys — read by iOS and external tools (colours
-                // as #RRGGBB, opacity separate). Emitting these is what makes
-                // Android drawings keep their styling on an iOS import.
+                // simplestyle-spec keys, read by iOS and external tools (colours
+                // as #RRGGBB, opacity separate). This is what makes Android
+                // drawings keep their styling on iOS import.
                 put("stroke", feature.strokeColor.rgbHex())
-                // Portable key in dp (px ÷ density) so iOS + external tools render
-                // the line at the same physical width. The legacy `stroke_width`
-                // below stays in raw px for older Android readers.
+                // portable key in dp (px / density) so iOS + external tools render
+                // at the same physical width. Legacy `stroke_width` below stays
+                // in raw px for older Android readers.
                 put("stroke-width", if (density > 0f) feature.strokeWidth / density else feature.strokeWidth)
                 if (feature.geometry == DrawingGeometry.POLYGON) {
                     put("fill", feature.fillColor.rgbHex())
@@ -153,15 +152,15 @@ object GeoJsonExporter {
                 }
                 put("tacticalmaps:stroke_style", feature.strokeStyle.name.lowercase())
                 put("tacticalmaps:stroke_unit", "dp")
-                // Legacy Android keys kept for backward-compatible reads.
+                // legacy Android keys for backward compat
                 put("stroke_color", feature.strokeColor.argbHex())
                 put("fill_color", feature.fillColor.argbHex())
                 put("stroke_width", feature.strokeWidth)
                 put("stroke_style", feature.strokeStyle.name.lowercase())
                 feature.lineGraphic?.let { put("tacticalmaps:line_graphic", it.wire) }
-                // Geometry is exported already baked (rotation/scale applied), so
-                // the transform is identity on the wire — re-import must not apply
-                // it a second time.
+                // geometry is exported already baked (rotation/scale applied) so
+                // transform is identity on the wire, re-import must not apply
+                // it a second time
                 put("scale_x", 1.0)
                 put("scale_y", 1.0)
                 put("rotation_degrees", 0.0)

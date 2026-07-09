@@ -7,13 +7,12 @@ import Grid
 
 /// Reads georeferencing metadata from a PDF.
 ///
-/// Supports the most common case for topographic GeoPDFs: an **OGC LGIDict**
-/// containing a `CTM` (PDF-user-space → projection) and a `Neatline`
-/// polygon. The Neatline bounding rect (in PDF user space) is *always*
-/// returned when present — even when the projection is one we can't decode
-/// for geographic bounds (UTM etc.). That lets callers crop title-block /
-/// legend marginalia from the rasterised page even when geographic bounds
-/// come from a hardcoded known-sheet entry.
+/// Handles the common case for topo GeoPDFs: an OGC LGIDict with a CTM
+/// (PDF-user-space -> projection) and a Neatline polygon. The Neatline
+/// bounding rect (PDF user space) is always returned when present, even
+/// when we can't decode the projection for geographic bounds. That lets
+/// callers crop title-block / legend marginalia from the rasterised page
+/// even when geo bounds come from a hardcoded known-sheet entry.
 enum GeoPDFReader {
 
     struct Bounds: Hashable {
@@ -22,12 +21,12 @@ enum GeoPDFReader {
         /// PDF-page crop rect (PDF user space, y-up, origin bottom-left)
         /// covering just the map content (LGIDict Neatline bounding box).
         let pdfCropRect: CGRect?
-        /// Affine mapping PDF user-space points → WGS84, fitted from the
-        /// GeoPDF control points (GPTS↔LPTS). When present, the overlay places
-        /// the page with this transform — capturing grid-convergence ROTATION
-        /// and true scale — instead of stretching it to the lat/lon box (which
-        /// leaves the sheet's grid ~1° out of true and offset from the MGRS
-        /// overlay). nil for LGIDict / known-sheet / fallback paths.
+        /// Affine mapping PDF user-space points to WGS84, fitted from the
+        /// GeoPDF control points (GPTS/LPTS). When present, overlay places
+        /// the page with this transform (captures grid-convergence rotation
+        /// and true scale) instead of stretching to the lat/lon box (which
+        /// leaves the sheet's grid ~1 deg off true). nil for LGIDict /
+        /// known-sheet / fallback paths.
         let placementAffine: AffineTransform2D?
 
         init(southWest: CLLocationCoordinate2D,
@@ -64,14 +63,14 @@ enum GeoPDFReader {
     }
 
     /// Try GeoPDF metadata first, then known-filename overrides.
-    /// Tries TWO georeferencing conventions in order:
-    ///   1. Adobe Geospatial (ISO 32000-2): page /VP → /Measure /Subtype GEO
-    ///      with /GPTS (geographic corners) and /BBox (viewport crop). This is
-    ///      what most modern topo PDFs (ADF/AUSLIG, USGS quads, Avenza imports)
-    ///      use. Gives pixel-accurate bounds + crop in one shot.
-    ///   2. OGC LGIDict (older): /LGIDict on page dict with /CTM + /Neatline.
+    /// Two georeferencing conventions tried in order:
+    /// 1. Adobe Geospatial (ISO 32000-2): page /VP -> /Measure /Subtype GEO
+    ///    with /GPTS (geographic corners) and /BBox (viewport crop). This is
+    ///    what most modern topo PDFs use (ADF/AUSLIG, USGS quads, Avenza).
+    ///    Gives pixel-accurate bounds + crop in one shot.
+    /// 2. OGC LGIDict (older): /LGIDict on page dict with /CTM + /Neatline.
     static func bounds(from url: URL) -> Bounds? {
-        // (1) Adobe Geospatial — the modern, common path. If present, trust it.
+        // (1) Adobe Geospatial - the modern, common path. If present just trust it.
         if let adobe = parseAdobeGeospatial(url: url),
            let sw = adobe.southWest, let ne = adobe.northEast {
             return Bounds(southWest: sw, northEast: ne,
@@ -98,22 +97,21 @@ enum GeoPDFReader {
         return nil
     }
 
-    /// Hardcoded sheet bounds for known demo PDFs. 1:25,000 NSW topo sheet
-    /// Holsworthy North — the PDF lacks a CTM in its LGIDict so we can’t
-    /// pixel-align it. We render the FULL page across the approximate
-    /// graticule bounds; the user gets the whole sheet visible (legend +
-    /// title block included). Pixel-accurate registration needs fiduciary
-    /// calibration — see `AffineFitter` in this directory; UI TBD.
+    /// Hardcoded sheet bounds for known demo PDFs. 1:25k NSW topo sheet
+    /// Holsworthy North - the PDF lacks a CTM in its LGIDict so we can’t
+    /// pixel-align it. Just render the full page across approximate graticule
+    /// bounds so the user gets the whole sheet (legend + title block included).
+    /// Pixel-accurate registration needs fiduciary calibration, see AffineFitter.
     private static let knownSheets: [String: Bounds] = [
         "Holsworthy_North_1-25000": Bounds(
             southWest: CLLocationCoordinate2D(latitude: -34.0625, longitude: 150.9375),
             northEast: CLLocationCoordinate2D(latitude: -33.9375, longitude: 151.0625),
-            pdfCropRect: nil   // render whole page — nothing cut off
+            pdfCropRect: nil   // render whole page, nothing cut off
         )
     ]
 
-    /// Mutable container so the parser can fill in whatever it can extract,
-    /// independent of whether geographic projection is supported.
+    /// Mutable container so parser can fill in whatever it manages to extract,
+    /// regardless of whether we support the geographic projection.
     private struct ParsedLGI {
         var southWest: CLLocationCoordinate2D?
         var northEast: CLLocationCoordinate2D?
@@ -123,18 +121,16 @@ enum GeoPDFReader {
 
     // MARK: - Adobe Geospatial (/VP /Measure) parsing
     //
-    // PDF page can have a /VP entry: an array of Viewport dictionaries.
+    // PDF page can have a /VP entry: array of Viewport dicts.
     // Each viewport has:
-    //   /BBox        — [x_min y_min x_max y_max] in PDF user space (the page
-    //                  region this viewport applies to)
-    //   /Measure     — a Measure dictionary
-    //     /Subtype /GEO          — geographic measurement
-    //     /GPTS [lat0 lon0 lat1 lon1 …]  — geographic corners (WGS84)
-    //     /LPTS [x0 y0 x1 y1 …]          — corresponding viewport-space corners
-    //                                       (typically 0–1 normalised)
-    //     /GCS << … >>                    — Geographic Coordinate System
+    //   /BBox    - [x_min y_min x_max y_max] in PDF user space
+    //   /Measure - a Measure dict
+    //     /Subtype /GEO       - geographic measurement
+    //     /GPTS [lat0 lon0 ...] - geographic corners (WGS84)
+    //     /LPTS [x0 y0 ...]     - viewport-space corners (0-1 normalised)
+    //     /GCS << ... >>        - Geographic Coordinate System
     //
-    // For our purposes: bounds = bbox of GPTS values, crop = BBox.
+    // For our purposes: bounds = bbox of GPTS, crop = BBox.
 
     private static func parseAdobeGeospatial(url: URL) -> ParsedLGI? {
         guard let doc  = PDFDocument(url: url),
@@ -149,14 +145,14 @@ enum GeoPDFReader {
             return nil
         }
 
-        // A georeferenced topo page usually carries SEVERAL viewports: the map
-        // neatline PLUS small marginalia insets (adjoining-sheets index, state
-        // locator). We must NOT assume viewport[0] is the map — QTopo sheets
-        // list the adjoining-sheets inset FIRST, and that inset is georeferenced
-        // against a 145°E prime meridian, so trusting it drops the import off
-        // the coast of West Africa. The map body is always the LARGEST viewport
-        // by BBox area, so choose that. Keep a crop-only fallback for viewports
-        // that yield a BBox but no usable geographic bounds.
+        // A georeferenced topo page usually has SEVERAL viewports: the map
+        // neatline plus small marginalia insets (adjoining-sheets index, state
+        // locator). Can't assume viewport[0] is the map - QTopo sheets list
+        // the adjoining-sheets inset FIRST, and that thing is georeferenced
+        // against a 145 deg E prime meridian, so trusting it drops the import
+        // off the coast of West Africa. The map body is always the LARGEST
+        // viewport by BBox area, so pick that one. Keep a crop-only fallback
+        // for viewports that give us a BBox but no usable geo bounds.
         let count = CGPDFArrayGetCount(vpRef)
         var bestGeo: (area: Double, sw: CLLocationCoordinate2D, ne: CLLocationCoordinate2D, crop: CGRect?, viewport: CGPDFDictionaryRef)?
         var bestCrop: (area: Double, crop: CGRect)?
@@ -179,24 +175,24 @@ enum GeoPDFReader {
         }
 
         if let g = bestGeo {
-            // Fit an affine from the chosen viewport's GPTS↔LPTS control points
-            // so the page can be placed with true rotation/scale (not stretched
-            // to the lat/lon box). Falls back to nil (bbox placement) if the
-            // viewport lacks LPTS or the fit is degenerate.
+            // Fit an affine from the chosen viewport's GPTS/LPTS control points
+            // so page gets placed with true rotation/scale instead of being
+            // stretched to the lat/lon box. Falls back to nil (bbox placement)
+            // if viewport lacks LPTS or the fit is degenerate.
             let affine = g.crop.flatMap { viewportAffine(g.viewport, crop: $0) }
             NSLog("[GeoPDF] Adobe Geospatial: \(count) viewport(s); chose largest geo (area=\(Int(g.area))) SW=\(g.sw.latitude),\(g.sw.longitude) NE=\(g.ne.latitude),\(g.ne.longitude) crop=\(String(describing: g.crop)) affine=\(affine != nil ? "yes" : "no")")
             return ParsedLGI(southWest: g.sw, northEast: g.ne, pdfCropRect: g.crop, placementAffine: affine)
         }
         if let c = bestCrop {
-            NSLog("[GeoPDF] Adobe Geospatial: no decodable GPTS in \(count) viewport(s) — returning largest crop only")
+            NSLog("[GeoPDF] Adobe Geospatial: no decodable GPTS in \(count) viewport(s) - returning largest crop only")
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: c.crop)
         }
         return nil
     }
 
-    /// /BBox → a well-formed crop rect in PDF user space (y-up, origin
-    /// bottom-left). USGS US Topo can write lly > ury, so take min/max to
-    /// avoid a negative-height rect.
+    /// /BBox -> a well-formed crop rect in PDF user space (y-up, origin
+    /// bottom-left). USGS US Topo sometimes writes lly > ury, so take
+    /// min/max to avoid a negative-height rect.
     private static func viewportCrop(_ viewport: CGPDFDictionaryRef) -> CGRect? {
         var bboxArr: CGPDFArrayRef?
         guard CGPDFDictionaryGetArray(viewport, "BBox", &bboxArr),
@@ -214,9 +210,9 @@ enum GeoPDFReader {
         return CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
     }
 
-    /// /Measure (/Subtype GEO) → SW/NE geographic corners from /GPTS, folding
-    /// the GCS prime-meridian offset into longitude. Returns nil when the
-    /// viewport carries no usable geographic measurement.
+    /// /Measure (/Subtype GEO) -> SW/NE geographic corners from /GPTS, folding
+    /// GCS prime-meridian offset into longitude. Returns nil when viewport
+    /// has no usable geographic measurement.
     private static func viewportGeoBounds(_ viewport: CGPDFDictionaryRef)
         -> (sw: CLLocationCoordinate2D, ne: CLLocationCoordinate2D)? {
 
@@ -234,8 +230,8 @@ enum GeoPDFReader {
         guard CGPDFDictionaryGetArray(measure, "GPTS", &gptsArr),
               let gpts = gptsArr else { return nil }
 
-        // GPTS longitudes are relative to the GCS prime meridian (Greenwich for
-        // the map body, but 145°E on some QTopo insets).
+        // GPTS longitudes are relative to GCS prime meridian (Greenwich for
+        // the map body, but 145 deg E on some QTopo insets).
         let primeMeridian = measurePrimeMeridian(measure)
 
         let count = CGPDFArrayGetCount(gpts)
@@ -265,12 +261,11 @@ enum GeoPDFReader {
                 CLLocationCoordinate2D(latitude: maxLat, longitude: maxLon))
     }
 
-    /// /Measure → least-squares affine (PDF user-space → WGS84) fitted from the
-    /// GPTS↔LPTS control points. LPTS are normalised (0–1) within the viewport
-    /// BBox, so each PDF-space control point is `crop.origin + lpts × crop.size`
-    /// — the SAME crop the page is rasterised + placed against, so the fit and
-    /// the render stay consistent. Returns nil if LPTS is absent or the points
-    /// are degenerate.
+    /// /Measure -> least-squares affine (PDF user-space -> WGS84) fitted from
+    /// GPTS/LPTS control points. LPTS are normalised (0-1) within viewport BBox
+    /// so each PDF-space control point is crop.origin + lpts * crop.size - same
+    /// crop the page is rasterised against, keeps the fit and render consistent.
+    /// Returns nil if LPTS is absent or points are degenerate.
     private static func viewportAffine(_ viewport: CGPDFDictionaryRef, crop: CGRect) -> AffineTransform2D? {
         var measureDict: CGPDFDictionaryRef?
         guard CGPDFDictionaryGetDictionary(viewport, "Measure", &measureDict),
@@ -307,10 +302,10 @@ enum GeoPDFReader {
         return try? AffineFitter.fit(fiducials).transform
     }
 
-    /// GPTS longitudes are measured from the GCS prime meridian — almost always
-    /// Greenwich (0), but some QTopo insets declare e.g. `PRIMEM["…",145.0]`.
-    /// Without adding that offset the longitudes come out ~145° too small.
-    /// Parses the offset from the Measure's /GCS /WKT string.
+    /// GPTS longitudes are measured from the GCS prime meridian, almost always
+    /// Greenwich (0) but some QTopo insets declare e.g. PRIMEM["...",145.0].
+    /// Without adding that offset the longitudes come out ~145 deg too small.
+    /// Parses the offset from Measure's /GCS /WKT string.
     private static func measurePrimeMeridian(_ measure: CGPDFDictionaryRef) -> Double {
         var gcsDict: CGPDFDictionaryRef?
         guard CGPDFDictionaryGetDictionary(measure, "GCS", &gcsDict),
@@ -329,8 +324,8 @@ enum GeoPDFReader {
 
     /// PDF spec lets LGIDict CTM/Neatline values be encoded as either PDF
     /// numbers OR PDF strings wrapped in parens. ADF and AUSLIG topo sheets
-    /// use the string encoding (e.g. `(135.8274208613)`). CGPDFArrayGetNumber
-    /// fails on strings, so we fall back to CGPDFArrayGetString + parse.
+    /// use the string encoding (e.g. (135.8274208613)). CGPDFArrayGetNumber
+    /// fails on strings so we fall back to CGPDFArrayGetString + parse.
     private static func arrayReal(_ arr: CGPDFArrayRef, _ idx: Int) -> Double? {
         var num: CGPDFReal = 0
         if CGPDFArrayGetNumber(arr, idx, &num) { return Double(num) }
@@ -348,9 +343,9 @@ enum GeoPDFReader {
         return CGPDFStringCopyTextString(s) as String?
     }
 
-    /// Read a dictionary value that may be encoded as either a PDF Name
-    /// (`/TC`) or a PDF String (`(TC)`). ADF/AUSLIG topo PDFs store all
-    /// LGIDict enum values as STRINGS, which is why our earlier reads
+    /// Read a dict value that may be encoded as either a PDF Name (/TC)
+    /// or a PDF String ((TC)). ADF/AUSLIG topo PDFs store all LGIDict enum
+    /// values as STRINGS - this was the culprit when our earlier reads
     /// silently returned nil and the parser defaulted to LL projection.
     private static func dictName(_ dict: CGPDFDictionaryRef, _ key: String) -> String? {
         var pPtr: UnsafePointer<Int8>?
@@ -376,8 +371,8 @@ enum GeoPDFReader {
         let mediaBox = page.bounds(for: .mediaBox)
 
         // Collect ALL LGIDict entries. ADF/AUSLIG sheets have multiple:
-        // BoundaryGuide, Elevation, Adjoining Sheet Guide, Layers — we want
-        // "Layers" (the main map content). Older single-dict format also OK.
+        // BoundaryGuide, Elevation, Adjoining Sheet Guide, Layers. We want
+        // "Layers" (main map content). Older single-dict format also OK.
         var entries: [CGPDFDictionaryRef] = []
         var arr: CGPDFArrayRef?
         var single: CGPDFDictionaryRef?
@@ -406,7 +401,7 @@ enum GeoPDFReader {
         NSLog("[GeoPDF] LGIDict: \(entries.count) entries; using '\(chosenDesc)'")
         let entryDict = chosen
 
-        // CTM (PDF user space → projection coords). 6 numbers, may be strings.
+        // CTM (PDF user space -> projection coords). 6 numbers, may be strings.
         var ctm = [Double](repeating: 0, count: 6)
         var ctmArr: CGPDFArrayRef?
         var haveCTM = false
@@ -443,7 +438,7 @@ enum GeoPDFReader {
             ]
         }
 
-        // Neatline crop in PDF user space — always available when Neatline is.
+        // Neatline crop in PDF user space, always available when Neatline is.
         let pdfXs = neatlinePts.map { Double($0.x) }
         let pdfYs = neatlinePts.map { Double($0.y) }
         let pdfCrop: CGRect? = {
@@ -455,14 +450,11 @@ enum GeoPDFReader {
                           height: maxPY - minPY)
         }()
 
-        // Projection. We now handle the full set:
-        //   LL / LongLat — geographic.
-        //   UT          — UTM (zone + hemisphere).
-        //   TC          — Transverse Mercator (arbitrary central meridian).
-        //   LC          — Lambert Conformal Conic (two standard parallels).
-        // Parameters are read directly from /Projection; /Display is consulted
-        // for the UTM shortcut (lets TC PDFs whose CentralMeridian matches a
-        // standard UTM zone reuse the NGA UTM helper).
+        // Projection. We handle: LL/LongLat (geographic), UT (UTM),
+        // TC (Transverse Mercator), LC (Lambert Conformal Conic).
+        // Params read from /Projection; /Display is consulted for the UTM
+        // shortcut (lets TC PDFs whose CentralMeridian matches a standard
+        // UTM zone reuse the NGA UTM helper).
         var projectionType = "LL"
         var utmZone: Int = 0
         var utmHemiName = "N"
@@ -473,10 +465,9 @@ enum GeoPDFReader {
         var scaleFactor:     Double = 1.0
         var stdParallel1:    Double = 0
         var stdParallel2:    Double = 0
-        // Resolved source datum: an ellipsoid + a geocentric translation to WGS84.
-        // Populated from either an inline /Datum dictionary (USGS US Topo & many
-        // OGC GeoPDFs) or a 2-letter /Datum name. `datumCode` is a human label
-        // for logging only.
+        // Resolved source datum: ellipsoid + geocentric translation to WGS84.
+        // Populated from either an inline /Datum dict (USGS US Topo and many
+        // OGC GeoPDFs) or a 2-letter /Datum name. datumCode is just for logging.
         var datumCode:       String = "WE"
         var srcEllipsoid = Ellipsoid.wgs84
         var datumDx = 0.0, datumDy = 0.0, datumDz = 0.0
@@ -504,12 +495,12 @@ enum GeoPDFReader {
             if let v = dictReal(pDict, "StandardParallelOne") { stdParallel1    = v }
             if let v = dictReal(pDict, "StandardParallelTwo") { stdParallel2    = v }
 
-            // Datum: an inline /Datum dictionary carries the source /Ellipsoid
-            // (SemiMajorAxis + InvFlattening) and the /ToWGS84 dx/dy/dz translation
-            // directly — the form USGS US Topo and many OGC GeoPDFs use. Only when
-            // /Datum is instead a bare 2-letter OGC name do we look it up in the
-            // DatumShift table. Reading the embedded params means a legacy-datum
-            // sheet in dictionary form gets its true 50–250 m shift (previously it
+            // Datum: inline /Datum dict carries the source /Ellipsoid
+            // (SemiMajorAxis + InvFlattening) and /ToWGS84 dx/dy/dz translation
+            // directly, which is what USGS US Topo and many OGC GeoPDFs use.
+            // Only when /Datum is a bare 2-letter OGC name do we look it up in
+            // the DatumShift table. Reading embedded params means a legacy-datum
+            // sheet in dict form gets its true 50-250m shift (previously just
             // fell through to WGS84 identity).
             var datumDict: CGPDFDictionaryRef?
             if CGPDFDictionaryGetDictionary(pDict, "Datum", &datumDict), let dDict = datumDict {
@@ -534,8 +525,8 @@ enum GeoPDFReader {
             }
         }
 
-        // /Display dict often carries the easy-to-use UTM mapping (Zone, Hemi)
-        // even when the main /Projection is TC. Prefer Display values when set.
+        // /Display dict often has the easy UTM mapping (Zone, Hemi) even when
+        // main /Projection is TC. Prefer Display values when set.
         var displayDict: CGPDFDictionaryRef?
         if CGPDFDictionaryGetDictionary(entryDict, "Display", &displayDict),
            let dDict = displayDict {
@@ -546,7 +537,7 @@ enum GeoPDFReader {
         }
 
         guard haveCTM else {
-            NSLog("[GeoPDF] LGIDict has no CTM — returning crop only")
+            NSLog("[GeoPDF] LGIDict has no CTM - returning crop only")
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
         }
 
@@ -561,9 +552,9 @@ enum GeoPDFReader {
         var lats: [Double] = []
         var lons: [Double] = []
 
-        // Build a Projection from what we parsed and dispatch. The inverse runs on
-        // the source datum's ellipsoid (resolved above); `DatumShift` then removes
-        // the datum offset to land on WGS84.
+        // Build a Projection from what we parsed. Inverse runs on the source
+        // datum's ellipsoid (resolved above); DatumShift then removes the datum
+        // offset to land on WGS84.
         let ellipsoid = srcEllipsoid
         let projection: Projection? = {
             switch projectionType {
@@ -601,7 +592,7 @@ enum GeoPDFReader {
 
             case "LC":
                 // LCC needs two standard parallels. Some encodings omit
-                // StandardParallelTwo for the "1SP" variant — treat as p2==p1.
+                // StandardParallelTwo for the "1SP" variant, just treat as p2==p1.
                 let p2 = stdParallel2 != 0 ? stdParallel2 : stdParallel1
                 return .lambertConformalConic(
                     stdParallel1:    stdParallel1,
@@ -619,7 +610,7 @@ enum GeoPDFReader {
         }()
 
         guard let proj = projection else {
-            NSLog("[GeoPDF] LGIDict projection='\(projectionType)' not supported — crop only")
+            NSLog("[GeoPDF] LGIDict projection='\(projectionType)' not supported - crop only")
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
         }
 
@@ -629,9 +620,9 @@ enum GeoPDFReader {
                 NSLog("[GeoPDF] corner \(idx) inverse failed (E=\(pt.x), N=\(pt.y))")
                 return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
             }
-            // Shift off the source datum onto WGS84 (identity for modern datums;
-            // removes the 50–250 m offset for legacy datums, whether named by a
-            // 2-letter code or carried as an inline /Datum ToWGS84 dictionary).
+            // Shift off source datum onto WGS84 (identity for modern datums;
+            // removes 50-250m offset for legacy datums, whether named by a
+            // 2-letter code or carried as an inline /Datum ToWGS84 dict).
             let w = DatumShift.toWGS84(lat: g.lat, lon: g.lon,
                                        sourceEllipsoid: srcEllipsoid,
                                        dx: datumDx, dy: datumDy, dz: datumDz)
@@ -642,7 +633,7 @@ enum GeoPDFReader {
 
         guard let minLon = lons.min(), let maxLon = lons.max(),
               let minLat = lats.min(), let maxLat = lats.max() else {
-            NSLog("[GeoPDF] decoded lats/lons empty — crop only")
+            NSLog("[GeoPDF] decoded lats/lons empty - crop only")
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
         }
 
@@ -666,7 +657,7 @@ enum GeoPDFReader {
     }
 
     /// Centre-on-camera fallback: 10km square. Used when no metadata exists
-    /// and the PDF isn't a known sheet — better than not rendering at all.
+    /// and the PDF isn't a known sheet. Better than not rendering at all.
     static func fallbackBounds(centeredOn camera: CLLocationCoordinate2D,
                                 halfWidthMetres: Double = 5000) -> Bounds {
         let metresPerDegLat = 111_320.0

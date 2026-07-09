@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Full-screen unlock gate shown when an App Lock PIN is set. Offers biometric
-/// (auto-prompted) and a 4-digit PIN fallback. After repeated failures the PIN
-/// entry is throttled with an escalating lockout (see `AppLock`).
+/// Full-screen unlock gate when App Lock PIN is set. Offers biometric
+/// (auto-prompted) and 4-digit PIN fallback. After repeated failures
+/// PIN entry is throttled with escalating lockout (see AppLock).
 struct LockView: View {
     let onUnlocked: () -> Void
     @State private var pin = ""
@@ -81,8 +81,8 @@ struct LockView: View {
     }
 }
 
-/// Enable / change / disable the App Lock PIN. Disabling or changing an existing
-/// PIN requires entering the current one, so a lock can't be removed by someone
+/// Enable / change / disable App Lock PIN. Disabling or changing existing
+/// PIN requires entering the current one so it can't be removed by someone
 /// who doesn't know it.
 struct AppLockSetupView: View {
     @Environment(\.dismiss) private var dismiss

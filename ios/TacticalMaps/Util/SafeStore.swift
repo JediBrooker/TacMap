@@ -1,17 +1,16 @@
 import Foundation
 
-/// Durable persistence primitives shared by the on-device stores.
+/// Shared persistence helpers for on-device stores.
 ///
-/// The critical guarantee is on the *read* path: a present-but-unreadable file
-/// is never treated as "no data". It is moved aside as `<name>.corrupt-<epoch>`
-/// and reported, so a caller cannot seed-then-overwrite the only copy of the
-/// user's drawings / waypoints. Writes use `Data.write(options: .atomic)`, which
-/// already writes to a temp file and renames, so a crash mid-write cannot
-/// truncate the target.
+/// Key thing on the read path: if a file exists but we can't decode it, we
+/// never treat it as "no data". It gets moved aside as `<name>.corrupt-<epoch>`
+/// so we don't accidentally clobber the user's drawings/waypoints. Writes go
+/// through `Data.write(options: .atomic)` which does the temp-file-then-rename
+/// dance, so a crash mid-write can't truncate anything.
 enum SafeStore {
 
     enum Load<T> {
-        /// File does not exist — a genuine fresh install.
+        /// File does not exist, genuine fresh install.
         case empty
         /// Decoded cleanly.
         case loaded(T)
@@ -20,10 +19,10 @@ enum SafeStore {
     }
 
     static func write(_ data: Data, to url: URL) throws {
-        // Encrypt at rest. `...UntilFirstUserAuthentication` (not `.complete`) is
-        // deliberate: it keeps the file readable/writable after the first device
-        // unlock following a boot, so background GPX track writing (screen off)
-        // and normal reads still work, while the data stays encrypted at rest.
+        // Encrypt at rest. Using `...UntilFirstUserAuthentication` instead of
+        // `.complete` on purpose - `.complete` would lock us out during background
+        // GPX recording (screen off). This way file stays accessible after first
+        // unlock but still encrypted at rest.
         try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 

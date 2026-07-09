@@ -1,8 +1,8 @@
 import XCTest
 
-/// Regression test for the bug where Layers toggles (labels/overlays) reset on
-/// every relaunch because `LayerVisibility` was in-memory only. They now
-/// persist to UserDefaults, so a toggle set before quitting must survive a
+/// Regression test for the bug where Layers toggles (labels/overlays) reset
+/// on every relaunch b/c LayerVisibility was in-memory only. They persist
+/// to UserDefaults now, so a toggle set before quitting must survive a
 /// cold relaunch.
 final class LayerPersistenceTests: XCTestCase {
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
@@ -46,8 +46,8 @@ final class LayerPersistenceTests: XCTestCase {
         app.buttons["Done"].tap()
     }
 
-    /// Tap the switch control itself (right edge). A plain `.tap()` on a
-    /// SwiftUI Form Toggle can land on the row label and fail to flip it.
+    // Tap the switch control itself (right edge). A plain .tap() on a
+    // SwiftUI Form Toggle can land on the row label and not actually flip it.
     private func flip(_ sw: XCUIElement) {
         sw.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
     }

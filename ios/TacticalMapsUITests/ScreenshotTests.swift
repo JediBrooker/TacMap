@@ -2,14 +2,14 @@ import XCTest
 
 /// Captures App Store marketing screenshots deterministically.
 ///
-/// Runs the real app, grants location, drops a friendly unit + a hostile
-/// unit + an Assembly Area task at the crosshair (panning between each so
-/// they don't stack), then visits the symbol builder, drawings panel and
-/// About screen. Each `snap` is attached to the test result; the
-/// `scripts/ios_screenshots.sh` wrapper extracts them from the .xcresult.
+/// Runs the real app, grants location, drops a friendly unit + hostile
+/// unit + Assembly Area task at the crosshair (panning between each so
+/// they don't stack), then visits symbol builder, drawings panel and
+/// About screen. Each snap is attched to the test result and
+/// scripts/ios_screenshots.sh extracts them from the .xcresult.
 ///
-/// Location is set at the device level by the wrapper script
-/// (`xcrun simctl location set`), so the basemap shows Shoalwater Bay.
+/// Location is set at device level by the wrapper script
+/// (xcrun simctl location set) so the basemap shows Shoalwater Bay.
 final class ScreenshotTests: XCTestCase {
     private var app: XCUIApplication!
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
@@ -55,8 +55,8 @@ final class ScreenshotTests: XCTestCase {
         sleep(1)
     }
 
-    /// Small map pan so the next "Add at Crosshair" lands at a fresh spot
-    /// rather than stacking on the previous symbol. dx/dy are normalized.
+    // Small pan so the next Add at Crosshair lands at a fresh spot
+    // instead of stacking on the previous symbol. dx/dy normalized.
     private func panMap(dx: CGFloat, dy: CGFloat) {
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5 + dx, dy: 0.5 + dy))
@@ -64,7 +64,7 @@ final class ScreenshotTests: XCTestCase {
         sleep(1)
     }
 
-    /// Menu → Symbology → Add at Crosshair → [configure] → Save → Done.
+    // Menu > Symbology > Add at Crosshair > [configure] > Save > Done.
     private func addSymbol(configure: () -> Void) {
         openMenu()
         guard tap("Symbology") else { return }
@@ -80,7 +80,7 @@ final class ScreenshotTests: XCTestCase {
     // MARK: - The capture run
 
     func testCaptureScreenshots() {
-        // 1) Hero — live MGRS HUD over the basemap.
+        // 1) Hero - live MGRS HUD over the basemap.
         snap("01-main")
 
         // 2) Friendly Infantry Platoon (defaults: friend / platoon / infantry).
@@ -95,7 +95,7 @@ final class ScreenshotTests: XCTestCase {
         _ = tap("Done")
         sleep(1)
 
-        // 3) Hostile unit — change Affiliation to Hostile (red diamond).
+        // 3) Hostile unit - change Affiliation to Hostile (red diamond).
         panMap(dx: 0.16, dy: -0.12)
         addSymbol {
             if tap("Affiliation", timeout: 6) {
@@ -148,11 +148,11 @@ final class ScreenshotTests: XCTestCase {
         snap("layers")
     }
 
-    // MARK: - Marketing set (1.1.0 — new features)
+    // MARK: - Marketing set (1.1.0 - new features)
 
-    /// Taps the first button whose label CONTAINS `text` (case-insensitive),
-    /// so menu rows with trailing ellipses ("Unit Sync…", "Import / Export…")
-    /// match without hard-coding the exact glyph.
+    // Taps the first button whose label contains `text` (case-insensitive)
+    // so menu rows with trailing ellipses ("Unit Sync...", "Import / Export...")
+    // match without hard-coding the exact glyph.
     @discardableResult
     private func tapContaining(_ text: String, timeout: TimeInterval = 10) -> Bool {
         let pred = NSPredicate(format: "label CONTAINS[c] %@", text)
@@ -165,8 +165,8 @@ final class ScreenshotTests: XCTestCase {
         return true
     }
 
-    /// Dismiss whatever sheet/sub-page is up: try a close-style button, else
-    /// drag the sheet down. Best-effort so the run never aborts on one sheet.
+    // Dismiss whatever sheet is up. Try a close-style button, else just
+    // drag the sheet down. Best-effort so the run doesn't abort on one sheet.
     private func dismissSheet() {
         for label in ["Close", "Done", "Cancel"] {
             let b = app.buttons[label]
@@ -181,17 +181,17 @@ final class ScreenshotTests: XCTestCase {
     /// One run that captures the full 1.1.0 marketing set. Every step is
     /// best-effort (guarded), so a single missing control can't abort the rest.
     func testCaptureMarketing() {
-        // 01 — live HUD: MGRS + UTM + mils compass over the basemap.
+        // 01 - live HUD: MGRS + UTM + mils compass over the basemap.
         snap("m01-hud")
 
-        // 02 — the consolidated command menu.
+        // 02 - the consolidated command menu.
         openMenu()
         sleep(1)
         snap("m02-menu")
         _ = tap("Close")
         sleep(1)
 
-        // 03 — Unit Sync (the flagship): join a room so it shows Connected.
+        // 03 - Unit Sync (the flagship): join a room so it shows Connected.
         openMenu()
         _ = tapContaining("Unit Sync")
         sleep(2)
@@ -206,28 +206,28 @@ final class ScreenshotTests: XCTestCase {
         snap("m03-unit-sync")
         dismissSheet()
 
-        // 04 — Weather + UAV flight-safety.
+        // 04 - Weather + UAV flight-safety.
         openMenu()
         _ = tapContaining("Weather")
         sleep(3)               // open-meteo fetch
         snap("m04-weather")
         dismissSheet()
 
-        // 05 — Layers & Labels: basemap selector + terrain heatmap.
+        // 05 - Layers & Labels: basemap selector + terrain heatmap.
         openMenu()
         _ = tap("Layers and Labels")
         sleep(2)
         snap("m05-layers")
         dismissSheet()
 
-        // 06 — Import / Export sub-page (the new grouping).
+        // 06 - Import / Export sub-page (the new grouping).
         openMenu()
         _ = tapContaining("Import / Export")
         sleep(2)
         snap("m06-import-export")
         dismissSheet()         // back out of the sub-page / menu
 
-        // 07 — APP-6 symbol builder with live preview.
+        // 07 - APP-6 symbol builder with live preview.
         openMenu()
         _ = tap("Symbology")
         _ = tap("Add at Crosshair")
@@ -238,7 +238,7 @@ final class ScreenshotTests: XCTestCase {
         _ = tap("Done")
         sleep(1)
 
-        // 08 — a second hostile unit + assembly-area, for a populated map.
+        // 08 - a second hostile unit + assembly-area, for a populated map.
         panMap(dx: 0.16, dy: -0.12)
         addSymbol {
             if tap("Affiliation", timeout: 6) { sleep(1); _ = tap("Hostile", timeout: 6); sleep(1) }
@@ -249,13 +249,13 @@ final class ScreenshotTests: XCTestCase {
         sleep(2)
         snap("m08-symbols")
 
-        // 09 — GPX recording: the live REC indicator on the map.
+        // 09 - GPX recording: the live REC indicator on the map.
         openMenu()
         _ = tapContaining("Start Track Recording")
         sleep(2)
         snap("m09-recording")
 
-        // 10 — search (place name or full / partial MGRS).
+        // 10 - search (place name or full / partial MGRS).
         openMenu()
         _ = tapContaining("Search")
         sleep(2)
@@ -263,11 +263,11 @@ final class ScreenshotTests: XCTestCase {
         dismissSheet()
     }
 
-    /// Hero shot: join the unit-sync room that the host script
-    /// (scripts/sync_push_situation.mjs) pre-populated with a NATO APP-6
-    /// company-attack overlay. The snapshot delivers the shared picture and
-    /// the on-screen Unit Sync indicator goes Connected — symbology (the #1
-    /// feature) + live encrypted sync in one frame.
+    // Hero shot: join the unit-sync room that the host script
+    // (scripts/sync_push_situation.mjs) pre-populated with a NATO APP-6
+    // company-attack overlay. Snapshot shows the shared picture and the
+    // on-screen Unit Sync indicator goes Connected - symbology (the #1
+    // feature) + live encrypted sync in one frame.
     func testCaptureHero() {
         openMenu()
         _ = tapContaining("Unit Sync")
@@ -284,7 +284,7 @@ final class ScreenshotTests: XCTestCase {
         sleep(2)
 
         // Turn on map labels (stay on the default Apple Satellite basemap, which
-        // loads reliably — graphics are bright/white so they read on it).
+        // loads reliably, graphics are bright/white so they read on it).
         openMenu()
         _ = tap("Layers and Labels")
         sleep(2)
@@ -299,9 +299,9 @@ final class ScreenshotTests: XCTestCase {
         snap("hero")
     }
 
-    /// Capture each basemap (Satellite / Esri / OpenTopoMap terrain) as a clean
-    /// map, for the "Satellite or terrain" fan slide. OTM rate-limits its tiles,
-    /// so the terrain step waits a long time for them to stream in.
+    // Capture each basemap (Satellite / Esri / OpenTopoMap terrain) as a
+    // clean map for the "Satellite or terrain" fan slide. OTM rate-limits
+    // its tiles so the terrain step waits ages for them to stream in.
     func testCaptureBasemaps() {
         sleep(2)
         let maps: [(String, String, UInt32)] = [
@@ -334,10 +334,10 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    /// Capture the GeoPDF-import hero: import a US Topo GeoPDF (pre-copied into
-    /// the app's Documents, so it shows in Files under "On My iPhone › TacMap")
-    /// then overlay the re-centred NATO situation. Device location is set to the
-    /// PDF/situation centre so "Centre on My Location" frames it.
+    // Capture the GeoPDF-import hero: import a US Topo GeoPDF (pre-copied
+    // into the app's Documents so it shows in Files under On My iPhone >
+    // TacMap) then overlay the re-centred NATO situation. Device location
+    // is set to the PDF/situation centre so Centre on My Location frames it.
     func testCaptureGeoPdf() {
         sleep(2)
         // 1) import the GeoPDF. "PDF Map…" lives inside the Import / Export

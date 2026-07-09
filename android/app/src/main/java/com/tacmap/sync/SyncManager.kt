@@ -35,22 +35,22 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * Real-time shared-tactical-picture sync client. Connects to the E2E-blind relay
- * ([RELAY_BASE]) for a unit room derived from a join code, and keeps waypoints +
- * drawings in step across the unit's devices.
+ * Real-time shared-tactical-picture sync client. Connects to the E2E-blind
+ * relay ([RELAY_BASE]) for a unit room derived from a join code, keeps
+ * waypoints + drawings in step across the unit's devices.
  *
- * Each object is serialised as a single-feature GeoJSON document (the same
- * cross-platform schema TacMap already round-trips), encrypted with the
- * room key ([SyncCrypto]) and relayed as opaque ciphertext — the server never
- * sees plaintext. Layers ride along in the feature properties, so they
- * reconstruct on the receiver without a separate channel.
+ * Each object is serialised as a single-feature GeoJSON doc (same cross-
+ * platform schema TacMap already round-trips), encrypted with room key
+ * ([SyncCrypto]) and relayed as opaque ciphertext - server never sees
+ * plaintext. Layers ride along in feature properties so they reconstruct
+ * on the reciever without a separate channel.
  *
- * Merge is last-write-wins on a per-object Lamport version; echo is suppressed
- * by tracking the last serialised form we sent/received for each id so applying
- * a remote change doesn't bounce back out.
+ * Merge is last-write-wins on per-object Lamport version; echo suppressed
+ * by tracking last serialised form we sent/recieved for each id so
+ * applying a remote change doesn't bounce back out.
  *
- * NOTE: compile-verified; convergence / no-echo behaviour should be confirmed
- * on two devices against the live relay.
+ * NOTE: compile-verified; convergence / no-echo should be confirmed on
+ * two devices against the live relay.
  */
 @OptIn(FlowPreview::class)
 class SyncManager(
@@ -65,7 +65,7 @@ class SyncManager(
     val status: StateFlow<Status> = _status.asStateFlow()
 
     private val _room = MutableStateFlow<String?>(null)
-    /** Join code of the active room (for display), or null when not syncing. */
+    /** Join code of active room (for display), null when not syncing. */
     val room: StateFlow<String?> = _room.asStateFlow()
 
     private val _peers = MutableStateFlow<Map<String, PresencePeer>>(emptyMap())
@@ -80,7 +80,7 @@ class SyncManager(
             savePresenceConfig()
         }
 
-    /** Provide a location supplier so sendPresence can read the latest fix. */
+    /** Hook up a location supplier so sendPresence can grab the latest fix. */
     var locationProvider: (() -> Location?)? = null
 
     private val prefs = context.applicationContext.getSharedPreferences("sync", Context.MODE_PRIVATE)
@@ -179,7 +179,7 @@ class SyncManager(
         for (wp in wps) current[wp.id] = "waypoint" to GeoJsonExporter.export(listOf(wp), emptyList(), doc.layers)
         for (f in doc.features) current[f.id] = "drawing" to GeoJsonExporter.export(emptyList(), listOf(f), doc.layers)
 
-        // New / changed → put.
+        // new / changed -> put
         for ((id, kc) in current) {
             val (kind, content) = kc
             if (lastContent[id] == content) continue
@@ -189,7 +189,7 @@ class SyncManager(
             kindById[id] = kind
             sendPut(id, clock, kind, content)
         }
-        // Removed → del.
+        // removed -> del
         val gone = lastContent.keys.filter { it !in current }
         for (id in gone) {
             clock += 1
@@ -221,7 +221,7 @@ class SyncManager(
             "snapshot" -> {
                 val items = msg.optJSONArray("items") ?: JSONArray()
                 for (i in 0 until items.length()) applyRecord(items.getJSONObject(i))
-                // Populate peers from the snapshot's members array (first chunk).
+                // populate peers from snapshot's members array (first chunk)
                 val members = msg.optJSONArray("members")
                 if (members != null) {
                     for (i in 0 until members.length()) {
@@ -264,12 +264,12 @@ class SyncManager(
         parsed.drawings.forEach { upsertDrawing(it) }
 
         versions[id] = v
-        // Re-export the applied object so the echo guard matches what our own
-        // diff will compute next emission (import→export must be a fixed point).
+        // re-export so echo guard matches what our next diff will see
+        // (import -> export must be a fixed point)
         kindById[id] = if (parsed.waypoints.isNotEmpty()) "waypoint" else "drawing"
         lastContent[id] = reexport(id)
 
-        // Notify the UI that a remote change was applied (conflict notification).
+        // notify UI about the remote change (conflict notification)
         val objectName = parsed.waypoints.firstOrNull()?.name
             ?: parsed.drawings.firstOrNull()?.name
             ?: "Object"
@@ -308,7 +308,7 @@ class SyncManager(
         else drawingStore.addFeature(f)
     }
 
-    /** Re-serialise the now-local object so the next diff sees no spurious change. */
+    /** Re-serialise now-local object so next diff doesn't see a spurious change. */
     private fun reexport(id: String): String {
         val doc = drawingStore.document.value
         waypointStore.waypoints.value.firstOrNull { it.id == id }
@@ -429,7 +429,7 @@ class SyncManager(
     }
 
     companion object {
-        /** Default E2E-blind relay. Self-hosters can point this at their own Worker. */
+        /** Default E2E-blind relay. Self-hosters can swap in their own Worker. */
         const val RELAY_BASE = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
     }
 }

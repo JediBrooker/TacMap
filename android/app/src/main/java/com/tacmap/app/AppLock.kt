@@ -5,17 +5,16 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 
 /**
- * Optional app-access lock (4-digit PIN). A deterrent for a lost/borrowed
- * device — NOT full at-rest OPSEC. The PIN is never stored: we keep a random
- * salt plus a stretched SHA-256 hash (120k rounds) so the tiny PIN space isn't
- * trivially recovered from the stored value. Stored in app-private prefs with
- * `allowBackup=false` (manifest), so it is not written to cloud backups.
+ * Optional 4-digit PIN lock for the app. Just a deterrent for lost/borrowed
+ * devices, NOT real at-rest OPSEC. We never store the PIN itself - just a
+ * random salt + stretched SHA-256 hash (120k rounds) so the tiny keyspace
+ * isn't trivially recoverable. Lives in app-private prefs with
+ * `allowBackup=false` (manifest) so it stays off cloud backups.
  *
- * Online guessing is throttled with an escalating lockout, and disabling or
- * changing the PIN requires the current one — a lock can't be silently removed
- * by someone who doesn't know it.
+ * Escalating lockout on wrong guesses, and you need the current PIN to
+ * change or disable the lock so it can't be silently nuked.
  *
- * PIN-only for now; biometric unlock is a follow-up (needs androidx.biometric).
+ * PIN-only for now; biometric is a follow-up (needs androidx.biometric).
  */
 class AppLock(context: Context) {
     private val prefs = context.applicationContext
@@ -33,15 +32,14 @@ class AppLock(context: Context) {
             .apply()
     }
 
-    /** Change the PIN, requiring the current one. Returns false (no change) if
-     *  the current PIN is wrong or the lock is throttled. */
+    /** Change PIN. Returns false if current PIN is wrong or we're in lockout. */
     fun changePin(currentPin: String, newPin: String): Boolean {
         if (!verify(currentPin)) return false
         setPin(newPin)
         return true
     }
 
-    /** Disable the lock, requiring the current PIN. Returns false if wrong. */
+    /** Turn off the lock. Needs current PIN, returns false if wrong. */
     fun disable(currentPin: String): Boolean {
         if (!isEnabled) { clearAll(); return true }
         if (!verify(currentPin)) return false
@@ -56,14 +54,14 @@ class AppLock(context: Context) {
             .apply()
     }
 
-    /** Milliseconds remaining on the current lockout, or 0 if attempts allowed. */
+    /** Ms left on current lockout, 0 if good to go. */
     fun lockoutRemainingMs(): Long {
         val until = prefs.getLong(KEY_LOCKED_UNTIL, 0L)
         return (until - System.currentTimeMillis()).coerceAtLeast(0L)
     }
 
     fun verify(pin: String): Boolean {
-        if (lockoutRemainingMs() > 0L) return false // throttled — reject without checking
+        if (lockoutRemainingMs() > 0L) return false // still locked out, bail
         val salt = prefs.getString(KEY_SALT, null)?.fromHex() ?: return false
         val stored = prefs.getString(KEY_HASH, null)?.fromHex() ?: return false
         return if (constantTimeEquals(hash(pin, salt), stored)) {

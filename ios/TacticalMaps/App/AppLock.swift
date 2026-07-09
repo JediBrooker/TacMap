@@ -3,17 +3,17 @@ import CryptoKit
 import LocalAuthentication
 import Security
 
-/// Optional app-access lock (PIN + biometric). A deterrent for a lost/borrowed
-/// device — NOT full at-rest OPSEC (a captured, unlocked device can still be
-/// forensically imaged). The PIN is never stored: we keep a random salt plus a
-/// stretched SHA-256 hash (120k rounds) so the tiny 4-digit space isn't trivially
-/// brute-forced from the stored value.
+/// Optional app-access lock (PIN + biometric). Basically a deterrent for a
+/// lost/borrowed device, NOT full at-rest OPSEC (a captured unlocked device
+/// can still be forensically imaged). The PIN is never stored - we keep a
+/// random salt + stretched SHA-256 hash (120k rounds) so the tiny 4-digit
+/// space isn't trivially brute-forced from the stored value.
 ///
-/// The salt, hash, and failed-attempt counters live in the **Keychain**
-/// (`WhenUnlockedThisDeviceOnly`) — not UserDefaults — so they are not written to
-/// device/iCloud backups and are unreadable while the device is locked. Online
-/// guessing is throttled with escalating lockouts, and disabling/changing the PIN
-/// requires the current PIN.
+/// Salt, hash, and failed-attempt counters live in the Keychain
+/// (WhenUnlockedThisDeviceOnly) not UserDefaults, so they don't end up in
+/// device/iCloud backups and are unreadable while device is locked. Online
+/// guessing is throttled with escalating lockouts, and disabling/changing
+/// the PIN requires the current one.
 enum AppLock {
     private static let saltKey = "applock.salt"
     private static let hashKey = "applock.hash"
@@ -21,14 +21,14 @@ enum AppLock {
     private static let lockUntilKey = "applock.lockeduntil"
     private static let iterations = 120_000
 
-    // Legacy UserDefaults keys (pre-Keychain) — migrated on first access.
+    // Legacy UserDefaults keys (pre-Keychain), migrated on first access.
     private static let legacySaltKey = "applock.salt.v1"
     private static let legacyHashKey = "applock.hash.v1"
 
     /// After this many consecutive failures, lockouts kick in.
     private static let freeAttempts = 5
-    /// Escalating lockout durations (seconds), indexed by failures past the free
-    /// allowance and clamped to the last entry.
+    /// Escalating lockout durations (seconds). Indexed by failures past the
+    /// free allowance, clamped to last entry.
     private static let lockoutLadder: [TimeInterval] = [30, 60, 300, 900, 3600]
 
     static var isEnabled: Bool {
@@ -43,9 +43,9 @@ enum AppLock {
         resetThrottle()
     }
 
-    /// Disable the lock. Requires the current PIN when one is set (returns false
-    /// and changes nothing if the PIN is wrong), so a lock can't be silently
-    /// removed by someone who doesn't know it.
+    /// Disable the lock. Requires current PIN when one is set (returns false
+    /// and changes nothing if wrong) so it can't be silently nuked by someone
+    /// who doesn't know it.
     @discardableResult
     static func disable(currentPIN: String) -> Bool {
         guard isEnabled else { clearAll(); return true }
@@ -54,7 +54,7 @@ enum AppLock {
         return true
     }
 
-    /// Unconditional clear — only for internal/first-time-setup use.
+    /// Unconditional clear - only for internal / first-time-setup use.
     static func clear() { clearAll() }
 
     private static func clearAll() {
@@ -65,7 +65,7 @@ enum AppLock {
         UserDefaults.standard.removeObject(forKey: legacyHashKey)
     }
 
-    /// Seconds remaining on the current lockout, or 0 if unlocked-for-attempts.
+    /// Seconds remaining on current lockout, or 0 if good to go.
     static var lockoutRemaining: TimeInterval {
         guard let data = keychainGet(lockUntilKey),
               let until = data.toDouble() else { return 0 }
@@ -73,7 +73,7 @@ enum AppLock {
     }
 
     static func verify(_ pin: String) -> Bool {
-        if lockoutRemaining > 0 { return false } // throttled — reject without checking
+        if lockoutRemaining > 0 { return false } // throttled, just reject
         guard let salt = keychainGet(saltKey),
               let stored = keychainGet(hashKey) else { return false }
         if constantTimeEqual(hash(pin, salt: salt), stored) {
@@ -124,7 +124,7 @@ enum AppLock {
 
     // MARK: legacy migration
 
-    /// Move any pre-Keychain UserDefaults salt/hash into the Keychain once.
+    /// Migrate any pre-Keychain UserDefaults salt/hash into Keychain. One-shot.
     private static func migrateIfNeeded() {
         guard keychainGet(hashKey) == nil,
               let salt = UserDefaults.standard.data(forKey: legacySaltKey),

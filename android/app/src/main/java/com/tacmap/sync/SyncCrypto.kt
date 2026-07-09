@@ -10,30 +10,29 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * End-to-end crypto for unit sync. A unit shares a **join code**; from it each
- * device derives three values via ONE expensive password-stretch:
+ * End-to-end crypto for unit sync. A unit shares a join code; each device
+ * derives three values via ONE expensive password-stretch:
  *
- *   master     = PBKDF2-HMAC-SHA256(joinCode, SALT, [PBKDF2_ITERATIONS]) — 32 B
- *   roomId     = base64url(HMAC(master, "…roomid…"))  — routing id (relay-visible)
- *   roomKey    = HMAC(master, "…roomkey…")            — AES-256-GCM key (never sent)
- *   authToken  = base64url(HMAC(master, "…auth…"))    — writer-auth bearer token
+ *   master     = PBKDF2-HMAC-SHA256(joinCode, SALT, PBKDF2_ITERATIONS) - 32 B
+ *   roomId     = base64url(HMAC(master, "...roomid..."))  - routing id (relay-visible)
+ *   roomKey    = HMAC(master, "...roomkey...")             - AES-256-GCM key (never sent)
+ *   authToken  = base64url(HMAC(master, "...auth..."))    - writer-auth bearer token
  *
- * Password stretching (PBKDF2) is the point: a human-memorable join code
- * ("bravo-tonight") is otherwise brute-forceable offline against retained
- * ciphertext. Because roomId is now downstream of the same 210k-iteration
- * PBKDF2, it is no longer a *cheap* offline verifier for the join code, and it is
- * unguessable (256-bit) without the code. authToken travels only in the
- * WebSocket handshake header — never in the URL/logs — so a leaked roomId alone
- * cannot write to a room.
+ * Password stretching (PBKDF2) is the whole point: a human-memorable join
+ * code ("bravo-tonight") is otherwise trivially brute-forceable offline
+ * against retained ciphertext. B/c roomId is downstream of the same 210k-iter
+ * PBKDF2, it's no longer a cheap offline verifier for the join code, and its
+ * unguessable (256-bit) without the code. authToken only travels in the
+ * WebSocket handshake header, never in URL/logs, so a leaked roomId alone
+ * can't write to a room.
  *
- * Objects are sealed AES-256-GCM with the routing metadata bound in as AEAD
- * associated data, so a hostile relay cannot move a blob to a different id /
- * version. Wire blob = `iv(12) ‖ ciphertext ‖ tag(16)` — byte-identical to iOS
- * CryptoKit's `AES.GCM.SealedBox.combined`. Pure java.* so it unit-tests on the
- * host JVM.
+ * Objects sealed AES-256-GCM with routing metadata bound as AEAD associated
+ * data so a hostile relay can't move a blob to a different id/version.
+ * Wire blob = iv(12) || ciphertext || tag(16), byte-identical to iOS
+ * CryptoKit AES.GCM.SealedBox.combined. Pure java.* so it tests on host JVM.
  *
- * NOTE: join codes are assumed ASCII (the in-app generator produces ASCII), so
- * the PBKDF2 char→byte encoding matches iOS's UTF-8 byte encoding.
+ * NOTE: join codes assumed ASCII (in-app generator produces ASCII) so the
+ * PBKDF2 char->byte encoding matches iOS UTF-8 byte encoding.
  */
 object SyncCrypto {
     private const val SALT = "tacmap-sync-salt-v2"
@@ -43,7 +42,7 @@ object SyncCrypto {
 
     class RoomKeys(val roomId: String, val roomKey: ByteArray, val authToken: String)
 
-    /** Run the expensive PBKDF2 once and derive all three room values. */
+    /** Run the expensive PBKDF2 once, derive all three room values. */
     fun deriveRoom(joinCode: String): RoomKeys {
         val m = master(joinCode)
         return RoomKeys(
@@ -75,11 +74,11 @@ object SyncCrypto {
     private fun urlB64(bytes: ByteArray): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 
-    /** AEAD associated data binding ciphertext to its routing metadata. */
+    /** AEAD associated data, binds ciphertext to its routing metadata. */
     fun aad(id: String, v: Long, kind: String): ByteArray =
         "$id|$v|$kind".toByteArray(Charsets.UTF_8)
 
-    /** Seal plaintext → `iv ‖ ct ‖ tag`, authenticating [aad]. */
+    /** Seal plaintext -> iv || ct || tag, authenticating [aad]. */
     fun seal(key: ByteArray, plaintext: ByteArray, aad: ByteArray): ByteArray {
         val iv = ByteArray(IV_LEN).also { SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -88,7 +87,7 @@ object SyncCrypto {
         return iv + cipher.doFinal(plaintext)
     }
 
-    /** Open `iv ‖ ct ‖ tag` → plaintext, or null on tamper / wrong key / AAD mismatch. */
+    /** Open iv || ct || tag -> plaintext, null on tamper / wrong key / AAD mismatch. */
     fun open(key: ByteArray, blob: ByteArray, aad: ByteArray): ByteArray? = try {
         if (blob.size <= IV_LEN) null else {
             val iv = blob.copyOfRange(0, IV_LEN)
@@ -102,7 +101,7 @@ object SyncCrypto {
         null
     }
 
-    /** Wire helpers for the base64 `ct` field. */
+    /** wire helpers for the base64 ct field */
     fun encodeBase64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
     fun decodeBase64(s: String): ByteArray = Base64.getDecoder().decode(s)
 }

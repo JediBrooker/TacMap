@@ -93,18 +93,15 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /**
- * Google Maps satellite map. Supports waypoint markers, drawings
- * (lines / polygons / points), draft drawing, drawing input, vertex-edit
- * handles (immediate drag via Compose overlay, long-press to delete),
- * camera control, MGRS grid lines, and PDF ground overlay.
+ * Google Maps satellite map. Waypoint markers, drawings (lines/polygons/
+ * points), draft drawing, drawing input, vertex-edit handles, camera
+ * control, MGRS grid lines, PDF ground overlay.
  *
- * Known parity gaps with the previous osmdroid surface:
- *  - MGRS grid labels are not rendered (just lines).
- *  - PDF overlay uses a single base bitmap — no high-res viewport
- *    re-render as the user zooms in.
- *  - Drawing name labels are not rendered next to features.
- *  - Whole-feature drag (grabbing a polyline / polygon body to move
- *    everything at once) is not supported — vertex handles only.
+ * Known parity gaps vs old osmdroid surface:
+ *  - MGRS grid labels not rendered (just lines)
+ *  - PDF overlay uses single base bitmap, no hi-res viewport re-render on zoom
+ *  - Drawing name labels not rendered next to features
+ *  - No whole-feature drag (polyline/polygon body move) - vertex handles only
  */
 @Composable
 fun GoogleMapScreen(
@@ -159,10 +156,8 @@ fun GoogleMapScreen(
         }
     }
 
-    /// Compass tap → animate the camera bearing back to 0° (north up)
-    /// while keeping the current target, zoom, and tilt. The viewmodel
-    /// emits a Unit on every tap; we drop tilt to 0 too so the map
-    /// reads as "flat, north up".
+    /// Compass tap - animate bearing back to 0 (north up), keep
+    /// target + zoom. Drop tilt to 0 too so map is flat north-up.
     LaunchedEffect(resetNorthRequests) {
         val flow = resetNorthRequests ?: return@LaunchedEffect
         flow.collect {
@@ -180,8 +175,8 @@ fun GoogleMapScreen(
         }
     }
 
-    // Auto terrain heat-map: when enabled, sample the visible region's DEM once
-    // the camera settles (debounced) and stretch a coloured overlay across it.
+    // terrain heatmap: sample visible region DEM once camera settles
+    // (debounced) and stretch a coloured overlay across it
     val heatmapService = remember { TerrainHeatmapService() }
     var terrainHeatmap by remember { mutableStateOf<Pair<Bitmap, LatLngBounds>?>(null) }
     LaunchedEffect(terrainHeatmapVisible, cameraPositionState) {
@@ -216,20 +211,16 @@ fun GoogleMapScreen(
                     val pos = cameraPositionState.position
                     currentOnCameraIdle.value(pos.target.latitude, pos.target.longitude, byUser)
                 }
-                /// We deliberately do NOT clear selection on
-                /// gesture-start anymore. The SDK's camera tracker
-                /// briefly flips `isMoving = true` for clean taps
-                /// (no real camera movement), and that race would
-                /// clear the selection that [MapItemTouchOverlay]
-                /// just set via `onWaypointTap`. Empty-tap clearing
-                /// is now handled by the overlay's `onEmptyTap`,
-                /// which only fires when the user lifts without
-                /// hitting any item — so we don't need this
-                /// fallback any more.
+                /// Don't clear selection on gesture-start anymore.
+                /// The SDK camera tracker briefly flips isMoving=true
+                /// on clean taps (no real camera movement) and that
+                /// race would nuke the selection MapItemTouchOverlay
+                /// just set. Empty-tap clearing is handled by the
+                /// overlay's onEmptyTap now, which only fires when
+                /// user lifts without hitting any item.
             }
     }
-    /// Report bearing changes so the compass chip in the HUD reflects
-    /// the current map orientation.
+    /// report bearing changes so compass chip stays in sync
     LaunchedEffect(cameraPositionState) {
         snapshotFlow { cameraPositionState.position.bearing }
             .distinctUntilChanged()
@@ -268,11 +259,10 @@ fun GoogleMapScreen(
             ?.takeIf { it.geometry == DrawingGeometry.LINE || it.geometry == DrawingGeometry.POLYGON }
     }
 
-    /// Single source of truth for any in-flight touch-and-drag of a
-    /// map item (waypoint OR drawing). The unified touch overlay
-    /// writes to this; both the SDK polyline renderer and the
-    /// Compose waypoint renderer read from it to display the item
-    /// following the user's finger in real time.
+    /// Single source of truth for in-flight drag of a map item
+    /// (waypoint or drawing). Touch overlay writes, SDK polyline
+    /// renderer + Compose waypoint renderer both read to show item
+    /// following the finger in realtime.
     var dragState by remember { mutableStateOf<MapItemDrag?>(null) }
     val currentDragState = rememberUpdatedState(dragState)
 
@@ -281,21 +271,17 @@ fun GoogleMapScreen(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
-                /// When a PDF basemap is loaded we hide Google Maps'
-                /// satellite tiles entirely (MapType.NONE) so the
-                /// PDF doesn't have to compete with the satellite
-                /// imagery underneath. Otherwise the user sees the
-                /// PDF surrounded by satellite where the page
-                /// doesn't cover, which makes the PDF look like
-                /// it's "floating" on Google Maps.
+                /// Hide Google satellite tiles when a PDF/offline/raster
+                /// basemap is loaded (MapType.NONE) so the PDF doesn't
+                /// compete with satellite underneath. Otherwise it looks
+                /// like its floating on Google Maps which is wierd.
                 mapType = if (mapSource is PdfMapSource ||
                     mapSource is OfflineTileMapSourceAndroid ||
                     mapSource is OnlineRasterMapSourceAndroid
                 ) MapType.NONE
                     else MapType.SATELLITE,
-                /// Google Maps' built-in blue user-location dot.
-                /// Gated on runtime permission — the SDK throws if
-                /// this is true without ACCESS_FINE_LOCATION granted.
+                /// built-in blue dot. SDK throws if true without
+                /// ACCESS_FINE_LOCATION so we gate on permission.
                 isMyLocationEnabled = myLocationEnabled
             ),
             uiSettings = MapUiSettings(
@@ -314,11 +300,10 @@ fun GoogleMapScreen(
                         currentOnDrawingTap.value(latLng.latitude, latLng.longitude)
                     currentCalibrationInputEnabled.value ->
                         currentOnCalibrationTap.value(latLng.latitude, latLng.longitude)
-                    /// Normal mode: a tap reaching the SDK landed on
-                    /// EMPTY map — a tap on a waypoint is consumed by
-                    /// its native marker's onClick, and a tap on a
-                    /// drawing by [MapItemTouchOverlay], before
-                    /// onMapClick fires. So anything here means deselect.
+                    /// Normal mode: if a tap reaches here it landed on
+                    /// empty map. Waypoint taps are consumed by native
+                    /// marker onClick, drawing taps by MapItemTouchOverlay,
+                    /// before onMapClick fires. So just deselect.
                     else -> currentOnMapTap.value()
                 }
             }
@@ -328,14 +313,13 @@ fun GoogleMapScreen(
             }
 
             (mapSource as? OfflineTileMapSourceAndroid)?.let { tiles ->
-                /// remember on the source id so the provider (and its tile
-                /// cache) survives recomposition; only rebuilt on source change.
+                /// remember on source id so provider + tile cache survive recomposition
                 val provider = remember(tiles.id) { tiles.tileProvider() }
                 TileOverlay(tileProvider = provider)
             }
 
             (mapSource as? OnlineRasterMapSourceAndroid)?.let { raster ->
-                /// Online raster basemap (Esri imagery / OpenTopoMap) over MapType.NONE.
+                /// Online raster basemap (Esri / OpenTopoMap) over MapType.NONE
                 val provider = remember(raster.id) { RasterTileProvider(raster.style) }
                 TileOverlay(tileProvider = provider)
             }
@@ -354,12 +338,10 @@ fun GoogleMapScreen(
             }
 
             visibleDrawings.forEach { feature ->
-                /// Live drag preview: if THIS drawing is the active
-                /// drag target, compute a lat/lng delta from the
-                /// touch's start position to its current position
-                /// (via the projection) and apply it to every vertex.
-                /// Polyline.points changing causes the SDK to redraw
-                /// the shape at the new position on each MOVE event.
+                /// Live drag preview: if this drawing is the active
+                /// drag target, compute lat/lng delta from touch
+                /// start to current pos (via projection) and apply
+                /// to every vertex. SDK redraws on each MOVE event.
                 val activeDrag = dragState
                     ?.takeIf { it.kind == MapItemDrag.Kind.DRAWING && it.itemId == feature.id }
                 val drawingDragDelta = activeDrag?.let { ds ->
@@ -397,18 +379,16 @@ fun GoogleMapScreen(
                 )
             }
 
-            /// PDF calibration fiduciaries — render small numbered
-            /// pins for each tapped reference point so the user can
-            /// see which corners of the PDF they've registered.
+            /// PDF calibration fiduciaries - small numbered pins so
+            /// user can see which corners they've registered
             calibrationFiduciaries.forEachIndexed { i, fid ->
                 CalibrationFiduciaryMarker(index = i + 1, fid = fid)
             }
 
-            /// Waypoint symbols (units + tasks): GroundOverlays on the map
-            /// surface (glued + always-upright on rotate), each paired with an
-            /// invisible native marker for the SDK-owned tap + finger-drag.
-            /// The overlay follows its marker, so a drag moves the symbol under
-            /// the finger; lock disables the drag + tap.
+            /// Waypoint symbols (units + tasks): GroundOverlays on map
+            /// surface (glued + upright on rotate), paired with invisible
+            /// native marker for SDK tap + drag. Overlay follows marker
+            /// so drag moves symbol under finger; lock disables both.
             WaypointGroundOverlays(
                 waypoints = visibleWaypoints,
                 selectedWaypointId = selectedWaypointId,
@@ -418,24 +398,23 @@ fun GoogleMapScreen(
                 onWaypointMoved = { wp, lat, lng -> currentOnWaypointMoved.value(wp, lat, lng) }
             )
 
-            // Presence peer symbols — rendered as GroundOverlays like waypoints,
-            // counter-rotated to stay upright with the map bearing.
+            // presence peers - same GroundOverlay pattern as waypoints,
+            // counter-rotated to stay upright
             PresenceOverlays(
                 peers = peers,
                 cameraPositionState = cameraPositionState
             )
         }
 
-        // Presence callsign labels — projected Compose overlays on top of the map
+        // presence callsign labels - Compose overlays projected on top of map
         PresenceLabelsOverlay(
             peers = peers,
             cameraPositionState = cameraPositionState
         )
 
-        /// Waypoint name labels (units / tasks) — Compose Text
-        /// overlays projected to screen coords each frame. Units +
-        /// generic get a pill below the icon; tasks get the pill
-        /// centred inside the graphic.
+        /// Waypoint name labels (units/tasks) - Compose Text overlays
+        /// projected to screen coords each frame. Units get pill below
+        /// icon, tasks get it centred inside the graphic.
         WaypointLabelsOverlay(
             waypoints = visibleWaypoints,
             cameraPositionState = cameraPositionState,
@@ -444,8 +423,8 @@ fun GoogleMapScreen(
             dragState = dragState
         )
 
-        /// Drawing name labels — anchored at the centroid for polygons,
-        /// midpoint for lines, the point itself for points.
+        /// Drawing name labels - centroid for polygons, midpoint for
+        /// lines, the point itself for points.
         if (drawingLabelsVisible && !freeDrawActive) {
             DrawingLabelsOverlay(
                 drawings = visibleDrawings,
@@ -454,23 +433,20 @@ fun GoogleMapScreen(
             )
         }
 
-        /// MGRS grid labels — suppressed during freehand drawing to avoid
-        /// recomposing hundreds of Text composables on every pointer event.
+        /// MGRS grid labels - suppressed during freehand b/c recomposing
+        /// hundreds of Text composables on every pointer event is brutal
         if (mgrsGridVisible && !freeDrawActive) {
             MgrsGridLabelsOverlay(cameraPositionState = cameraPositionState)
         }
 
-        /// Single unified touch handler for ALL map items (waypoints
-        /// and drawings). Replaces the old per-icon pointerInput
-        /// handlers on waypoints and the separate DrawingsDragOverlay.
-        /// Hit-tests in z-order (waypoints first, then drawings) and
-        /// passes the gesture through to the GoogleMap underneath
-        /// when nothing is hit, so pan/zoom still work everywhere
-        /// else. Also detects empty taps and dispatches them via
-        /// `onEmptyTap` so we can clear selection without relying on
-        /// the SDK's onMapClick (which races against our tap handler
-        /// and would otherwise immediately clear a waypoint we just
-        /// selected).
+        /// Unified touch handler for all map items (waypoints + drawings).
+        /// Replaces old per-icon pointerInput handlers and the seperate
+        /// DrawingsDragOverlay. Hit-tests z-order (waypoints first, then
+        /// drawings) and passes through to GoogleMap when nothing hit so
+        /// pan/zoom still work. Also dispatches empty taps via onEmptyTap
+        /// so we can clear selection without relying on SDK onMapClick
+        /// (which races our tap handler and would immediately nuke
+        /// a waypoint we just selected).
         MapItemTouchOverlay(
             waypoints = visibleWaypoints,
             drawings = visibleDrawings,
@@ -537,16 +513,15 @@ fun GoogleMapScreen(
     }
 }
 
-/// Tracks an in-flight touch-and-drag of a single map item.
-/// `startX/Y` is the touch position where the gesture began (window
-/// pixels). `offsetX/Y` is the cumulative finger displacement from
-/// that start. `didDrag` flips to true once the finger has moved past
-/// the tap slop — lift-with-didDrag-false fires the tap callback.
+/// Tracks in-flight touch-drag of a single map item.
+/// startX/Y = where gesture began (window px). offsetX/Y = cumulative
+/// finger displacement. didDrag flips true once past tap slop -
+/// lift-with-didDrag-false fires tap callback.
 
-/// Presence peer symbols rendered as GroundOverlays inside the GoogleMap
-/// content lambda. Each peer's APP-6 symbol is drawn using
-/// SymbolIconFactory, counter-rotated with the map bearing to stay
-/// upright — same pattern as WaypointGroundOverlays.
+/// Presence peer symbols as GroundOverlays inside the GoogleMap content
+/// lambda. Each peer's APP-6 symbol drawn via SymbolIconFactory,
+/// counter-rotated with map bearing to stay upright. Same pattern
+/// as WaypointGroundOverlays.
 @Composable
 internal fun PresenceOverlays(
     peers: Map<String, PresencePeer>,
@@ -617,8 +592,8 @@ internal fun PresenceOverlays(
     }
 }
 
-/// Callsign labels for presence peers — projected Compose overlays
-/// positioned below the peer's symbol, same as WaypointLabelsOverlay.
+/// Callsign labels for presence peers - projected Compose overlays
+/// below the peer symbol, same approach as WaypointLabelsOverlay.
 @Composable
 internal fun PresenceLabelsOverlay(
     peers: Map<String, PresencePeer>,

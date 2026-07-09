@@ -2,9 +2,9 @@ import Foundation
 import CoreLocation
 import SwiftUI
 
-/// A user-placed point of interest. Stored in WGS84 as lat/lon doubles (matches
-/// the GeoJSON export schema and the Android model). The computed `coordinate`
-/// adapts to CoreLocation/MapKit APIs.
+/// User-placed point of interest. Stored as WGS84 lat/lon doubles (matches
+/// GeoJSON export and Android model). The computed `coordinate` just wraps
+/// it for CoreLocation/MapKit.
 struct Waypoint: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
@@ -13,28 +13,25 @@ struct Waypoint: Identifiable, Codable, Hashable {
     var longitude: Double
     var elevation: Double?      // metres above sea level (optional)
     var kind: WaypointKind
-    /// Symbol rotation in degrees (0–360, clockwise). Only meaningful for
-    /// tactical control measures whose orientation conveys direction
-    /// (axis of advance, ambush, attack-by-fire, etc.). Ignored otherwise.
+    /// Symbol rotation in degrees (0-360, clockwise). Only matters for
+    /// tactical control measures where orientation conveys direction
+    /// (axis of advance, ambush, ABF, etc). Ignored otherwise.
     var rotation: Double
-    /// Horizontal multiplier on the symbol's default render size.
-    /// 1.0 = canonical (~64pt on screen). Range surfaced in the UI is
-    /// 0.1–20×. Independent of `scaleY` so the user can stretch a
-    /// task graphic wider/thinner. Only applied to tactical control
-    /// measures.
+    /// Horizontal multiplier on symbol's default render size.
+    /// 1.0 = canonical (~64pt on screen). UI range is 0.1-20x.
+    /// Independent of scaleY so user can stretch a task graphic
+    /// wider/thinner. Only applied to control measures.
     var scaleX: Double
     /// Vertical multiplier. See `scaleX`.
     var scaleY: Double
-    /// Tint applied to a tactical task graphic (control measure). The
-    /// black line-art glyph is recoloured to this. Black is the default;
-    /// the others follow the APP-6 affiliation palette. Ignored for
-    /// military units and generic markers.
+    /// Tint for tactical task graphics (control measures). Recolours
+    /// the black line-art glyph. Default is black, others follow
+    /// APP-6 affiliation palette. Ignored for units + generic markers.
     var taskColor: TaskColor
-    /// Which map layer this waypoint belongs to. Shared layer model with
-    /// `DrawingShape` so toggling a layer hides both drawings and
-    /// waypoints on it. Backward-compat: pre-layer saves get the
-    /// `DrawingLayer.legacyFallbackID` so they land in the default
-    /// "Friendly" layer.
+    /// Which layer this waypoint sits on. Shared model with DrawingShape,
+    /// so toggling a layer hides both drawings and waypoints.
+    /// Back-compat: old saves without layerID get legacyFallbackID
+    /// which lands them in the default "Friendly" layer.
     var layerID: UUID
     var createdAt: Date
 
@@ -66,7 +63,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
         self.createdAt = createdAt
     }
 
-    /// Convenience for callers working with CoreLocation/MapKit.
+    /// Convenience init for CoreLocation/MapKit callers.
     init(id: UUID = UUID(),
          name: String,
          notes: String? = nil,
@@ -94,9 +91,8 @@ struct Waypoint: Identifiable, Codable, Hashable {
         elevation.map { String(format: "%.0f m", $0) }
     }
 
-    /// Compact identity of `kind` used by MapContainerView's refresh
-    /// fingerprint. Two waypoints with the same fingerprint render to
-    /// the same annotation image, so the map can skip rebuilding.
+    /// Compact identity used by MapContainerView's refresh fingerprint.
+    /// Same fingerprint = same annotation image, so map can skip rebuild.
     var kindFingerprint: String { kind.fingerprint }
 
     // MARK: Codable (custom to allow back-compat with files that pre-date `rotation`)
@@ -116,9 +112,9 @@ struct Waypoint: Identifiable, Codable, Hashable {
         self.elevation = try c.decodeIfPresent(Double.self, forKey: .elevation)
         self.kind = try c.decode(WaypointKind.self, forKey: .kind)
         self.rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
-        // Migration: older saves had a single `scale` field. If
-        // scaleX/scaleY aren't present, populate both from `scale`
-        // (or default 1.0).
+        // Migration: older saves had a single `scale` field, so if
+        // scaleX/scaleY aren't present just populate both from that
+        // (or default to 1.0).
         let legacyScale = try c.decodeIfPresent(Double.self, forKey: .scale)
         self.scaleX = try c.decodeIfPresent(Double.self, forKey: .scaleX)
             ?? legacyScale ?? 1.0
@@ -148,10 +144,10 @@ struct Waypoint: Identifiable, Codable, Hashable {
     }
 }
 
-/// What a waypoint represents. Three top-level cases:
-///   - `.generic`            : plain field marker
-///   - `.military(spec)`     : APP-6C unit symbol (affiliation × echelon × function)
-///   - `.controlMeasure(…)`  : tactical point-symbol control measure (FUP, RV, LZ, etc.)
+/// What a waypoint represents:
+///   .generic             - plain field marker
+///   .military(spec)      - APP-6C unit symbol (affiliation x echelon x function)
+///   .controlMeasure(..)  - tactical point symbol (FUP, RV, LZ, etc.)
 enum WaypointKind: Hashable, Codable {
     case generic
     case military(MilitarySymbolSpec)
@@ -192,7 +188,7 @@ enum WaypointKind: Hashable, Codable {
 
     // MARK: Display
 
-    /// Short, human-friendly summary.
+    /// Short human-readable summary.
     var displayName: String {
         switch self {
         case .generic:                return "Waypoint"
@@ -216,7 +212,7 @@ enum WaypointKind: Hashable, Codable {
 
     // MARK: Symbol accessors
 
-    /// Non-nil for military kinds — used by the map and picker icon view.
+    /// Non-nil for military kinds. Used by map + picker icon view.
     var militarySpec: MilitarySymbolSpec? {
         if case .military(let s) = self { return s }
         return nil
@@ -228,8 +224,7 @@ enum WaypointKind: Hashable, Codable {
         return nil
     }
 
-    /// SF Symbol fallback for kinds without a custom drawing
-    /// (generic + tactical control measures).
+    /// SF Symbol fallback for kinds without a custom drawing.
     var sfSymbol: String {
         switch self {
         case .generic:                  return "mappin"
@@ -247,9 +242,9 @@ enum WaypointKind: Hashable, Codable {
         }
     }
 
-    /// Compact representation used by the map's refresh fingerprint —
-    /// distinguishes kinds that render to different images so we can
-    /// skip rebuilding when nothing visible changed.
+    /// Compact repr for the map's refresh fingerprint. Distinguishes
+    /// kinds that render to different images so we skip rebuilding
+    /// when nothing visible changed.
     var fingerprint: String {
         switch self {
         case .generic:
@@ -264,13 +259,12 @@ enum WaypointKind: Hashable, Codable {
 
 // MARK: - Task graphic colour
 
-/// Colour applied to a tactical task graphic (control measure). The
-/// bundled glyphs are pure-black line art on transparent; the renderer
-/// template-tints them to this colour. Black is the default; the other
-/// four follow the APP-6 affiliation palette (saturated for legibility
-/// on both satellite imagery and imported PDFs — the affiliation frame
-/// fills are pastel and too pale for line art). Kept in sync with
-/// Android's `TaskColor`.
+/// Colour applied to tactical task graphics (control measures). Bundled
+/// glyphs are pure-black line art on transparent, renderer template-tints
+/// them. Black is default; the other four follow APP-6 affiliation palette
+/// (saturated for legibility on satellite + PDFs, b/c the affiliation
+/// frame fills are too pastel for line art). Keep in sync with Android's
+/// TaskColor.
 enum TaskColor: String, Codable, Hashable, CaseIterable {
     case black, blue, red, green, yellow
 
@@ -285,7 +279,7 @@ enum TaskColor: String, Codable, Hashable, CaseIterable {
         }
     }
 
-    /// Picker label — colour plus its APP-6 affiliation meaning.
+    /// Picker label - colour + APP-6 affiliation meaning.
     var label: String {
         switch self {
         case .black:  return "Black"
@@ -300,10 +294,9 @@ enum TaskColor: String, Codable, Hashable, CaseIterable {
 // MARK: - Tactical control measures (point-symbol subset of APP-6C)
 
 /// Tactical mission tasks and control-measure point symbols.
-/// Each case maps to a bundled PNG/SVG asset under
-/// `Assets.xcassets/AppSymbols/<rawValue>`. Symbols are cropped from
-/// NATO MPSOTC Table E-I (Tactical graphics), except `assemblyArea`
-/// and `formUpPoint` which are custom SVGs.
+/// Each case maps to a bundled asset under AppSymbols/<rawValue>.
+/// Most are cropped from NATO MPSOTC Table E-I (Tactical graphics),
+/// except assemblyArea and formUpPoint which are hand-rolled SVGs.
 enum TacticalControlMeasure: String, Codable, Hashable, CaseIterable {
     // ---- Mission tasks (cropped from PDF spec) ----
     case block, breach, bypass, canalise, clear, contain
@@ -365,9 +358,8 @@ enum TacticalControlMeasure: String, Codable, Hashable, CaseIterable {
     /// Basename of the bundled image in `Assets.xcassets/AppSymbols/`.
     var assetName: String { rawValue }
 
-    /// Picker order — alphabetised by `displayName` so the in-app list
-    /// matches what a user would scan for. Mirrors Android's
-    /// `TacticalControlMeasure.pickerEntries`.
+    /// Picker order, alphabetised by displayName. Mirrors Android's
+    /// TacticalControlMeasure.pickerEntries.
     static let pickerEntries: [TacticalControlMeasure] =
         allCases.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
 }

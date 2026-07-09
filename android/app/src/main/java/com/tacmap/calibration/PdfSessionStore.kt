@@ -9,22 +9,19 @@ import kotlinx.serialization.json.Json
 import java.io.File
 
 /**
- * Persists the currently-active calibrated PDF map source across app
- * launches so the user doesn't have to re-import after closing the
- * app.
+ * Persists the active calibrated PDF map source across app launches so
+ * the user doesn't have to re-import every time they close the app.
  *
  * The PDF file itself is already copied to internal `pdf_maps/` on
- * import, so it lives across restarts as long as the OS doesn't clear
- * app data. What we add here is a small JSON sidecar in
- * `SharedPreferences` that captures the **non-bitmap** state
- * (filename, display name, page dimensions, calibration affine + the
- * fiduciaries we fit it from) so we can reconstruct a [PdfMapSource]
- * with full GeoPDF accuracy on startup.
+ * import so it survives restarts (unless OS clears app data). What we
+ * add here is a small JSON sidecar in SharedPreferences with the
+ * non-bitmap state (filename, display name, page dims, calibration
+ * affine + the fiduciaries we fit it from) so we can reconstruct a
+ * [PdfMapSource] with full GeoPDF accuracy on startup.
  *
- * Only [PdfMapSource] instances that carry a [Calibration.Fiduciaries]
- * are saved — an uncalibrated source has no real geographic position
- * and re-reading it on startup would just resurrect a useless rough
- * fallback box.
+ * Only [PdfMapSource] instances with [Calibration.Fiduciaries] are
+ * saved - don't bother persisting uncalibrated sources since they have
+ * no real geographic position, just a useless rough fallback box.
  */
 class PdfSessionStore(private val context: Context) {
 
@@ -33,18 +30,16 @@ class PdfSessionStore(private val context: Context) {
 
     fun save(source: PdfMapSource) {
         val calibration = source.calibration as? Calibration.Fiduciaries ?: run {
-            /// Uncalibrated PDF — don't bother persisting, the
-            /// fallback bounds aren't worth restoring.
+            // uncalibrated PDF, don't bother persisting - fallback
+            // bounds aren't worth restoring
             return
         }
         val pageInfo = source.pageInfo ?: return
         val coverage = source.coverage ?: return
-        /// Strip the URI down to just the file's basename inside our
-        /// private `pdf_maps/` directory. The full URI baked at
-        /// import time is `file:///data/.../files/pdf_maps/foo.pdf`,
-        /// which is stable across the app's lifetime — but storing
-        /// just the basename lets us recover gracefully if the
-        /// sandbox path ever shifts.
+        // Strip URI to just the basename inside our private `pdf_maps/`
+        // dir. The full URI from import time is stable across the app's
+        // lifetime but storing just the basename lets us recover if the
+        // sandbox path ever shifts.
         val fileName = File(source.uri.path ?: return).name
         val dto = PersistedPdfSource(
             fileName = fileName,
@@ -60,10 +55,10 @@ class PdfSessionStore(private val context: Context) {
         runCatching { json.encodeToString(dto) }
             .onSuccess { prefs.edit().putString(KEY_PDF, it).apply() }
             .onFailure { Log.w(TAG, "Couldn't encode PDF for persistence: ${it.message}") }
-        // Also remember it in the per-PDF library so switching PDFs and back
-        // restores this one's own calibration. Keyed by the file's CONTENT hash,
-        // not its display name: two different sheets that happen to share a
-        // filename must NOT inherit each other's affine.
+        // Also stash in the per-PDF library so switching PDFs and back
+        // restores this one's calibration. Keyed by file CONTENT hash,
+        // not display name - two different sheets that share a filename
+        // must NOT inherit each other's affine.
         val key = runCatching { contentKeyFor(File(source.uri.path ?: return)) }.getOrNull()
             ?: source.displayName // fall back to name only if the file is unreadable
         saveToLibrary(key, calibration)
@@ -99,10 +94,10 @@ class PdfSessionStore(private val context: Context) {
     }
 
     /**
-     * Per-PDF calibration library. Looks up by the file's content hash first
-     * (so the correct affine follows the actual bytes, even if the display name
-     * collides with a different sheet), falling back to a legacy display-name
-     * key for entries saved before content-hash keying.
+     * Per-PDF calibration library. Looks up by content hash first so the
+     * correct affine follows the actual bytes even if display name collides
+     * with a different sheet. Falls back to legacy display-name key for
+     * entries saved before we added content-hash keying.
      */
     fun calibration(file: File?, displayName: String): Calibration.Fiduciaries? {
         val lib = loadLibrary()
@@ -125,7 +120,7 @@ class PdfSessionStore(private val context: Context) {
             .getOrDefault(emptyMap())
     }
 
-    /** SHA-256 of the file's bytes, streamed so large PDFs don't load whole. */
+    /** SHA-256 of the file bytes, streamed so big PDFs dont load whole. */
     private fun contentKeyFor(file: File): String {
         val md = java.security.MessageDigest.getInstance("SHA-256")
         file.inputStream().use { ins ->

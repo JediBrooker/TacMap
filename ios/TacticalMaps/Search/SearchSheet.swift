@@ -2,13 +2,10 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
-/// Search by:
-///   • Place name / address / POI — MKLocalSearch
-///   • Full MGRS grid reference  — e.g. `56HLH 13225 37516` (spaces optional)
-///   • **Partial** grid reference — 4, 6, 8, or 10 digits. Resolved against
-///     the user’s current GZD + 100km-square prefix (whatever the map centre
-///     is sitting in). E.g. at Holsworthy, typing `1885` lands on the centre
-///     of grid square 56HLH 18 85 (≈1 km square).
+/// Handles place name / address / POI search (MKLocalSearch), full MGRS coords
+/// like `56HLH 13225 37516` (spaces optional), and partial grid refs - just
+/// type 4/6/8/10 digits and they get resolved against whatever GZD the camera
+/// is sitting in. e.g. at Holsworthy typing `1885` hits 56HLH 18 85 (~1 km sq).
 struct SearchSheet: View {
     @ObservedObject var mapVM: MapViewModel
     @Environment(\.dismiss) private var dismiss
@@ -41,9 +38,9 @@ struct SearchSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
-            // SwiftUI built-in debouncer: re-runs the task only when `query`
-            // changes, auto-cancels the previous fire. No timers, no Tasks,
-            // no @State race conditions — fixes the v10 crash.
+            // .task(id:) is basically a built-in debouncer - reruns when `query`
+            // changes, auto-cancels the previous one. No manual timers or
+            // @State race conditions. Fixed the v10 crash.
             .task(id: query) {
                 await runSearch(for: query)
             }
@@ -135,8 +132,8 @@ struct SearchSheet: View {
 
     // MARK: - Search pipeline
 
-    /// Single entry point invoked by `.task(id: query)`. Runs MGRS detection
-    /// synchronously then a debounced MKLocalSearch.
+    /// Main entry point from `.task(id: query)`. Does MGRS detection
+    /// synchronously then kicks off a debounced MKLocalSearch.
     private func runSearch(for raw: String) async {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -199,14 +196,14 @@ struct SearchSheet: View {
                 }
             }
         } catch {
-            // Superseded by a newer query (or otherwise cancelled) — stay silent
+            // Superseded by newer query or cancelled, bail out silently
             // instead of flashing "Search failed: cancelled".
             if Task.isCancelled || error is CancellationError { return }
             await MainActor.run {
                 isSearching = false
                 places = []
                 let ns = error as NSError
-                // MKError.unknown for cancelled or no-results — stay silent.
+                // MKError.unknown for cancelled or no-results, stay silent.
                 if ns.domain != MKError.errorDomain || ns.code > 0 {
                     statusMessage = "Search failed: \(error.localizedDescription)"
                 }
@@ -216,13 +213,13 @@ struct SearchSheet: View {
 
     // MARK: - MGRS interpretation
 
-    /// Return ordered candidate coordinates for the query: a full-MGRS parse
-    /// plus any partial-grid interpretation. Most-specific results first.
+    /// Returns candidate coords for the query, most-specific first.
+    /// Tries a full MGRS parse then partial-grid interpretation.
     private func inferCoordinateResults(from raw: String) -> [SearchResult] {
         guard !raw.isEmpty else { return [] }
         var out: [SearchResult] = []
 
-        // 1) Full MGRS — needs the GZD prefix to parse.
+        // 1) Full MGRS - needs the GZD prefix to parse.
         let compact = raw.uppercased().filter { !$0.isWhitespace }
         if let coord = MGRSFormatter.coordinate(from: compact) {
             out.append(SearchResult(
@@ -241,9 +238,9 @@ struct SearchSheet: View {
         return out
     }
 
-    /// Type just the digits (e.g. "1885" or "188 850") and we synthesize a
-    /// full MGRS by prefixing the current camera’s GZD + 100km square ID,
-    /// then return the *centre* of the implied square (1km/100m/10m/1m).
+    /// User types just the digits (e.g. "1885" or "188 850") and we tack on
+    /// the camera’s current GZD + 100km square ID to build a full MGRS,
+    /// then return the centre of the implied square (1km/100m/10m/1m).
     private func partialGridResult(_ raw: String) -> SearchResult? {
         let digits = raw.filter { $0.isNumber }
         guard [4, 6, 8, 10].contains(digits.count) else { return nil }
@@ -251,7 +248,7 @@ struct SearchSheet: View {
         let anchor = mapVM.cameraCentre
         guard anchor.latitude != 0 || anchor.longitude != 0 else { return nil }
 
-        // "56HLH" / "9VCD" — the GZD letters + 100km square.
+        // "56HLH" / "9VCD" - the GZD letters + 100km square.
         let fullMGRS = MGRSFormatter.string(from: anchor, spaced: false)
         guard let prefix = extractGZDPrefix(fullMGRS) else { return nil }
 
@@ -295,10 +292,9 @@ struct SearchSheet: View {
         return nil
     }
 
-    /// MGRS coords decode to the south-west corner of their precision square.
-    /// Bump by half a square in the local metric frame so the result lands at
-    /// the visual middle of the grid square — that’s the conventional
-    /// “grid reference points to here” behaviour for navigation.
+    /// MGRS decodes to the SW corner of the precision square. Nudge by half
+    /// a square so the pin lands in the middle, which is the conventional
+    /// “grid ref points here” behaviour for nav.
     private func centreOfSquare(sw: CLLocationCoordinate2D, eastNorthDigits half: Int) -> CLLocationCoordinate2D {
         let halfMetres: Double = {
             switch half {

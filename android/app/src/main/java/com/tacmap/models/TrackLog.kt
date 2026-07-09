@@ -5,12 +5,10 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Append-only on-disk log of track points (newline-delimited JSON).
- *
- * Pure file/serialisation logic with no Android dependencies, so it is unit
- * testable on the JVM. [TrackRecorder] delegates persistence here so that a
- * recording survives process death: every accepted fix is fsync'd to disk as it
- * arrives, and [read] recovers the whole track on next launch.
+ * Append-only NDJSON log of track points. Pure file I/O with no Android
+ * deps so its unit-testable on JVM. TrackRecorder delegates here so
+ * recordings survive process death - every fix is fsync'd as it arrives,
+ * and read() recovers the track on next launch.
  */
 object TrackLog {
     private val json = Json { ignoreUnknownKeys = true }
@@ -25,9 +23,9 @@ object TrackLog {
         }
     }
 
-    /** Read every well-formed point; skips any trailing partial line from a
-     *  write that was interrupted mid-append (defensive — the fsync per line
-     *  makes torn writes unlikely, but recovery must never throw). */
+    /** Read all well-formed points, skip any partial line from an interrupted
+     *  write. fsync per line makes torn writes unlikely but recovery must
+     *  never throw regardless. */
     fun read(file: File): List<TrackPoint> {
         if (!file.exists()) return emptyList()
         return file.readLines().mapNotNull { line ->
@@ -36,8 +34,8 @@ object TrackLog {
         }
     }
 
-    /** Start a fresh log, discarding any prior contents atomically enough that
-     *  a crash can't merge an old track with a new one. */
+    /** Nuke the log and start fresh. Atomic enough that a crash can't
+     *  merge old track with a new one. */
     fun truncate(file: File) {
         file.parentFile?.mkdirs()
         FileOutputStream(file, /* append = */ false).use { fos ->

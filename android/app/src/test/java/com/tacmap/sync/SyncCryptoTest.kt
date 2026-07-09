@@ -22,8 +22,8 @@ class SyncCryptoTest {
     @Test
     fun roomIdRoomKeyAndAuthTokenAreDistinct() {
         val keys = SyncCrypto.deriveRoom("unit-7")
-        // Three independent derivations from the same master — the routing id,
-        // the AEAD key, and the writer-auth token must not coincide.
+        // three independant derivations from same master - routing id,
+        // AEAD key, and writer-auth token must not coincide
         assertNotEquals(keys.roomId, keys.authToken)
         assertEquals(32, keys.roomKey.size)
         assertTrue(keys.authToken.isNotEmpty())
@@ -39,7 +39,7 @@ class SyncCryptoTest {
         val key = SyncCrypto.roomKey("unit-7-key")
         val plaintext = """{"id":"abc","name":"OP North"}""".toByteArray(Charsets.UTF_8)
         val blob = SyncCrypto.seal(key, plaintext, aad)
-        // iv(12) + ct + tag(16) — strictly larger than the plaintext.
+        // iv(12) + ct + tag(16), always bigger than plaintext
         assertTrue(blob.size >= plaintext.size + 28)
         assertArrayEquals(plaintext, SyncCrypto.open(key, blob, aad))
     }
@@ -52,8 +52,8 @@ class SyncCryptoTest {
 
     @Test
     fun wrongAadFailsToOpen() {
-        // A relay that swapped this blob onto a different object id / version
-        // reconstructs a different AAD, so authentication fails.
+        // if a relay swaps this blob onto a different object id / version
+        // it reconstructs a different AAD, so auth fails
         val key = SyncCrypto.roomKey("k")
         val blob = SyncCrypto.seal(key, "payload".toByteArray(), aad)
         val otherAad = SyncCrypto.aad("obj-2", 7L, "waypoint")

@@ -21,10 +21,9 @@ import com.tacmap.drawings.DrawingPoint
 import com.tacmap.export.GeoJsonExporter
 import java.io.File
 
-// Non-composable helpers extracted verbatim from MapScreen.kt: angle
-// normalisation, drawing defaults / naming, PDF import + georeferencing, and
-// GeoJSON sharing. Visibility widened private -> internal so MapScreen.kt (same
-// package) can still reach them.
+// Non-composable helpers extracted from MapScreen.kt: angle normalisation,
+// drawing defaults/naming, PDF import + georeferencing, GeoJSON sharing.
+// Widened to internal so MapScreen.kt can still reach them.
 
 internal fun normalizedDegrees(degrees: Double): Double =
     ((degrees % 360.0) + 360.0) % 360.0
@@ -166,7 +165,7 @@ internal fun shareGpx(
     }
 }
 
-/** Export all waypoints + drawings as a single GeoJSON file and share via Intent (Fix #4). */
+/** Export all waypoints + drawings as GeoJSON and share via Intent. */
 internal fun exportAllData(
     context: Context,
     waypoints: List<com.tacmap.waypoints.Waypoint>,
@@ -226,25 +225,23 @@ internal fun importPdfMapSource(
         pageInfo = pageInfo
     )
 
-    // A previously-saved MANUAL calibration (user-dropped fiduciaries, which
-    // carry real MGRS strings) wins over auto-parsing. Auto-parsed calibrations
-    // are deliberately NOT honored here: they're reproducible from the PDF, so
-    // short-circuiting the re-parse would pin a stale result that a parser fix
-    // can never correct on re-import — exactly what stranded the sheet at the
-    // wrong longitude after the GeoPDF viewport fix. Auto correspondences leave
-    // the MGRS field blank; manual ones don't — that's how we tell them apart.
+    // Manual calibration (user-dropped fiduciaries with real MGRS strings)
+    // wins over auto-parsing. Auto-parsed calibrations are NOT honored here
+    // b/c they're reproducible from the PDF, so short-circuiting the re-parse
+    // would pin a stale result that a parser fix can never correct on re-import.
+    // That's exactly what stranded the sheet at wrong longitude after the
+    // GeoPDF viewport fix. Auto correspondences leave MGRS blank, manual
+    // ones don't - thats how we tell them apart.
     PdfSessionStore(context).calibration(dest, baseName)
         ?.takeIf { saved -> saved.fids.any { it.mgrs.isNotBlank() } }
         ?.let { saved -> return base.calibrated(saved.transform, saved.fids) }
 
-    /// Try to lift georeferencing straight out of the PDF (OGC
-    /// GeoPDF / Adobe LGIDict). If we find ≥3 correspondences we
-    /// fit the same affine the manual-fiduciary flow would and
-    /// return a calibrated source — the PDF lands in its real
-    /// geographic position with the right rotation and scale, no
-    /// user calibration step required. If the PDF has no
-    /// recognisable georeferencing we leave the base (uncalibrated)
-    /// source in place and the user can drop fiduciaries by hand.
+    /// Try to pull georeferencing straight from the PDF (OGC GeoPDF /
+    /// Adobe LGIDict). If we get >=3 correspondences, fit an affine
+    /// and return a calibrated source - PDF lands in the right spot
+    /// with correct rotation+scale, no user calibration needed. If
+    /// no georef found, leave it uncalibrated and user can drop
+    /// fiduciaries manually.
     val geo = GeoPdfParser.parse(context, fileUri) ?: return base
     val fiducials = geo.correspondences.map { it.toFiduciary() }
     val fit = runCatching { AffineFitter.fit(fiducials) }.getOrNull() ?: return base
@@ -277,8 +274,8 @@ internal fun uniquePdfFileName(displayName: String): String {
     return "${System.currentTimeMillis()}_$base.pdf"
 }
 
-/** Copy a picked .mbtiles into the app's files dir (SQLite needs a real path,
- *  not a content Uri) and open it as an offline-tile basemap source. */
+/** Copy picked .mbtiles into files dir (SQLite needs a real path, not a
+ *  content Uri) and open as an offline-tile basemap. */
 internal fun importMBTilesMapSource(context: Context, sourceUri: Uri): OfflineTileMapSourceAndroid? {
     val displayName = context.displayNameFor(sourceUri)
     val dir = File(context.filesDir, "mbtiles").apply { mkdirs() }

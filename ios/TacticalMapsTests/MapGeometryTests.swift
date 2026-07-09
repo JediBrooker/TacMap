@@ -2,8 +2,8 @@ import XCTest
 import CoreGraphics
 @testable import TacticalMaps
 
-/// Tests the pure hit-test + zoom geometry extracted from the map coordinator.
-/// These ran inside an 84 KB UIViewRepresentable before and were untestable.
+/// Hit-test + zoom geometry pulled out of the map coordinator.
+/// These used to live inside an 84 KB UIViewRepresentable and were untestable.
 final class MapGeometryTests: XCTestCase {
 
     func testDistanceToSegment_onSegmentIsZero() {

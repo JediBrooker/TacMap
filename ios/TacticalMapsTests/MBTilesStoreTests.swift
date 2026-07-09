@@ -2,8 +2,8 @@ import XCTest
 import SQLite3
 @testable import TacticalMaps
 
-/// Tests the MBTiles reader against a generated sample database: metadata
-/// parsing and the TMS↔XYZ row flip that's the easiest thing to get wrong.
+/// Tests MBTiles reader against a generated sample db: metadata parsing
+/// and the TMS/XYZ row flip thats the easiest thing to get wrong.
 final class MBTilesStoreTests: XCTestCase {
 
     private func makeSampleMBTiles() throws -> URL {

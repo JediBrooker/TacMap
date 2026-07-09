@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Composite a real topo basemap behind the literal hero capture, and redraw the
-app's centre crosshair cleanly.
+Composite a real topo basemap behind the literal hero capture, and redraw
+the app's centre crosshair cleanly.
 
-OpenTopoMap throttles the simulator's tile requests, so the captured app's
-Terrain basemap mostly comes through as the unloaded grey placeholder. This
-fills that grey with a real Esri World Topo basemap (a faithful stand-in for
+OpenTopoMap throttles the simulator's tile requests so the captured app's
+Terrain basemap mostly comes through as unloaded grey placeholder. We just
+fill that grey with a real Esri World Topo basemap (faithful stand-in for
 the app's OpenTopoMap terrain).
 
-The app's centre crosshair is permanent UI, so it stays — but its
-semi-transparent orange glow over the grey leaves a muddy halo when the grey is
-replaced. So we detect the crosshair's centre + exact orange from the capture,
-strip the old (muddy) crosshair, then redraw a clean one in the app's colour.
+The app's centre crosshair is permanent UI so it stays, but its
+semi-transparent orange glow over the grey leaves a muddy halo when grey
+gets replaced. So we detect crosshair centre + exact orange from capture,
+strip the old muddy crosshair, then redraw a clean one in the app's colour.
 
     python3 scripts/topo_hero_composite.py <capture.png> <out.png>
 """
@@ -52,7 +52,7 @@ url = ("https://server.arcgisonline.com/arcgis/rest/services/World_Topo_Map/MapS
 topo = Image.open(io.BytesIO(urllib.request.urlopen(
     urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=45).read())).convert("RGB").resize((W, H))
 
-# --- mask: unloaded grey + the old orange crosshair (so it's fully replaced) ---
+# --- mask: unloaded grey + old orange crosshair (nuke both, fully replaced) ---
 hsv = hero.convert("HSV"); hh, ss, vv = hsv.split()
 graym = ImageChops.multiply(ss.point(lambda v: 255 if v < 55 else 0),
                             vv.point(lambda v: 255 if 60 < v < 195 else 0))
@@ -63,10 +63,10 @@ ImageDraw.Draw(region).rectangle([0, int(0.165 * H), W, H], fill=255)
 orange = ImageChops.multiply(orange, region)
 comp = Image.composite(topo, hero, ImageChops.lighter(graym, orange)).convert("RGBA")
 
-# --- redraw a clean crosshair in the app's orange (hairlines + 26pt ring + glow) ---
+# --- redraw clean crosshair in app's orange (hairlines + 26pt ring + glow) ---
 lw = max(4, round(W / 300))                  # ~1.5pt @3x
 ring = round(W * 0.0645)                      # ~26pt diameter @3x
-top, bot = int(0.165 * H), int(0.905 * H)     # stay clear of header + bottom button
+top, bot = int(0.165 * H), int(0.905 * H)     # keep clear of header + bottom button
 glow = Image.new("RGBA", (W, H), (0, 0, 0, 0)); gd = ImageDraw.Draw(glow)
 gw = lw * 4; gc = (*ocol, 110)
 gd.line([(cx, top), (cx, bot)], fill=gc, width=gw)

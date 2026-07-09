@@ -1,31 +1,30 @@
 import Foundation
 import CoreLocation
 
-/// Parses a GeoJSON FeatureCollection back into our domain objects.
+/// Parses a GeoJSON FeatureCollection back into domain objects.
 ///
-/// Round-trips our own export (uses `tacticalmaps:*` namespaced properties
-/// to reconstruct waypoints, drawings, and layers). Falls back gracefully
-/// for foreign GeoJSON: points become generic waypoints, LineStrings /
-/// Polygons become drawings on the active layer.
+/// Round-trips our own export via `tacticalmaps:*` properties. For foreign
+/// GeoJSON it does its best: points become generic waypoints, lines/polygons
+/// become drawings on the active layer.
 enum GeoJSONImporter {
 
     struct Result {
         var waypoints: [Waypoint] = []
         var drawings:  [DrawingShape] = []
-        /// Layers referenced by imported drawings that don't exist in the
-        /// store yet. Caller should add them before importing the shapes.
+        /// Layers from the import that dont exist in the store yet.
+        /// Caller needs to add these before importing shapes.
         var newLayers: [DrawingLayer] = []
-        /// Features skipped because their coordinates were non-finite or out of
-        /// range — surfaced in the import summary rather than silently dropped.
+        /// Features skipped b/c coordinates were non-finite or out of range.
+        /// Surfaced in the import summary so we don't silently drop stuff.
         var invalidSkipped: Int = 0
     }
 
-    /// A single lon/lat pair is valid when both are finite and in range.
+    /// True if a single lon/lat pair is finite and in range.
     private static func validLonLat(_ lon: Double, _ lat: Double) -> Bool {
         lon.isFinite && lat.isFinite && abs(lat) <= 90 && abs(lon) <= 180
     }
 
-    /// Every coordinate in a GeoJSON geometry is finite and in range.
+    /// Checks that every coord in the geometry is finite and in range.
     private static func geometryValid(_ geometry: [String: Any]) -> Bool {
         switch geometry["type"] as? String {
         case "Point":
@@ -67,14 +66,14 @@ enum GeoJSONImporter {
         for feature in features {
             guard let geometry = feature["geometry"] as? [String: Any],
                   let geomType = geometry["type"] as? String else { continue }
-            // Reject non-finite / out-of-range coordinates so a corrupt file
-            // can't drop a symbol at NaN or off the globe.
+            // Bail out on non-finite / out-of-range coords. Don't let a corrupt
+            // file drop a symbol at NaN or somewhere off the globe.
             guard geometryValid(geometry) else { result.invalidSkipped += 1; continue }
             let props = feature["properties"] as? [String: Any] ?? [:]
             let category = resolveCategory(props)
 
-            // Resolve target layer: existing-by-id → newly-imported-by-id →
-            // create new layer from name/color → fallback.
+            // Resolve target layer: existing by id, then newly-imported by id,
+            // then create from name/color, then fallback.
             let layerID: UUID = resolveLayerID(
                 props: props,
                 existingLayersByID: &layersByID,
@@ -101,7 +100,7 @@ enum GeoJSONImporter {
                     result.waypoints.append(wp)
                 }
             default:
-                // Foreign GeoJSON: best-effort classification by geometry.
+                // Foreign GeoJSON - just classify by geometry type.
                 if geomType == "Point" {
                     if let wp = parseGenericPoint(feature: feature,
                                                   geometry: geometry,
@@ -153,10 +152,10 @@ enum GeoJSONImporter {
            let layer = existingLayersByID.first(where: { $0.key.caseInsensitiveCompare(idStr) == .orderedSame })?.value {
             return layer.id
         }
-        // Before minting a NEW layer for an unknown id, adopt an existing layer
-        // with the same NAME — otherwise a device with default layers under
-        // different (per-install) ids proliferates duplicate "Friendly"/"Enemy"
-        // layers on every cross-device import/sync.
+        // Before minting a new layer for an unknown id, try to adopt an existing
+        // one with the same name. Otherwise devices with default layers under
+        // different per-install ids proliferate duplicate "Friendly"/"Enemy"
+        // layers on every import/sync. Ask me how I know.
         let name = (props["tacticalmaps:layer"] as? String)
             ?? (props["layer_name"] as? String)
         if let name,
@@ -197,11 +196,11 @@ enum GeoJSONImporter {
                 return Coordinate2D(latitude: p[1], longitude: p[0])
             }
         case "Polygon":
-            // Outer ring only — we don't model holes.
+            // Outer ring only, we dont model holes.
             guard let rings = geometry["coordinates"] as? [[[Double]]],
                   let outer = rings.first, !outer.isEmpty else { return nil }
             kind = .polygon
-            // Drop the GeoJSON ring-closure repeat if present.
+            // Strip the GeoJSON ring-closure duplicate if present.
             var pts = outer.compactMap { p -> Coordinate2D? in
                 guard p.count >= 2 else { return nil }
                 return Coordinate2D(latitude: p[1], longitude: p[0])
@@ -218,9 +217,9 @@ enum GeoJSONImporter {
         guard !coords.isEmpty else { return nil }
 
         var style = DrawingStyle()
-        // simplestyle first, then the Android legacy keys (stroke_color etc. are
-        // #AARRGGBB — drop the alpha to our #RRGGBB) so Android drawings keep
-        // their styling when imported here.
+        // simplestyle first, then Android legacy keys (stroke_color etc. are
+        // #AARRGGBB, drop the alpha to get #RRGGBB) so Android drawings keep
+        // their styling on import.
         if let stroke = (props["stroke"] as? String) ?? rgbFromArgb(props["stroke_color"] as? String) {
             style.strokeColorHex = stroke
         }
@@ -231,7 +230,7 @@ enum GeoJSONImporter {
             style.strokeWidth = w
         }
         if let o = doubleValue(props["fill-opacity"]) { style.fillOpacity = o }
-        // Dash: shared namespaced key, falling back to the Android legacy key.
+        // Dash style: shared namespaced key, falls back to Android legacy key.
         let strokeStyle = (props["tacticalmaps:stroke_style"] as? String) ?? (props["stroke_style"] as? String)
         if strokeStyle?.lowercased() == "dashed" { style.dashPattern = [8, 4] }
         if let lg = (props["tacticalmaps:line_graphic"] as? String).flatMap(LineGraphic.init(rawValue:)) {
@@ -255,7 +254,7 @@ enum GeoJSONImporter {
         )
     }
 
-    /// Android's `#AARRGGBB` → our `#RRGGBB` (drop the alpha byte).
+    /// Android's `#AARRGGBB` to our `#RRGGBB` (just drop the alpha byte).
     private static func rgbFromArgb(_ hex: String?) -> String? {
         guard var h = hex else { return nil }
         h = h.hasPrefix("#") ? String(h.dropFirst()) : h
@@ -264,10 +263,10 @@ enum GeoJSONImporter {
         return nil
     }
 
-    /// Parse an ISO-8601 instant into a Date (created_at round-trip). Tolerates
-    /// both fractional-second (`…:00.123Z`, e.g. Android's ISO_INSTANT) and
-    /// whole-second forms — otherwise Android-authored objects reset their
-    /// creation time to import time (and re-sync churns).
+    /// Parse ISO-8601 into a Date for created_at round-trip. Handles both
+    /// fractional-second (`...00.123Z`, Android's ISO_INSTANT) and whole-second
+    /// variants, otherwise Android objects reset their creation time on import
+    /// and re-sync churns.
     private static func parseDate(_ any: Any?) -> Date? {
         guard let s = any as? String else { return nil }
         let fractional = ISO8601DateFormatter()
@@ -292,8 +291,8 @@ enum GeoJSONImporter {
         let kind: WaypointKind
         switch category {
         case "military":
-            // Unknown/corrupt affiliation → .unknown (unresolved), NOT .friend:
-            // fail-to-friendly could mask a hostile contact on a mixed import.
+            // Unknown/corrupt affiliation -> .unknown, NOT .friend.
+            // Fail-to-friendly could mask a hostile contact on mixed import.
             let aff = (props["tacticalmaps:affiliation"] as? String)
                 .flatMap(SymbolAffiliation.init(rawValue:)) ?? .unknown
             let ech = (props["tacticalmaps:echelon"] as? String)

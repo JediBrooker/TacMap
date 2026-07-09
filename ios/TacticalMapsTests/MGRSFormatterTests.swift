@@ -2,13 +2,13 @@ import XCTest
 import CoreLocation
 @testable import TacticalMaps
 
-/// Tests for the parts of the MGRS bridge that are *ours* (not NGA's):
-/// the crash-safety validation gate, the display spacing, and round-trip
-/// stability. The underlying coordinate conversion is the NGA library's
-/// responsibility and is covered by its own test suite.
+/// Tests for the parts of the MGRS bridge that are ours (not NGA's):
+/// crash-safety validation gate, display spacing, and round-trip stability.
+/// The underlying coord conversion is NGA's problem and covered by their
+/// own test suite.
 final class MGRSFormatterTests: XCTestCase {
 
-    // MARK: looksLikeMGRS — the regex gate that stops NGA's parser from
+    // MARK: looksLikeMGRS - the regex gate that stops NGA's parser from
     // fatalError-ing on partial / garbage input.
 
     func testLooksLikeMGRS_acceptsValidShapes() {
@@ -45,7 +45,7 @@ final class MGRSFormatterTests: XCTestCase {
         }
     }
 
-    // MARK: formatted — inserts the GZD / easting / northing spacing.
+    // MARK: formatted - inserts the GZD / easting / northing spacing.
 
     func testFormatted_insertsTriadSpacing() {
         XCTAssertEqual(MGRSFormatter.formatted("56HLH1322537516"), "56HLH 13225 37516")
@@ -65,7 +65,7 @@ final class MGRSFormatterTests: XCTestCase {
         XCTAssertEqual(MGRSFormatter.formatted("HELLO"), "HELLO")
     }
 
-    // MARK: round-trip — format a coordinate, parse it back, expect ≈ identity.
+    // MARK: round-trip - format a coordinate, parse it back, expect ~= identity.
 
     func testRoundTrip_coordinateThroughMGRSAndBack() throws {
         let sf = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)

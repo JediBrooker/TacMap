@@ -33,13 +33,11 @@ import kotlin.math.abs
 enum class BaseMap { SATELLITE, ESRI_SATELLITE, TERRAIN }
 
 /**
- * Owns map camera, browse-mode toggle, and the MGRS readout shown in the header.
+ * Map camera, browse-mode toggle, MGRS header readout.
  *
- * Browse mode = the user has manually panned/zoomed away from their location.
- * Cleared by `centreOnUser`.
- *
- * Coordinates are exposed as bare (lat, lng, zoom) triples so the VM
- * doesn't depend on any specific map library type.
+ * "Browse mode" just means the user panned away from their location.
+ * Cleared by centreOnUser. Coords are bare (lat, lng, zoom) so we
+ * don't depend on any particular map SDK.
  */
 class MapViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -62,12 +60,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private val _mapBearingDegrees = MutableStateFlow(0.0)
     val mapBearingDegrees: StateFlow<Double> = _mapBearingDegrees.asStateFlow()
 
-    /**
-     * Live terrain-elevation reading for the current map centre (metres MSL +
-     * staleness), fetched from Open-Meteo's Copernicus DEM via
-     * [ElevationService], debounced so we only hit the network once the user
-     * stops panning. null until the first reading resolves. Mirrors iOS.
-     */
+    /** Live elevation for map centre (metres MSL), fetched from Open-Meteo DEM.
+     *  Debounced so we only hit the network when panning stops. null until
+     *  first reading comes back. */
     private val _centreElevation = MutableStateFlow<ElevationReading?>(null)
     val centreElevation: StateFlow<ElevationReading?> = _centreElevation.asStateFlow()
     private val elevationService = ElevationService()
@@ -86,8 +81,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
     private fun onlineBasemap(): MapSource = baseMapSource(preferredBaseMap)
 
-    /** Switch the online basemap. Also clears any imported PDF so the chosen
-     *  basemap actually shows. */
+    /** Switch online basemap. Clears any imported PDF so the basemap shows. */
     fun selectBaseMap(choice: BaseMap) {
         preferredBaseMap = choice
         _mapSource.value = baseMapSource(choice)
@@ -99,30 +93,18 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         _mapSource.value = onlineBasemap()
     }
 
-    /**
-     * Set the active map source AND, when it has coverage, fly the camera
-     * to a sensible starting position (see [frameCameraFor]).
-     *
-     * Calibrated PDF sources are also written through to
-     * [pdfSessionStore] so they survive an app restart.
-     */
+    /** Set active map source + fly camera to a sensible starting position if
+     *  it has coverage. Calibrated PDFs get persisted to pdfSessionStore. */
     fun setMapSource(source: MapSource) {
         _mapSource.value = source
         if (source is PdfMapSource) pdfSessionStore.save(source)
         frameCameraFor(source)
     }
 
-    /**
-     * Frame the camera for a freshly-set or restored map source:
-     *   - If we have a recent user fix inside the source's coverage box,
-     *     centre on the user (so they immediately see "I am here on
-     *     this paper map").
-     *   - Otherwise centre on the coverage centre (the user is off-map
-     *     and we want them to at least see the page).
-     *
-     * No-op for unbounded sources (e.g. OSM). Shared by [setMapSource]
-     * and the startup restore so a restored PDF frames like an import.
-     */
+    /** Frame camera for a new or restored map source. If user's last fix
+     *  is inside the coverage, centre on them. Otherwise centre on the
+     *  coverage centre so they at least see the page. No-op for unbounded
+     *  sources like OSM. */
     private fun frameCameraFor(source: MapSource) {
         val coverage = source.coverage ?: return
         val userLoc = lastUserLocation
@@ -154,13 +136,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private var hasInitialFix = false
 
     init {
-        /// Restore the last-imported PDF map (if any) on startup so the
-        /// user doesn't have to re-import after closing the app, then frame
-        /// it like an import would. Runs here (not in an earlier init block)
-        /// because [frameCameraFor] -> flyTo touches [_pendingCameraTarget],
-        /// which is declared above and must already be initialised.
-        /// No fix yet at launch, so this frames the whole page; the first
-        /// fix won't yank away if the user turns out to be off-map.
+        /// Restore last PDF on startup so user doesn't re-import after
+        /// closing the app. Has to be here (not earlier init) b/c
+        /// frameCameraFor -> flyTo needs _pendingCameraTarget initialised.
+        /// No fix yet at launch so this frames the whole page.
         pdfSessionStore.load()?.let { restored ->
             _mapSource.value = restored
             frameCameraFor(restored)
@@ -171,14 +150,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         observeElevation()
     }
 
-    /**
-     * Fetch the centre elevation whenever the camera settles. Debounced 400ms
-     * (matches iOS) and de-duped to ~11 m so a tiny jitter doesn't re-hit the
-     * network. `collectLatest` cancels an in-flight fetch when the centre moves
-     * again, so only the latest position resolves.
-     */
-    /** Round a coordinate to ~110 m so online lookups don't disclose the exact
-     *  map centre. */
+    /** Debounced 400ms, de-duped to ~11m so jitter doesn't spam the network.
+     *  collectLatest cancels in-flight fetches when centre moves again. */
+    /** Round coord to ~110m so lookups don't disclose exact map centre. */
     private fun coarsen(v: Double): Double = Math.round(v * 1000.0) / 1000.0
 
     @OptIn(FlowPreview::class)
@@ -191,10 +165,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                     abs(oLat - nLat) < 0.0001 && abs(oLng - nLng) < 0.0001
                 }
                 .collectLatest { (lat, lng) ->
-                    // OPSEC: elevation lookups transmit the queried coordinate to
-                    // a third party (Open-Meteo). Only do so when the user has
-                    // opted in, and coarsen to ~110 m (3 dp) so the exact map
-                    // centre isn't disclosed even then.
+                    // OPSEC: elevation lookups send coords to Open-Meteo. Only
+                    // do it if user opted in, and coarsen to ~110m so exact
+                    // map centre isn't disclosed.
                     if (!opsec.onlineLookups.value) {
                         _centreElevation.value = null
                     } else {
@@ -204,8 +177,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Called by MapScreen on every camera idle event. `byUser` distinguishes
-     *  user gestures from programmatic moves. */
+    /** Called on every camera idle. byUser distinguishes gestures from
+     *  programmatic moves. */
     fun onCameraIdle(lat: Double, lng: Double, byUser: Boolean) {
         _cameraLat.value = lat
         _cameraLng.value = lng
@@ -221,21 +194,20 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     fun consumePendingCameraTarget() { _pendingCameraTarget.value = null }
 
-    /** One-shot signal that the compass HUD was tapped, asking the
-     *  map to animate its bearing back to 0° (north up). A Channel
-     *  with BUFFERED capacity ensures rapid taps don't drop. */
+    /** Compass HUD tapped - animate bearing back to 0 (north up).
+     *  Channel w/ BUFFERED capacity so rapid taps don't drop. */
     private val _resetNorthRequests = Channel<Unit>(Channel.BUFFERED)
     val resetNorthRequests: Flow<Unit> = _resetNorthRequests.receiveAsFlow()
     fun requestResetNorth() { _resetNorthRequests.trySend(Unit) }
 
-    /** Start GPX recording and bring up the foreground service so the track
-     *  keeps logging while the app is backgrounded / the screen is locked. */
+    /** Start GPX recording + foreground service so track keeps logging
+     *  while app is backgrounded or screen locked. */
     fun startTrackRecording() {
         trackRecorder.start()
         TrackRecordingService.start(getApplication<android.app.Application>())
     }
 
-    /** Stop recording and tear down the foreground service. */
+    /** Stop recording, tear down the foreground service. */
     fun stopTrackRecording() {
         trackRecorder.stop()
         TrackRecordingService.stop(getApplication<android.app.Application>())
@@ -246,9 +218,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         trackRecorder.onLocation(loc)
         if (!hasInitialFix) {
             hasInitialFix = true
-            // Centre on the user on the first fix — unless a bounded map
-            // (PDF) is active and the user is off it, in which case keep the
-            // framing set at import/restore so an off-map PDF stays visible.
+            // Centre on user on first fix, unless a bounded map (PDF) is
+            // active and user is off it - keep the import framing so the
+            // PDF stays visible.
             val coverage = _mapSource.value.coverage
             if (coverage == null || coverage.contains(loc.latitude, loc.longitude)) {
                 centreOnUser()
@@ -264,9 +236,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         _pendingCameraTarget.value = Triple(loc.latitude, loc.longitude, 15f)
     }
 
-    /** Animate camera to an arbitrary coordinate. Used by the
-     *  waypoint list's "fly to" rows. Enters browse mode so the
-     *  header reads the map centre, not the user. */
+    /** Fly camera to arbitrary coord. Used by waypoint list's "fly to"
+     *  rows. Enters browse mode so header shows map centre not user. */
     fun flyTo(lat: Double, lng: Double, zoom: Float = 15f) {
         _isBrowsing.value = true
         _cameraLat.value = lat

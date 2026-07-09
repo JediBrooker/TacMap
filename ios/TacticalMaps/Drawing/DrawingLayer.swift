@@ -1,11 +1,10 @@
 import Foundation
 import SwiftUI
 
-/// A named group of drawings. Layers let the user separate, hide, or wipe
-/// out an entire category of work in one shot — e.g. friendly graphics on
-/// one layer, hostile on another. Each new drawing is stamped with the
-/// active layer's id; visibility and deletion cascade from layer to its
-/// shapes via `DrawingStore`.
+/// Named group of drawings. Basically lets users seperate, hide, or nuke
+/// an entire category at once - e.g. friendly graphics on one layer,
+/// hostile on another. New drawings get stamped with the active layer id;
+/// visibility and deletion cascade via `DrawingStore`.
 struct DrawingLayer: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
@@ -13,9 +12,8 @@ struct DrawingLayer: Identifiable, Codable, Hashable {
     /// `DrawingStore` ANDs this with `LayerVisibility.drawingsVisible` (the
     /// master kill-switch).
     var visible: Bool
-    /// Default stroke colour suggested for shapes added to this layer.
-    /// Used by `DrawingSession` when the user hasn't explicitly picked a
-    /// colour yet.
+    /// Default stroke colour for shapes on this layer. `DrawingSession`
+    /// uses it when user hasn't picked a colour yet.
     var defaultColorHex: String
     var createdAt: Date
 
@@ -31,15 +29,13 @@ struct DrawingLayer: Identifiable, Codable, Hashable {
         self.createdAt = createdAt
     }
 
-    /// Stable id used when migrating old `drawings.json` files: any shape
-    /// that was written before the multi-layer schema gets re-assigned to
-    /// the "Drawings" default layer using this constant id so the
-    /// migration is deterministic and idempotent.
+    /// Hardcoded id for migrating old drawings.json - shapes from before
+    /// multi-layer just get shoved onto this fallback layer. Using a
+    /// constant so the migration is repeatable and doesn't create dupes.
     static let legacyFallbackID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
-    /// Seed layers created on a fresh install. Order is the order in
-    /// which they'll be listed in the UI. Colours track the rough APP-6C
-    /// affiliation palette but at a saturation that reads on satellite.
+    /// Default layers on fresh install, listed in UI order. Colours are
+    /// loosely APP-6C affiliation palette but bumped to read on satellite.
     static let seedDefaults: [DrawingLayer] = [
         DrawingLayer(id: legacyFallbackID,
                      name: "Friendly",

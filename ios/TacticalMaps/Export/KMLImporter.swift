@@ -2,17 +2,16 @@ import Foundation
 import CoreLocation
 import Compression
 
-/// Parses a KML / KMZ document (Google Earth, ATAK, Caltopo, …) into our
-/// domain objects.
+/// Parses KML / KMZ (Google Earth, ATAK, Caltopo, etc.) into domain objects.
 ///
-/// Placemark `Point` → generic waypoint; `LineString` / `Polygon` (outer
-/// ring) → drawing. KML `Folder` / `Document` names become drawing layers
-/// so an exported folder structure survives the round-trip. KMZ is a zip
-/// wrapper — we read the first `.kml` entry (typically `doc.kml`).
+/// Points become generic waypoints, lines/polygons become drawings.
+/// KML Folder/Document names map to drawing layers so folder structure
+/// survives the round-trip. KMZ is just a zip wrapper, we pull the first
+/// `.kml` entry (usually `doc.kml`).
 ///
-/// Reuses `GeoJSONImporter.Result` so the import flow handles GeoJSON and
-/// KML identically. Shared `<styleUrl>` styles aren't resolved in this
-/// first cut; shapes use the standard amber defaults, like foreign GeoJSON.
+/// Reuses `GeoJSONImporter.Result` so the import path is the same for both
+/// formats. `<styleUrl>` styles aren't resolved yet - shapes just get the
+/// default amber styling, same as foreign GeoJSON.
 enum KMLImporter {
 
     enum ImportError: Error, LocalizedError {
@@ -27,7 +26,7 @@ enum KMLImporter {
         }
     }
 
-    /// Parse a `.kml` or `.kmz` file. Sniffs the zip magic to unwrap KMZ.
+    /// Parse a `.kml` or `.kmz` file. Checks zip magic bytes to unwrap KMZ.
     static func parse(_ data: Data,
                       existingLayers: [DrawingLayer],
                       fallbackLayerID: UUID) throws -> GeoJSONImporter.Result {
@@ -62,7 +61,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     private var layersByName: [String: DrawingLayer]
     private let fallbackLayerID: UUID
 
-    /// Layer id for the current folder scope (inherits down the tree).
+    /// Layer id for current folder scope, inherits down the tree.
     private var layerStack: [UUID]
     /// Element name path, used to disambiguate `<name>` (folder vs placemark).
     private var elementPath: [String] = []
@@ -248,11 +247,10 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
 
 // MARK: - Minimal ZIP reader (KMZ)
 
-/// Just enough of the ZIP format to pull a single `.kml` entry out of a KMZ:
-/// locate the End-Of-Central-Directory record, walk the central directory
-/// for the `.kml` entry (preferring `doc.kml`), then inflate its data via
-/// Apple's `Compression` framework (`COMPRESSION_ZLIB` == raw DEFLATE, which
-/// is exactly what ZIP stores). No zip64 / encryption support — fine for KMZ.
+/// Bare-minimum ZIP reader to yank a .kml out of a KMZ. Finds the EOCD,
+/// walks the central directory for the .kml entry (prefers `doc.kml`),
+/// then inflates via `Compression` (COMPRESSION_ZLIB == raw DEFLATE, which
+/// is what ZIP uses). No zip64 or encryption, but thats fine for KMZ.
 private enum MiniZip {
 
     static func extractFirstKML(from data: Data) -> Data? {

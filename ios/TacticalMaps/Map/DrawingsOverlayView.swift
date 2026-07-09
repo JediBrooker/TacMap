@@ -1,8 +1,8 @@
 import UIKit
 import MapKit
 
-/// One vector shape (saved drawing, in-progress sketch, or measure line) to be
-/// redrawn ABOVE the imported PDF.
+/// Single vector shape (drawing, in-progress sketch, or measure line)
+/// to redraw above the imported PDF.
 struct PDFVectorShape {
     let coords: [CLLocationCoordinate2D]
     let isPolygon: Bool
@@ -12,16 +12,15 @@ struct PDFVectorShape {
     let inProgress: Bool
 }
 
-/// Redraws drawing / measure / in-progress vector shapes as a transparent
-/// subview layered ABOVE the imported-PDF image.
+/// Transparent subview that redraws drawing/measure/in-progress shapes
+/// ABOVE the imported PDF image.
 ///
-/// Shapes are `MKPolyline`/`MKPolygon` overlays, which MapKit renders in its
-/// overlay layer — BENEATH the PDF `UIImageView` subview — so over a PDF they'd
-/// be hidden (the user's drawings vanished under the imported map). This view
-/// projects each shape's coordinates with `MKMapView.convert` every camera
-/// change and strokes/fills them in Core Graphics, matching the MKOverlay
-/// renderer's styling, so they sit on top of the PDF. Used only while a PDF is
-/// active; the plain-basemap path keeps the cheaper MKOverlay renderer.
+/// The problem: MKPolyline/MKPolygon overlays render in MapKit's overlay
+/// layer which is BENEATH the PDF UIImageView, so drawings just vanish
+/// under the imported map. This view reprojects coords with
+/// MKMapView.convert every camera change and strokes/fills in CG to
+/// match the overlay renderer. Only used while a PDF is active,
+/// plain-basemap path uses the cheaper MKOverlay renderer.
 final class DrawingsOverlayView: UIView {
 
     private weak var mapView: MKMapView?
@@ -63,8 +62,8 @@ final class DrawingsOverlayView: UIView {
             for p in pts.dropFirst() { path.addLine(to: p) }
             if shape.isPolygon { path.close() }
 
-            // Fill (polygons) — matches MapContainerCoordinator+Rendering: the
-            // fill brightens slightly when selected and is capped at 0.6 alpha.
+            // Fill polygons. Matches MapContainerCoordinator+Rendering -
+            // selected fill brightens slightly, capped at 0.6 alpha.
             if shape.isPolygon {
                 let fillHex = shape.style.fillColorHex ?? shape.style.strokeColorHex
                 let alpha = min(shape.style.fillOpacity * (shape.isSelected ? 1.6 : 1.0), 0.6)
@@ -72,7 +71,7 @@ final class DrawingsOverlayView: UIView {
                 path.fill()
             }
 
-            // Stroke — selection bumps the width by 3pt; in-progress is dashed.
+            // Stroke - selection bumps width +3pt, in-progress is dashed.
             UIColor(hex: shape.style.strokeColorHex).setStroke()
             path.lineWidth = CGFloat(shape.style.strokeWidth) + (shape.isSelected ? 3.0 : 0.0)
             let dash = shape.inProgress ? [6.0, 4.0] : shape.style.dashPattern

@@ -1,8 +1,8 @@
 import SwiftUI
 import CoreLocation
 
-/// Modal that asks the user for the MGRS of a tapped fiduciary point.
-/// Shown automatically when `session.pendingTap != nil`.
+/// Modal that asks user for the MGRS of a tapped fiduciary point.
+/// Pops up automatically when session.pendingTap != nil.
 struct CalibrationInputSheet: View {
     @ObservedObject var session: CalibrationSession
     /// Closure called when the user dismisses without confirming, so we can
@@ -88,7 +88,7 @@ struct CalibrationInputSheet: View {
         if session.confirmFiduciary(mgrs: cleaned, label: labelOrNil) {
             dismiss()
         } else {
-            errorMessage = "Couldn't parse MGRS. Format: <zone><band><square> <easting> <northing> — e.g. 56HLH 12345 67890"
+            errorMessage = "Couldn't parse MGRS. Format: <zone><band><square> <easting> <northing>, e.g. 56HLH 12345 67890"
         }
     }
 }

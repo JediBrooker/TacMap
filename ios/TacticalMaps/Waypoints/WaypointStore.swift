@@ -2,13 +2,13 @@ import Foundation
 import Combine
 import CoreLocation
 
-/// In-memory waypoint store with disk persistence to Application Support/waypoints.json.
+/// In-memory waypoint store, persists to Application Support/waypoints.json.
 final class WaypointStore: ObservableObject {
     @Published private(set) var waypoints: [Waypoint] = []
 
-    /// Non-nil when the waypoints file was unreadable (and quarantined) or a
-    /// save failed — surfaced so the user isn't shown an empty list that a
-    /// silent decode failure mistook for "no waypoints".
+    /// Non-nil when waypoints file was unreadable (quarantined) or a save
+    /// failed. Surfaced so user doesn't see an empty list and think they
+    /// have no waypoints when really decode just blew up.
     @Published var loadError: String?
 
     /// Set by ContentView from `@Environment(\.undoManager)` after the view appears.
@@ -57,19 +57,18 @@ final class WaypointStore: ObservableObject {
     // MARK: - Persistence
 
     private func load() {
-        // Fresh installs start with an empty waypoint list — no demo
-        // seed. Previously we shipped a handful of "Pl, A Coy" /
-        // "Med Post" markers around San Francisco so the map wasn't
-        // blank on first launch, but that confused real users who
-        // hadn't placed anything yet.
+        // Fresh installs just start empty, no demo seed. We used to
+        // ship a handful of "Pl, A Coy" / "Med Post" markers around
+        // San Francisco so the map wasn't blank on first launch but
+        // that confused real users who hadn't placed anything.
         switch SafeStore.read(url, decode: { try JSONDecoder().decode([Waypoint].self, from: $0) }) {
         case .loaded(let decoded):
             waypoints = decoded
         case .empty:
             break // genuine fresh install
         case .corrupt(let quarantine, _):
-            // Preserve the unreadable file rather than letting the next add()
-            // overwrite it with a one-element list.
+            // Preserve the unreadable file rather than letting next add()
+            // clobber it with a one-element list.
             loadError = "Saved waypoints could not be read and were set aside "
                 + "(\(quarantine?.lastPathComponent ?? "recovery copy")). Starting with no waypoints."
         }

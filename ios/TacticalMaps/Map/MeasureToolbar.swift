@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Bottom HUD shown while `MeasureSession.isActive`. Lays out the running
-/// distance, bearing-of-last-segment in mils, and (for 3+ points) the
-/// enclosed area, plus undo / done buttons.
+/// Bottom HUD for the measure tool. Shows running distance,
+/// last-segment bearing in mils, area (3+ pts), undo + done.
 struct MeasureToolbar: View {
     @ObservedObject var session: MeasureSession
 

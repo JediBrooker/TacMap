@@ -8,14 +8,14 @@ import kotlin.math.hypot
 import kotlin.math.sqrt
 
 /**
- * 2D affine transform from PDF page coordinates to WGS84 lon/lat:
+ * 2D affine transform: PDF page coords -> WGS84 lon/lat.
  *
  *   lon = a*x + b*y + c
  *   lat = d*x + e*y + f
  *
- * Stored as six coefficients. Captures translation, rotation, scale, and shear.
- * For production work over large areas a projective fit using the source map's
- * actual projection is preferable, but for prototype scale this is sufficient.
+ * Six coefficients covering translation, rotation, scale, shear.
+ * A projective fit on the source map's actual projection would be
+ * better for large areas, but this is good enough for our use case.
  */
 @Serializable
 data class AffineTransform2D(
@@ -27,10 +27,10 @@ data class AffineTransform2D(
 
     fun inverted(): AffineTransform2D? {
         val det = a * e - b * d
-        // Scale-invariant singularity test: |det| / (‖row1‖·‖row2‖) is the sine
-        // of the angle between the two basis vectors ∈ [0,1]. The old absolute
-        // 1e-12 on `det` — which is ≈ degrees²/pixel² (~1e-10 at fine scale) —
-        // falsely rejected valid high-zoom calibrations as singular.
+        // Scale-invariant singularity check: |det| / (||row1||*||row2||) gives
+        // the sine of the angle between basis vectors [0,1]. The old absolute
+        // 1e-12 threshold on `det` (roughly degrees^2/pixel^2, ~1e-10 at fine
+        // scale) was falsely rejecting valid high-zoom calibrations.
         val rowScale = hypot(a, b) * hypot(d, e)
         if (rowScale <= 0.0 || abs(det) <= 1e-9 * rowScale) return null
         val inv = 1.0 / det
@@ -52,29 +52,29 @@ sealed class AffineFitError(message: String) : Throwable(message) {
 
 data class AffineFitResult(
     val transform: AffineTransform2D,
-    /** RMS residual in metres. Surface this to users so they know how trustworthy
-     *  the calibration is. */
+    /** RMS residual in metres. Show this to users so they can judge
+     *  how trustworthy the calibration is. */
     val rmsMetres: Double,
-    /** False for an exactly-determined 3-point fit: it passes through all three
-     *  points so its RMS is ~0 regardless of accuracy — not evidence the map is
-     *  correct. True once N≥4 over-constrains the fit and the RMS is meaningful. */
+    /** False for exact 3-point fit since it passes through all three points
+     *  so RMS is ~0 regardless of accuracy (not evidence the map is correct).
+     *  True once N>=4 over-constrains the fit and RMS actually means something. */
     val crossValidated: Boolean
 )
 
 /**
- * Least-squares fit of an affine transform from N≥3 fiduciaries.
+ * Least-squares affine fit from N>=3 fiduciaries.
  *
- * The X- and Y-halves of the affine are uncoupled, so we solve two independent
- * 3-parameter LSQ problems via the normal equations (closed form, Cramer’s rule
- * for the 3x3 matrix).
+ * X and Y halves are uncoupled so we just solve two independant
+ * 3-param LSQ problems via normal equations (closed form, Cramer’s
+ * rule for the 3x3).
  */
 object AffineFitter {
 
     fun fit(fids: List<Fiduciary>): AffineFitResult {
         if (fids.size < 3) throw AffineFitError.TooFewFiduciaries
-        // Reject control points that lie on (or almost on) a single line: the
-        // affine's perpendicular direction is then unconstrained and it
-        // extrapolates wildly — a wrong map that still fits the fiduciaries.
+        // Bail if control points are colinear (or nearly so) - the affine's
+        // perpendicular direction is unconstrained and it'll extrapolate
+        // wildly. You'd get a wrong map that still fits the fiduciaries.
         if (isDegenerate(fids)) throw AffineFitError.Degenerate
 
         val (a, b, c) = lsq(fids.map { Triple(it.pdfX, it.pdfY, it.longitude) })
@@ -89,10 +89,10 @@ object AffineFitter {
         return AffineFitResult(t, sqrt(sumSq / fids.size), crossValidated = fids.size >= 4)
     }
 
-    /** True when the fiduciaries are coincident or (near-)colinear. Uses the
-     *  ratio of the covariance eigenvalues of the PDF-space points, which is
-     *  scale-invariant — unlike an absolute determinant threshold, which is
-     *  meaningless at pixel-coordinate magnitudes. */
+    /** Checks if fiduciaries are coincident or near-colinear. Uses ratio
+     *  of covariance eigenvalues of PDF-space points - scale-invariant
+     *  unlike an absolute determinant threshold which is meaningless at
+     *  pixel-coordinate magnitudes. */
     private fun isDegenerate(fids: List<Fiduciary>): Boolean {
         val n = fids.size.toDouble()
         var mx = 0.0; var my = 0.0
@@ -111,7 +111,7 @@ object AffineFitter {
         return l1 <= 0.0 || l2 / l1 < MIN_SPREAD_RATIO
     }
 
-    /** Minor/major spread ratio below which the points count as colinear. */
+    /** minor/major spread ratio below which points count as colinear */
     private const val MIN_SPREAD_RATIO = 1e-6
 
     private fun lsq(points: List<Triple<Double, Double, Double>>): Triple<Double, Double, Double> {

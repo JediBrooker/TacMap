@@ -1,10 +1,10 @@
 import Foundation
 import SQLite3
 
-/// Writes an MBTiles file (OSGeo spec): a SQLite DB with a `metadata` key/value
-/// table and a `tiles` table of raster blobs. Write-side companion to
-/// `MBTilesStore`; used by `PDFTiler` to bake a calibrated PDF into an offline
-/// tile pyramid on-device (no desktop GDAL step).
+/// Writes an MBTiles file (OSGeo spec): SQLite DB with a metadata key/value
+/// table and a tiles table of raster blobs. Write-side companion to MBTilesStore;
+/// used by PDFTiler to bake a calibrated PDF into an offline tile pyramid
+/// on-device, no desktop GDAL step needed.
 final class MBTilesWriter {
 
     private var db: OpaquePointer?
@@ -12,8 +12,8 @@ final class MBTilesWriter {
     private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     /// Set true the moment any SQL step/exec returns an error (e.g. disk full).
-    /// Callers MUST check this before treating the bake as successful — otherwise
-    /// a half-written file is mistaken for a complete offline basemap and the
+    /// Callers MUST check this before treating the bake as successful, otherwise
+    /// a half-written file gets mistaken for a complete offline basemap and the
     /// source PDF gets discarded.
     private(set) var hadError = false
 

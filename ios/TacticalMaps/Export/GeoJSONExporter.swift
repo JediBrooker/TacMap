@@ -1,13 +1,12 @@
 import Foundation
 
-/// Serialises waypoints + drawings into a single GeoJSON FeatureCollection
-/// (RFC 7946). Style metadata follows the **Mapbox simplestyle-spec**
-/// (`stroke`, `stroke-width`, `fill`, `fill-opacity`, `marker-color`) so the
-/// output renders correctly in GitHub gists, geojson.io, Mapbox, Felt,
-/// Leaflet, QGIS, and any other tool that speaks the convention.
+/// Serialises waypoints + drawings into a GeoJSON FeatureCollection (RFC 7946).
+/// Uses Mapbox simplestyle-spec for styling (`stroke`, `stroke-width`, etc.)
+/// so it renders in GitHub gists, geojson.io, QGIS, and basically anything
+/// that understands simplestyle.
 ///
-/// Tactical-specific metadata uses the `tacticalmaps:` prefix so it does not
-/// collide with simplestyle keys.
+/// Tactical-specific stuff goes under the `tacticalmaps:` prefix to avoid
+/// clobbering simplestyle keys.
 enum GeoJSONExporter {
 
     /// Build the FeatureCollection as a pretty-printed JSON string.
@@ -23,10 +22,10 @@ enum GeoJSONExporter {
         for wp in waypoints      { features.append(feature(for: wp, layer: layerByID[wp.layerID])) }
         for shape in drawings    { features.append(feature(for: shape, layer: layerByID[shape.layerID])) }
 
-        // NOTE: no wall-clock `generated_at` here — per-object export must be a
-        // pure function of object state so sync change-detection doesn't see a
-        // "change" on every serialisation. (User-facing file exports carry a
-        // timestamp in the filename instead.)
+        // No wall-clock `generated_at` here. Per-object export has to be a
+        // pure function of object state, otherwise sync change-detection sees
+        // a "change" on every serialisation. File exports just carry a
+        // timestamp in the filename instead.
         let collection: [String: Any] = [
             "type":      "FeatureCollection",
             "generator": "TacMap iOS prototype \(generatorVersion)",
@@ -72,7 +71,7 @@ enum GeoJSONExporter {
             "tacticalmaps:created_at": ISO8601DateFormatter().string(from: wp.createdAt)
         ]
         props["created_at"] = props["tacticalmaps:created_at"]
-        // Task/control-measure colour — shared lowercase token set so it
+        // Task/control-measure colour - shared lowercase token set so it
         // round-trips across platforms (black/blue/red/green/yellow).
         props["tacticalmaps:task_color"] = wp.taskColor.rawValue
         props["layer_id"] = wire(wp.layerID)
@@ -82,8 +81,7 @@ enum GeoJSONExporter {
             props["tacticalmaps:layer"] = layer.name
             props["tacticalmaps:layer_color"] = layer.defaultColorHex
         }
-        // Carry the structured APP-6C spec verbatim for round-tripping into
-        // other tools that may want to re-render the symbol.
+        // Stash the APP-6C spec as-is so other tools can re-render the symbol.
         if let spec = wp.kind.militarySpec {
             props["tacticalmaps:affiliation"] = spec.affiliation.rawValue
             props["tacticalmaps:echelon"]     = spec.echelon.rawValue
@@ -101,7 +99,7 @@ enum GeoJSONExporter {
             props["tacticalmaps:scale_x"] = wp.scaleX
             props["tacticalmaps:scale_y"] = wp.scaleY
             if wp.rotation != 0 {
-                // Round to 1° — sub-degree precision is meaningless for a
+                // Round to 1 deg. Sub-degree precision is meaningless for a
                 // hand-dialed slider and just clutters the diff.
                 props["tacticalmaps:rotation_deg"] = (wp.rotation.rounded() as Double)
             }
@@ -126,9 +124,9 @@ enum GeoJSONExporter {
         ]
     }
 
-    /// Canonical wire form of a UUID: lowercase. Swift's `uuidString` is
-    /// uppercase while Android/Java emit lowercase; emitting lowercase on both
-    /// keeps the id byte-identical across a round-trip so sync doesn't churn.
+    /// Wire-format UUID: always lowercase. Swift's `uuidString` is uppercase
+    /// but Android emits lowercase, so we just lowercase everything to keep
+    /// ids byte-identical and avoid sync churn.
     private static func wire(_ id: UUID) -> String { id.uuidString.lowercased() }
 
     private static func feature(for shape: DrawingShape, layer: DrawingLayer? = nil) -> [String: Any] {
@@ -158,15 +156,15 @@ enum GeoJSONExporter {
             if let f = shape.style.fillColorHex { props["fill"] = f }
             props["fill-opacity"] = shape.style.fillOpacity
         }
-        // Dash round-trips via a shared namespaced key (both platforms emit/read).
+        // Dash style: shared namespaced key, both plaforms emit and read it.
         props["tacticalmaps:stroke_style"] = shape.style.dashPattern != nil ? "dashed" : "solid"
         if let lg = shape.style.lineGraphic, lg != .plain {
             props["tacticalmaps:line_graphic"] = lg.rawValue
         }
 
-        // Export the RENDERED geometry — rotation + scale baked in (matching
-        // Android) — so a rotated/stretched shape lands correctly in other tools
-        // and sync diffs actually reflect a transform edit.
+        // Export the RENDERED geometry, rotation + scale baked in (matching
+        // Android). That way a rotated/stretched shape lands correctly in other
+        // tools and sync diffs actually reflect transform edits.
         let baked = shape.effectiveCoordinates
         var geometry: [String: Any]
         switch shape.kind {
@@ -184,7 +182,7 @@ enum GeoJSONExporter {
             ]
 
         case .polygon:
-            // GeoJSON rings must be closed (first == last). Close implicitly.
+            // GeoJSON rings must be closed (first == last), so close if needed.
             var coords = baked.map { [$0.longitude, $0.latitude] }
             if let first = coords.first, let last = coords.last, first != last {
                 coords.append(first)
@@ -221,9 +219,8 @@ enum GeoJSONExporter {
         }
     }
 
-    /// Closest Mapbox Maki icon for a military spec. There's no real
-    /// APP-6 equivalent in Maki so this is a best-effort hint for tools
-    /// like geojson.io.
+    /// Best-effort Maki icon for a military spec. There's no real APP-6
+    /// equivalent in Maki, just a rough hint for geojson.io and friends.
     private static func makiSymbol(for spec: MilitarySymbolSpec) -> String {
         switch spec.affiliation {
         case .friend:  return "square"
@@ -234,9 +231,8 @@ enum GeoJSONExporter {
     }
 
     private static func makiSymbol(for m: TacticalControlMeasure) -> String {
-        // We don't ship a Maki name for every one of the 37 cases —
-        // simplestyle viewers (geojson.io, GitHub gists) get a generic
-        // marker plus the namespaced sidc/displayName for round-tripping.
+        // No maki name for all 37 cases. Simplestyle viewers just get a
+        // generic marker + the namespaced displayName for round-tripping.
         return "marker"
     }
 

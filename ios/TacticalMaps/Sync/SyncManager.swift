@@ -3,19 +3,18 @@ import Combine
 import CryptoKit
 import CoreLocation
 
-/// Real-time shared-tactical-picture sync client (iOS). Mirrors the Android
-/// `SyncManager`: connects to the E2E-blind relay for a join-code room and keeps
-/// waypoints + drawings in step across the unit.
+/// Real-time sync client for shared tactical picture (iOS side). Basically
+/// mirrors Android's `SyncManager`: connects to E2E-blind relay for a
+/// join-code room and keeps waypoints + drawings in sync across the unit.
 ///
-/// Each object is serialised as a single-feature GeoJSON document (the same
-/// cross-platform schema TacMap already round-trips), encrypted with the room
-/// key (`SyncCrypto`) and relayed as opaque ciphertext. Layers ride along in the
-/// feature properties. Merge is last-write-wins on a per-object Lamport version;
-/// echo is suppressed by tracking the last serialised form per id.
+/// Each object gets serialised as single-feature GeoJSON (same cross-platform
+/// schema we already use for import/export), encrypted with the room key and
+/// relayed as opaque ciphertext. Layers ride along in feature properties.
+/// Merge is LWW on per-object Lamport version; echo supressed by tracking
+/// last serialised form per id.
 ///
-/// Also manages ephemeral presence: broadcasts the device's location + callsign
-/// every 5 seconds when `presenceConfig.shareLocation` is true, and tracks
-/// remote peers' positions for display as map annotations.
+/// Also handles ephemeral presence: broadcasts device location + callsign
+/// every 5s when sharing is on, and tracks remote peers for map annotations.
 @MainActor
 final class SyncManager: ObservableObject {
     enum Status { case offline, connecting, connected }
@@ -27,14 +26,14 @@ final class SyncManager: ObservableObject {
         didSet { savePresenceConfig() }
     }
 
-    /// Fires a short description string whenever a remote sync change is applied,
-    /// so the UI can show a brief conflict/update notification.
+    /// Fires a description whenever a remote change comes in, so the UI
+    /// can flash a conflict/update notification.
     let remoteUpdateSubject = PassthroughSubject<String, Never>()
 
     static let relayBase = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
 
-    // Set once via configure() so this can be a @StateObject (created without
-    // referencing the other @StateObject stores at declaration).
+    // Set once via configure() so this can be a @StateObject. Needs to be
+    // created without referencing other @StateObject stores at init time.
     private var waypointStore: WaypointStore!
     private var drawingStore: DrawingStore!
     /// Injected after construction so presence can read the current GPS fix.
@@ -52,9 +51,9 @@ final class SyncManager: ObservableObject {
     private var kindById: [String: String] = [:]
     private var observers = Set<AnyCancellable>()
 
-    /// Timer that broadcasts `loc` messages every 5 seconds.
+    /// Broadcasts `loc` messages every 5 seconds.
     private var presenceTimer: Timer?
-    /// Timer that sweeps stale peers every 30 seconds.
+    /// Sweeps stale peers every 30s.
     private var stalenessTimer: Timer?
 
     init() {
@@ -68,8 +67,8 @@ final class SyncManager: ObservableObject {
         loadPresenceConfig()
     }
 
-    /// Inject the shared stores once the view hierarchy exists. Safe to call
-    /// repeatedly; only the first call binds.
+    /// Inject shared stores once the view hierarchy is up. Can call
+    /// repeatedly, only first call actually binds.
     func configure(waypointStore: WaypointStore,
                    drawingStore: DrawingStore,
                    locationService: LocationService? = nil) {
@@ -226,9 +225,9 @@ final class SyncManager: ObservableObject {
 
     // MARK: - Presence broadcasting
 
-    /// Sends the device's current GPS position + presenceConfig fields as a
-    /// `loc` message. Called every 5 seconds by the presence timer while
-    /// connected and `presenceConfig.shareLocation` is true.
+    /// Fire-and-forget the device's GPS position + presenceConfig as a
+    /// `loc` message. Runs on the 5s presence timer while connected and
+    /// location sharing is on.
     func sendPresence() {
         guard status == .connected,
               presenceConfig.shareLocation,
@@ -274,7 +273,7 @@ final class SyncManager: ObservableObject {
         stalenessTimer = nil
     }
 
-    /// Remove peers whose last `loc` update is older than 45 seconds.
+    /// Drop peers whose last `loc` is older than 45s.
     private func sweepStalePeers() {
         let cutoff = Date().addingTimeInterval(-45)
         peers = peers.filter { $0.value.receivedAt > cutoff }
@@ -362,7 +361,7 @@ final class SyncManager: ObservableObject {
         kindById[id] = parsed.waypoints.isEmpty ? "drawing" : "waypoint"
         lastContent[id] = reexport(id: id)
 
-        // Notify the UI that a remote change was applied.
+        // Let UI know a remote change landed.
         let kind = parsed.waypoints.isEmpty ? "Drawing" : "Waypoint"
         remoteUpdateSubject.send("\(kind) updated by another device")
     }
@@ -392,7 +391,7 @@ final class SyncManager: ObservableObject {
         else { drawingStore.add(shape) }
     }
 
-    /// Re-serialise the applied object so the next diff sees no spurious change.
+    /// Re-serialise so the next diff doesn't see a spurious change.
     private func reexport(id: String) -> String {
         let layers = drawingStore.layers
         if let wp = waypointStore.waypoints.first(where: { $0.id.uuidString == id }) {

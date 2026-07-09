@@ -9,15 +9,15 @@ import kotlin.math.tan
 import kotlin.math.cos
 
 /**
- * Pure Web-Mercator (EPSG:3857) XYZ tile math — the slippy-map scheme MBTiles
- * and Google/OSM tiles use. Kept dependency-free and side-effect-free so the
- * tricky parts are unit-tested on the host JVM (see WebMercatorTilesTest).
+ * Pure Web-Mercator (EPSG:3857) XYZ tile math, the slippy-map scheme MBTiles
+ * and Google/OSM tiles use. No deps, no side effects so the tricky parts
+ * are unit-tested on host JVM (see WebMercatorTilesTest).
  *
- * XYZ convention: tile (0,0) is the north-west corner; y increases southward.
+ * XYZ convention: tile (0,0) is NW corner, y increases southward.
  */
 object WebMercatorTiles {
 
-    private const val MAX_LAT = 85.05112878   // Web-Mercator clamp
+    private const val MAX_LAT = 85.05112878   // web-mercator clamp
 
     /** Fractional tile column for a longitude at zoom [z]. */
     fun lonToTileX(lon: Double, z: Int): Double =
@@ -40,7 +40,7 @@ object WebMercatorTiles {
         return Math.toDegrees(atan(sinh(n)))
     }
 
-    /** WGS84 bounding box of integer tile (z,x,y). */
+    /** WGS84 bbox of integer tile (z,x,y). */
     fun tileBounds(z: Int, x: Int, y: Int): Wgs84Bounds {
         val west = tileXToLon(x.toDouble(), z)
         val east = tileXToLon((x + 1).toDouble(), z)
@@ -54,21 +54,21 @@ object WebMercatorTiles {
 
     /**
      * Inclusive integer tile range (minX..maxX, minY..maxY) covering `bounds`
-     * at zoom `z`. Clamped to the valid 0..(2^z - 1) grid.
+     * at zoom `z`. Clamped to valid 0..(2^z - 1) grid.
      *
-     * Antimeridian note: a box that crosses ±180° (west longitude > east) yields
-     * minX > maxX, so [TileRange.count] is 0 and the caller ([PdfTiler]) treats
-     * the bake as failed rather than producing wrong tiles. Full wrap-around
-     * tiling is intentionally unsupported: the calibration affine is linear in
-     * longitude and cannot represent the ±180° discontinuity, so a sheet
-     * straddling the date line would need unwrapped-longitude fiduciaries fixed
+     * Antimeridian: a box crossing +/-180 (west lon > east) yields
+     * minX > maxX so [TileRange.count] is 0 and [PdfTiler] treats the bake
+     * as failed rather than producing wrong tiles. Full wrap-around tiling
+     * is intentionally unsupported - the calibration affine is linear in
+     * longitude and can't represent the +/-180 discontinuity, so a sheet
+     * straddling the date line needs unwrapped-longitude fiduciaries fixed
      * upstream, not a tiler workaround.
      */
     fun tileRange(bounds: Wgs84Bounds, z: Int): TileRange {
         val max = (1 shl z) - 1
         val minX = floor(lonToTileX(bounds.southwest.longitude, z)).toInt().coerceIn(0, max)
         val maxX = floor(lonToTileX(bounds.northeast.longitude, z)).toInt().coerceIn(0, max)
-        // North latitude → smaller y.
+        // north latitude -> smaller y
         val minY = floor(latToTileY(bounds.northeast.latitude, z)).toInt().coerceIn(0, max)
         val maxY = floor(latToTileY(bounds.southwest.latitude, z)).toInt().coerceIn(0, max)
         return TileRange(z, minX, maxX, minY, maxY)

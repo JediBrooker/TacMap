@@ -11,7 +11,7 @@ import java.io.File
 
 /**
  * In-memory waypoint store with disk persistence to filesDir/waypoints.json.
- * Fresh installs start empty — no demo seed (matches iOS).
+ * Fresh installs start empty, no demo seed (matches iOS).
  */
 class WaypointStore(context: Context) {
 
@@ -21,8 +21,8 @@ class WaypointStore(context: Context) {
     private val _waypoints = MutableStateFlow<List<Waypoint>>(emptyList())
     val waypoints: StateFlow<List<Waypoint>> = _waypoints.asStateFlow()
 
-    /** Non-null when the on-disk waypoints file was unreadable and quarantined,
-     *  so the UI can tell the user their waypoints were preserved rather than
+    /** Non-null when on-disk waypoints file was unreadable and got quarantined,
+     *  so UI can tell user their waypoints were preserved instead of just
      *  silently emptied. */
     private val _loadError = MutableStateFlow<String?>(null)
     val loadError: StateFlow<String?> = _loadError.asStateFlow()
@@ -48,8 +48,8 @@ class WaypointStore(context: Context) {
         persist()
     }
 
-    /** Updates a waypoint for visual feedback during a continuous gesture (e.g. slider
-     *  drag) without pushing to the undo stack. Call [update] at gesture end. */
+    /** Update waypoint for visual feedback during a gesture (e.g. slider drag)
+     *  without pushing to undo stack. Call [update] when gesture ends. */
     fun updateNoUndo(wp: Waypoint) {
         _waypoints.value = _waypoints.value.map { if (it.id == wp.id) wp else it }
         persist()

@@ -6,19 +6,18 @@ import com.google.android.gms.auth.blockstore.RetrieveBytesRequest
 import com.google.android.gms.auth.blockstore.StoreBytesData
 
 /**
- * Tracks the free-trial window. Same synchronous API as before
- * (isTrialActive / daysRemaining), so MainActivity needs no changes beyond
- * optionally awaiting [restoreFromBlockStore] at startup.
+ * Tracks free-trial window. Same sync API as before (isTrialActive /
+ * daysRemaining) so MainActivity doesn't need changes beyond optionally
+ * awaiting [restoreFromBlockStore] at startup.
  *
- * Parity with the iOS Keychain version:
- *  1. The first-launch timestamp is mirrored to **Block Store**, which
- *     survives uninstall/reinstall on devices with Google Play services.
- *     On reinstall, prefs are empty, so we re-seed them from Block Store —
- *     the trial does NOT restart.
- *  2. A monotonically-increasing "latest seen" timestamp blocks the
- *     set-the-clock-back trick: effective now = max(wall clock, latest seen).
- *  3. On de-Googled devices Block Store calls fail silently and behaviour
- *     degrades to the old prefs-only model (accepted fallback).
+ * Parity with iOS Keychain version:
+ *  - First-launch timestamp mirrored to Block Store, which survives
+ *    uninstall/reinstall on devices w/ Play services. On reinstall prefs
+ *    are empty so we re-seed from Block Store - trial does NOT restart.
+ *  - Monotonic "latest seen" timestamp blocks the clock-rollback trick:
+ *    effective now = max(wall clock, latest seen).
+ *  - On de-Googled devices Block Store calls fail silently and we just
+ *    fall back to the old prefs-only model.
  *
  * Gradle: implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
  */
@@ -30,20 +29,19 @@ class TrialManager(context: Context) {
 
     init {
         if (!prefs.contains(KEY_FIRST_LAUNCH)) {
-            // Don't stamp yet — Block Store may hold the real first launch
-            // from a previous install. Kick off the async restore; if Block
-            // Store has nothing (true first install or no Play services),
-            // stamp now.
+            // Don't stamp yet, Block Store might have the real first launch
+            // from a previous install. Kick off async restore; if it comes
+            // back empty (true first install or no Play services) we stamp.
             restoreFromBlockStore()
         }
         touchLatestSeen(System.currentTimeMillis())
     }
 
     /**
-     * Re-seed prefs from Block Store after a reinstall, or write the
-     * first-launch stamp to both if neither has one. Fire-and-forget; the
-     * synchronous getters below fall back to "now" until it lands, which is
-     * at worst briefly generous, never exploitable long-term.
+     * Re-seed prefs from Block Store after reinstall, or write first-launch
+     * stamp to both if neither has one. Fire and forget - the sync getters
+     * below fall back to "now" until it lands, which is at worst briefly
+     * generous but not exploitable long-term.
      */
     fun restoreFromBlockStore(onComplete: (() -> Unit)? = null) {
         val client = Blockstore.getClient(appContext)
@@ -69,7 +67,7 @@ class TrialManager(context: Context) {
                 onComplete?.invoke()
             }
             .addOnFailureListener {
-                // No Play services / Block Store unavailable → prefs-only.
+                // no Play services / Block Store unavailable, prefs-only fallback
                 if (!prefs.contains(KEY_FIRST_LAUNCH)) stampFirstLaunchEverywhere()
                 onComplete?.invoke()
             }
@@ -87,7 +85,7 @@ class TrialManager(context: Context) {
         val data = StoreBytesData.Builder()
             .setKey(key)
             .setBytes(value.toString().toByteArray(Charsets.UTF_8))
-            .setShouldBackupToCloud(false) // device-bound, like Keychain config
+            .setShouldBackupToCloud(false) // device-bound, same as Keychain on iOS
             .build()
         Blockstore.getClient(appContext).storeBytes(data) // best-effort
     }
@@ -97,7 +95,7 @@ class TrialManager(context: Context) {
 
     // ---- clock-rollback guard -------------------------------------------
 
-    /** Advance the high-water mark; returns effective "now". */
+    /** Bump the high-water mark, returns effective "now". */
     private fun touchLatestSeen(now: Long): Long {
         val seen = prefs.getLong(KEY_LATEST_SEEN, 0L)
         val effective = maxOf(now, seen)
@@ -119,7 +117,7 @@ class TrialManager(context: Context) {
     fun isTrialActive(now: Long = System.currentTimeMillis()): Boolean =
         touchLatestSeen(now) < trialEndMillis
 
-    /** Whole days remaining, rounded up (so "2.3 days left" reads as 3), 0 once expired. */
+    /** Days left rounded up (2.3 days -> 3), 0 when expired. */
     fun daysRemaining(now: Long = System.currentTimeMillis()): Int {
         val remaining = trialEndMillis - touchLatestSeen(now)
         if (remaining <= 0L) return 0

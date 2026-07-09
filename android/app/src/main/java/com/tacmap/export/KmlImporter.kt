@@ -16,18 +16,18 @@ import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
- * Import KML / KMZ (Google Earth, ATAK, Caltopo, …) into TacticalMaps
+ * Import KML / KMZ (Google Earth, ATAK, Caltopo, etc) into TacticalMaps
  * domain objects.
  *
- * Placemark `Point` → waypoint; `LineString` / `Polygon` (outer ring) →
- * drawing. KML `Folder`/`Document` names map to drawing layers so an
- * exported folder structure survives the round-trip. KMZ is just a zip
- * wrapper — we read the first `.kml` entry (typically `doc.kml`).
+ * Placemark Point -> waypoint; LineString / Polygon (outer ring) ->
+ * drawing. KML Folder/Document names map to drawing layers so exported
+ * folder structure survives the round-trip. KMZ is just a zip wrapper,
+ * we read the first .kml entry (typically doc.kml).
  *
- * Reuses [GeoJsonImporter.Result] so the import UI handles GeoJSON and
- * KML identically. Shared inline styles (`<styleUrl>` references) are not
- * resolved in this first cut; imported shapes use the standard amber
- * defaults, matching how foreign GeoJSON lands.
+ * Reuses [GeoJsonImporter.Result] so import UI handles GeoJSON and KML
+ * identically. Shared inline styles (styleUrl refs) are not resolved
+ * in this first cut; imported shapes get the standard amber defaults,
+ * same as foreign GeoJSON.
  */
 object KmlImporter {
 
@@ -37,8 +37,8 @@ object KmlImporter {
     private const val DEFAULT_FILL = 0x33FFA000
 
     /**
-     * Parse a KML or KMZ [input] stream. Sniffs the zip magic to decide
-     * whether to unwrap a KMZ first. The caller owns/closes [input].
+     * Parse a KML or KMZ [input] stream. Sniffs zip magic to decide
+     * whether to unwrap KMZ first. Caller owns/closes [input].
      */
     fun parseStream(
         input: InputStream,
@@ -62,7 +62,7 @@ object KmlImporter {
     ): GeoJsonImporter.Result {
         val doc = try {
             DocumentBuilderFactory.newInstance()
-                .apply { isNamespaceAware = false }   // KML default namespace → ignore prefixes
+                .apply { isNamespaceAware = false }   // KML default namespace, just ignore prefixes
                 .newDocumentBuilder()
                 .parse(kml.byteInputStream())
         } catch (e: Exception) {
@@ -128,7 +128,7 @@ object KmlImporter {
         val notes = directChildText(placemark, "description")
         val id = UUID.randomUUID().toString()
 
-        // First recognised geometry wins (MultiGeometry → first child).
+        // first recognised geometry wins (MultiGeometry -> first child)
         val geom = firstGeometry(placemark) ?: return
         when (localName(geom.tagName)) {
             "Point" -> {
@@ -165,7 +165,7 @@ object KmlImporter {
                 )
             }
             "Polygon" -> {
-                // Outer ring only — we don't model holes.
+                // outer ring only, we don't model holes
                 val ring = directChild(geom, "outerBoundaryIs")
                     ?.let { directChild(it, "LinearRing") }
                     ?: return
@@ -187,7 +187,7 @@ object KmlImporter {
         }
     }
 
-    /** First Point/LineString/Polygon under a Placemark (descends MultiGeometry). */
+    /** First Point/LineString/Polygon under a Placemark (descends into MultiGeometry). */
     private fun firstGeometry(placemark: Element): Element? {
         directChild(placemark, "Point")?.let { return it }
         directChild(placemark, "LineString")?.let { return it }
@@ -205,7 +205,7 @@ object KmlImporter {
 
     // ----- Coordinate parsing -----
 
-    /** KML coordinates: whitespace-separated `lon,lat[,alt]` tuples. */
+    /** KML coordinates: whitespace-separated lon,lat[,alt] tuples. */
     private fun parseCoords(text: String): List<DrawingPoint> =
         text.trim().split(Regex("\\s+")).mapNotNull { tuple ->
             val parts = tuple.split(',')
@@ -221,7 +221,7 @@ object KmlImporter {
 
     // ----- DOM helpers -----
 
-    /** Strip any namespace prefix: "kml:Placemark" → "Placemark". */
+    /** Strip namespace prefix: "kml:Placemark" -> "Placemark" */
     private fun localName(tag: String): String = tag.substringAfterLast(':')
 
     private fun directChild(parent: Element, tag: String): Element? {
@@ -236,7 +236,7 @@ object KmlImporter {
     private fun directChildText(parent: Element, tag: String): String? =
         directChild(parent, tag)?.textContent?.trim()?.ifBlank { null }
 
-    /** First descendant with [tag] (handles coordinates nested in boundary wrappers). */
+    /** First descendant with [tag] (handles coords nested in boundary wrappers). */
     private fun descendantText(parent: Element, tag: String): String? {
         directChild(parent, tag)?.let { return it.textContent?.trim()?.ifBlank { null } }
         val kids = parent.childNodes

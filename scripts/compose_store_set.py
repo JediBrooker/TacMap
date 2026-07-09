@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Compose the canonical 10-slide branded store set (shared text/order across
 iOS + Android) for one device profile. 9 single-device slides via
-store_screenshots, the basemaps slide as a 3-device fan via fan_slide.
+store_screenshots, basemaps slide as a 3-device fan via fan_slide.
 
-The slide text/eyebrow/accent is identical for every device so the four sets
-(iPhone, iPad, Android phone, Android tablet) stay consistent — only the raw
-screenshots and the output canvas size differ.
+Slide text/eyebrow/accent is identical for every device so the four sets
+(iPhone, iPad, Android phone, Android tablet) stay consistent. Only the
+raw screenshots and output canvas size differ.
 
     python3 scripts/compose_store_set.py <profile.json>
 
@@ -13,9 +13,9 @@ profile = {
   "W":1080,"H":2100,
   "raw_dir":"/abs/raws",              # hero.png symbols.png unit-sync.png recording.png
                                       # weather.png import-export.png symbol-builder.png search.png
-  "pdf_src":"/abs/pdf-hero.png",      # the imported-GeoPDF capture (staged in as pdf-hero.png)
+  "pdf_src":"/abs/pdf-hero.png",      # imported-GeoPDF capture (staged in as pdf-hero.png)
   "basemaps_dir":"/abs/basemaps",     # bm-esri.png bm-terrain.png bm-satellite.png
-  "out_dir":"/abs/out",               # writes 01-hero.png … 10-pdfmap.png
+  "out_dir":"/abs/out",               # writes 01-hero.png ... 10-pdfmap.png
   "fan":{"angle":13,"device_w":0.40,"offx":0.225}
 }
 """

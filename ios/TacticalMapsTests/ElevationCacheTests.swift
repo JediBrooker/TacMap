@@ -2,8 +2,8 @@ import XCTest
 import CoreLocation
 @testable import TacticalMaps
 
-/// Tests the pure offline-fallback cache behind the elevation HUD: exact hits,
-/// nearest-within-threshold (what keeps the readout alive with no signal), and
+/// Tests the offline-fallback cache behind the elevation HUD: exact hits,
+/// nearest-within-threshold (keeps the readout alive with no signal), and
 /// bounded eviction.
 final class ElevationCacheTests: XCTestCase {
 

@@ -3,10 +3,10 @@ import Foundation
 import CoreLocation
 @testable import TacticalMaps
 
-/// Loads the shared golden vectors in `testdata/` — the SAME files the Android
-/// suite reads — and asserts the iOS implementations match them. This is the
-/// guard against the two native ports of the affine solve, MGRS formatting, and
-/// GeoJSON geometry silently drifting apart. See `testdata/README.md`.
+/// Loads the shared golden vectors in testdata/ - the SAME files the Android
+/// suite reads - and checks the iOS implementations match. This is what
+/// catches the two native ports of affine solve, MGRS formatting, and
+/// GeoJSON geometry silenty drifting apart.
 final class SharedVectorsTests: XCTestCase {
 
     // MARK: fixture loading (walk up from this source file to repo-root testdata/)

@@ -9,18 +9,16 @@ struct DrawingShape: Identifiable, Codable, Hashable {
     var name: String?
     var notes: String?
     var kind: DrawingKind
-    /// Ordered vertices as drawn. For polygons, the ring is closed
-    /// implicitly on export. Rendering uses `effectiveCoordinates`,
-    /// which applies `rotation` and `scaleX`/`scaleY` non-destructively
-    /// around the shape's centroid — so the original vertices are
-    /// preserved and the controls can be reset back to 1×, 0°.
+    /// Vertices as drawn. Polygons get their ring closed on export.
+    /// Rendering goes through `effectiveCoordinates` which applies
+    /// rotation/scale around centroid non-destructively, so originals
+    /// are preserved and you can always reset to 1x/0deg.
     var coordinates: [Coordinate2D]
     var style: DrawingStyle
     var createdAt: Date
-    /// Which DrawingLayer this shape belongs to. Required, but kept Codable-
-    /// optional so older `drawings.json` files written before multi-layer
-    /// support can still decode (DrawingStore re-stamps them with the
-    /// default layer's id on first read).
+    /// Which layer this shape belongs to. Required but Codable-optional
+    /// so old drawings.json files from before multi-layer still decode
+    /// (DrawingStore re-stamps them with the default layer id).
     var layerID: UUID
     /// Rotation around the centroid, in degrees clockwise. 0 = as drawn.
     var rotation: Double
@@ -57,25 +55,23 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         coordinates.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
-    /// Coordinates with rotation + scale applied around the shape's
-    /// centroid. Used by the map renderer and tap hit-test. For a single-
-    /// point shape this is just the original coordinate.
+    /// Coords with rotation + scale applied around centroid. Used by
+    /// map renderer and tap hit-test. Single-point = just the original.
     var effectiveCoordinates: [Coordinate2D] {
         guard coordinates.count > 1,
               rotation != 0 || scaleX != 1 || scaleY != 1
         else { return coordinates }
         let lat0 = coordinates.map(\.latitude ).reduce(0, +) / Double(coordinates.count)
         let lon0 = coordinates.map(\.longitude).reduce(0, +) / Double(coordinates.count)
-        // Negate so positive rotation is CLOCKWISE on screen — matching Android
-        // drawings (Drawing.kt effectivePoints uses -rotationDegrees) and both
-        // platforms' control-measure renderers. Without this, iOS drawings
-        // rotated the opposite way to everything else.
+        // Negate so positive = CLOCKWISE on screen, matching Android
+        // (Drawing.kt effectivePoints uses -rotationDegrees) and both
+        // platforms' control-measure renderers. Without this iOS drawings
+        // rotated the wrong way compared to everything else.
         let rad = -rotation * .pi / 180
         let cosR = cos(rad), sinR = sin(rad)
-        // Apply a cos(latitude) correction so a 90° rotation actually
-        // looks square on screen at non-equatorial latitudes (without it
-        // the shape stretches because 1° of longitude < 1° of latitude
-        // away from the equator).
+        // cos(lat) correction so 90deg rotation looks square on screen
+        // at non-equatorial latitudes (without it shapes stretch b/c
+        // 1deg longitude < 1deg latitude away from equator)
         let lonScale = max(cos(lat0 * .pi / 180), 0.001)
         return coordinates.map { c in
             let dx = (c.longitude - lon0) * lonScale * scaleX
@@ -93,10 +89,9 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         effectiveCoordinates.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
-    /// Once the user starts editing individual vertices, any
-    /// rotation/scale baked into the controls card is no longer
-    /// meaningful — the new vertex set BECOMES the canonical shape.
-    /// Apply the transform to `coordinates` and reset rotation/scale.
+    /// Once user starts editing vertices, any rotation/scale from the
+    /// controls card is no longer meaningful. The new vertex set IS the
+    /// shape now. Apply transform to coords and reset rotation/scale.
     mutating func bakeTransformIfNeeded() {
         guard rotation != 0 || scaleX != 1 || scaleY != 1 else { return }
         coordinates = effectiveCoordinates
@@ -105,17 +100,16 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         scaleY = 1
     }
 
-    /// Move the vertex at `index` to a new coordinate. Bakes any
-    /// pending rotation/scale first so the dragged handle's screen
-    /// position matches what gets stored.
+    /// Move vertex at `index`. Bakes pending rotation/scale first so
+    /// the dragged handle's position matches what gets stored.
     mutating func setEffectiveVertex(_ index: Int, to coord: Coordinate2D) {
         bakeTransformIfNeeded()
         guard index >= 0 && index < coordinates.count else { return }
         coordinates[index] = coord
     }
 
-    /// Insert a new vertex at `index` (shifting existing vertices
-    /// right). Used when the user drags a midpoint handle.
+    /// Insert new vertex at `index` (shifts existing verts right).
+    /// Used when user drags a midpoint handle.
     mutating func insertEffectiveVertex(_ coord: Coordinate2D, at index: Int) {
         bakeTransformIfNeeded()
         guard index >= 0 && index <= coordinates.count else { return }
@@ -136,9 +130,9 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         return true
     }
 
-    /// Map coordinate where a name-label should be anchored on the map.
-    /// Polygons → centroid. Polylines → midpoint of the central segment.
-    /// Points → the point itself.
+    /// Where to anchor the name-label on the map.
+    /// Polygons = centroid, polylines = midpoint of central segment,
+    /// points = the point itself.
     var labelAnchor: CLLocationCoordinate2D? {
         let coords = effectiveCoordinates
         guard !coords.isEmpty else { return nil }
@@ -159,8 +153,8 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         }
     }
 
-    // Backward-compat: legacy drawings.json files have no `layerID` /
-    // rotation / scaleX / scaleY. Decode them with sensible defaults.
+    // backward compat: old drawings.json has no layerID / rotation /
+    // scaleX / scaleY. Decode with sensible defaults.
     private enum CodingKeys: String, CodingKey {
         case id, name, notes, kind, coordinates, style, createdAt, layerID
         case rotation, scaleX, scaleY
@@ -214,16 +208,15 @@ enum DrawingKind: String, Codable, CaseIterable, Hashable {
     }
 }
 
-/// WGS84 lat/lon pair. Plain doubles so the model is trivially Codable
-/// (CLLocationCoordinate2D isn't, and Apple's retroactive conformance landed
-/// only in iOS 17 SDKs).
+/// WGS84 lat/lon pair. Plain doubles so its trivially Codable
+/// (CLLocationCoordinate2D isn't Codable, Apple only added that in iOS 17).
 struct Coordinate2D: Codable, Hashable {
     var latitude: Double
     var longitude: Double
 }
 
-/// Tactical line-graphic style for a polyline — decorates the stroke as a NATO
-/// operational graphic. `.plain` (or nil) is an ordinary stroked line.
+/// Tactical line-graphic for a polyline, decorates stroke as a NATO
+/// operational graphic. `.plain` (or nil) is just a regular line.
 enum LineGraphic: String, Codable, Hashable, CaseIterable {
     case plain            // ordinary line
     case phaseLine        // dashed control line (PL / report line)
@@ -251,17 +244,17 @@ enum LineGraphic: String, Codable, Hashable, CaseIterable {
     }
 }
 
-/// Style follows the Mapbox simplestyle-spec keys (`stroke`, `stroke-width`,
-/// `fill`, `fill-opacity`) so the GeoJSON export renders out-of-the-box in
-/// GitHub, geojson.io, Mapbox, Felt, Leaflet, etc.
+/// Follows Mapbox simplestyle-spec keys (stroke, stroke-width, fill,
+/// fill-opacity) so GeoJSON export just works in GitHub, geojson.io,
+/// Mapbox, Felt, Leaflet, etc.
 struct DrawingStyle: Codable, Hashable {
     /// Stroke colour as a `#RRGGBB` hex string.
     var strokeColorHex: String = "#FFA500"  // tactical orange
-    /// Optional fill colour for polygons (`#RRGGBB` — opacity handled separately).
+    /// Fill colour for polygons (#RRGGBB, opacity is separate).
     var fillColorHex: String? = "#FFA500"
     /// Stroke width in points.
     var strokeWidth: Double = 3.0
-    /// Fill opacity (0–1). Defaults to 0.2 for a translucent area fill.
+    /// Fill opacity (0-1). Defaults to 0.2 for translucent area fill.
     var fillOpacity: Double = 0.2
     /// Optional dash pattern (in points, alternating on/off). Solid line if nil.
     var dashPattern: [Double]? = nil

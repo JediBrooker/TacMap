@@ -2,10 +2,10 @@ import Foundation
 import CoreLocation
 
 /// Geodetic datum that a calibrated map's grid references are expressed in.
-/// Most Australian defence / topo sheets are MGA (GDA94 or GDA2020), not WGS84
-/// — up to ~1.8 m apart. When the user calibrates such a sheet, the MGRS they
-/// type is in the sheet's datum; we shift each fiduciary to WGS84 before storing
-/// so overlays line up with the satellite basemap and GeoJSON exports.
+/// Most Aussie defence / topo sheets use MGA (GDA94 or GDA2020), not WGS84,
+/// and they can be up to ~1.8 m apart. When calibrating such a sheet the MGRS
+/// the user types is in the sheet's datum; we shift each fiduciary to WGS84
+/// before storing so overlays line up with satellite basemap and GeoJSON exports.
 enum Datum: String, CaseIterable, Codable {
     case wgs84
     case gda94
@@ -19,9 +19,9 @@ enum Datum: String, CaseIterable, Codable {
         }
     }
 
-    /// Shift a coordinate expressed in this datum to WGS84. GDA2020 and WGS84
-    /// are treated as coincident (both ≈ ITRF2014 @ epoch 2020); GDA94 → WGS84
-    /// uses the official ICSM GDA94→GDA2020 7-parameter conformal transform.
+    /// Shift a coordinate in this datum to WGS84. GDA2020 and WGS84 are
+    /// basically coincident (both ~ITRF2014 @ epoch 2020); GDA94 to WGS84
+    /// uses the official ICSM 7-parameter conformal transform.
     func toWGS84(_ c: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
         switch self {
         case .wgs84, .gda2020: return c
@@ -30,12 +30,12 @@ enum Datum: String, CaseIterable, Codable {
     }
 }
 
-/// 7-parameter Helmert datum transforms. Coordinates go geodetic → ECEF →
-/// (similarity transform) → ECEF → geodetic on the GRS80 ellipsoid (which GDA
-/// uses and which is identical to WGS84's to sub-millimetre).
+/// 7-parameter Helmert datum transforms. Coords go geodetic -> ECEF ->
+/// similarity transform -> ECEF -> geodetic on GRS80 ellipsoid (same as
+/// WGS84's to sub-millimetre).
 enum DatumTransform {
 
-    // ICSM "GDA94 → GDA2020" conformal 7-parameter transformation
+    // ICSM "GDA94 -> GDA2020" conformal 7-parameter transformation
     // (GDA2020 Technical Manual). Coordinate-frame rotation convention.
     private static let tx = 0.06155, ty = -0.01087, tz = -0.04019          // metres
     private static let rxSec = -0.0394924, rySec = -0.0327221, rzSec = -0.0328979  // arc-seconds

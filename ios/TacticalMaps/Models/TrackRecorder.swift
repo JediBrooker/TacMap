@@ -9,22 +9,21 @@ struct TrackPoint {
 }
 
 /// Accumulates GPS fixes into a track while recording. Fed by ContentView from
-/// `LocationService.lastLocation`. Foreground + background (the latter only
+/// `LocationService.lastLocation`. Foreground + background (background only
 /// while recording, via `LocationService.setBackgroundUpdates`).
 ///
-/// Durability: every accepted fix is appended and fsync'd to
-/// `Application Support/tracks/recording.ndjson` as it arrives, so process death
-/// (memory-pressure termination, crash, reboot) can lose at most the single
-/// in-flight fix — never the whole track. On construction, a track left on disk
-/// from a session that ended without a clean discard is recovered so the user
-/// can export or clear it.
+/// Each fix gets appended + fsync'd to
+/// `Application Support/tracks/recording.ndjson` as it arrives, so if the
+/// process dies (OOM kill, crash, reboot) we lose at most one in-flight fix,
+/// not the whole track. On init we check for a leftover log from a previous
+/// session that wasnt cleanly discarded and recover it.
 final class TrackRecorder: ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var points: [TrackPoint] = []
     /// True when `points` were recovered from a previous, un-discarded session.
     @Published private(set) var recovered = false
 
-    /// Minimum spacing between stored fixes — drops GPS jitter so a stationary
+    /// Min spacing between stored fixes. Drops GPS jitter so a stationary
     /// device doesn't bloat the track.
     private let minSpacingMetres: Double = 2
 
@@ -36,8 +35,7 @@ final class TrackRecorder: ObservableObject {
         return dir.appendingPathComponent("recording.ndjson")
     }()
 
-    /// On-disk line format (independent of CLLocationCoordinate2D, which is not
-    /// Codable).
+    /// On-disk line format. CLLocationCoordinate2D isn't Codable so we roll our own.
     private struct StoredPoint: Codable {
         let lat: Double
         let lon: Double
@@ -50,16 +48,16 @@ final class TrackRecorder: ObservableObject {
     func start() {
         points = []
         recovered = false
-        // Truncate any recovered/previous log and begin fresh. Protected at rest
-        // but readable after first unlock so background recording keeps working.
+        // Nuke any existing log and start fresh. Encrypted at rest but still
+        // readable after first unlock so background recording works.
         try? Data().write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         isRecording = true
     }
 
     func stop() {
         isRecording = false
-        // The log file is kept so a completed-but-unexported track also survives
-        // process death until the user exports or calls discard().
+        // Keep the log around so a finished-but-unexported track survives
+        // process death until user exports or discards.
     }
 
     /// Clear the current (recorded or recovered) track and remove its file.
@@ -104,7 +102,7 @@ final class TrackRecorder: ObservableObject {
         defer { try? handle.close() }
         handle.seekToEndOfFile()
         handle.write(line)
-        try? handle.synchronize() // fsync — force to stable storage
+        try? handle.synchronize() // fsync, force to stable storage
     }
 
     private func recover() {

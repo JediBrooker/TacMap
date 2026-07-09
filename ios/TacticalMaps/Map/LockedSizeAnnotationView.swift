@@ -1,23 +1,20 @@
 import MapKit
 import UIKit
 
-/// `MKAnnotationView` for tactical-symbol images that scales with the
-/// map's zoom level via `applyZoomScale(_:)` (called from
-/// `MapContainerView.Coordinator` on every camera change).
+/// MKAnnotationView for tactical symbols that scales with map zoom
+/// via applyZoomScale(_:), called from MapContainerView.Coordinator
+/// on every camera change.
 ///
-/// The white outline is baked into the bitmap by
-/// `TacticalControlMeasureSymbolView`; this view just hosts the image
-/// and applies the transform. Bounds match the image exactly so
-/// MapKit's hit-test target equals the visible symbol — no slack,
-/// no enlarged frames swallowing taps on neighbouring annotations.
+/// White outline is baked in by TacticalControlMeasureSymbolView,
+/// this view just hosts the image + applies transform. Bounds match
+/// image exactly so MapKit hit-test target = visible symbol, no
+/// enlarged frames clobbering taps on neighbouring annotations.
 final class LockedSizeAnnotationView: MKAnnotationView {
 
-    /// Native point size of the underlying image (before any zoom
-    /// scaling). nil until `setSymbolImage` has run.
+    /// Native point size before zoom scaling. nil untill setSymbolImage runs.
     private(set) var nativeImageSize: CGSize?
 
-    /// Install the symbol image and pin the view's bounds to its
-    /// point size.
+    /// Set the symbol image, pins bounds to its point size.
     func setSymbolImage(_ img: UIImage?) {
         self.image = img
         if let size = img?.size {
@@ -26,13 +23,13 @@ final class LockedSizeAnnotationView: MKAnnotationView {
         } else {
             nativeImageSize = nil
         }
-        // Reset transform so a recycled view from the dequeue pool
-        // doesn't carry a stale zoom scale from a previous use.
+        // reset transform b/c recycled views from dequeue pool
+        // can carry a stale zoom scale
         self.transform = .identity
     }
 
-    /// Apply a uniform scale to the view via its `transform`. Called
-    /// on every map-camera change so the symbol tracks zoom.
+    /// Uniform scale via transform, fires on every camera change
+    /// so symbol tracks zoom.
     func applyZoomScale(_ scale: CGFloat) {
         self.transform = CGAffineTransform(scaleX: max(scale, 0.01),
                                             y: max(scale, 0.01))

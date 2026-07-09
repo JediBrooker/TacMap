@@ -13,13 +13,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Builds an automatic terrain heat-map for a WGS84 region by sampling a grid of
- * elevations from Open-Meteo's Copernicus DEM (same source as the elevation
- * readout) and colouring it blue (low) → red (high). Reuses no user-uploaded
- * file — the differentiator vs the competitor's manual elevation-file import.
+ * Auto terrain heatmap for a WGS84 region. Samples a grid of elevations
+ * from Open-Meteo's Copernicus DEM and colours blue (low) to red (high).
+ * No user-uploaded file needed, unlike the competitor's manual import.
  *
- * The returned bitmap is upscaled + alpha-blended so it reads as a smooth,
- * semi-transparent shading overlay when stretched across the region.
+ * Returned bitmap is upscaled + alpha-blended for a smooth semi-transparent
+ * overlay when stretched across the region.
  */
 class TerrainHeatmapService {
 
@@ -31,9 +30,8 @@ class TerrainHeatmapService {
     /** Sample [grid]x[grid] elevations over [bounds] and return a coloured,
      *  upscaled bitmap, or null on failure. */
     suspend fun generate(bounds: Wgs84Bounds, grid: Int = 24): Bitmap? = withContext(Dispatchers.IO) {
-        // OPSEC gate (mirrors iOS TerrainHeatmapService): sampling the DEM
-        // transmits the region's coordinates to a third party (Open-Meteo), so
-        // only proceed when the user has opted into online lookups.
+        // OPSEC: sampling the DEM sends coordinates to Open-Meteo,
+        // only proceed if user opted into online lookups.
         if (OpsecSettings.shared?.onlineLookups?.value != true) return@withContext null
         val south = bounds.southwest.latitude
         val north = bounds.northeast.latitude
@@ -57,8 +55,8 @@ class TerrainHeatmapService {
         val elev = DoubleArray(grid * grid) { Double.NaN }
         var i = 0
         while (i < elev.size) {
-            // Honour cancellation: if the user panned away or turned the heatmap
-            // off, stop hitting the network instead of finishing every batch.
+            // If user panned away or toggled heatmap off, bail early
+            // instead of finishing every batch.
             ensureActive()
             val end = minOf(i + 100, elev.size)   // Open-Meteo: <=100 points/request
             val latStr = (i until end).joinToString(",") { lat[it].toString() }

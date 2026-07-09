@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Compose stylised, store-ready marketing screenshots from raw app captures.
+Compose stylised store-ready marketing screenshots from raw app captures.
 
 Each slide = on-brand tactical background (gradient + faint MGRS grid + green
-glow + corner reticle) -> a wordmark + accent eyebrow + bold headline +
-subcaption -> the raw screenshot inside a rounded device bezel, bottom-anchored.
+glow + corner reticle) -> wordmark + accent eyebrow + bold headline +
+subcaption -> raw screenshot inside a rounded device bezel, bottom-anchored.
 
-Output dimensions are set per store target, so the raw capture resolution does
-not matter (it is scaled to fit the bezel). Brand fonts live in scripts/fonts/.
+Output dims are set per store target so raw capture resolution doesn't
+matter (scaled to fit the bezel). Brand fonts live in scripts/fonts/.
 
     python3 scripts/store_screenshots.py <config.json>
 
@@ -65,13 +65,13 @@ def background(W, H, accent):
         c = lerp(BG_TOP, BG_BOT, y / H)
         for x in range(W):
             px[x, y] = c
-    # green radial glow, top-centre
+    # green radial glow at top-centre
     glow = Image.radial_gradient("L").resize((int(W * 1.5), int(W * 1.5)))
     gl = Image.new("RGB", glow.size, accent)
     galpha = glow.point(lambda v: int((255 - v) * 0.18))  # bright centre, fade out
     img.paste(gl, (int(W * 0.5 - glow.size[0] / 2), int(H * 0.20 - glow.size[1] / 2)),
               galpha)
-    # faint tactical grid (top-weighted)
+    # faint tactical grid, heavier at top
     grid = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
     step = max(40, int(W / 14))
@@ -79,7 +79,7 @@ def background(W, H, accent):
         gd.line([(x, 0), (x, H)], fill=(*GRID, 16), width=1)
     for y in range(0, H, step):
         gd.line([(0, y), (W, y)], fill=(*GRID, 16), width=1)
-    # fade the grid out toward the bottom
+    # fade grid out toward bottom
     fade = Image.new("L", (W, H), 0)
     fd = fade.load()
     for y in range(H):
@@ -89,7 +89,7 @@ def background(W, H, accent):
             fd[x, y] = v
     grid.putalpha(Image.composite(grid.getchannel("A"), Image.new("L", (W, H), 0), fade))
     img = Image.alpha_composite(img.convert("RGBA"), grid).convert("RGB")
-    # corner reticle, top-right
+    # corner reticle top-right
     d = ImageDraw.Draw(img, "RGBA")
     cx, cy, r = int(W * 0.88), int(H * 0.075), int(W * 0.05)
     d.arc([cx - r, cy - r, cx + r, cy + r], 0, 360, fill=(*AMBER, 90), width=2)
@@ -187,7 +187,7 @@ def render(cfg_slide, W, H, src_dir, out_path):
     # screenshot
     shot_r = rounded(shot.resize((inner_w, inner_h), Image.LANCZOS), int(inner_w * 0.075))
     img.paste(shot_r, (fx + bezel, fy + bezel), shot_r)
-    # thin accent edge along the bottom of the canvas
+    # thin accent edge along bottom of canvas
     d.rectangle([0, H - 6, W, H], fill=accent)
 
     img.save(out_path, "PNG")

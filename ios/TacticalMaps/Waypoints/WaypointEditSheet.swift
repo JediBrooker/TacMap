@@ -1,12 +1,12 @@
 import SwiftUI
 import CoreLocation
 
-/// Edit (or create) a single waypoint. Reachable by tapping any row in
-/// `WaypointListSheet`. Lets the user rename, change category & APP-6C
-/// symbol selection, edit notes / elevation, and delete.
+/// Edit (or create) a waypoint. Tapping a row in WaypointListSheet opens
+/// this. Rename, change category + APP-6C symbol, edit notes/elevation,
+/// or delete.
 struct WaypointEditSheet: View {
     @ObservedObject var waypointStore: WaypointStore
-    /// nil = creating a brand-new waypoint at `defaultCoordinate`.
+    /// nil = creating a new waypoint at defaultCoordinate.
     let original: Waypoint?
     let defaultCoordinate: CLLocationCoordinate2D
     @Environment(\.dismiss) private var dismiss
@@ -55,9 +55,9 @@ struct WaypointEditSheet: View {
                 _control  = State(initialValue: m)
             }
         } else {
-            // New tactical control measure: start at the zoom-appropriate
-            // scale on BOTH axes so the symbol enters square at roughly
-            // 10% of screen height at the current zoom level.
+            // New control measure: start at zoom-appropriate scale on
+            // both axes so symbol enters square at roughly 10% of
+            // screen height at current zoom.
             _scaleX = State(initialValue: defaultScale)
             _scaleY = State(initialValue: defaultScale)
         }
@@ -89,14 +89,14 @@ struct WaypointEditSheet: View {
                 } header: { Text("Preview") }
 
                 Section("Type") {
-                    // Custom segmented control. SwiftUI's
-                    // `.pickerStyle(.segmented)` on iOS 26 ignores
-                    // short taps (< ~200ms), which makes the bug
-                    // "I can't click Tasks" — finger taps mostly
-                    // work on device but it's flaky, and mouse
-                    // clicks in the simulator straight up don't
-                    // register. Buttons fire on touchUpInside with
-                    // no minimum-press threshold.
+                    // Custom segmented control b/c SwiftUI's
+                    // .pickerStyle(.segmented) on iOS 26 ignores
+                    // short taps (< ~200ms). The culprit is some
+                    // internal gesture recognizer. Finger taps
+                    // mostly work on device but its flaky, and
+                    // mouse clicks in simulator just don't register.
+                    // Buttons fire on touchUpInside with no minimum
+                    // press threshold so this works fine.
                     KindCategorySegmentedPicker(selection: $category)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
@@ -104,23 +104,22 @@ struct WaypointEditSheet: View {
 
                 switch category {
                 case .generic:
-                    EmptyView() // a plain point — no symbol configuration
+                    EmptyView() // plain point, no symbol config
 
                 case .military:
                     Section("Military Unit (APP-6C)") {
-                        // Affiliation is only 4 options — popup menu
-                        // (default style) fits comfortably with no
-                        // scrolling needed.
+                        // Only 4 options so popup menu (default style)
+                        // fits fine without scrolling.
                         Picker("Affiliation", selection: $affiliation) {
                             ForEach(SymbolAffiliation.allCases, id: \.self) { a in
                                 Text(a.displayName).tag(a)
                             }
                         }
-                        // Echelon (7) and Function (~30) push to a
-                        // dedicated scrollable List instead of using
-                        // the default popup menu — popup menu scroll
-                        // is unreliable in iOS 26 simulator and
-                        // fiddly on device for long lists.
+                        // Echelon (7) and Function (~30) use
+                        // navigationLink to push a scrollable list.
+                        // Popup menu scroll is wonky in iOS 26
+                        // simulator and fiddly on device for long
+                        // lists.
                         Picker("Echelon", selection: $echelon) {
                             ForEach(SymbolEchelon.allCases, id: \.self) { e in
                                 Text(e.displayName).tag(e)
@@ -138,13 +137,11 @@ struct WaypointEditSheet: View {
 
                 case .controlMeasure:
                     Section("Tactical Task / Control Measure") {
-                        // .navigationLink pushes a real scrollable List
-                        // onto the navigation stack. The default
-                        // popup-menu style has too many items to fit
-                        // on screen and the in-menu scroll doesn't
-                        // work reliably (silently swallows mouse-wheel
-                        // events in iOS 26 simulator, and is fiddly to
-                        // flick on device).
+                        // navigationLink pushes a scrollable list.
+                        // Default popup has too many items and the
+                        // in-menu scroll silently swallows mouse
+                        // events in iOS 26 sim, kinda fiddly to
+                        // flick on device too.
                         Picker("Measure", selection: $control) {
                             ForEach(TacticalControlMeasure.pickerEntries, id: \.self) { m in
                                 Text(m.displayName).tag(m)
@@ -208,9 +205,9 @@ struct WaypointEditSheet: View {
                                 }
                                 Slider(value: $scaleY, in: 0.1...20.0, step: 0.1)
                             }
-                            // Quick uniform-scale presets — applied to BOTH axes
-                            // (and any prior aspect-ratio stretch is lost). Lets
-                            // the user say "make the whole thing 2× bigger"
+                            // Quick uniform-scale presets, applied to both
+                            // axes (clobbers any aspect-ratio stretch).
+                            // Just lets the user go "make it 2x bigger"
                             // without dragging both sliders.
                             HStack {
                                 Text("Both:")
@@ -290,14 +287,13 @@ struct WaypointEditSheet: View {
                 Text("This will permanently remove “\(label)”.")
             }
         }
-        // Block interactive swipe-to-dismiss: this is an edit form, so an
-        // accidental swipe must not silently discard the user's changes. They
-        // exit explicitly via Cancel or Save.
+        // Block swipe-to-dismiss. This is an edit form, accidental
+        // swipe shouldn't silently nuke the user's changes.
         .interactiveDismissDisabled()
-        // The default iPad form-sheet is too small — the APP-6C unit options
-        // (affiliation / echelon / function / HQ) fall below the fold. On
-        // iOS 18+ present it as a large "page" sheet on iPad so the whole
-        // builder shows without scrolling (no-op on iPhone / older iOS).
+        // Default iPad form-sheet is too small, APP-6C unit options
+        // fall below the fold. Present as large "page" sheet on iPad
+        // so the whole builder shows without scrolling (no-op on
+        // iPhone / older iOS).
         .padSheetSizing()
     }
 
@@ -313,17 +309,16 @@ struct WaypointEditSheet: View {
         }
     }
 
-    /// Rotation applied to the live preview. Only meaningful for tactical
-    /// control measures — other categories ignore the value.
+    /// Rotation for the live preview. Only meaningful for control
+    /// measures, other categories just ignore it.
     private var previewRotation: Double {
         category == .controlMeasure ? rotation : 0
     }
 
-    /// Scale applied to the live preview. Uses the geometric mean of
-    /// scaleX/scaleY so a stretched symbol still shows at a sensible
-    /// size in the fixed-size preview cell. Clamped to a reasonable
-    /// display range (0.6×–1.4×); the persisted values can still span
-    /// 0.1×–20×.
+    /// Scale for the live preview. Geometric mean of scaleX/scaleY so
+    /// a stretched symbol still looks sensible in the fixed-size preview
+    /// cell. Clamped to 0.6x-1.4x for display, persisted values can
+    /// still span 0.1x-20x.
     private var previewScale: CGFloat {
         guard category == .controlMeasure else { return 1.0 }
         let mean = (scaleX * scaleY).squareRoot()
@@ -339,16 +334,15 @@ struct WaypointEditSheet: View {
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedElevation = Double(elevationText.trimmingCharacters(in: .whitespaces))
 
-        // Auto-fill the name with the kind's display name when blank
-        // so the user can drop a waypoint without thinking about a
-        // label. e.g. a tactical control measure becomes "Form-Up
-        // Point"; a friendly infantry platoon becomes "Friendly
-        // Infantry Platoon"; a generic waypoint becomes "Waypoint".
+        // Auto-fill name from kind's displayName when blank so user
+        // can just drop a waypoint without typing a label. e.g.
+        // control measure -> "Form-Up Point", friendly inf pl ->
+        // "Friendly Infantry Platoon", generic -> "Waypoint".
         let resolvedName = trimmedName.isEmpty ? currentKind.displayName : trimmedName
 
-        // Persist rotation + scale only for control measures; reset to
-        // defaults otherwise so a user who flips category doesn't carry
-        // over stale values.
+        // Only persist rotation + scale for control measures. Reset to
+        // defaults otherwise so flipping category doesn't carry over
+        // stale values.
         let persistedRotation = category == .controlMeasure ? rotation : 0
         let persistedScaleX   = category == .controlMeasure ? scaleX   : 1.0
         let persistedScaleY   = category == .controlMeasure ? scaleY   : 1.0
@@ -393,12 +387,11 @@ private enum KindCategory: String, CaseIterable, Hashable {
     }
 }
 
-/// Drop-in replacement for `Picker(...).pickerStyle(.segmented)` that
-/// works with fast taps and mouse clicks. Apple's segmented picker on
-/// iOS 26 has a regression where it ignores touches shorter than
-/// ~200ms — a deal-breaker for simulator testing with a mouse and
-/// flaky on real devices for users with quick fingers. SwiftUI
-/// `Button` doesn't have that issue.
+/// Drop-in replacement for Picker(.segmented) that works with fast taps
+/// and mouse clicks. Apple's segmented picker on iOS 26 has a regression
+/// where it ignores touches shorter than ~200ms, which is a dealbreaker
+/// for simulator testing and flaky on device too. Plain SwiftUI Buttons
+/// don't have that issue.
 private struct KindCategorySegmentedPicker: View {
     @Binding var selection: KindCategory
 

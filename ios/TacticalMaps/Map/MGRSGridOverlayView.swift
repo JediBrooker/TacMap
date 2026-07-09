@@ -2,19 +2,17 @@ import UIKit
 import MapKit
 import MGRS
 
-/// Draws the MGRS grid (lines + per-line labels) as a transparent subview
-/// layered ABOVE the imported-PDF image view.
+/// Draws MGRS grid (lines + labels) as a transparent subview above the
+/// imported-PDF image view.
 ///
-/// When a PDF basemap is active it renders as a `UIImageView` subview because
-/// iOS 26 MapKit won't draw MKOverlays over satellite imagery (see
-/// `syncPDFOverlay`). MKOverlay-based grid lines therefore paint *underneath*
-/// that image and disappear. This view sidesteps the problem by projecting the
-/// grid's geographic coordinates to screen points with `MKMapView.convert` on
-/// every camera change and stroking them in Core Graphics, so the grid sits on
-/// top of the PDF. It mirrors the Android Compose-canvas grid-label overlay.
+/// Needed b/c iOS 26 MapKit won't draw MKOverlays over satellite imagery
+/// (see syncPDFOverlay) so overlay-based grid lines end up underneath the
+/// PDF and disappear. We sidestep this by projecting grid coords to screen
+/// points via MKMapView.convert on every camera change and stroking with
+/// Core Graphics. Mirrors the Android Compose-canvas grid overlay.
 ///
-/// Only used while a PDF is active; the plain-basemap path keeps the cheaper
-/// MKOverlay/annotation renderer (which only redraws on zoom).
+/// Only used while a PDF is active - plain basemap uses the cheaper
+/// MKOverlay/annotation renderer.
 final class MGRSGridOverlayView: UIView {
 
     private struct Line {
@@ -41,9 +39,9 @@ final class MGRSGridOverlayView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// Replace the grid geometry. Called when the visible cells change
-    /// (panned/zoomed into a new bucket); the screen projection itself is
-    /// re-derived in `draw(_:)` so this is only about *which* lines exist.
+    /// Replace grid geometry when visible cells change (pan/zoom into new
+    /// bucket). Screen projection is re-derived in draw() so this just
+    /// controls *which* lines exist.
     func update(lines builtLines: [MGRSGridRenderer.LineSegment],
                 labels builtLabels: [MGRSGridRenderer.LabelMark]) {
         lines = builtLines.map { seg in
@@ -56,8 +54,8 @@ final class MGRSGridOverlayView: UIView {
         setNeedsDisplay()
     }
 
-    /// Re-project against the current camera. Cheap — called on every camera
-    /// change; the geometry is unchanged, only its screen position moves.
+    /// Re-project against current camera. Cheap, called on every camera
+    /// change; geometry is unchanged, only screen position moves.
     func reproject() { setNeedsDisplay() }
 
     func clear() {
@@ -82,8 +80,8 @@ final class MGRSGridOverlayView: UIView {
             ctx.strokePath()
         }
 
-        // Dark-grey bold text + soft white halo; vertical (easting) labels
-        // rotated -90° to run along the line — matches the annotation path.
+        // Dark-grey bold text + white halo. Vertical (easting) labels
+        // rotated -90 so they run along the line.
         for mark in labels {
             let pt = mv.convert(mark.coordinate, toPointTo: self)
             drawLabel(mark, at: pt, in: ctx)

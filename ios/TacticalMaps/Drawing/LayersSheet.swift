@@ -5,9 +5,8 @@ struct LayersSheet: View {
     @ObservedObject var visibility: LayerVisibility
     @ObservedObject var mapVM: MapViewModel
     @ObservedObject var drawingStore: DrawingStore
-    /// Closure invoked when the user requests fiduciary calibration for the
-    /// currently-loaded PDF. ContentView dismisses this sheet and starts the
-    /// CalibrationSession.
+    /// Called when user wants to calibrate the current PDF. ContentView
+    /// dismisses this sheet and kicks off CalibrationSession.
     var onCalibrate: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
 
@@ -17,8 +16,8 @@ struct LayersSheet: View {
     @State private var tilingProgress: PDFTiler.Progress? = nil
     @State private var tilingTask: Task<Void, Never>? = nil
     @State private var tilingError: String? = nil
-    /// A persisted-but-not-currently-active imported map, so the user can switch
-    /// back to it after picking an online basemap.
+    /// Persisted imported map that's not currently active, so user can
+    /// switch back after picking an online basemap.
     @State private var restorablePDF: PDFMapSource? = nil
 
     var body: some View {
@@ -86,9 +85,8 @@ struct LayersSheet: View {
                         }
                         Button(role: .destructive) {
                             mapVM.mapSource = AppleSatelliteMapSource()
-                            /// Clear the persisted entry too, otherwise the
-                            /// PDF the user just unloaded resurrects on the
-                            /// next launch.
+                            // also nuke the persisted entry, otherwise the PDF
+                            // the user just unloaded comes back on next launch
                             PDFSessionStore.clear()
                         } label: {
                             Label("Unload PDF", systemImage: "xmark.circle")
@@ -164,8 +162,8 @@ struct LayersSheet: View {
         }
     }
 
-    /// Bake the calibrated PDF into an offline MBTiles set off the main thread,
-    /// then swap the active source to the generated tiles.
+    /// Bake the calibrated PDF into offline MBTiles off main thread,
+    /// then swap active source to the generated tiles.
     private func generateTiles(from pdf: PDFMapSource) {
         tilingProgress = PDFTiler.Progress(done: 0, total: 0)
         tilingTask = Task.detached(priority: .userInitiated) {
@@ -176,30 +174,30 @@ struct LayersSheet: View {
             await MainActor.run {
                 tilingProgress = nil
                 tilingTask = nil
-                if cancelled { return } // user cancelled — no error, no swap
+                if cancelled { return } // user cancelled, bail out
                 if let url, let source = OfflineTileMapSource(url: url) {
                     mapVM.mapSource = source
                     PDFSessionStore.clear()
                     dismiss()
                 } else {
-                    // Don't fail silently — the bake didn't produce a usable set.
+                    // don't fail silently, the bake didn't produce a usable set
                     tilingError = "Couldn't generate offline tiles. Check that the device has free storage and try again."
                 }
             }
         }
     }
 
-    /// Extracted so the outer body stays within the SwiftUI type-checker's
-    /// complexity budget.
+    /// Pulled out b/c the outer body was hitting SwiftUI's type-checker
+    /// complexity limit.
     @ViewBuilder
     private var basemapSection: some View {
         Section("Basemap") {
             let importedActive = mapVM.mapSource is PDFMapSource
                 || mapVM.mapSource is OfflineTileMapSource
-            // Switching basemap only CHANGES the shown layer — it no longer
-            // clears the imported map's persisted session, so the imported map
-            // stays re-loadable (below) and still restores on next launch. Use
-            // "Unload…" above to actually remove it.
+            // Switching basemap just changes the shown layer, doesn't
+            // clobber the imported map's session anymore. Imported map
+            // stays re-loadable and restores on next launch. Use
+            // "Unload" above to actually nuke it.
             basemapRow(title: "Satellite (Apple)",
                        systemImage: "globe.americas.fill",
                        isActive: mapVM.mapSource is AppleSatelliteMapSource) {
@@ -334,7 +332,7 @@ struct LayersSheet: View {
     }
 }
 
-/// Modal that asks for a name + colour for a new drawing layer.
+/// Asks for a name + colour for a new drawing layer.
 private struct NewLayerSheet: View {
     let onCreate: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -392,8 +390,8 @@ private struct NewLayerSheet: View {
     }
 }
 
-/// Helper that injects a TextField + OK button into a SwiftUI .alert.
-/// Used by the rename flow so we don't pull in a whole second sheet.
+/// Injects a TextField + OK button into a SwiftUI .alert. Kinda hacky
+/// but beats pulling in a whole second sheet just for rename.
 private struct RenameLayerAlert: View {
     let initialName: String
     let onRename: (String) -> Void

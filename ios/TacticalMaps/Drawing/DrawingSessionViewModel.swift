@@ -4,15 +4,15 @@ import Combine
 
 /// State machine for an in-progress drawing.
 ///
-/// When `activeKind` is non-nil the app is in **drawing mode**: tapping the map
-/// adds a vertex, the bottom HUD swaps to `DrawToolbar`, and pan/zoom still
-/// works (gestures aren't swallowed). Finish writes the shape to `DrawingStore`.
+/// When `activeKind` is non-nil we're in drawing mode: map taps add vertices,
+/// bottom HUD swaps to `DrawToolbar`, pan/zoom still works (gestures aren't
+/// swallowed). Finish writes the shape to `DrawingStore`.
 final class DrawingSessionViewModel: ObservableObject {
     @Published private(set) var activeKind: DrawingKind? = nil
     @Published private(set) var inProgressCoordinates: [Coordinate2D] = []
 
-    /// User-selected stroke / fill colour for the in-progress drawing.
-    /// Persists across sessions until the user picks something else.
+    /// Stroke / fill colour for the in-progress drawing. Sticks around
+    /// across sessions untill the user picks something else.
     @Published var strokeColorHex: String = DrawingPalette.default.hex
 
     /// When true, finished lines and polygon strokes render dashed.
@@ -51,9 +51,9 @@ final class DrawingSessionViewModel: ObservableObject {
         return activeKind == .point
     }
 
-    /// Append a freehand point only when far enough from the last vertex
-    /// to avoid recording hundreds of near-identical coordinates during
-    /// a fast drag. Threshold is ~5 m at mid-latitudes.
+    /// Only append a freehand point when its far enough from the last
+    /// vertex - avoids recording hundreds of near-identical coords
+    /// during a fast drag. Threshold is ~5 m at mid-latitudes.
     func addFreeDrawPoint(_ coord: CLLocationCoordinate2D) {
         guard isDrawing else { return }
         if let last = inProgressCoordinates.last {
@@ -78,9 +78,8 @@ final class DrawingSessionViewModel: ObservableObject {
         shapeName = ""
     }
 
-    /// Build the final shape and reset session state. Returns nil if there's
-    /// nothing to commit (no active kind, fewer than the kind's minimum
-    /// vertices, or no target layer set).
+    /// Build the final shape and reset. Returns nil if there's nothing to
+    /// commit (no active kind, not enough verts, or no target layer).
     func finish() -> DrawingShape? {
         defer {
             activeKind = nil
@@ -93,16 +92,15 @@ final class DrawingSessionViewModel: ObservableObject {
               inProgressCoordinates.count >= kind.minimumVertices else {
             return nil
         }
-        // Standard tactical dash: 8pt on, 6pt off. Tuned to read at the
-        // app's default 3pt stroke width without losing the underlying
-        // shape outline on satellite imagery.
+        // 8pt on, 6pt off - reads ok at our default 3pt stroke width
+        // without losing the shape outline on satellite.
         let style = DrawingStyle(
             strokeColorHex: strokeColorHex,
             fillColorHex:   strokeColorHex,   // polygons fill with same hue
             dashPattern:    isDashed ? [8, 6] : nil
         )
         let trimmedName = shapeName.trimmingCharacters(in: .whitespaces)
-        // Free draw is a capture mode — store the result as a polyline.
+        // free draw is just a capture mode, store as polyline
         let storedKind: DrawingKind = kind == .freedraw ? .polyline : kind
         return DrawingShape(
             name: trimmedName.isEmpty ? nil : trimmedName,

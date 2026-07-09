@@ -2,27 +2,26 @@ import SwiftUI
 import CoreLocation
 import UIKit
 
-/// Tactical-style header rendering the MGRS grid reference of either the user's
-/// position (default) or the map centre (browse mode), plus WGS84, elevation,
-/// and a status/accuracy strip.
+/// MGRS header - shows grid reference for user's position or map centre,
+/// plus WGS84, elevation, and accuracy.
 ///
-/// Tap → copy MGRS to clipboard. Long-press → drop a waypoint at this MGRS
-/// (closure provided by the caller; nil disables the affordance).
+/// Tap to copy MGRS to clipboard. Long-press to drop a waypoint here
+/// (caller provides closure, nil disables it).
 struct MGRSHeaderView: View {
     let mgrs: String
     let wgs84: String
     /// User-facing UTM readout (e.g. "33N 450000mE 6700000mN"). nil hides the row.
     var utm: String? = nil
-    /// True while connected to a Unit Sync room — shows a blue indicator.
+    /// True while connected to a Unit Sync room. Shows a blue indicator.
     var syncConnected: Bool = false
     let isBrowsing: Bool
     let accuracy: CLLocationAccuracy?
     let elevation: CLLocationDistance?
-    /// True when `elevation` is an approximate offline-cache value, shown with
-    /// a leading "~". Defaults false (fresh / live reading).
+    /// True when elevation is approximate (offline cache). Shown with
+    /// leading "~". Defaults false (fresh/live reading).
     var elevationIsApproximate: Bool = false
-    /// Caller hands us the coordinate currently displayed (live or crosshair).
-    /// We use it for the long-press "drop pin" action.
+    /// Coordinate currently displayed (live or crosshair). Used for
+    /// the long-press "drop pin" action.
     var coordinate: CLLocationCoordinate2D? = nil
     var onDropPin: ((CLLocationCoordinate2D, String) -> Void)? = nil
 
@@ -35,8 +34,8 @@ struct MGRSHeaderView: View {
                 .foregroundStyle(.white.opacity(0.7))
 
             Text(mgrs)
-                // Text-style (not fixed 26pt) so the primary grid readout scales
-                // with Dynamic Type for large-text users; still shrinks to fit.
+                // Text-style not fixed 26pt so it scales with Dynamic Type.
+                // Still shrinks to fit.
                 .font(.system(.title, design: .monospaced).weight(.bold))
                 .foregroundStyle(Color(red: 0.55, green: 0.95, blue: 0.55))
                 .lineLimit(1)

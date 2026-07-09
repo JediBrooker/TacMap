@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// App-Store-compliant credits screen. Lists every third-party library or
-/// data source we depend on with its license + project link.
+/// Credits screen (App Store compliant). Lists every third-party lib or
+/// data source we use with its license + project link.
 struct AcknowledgementsView: View {
     @Environment(\.dismiss) private var dismiss
-    /// Captured once on appear so the destructive "Clear" button can hide the
-    /// section without a re-render fight.
+    /// Captured once on appear so the "Clear" button can hide the section
+    /// without a re-render fight.
     @State private var crashURL: URL? = CrashReporter.exportURL()
 
     var body: some View {

@@ -1,33 +1,29 @@
 import SwiftUI
 import CoreLocation
 
-/// Floating compact card that appears when the user taps any waypoint
-/// annotation on the map. Surfaces the actions that make sense for
-/// the kind:
-///   - All kinds: live preview, name, "Move to Crosshair", close.
-///   - Tactical control measures: rotation + size sliders.
-///   - Military / generic: just move.
+/// Floating card that appears when you tap a waypoint annotation on
+/// the map. Shows relevant actions for the kind:
+///   All: live preview, name, "Move to Crosshair", close
+///   Control measures: rotation + size sliders
+///   Military / generic: just move
 ///
-/// Designed to sit just above the bottom safe-area inset so it doesn't
-/// overlap with the "Centre on My Location" pill. Tap-outside dismissal
-/// is handled by `ContentView` — this view only renders.
+/// Sits just above bottom safe-area so it doesn't overlap the "Centre
+/// on My Location" pill. Tap-outside dismissal handled by ContentView,
+/// this view only renders.
 struct SymbolControlsCard: View {
     @ObservedObject var waypointStore: WaypointStore
-    /// Shared layer model — used to render and pick the waypoint's layer.
+    /// Shared layer model, used to render and pick the waypoint's layer.
     @ObservedObject var drawingStore: DrawingStore
-    /// Map VM exposes the current crosshair coordinate (camera centre)
-    /// for the "Move to Crosshair" action.
+    /// Map VM - need current crosshair coord for "Move to Crosshair".
     @ObservedObject var mapVM: MapViewModel
-    /// ID of the waypoint we're editing. The view re-resolves the
-    /// current Waypoint from the store on every redraw so changes
-    /// persist immediately and the preview stays in sync.
+    /// ID of waypoint we're editing. Re-resolves from store every
+    /// redraw so changes persist immediately and preview stays in sync.
     let waypointID: UUID
     let onDismiss: () -> Void
 
     @State private var showDeleteConfirm: Bool = false
-    /// Tapping the name in the header presents the full edit sheet so the
-    /// user can change the kind (e.g. swap Ambush → Block) without
-    /// re-creating the waypoint.
+    /// Tapping name in header opens full edit sheet so user can swap
+    /// the kind (e.g. Ambush -> Block) without re-creating the waypoint.
     @State private var showingEdit: Bool = false
 
     var body: some View {
@@ -40,10 +36,10 @@ struct SymbolControlsCard: View {
         VStack(spacing: 8) {
             header(for: wp)
 
-            // Rotation + width/height live only for tactical control
-            // measures — military symbols don't have orientation or
-            // per-instance size in the model. No dividers between
-            // sections — the icons and spacing carry enough structure.
+            // Rotation + width/height only for control measures.
+            // Military symbols don't have orientation or per-instance
+            // size. No dividers between sections, icons and spacing
+            // carry enough structure.
             if case .controlMeasure = wp.kind {
                 colorRow(for: wp)
                 rotationRow(for: wp)
@@ -88,19 +84,17 @@ struct SymbolControlsCard: View {
     // MARK: Rows
 
     private func header(for wp: Waypoint) -> some View {
-        // Compact one-line header: small icon + name (or name + kind
-        // muted, if they differ) + close. The previous two-line layout
-        // wasted vertical space and the subtitle was usually the same
-        // string as the name (we auto-fill blank names from the kind's
-        // display name).
+        // Compact one-line header: icon + name (+ kind muted if they
+        // differ) + close. Previous two-line layout wasted vertical
+        // space and subtitle was usually the same string as the name
+        // anyway (we auto-fill from kind displayName).
         let kindLabel = wp.kind.displayName
         let showKindSuffix = wp.name != kindLabel
         return HStack(spacing: 10) {
-            // Military unit symbols carry an echelon (dots / bars / X)
-            // sitting *above* the frame plus a function glyph inside —
-            // a 22pt icon in a 28pt tile compressed all of that into
-            // an unreadable blob. Give units a roomier tile; control
-            // measures + generic markers stay compact.
+            // Military unit symbols have echelon (dots/bars/X) above
+            // the frame plus a function glyph inside. 22pt in a 28pt
+            // tile was an unreadable blob so give units a roomier
+            // tile. Control measures + generic markers stay compact.
             let isUnit = wp.kind.militarySpec != nil
             let tile: CGFloat = isUnit ? 44 : 28
             let inner: CGFloat = isUnit ? 38 : 22
@@ -111,8 +105,8 @@ struct SymbolControlsCard: View {
                 taskColor: wp.taskColor
             )
             .frame(width: tile, height: tile)
-            // White background so the (mostly black) symbols stay
-            // legible against the translucent material card.
+            // White bg so the (mostly black) symbols stay legible
+            // against the translucent material card.
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.white)
@@ -154,8 +148,7 @@ struct SymbolControlsCard: View {
         }
     }
 
-    /// Compact layer pill — colour swatch + name + item count, opens a menu
-    /// to reassign.
+    /// Layer pill - colour swatch + name + count, opens menu to reassign.
     private func layerPill(for wp: Waypoint) -> some View {
         let current = drawingStore.layer(id: wp.layerID) ?? drawingStore.layers.first
         return Menu {
@@ -201,10 +194,9 @@ struct SymbolControlsCard: View {
         return drawings + waypoints
     }
 
-    /// Five-swatch colour picker for the task graphic. Black is the
-    /// default; the others follow the APP-6 affiliation palette
-    /// (blue = friendly, red = hostile, green = neutral, yellow =
-    /// unknown). Mirrors Android's ControlMeasureControls colour row.
+    /// Five-swatch colour picker for task graphic. Black default,
+    /// others follow APP-6 affiliation palette. Mirrors Android's
+    /// ControlMeasureControls colour row.
     private func colorRow(for wp: Waypoint) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "paintpalette")
@@ -221,8 +213,8 @@ struct SymbolControlsCard: View {
                         Circle()
                             .fill(tc.color)
                             .frame(width: 28, height: 28)
-                            // White hairline so black/dark swatches read on
-                            // the translucent dark card.
+                            // White hairline so black swatches are readable
+                            // on the translucent dark card.
                             .overlay(Circle().strokeBorder(.white.opacity(0.7), lineWidth: 1))
                             // Accent ring marks the current selection.
                             .overlay(Circle().strokeBorder(
@@ -295,10 +287,9 @@ struct SymbolControlsCard: View {
         )
     }
 
-    /// Move + Delete row. Move snaps the waypoint to the current map
-    /// centre (where the crosshair sits) — long-press-drag on the map
-    /// itself is also supported. Delete shows a confirm alert before
-    /// removing the waypoint, then dismisses the card.
+    /// Move + Delete row. Move snaps waypoint to current map centre
+    /// (the crosshair). Long-press-drag on the map also works. Delete
+    /// shows confirm alert then dismisses card.
     private func actionRow(for wp: Waypoint) -> some View {
         HStack(spacing: 8) {
             layerPill(for: wp)
@@ -342,10 +333,10 @@ struct SymbolControlsCard: View {
 
     // MARK: Slider primitive
 
-    /// One-line slider: `[icon] [——slider——] [value] [reset]`. The
-    /// `title` is used only for the reset button's accessibility
-    /// label — the icon visually conveys what's being adjusted, and
-    /// dropping the redundant text label saves a whole row per slider.
+    /// One-line slider: [icon] [--slider--] [value] [reset]. Title is
+    /// only used for accessibility on the reset button. Icon conveys
+    /// whats being adjusted, dropping the redundant text label saves
+    /// a whole row per slider.
     private func sliderRow(icon: String,
                            title: String,
                            valueLabel: String,

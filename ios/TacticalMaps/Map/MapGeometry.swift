@@ -1,9 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// Pure screen-space + zoom geometry extracted from `MapContainerView.Coordinator`
-/// so it can be unit-tested without an `MKMapView`. Everything here is plain
-/// values — nothing touches MapKit or app model types.
+/// Pure screen-space + zoom geometry pulled out of MapContainerView.Coordinator
+/// so it can be unit-tested without MKMapView. Plain values only, nothing
+/// touches MapKit or app model types.
 enum MapGeometry {
 
     /// Shortest distance from point `p` to segment `a`-`b` (screen coords).
@@ -33,17 +33,17 @@ enum MapGeometry {
         return inside
     }
 
-    /// Metres-per-point at the current camera. `latitudeDelta` in degrees,
-    /// `viewHeightPoints` in points (clamped to ≥1). 111_000 m / degree latitude.
+    /// Metres-per-point at current camera. latitudeDelta in degrees,
+    /// viewHeightPoints in points (clamped to >=1). 111k m per degree lat.
     static func metresPerPoint(latitudeDelta: Double, viewHeightPoints: Double) -> Double {
         let latDeltaMetres = latitudeDelta * 111_000
         let viewHeight = max(viewHeightPoints, 1)
         return latDeltaMetres / viewHeight
     }
 
-    /// Unit zoom scale where `1.0` corresponds to the reference zoom. Halving
-    /// metres-per-point (zoom in) → 2.0; doubling (zoom out) → 0.5. Clamped to
-    /// [0.005, 50] so symbols stay visible from building-level to continental.
+    /// Unit zoom scale, 1.0 = reference zoom. Halving mpp (zoom in) gives
+    /// 2.0, doubling (zoom out) gives 0.5. Clamped [0.005, 50] so symbols
+    /// stay visible from building-level to continental.
     static func zoomScaleFactor(metresPerPoint mpp: Double, reference: Double) -> CGFloat {
         let raw = reference / mpp
         return CGFloat(max(0.005, min(raw, 50.0)))

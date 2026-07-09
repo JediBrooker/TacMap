@@ -40,9 +40,8 @@ enum ImportedMapFileCopier {
         return next
     }
 
-    /// Application Support directory for imported maps. Maps are stored here
-    /// (not Documents/) so they stay hidden from Files.app and get stronger
-    /// file protection.
+    /// App Support dir for imported maps. Stored here (not Documents/) so
+    /// they stay hidden from Files.app and get stronger file protection.
     static func importedMapsDirectory(fileManager: FileManager = .default) throws -> URL {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = appSupport.appendingPathComponent("ImportedMaps", isDirectory: true)
@@ -63,9 +62,8 @@ struct ContentView: View {
     @StateObject private var calibration     = CalibrationSession()
     @StateObject private var trackRecorder   = TrackRecorder()
 
-    /// Injected from the app gate so the menu can show trial status + offer
-    /// the unlock on demand (the paywall otherwise only appears once the
-    /// trial has expired).
+    /// Injected from app gate so menu can show trial status + offer the
+    /// unlock on demand (paywall otherwise only shows once trial expires).
     @ObservedObject var store: StoreManager
     private let trial = TrialManager()
     @State private var showPaywallSheet    = false
@@ -73,7 +71,7 @@ struct ContentView: View {
     @Environment(\.undoManager) private var undoManager
     @State private var canUndo = false
     @State private var canRedo = false
-    /// Freeze all graphic interaction (select / drag / vertex-edit / settings).
+    /// Freeze all graphic interaction (select/drag/vertex-edit/settings).
     @State private var graphicsLocked = false
 
     @State private var showImporter        = false
@@ -86,9 +84,9 @@ struct ContentView: View {
     @State private var showSyncSheet       = false
     @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: String? = nil
-    /// Brief toast shown when a remote sync update arrives (conflict notification).
+    /// Brief toast for remote sync updates (conflict notification).
     @State private var syncToast: String? = nil
-    /// Share sheet URL for "Export All Data".
+    /// Share sheet URL for "Export All Data"
     @State private var exportAllURL: URL? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
@@ -116,11 +114,11 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
                 // SwiftUI overlay for tactical control measures. Sits
-                // directly above the map so its symbols render WITHOUT
-                // going through MKMapView's annotation pipeline —
-                // gives us a real .shadow() halo, vector-crisp lines
-                // at any zoom, and hit-testing that matches the
-                // visible symbol pixels exactly.
+                // directly above the map so symbols render WITHOUT
+                // going through MKMapView's annotation pipeline -
+                // gives us real .shadow() halo, vector-crisp lines
+                // at any zoom, and hit-testing that matches visible
+                // symbol pixels exactly.
                 TacticalSymbolOverlay(
                     waypointStore: waypointStore,
                     drawingStore: drawingStore,
@@ -131,8 +129,8 @@ struct ContentView: View {
                 .allowsHitTesting(!drawingSession.isDrawing
                                   && !calibration.isCalibrating)
 
-                // Tap-anywhere-else dismisses the drawings panel. Layered between
-                // the map and the HUD so taps on HUD controls still work.
+                // Tap-anywhere-else dismisses drawings panel. Layered between
+                // map and HUD so taps on HUD controls still work.
                 if drawingsPanelOpen {
                     Color.black.opacity(0.001)
                         .ignoresSafeArea()
@@ -140,16 +138,15 @@ struct ContentView: View {
                         .onTapGesture { drawingsPanelOpen = false }
                 }
 
-                // (We don't put a tap-outside-dismiss overlay above the
-                // map here because it would also absorb pan / pinch
-                // gestures, preventing the user from panning the map
-                // while the controls card is open. Dismissal on tap
-                // is handled by the map's own tap recognizer — see
-                // MapContainerView.Coordinator.handleTap.)
+                // Don't put a tap-outside-dismiss overlay above the map
+                // b/c it would also absorb pan/pinch gestures and the
+                // user couldn't pan the map while controls card is open.
+                // Dismissal on tap is handled by map's own tap recognizer,
+                // see MapContainerView.Coordinator.handleTap.
 
-                // Crosshair: always visible (except while drawing — taps go
-                // to vertex placement and the crosshair would compete with
-                // the tap-target markers).
+                // Crosshair: always visible except while drawing (taps go
+                // to vertex placement, crosshair would compete with
+                // tap-target markers).
                 if !drawingSession.isDrawing {
                     CrosshairOverlay().allowsHitTesting(false)
                 }
@@ -177,17 +174,17 @@ struct ContentView: View {
         .onAppear {
             locationService.requestAuthorisation()
             locationService.start()
-            /// Rehydrate the last-imported PDF (if any) so the user
-            /// doesn't have to re-import after closing the app. The
-            /// PDF file lives in Documents and the calibration is
-            /// stored in UserDefaults — see PDFSessionStore.
+            /// Rehydrate last-imported PDF (if any) so user doesn't
+            /// have to re-import after closing the app. PDF file
+            /// lives in Documents, calibration is in UserDefaults -
+            /// see PDFSessionStore.
             if let restored = PDFSessionStore.load() {
                 NSLog("[Import] restored persisted PDF: \(restored.displayName)")
                 mapVM.mapSource = restored
-                /// Frame the restored map the same way an import does, so a
-                /// PDF whose coverage doesn't contain the user doesn't open
-                /// off-screen. (No fix yet at launch → frames the whole page;
-                /// the first fix won't yank away if the user is off-map.)
+                /// Frame restored map same way an import does so a PDF
+                /// whose coverage doesn't contain user doesn't open
+                /// off-screen. No fix yet at launch so it frames the
+                /// whole page; first fix won't yank away if user is off-map.
                 mapVM.frameCamera(
                     for: restored,
                     userLocation: locationService.lastLocation?.coordinate
@@ -248,14 +245,14 @@ struct ContentView: View {
                                   drawingStore: drawingStore,
                                   locationService: locationService)
         }
-        // Remote sync update toast (conflict notification).
+        // Remote sync update toast (conflict notif).
         .onReceive(syncManager.remoteUpdateSubject) { message in
             syncToast = message
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 if syncToast == message { syncToast = nil }
             }
         }
-        // Feed every fix into the track recorder; it ignores them unless recording.
+        // Feed every fix into the track recorder. It just ignores them unless recording.
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
             trackRecorder.ingest(loc)
         }
@@ -275,13 +272,12 @@ struct ContentView: View {
                 onClose: { showPaywallSheet = false }
             )
         }
-        /// SwiftUI has a long-standing bug where two `.fileImporter`
-        /// modifiers attached back-to-back on the same view silently
-        /// shadow each other — only the last one ever presents,
-        /// which is why "Import PDF Map" did nothing while
-        /// "Import GeoJSON…" worked. Attaching each via an empty
-        /// background view puts them on separate view nodes and
-        /// they both fire independently.
+        /// SwiftUI has a long-standing bug where two .fileImporter
+        /// modifiers on the same view silently shadow each other -
+        /// only the last one ever presents. Thats why "Import PDF
+        /// Map" did nothing while "Import GeoJSON" worked. Attaching
+        /// each via an empty background view puts them on seperate
+        /// view nodes and they both fire independently.
         .background(
             EmptyView()
                 .fileImporter(
@@ -350,10 +346,10 @@ struct ContentView: View {
         }
     }
 
-    /// Freehand capture overlay. Sits above the map but below the
-    /// HUD VStack so toolbar buttons remain interactive. Converts
-    /// every drag point to a map coordinate and streams it into the
-    /// session; auto-commits when the finger lifts.
+    /// Freehand capture overlay. Above map but below HUD VStack
+    /// so toolbar buttons stay interactive. Converts every drag
+    /// point to a map coord and streams into the session,
+    /// auto-commits when finger lifts.
     @ViewBuilder
     private var freehandCaptureOverlay: some View {
         if drawingSession.activeKind == .freedraw {
@@ -375,9 +371,9 @@ struct ContentView: View {
         }
     }
 
-    /// The full HUD: header, hamburger menu, compass, bottom toolbar /
-    /// selection cards, recording indicator. Extracted from body to keep
-    /// the ZStack under Swift's type-checker complexity budget.
+    /// Full HUD: header, hamburger menu, compass, bottom toolbar /
+    /// selection cards, recording indicator. Extracted from body to
+    /// keep ZStack under Swift's type-checker complexity budget.
     @ViewBuilder
     private func hudOverlay(bottomInset: CGFloat) -> some View {
         VStack(spacing: 0) {
@@ -558,9 +554,9 @@ struct ContentView: View {
         .padding(.top, 4)
     }
 
-    /// Bottom toolbar area: calibration, drawing, measure, selection cards,
-    /// or the centre-on-location pill. Extracted to keep hudOverlay under
-    /// the type-checker limit.
+    /// Bottom toolbar: calibration, drawing, measure, selection cards,
+    /// or centre-on-location pill. Extracted to keep hudOverlay under
+    /// type-checker limit.
     @ViewBuilder
     private func hudBottomBar(bottomInset: CGFloat) -> some View {
         if calibration.isCalibrating {
@@ -613,7 +609,7 @@ struct ContentView: View {
         }
     }
 
-    /// Brief overlay toast shown when a remote sync change arrives.
+    /// Brief overlay toast when a remote sync change arrives.
     @ViewBuilder
     private var syncToastOverlay: some View {
         if let toast = syncToast {
@@ -638,8 +634,8 @@ struct ContentView: View {
         canRedo = undoManager?.canRedo ?? false
     }
 
-    /// Export all waypoints + drawings + layers to a GeoJSON file and present
-    /// the system share sheet.
+    /// Export all waypoints + drawings + layers to GeoJSON and show
+    /// system share sheet.
     private func exportAllData() {
         do {
             let url = try GeoJSONExporter.exportToFile(
@@ -659,7 +655,7 @@ struct ContentView: View {
             importMessage = "Import failed: \(err.localizedDescription)"
         case .success(let urls):
             guard let url = urls.first else { return }
-            // Documents picker hands us a security-scoped URL.
+            // Docs picker gives us a security-scoped URL.
             let didStart = url.startAccessingSecurityScopedResource()
             defer { if didStart { url.stopAccessingSecurityScopedResource() } }
             do {
@@ -728,8 +724,8 @@ struct ContentView: View {
     private func finishCalibration() {
         guard let result = calibration.finish(),
               let source = calibration.source else { return }
-        // Build a fresh source so MapContainerView rebuilds the overlay
-        // (its sync logic keys on source.id).
+        // Build fresh source so MapContainerView rebuilds overlay
+        // (sync logic keys on source.id).
         let newSource = PDFMapSource(url: source.url, bounds: nil, fromGeoPDF: false)
         newSource.applyCalibration(
             transform: result.transform,
@@ -738,9 +734,9 @@ struct ContentView: View {
         let bounds = newSource.bounds
         calibration.cancel()
         mapVM.mapSource = newSource
-        /// Persist the freshly-calibrated source so the fiduciary fit
-        /// survives an app restart. Without this the next launch would
-        /// restore the pre-calibration import and silently drop the
+        /// Persist the freshly-calibrated source so fiduciary fit
+        /// survives app restart. Without this next launch would
+        /// restore pre-calibration import and silently clobber the
         /// user's calibration work.
         PDFSessionStore.save(newSource)
         if let b = bounds {
@@ -760,8 +756,8 @@ struct ContentView: View {
             return
         }
 
-        // The file picker may hand us a security-scoped URL (file came from
-        // outside the sandbox). Copy into Documents so we have stable access.
+        // File picker may hand us a security-scoped URL (came from outside
+        // sandbox). Copy into Documents for stable access.
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
@@ -789,15 +785,15 @@ struct ContentView: View {
                     bounds: resolvedBounds,
                     fromGeoPDF: fromGeoPDF
                 )
-                // If this PDF was calibrated in a previous session, restore its
+                // If PDF was calibrated in a previous session, restore
                 // fiduciaries + affine so it re-imports already aligned.
                 PDFSessionStore.applyCalibrationIfKnown(to: source)
                 mapVM.mapSource = source
                 PDFSessionStore.save(source)
 
-                /// Frame the camera: snap to the user if they're inside the
-                /// PDF's coverage, otherwise frame the whole page. Shared
-                /// with the restore path via MapViewModel.frameCamera.
+                /// Frame camera - snap to user if they're inside PDF
+                /// coverage, otherwise frame the whole page. Shared
+                /// with restore path via MapViewModel.frameCamera.
                 mapVM.frameCamera(
                     for: source,
                     userLocation: locationService.lastLocation?.coordinate
@@ -806,9 +802,9 @@ struct ContentView: View {
         }
     }
 
-    /// Import a local MBTiles raster pyramid as an offline basemap. Copies the
-    /// picked file into Documents (stable sandbox access) and installs an
-    /// `OfflineTileMapSource` — served with no network via an MKTileOverlay.
+    /// Import local MBTiles raster pyramid as offline basemap. Copies
+    /// picked file into Documents (stable sandbox access), installs an
+    /// OfflineTileMapSource served with no network via MKTileOverlay.
     private func handleMBTilesImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure(let error) = result {

@@ -3,11 +3,11 @@ import UIKit
 import PDFKit
 import MapKit
 
-/// Bakes a calibrated `PDFMapSource` into an offline MBTiles raster pyramid
-/// **on-device** — no desktop GDAL step. Swift mirror of the Android `PdfTiler`:
-/// maps each Web-Mercator XYZ tile's WGS84 box back to PDF user-space points via
-/// the inverse calibration affine, renders that region with PDFKit, and writes
-/// PNG tiles via `MBTilesWriter`.
+/// Bakes a calibrated PDFMapSource into an offline MBTiles raster pyramid
+/// on-device, no desktop GDAL step. Swift mirror of the Android PdfTiler:
+/// maps each Web-Mercator XYZ tile's WGS84 box back to PDF user-space via
+/// the inverse calibration affine, renders that region with PDFKit, writes
+/// PNG tiles via MBTilesWriter.
 enum PDFTiler {
 
     struct Progress { let done: Int; let total: Int }
@@ -44,9 +44,9 @@ enum PDFTiler {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
                                                   attributes: [.protectionKey: FileProtectionType.complete])
         let outURL = dir.appendingPathComponent("tacmap-\(Int(Date().timeIntervalSince1970)).mbtiles")
-        // Bake into a .partial temp and only publish to the real path on full
-        // success, so an interrupted run can't leave a truncated file that later
-        // loads as a "valid" (but incomplete) basemap.
+        // Bake into a .partial temp and only publish to real path on full
+        // success. An interrupted run can't leave a truncated file that later
+        // loads as a "valid" but incomplete basemap.
         let tmpURL = outURL.appendingPathExtension("partial")
 
         guard let writer = MBTilesWriter(path: tmpURL.path) else { return nil }
@@ -60,7 +60,7 @@ enum PDFTiler {
 
         var done = 0
         for z in minZoom...maxZoom {
-            // Honour cancellation (Cancel button) — stop and clean up the temp.
+            // Honour cancellation (Cancel button) - stop and clean up temp.
             if Task.isCancelled {
                 writer.close()
                 try? FileManager.default.removeItem(at: tmpURL)
@@ -87,7 +87,7 @@ enum PDFTiler {
         progress(Progress(done: total, total: total))
         writer.close()
 
-        // A tile/metadata write failed mid-bake (e.g. disk full) — don't pass a
+        // A tile/metadata write failed mid-bake (e.g. disk full). Don't pass a
         // half-baked file off as a complete basemap.
         guard !writer.hadError else {
             try? FileManager.default.removeItem(at: tmpURL)
@@ -104,9 +104,9 @@ enum PDFTiler {
         return outURL
     }
 
-    /// Map a tile's WGS84 box to a PDF user-space rect (y-up). Used only as the
-    /// off-page skip gate — a tile whose PDF rect doesn't touch the page is not
-    /// baked at all. The actual render (`renderTile`) re-derives per-strip rects.
+    /// Map a tile's WGS84 box to a PDF user-space rect (y-up). Only used as
+    /// the off-page skip gate - tiles whose PDF rect doesn't touch the page
+    /// aren't baked at all. The actual render (renderTile) re-derives per-strip.
     private static func pdfRect(inverse: AffineTransform2D,
                                 box: WebMercatorTiles.Box,
                                 mediaBox: CGRect) -> CGRect? {
@@ -126,9 +126,9 @@ enum PDFTiler {
         return rect
     }
 
-    /// PDF-space bounding rect of the sub-band whose *Web-Mercator* tile-Y runs
-    /// `[yTop, yBottom]` (tile units). Longitude is linear in both Mercator and
-    /// the affine, so only the latitude edges are re-derived per strip.
+    /// PDF-space bounding rect of the sub-band whose Web-Mercator tile-Y runs
+    /// [yTop, yBottom] (tile units). Longitude is linear in both Mercator and
+    /// the affine so only latitude edges need to be re-derived per strip.
     private static func stripRect(inverse: AffineTransform2D,
                                   west: Double, east: Double,
                                   yTop: Double, yBottom: Double, z: Int) -> CGRect? {
@@ -146,18 +146,18 @@ enum PDFTiler {
         return CGRect(x: left, y: bottom, width: right - left, height: top - bottom)
     }
 
-    /// Render one 256×256 tile north-up. To stay Web-Mercator-correct we split the
-    /// tile into horizontal strips that are each linear in tile-Y (Mercator) and
-    /// map each strip through the calibration affine at its *true* latitude edges.
-    /// A single linear scale over the whole tile would warp any tile spanning more
-    /// than ~2° of latitude (large sheets at low zoom); strips reduce the residual
-    /// to sub-pixel. Small high-zoom tiles span <¼° → one strip → zero extra cost.
+    /// Render one 256x256 tile north-up. To stay Web-Mercator-correct we split
+    /// the tile into horizontal strips that are each linear in tile-Y (Mercator)
+    /// and map each strip through the calibration affine at its true lat edges.
+    /// A single linear scale over the whole tile would warp tiles spanning more
+    /// than ~2 deg lat (large sheets at low zoom); strips reduce residual to
+    /// sub-pixel. Small high-zoom tiles span <0.25 deg so just one strip, no cost.
     private static func renderTile(_ renderer: UIGraphicsImageRenderer,
                                    page: PDFPage, z: Int, x: Int, y: Int,
                                    inverse: AffineTransform2D, mediaBox: CGRect) -> Data? {
         let size: CGFloat = 256
         let box = WebMercatorTiles.tileBounds(z, x, y)
-        // One strip per ≤¼° of latitude, capped at 16 (residual warp ≪ 1 px).
+        // One strip per <=0.25 deg of latitude, capped at 16 (residual warp << 1 px).
         let strips = max(1, min(16, Int(ceil((box.north - box.south) / 0.25))))
 
         let image = renderer.image { rctx in
@@ -191,8 +191,8 @@ enum PDFTiler {
         return image.pngData()
     }
 
-    /// Min zoom (coverage ~fits one tile) accumulating up to a tile budget so a
-    /// huge sheet can't generate forever. Resolution-agnostic.
+    /// Min zoom (coverage ~fits one tile) accumulating up to a tile budget so
+    /// huge sheets can't generate forever. Resolution-agnostic.
     private static func zoomRange(minLat: Double, maxLat: Double,
                                   minLon: Double, maxLon: Double) -> (Int, Int) {
         func count(_ z: Int) -> Int {

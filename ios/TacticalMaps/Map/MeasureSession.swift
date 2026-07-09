@@ -2,13 +2,12 @@ import Foundation
 import CoreLocation
 import Combine
 
-/// State machine for the measure tool. When `isActive` is true the bottom HUD
-/// swaps to `MeasureToolbar`, taps on the map add vertices, and the in-progress
-/// polyline renders alongside drawings (without ever being persisted).
+/// State machine for measure tool. When isActive is true the HUD swaps
+/// to MeasureToolbar, map taps add vertices, polyline renders alongside
+/// drawings but never gets persisted.
 ///
-/// Distances use the haversine formula via `CLLocation.distance(from:)`;
-/// areas use the spherical-excess approximation, fine for the polygon
-/// sizes the user is likely to draw on a tactical map.
+/// Distances are haversine via CLLocation.distance(from:), areas use
+/// spherical-excess approx which is close enough for tactical-map polygons.
 final class MeasureSession: ObservableObject {
     @Published private(set) var isActive: Bool = false
     @Published private(set) var points: [CLLocationCoordinate2D] = []
@@ -32,7 +31,7 @@ final class MeasureSession: ObservableObject {
         points.removeLast()
     }
 
-    /// Sum of haversine distances between consecutive points, in metres.
+    /// Total haversine distance across all points, in metres.
     var totalDistanceMeters: Double {
         guard points.count >= 2 else { return 0 }
         var total = 0.0
@@ -56,8 +55,8 @@ final class MeasureSession: ObservableObject {
         return Int(round(deg * 6400 / 360)) % 6400
     }
 
-    /// Enclosed area in square metres when the user has 3+ points. The polygon
-    /// is closed implicitly (last → first segment).
+    /// Enclosed area in sq metres for 3+ points. Polygon is closed
+    /// implicitly (last point connects back to first).
     var enclosedAreaSquareMeters: Double? {
         guard points.count >= 3 else { return nil }
         let R: Double = 6_378_137  // mean Earth radius
@@ -85,7 +84,7 @@ final class MeasureSession: ObservableObject {
     }
 }
 
-/// Format helpers used by `MeasureToolbar` and the running HUD.
+/// Formatting helpers for MeasureToolbar + the running HUD.
 enum MeasureFormat {
     static func distance(_ m: Double) -> String {
         if m < 1000 { return String(format: "%.0f m", m) }

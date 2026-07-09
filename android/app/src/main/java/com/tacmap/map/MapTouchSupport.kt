@@ -19,12 +19,9 @@ import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.waypoints.Waypoint
 import kotlin.math.roundToInt
 
-// Map interaction layer — the unified touch overlay (tap/drag of waypoints +
-// drawings), the vertex-edit handle overlay, and the screen-space hit-testing.
-// Extracted verbatim from GoogleMapScreen.kt. The two composables GoogleMapScreen
-// calls are `internal`; MapItemDrag stays public (the overlays in MapOverlays.kt
-// read it); the hit-test helpers + gesture state stay `private`. The pure
-// distance/polygon math lives in MapGeometry.kt.
+// Unified touch overlay (tap/drag for waypoints + drawings), vertex-edit
+// handles, and screen-space hit-testing. Pulled out of GoogleMapScreen.kt.
+// Distance/polygon math lives in MapGeometry.kt.
 
 data class MapItemDrag(
     val kind: Kind,
@@ -50,18 +47,16 @@ internal fun VertexHandlesOverlay(
     val effective = feature.effectivePoints
     if (effective.size < 2) return
 
-    /// Re-read camera position so the overlay recomposes (and handles
-    /// reposition) when the user pans or zooms the map.
+    /// Force recompose when user pans/zooms so handles reposition.
     cameraPositionState.position
     val projection = cameraPositionState.projection ?: return
 
     val density = LocalDensity.current
     val sizePx = with(density) { 48.dp.roundToPx() }
 
-    /// Free-hand strokes have far too many vertices to edit meaningfully, so
-    /// they get NO vertex handles at all — a dense LINE (> 20 points) is a
-    /// free-draw. It stays selectable/movable/deletable via the controls card;
-    /// it just isn't vertex-editable.
+    /// Freehand strokes have way too many vertices to edit individually.
+    /// Dense LINE (> 20 pts) = freehand, so skip vertex handles entirely.
+    /// Still movable/deletable via controls card, just not vertex-editable.
     if (feature.geometry == DrawingGeometry.LINE && effective.size > 20) {
         return
     }
@@ -87,7 +82,7 @@ internal fun VertexHandlesOverlay(
         )
     }
 
-    /// Polygons get a midpoint handle for the closing segment too.
+    /// Polygons also get a midpoint handle on the closing segment.
     val segmentCount = if (feature.geometry == DrawingGeometry.POLYGON) effective.size
         else effective.size - 1
     for (i in 0 until segmentCount.coerceAtLeast(0)) {
@@ -117,38 +112,21 @@ internal fun VertexHandlesOverlay(
     }
 }
 
-/// Unified fullscreen touch handler for ALL map items — waypoints
-/// (units AND tasks share this code path) and drawings.
+/// Fullscreen touch handler for all map items (waypoints + drawings).
 ///
-/// Touch lifecycle (single finger):
-///   1. DOWN: hit-test in z-order. If nothing's hit, we return
-///      without consuming and the gesture falls through to
-///      GoogleMap (pan starts there).
-///   2. Finger moves but stays within tap-slop, no extra pointers
-///      → we still don't consume; GoogleMap may briefly start
-///      panning but we'll cancel it once drag commits.
-///   3. Finger crosses tap-slop with no second pointer present
-///      → CLAIM. We consume the change, GoogleMap sees a
-///      synthetic CANCEL via Compose's interop layer, and the item
-///      starts following the finger via the shared `dragState`.
-///   4. Lift before slop → fire the tap callback.
-///   5. Lift after slop → commit the new lat/lng.
+/// Basically: DOWN hit-tests in z-order, if nothing hit we bail and
+/// let GoogleMap handle pan. If we do hit something, we track the
+/// finger - stays within tap-slop = still don't consume (map might
+/// start a brief pan but we cancel it on commit). Crosses slop with
+/// one finger = CLAIM the gesture, item follows the finger.
+/// Lift before slop = tap. Lift after slop = commit new lat/lng.
 ///
-/// Multi-touch escape hatch:
-///   - If a second pointer arrives BEFORE the drag has committed,
-///     we abandon the gesture entirely (no consume). GoogleMap has
-///     been receiving every pointer event unconsumed so far, so
-///     it can immediately treat the touches as a pinch / two-
-///     finger pan. This is the fix for "I can't pinch when my
-///     finger is on a graphic".
-///   - If a second pointer arrives AFTER drag commits, we keep
-///     dragging single-finger — the user clearly meant drag.
+/// Multi-touch: second finger before drag committed = abandon,
+/// let GoogleMap do its pinch thing. Second finger AFTER commit =
+/// keep dragging, user obviously meant drag not pinch.
 ///
-/// On commit we project the final screen position back to lat/lng:
-///   - Waypoint: drop the icon's geographic anchor at
-///     (anchor + offset) → exact match for where the icon ended
-///     up visually.
-///   - Drawing: shift every vertex by (after - before) in lat/lng.
+/// On commit we project screen position back to lat/lng. Waypoints
+/// get dropped at (anchor + offset), drawings shift all vertices.
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 internal fun MapItemTouchOverlay(
@@ -166,9 +144,8 @@ internal fun MapItemTouchOverlay(
     onDrawingMoved: (featureId: String, deltaLat: Double, deltaLng: Double) -> Unit,
     onEmptyTap: () -> Unit
 ) {
-    /// Drawing-input mode (placing vertices on a draft) and
-    /// calibration mode (placing PDF fiduciaries) must let every tap
-    /// reach the GoogleMap so `onMapClick` fires — bail out.
+    /// Drawing-input or calibration mode needs taps to reach GoogleMap
+    /// for onMapClick, so bail out and don't intercept anything.
     if (drawingInputEnabled || calibrationInputEnabled) return
     cameraPositionState.position
     val projection = cameraPositionState.projection ?: return
@@ -178,10 +155,8 @@ internal fun MapItemTouchOverlay(
     val drawingTolerancePx = with(density) { 22.dp.toPx() }
     val tapSlopPx = with(density) { 8.dp.toPx() }
 
-    /// Project every waypoint to a screen-space bounding rect so the
-    /// pointer callback can hit-test cheaply. The icon's anchor is
-    /// pinned to the projected lat/lng so the rect runs from
-    /// (screen - anchor*size) to (screen + (1-anchor)*size).
+    /// Project all waypoints to screen-space bounding rects for cheap
+    /// hit-testing. Rect = (screen - anchor*size) to (screen + (1-anchor)*size).
     val projectedWaypoints = remember(waypoints, cameraPositionState.position) {
         waypoints.map { wp ->
             val drawable = SymbolIconFactory.drawableFor(context, wp)
@@ -226,9 +201,8 @@ internal fun MapItemTouchOverlay(
     val currentCameraPosition = rememberUpdatedState(cameraPositionState)
     val currentOnDragStateChange = rememberUpdatedState(onDragStateChange)
 
-    /// Per-gesture state. Lives outside the filter lambda because
-    /// the filter is recreated on every MotionEvent — we need
-    /// persistent fields for the in-flight gesture.
+    /// Gesture state lives outside the lambda b/c the filter gets
+    /// recreated on every MotionEvent - need persistent fields.
     val gesture = remember { TouchGestureState() }
 
     Box(
@@ -238,13 +212,11 @@ internal fun MapItemTouchOverlay(
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         val pos = Offset(event.x, event.y)
-                        /// Waypoints are native draggable map markers now
-                        /// (see [WaypointMarkers]) — the SDK owns their
-                        /// tap + long-press-drag and never blocks the map,
-                        /// so this overlay only claims DRAWINGS.
+                        /// Waypoints use native draggable markers now
+                        /// (WaypointMarkers), so this overlay only claims
+                        /// DRAWINGS.
                         val wpHit: ProjectedWaypoint? = null
-                        /// Locked → claim nothing, so a tap can't open a
-                        /// drawing's settings and a drag can't move it.
+                        /// Locked = claim nothing. No taps, no drags.
                         val shapeHitId = if (wpHit == null && !locked) {
                             hitTestShapes(
                                 pos, currentShapes.value, drawingTolerancePx
@@ -271,40 +243,28 @@ internal fun MapItemTouchOverlay(
                                 gesture.itemId = null
                             }
                         }
-                        /// pointerInteropFilter follows the Android
-                        /// View.onTouchEvent contract: returning
-                        /// FALSE on DOWN means we won't receive any
-                        /// further events for this gesture. So we
-                        /// MUST return true to keep the gesture if
-                        /// we want to detect tap/drag at all.
-                        ///
-                        /// When there's no hit we let the SDK have
-                        /// the whole gesture (return false) so pan
-                        /// and pinch work natively. When there IS a
-                        /// hit we claim it — the trade-off is that
-                        /// pinch starting on a graphic doesn't
-                        /// work, but pinch from empty space still
-                        /// does.
+                        /// Must return true on DOWN to recieve
+                        /// further events (Android contract). No hit
+                        /// = return false so map gets pan/pinch.
+                        /// Hit = claim it. Trade-off: can't pinch
+                        /// starting on a graphic, but pinch from
+                        /// empty space still works.
                         gesture.itemId != null
                     }
                     android.view.MotionEvent.ACTION_POINTER_DOWN -> {
-                        /// Second finger arrived. Since we already
-                        /// claimed the gesture on DOWN, the SDK
-                        /// never saw the first finger and can't
-                        /// recover into a pinch. We just keep
-                        /// processing as a single-finger drag (or
-                        /// tap on lift).
+                        /// Second finger showed up. We already
+                        /// claimed on DOWN so SDK can't recover
+                        /// into a pinch. Just keep going as
+                        /// single-finger drag (or tap on lift).
                         true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         if (!gesture.tracking) return@pointerInteropFilter false
                         val itemId = gesture.itemId
                         if (itemId == null) {
-                            /// No hit — just observing in case the
-                            /// user lifts within tap slop on empty
-                            /// space (we'll dispatch onEmptyTap).
-                            /// Otherwise the map handles the pan
-                            /// because we never consume.
+                            /// No hit, just watching. If they lift
+                            /// within slop on empty space we fire
+                            /// onEmptyTap, otherwise map handles pan.
                             return@pointerInteropFilter false
                         }
                         val dx = event.x - gesture.startX
@@ -329,11 +289,9 @@ internal fun MapItemTouchOverlay(
                             kotlin.math.hypot(dx, dy) > tapSlopPx &&
                             event.pointerCount == 1
                         ) {
-                            /// CLAIM. Returning true tells Compose
-                            /// to mark the event consumed, which
-                            /// causes GoogleMap to receive a
-                            /// CANCEL and abort its incidental
-                            /// pan.
+                            /// CLAIM - returning true consumes
+                            /// the event, GoogleMap gets a CANCEL
+                            /// and aborts its pan.
                             gesture.committed = true
                             gesture.lastDx = dx
                             gesture.lastDy = dy
@@ -385,12 +343,9 @@ internal fun MapItemTouchOverlay(
                             return@pointerInteropFilter true
                         }
 
-                        /// Tap: lift within slop. Fire the right
-                        /// callback and CONSUME the UP (return
-                        /// true) so the GoogleMap underneath
-                        /// doesn't also fire its onMapClick — that
-                        /// race is what made waypoint selection
-                        /// flicker and immediately disappear.
+                        /// Tap (lift within slop). Consume the UP
+                        /// so GoogleMap doesn't also fire onMapClick
+                        /// - that race caused selection flicker.
                         if (kotlin.math.hypot(dx, dy) < tapSlopPx) {
                             when {
                                 itemId != null && kind == MapItemDrag.Kind.WAYPOINT -> {
@@ -404,9 +359,8 @@ internal fun MapItemTouchOverlay(
                             }
                             return@pointerInteropFilter true
                         }
-                        /// Movement past slop without commit means
-                        /// the user panned — don't fire a tap, let
-                        /// the map have the UP.
+                        /// Past slop w/o commit = user panned.
+                        /// Don't fire tap, let map have the UP.
                         false
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
@@ -428,10 +382,9 @@ private class TouchGestureState {
     var committed: Boolean = false
     var lastDx: Float = 0f
     var lastDy: Float = 0f
-    /// `tracking` is true between ACTION_DOWN and ACTION_UP /
-    /// ACTION_CANCEL. `abandoned` flips when a second pointer comes
-    /// down before drag-commit (so we don't accidentally fire a tap
-    /// when the user lifts their first finger after pinch).
+    /// tracking = true from DOWN to UP/CANCEL. abandoned flips on
+    /// second pointer before commit so we don't fire a spurious tap
+    /// after a pinch.
     var tracking: Boolean = false
     var abandoned: Boolean = false
 
@@ -506,8 +459,7 @@ private fun hitTestWaypoints(
     waypoints: List<ProjectedWaypoint>,
     expandPx: Float
 ): ProjectedWaypoint? {
-    /// Reverse iterate so the icon drawn last (visually topmost)
-    /// wins ties.
+    /// Reverse so topmost (last drawn) wins.
     for (i in waypoints.indices.reversed()) {
         val w = waypoints[i]
         if (point.x in (w.left - expandPx)..(w.right + expandPx) &&
@@ -525,16 +477,15 @@ private data class ProjectedShape(
     val screenPoints: List<Offset>
 )
 
-/// Z-ordered (last drawn = topmost) hit-test against projected shapes.
-/// Returns the topmost shape ID that the point lands on, or null.
+/// Hit-test shapes in z-order (last drawn = topmost). Returns topmost
+/// shape ID under the point, or null.
 private fun hitTestShapes(
     point: Offset,
     shapes: List<ProjectedShape>,
     tolerancePx: Float
 ): String? {
-    /// Iterate in reverse so shapes drawn last (visually on top)
-    /// win ties — matches the user's expectation of grabbing the
-    /// shape they see, not whichever was added first.
+    /// Reverse iteration so the shape the user actually sees on
+    /// top is the one they grab.
     for (i in shapes.indices.reversed()) {
         val s = shapes[i]
         if (shapeHit(point, s, tolerancePx)) return s.id

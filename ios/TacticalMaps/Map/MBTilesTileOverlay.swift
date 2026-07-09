@@ -1,8 +1,8 @@
 import MapKit
 
-/// `MKTileOverlay` that serves raster tiles from a local MBTiles file via
-/// `MBTilesStore`. `canReplaceMapContent` is on so the offline tiles cover the
-/// satellite basemap entirely (the user wants the imported map, not a blend).
+/// MKTileOverlay serving raster tiles from a local MBTiles file
+/// via MBTilesStore. canReplaceMapContent is on so offline tiles
+/// fully replace the basemap (user wants the imported map, not a blend).
 final class MBTilesTileOverlay: MKTileOverlay {
 
     private let store: MBTilesStore

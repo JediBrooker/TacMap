@@ -1,11 +1,10 @@
 import Foundation
 import MapKit
 
-/// A basemap backed by a local MBTiles raster pyramid (offline). Like
-/// `PDFMapSource` it travels alongside the WGS84 overlay store, but instead of
-/// a single rasterised image it serves a proper zoomable tile set through an
-/// `MKTileOverlay`. Coverage comes from the MBTiles `bounds` metadata so the
-/// camera can frame the map on load.
+/// Basemap backed by a local MBTiles raster pyramid (offline). Like PDFMapSource
+/// it travels alongside the WGS84 overlay store, but instead of a single
+/// rasterised image it serves a proper zoomable tile set through MKTileOverlay.
+/// Coverage comes from MBTiles `bounds` metadata so camera can frame map on load.
 final class OfflineTileMapSource: MapSource {
     let id = UUID()
     let displayName: String
@@ -37,6 +36,6 @@ final class OfflineTileMapSource: MapSource {
         }
     }
 
-    /// A fresh overlay for the map to add. The Coordinator owns its lifecycle.
+    /// Fresh overlay for map to add. Coordinator owns the lifecycle.
     func makeOverlay() -> MBTilesTileOverlay { MBTilesTileOverlay(store: store) }
 }

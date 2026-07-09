@@ -57,13 +57,16 @@ MILITARY-GRADE TOOLING
 
 SHARE THE PICTURE, IN REAL TIME
 • Unit Sync — share drawings and symbols live across devices over an end-to-end encrypted channel
+• Live presence — see where your team is on the map in real time, with callsign, affiliation, and heading, all end-to-end encrypted
 • The relay never sees your plaintext; a connected indicator on the header shows you're linked up
+• Conflict detection — if a teammate edits the same object, you get a clear notification instead of a silent overwrite
 • Weather + UAV flight-safety widget — live wind, gusts, visibility, and a SAFE / CAUTION / DANGER drone-flight read for the map centre
 
 OPEN BY DESIGN — YOUR DATA STAYS YOURS
 • Import and export GeoJSON (RFC 7946) — round-trips cleanly through QGIS, ArcGIS, Felt, Leaflet, and Google Earth
 • Import KML / KMZ from Google Earth and ATAK exports
 • Record and export GPX tracks
+• Export All — one-tap backup of every symbol, drawing, waypoint, and track as a single GeoJSON file
 • No proprietary format. Everything you draw exports to the tools your unit already uses.
 
 RUNS ON THE GEAR YOU ALREADY FIELD
@@ -100,13 +103,16 @@ MILITARY-GRADE TOOLING
 
 SHARE THE PICTURE, IN REAL TIME
 • Unit Sync — share drawings and symbols live across devices over an end-to-end encrypted channel
+• Live presence — see where your team is on the map in real time, with callsign, affiliation, and heading, all end-to-end encrypted
 • The relay never sees your plaintext; a connected indicator on the header shows you're linked up
+• Conflict detection — if a teammate edits the same object, you get a clear notification instead of a silent overwrite
 • Weather + UAV flight-safety widget — live wind, gusts, visibility, and a SAFE / CAUTION / DANGER drone-flight read for the map centre
 
 OPEN BY DESIGN — YOUR DATA STAYS YOURS
 • Import and export GeoJSON (RFC 7946) — round-trips cleanly through QGIS, ArcGIS, Felt, Leaflet, and Google Earth
 • Import KML / KMZ from Google Earth and ATAK exports
 • Record and export GPX tracks
+• Export All — one-tap backup of every symbol, drawing, waypoint, and track as a single GeoJSON file
 • No proprietary format. Everything you draw exports to the tools your unit already uses.
 
 RUNS ON THE GEAR YOU ALREADY FIELD
@@ -125,6 +131,16 @@ PAY ONCE — A$5
 `mgrs,nato,app-6,tactical,offline,map,gis,geojson,kml,geopdf,military,grid,utm,navigation,sar`
 
 ## What's New (release note snippet)
+
+### 1.2.0
+- **New: Live presence** — see your team on the map in real time. Set your callsign, affiliation, and echelon, and every connected device shows your position with heading — all end-to-end encrypted.
+- **New: Export All** — one-tap backup of every symbol, drawing, waypoint, and track as a single GeoJSON file.
+- **New: Sync conflict alerts** — if a teammate edits the same object, you get a notification instead of a silent overwrite.
+- Authenticated sync relay — stronger security for Unit Sync connections.
+- Data durability improvements — symbols, drawings, and tracks survive app kills and low-memory conditions more reliably.
+- Bug fixes and stability improvements.
+
+### 1.1.0
 - **New: Unit Sync** — share your drawings and symbols live across devices over an end-to-end encrypted channel. The relay never sees your plaintext.
 - **New: Weather + UAV flight-safety** — live wind, gusts and visibility with a SAFE / CAUTION / DANGER drone-flight read for the map centre.
 - **New: terrain heatmap** — toggle a DEM-shaded elevation overlay from the Layers sheet.

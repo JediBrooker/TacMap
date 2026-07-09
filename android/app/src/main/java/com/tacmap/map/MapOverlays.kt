@@ -65,10 +65,10 @@ import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.waypoints.Waypoint
 import kotlin.math.roundToInt
 
-// Map overlay rendering — vertex handles, drawing shapes, MGRS grid lines +
-// labels, PDF ground overlay, waypoint icons + labels, drawing labels, and the
-// fiduciary pins — extracted verbatim from GoogleMapScreen.kt. Composables
-// GoogleMapScreen calls are `internal`; leaf helpers stay `private`.
+// Map overlay rendering - vertex handles, drawing shapes, MGRS grid,
+// PDF ground overlay, waypoint icons + labels, drawing labels, fiduciary
+// pins. Extracted from GoogleMapScreen.kt. Composables it calls are
+// internal, leaf helpers stay private.
 
 @Composable
 internal fun VertexHandleBox(
@@ -172,37 +172,32 @@ internal fun DrawingShape(
     if (effective.isEmpty()) return
 
     val strokeColor = Color(feature.strokeColor)
-    /// Fill is always a translucent version of the stroke. This matches
-    /// every DrawingFeature construction site in [MapScreen] (which sets
-    /// `fillColor = strokeColor.withAlpha(0x33)`) and enforces the
-    /// invariant defensively at render time in case a stored feature
-    /// drifted (e.g. older format, imported GeoJSON with mismatched
-    /// colours).
+    /// Fill is always translucent version of stroke. Matches every
+    /// DrawingFeature construction site (fillColor = strokeColor.withAlpha(0x33))
+    /// and enforces it defensively at render time in case stored feature
+    /// drifted (older format, imported GeoJSON, etc).
     val fillColor = Color(feature.strokeColor and 0x00FFFFFF or 0x33000000)
     val baseWidth = if (isDraft) feature.strokeWidth + 2f else feature.strokeWidth
     val width = baseWidth
     val pattern: List<PatternItem>? = if (feature.strokeStyle == DrawingStrokeStyle.DASHED) {
         listOf(Dash(width * 3f), Gap(width * 2f))
     } else null
-    /// Wider, translucent tactical-orange halo painted UNDER the
-    /// real polyline / polygon when the shape is selected — gives
-    /// the same "selection glow" affordance the waypoint icons get
-    /// and matches the iOS thicken-stroke pattern but with colour.
+    /// wider translucent orange halo under the real polyline/polygon
+    /// when selected - same glow affordance as waypoint icons, kinda
+    /// like iOS thicken-stroke but with colour
     val haloColor = Color(0xFFFFA63D)
     val haloWidth = width + 14f
 
-    /// Tapping a feature while drawing is in progress would otherwise
-    /// swallow vertex placement.
+    /// don't let feature tap swallow vertex placement during drawing
     val clickable = onTap != null && !inputEnabled
     val handleClick: () -> Unit = onTap ?: {}
 
     when (feature.geometry) {
         DrawingGeometry.POINT -> {
-            /// Point geometry renders as a small filled circle around
-            /// the single coordinate. Use a tiny polygon approximation
-            /// — Google Maps SDK has Circle, but a small polygon keeps
-            /// the dashed-stroke + fill story consistent with line /
-            /// polygon shapes above.
+            /// Point geometry = small filled circle around the coordinate.
+            /// Using a tiny polygon approx here b/c Google Maps SDK has
+            /// Circle but polygon keeps dashed-stroke + fill consistent
+            /// with line/polygon shapes above.
             val center = effective.first()
             val ring = remember(center, width) { pointCircle(center, radiusMetres = 12.0) }
             Polygon(
@@ -218,9 +213,8 @@ internal fun DrawingShape(
         DrawingGeometry.LINE -> {
             if (effective.size < 2 && !isDraft) return
             if (effective.size < 2) {
-                /// First vertex of an in-progress line: drop a small
-                /// marker so the user can see the seed before they
-                /// place the second vertex.
+                /// first vertex of in-progress line - drop small marker
+                /// so user can see the seed before placing second vertex
                 DraftSeedMarker(effective.first())
                 return
             }
@@ -322,8 +316,8 @@ private fun DraftSeedMarker(point: LatLng) {
     )
 }
 
-/// Approximate a small circle (in metres) around a centre point with a
-/// 24-point polygon. Used for POINT geometry rendering.
+/// approx small circle (metres) around centre with 24-pt polygon.
+/// Used for POINT geometry rendering.
 private fun pointCircle(center: LatLng, radiusMetres: Double, segments: Int = 24): List<LatLng> {
     val latRadius = radiusMetres / 111_320.0
     val lngRadius = radiusMetres / (111_320.0 * kotlin.math.cos(Math.toRadians(center.latitude)).coerceAtLeast(0.000001))
@@ -336,8 +330,8 @@ private fun pointCircle(center: LatLng, radiusMetres: Double, segments: Int = 24
     }
 }
 
-/// MGRS grid lines rendered as a TileOverlay so the Maps SDK fetches tiles
-/// lazily and handles caching internally — no per-line Polyline IPC calls.
+/// MGRS grid lines as TileOverlay so Maps SDK fetches tiles lazily
+/// and handles caching. Way better than per-line Polyline IPC calls.
 @Composable
 internal fun MgrsGridLayer() {
     val density = LocalDensity.current.density
@@ -345,11 +339,10 @@ internal fun MgrsGridLayer() {
     TileOverlay(tileProvider = provider, zIndex = -0.5f)
 }
 
-/// MGRS grid labels live OUTSIDE the GoogleMap composable scope (they
-/// need to draw on top of the map, projected to screen coords each
-/// frame). Uses a single Canvas draw call instead of N×5 Text
-/// composables to avoid exhausting the Compose change-list under
-/// rapid camera movement.
+/// MGRS grid labels live OUTSIDE GoogleMap composable scope (need to
+/// draw on top, projected to screen coords each frame). Single Canvas
+/// draw call instead of Nx5 Text composables - the compose change-list
+/// absolutely chokes under rapid camera movement otherwise.
 @Composable
 internal fun MgrsGridLabelsOverlay(cameraPositionState: CameraPositionState) {
     cameraPositionState.position
@@ -426,13 +419,12 @@ internal fun MgrsGridLabelsOverlay(cameraPositionState: CameraPositionState) {
 internal fun PdfGroundOverlay(source: PdfMapSource) {
     val context = LocalContext.current
 
-    /// Render the PDF's first page once per URI as a single high-res
-    /// bitmap and place it via a GroundOverlay. Simple, robust, and at the
-    /// 4096-px max dimension set in [PdfPageRenderer] it stays readable
-    /// through several zoom steps. The previous tile-based approach was more
-    /// flexible but proved slow to first-render and held multiple
-    /// PdfRenderer instances in native memory, which tripped the
-    /// low-memory killer on larger PDFs.
+    /// Render PDF first page once per URI as a single hi-res bitmap,
+    /// place via GroundOverlay. Simple and robust, at 4096px max it
+    /// stays readable through several zoom steps. The old tile-based
+    /// approach was more flexible but slow to first-render and held
+    /// multiple PdfRenderer instances in native memory which tripped
+    /// the low-memory killer on larger PDFs.
     var image by remember(source.uri) {
         mutableStateOf<BitmapDescriptor?>(null)
     }
@@ -506,20 +498,18 @@ private data class BakedSymbol(
     val hPx: Int,
     val vcx: Float = 0f,
     val vcy: Float = 0f,
-    /// Transparent hit-target sized to the symbol's VISIBLE bounds (only on
-    /// the raw symbol; the glow doesn't need one).
+    /// transparent hit-target sized to symbol's visible bounds (only on
+    /// raw symbol, glow doesn't need one)
     val tapDescriptor: BitmapDescriptor? = null
 )
 
-/// Visible waypoint symbols painted as GROUND OVERLAYS — i.e. on the map
-/// surface, the SAME layer as Circle/Polyline, which is the only layer the
-/// GL renderer keeps glued to its lat/lng through a rotate. Native markers
-/// (billboard or flat) AND projection-based Compose overlays both lag the
-/// map on rotate and let the symbol slide off its coordinate; a
-/// GroundOverlay does not. `bearing = mapBearing` counter-rotates the bitmap
-/// so it still reads screen-upright; the ground size is recomputed from the
-/// projection so the symbol holds a roughly constant on-screen size across
-/// zooms. (Tap/selection stays on the invisible [WaypointMarkers].)
+/// Waypoint symbols as GROUND OVERLAYS - same layer as Circle/Polyline,
+/// only layer the GL renderer keeps glued to lat/lng through a rotate.
+/// Native markers (billboard or flat) AND projection Compose overlays
+/// both lag on rotate and let symbol slide off its coordinate;
+/// GroundOverlay doesn't. bearing=mapBearing counter-rotates bitmap
+/// so it reads upright; ground size recomputed from projection so
+/// symbol holds roughly constant on-screen size across zooms.
 @Composable
 internal fun WaypointGroundOverlays(
     waypoints: List<Waypoint>,
@@ -534,31 +524,28 @@ internal fun WaypointGroundOverlays(
     val zoom by remember(cameraPositionState) {
         derivedStateOf { cameraPositionState.position.zoom }
     }
-    /// Counter-rotate EVERY frame so the symbol is ALWAYS screen-upright.
-    /// Safe ONLY because the overlay's anchor is the symbol's VISIBLE
-    /// centroid: `bearing` rotates a GroundOverlay about its anchor, and that
-    /// anchor is pinned to the lat/lng and rendered by the GL map directly, so
-    /// a bearing change just spins the symbol in place — its visible mass never
-    /// orbits off the coordinate. (Earlier per-frame-bearing attempts drifted
-    /// because they pivoted about an OFF-centroid anchor.) During a very fast
-    /// spin the bearing value can lag the GL camera by a frame, so the symbol
-    /// may sit a couple degrees off-upright mid-gesture and settle exactly
-    /// upright — but it never leaves its spot.
+    /// Counter-rotate every frame so symbol stays screen-upright. Only
+    /// works b/c overlay anchor is the symbol's visible centroid -
+    /// bearing rotates GroundOverlay about its anchor which is pinned
+    /// to lat/lng by the GL map, so bearing change just spins in place.
+    /// Earlier attempts drifted because they pivoted about an off-centroid
+    /// anchor. During fast spin bearing can lag GL camera by a frame
+    /// (couple degrees off mid-gesture) but it never leaves its spot.
     val mapBearing by remember(cameraPositionState) {
         derivedStateOf { cameraPositionState.position.bearing }
     }
     waypoints.forEach { wp ->
         key(wp.id) {
             val markerState = rememberMarkerState(position = LatLng(wp.latitude, wp.longitude))
-            /// Re-pin to the model position when it changes externally (a drag
-            /// commit, or "Move to Crosshair"), but never fight a live drag.
+            /// Re-pin to model position when it changes externally (drag
+            /// commit, "Move to Crosshair") but don't fight a live drag.
             LaunchedEffect(wp.latitude, wp.longitude) {
                 val target = LatLng(wp.latitude, wp.longitude)
                 if (markerState.dragState != DragState.DRAG && markerState.position != target) {
                     markerState.position = target
                 }
             }
-            /// Commit the new position once a finger-drag ends.
+            /// commit new position when finger-drag ends
             LaunchedEffect(markerState.dragState) {
                 if (markerState.dragState == DragState.END) {
                     onWaypointMoved(
@@ -567,19 +554,17 @@ internal fun WaypointGroundOverlays(
                 }
             }
             val isSelected = wp.id == selectedWaypointId
-            /// Bake the symbol into a PADDED bitmap (room for the halo). The
-            /// padded size + centroid anchor are identical whether selected or
-            /// not, so toggling selection never shifts OR duplicates it — the
-            /// glow is only DRAWN (in the existing padding) when selected. Also
-            /// bakes a transparent hit-target sized to the symbol's VISIBLE
-            /// bounds so a tap only selects when it lands on the symbol.
+            /// Bake symbol into padded bitmap (room for halo). Padded size +
+            /// centroid anchor are identical whether selected or not, so
+            /// toggling selection never shifts or duplicates - glow is only
+            /// drawn in existing padding when selected. Also bakes a
+            /// transparent hit-target sized to visible bounds.
             val baked = remember(wp.kind, wp.rotation, wp.scaleX, wp.scaleY, wp.taskColor, isSelected) {
                 val raw = SymbolIconFactory.drawableFor(context, wp)
                 val rawW = raw.intrinsicWidth.coerceAtLeast(1)
                 val rawH = raw.intrinsicHeight.coerceAtLeast(1)
-                /// VISIBLE centroid — the overlay rotates about THIS point so it
-                /// spins truly in place (not orbiting the off-centroid ground
-                /// anchor), and seats the symbol's visual centre on the lat/lng.
+                /// visible centroid - overlay rotates about this point so it
+                /// spins in place instead of orbiting off-centroid
                 val vb = SymbolIconFactory.visibleBoundsFor(context, wp)
                 val vcx = (vb.left + vb.right) / 2f
                 val vcy = (vb.top + vb.bottom) / 2f
@@ -597,9 +582,9 @@ internal fun WaypointGroundOverlays(
                     outW, outH, vcx, vcy, tap
                 )
             }
-            /// Ground metres per symbol pixel at this zoom. Keyed on ZOOM ONLY,
-            /// so it does NOT change during a rotate — the overlay stays static
-            /// while rotating, which is the only thing the GL keeps glued.
+            /// Ground metres per symbol pixel at this zoom. Keyed on zoom only
+            /// so it doesn't change during rotate - overlay stays static while
+            /// rotating, which is the only thing GL keeps glued.
             val metersPerPixel = remember(zoom, wp.latitude, density) {
                 40075016.686 *
                     kotlin.math.cos(Math.toRadians(wp.latitude)) /
@@ -608,9 +593,8 @@ internal fun WaypointGroundOverlays(
             val widthMeters = (baked.wPx * metersPerPixel).toFloat().coerceIn(1f, 1_000_000f)
             val heightMeters = (widthMeters * baked.hPx / baked.wPx).coerceAtLeast(1f)
 
-            /// VISIBLE symbol — anchored at the marker's CURRENT position (so a
-            /// finger-drag moves it under the finger), counter-rotated about its
-            /// visible centroid to stay upright with no orbit/drift.
+            /// visible symbol - anchored at marker's current position (so
+            /// finger-drag moves it), counter-rotated about visible centroid
             GroundOverlay(
                 position = GroundOverlayPosition.create(
                     markerState.position, widthMeters, heightMeters
@@ -622,12 +606,11 @@ internal fun WaypointGroundOverlays(
                 zIndex = 2f
             )
 
-            /// Invisible native marker — SDK-owned TAP + long-press-DRAG. Its
-            /// icon is a transparent bitmap sized to the symbol's VISIBLE bounds
-            /// (anchored centre), so the tap target matches the symbol and a tap
-            /// just OUTSIDE it no longer opens its settings. Invisible (alpha 0)
-            /// so the native "lift" on pickup isn't seen, and the GroundOverlay
-            /// above follows this marker's position during a drag.
+            /// Invisible native marker for SDK tap + long-press-drag. Icon
+            /// is transparent bitmap sized to symbol visible bounds so tap
+            /// target matches and tapping just outside doesn't open settings.
+            /// Alpha 0 so native "lift" on pickup isn't seen, and the
+            /// GroundOverlay above follows this markers position during drag.
             Marker(
                 state = markerState,
                 icon = baked.tapDescriptor,
@@ -644,11 +627,10 @@ internal fun WaypointGroundOverlays(
     }
 }
 
-/// Overlay that renders each waypoint icon at the projected screen
-/// coordinate of its lat/lng. RENDERING ONLY — all touch handling
-/// (tap + drag) lives in [MapItemTouchOverlay]. When a waypoint is
-/// the active drag target, its icon visually follows the finger via
-/// `graphicsLayer { translationX/Y }`.
+/// Renders each waypoint icon at projected screen coord. Rendering
+/// only - all touch handling (tap + drag) lives in MapItemTouchOverlay.
+/// When a waypoint is the active drag target, icon follows finger via
+/// graphicsLayer translationX/Y.
 @Composable
 internal fun WaypointHandlesOverlay(
     waypoints: List<Waypoint>,
@@ -656,8 +638,7 @@ internal fun WaypointHandlesOverlay(
     cameraPositionState: CameraPositionState,
     dragState: MapItemDrag?
 ) {
-    /// Re-read camera position so handles reproject on every pan /
-    /// zoom — same trick as VertexHandlesOverlay.
+    /// re-read camera pos so handles reproject on every pan/zoom
     cameraPositionState.position
     val projection = cameraPositionState.projection ?: return
     val context = LocalContext.current
@@ -672,8 +653,7 @@ internal fun WaypointHandlesOverlay(
         }
         val isSelected = wp.id == selectedWaypointId
 
-        /// Pre-bake the icon (with halo when selected) into a
-        /// Bitmap + anchor.
+        /// pre-bake icon (with halo when selected) into Bitmap + anchor
         val (iconBmp, anchor) = remember(rawIcon, rawAnchor, isSelected) {
             if (isSelected) {
                 val (glowed, ga) = applySelectionGlow(context, rawIcon, rawAnchor)
@@ -694,10 +674,8 @@ internal fun WaypointHandlesOverlay(
         val anchorPxX = (anchor.first * boxW).roundToInt()
         val anchorPxY = (anchor.second * boxH).roundToInt()
 
-        /// Apply the active drag's screen-pixel offset visually so
-        /// the icon follows the finger in real time without changing
-        /// its layout origin (and thus without disturbing any other
-        /// overlays' coordinate frames).
+        /// apply drag offset visually so icon follows finger without
+        /// changing layout origin (doesn't disturb other overlays)
         val activeDrag = dragState?.takeIf {
             it.kind == MapItemDrag.Kind.WAYPOINT && it.itemId == wp.id
         }
@@ -725,11 +703,10 @@ internal fun WaypointHandlesOverlay(
     }
 }
 
-/// Bake [icon] into a bitmap padded by a fixed margin on EVERY side (room for
-/// the selection halo), drawing the orange glow behind the crisp symbol only
-/// when [glow] is true. The padded SIZE is identical glow-or-not, so toggling
-/// selection never resizes/shifts/duplicates the overlay — the halo simply
-/// appears in the already-present padding. Returns (drawable, pad).
+/// Bake icon into bitmap padded on every side (room for selection halo),
+/// drawing orange glow behind symbol only when [glow] is true. Padded
+/// size is identical glow-or-not so toggling selection never resizes or
+/// shifts the overlay. Returns (drawable, pad).
 private fun bakePaddedSymbol(
     context: android.content.Context,
     icon: Drawable,
@@ -765,11 +742,10 @@ private fun bakePaddedSymbol(
     return BitmapDrawable(context.resources, out) to pad
 }
 
-/// Composite an orange halo behind the icon by drawing the icon's
-/// alpha mask multiple times with a tinted blur, then drawing the
-/// crisp icon on top. Returns the larger bitmap drawable plus a new
-/// anchor that keeps the original icon's anchor pixel pinned to the
-/// marker's geographic position.
+/// Orange halo behind icon - draw alpha mask multiple times with
+/// tinted blur, then crisp icon on top. Returns larger bitmap drawable
+/// + new anchor that keeps original anchor pixel pinned to marker's
+/// geographic position.
 private fun applySelectionGlow(
     context: android.content.Context,
     icon: Drawable,
@@ -817,12 +793,10 @@ private fun applySelectionGlow(
     return BitmapDrawable(context.resources, out) to (newAnchorU to newAnchorV)
 }
 
-/// Per-waypoint name labels rendered as Compose overlays on top of
-/// the map. Tasks (control measures) place the label centred inside
-/// the symbol bubble; units / generic waypoints sit the label
-/// horizontally centred on the icon's visual centre and just below
-/// the icon's bottom edge. During a drag the label follows the icon
-/// via the same screen-pixel offset.
+/// Per-waypoint name labels as Compose overlays on top of the map.
+/// Tasks place label centred inside symbol bubble; units/generic
+/// sit horizontally centred on icon's visual centre, just below
+/// bottom edge. During drag the label follows via same pixel offset.
 @Composable
 internal fun WaypointLabelsOverlay(
     waypoints: List<Waypoint>,
@@ -852,20 +826,17 @@ internal fun WaypointLabelsOverlay(
         val dragDy = activeDrag?.offsetY?.roundToInt() ?: 0
 
         if (isTask) {
-            /// Tasks: centred on the projected anchor (matches the
-            /// icon's geometric centre because control-measure
-            /// anchors are 0.5/0.5).
+            /// Tasks: centred on projected anchor (control-measure
+            /// anchors are 0.5/0.5 so this just works)
             ScreenAnchoredOverlay(
                 screenX = screen.x + dragDx,
                 screenY = screen.y + dragDy
             ) { LabelPill(text = trimmed) }
         } else {
-            /// Units / generic: anchor on the icon's VISIBLE centre
-            /// (using the rendered bitmap's visible bounds, so any
-            /// transparent padding baked into the SVG/asset doesn't
-            /// throw the label off-centre or push it further below)
-            /// and sit the label just below the icon's visible
-            /// bottom edge.
+            /// Units/generic: anchor on icon's visible centre using
+            /// rendered bitmap visible bounds so transparent padding
+            /// in the SVG/asset doesn't throw label off-centre.
+            /// Sits just below icon's visible bottom edge.
             val drawable = remember(wp.kind, wp.rotation, wp.scaleX, wp.scaleY) {
                 SymbolIconFactory.drawableFor(context, wp)
             }
@@ -879,7 +850,7 @@ internal fun WaypointLabelsOverlay(
             val iconH = drawable.intrinsicHeight.coerceAtLeast(1)
             val anchorPxX = (anchor.first * iconW).roundToInt()
             val anchorPxY = (anchor.second * iconH).roundToInt()
-            /// Bitmap top-left in screen coords.
+            /// bitmap top-left in screen coords
             val bmpLeftX = screen.x - anchorPxX
             val bmpTopY = screen.y - anchorPxY
             val visibleCenterX = bmpLeftX + (visibleBounds.left + visibleBounds.right) / 2 + dragDx
@@ -893,10 +864,9 @@ internal fun WaypointLabelsOverlay(
     }
 }
 
-/// Drawing name labels — one per named drawing, anchored at the
-/// shape's labelAnchor (centroid / mid-segment / point). Non-
-/// interactive; the unified touch overlay handles taps. During a
-/// drag the label follows the shape.
+/// Drawing name labels - one per named drawing, anchored at shape's
+/// labelAnchor (centroid/mid-segment/point). Non-interactive, unified
+/// touch overlay handles taps. Label follows shape during drag.
 @Composable
 internal fun DrawingLabelsOverlay(
     drawings: List<DrawingFeature>,
@@ -929,12 +899,9 @@ internal fun DrawingLabelsOverlay(
 
 private enum class ScreenAnchor { CENTER, TOP }
 
-/// Lay a single child out at an absolute screen coordinate. With
-/// `ScreenAnchor.CENTER` the child's CENTRE sits at (`screenX`,
-/// `screenY + yOffsetPx`); with `ScreenAnchor.TOP` the child's TOP
-/// edge sits at that point (horizontal centring is unchanged). The
-/// Layout itself reports a zero footprint so it doesn't push siblings
-/// around.
+/// Lays a single child at absolute screen coordinate. CENTER = child
+/// centre at (screenX, screenY + yOffsetPx), TOP = child top edge.
+/// Layout reports zero footprint so it doesn't push siblings around.
 @Composable
 private fun ScreenAnchoredOverlay(
     screenX: Int,
@@ -977,10 +944,9 @@ private fun LabelPill(text: String) {
     )
 }
 
-/// Numbered pin for one PDF-calibration fiduciary. The pin's geographic
-/// position is the MGRS the user typed for that PDF corner; the
-/// number identifies the order so the user knows which fiduciary
-/// they've placed.
+/// Numbered pin for one PDF-calibration fiduciary. Geographic position
+/// is the MGRS user typed for that PDF corner, number shows placement
+/// order.
 @Composable
 internal fun CalibrationFiduciaryMarker(index: Int, fid: com.tacmap.calibration.Fiduciary) {
     val context = LocalContext.current
@@ -998,8 +964,8 @@ internal fun CalibrationFiduciaryMarker(index: Int, fid: com.tacmap.calibration.
     )
 }
 
-/// Build a small pin-shaped bitmap with a number stamped inside.
-/// Tactical orange so it pops against satellite and PDF basemaps.
+/// Small pin bitmap with number stamped inside. Tactical orange
+/// so it pops against satellite and PDF basemaps.
 private fun makeFiduciaryPinDrawable(
     context: android.content.Context,
     index: Int
@@ -1016,7 +982,7 @@ private fun makeFiduciaryPinDrawable(
     val white = 0xFFFFFFFF.toInt()
     val text = 0xFF1A1A1A.toInt()
 
-    /// Pin tail — small triangle pointing down from the disc's bottom.
+    /// pin tail - small triangle pointing down from disc bottom
     val tailPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = orange
     }
@@ -1028,7 +994,7 @@ private fun makeFiduciaryPinDrawable(
     }
     canvas.drawPath(path, tailPaint)
 
-    /// Disc.
+    /// disc
     val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = orange
     }
@@ -1040,7 +1006,7 @@ private fun makeFiduciaryPinDrawable(
     }
     canvas.drawCircle(cx, cy, r, stroke)
 
-    /// Number — centred in the disc.
+    /// number, centred in disc
     val textPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = text
         textSize = 14f * density

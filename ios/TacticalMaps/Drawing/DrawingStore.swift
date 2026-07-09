@@ -1,34 +1,31 @@
 import Foundation
 import Combine
 
-/// Persistent store for the user's drawings, grouped into layers.
+/// Persistent store for drawings, grouped into layers.
 ///
-/// Schema lives at `Application Support/drawings.json` as a single
-/// `{"layers": [...], "shapes": [...]}` object. Older versions of the app
-/// wrote a bare `[DrawingShape]` array; that legacy shape is still
-/// readable — those shapes get re-stamped with `DrawingLayer.legacyFallbackID`
-/// and the default seed layers are inserted so the user lands in a
-/// recognisable multi-layer state.
+/// Schema lives at Application Support/drawings.json as
+/// `{"layers": [...], "shapes": [...]}`. Older versions wrote a bare
+/// [DrawingShape] array; we still read that format - those shapes get
+/// re-stamped with `DrawingLayer.legacyFallbackID` and seed layers
+/// are inserted so the user sees a sane multi-layer state.
 final class DrawingStore: ObservableObject {
     @Published private(set) var layers: [DrawingLayer] = []
     @Published private(set) var shapes: [DrawingShape] = []
-    /// Layer used for newly-started drawings when the session doesn't
-    /// specify one. Defaults to the first visible layer, falling back to
-    /// the first layer.
+    /// Layer for new drawings when session doesn't specify one. First
+    /// visible layer, or just the first layer as fallback.
     @Published var activeLayerID: UUID?
 
-    /// Non-nil when the on-disk drawings file was unreadable (and quarantined)
-    /// or a save failed. Surfaced by the UI so the user knows their drawings
-    /// were preserved / a save didn't reach disk, instead of a blank map being
-    /// silently mistaken for "no data".
+    /// Non-nil when the drawings file was unreadable (quarantined) or a
+    /// save failed. Surfaced in the UI so user knows whats going on
+    /// instead of just seeing a blank map and thinking there's no data.
     @Published var loadError: String?
 
-    /// Persisted-document schema version. Bump when the on-disk shape changes so
-    /// old files migrate instead of being mistaken for corruption.
+    /// Schema version. Bump when on-disk format changes so old files
+    /// migrate instead of looking like corruption.
     private static let currentSchema = 1
 
-    /// Set by ContentView from `@Environment(\.undoManager)` after the
-    /// view appears. Weak so the store doesn't extend the window's lifetime.
+    /// Set by ContentView from @Environment(\.undoManager) after view
+    /// appears. Weak so we don't extend the window's lifetime.
     weak var undoManager: UndoManager?
 
     private let url: URL = {
@@ -52,10 +49,9 @@ final class DrawingStore: ObservableObject {
         return layer
     }
 
-    /// Undo-only removal of a layer that had no shapes (i.e. was just added).
-    /// Only called from the undo handler for addLayer — not exposed as a
-    /// general-purpose API so we don't accidentally skip the shape-deletion
-    /// logic in removeLayer.
+    /// Undo-only removal of a layer that had no shapes (just added).
+    /// Not exposed as public API - don't want to accidentally skip the
+    /// shape-deletion logic in removeLayer.
     private func removeLayerUndo(_ layer: DrawingLayer) {
         layers.removeAll { $0.id == layer.id }
         if activeLayerID == layer.id {
@@ -71,8 +67,8 @@ final class DrawingStore: ObservableObject {
         undoManager?.setActionName("Add Layer")
     }
 
-    /// Insert a layer exactly as supplied. Used by GeoJSON import so drawings
-    /// that reference the imported layer id do not become orphaned.
+    /// Insert layer as-is. Used by GeoJSON import so drawings referencing
+    /// the imported layer id don't become orphaned.
     func addLayerVerbatim(_ layer: DrawingLayer) {
         guard !layers.contains(where: { $0.id == layer.id }) else { return }
         layers.append(layer)
@@ -149,8 +145,8 @@ final class DrawingStore: ObservableObject {
         undoManager?.setActionName("Delete Drawing")
     }
 
-    /// Inserts a shape at a specific index (used by undo of remove) and
-    /// registers the corresponding redo so the cycle is complete.
+    /// Inserts shape at index (undo of remove) and registers the redo
+    /// so undo/redo cycle stays complete.
     private func insertShape(_ shape: DrawingShape, at idx: Int) {
         shapes.insert(shape, at: min(idx, shapes.count))
         persist()
@@ -166,19 +162,18 @@ final class DrawingStore: ObservableObject {
     // MARK: - Persistence
 
     private struct Persisted: Codable {
-        /// nil == written before schema versioning; treat as v1. Optional so
-        /// existing files (which lack the key) still decode — otherwise the very
-        /// upgrade meant to protect data would fail to decode and wipe it.
+        /// nil = written before schema versioning, treat as v1. Has to be
+        /// optional so existing files without this key still decode -
+        /// otherwise the upgrade would fail and wipe the data. Ironic.
         var schemaVersion: Int?
         var layers: [DrawingLayer]
         var shapes: [DrawingShape]
         var activeLayerID: UUID?
     }
 
-    /// Decode either the current `Persisted` schema or the legacy flat
-    /// `[DrawingShape]` array, returning whether a legacy migration happened.
-    /// Throws if the bytes match neither — so `SafeStore` quarantines rather
-    /// than the caller silently discarding.
+    /// Try decoding as current schema, fall back to legacy flat
+    /// [DrawingShape] array. Throws if neither works so SafeStore
+    /// quarantines instead of silently discarding.
     private static func decodeAny(_ data: Data) throws -> (Persisted, migrated: Bool) {
         let dec = JSONDecoder()
         if let payload = try? dec.decode(Persisted.self, from: data) {
@@ -209,17 +204,17 @@ final class DrawingStore: ObservableObject {
         case .empty:
             seedFreshInstall()
         case .corrupt(let quarantine, _):
-            // Preserve, don't overwrite: the unreadable file is set aside and
-            // the user is told, instead of the next edit persisting an empty
-            // document over the only copy.
+            // Don't clobber the unreadable file - set it aside and tell the
+            // user, otherwise the next edit would persist an empty doc over
+            // the only copy
             loadError = "Saved drawings could not be read and were set aside "
                 + "(\(quarantine?.lastPathComponent ?? "recovery copy")). Starting with an empty map."
             seedFreshInstall()
         }
     }
 
-    /// First-time install: seed the four default layers so the user has
-    /// somewhere to draw on without having to create a layer first.
+    /// Fresh install - seed default layers so the user has somewhere to
+    /// draw without having to create a layer first.
     private func seedFreshInstall() {
         layers = DrawingLayer.seedDefaults
         shapes = []
@@ -227,8 +222,8 @@ final class DrawingStore: ObservableObject {
         persist()
     }
 
-    /// If a saved file has zero layers (e.g. user deleted every one), put
-    /// the seeds back so new drawings have a destination.
+    /// If saved file has zero layers (user deleted them all), put the
+    /// seed layers back so new drawings have somewhere to go.
     private func ensureSeedLayers() {
         if layers.isEmpty {
             layers = DrawingLayer.seedDefaults
@@ -249,7 +244,7 @@ final class DrawingStore: ObservableObject {
             try SafeStore.write(data, to: url)
             if loadError?.hasPrefix("Could not save") == true { loadError = nil }
         } catch {
-            // Do not swallow: the user is editing but nothing is reaching disk.
+            // don't swallow this, user is editing but nothing is hitting disk
             print("[DrawingStore] persist failed: \(error)")
             loadError = "Could not save drawings to disk: \(error.localizedDescription)"
         }

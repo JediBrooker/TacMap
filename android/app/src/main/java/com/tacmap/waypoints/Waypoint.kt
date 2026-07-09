@@ -20,8 +20,8 @@ import kotlinx.serialization.json.put
 import java.util.UUID
 
 /**
- * A user-placed point of interest, stored in WGS84 so it survives swapping basemaps
- * (OSM, satellite tiles, GeoPDF, calibrated PDF).
+ * A user-placed point of interest. Stored in WGS84 so it survives swapping
+ * basemaps (OSM, satellite tiles, GeoPDF, calibrated PDF).
  */
 @Serializable
 data class Waypoint(
@@ -144,12 +144,12 @@ data class MilitarySymbolSpec(
 )
 
 /**
- * Colour applied to a tactical task graphic (control measure). The bundled
- * glyphs are pure-black line art on transparent; the icon factory tints them
- * to this colour via a SRC_IN PorterDuff filter. Black is the default; the
- * other four follow the APP-6 affiliation palette (saturated for legibility
- * on satellite imagery and imported PDFs — the affiliation frame fills are
- * pastel and too pale for line art). Kept in sync with iOS's `TaskColor`.
+ * Colour applied to a tactical task graphic (control measure). Bundled
+ * glyphs are pure-black line art on transparent, icon factory tints them
+ * via SRC_IN PorterDuff. Black is default; the other four follow APP-6
+ * affiliation palette (saturated for legibility on sat imagery and PDFs -
+ * the affiliation frame fills are pastel, too pale for line art).
+ * Kept in sync with iOS TaskColor.
  */
 @Serializable
 enum class TaskColor(val displayName: String, val argb: Int) {

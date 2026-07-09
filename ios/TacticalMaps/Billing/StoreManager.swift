@@ -2,22 +2,21 @@ import Foundation
 import StoreKit
 import UIKit
 
-/// StoreKit 2 wrapper for the single one-time, non-consumable unlock that
-/// permanently removes the trial gate.
+/// StoreKit 2 wrapper for our one-time non-consumable unlock. Basically just
+/// manages the single IAP that permanently removes the trial gate.
 ///
-/// Exposes `isPurchased` (the entitlement) and `priceText` (the store's
-/// localized price) for the paywall. The entitlement is sourced from
-/// `Transaction.currentEntitlements`, so it restores automatically on a new
-/// device / reinstall once the user signs into the same Apple ID.
+/// Exposes `isPurchased` and `priceText` for the paywall. Entitlement comes
+/// from `Transaction.currentEntitlements` so it auto-restores on a new
+/// device / reinstall once user signs into the same Apple ID.
 @MainActor
 final class StoreManager: ObservableObject {
-    /// Must match the In-App Purchase product ID in App Store Connect
-    /// (and the local `TacticalMaps.storekit` testing config).
+    /// Has to match the IAP product ID in App Store Connect
+    /// and the local `TacticalMaps.storekit` testing config.
     static let productID = "com.tacticalmaps.app.unlock"
 
-    /// Where the one-time product fetch currently stands. Drives the paywall's
-    /// loading / error / retry UI so it can never sit on a dead "Loading…"
-    /// screen — the failure App Review hit when the IAP wasn't yet approved.
+    /// Tracks where the product fetch is at. Drives the paywall's loading /
+    /// error / retry UI so it doesn't get stuck on a dead "Loading..." screen
+    /// (that's the exact failure App Review hit when the IAP wasn't approved yet).
     enum ProductLoadState: Equatable {
         case loading      // fetch in flight
         case loaded       // product available, purchase enabled
@@ -35,13 +34,12 @@ final class StoreManager: ObservableObject {
     @Published private(set) var loadState: ProductLoadState = .loading
 
     /// True for TestFlight / Sandbox builds (receipt is `sandboxReceipt`), where
-    /// in-app purchases are FREE — used to reassure testers they won't be charged.
+    /// IAPs are free. Used to reassure testers they won't be charged.
     var isSandbox: Bool {
         Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
     }
 
-    /// Hard ceiling on the product fetch so a stalled StoreKit request can't
-    /// hang the paywall forever.
+    /// Hard ceiling so a stalled StoreKit request can't hang the paywall forever.
     private static let loadTimeout: Double = 15
 
     private var updatesTask: Task<Void, Never>?
@@ -82,7 +80,7 @@ final class StoreManager: ObservableObject {
         }
     }
 
-    /// Begin the purchase flow. Safe to call only when `product` is loaded.
+    /// Kick off the purchase flow. Only call when `product` is loaded.
     func purchase() async {
         guard let product else { return }
         purchasing = true
@@ -104,7 +102,7 @@ final class StoreManager: ObservableObject {
         }
     }
 
-    /// "Restore purchase" — re-sync with the App Store and re-read entitlements.
+    /// "Restore purchase" - re-syncs with the App Store and re-reads entitlements.
     /// Always reports an outcome so the button never feels like it did nothing.
     func restore() async {
         restoring = true
@@ -117,21 +115,21 @@ final class StoreManager: ObservableObject {
             : "No previous purchase found on this Apple ID."
     }
 
-    /// Open the App Store's "Redeem Gift Card or Code" screen.
+    /// Opens the App Store's "Redeem Gift Card or Code" screen.
     ///
-    /// App Store **promo codes** for a NON-consumable IAP can only be redeemed
-    /// in the App Store app — Apple's in-app `presentCodeRedemptionSheet()` is
-    /// for *subscription offer codes* only, which this app doesn't have, so it
-    /// would dead-end. Instead we deep-link to the store's redeem screen (the
-    /// iOS mirror of Android's `play.google.com/redeem`); the user pastes the
-    /// code there. A successful redemption produces a normal transaction that
-    /// `listenForTransactions` / restore picks up, flipping `isPurchased`.
+    /// Promo codes for a non-consumable IAP can only be redeemed in the App
+    /// Store app itself. Apple's `presentCodeRedemptionSheet()` is for
+    /// subscription offer codes only (which we dont have) so it would just
+    /// dead-end. We deep-link to the store's redeem screen instead (kinda the
+    /// iOS equivalent of Android's `play.google.com/redeem`). User pastes the
+    /// code there and it produces a normal transaction that
+    /// `listenForTransactions` / restore picks up.
     func presentRedeemSheet() {
         guard let url = URL(string: "https://apps.apple.com/redeem") else { return }
         UIApplication.shared.open(url)
     }
 
-    /// Grant the unlock if a verified, non-revoked entitlement exists.
+    /// Check entitlements and grant unlock if we find a verified, non-revoked one.
     func refreshEntitlement() async {
         var hasEntitlement = false
         for await result in Transaction.currentEntitlements {
@@ -144,8 +142,8 @@ final class StoreManager: ObservableObject {
         isPurchased = hasEntitlement
     }
 
-    /// Listen for transactions approved outside the app (Ask to Buy, another
-    /// device, interrupted purchases).
+    /// Picks up transactions that got approved outside the app (Ask to Buy,
+    /// another device, interrupted purchases).
     private func listenForTransactions() -> Task<Void, Never> {
         Task.detached { [weak self] in
             for await result in Transaction.updates {
@@ -161,8 +159,7 @@ final class StoreManager: ObservableObject {
 
 private struct TimeoutError: Error {}
 
-/// Runs `operation`, throwing `TimeoutError` if it doesn't finish within
-/// `seconds`. Whichever finishes first wins; the loser is cancelled.
+/// Runs `operation` with a timeout. First one to finish wins, loser gets cancelled.
 private func withTimeout<T: Sendable>(
     seconds: Double,
     operation: @escaping @Sendable () async throws -> T

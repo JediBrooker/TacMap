@@ -1,8 +1,8 @@
 import Foundation
 import CoreLocation
 
-/// Current-conditions reading for a coordinate, from Open-Meteo (same provider
-/// as elevation; no API key). Units: °C, m/s, metres.
+/// Current conditions for a coordinate, pulled from Open-Meteo (same as
+/// elevation lookups, no API key needed). Units: °C, m/s, metres.
 struct WeatherReading: Equatable {
     let temperatureC: Double?
     let windSpeedMs: Double?
@@ -11,9 +11,9 @@ struct WeatherReading: Equatable {
     let weatherCode: Int?
 }
 
-/// Drone/UAV flight-safety risk derived from a `WeatherReading` against
-/// configurable thresholds. The overall level is the worst of the components,
-/// so a single dangerous factor (e.g. high gusts) flags the whole assessment.
+/// UAV flight risk from a WeatherReading vs configurable thresholds.
+/// Takes the worst-of component risk, so one bad factor (e.g. high gusts)
+/// flags the whole thing.
 enum UAVRisk: Int, Comparable {
     case safe = 0, caution = 1, danger = 2
     static func < (l: UAVRisk, r: UAVRisk) -> Bool { l.rawValue < r.rawValue }
@@ -27,7 +27,7 @@ enum UAVRisk: Int, Comparable {
     }
 }
 
-/// Default UAV thresholds (small/consumer-drone oriented). Tunable later.
+/// Default thresholds for small/consumer drones. Prob make these configurable later.
 struct UAVThresholds {
     var windCautionMs = 7.0,  windDangerMs = 10.0
     var gustCautionMs = 8.0,  gustDangerMs = 12.0
@@ -38,7 +38,7 @@ struct UAVThresholds {
 }
 
 enum UAVAssessment {
-    /// Worst-of-components risk for the reading. Missing values don't raise risk.
+    /// Worst-of risk across all components. Missing values just get skipped.
     static func risk(for r: WeatherReading, _ t: UAVThresholds = .default) -> UAVRisk {
         var level: UAVRisk = .safe
         func bump(_ x: UAVRisk) { if x > level { level = x } }
@@ -60,7 +60,7 @@ enum UAVAssessment {
     }
 }
 
-/// Fetches current conditions from Open-Meteo's forecast endpoint.
+/// Fetch current conditions from Open-Meteo forecast endpoint.
 actor WeatherService {
 
     private struct Response: Decodable {
@@ -80,8 +80,8 @@ actor WeatherService {
     }
 
     func reading(for coordinate: CLLocationCoordinate2D) async -> WeatherReading? {
-        // OPSEC: weather lookups transmit the coordinate to a third party
-        // (Open-Meteo), so only proceed when the user has opted in.
+        // OPSEC: this sends the coordinate to Open-Meteo, so bail out
+        // unless user opted into online lookups.
         guard OpsecSettings.shared.onlineLookups else { return nil }
         if coordinate.latitude == 0 && coordinate.longitude == 0 { return nil }
         // Coarsen to ~110 m (3 dp) so the exact position isn't disclosed.
@@ -119,8 +119,8 @@ actor WeatherService {
         }
     }
 
-    /// Pick the hourly visibility for the current hour (match on the hour
-    /// prefix of `current.time`), falling back to the first entry.
+    /// Grab hourly visibility matching current hour, falls back
+    /// to first entry if we can't find a match.
     private func visibilityNow(_ r: Response, currentTime: String?) -> Double? {
         guard let times = r.hourly?.time, let vis = r.hourly?.visibility, !vis.isEmpty else { return nil }
         if let currentTime, let idx = times.firstIndex(of: currentTime), idx < vis.count {

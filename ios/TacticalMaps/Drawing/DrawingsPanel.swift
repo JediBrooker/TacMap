@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Inline floating panel that drops down below the hamburger button when the
-/// user picks "Drawings" from the menu. Replaces the modal `DrawingsSheet`
-/// for the common start-a-new-drawing path; the full list is one tap away.
+/// Floating panel that drops down from the hamburger menu when user
+/// picks "Drawings". Replaces the full `DrawingsSheet` modal for the
+/// common start-a-new-drawing path, full list is one tap away.
 struct DrawingsPanel: View {
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var session: DrawingSessionViewModel
@@ -20,10 +20,9 @@ struct DrawingsPanel: View {
                     Image(systemName: "xmark")
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(.white.opacity(0.85))
-                        /// 36pt visual chip, 44pt invisible hit area
-                        /// via contentShape so the close button is
-                        /// reliably tappable without ballooning the
-                        /// panel header.
+                        // 36pt visible, 44pt hit area via contentShape
+                        // so close button is easy to tap without
+                        // making the header huge
                         .frame(width: 36, height: 36)
                         .background(.white.opacity(0.10), in: Circle())
                         .contentShape(Rectangle().inset(by: -4))
@@ -114,9 +113,9 @@ struct DrawingsPanel: View {
         .padding(.vertical, 4)
     }
 
-    /// Layer chooser. Tapping opens a menu of every drawing layer (with
-    /// its colour swatch) and updates `drawingStore.activeLayerID`, which
-    /// each "New X" row reads when it kicks off the session.
+    /// Layer chooser. Opens a menu of every layer (with colour swatch),
+    /// updates `drawingStore.activeLayerID` which the "New X" rows
+    /// read when kicking off a session.
     @ViewBuilder
     private var layerPicker: some View {
         let active = activeLayer
@@ -168,9 +167,8 @@ struct DrawingsPanel: View {
     private func row(_ kind: DrawingKind, label: String? = nil, subtitle: String) -> some View {
         Button {
             guard let layer = activeLayer else { return }
-            // New drawings inherit the active layer's default colour so
-            // a Hostile-layer drawing starts red instead of forcing the
-            // user to recolour from the palette default.
+            // inherit active layer's colour so e.g. Hostile drawings
+            // start red instead of forcing user to recolour
             session.strokeColorHex = layer.defaultColorHex
             session.start(kind: kind, layerID: layer.id)
             onDismiss()
@@ -190,10 +188,9 @@ struct DrawingsPanel: View {
                 }
                 Spacer()
             }
-            /// Vertical padding bumped from 6 → 10 so each draw-tool
-            /// row is ~48pt tall (icon ~22pt + 2×10 padding + text
-            /// metrics). At the previous 6pt the rows were ~34pt and
-            /// missed taps were common.
+            // bumped padding from 6 to 10 so rows are ~48pt tall.
+            // at 6pt they were only ~34pt and missed taps were
+            // definately an issue
             .padding(.horizontal, 8)
             .padding(.vertical, 10)
             .contentShape(Rectangle())

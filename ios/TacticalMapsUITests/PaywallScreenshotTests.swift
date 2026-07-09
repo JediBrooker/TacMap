@@ -1,9 +1,9 @@
 import XCTest
 
-/// Captures a clean screenshot of the paywall for the App Store Connect IAP
-/// review screenshot. Opens it on demand via the menu's "Unlock Full Version"
-/// row (trial active) or directly if the trial has lapsed. The scheme's
-/// StoreKit config makes the real price render.
+/// Captures a clean paywall screenshot for App Store Connect IAP review.
+/// Opens it via the menu's "Unlock Full Version" row (trial active) or
+/// directly if the trial has lapsed. Scheme's StoreKit config makes
+/// the real price render.
 final class PaywallScreenshotTests: XCTestCase {
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 

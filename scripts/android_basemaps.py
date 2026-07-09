@@ -42,10 +42,10 @@ def back(n=1):
     for _ in range(n): adb("shell", "input", "keyevent", "4"); time.sleep(1.2)
 def on_map():
     r = dump(); return r is not None and any("centre on my location" in x.get("text","").lower() for x in r.iter("node"))
-SCREEN_W, SCREEN_H = 1080, 2400   # overwritten from `wm size` at runtime
+SCREEN_W, SCREEN_H = 1080, 2400   # gets overwritten at runtime from wm size
 def select_basemap(label):
     ham(); tapt("Layers and Labels"); time.sleep(1)
-    # scroll the sheet up so the basemap rows are reachable
+    # scroll sheet up so basemap rows are actually reachable
     for _ in range(4):
         adb("shell", "input", "swipe", str(SCREEN_W//2), str(int(SCREEN_H*0.8)),
             str(SCREEN_W//2), str(int(SCREEN_H*0.28)), "300"); time.sleep(1)
@@ -60,8 +60,8 @@ adb("shell","am","start","-n",ACT); time.sleep(9)
 adb("emu","geo","fix","150.305","-33.700"); time.sleep(2)
 import struct
 def screen_dims():
-    """Actual rendered W×H from a screencap (wm size reports the physical panel,
-    wrong when a landscape-native tablet is rotated to portrait)."""
+    """Actual rendered WxH from screencap. wm size reports the physical panel
+    which is wrong when a landscape tablet is rotated to portrait."""
     png = adb("exec-out", "screencap", "-p").stdout
     return struct.unpack(">I", png[16:20])[0], struct.unpack(">I", png[20:24])[0]
 SCREEN_W, SCREEN_H = screen_dims()
@@ -75,7 +75,7 @@ adb("shell","input","tap",str(CX),str(CY)); adb("shell","input","tap",str(CX),st
 print("Satellite…"); time.sleep(8); snap("bm-satellite")
 # 2) Esri
 print("Esri…"); select_basemap("Satellite (Esri)"); time.sleep(10); snap("bm-esri")
-# 3) OpenTopoMap terrain — long load + pan to trigger tiles
+# 3) OpenTopoMap terrain - long load, need to pan to trigger tiles
 print("Terrain (OpenTopoMap)…"); select_basemap("Terrain (OpenTopoMap)")
 for _ in range(5):
     time.sleep(10)

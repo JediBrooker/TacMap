@@ -2,26 +2,24 @@ import Foundation
 import CoreLocation
 
 /// Persists the currently-active calibrated PDF map source across app
-/// launches. The PDF file itself is already copied to the Documents
-/// directory on import, so it survives an app relaunch. What we add
-/// here is a small JSON sidecar in `UserDefaults` that captures the
-/// non-bitmap state — file name, GeoPDF bounds (sw/ne lat/lng), PDF
-/// crop rect, plus (when calibrated) the affine + fiduciaries — so
-/// we can reconstruct the same `PDFMapSource` on startup without
-/// re-parsing or asking the user to re-import.
+/// launches. The PDF file is already copied to Documents on import so it
+/// survives a relaunch. What we add here is a small JSON sidecar in
+/// UserDefaults that captures the non-bitmap state: file name, GeoPDF
+/// bounds (sw/ne lat/lng), PDF crop rect, plus (when calibrated) the
+/// affine + fiduciaries. That way we can reconstruct the same PDFMapSource
+/// on startup without re-parsing or asking user to re-import.
 enum PDFSessionStore {
     private static let key = "active_pdf_v1"
 
     static func save(_ source: PDFMapSource) {
         guard let bounds = source.bounds else {
-            /// No bounds at all — nothing to anchor the page to.
+            /// No bounds at all, nothing to anchor page to.
             return
         }
-        /// Only persist genuinely georeferenced sources: a GeoPDF whose
-        /// position came from embedded tags, or one the user has fitted
-        /// with fiduciaries. A plain PDF carrying only the rough
-        /// camera-centred fallback box isn't worth resurrecting — it
-        /// would reappear at an arbitrary location on the next launch.
+        /// Only persist genuinely georeferenced sources: GeoPDF with
+        /// embedded tags, or one the user fitted with fiduciaries. A plain
+        /// PDF with only the rough camera-centred fallback box isn't worth
+        /// saving - it'd just reappear at some arbitrary location next launch.
         guard source.kind == .geoPDF || source.calibration != nil else { return }
         let cropRect = source.pdfRenderRect
         let cal: PersistedCalibration?
@@ -51,8 +49,8 @@ enum PDFSessionStore {
             let data = try JSONEncoder().encode(dto)
             UserDefaults.standard.set(data, forKey: key)
         } catch {
-            /// Don't silently drop the write — a stale entry would then
-            /// be restored on next launch with no clue why.
+            /// Don't silently drop the write. A stale entry would then
+            /// get restored on next launch with no clue why.
             NSLog("[PDFSessionStore] failed to encode active PDF: \(error)")
         }
     }
@@ -92,9 +90,9 @@ enum PDFSessionStore {
         UserDefaults.standard.removeObject(forKey: key)
     }
 
-    /// Resolve an imported map by file name. New location is Application Support
-    /// (private); a copy still in the legacy Documents location is migrated there
-    /// on first access so existing sessions aren't lost.
+    /// Resolve an imported map by file name. New location is App Support
+    /// (private); legacy Documents copy gets migrated there on first access
+    /// so existing sessions aren't lost.
     private static func resolveImportedMap(named fileName: String) -> URL? {
         let fm = FileManager.default
         if let dir = try? ImportedMapFileCopier.importedMapsDirectory() {
@@ -116,14 +114,14 @@ enum PDFSessionStore {
 
     // MARK: - Per-PDF calibration library
     //
-    // Beyond the single *active* source above, keep every PDF's calibration
-    // keyed by file name, so importing / switching between several PDFs restores
-    // each one's own fiduciaries + affine instead of only the last one used.
+    // Beyond the single active source above, keep every PDF's calibration
+    // keyed by file name so switching between PDFs restores each one's own
+    // fiduciaries + affine instead of only the last one used.
 
     private static let libraryKey = "pdf_calibrations_v1"
 
-    /// Apply a previously-saved calibration for this source's file, if any.
-    /// Called on import so a re-imported PDF lands already calibrated.
+    /// Apply a previously-saved calibration for this source's file if any.
+    /// Called on import so re-imported PDF lands already calibrated.
     static func applyCalibrationIfKnown(to source: PDFMapSource) {
         guard let cal = loadLibrary()[source.url.lastPathComponent] else { return }
         source.applyCalibration(transform: cal.transform, fiduciaries: cal.fids)
@@ -146,9 +144,9 @@ enum PDFSessionStore {
 }
 
 private struct PersistedPDF: Codable {
-    /// `displayName` is intentionally not stored: PDFMapSource always
-    /// derives it from the file's URL on init, so persisting it would be
-    /// dead data that could drift out of sync with the filename.
+    /// displayName intentionally not stored: PDFMapSource derives it from
+    /// the file URL on init, persisting it would just be dead data that
+    /// could drift out of sync with the filename.
     let fileName: String
     let swLat: Double
     let swLng: Double
@@ -161,7 +159,7 @@ private struct PersistedPDF: Codable {
     let kind: String
     let calibration: PersistedCalibration?
     /// GeoPDF auto-fit placement affine (rotation/scale-correct). Optional so
-    /// older persisted entries (which predate it) still decode → bbox fallback.
+    /// older persisted entries (which predate it) still decode to bbox fallback.
     let placementAffine: AffineTransform2D?
 }
 

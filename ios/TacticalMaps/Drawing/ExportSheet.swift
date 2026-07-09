@@ -1,9 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Unified export sheet: serialises waypoints + drawings into a single GeoJSON
-/// `FeatureCollection`, shows a preview, and offers `ShareLink` to write the
-/// file out to Files, Mail, AirDrop, etc.
+/// Export sheet - packs waypoints + drawings into one GeoJSON
+/// FeatureCollection, shows a preview, and offers ShareLink to
+/// write it out to Files / Mail / AirDrop / etc.
 struct ExportSheet: View {
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var drawingStore: DrawingStore
@@ -58,9 +58,9 @@ struct ExportSheet: View {
         }
     }
 
-    /// Per-type counts (only non-empty types are listed). Free-draws are stored
-    /// as many-point polylines, so they're split out from plain lines by point
-    /// count (matching the > 20 heuristic used elsewhere).
+    /// Per-type counts (skip empty types). Free-draws are basically polylines
+    /// with a lot of points, so we split them out using the >20 point
+    /// heuristic from elsewhere.
     private var summaryItems: [(text: String, icon: String)] {
         let wps = waypointStore.waypoints
         let units = wps.filter { if case .military = $0.kind { return true }; return false }.count
@@ -116,7 +116,7 @@ struct ExportSheet: View {
             )
             let str = try String(contentsOf: url, encoding: .utf8)
             generatedURL = url
-            // Show a snippet — full file might be hundreds of KB.
+            // just show a snippet, full file can be hundreds of KB
             preview = str.count > 4000
                 ? String(str.prefix(4000)) + "\n… (truncated, full file in Share)"
                 : str

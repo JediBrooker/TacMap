@@ -1,9 +1,9 @@
 import MapKit
 import UIKit
 
-/// A geo-anchored terrain heat-map image pinned to a region. The image rows run
-/// north→south, columns west→east (matching `TerrainHeatmapService`), so it
-/// draws upright over the map.
+/// Geo-anchored terrain heatmap image pinned to a region. Rows go north
+/// to south, columns west to east (matching TerrainHeatmapService) so
+/// it draws upright over the map.
 final class TerrainHeatmapOverlay: NSObject, MKOverlay {
     let image: UIImage
     let coordinate: CLLocationCoordinate2D
@@ -25,8 +25,8 @@ final class TerrainHeatmapOverlay: NSObject, MKOverlay {
     }
 }
 
-/// Draws the heat-map image into its geographic rect. MKOverlayRenderer's
-/// context is y-flipped relative to UIKit images, so we flip before drawing.
+/// Draws heatmap image into its geographic rect. MKOverlayRenderer context
+/// is y-flipped vs UIKit images so we flip before drawing.
 final class TerrainHeatmapRenderer: MKOverlayRenderer {
     private let image: UIImage
 
