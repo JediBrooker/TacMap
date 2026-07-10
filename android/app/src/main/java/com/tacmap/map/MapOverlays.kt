@@ -385,16 +385,35 @@ internal fun MgrsGridLabelsOverlay(cameraPositionState: CameraPositionState) {
         }
     }
 
+    // Declutter to one label per grid LINE: every crossing along a line carries
+    // the same value, so zoomed out we'd get the same label over and over. Bucket
+    // vertical labels by screen-x, horizontal by screen-y (a line's perpendicular
+    // coord is ~constant), and keep the copy nearest the top/left margin so it
+    // reads like a grid ruler. Distinct lines land in different buckets, so finer
+    // grids with unique per-line values are untouched.
+    val bucketPx = 55f
+    val kept = HashMap<String, Pair<MgrsGridRenderer.LabelMark, Offset>>()
+    labels.forEach { mark ->
+        val screen = projection.toScreenLocation(LatLng(mark.lat, mark.lng))
+        val here = Offset(screen.x.toFloat(), screen.y.toFloat())
+        val b = Math.round((if (mark.isVertical) here.x else here.y) / bucketPx)
+        val key = "${if (mark.isVertical) "v" else "h"}|$b|${mark.text}"
+        val margin = if (mark.isVertical) here.y else here.x
+        val existing = kept[key]
+        if (existing == null || margin < (if (mark.isVertical) existing.second.y else existing.second.x)) {
+            kept[key] = mark to here
+        }
+    }
+
     Canvas(modifier = Modifier.fillMaxSize()) {
         val nc = drawContext.canvas.nativeCanvas
-        labels.forEach { mark ->
-            val screen = projection.toScreenLocation(LatLng(mark.lat, mark.lng))
+        kept.values.forEach { (mark, here) ->
             val textSizePx = MgrsGridRenderer.labelTextSp(mark.type) * density * fontScale
             mainPaint.textSize = textSizePx
             haloPaint.textSize = textSizePx
 
-            val cx = screen.x.toFloat()
-            val cy = screen.y.toFloat()
+            val cx = here.x
+            val cy = here.y
             val fm = mainPaint.fontMetrics
             // Baseline that vertically centres the text glyph at cy
             val textY = cy - (fm.ascent + fm.descent) / 2f

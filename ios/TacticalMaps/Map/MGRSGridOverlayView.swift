@@ -85,9 +85,29 @@ final class MGRSGridOverlayView: UIView {
 
         // Dark-grey bold text + white halo. Vertical (easting) labels
         // rotated -90 so they run along the line.
+        //
+        // Declutter to one label per grid LINE: every crossing along a line
+        // carries the same value, so the library hands us the same label over
+        // and over (worst zoomed out). Bucket vertical labels by screen-x and
+        // horizontal by screen-y (a line's perpendicular coordinate is ~constant),
+        // and keep the copy nearest the top/left margin so it reads like a proper
+        // grid ruler. Distinct lines land in different buckets, so finer grids
+        // with unique per-line values are untouched.
+        let bucket: CGFloat = 55
+        var best: [String: (pt: CGPoint, mark: MGRSGridRenderer.LabelMark)] = [:]
         for mark in labels {
-            drawLabel(mark, at: project(mark.coordinate), in: ctx)
+            let pt = project(mark.coordinate)
+            let b = Int(((mark.isVertical ? pt.x : pt.y) / bucket).rounded())
+            let key = "\(mark.isVertical ? "v" : "h")|\(b)|\(mark.text)"
+            let margin = mark.isVertical ? pt.y : pt.x   // smaller = nearer margin
+            if let ex = best[key] {
+                let exMargin = mark.isVertical ? ex.pt.y : ex.pt.x
+                if margin < exMargin { best[key] = (pt, mark) }
+            } else {
+                best[key] = (pt, mark)
+            }
         }
+        for (_, v) in best { drawLabel(v.mark, at: v.pt, in: ctx) }
     }
 
     private func drawLabel(_ mark: MGRSGridRenderer.LabelMark, at pt: CGPoint, in ctx: CGContext) {
