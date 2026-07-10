@@ -53,7 +53,7 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = injectedVersionCode ?: 29
+        versionCode = injectedVersionCode ?: 30
         versionName = "1.2.0"
 
         vectorDrawables { useSupportLibrary = true }

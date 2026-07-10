@@ -73,6 +73,11 @@ object GeoJsonExporter {
 
             when (val kind = wp.kind) {
                 WaypointKind.Generic -> Unit
+                is WaypointKind.Marker -> {
+                    put("tacticalmaps:marker_set", kind.marker.set.name.lowercase())
+                    put("tacticalmaps:marker_symbol", kind.marker.symbolId)
+                    put("tacticalmaps:marker_color", kind.marker.colorHex)
+                }
                 is WaypointKind.Military -> {
                     put("tacticalmaps:affiliation", kind.spec.affiliation.exportValue)
                     put("tacticalmaps:echelon", kind.spec.echelon.exportValue)
@@ -234,6 +239,7 @@ object GeoJsonExporter {
             WaypointKind.Generic -> "generic"
             is WaypointKind.Military -> "military"
             is WaypointKind.ControlMeasure -> "control_measure"
+            is WaypointKind.Marker -> "marker"
         }
 
     private val WaypointKind.exportCategory: String
@@ -241,6 +247,7 @@ object GeoJsonExporter {
             WaypointKind.Generic -> "generic"
             is WaypointKind.Military -> "military"
             is WaypointKind.ControlMeasure -> "controlMeasure"
+            is WaypointKind.Marker -> "marker"
         }
 
     private val WaypointKind.exportDescriptor: String
@@ -249,6 +256,7 @@ object GeoJsonExporter {
             is WaypointKind.Military ->
                 "${spec.affiliation.exportValue}.${spec.function.assetName}.${spec.echelon.exportValue}"
             is WaypointKind.ControlMeasure -> measure.assetName
+            is WaypointKind.Marker -> "${marker.set.name.lowercase()}.${marker.symbolId}"
         }
 
     private val SymbolAffiliation.exportValue: String

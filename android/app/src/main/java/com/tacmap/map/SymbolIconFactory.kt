@@ -18,6 +18,7 @@ import android.graphics.drawable.Drawable
 import androidx.core.content.ContextCompat
 import com.caverock.androidsvg.SVG
 import com.tacmap.R
+import com.tacmap.waypoints.MarkerSymbol
 import com.tacmap.waypoints.MilitarySymbolSpec
 import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
@@ -59,6 +60,7 @@ object SymbolIconFactory {
                     scaleY = waypoint.scaleY,
                     color = waypoint.taskColor
                 )
+                is WaypointKind.Marker -> renderMarker(context, kind.marker)
             }
         }
         return when (kind) {
@@ -96,6 +98,7 @@ object SymbolIconFactory {
         return when (val kind = waypoint.kind) {
             WaypointKind.Generic -> markerAnchorBottom
             is WaypointKind.ControlMeasure -> markerAnchorCenter
+            is WaypointKind.Marker -> markerAnchorCenter
             is WaypointKind.Military -> milsymbolMetric(context, kind.spec)?.let {
                 it.anchorU to it.anchorV
             } ?: markerAnchorCenter
@@ -116,10 +119,59 @@ object SymbolIconFactory {
                 val sy = waypoint.scaleY.roundKey(2)
                 "ctrl|$density|${kind.measure.assetName}|$rot|$sx|$sy|${waypoint.taskColor.name}"
             }
+            is WaypointKind.Marker ->
+                "mk|$density|${kind.marker.set}|${kind.marker.symbolId}|${kind.marker.colorHex}"
         }
     }
 
     private fun Double.roundKey(decimals: Int): String = "%.${decimals}f".format(this)
+
+    /// Marker badge: a filled coloured disc + white ring + short white code, for
+    /// the airsoft/SAR/POI symbol sets. Simple + recognizable; mirrors the iOS
+    /// MarkerSymbolRenderer badge.
+    private fun renderMarker(context: Context, marker: MarkerSymbol): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val size = (34f * density).toInt().coerceAtLeast(24)
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val cx = size / 2f
+        val cy = size / 2f
+        val r = size / 2f - 1.5f * density
+
+        val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = parseHexColor(marker.colorHex)
+            setShadowLayer(2f * density, 0f, 1f * density, 0x70000000)
+        }
+        canvas.drawCircle(cx, cy, r, fill)
+        val ring = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 2f * density
+            color = 0xFFFFFFFF.toInt()
+        }
+        canvas.drawCircle(cx, cy, r, ring)
+
+        val code = marker.entry.code
+        val text = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFFFFF.toInt()
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textAlign = android.graphics.Paint.Align.CENTER
+            // Shrink for longer codes so 3-char labels still fit the badge.
+            textSize = when {
+                code.length <= 1 -> size * 0.5f
+                code.length == 2 -> size * 0.38f
+                else -> size * 0.28f
+            }
+        }
+        val fm = text.fontMetrics
+        canvas.drawText(code, cx, cy - (fm.ascent + fm.descent) / 2f, text)
+        return bmp
+    }
+
+    private fun parseHexColor(hex: String): Int = try {
+        android.graphics.Color.parseColor(hex)
+    } catch (_: Throwable) {
+        0xFF3B7BE0.toInt()
+    }
 
     private data class MilsymbolMetric(
         val anchorU: Float,

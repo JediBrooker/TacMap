@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -106,6 +107,13 @@ fun WaypointListSheet(
                 modifier = Modifier.padding(horizontal = 20.dp),
                 onClick = { pendingEditor = SymbolEditorMode.TASK }
             )
+            Spacer(Modifier.size(8.dp))
+            AddSymbolButton(
+                label = "Marker (Airsoft / SAR / POI)",
+                icon = Icons.Default.Place,
+                modifier = Modifier.padding(horizontal = 20.dp),
+                onClick = { pendingEditor = SymbolEditorMode.MARKER }
+            )
             Text(
                 "New symbols are placed at the current map centre.",
                 fontSize = 11.sp,
@@ -119,6 +127,7 @@ fun WaypointListSheet(
         val initialKind = when (mode) {
             SymbolEditorMode.MILITARY -> WaypointKind.Military()
             SymbolEditorMode.TASK -> WaypointKind.ControlMeasure()
+            SymbolEditorMode.MARKER -> WaypointKind.Marker()
         }
         SymbolEditorDialog(
             mode = mode,
@@ -129,6 +138,7 @@ fun WaypointListSheet(
             title = when (mode) {
                 SymbolEditorMode.MILITARY -> "New Military Unit"
                 SymbolEditorMode.TASK -> "New Tactical Task"
+                SymbolEditorMode.MARKER -> "New Marker"
             },
             actionLabel = "Place",
             onDismiss = { pendingEditor = null },
@@ -183,6 +193,7 @@ private fun WaypointRow(wp: Waypoint, onTap: () -> Unit) {
             WaypointKind.Generic -> Icons.Default.LocationOn
             is WaypointKind.Military -> Icons.Default.Security
             is WaypointKind.ControlMeasure -> Icons.Default.Flag
+            is WaypointKind.Marker -> Icons.Default.Place
         }
         Icon(icon, contentDescription = null,
              tint = Color(0xFFB48800), modifier = Modifier.size(28.dp))

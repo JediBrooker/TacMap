@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,6 +61,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tacmap.mgrs.MgrsFormatter
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import com.tacmap.waypoints.MarkerCatalog
+import com.tacmap.waypoints.MarkerSet
+import com.tacmap.waypoints.MarkerSymbol
 import com.tacmap.waypoints.MilitarySymbolSpec
 import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
@@ -68,7 +75,7 @@ import com.tacmap.waypoints.TacticalControlMeasure
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 
-enum class SymbolEditorMode { MILITARY, TASK }
+enum class SymbolEditorMode { MILITARY, TASK, MARKER }
 
 @Composable
 fun SymbolEditorDialog(
@@ -90,10 +97,15 @@ fun SymbolEditorDialog(
     var measure by remember(initialKind) {
         mutableStateOf((initialKind as? WaypointKind.ControlMeasure)?.measure ?: TacticalControlMeasure.ASSEMBLY_AREA)
     }
+    val initialMarker = (initialKind as? WaypointKind.Marker)?.marker
+    var markerSet by remember(initialKind) { mutableStateOf(initialMarker?.set ?: MarkerSet.AIRSOFT) }
+    var markerSymbolId by remember(initialKind) { mutableStateOf(initialMarker?.symbolId ?: "team") }
+    var markerColor by remember(initialKind) { mutableStateOf(initialMarker?.colorHex ?: "#3B7BE0") }
 
     val currentKind = when (mode) {
         SymbolEditorMode.MILITARY -> WaypointKind.Military(militarySpec)
         SymbolEditorMode.TASK -> WaypointKind.ControlMeasure(measure)
+        SymbolEditorMode.MARKER -> WaypointKind.Marker(MarkerSymbol(markerSet, markerSymbolId, markerColor))
     }
 
     Dialog(
@@ -144,6 +156,7 @@ fun SymbolEditorDialog(
                     fallbackIcon = when (mode) {
                         SymbolEditorMode.MILITARY -> Icons.Default.Security
                         SymbolEditorMode.TASK -> Icons.Default.Flag
+                        SymbolEditorMode.MARKER -> Icons.Default.Place
                     },
                     onDismiss = onDismiss
                 )
@@ -196,6 +209,24 @@ fun SymbolEditorDialog(
                         }
                         SymbolEditorMode.TASK -> item {
                             TaskTypeField(measure = measure, onChange = { measure = it })
+                        }
+                        SymbolEditorMode.MARKER -> item {
+                            MarkerTypeFields(
+                                set = markerSet,
+                                symbolId = markerSymbolId,
+                                colorHex = markerColor,
+                                onSetChange = { newSet ->
+                                    markerSet = newSet
+                                    val first = MarkerCatalog.entries(newSet)[0]
+                                    markerSymbolId = first.id
+                                    markerColor = first.defaultColor
+                                },
+                                onSymbolChange = { id ->
+                                    markerSymbolId = id
+                                    markerColor = MarkerCatalog.entry(markerSet, id).defaultColor
+                                },
+                                onColorChange = { markerColor = it }
+                            )
                         }
                     }
 
@@ -382,6 +413,49 @@ private fun TaskTypeField(
     ) {
         Text("Task Type", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         PickerField("Task", measure, TacticalControlMeasure.pickerEntries, { it.displayName }, onChange)
+    }
+}
+
+@Composable
+private fun MarkerTypeFields(
+    set: MarkerSet,
+    symbolId: String,
+    colorHex: String,
+    onSetChange: (MarkerSet) -> Unit,
+    onSymbolChange: (String) -> Unit,
+    onColorChange: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("Symbol Set", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        PickerField("Set", set, MarkerSet.entries.toList(), { it.displayName }, onSetChange)
+        val entries = MarkerCatalog.entries(set)
+        val selectedEntry = entries.firstOrNull { it.id == symbolId } ?: entries[0]
+        PickerField("Symbol", selectedEntry, entries, { it.displayName }, { onSymbolChange(it.id) })
+        Text("Colour", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+        val swatches = MarkerCatalog.teamColors.map { it.second } + listOf("#8A93A6", "#111417")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            swatches.forEach { hex ->
+                val selected = hex.equals(colorHex, ignoreCase = true)
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(Color(android.graphics.Color.parseColor(hex)))
+                        .border(
+                            width = if (selected) 3.dp else 1.dp,
+                            color = if (selected) Color.White else Color.White.copy(alpha = 0.3f),
+                            shape = CircleShape
+                        )
+                        .clickable { onColorChange(hex) }
+                )
+            }
+        }
     }
 }
 
