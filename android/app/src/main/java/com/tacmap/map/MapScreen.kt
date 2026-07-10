@@ -677,12 +677,14 @@ fun MapScreen(
             )
         }
 
-        // hamburger (left) + compass (right), pinned below MGRS header
+        // hamburger (left) + compass (right), pinned below the MGRS header with
+        // a small gap. 100dp used to clip the header's bottom edge; the card is
+        // taller than that, so sit them a bit lower.
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .statusBarsPadding()
-                .padding(top = 100.dp, start = 12.dp, end = 12.dp)
+                .padding(top = 116.dp, start = 12.dp, end = 12.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween
