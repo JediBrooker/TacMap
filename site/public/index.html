@@ -86,7 +86,10 @@
   @media(max-width:760px){.nav-links a:not(.nav-cta){display:none}}
 
   /* ---- hero ---- */
-  .hero{position:relative;padding:86px 0 64px}
+  /* clip-x only: the device bloom is wider than the column and would otherwise
+     add a pixel of sideways scroll on narrow screens. y stays visible so the
+     handset keeps its drop shadow. */
+  .hero{position:relative;padding:86px 0 64px;overflow-x:clip;overflow-y:visible}
   .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center}
   .hero h1{font-size:clamp(40px,6.4vw,74px);font-weight:800;margin:22px 0 20px}
   .hero h1 em{font-style:normal;color:var(--signal)}
@@ -103,20 +106,25 @@
     color:var(--ink-faint);letter-spacing:.04em}
   .hero-meta b{color:var(--ink-dim);font-weight:500}
 
-  /* chart panel signature */
-  .chart{position:relative;aspect-ratio:5/4.4;border:1px solid var(--line);
-    border-radius:4px;background:
-      radial-gradient(120% 120% at 20% 10%, #16232b 0%, #0d151a 60%, #0a1014 100%);
-    overflow:hidden;box-shadow:0 30px 80px -40px #000}
-  .chart svg{position:absolute;inset:0;width:100%;height:100%}
-  .chart .readout{position:absolute;left:14px;bottom:12px;
-    font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.06em;color:var(--ink-dim)}
-  .chart .readout b{color:var(--signal);font-weight:500}
-  .chart .tag{position:absolute;top:12px;right:14px;font-family:"IBM Plex Mono";
-    font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+  /* hero device shot */
+  .device{position:relative;display:flex;flex-direction:column;align-items:center;gap:18px}
+  /* signal-orange bloom behind the handset, keeps it off the flat background */
+  .device::before{content:"";position:absolute;top:6%;left:50%;translate:-50% 0;
+    width:118%;aspect-ratio:1;border-radius:50%;pointer-events:none;
+    background:radial-gradient(closest-side,rgba(255,90,36,.13),transparent 72%)}
+  .device picture{position:relative;display:block;width:100%;max-width:302px}
+  .device img{display:block;width:100%;height:auto;
+    /* the bezel corners are square in the file, round them here. x/y percentages
+       keep the corner circular instead of stretching with the aspect ratio.
+       values come out of scripts/extract_site_hero.py */
+    border-radius:9.513% / 4.4728%;
+    box-shadow:0 40px 90px -34px #000, 0 0 0 1px rgba(231,237,236,.07)}
+  .device .caption{position:relative;font-family:"IBM Plex Mono";font-size:11px;
+    letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);text-align:center}
   @media(max-width:900px){
     .hero-grid{grid-template-columns:1fr;gap:40px}
     .hero{padding:56px 0 40px}
+    .device picture{max-width:272px}
   }
 
   /* ---- trust strip ---- */
@@ -280,36 +288,14 @@
         </div>
       </div>
 
-      <div class="chart rv in" aria-hidden="true">
-        <svg viewBox="0 0 400 352" preserveAspectRatio="xMidYMid slice">
-          <defs>
-            <pattern id="g" width="32" height="32" patternUnits="userSpaceOnUse">
-              <path d="M32 0H0V32" fill="none" stroke="#22333d" stroke-width="1"/>
-            </pattern>
-          </defs>
-          <rect width="400" height="352" fill="url(#g)"/>
-          <!-- contour lines -->
-          <g fill="none" stroke="#2c4650" stroke-width="1.3" opacity=".9">
-            <path d="M-20 120 C 70 60, 150 150, 230 90 S 380 60, 440 130"/>
-            <path d="M-20 160 C 80 110, 160 190, 240 130 S 380 110, 440 170"/>
-            <path d="M-20 205 C 90 165, 170 235, 250 180 S 380 170, 440 220"/>
-            <path d="M-20 255 C 90 220, 180 285, 260 235 S 380 230, 440 270"/>
-          </g>
-          <!-- route -->
-          <path d="M70 275 L145 205 L215 232 L300 150" fill="none"
-            stroke="#FF5A24" stroke-width="2.2" stroke-dasharray="2 6"
-            stroke-linecap="round"/>
-          <!-- friendly markers -->
-          <g>
-            <circle cx="70" cy="275" r="6" fill="#4FB0C6"/>
-            <circle cx="70" cy="275" r="12" fill="none" stroke="#4FB0C6" stroke-width="1" opacity=".5"/>
-            <rect x="209" y="226" width="12" height="12" fill="#4FB0C6" transform="rotate(45 215 232)"/>
-            <path d="M300 142 l7 12 h-14 z" fill="#FF5A24"/>
-          </g>
-          <text x="306" y="140" font-family="IBM Plex Mono" font-size="9" fill="#8DA2AA">OBJ</text>
-        </svg>
-        <span class="tag">Chart · illustrative</span>
-        <span class="readout">GRID <b>34T DP 4521 8763</b> · 3 UP · LINK SEALED</span>
+      <div class="device rv in">
+        <picture>
+          <source srcset="assets/screens/hero-device.webp" type="image/webp">
+          <img src="assets/screens/hero-device.jpg" width="720" height="1531"
+               fetchpriority="high" decoding="async"
+               alt="TacMap on an iPhone: NATO APP-6 symbology over a satellite basemap, live MGRS readout showing 56HKH 50215 67845, Unit Sync active.">
+        </picture>
+        <span class="caption">Live MGRS · APP-6 symbology · Unit Sync</span>
       </div>
     </div>
   </div>
@@ -520,17 +506,6 @@
     es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
   },{threshold:.12});
   document.querySelectorAll(".rv").forEach(function(el){ io.observe(el); });
-
-  // rotate the hero grid readout for a live-instrument feel
-  var ro=document.querySelector(".chart .readout");
-  if(ro && !window.matchMedia("(prefers-reduced-motion:reduce)").matches){
-    var eastings=[4521,4530,4547,4562,4558,4544];
-    var i=0;
-    setInterval(function(){
-      i=(i+1)%eastings.length;
-      ro.innerHTML='GRID <b>34T DP '+eastings[i]+' 87'+(60+i*3)+'</b> · 3 UP · LINK SEALED';
-    },2600);
-  }
 </script>
 </body>
 </html>
