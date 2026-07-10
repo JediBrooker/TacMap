@@ -7,6 +7,14 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import com.tacmap.calibration.SatelliteMapSourceAndroid
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -127,6 +135,9 @@ fun GoogleMapScreen(
     selectedWaypointId: String? = null,
     calibrationFiduciaries: List<com.tacmap.calibration.Fiduciary> = emptyList(),
     myLocationEnabled: Boolean = false,
+    /// OPSEC gate. Off by default, and while off we never ask Google, Esri or
+    /// OpenTopoMap for a tile - the basemap just isn't drawn. See OpsecSettings.
+    onlineBasemapsEnabled: Boolean = false,
     pendingTarget: Triple<Double, Double, Float>? = null,
     resetNorthRequests: kotlinx.coroutines.flow.Flow<Unit>? = null,
     onConsumePendingTarget: () -> Unit = {},
@@ -266,20 +277,27 @@ fun GoogleMapScreen(
     var dragState by remember { mutableStateOf<MapItemDrag?>(null) }
     val currentDragState = rememberUpdatedState(dragState)
 
+    /// No explicit source means we'd fall back to Google's own satellite
+    /// basemap, which is an online tile fetch like any other.
+    val wantsGoogleBasemap = mapSource == null || mapSource is SatelliteMapSourceAndroid
+    /// Is anything on screen actually pulling tiles off the internet right now?
+    val onlineTilesActive = onlineBasemapsEnabled &&
+        (wantsGoogleBasemap || mapSource is OnlineRasterMapSourceAndroid)
+    /// Nothing to draw at all: no imported map, and online tiles are gated off.
+    /// Say so, rather than showing a black rectangle and letting the user guess.
+    val basemapBlank = !onlineBasemapsEnabled && wantsGoogleBasemap
+
     Box(modifier = modifier) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
-                /// Hide Google satellite tiles when a PDF/offline/raster
-                /// basemap is loaded (MapType.NONE) so the PDF doesn't
-                /// compete with satellite underneath. Otherwise it looks
-                /// like its floating on Google Maps which is wierd.
-                mapType = if (mapSource is PdfMapSource ||
-                    mapSource is OfflineTileMapSourceAndroid ||
-                    mapSource is OnlineRasterMapSourceAndroid
-                ) MapType.NONE
-                    else MapType.SATELLITE,
+                /// MapType.NONE means the SDK draws no basemap and, crucially,
+                /// requests no tiles. We use it whenever a PDF/offline/raster
+                /// source owns the backdrop (so Google doesn't compete with it
+                /// underneath), and whenever online basemaps are gated off.
+                mapType = if (wantsGoogleBasemap && onlineBasemapsEnabled) MapType.SATELLITE
+                    else MapType.NONE,
                 /// built-in blue dot. SDK throws if true without
                 /// ACCESS_FINE_LOCATION so we gate on permission.
                 isMyLocationEnabled = myLocationEnabled
@@ -318,8 +336,10 @@ fun GoogleMapScreen(
                 TileOverlay(tileProvider = provider)
             }
 
-            (mapSource as? OnlineRasterMapSourceAndroid)?.let { raster ->
-                /// Online raster basemap (Esri / OpenTopoMap) over MapType.NONE
+            /// Online raster basemap (Esri / OpenTopoMap) over MapType.NONE.
+            /// Gated: with the toggle off we never construct the provider, so
+            /// not a single tile URL is requested.
+            (mapSource as? OnlineRasterMapSourceAndroid)?.takeIf { onlineBasemapsEnabled }?.let { raster ->
                 val provider = remember(raster.id) { RasterTileProvider(raster.style) }
                 TileOverlay(tileProvider = provider)
             }
@@ -510,6 +530,57 @@ fun GoogleMapScreen(
                     }
             )
         }
+
+        /// Last child so it paints over the map and every overlay.
+        if (onlineTilesActive) {
+            OnlineTilesBanner(Modifier.align(Alignment.TopCenter))
+        } else if (basemapBlank) {
+            NoBasemapNotice(Modifier.align(Alignment.Center))
+        }
+    }
+}
+
+/// Persistent warning while the map is pulling tiles from the internet. The
+/// provider learns your area of interest from the tiles you request, so this
+/// should never be something you find out by accident.
+@Composable
+private fun OnlineTilesBanner(modifier: Modifier = Modifier) {
+    Text(
+        text = "ONLINE BASEMAP  ·  tile requests reveal your area of interest",
+        color = Color.White,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color(0xFFB00020).copy(alpha = 0.92f))
+            .statusBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .semantics { contentDescription = "Warning: online basemap active, tile requests reveal your area of interest" }
+    )
+}
+
+/// Fresh install with no offline pack and online basemaps gated off draws
+/// nothing at all. Explain that, b/c a blank map with no message reads as a
+/// broken app rather than a deliberate OPSEC posture.
+@Composable
+private fun NoBasemapNotice(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .padding(24.dp)
+            .background(Color(0xCC000000), RoundedCornerShape(8.dp))
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("No basemap", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "Online basemaps are off. Import an offline map pack, or enable " +
+                "online basemap tiles in Privacy & OPSEC.",
+            color = Color(0xFFBBBBBB),
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }
 

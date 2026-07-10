@@ -134,6 +134,7 @@ fun MapScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val onlineBasemapsEnabled by vm.opsec.onlineBasemaps.collectAsState()
     val isBrowsing by vm.isBrowsing.collectAsState()
     val pendingTarget by vm.pendingCameraTarget.collectAsState()
     val cameraLat by vm.cameraLat.collectAsState()
@@ -517,6 +518,7 @@ fun MapScreen(
                 modifier = Modifier.fillMaxSize(),
                 waypoints = waypoints,
                 mapSource = mapSource,
+                onlineBasemapsEnabled = onlineBasemapsEnabled,
                 drawings = drawingDocument.features,
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,

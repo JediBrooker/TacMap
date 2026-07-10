@@ -15,6 +15,13 @@ import kotlinx.coroutines.flow.asStateFlow
  *    recents thumbnail and screenshots/recordings by default.
  *  - [onlineLookups] OFF - elevation / weather / terrain lookups send
  *    coords to a third party (Open-Meteo), so opt-in only.
+ *  - [onlineBasemaps] OFF - requesting tiles hands your area of interest to
+ *    the tile provider, so a fresh install fetches nothing until you say so.
+ *
+ * The "require auth to decrypt" toggle deliberately isn't here. It has to stay
+ * in lockstep with which Keystore KEK the data key is wrapped under, so it
+ * lives in com.tacmap.util.DataKey and prefs would only be a second, drifting
+ * copy of the truth.
  */
 class OpsecSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("opsec", Context.MODE_PRIVATE)
@@ -27,6 +34,9 @@ class OpsecSettings(context: Context) {
     private val _onlineLookups = MutableStateFlow(prefs.getBoolean(KEY_ONLINE, false))
     val onlineLookups: StateFlow<Boolean> = _onlineLookups.asStateFlow()
 
+    private val _onlineBasemaps = MutableStateFlow(prefs.getBoolean(KEY_BASEMAPS, false))
+    val onlineBasemaps: StateFlow<Boolean> = _onlineBasemaps.asStateFlow()
+
     private val _relayUrl = MutableStateFlow(prefs.getString(KEY_RELAY, DEFAULT_RELAY) ?: DEFAULT_RELAY)
     val relayUrl: StateFlow<String> = _relayUrl.asStateFlow()
 
@@ -38,6 +48,11 @@ class OpsecSettings(context: Context) {
     fun setOnlineLookups(value: Boolean) {
         prefs.edit().putBoolean(KEY_ONLINE, value).apply()
         _onlineLookups.value = value
+    }
+
+    fun setOnlineBasemaps(value: Boolean) {
+        prefs.edit().putBoolean(KEY_BASEMAPS, value).apply()
+        _onlineBasemaps.value = value
     }
 
     fun setRelayUrl(value: String) {
@@ -57,6 +72,7 @@ class OpsecSettings(context: Context) {
         const val DEFAULT_RELAY = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
         private const val KEY_SCREEN = "block_screen_capture"
         private const val KEY_ONLINE = "online_lookups"
+        private const val KEY_BASEMAPS = "online_basemaps"
         private const val KEY_RELAY = "relay_url"
     }
 }

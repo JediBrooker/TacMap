@@ -42,15 +42,33 @@ class TrackRecorder(context: Context) {
     private val _recovered = MutableStateFlow(false)
     val recovered: StateFlow<Boolean> = _recovered.asStateFlow()
 
+    /** Non-null when a fix couldn't be written to disk. The UI has to say so:
+     *  a recording that looks live but isn't hitting the disk is the worst
+     *  possible failure for a field tool. */
+    private val _persistError = MutableStateFlow<String?>(null)
+    val persistError: StateFlow<String?> = _persistError.asStateFlow()
+
+    fun acknowledgePersistError() { _persistError.value = null }
+
     /** Min spacing between fixes (m). Drops GPS jitter. */
     private val minSpacingMetres = 2.0
 
     init {
-        val restored = TrackLog.read(logFile)
-        if (restored.isNotEmpty()) {
-            _points.value = restored
-            _recovered.value = true
-        }
+        // A locked at-rest key means we can't read the log yet. Leave it alone,
+        // don't report an empty track as if the recording was lost.
+        runCatching { TrackLog.read(logFile) }
+            .onSuccess { restored ->
+                if (restored.points.isNotEmpty()) {
+                    _points.value = restored.points
+                    _recovered.value = true
+                }
+                // Log came from a pre-encryption build, seal it in place once.
+                if (restored.hadLegacyLines) {
+                    runCatching { TrackLog.reseal(logFile, restored.points) }
+                        .onFailure { _persistError.value = "Could not encrypt the recovered track: ${it.message}" }
+                }
+            }
+            .onFailure { _persistError.value = "Could not read the saved track: ${it.message}" }
     }
 
     fun start() {
@@ -89,6 +107,7 @@ class TrackRecorder(context: Context) {
         _points.value = _points.value + point
         // Persist before returning so the fix is durable the moment its shown.
         runCatching { TrackLog.append(logFile, point) }
+            .onFailure { _persistError.value = "Track fix not saved to disk: ${it.message}" }
     }
 
     private fun distanceMetres(aLat: Double, aLng: Double, bLat: Double, bLng: Double): Double {

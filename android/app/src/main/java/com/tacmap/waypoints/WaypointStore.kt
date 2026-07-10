@@ -81,18 +81,33 @@ class WaypointStore(context: Context) {
         _canRedo.value = false
     }
 
+    /** True when the store couldn't be opened b/c the at-rest key is locked.
+     *  Nothing may be persisted while this holds or we'd write an empty list
+     *  over data we simply couldn't read. */
+    private val _locked = MutableStateFlow(false)
+    val locked: StateFlow<Boolean> = _locked.asStateFlow()
+
     private fun load() {
-        when (val r = SafeStore.readOrQuarantine(file) { json.decodeFromString<List<Waypoint>>(it) }) {
+        when (val r = SafeStore.readOrQuarantine(file, LABEL) { json.decodeFromString<List<Waypoint>>(it) }) {
             is SafeStore.LoadResult.Loaded -> _waypoints.value = r.value
             is SafeStore.LoadResult.Empty -> Unit
             is SafeStore.LoadResult.Corrupt ->
                 _loadError.value = "Saved waypoints could not be read and were set aside " +
                     "(${r.quarantinedTo?.name ?: "recovery copy"}). Starting with no waypoints."
+            is SafeStore.LoadResult.Locked -> {
+                _locked.value = true
+                _loadError.value = "Waypoints are encrypted and locked. ${r.error.message}"
+            }
         }
     }
 
     private fun persist() {
-        runCatching { SafeStore.writeAtomically(file, json.encodeToString(_waypoints.value)) }
+        // Refuse to write while locked. The file on disk is fine, we just
+        // can't read it yet, and an empty list must never land on top of it.
+        if (_locked.value) return
+        runCatching { SafeStore.writeAtomically(file, LABEL, json.encodeToString(_waypoints.value)) }
             .onFailure { _loadError.value = "Could not save waypoints to disk: ${it.message}" }
     }
+
+    private companion object { const val LABEL = "waypoints.json" }
 }
