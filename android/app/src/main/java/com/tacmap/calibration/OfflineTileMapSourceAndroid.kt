@@ -32,6 +32,10 @@ class OfflineTileMapSourceAndroid private constructor(
 
     fun tileProvider(): TileProvider = MBTilesTileProvider(store)
 
+    /** Tile source for the custom (SDK-free) map view. */
+    fun renderTileSource(): com.tacmap.map.render.TileSource =
+        com.tacmap.map.render.OfflineRasterTileSource(store)
+
     companion object {
         fun open(path: String): OfflineTileMapSourceAndroid? {
             val store = MBTilesStore.open(path) ?: return null
