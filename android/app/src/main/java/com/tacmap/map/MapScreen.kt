@@ -145,13 +145,9 @@ fun MapScreen(
     val mapSource by vm.mapSource.collectAsState()
 
     /// Is anything on screen actually pulling tiles off the internet right now?
-    /// Google's own satellite basemap counts, and so does no-source-selected,
-    /// which falls back to it.
-    val onlineTilesActive = onlineBasemapsEnabled && (
-        mapSource == null ||
-            mapSource is com.tacmap.calibration.SatelliteMapSourceAndroid ||
-            mapSource is com.tacmap.calibration.OnlineRasterMapSourceAndroid
-        )
+    /// Only the online raster styles (Esri/OSM) do; offline packs and PDFs don't.
+    val onlineTilesActive = onlineBasemapsEnabled &&
+        mapSource is com.tacmap.calibration.OnlineRasterMapSourceAndroid
     val waypointStore = remember { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
     val drawingStore = remember { DrawingStore(context) }
@@ -1067,13 +1063,7 @@ fun MapScreen(
             drawingLayers = drawingDocument.layers,
             drawingFeatures = drawingDocument.features,
             onSetLayerVisible = { id, v -> drawingStore.setLayerVisible(id, v) },
-            activeBaseMap = mapSource.let { ms ->
-                when (ms) {
-                    is OnlineRasterMapSourceAndroid ->
-                        if (ms.style == BasemapStyle.TERRAIN) BaseMap.TERRAIN else BaseMap.ESRI_SATELLITE
-                    else -> BaseMap.SATELLITE
-                }
-            },
+            activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
             hasPdfMap = pdfSource != null,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,

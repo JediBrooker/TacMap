@@ -16,11 +16,13 @@ import java.net.URL
  * unauthenticated endpoint. Use is subject to each provider's tile policy;
  * attribution is shown in-app (see AboutDialog).
  */
-class RasterTileProvider(private val style: BasemapStyle) : UrlTileProvider(TILE_SIZE, TILE_SIZE) {
+class RasterTileProvider(private val style: BasemapStyle) :
+    UrlTileProvider(style.tileSize, style.tileSize) {
+
     override fun getTileUrl(x: Int, y: Int, zoom: Int): URL? {
         if (zoom > style.maxZoom) return null
-        // Never hot-link Esri without a key. The caller should also hide the
-        // Esri option when unavailable; this is the belt to that braces.
+        // Never hot-link a keyed source without a key. The caller should also
+        // hide keyed options when unavailable; this is the belt to that braces.
         if (style.requiresEsriKey && !EsriKey.isAvailable) return null
 
         var url = style.urlTemplate
@@ -34,9 +36,5 @@ class RasterTileProvider(private val style: BasemapStyle) : UrlTileProvider(TILE
         } catch (e: MalformedURLException) {
             null
         }
-    }
-
-    private companion object {
-        const val TILE_SIZE = 256
     }
 }

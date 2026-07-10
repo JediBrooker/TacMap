@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import com.tacmap.calibration.SatelliteMapSourceAndroid
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -277,24 +276,21 @@ fun GoogleMapScreen(
     var dragState by remember { mutableStateOf<MapItemDrag?>(null) }
     val currentDragState = rememberUpdatedState(dragState)
 
-    /// No explicit source means we'd fall back to Google's own satellite
-    /// basemap, which is an online tile fetch like any other.
-    val wantsGoogleBasemap = mapSource == null || mapSource is SatelliteMapSourceAndroid
-    /// Nothing to draw at all: no imported map, and online tiles are gated off.
-    /// Say so, rather than showing a black rectangle and letting the user guess.
-    val basemapBlank = !onlineBasemapsEnabled && wantsGoogleBasemap
+    /// An online raster style (Esri/OSM) owns the backdrop now - there is no
+    /// Google basemap any more. Blank when that style is gated off and no
+    /// imported map is loaded: say so rather than show a black rectangle.
+    val wantsOnlineRaster = mapSource is OnlineRasterMapSourceAndroid
+    val basemapBlank = !onlineBasemapsEnabled && wantsOnlineRaster
 
     Box(modifier = modifier) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
-                /// MapType.NONE means the SDK draws no basemap and, crucially,
-                /// requests no tiles. We use it whenever a PDF/offline/raster
-                /// source owns the backdrop (so Google doesn't compete with it
-                /// underneath), and whenever online basemaps are gated off.
-                mapType = if (wantsGoogleBasemap && onlineBasemapsEnabled) MapType.SATELLITE
-                    else MapType.NONE,
+                /// Always MapType.NONE: the SDK never draws or fetches a Google
+                /// basemap. It's just the map surface; every basemap we show is
+                /// our own tile overlay (Esri/OSM/offline) or a PDF.
+                mapType = MapType.NONE,
                 /// built-in blue dot. SDK throws if true without
                 /// ACCESS_FINE_LOCATION so we gate on permission.
                 isMyLocationEnabled = myLocationEnabled
