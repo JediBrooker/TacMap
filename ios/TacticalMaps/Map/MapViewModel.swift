@@ -15,7 +15,10 @@ final class MapViewModel: ObservableObject {
     @Published var cameraCentre: CLLocationCoordinate2D = .init(latitude: 0, longitude: 0)
     @Published var heading: CLLocationDirection = 0
     @Published var isBrowsing: Bool = false
-    @Published var mapSource: MapSource = AppleSatelliteMapSource() {
+    /// Default basemap: Esri Satellite when we have a key, else the one style
+    /// that needs none (OpenTopoMap) so a keyless dev build still shows a map.
+    /// The native Apple basemap is no longer a selectable source.
+    @Published var mapSource: MapSource = OnlineRasterBasemapSource.makeDefault() {
         didSet { NSLog("[MapVM] mapSource changed -> kind=\(mapSource.kind) name=\(mapSource.displayName)") }
     }
 

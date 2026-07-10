@@ -84,7 +84,7 @@ struct LayersSheet: View {
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                         Button(role: .destructive) {
-                            mapVM.mapSource = AppleSatelliteMapSource()
+                            mapVM.mapSource = OnlineRasterBasemapSource.makeDefault()
                             // also nuke the persisted entry, otherwise the PDF
                             // the user just unloaded comes back on next launch
                             PDFSessionStore.clear()
@@ -99,7 +99,7 @@ struct LayersSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                         Button(role: .destructive) {
-                            mapVM.mapSource = AppleSatelliteMapSource()
+                            mapVM.mapSource = OnlineRasterBasemapSource.makeDefault()
                         } label: {
                             Label("Unload offline tiles", systemImage: "xmark.circle")
                         }
@@ -198,24 +198,17 @@ struct LayersSheet: View {
             // clobber the imported map's session anymore. Imported map
             // stays re-loadable and restores on next launch. Use
             // "Unload" above to actually nuke it.
-            basemapRow(title: "Satellite (Apple)",
-                       systemImage: "globe.americas.fill",
-                       isActive: mapVM.mapSource is AppleSatelliteMapSource) {
-                mapVM.mapSource = AppleSatelliteMapSource()
-            }
-            // Esri needs an ArcGIS key baked in at build time. No key -> no row,
-            // rather than offer a basemap that would just render blank.
-            if EsriKey.isAvailable {
-                basemapRow(title: "Satellite (Esri)",
-                           systemImage: "globe.badge.chevron.backward",
-                           isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .esriSatellite) {
-                    mapVM.mapSource = OnlineRasterBasemapSource(.esriSatellite)
+            // Four online basemaps. Keyed styles (all but OSM Topo) need the
+            // ArcGIS key baked in at build time; no key -> hide them rather than
+            // offer a basemap that would render blank.
+            ForEach(BasemapStyle.allCases.filter {
+                !$0.requiresEsriKey || EsriKey.isAvailable
+            }, id: \.self) { style in
+                basemapRow(title: style.displayName,
+                           systemImage: basemapIcon(style),
+                           isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == style) {
+                    mapVM.mapSource = OnlineRasterBasemapSource(style)
                 }
-            }
-            basemapRow(title: "Terrain (OpenTopoMap)",
-                       systemImage: "mountain.2.fill",
-                       isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .terrain) {
-                mapVM.mapSource = OnlineRasterBasemapSource(.terrain)
             }
             if !importedActive, let stored = restorablePDF {
                 let title = "Imported map (" + stored.displayName + ")"
@@ -232,6 +225,15 @@ struct LayersSheet: View {
     }
 
     @ViewBuilder
+    private func basemapIcon(_ style: BasemapStyle) -> String {
+        switch style {
+        case .esriSatellite: return "globe.americas.fill"
+        case .esriTopo:      return "mountain.2.fill"
+        case .osmTopo:       return "mountain.2"
+        case .osmStreet:     return "map.fill"
+        }
+    }
+
     private func basemapRow(title: String,
                             systemImage: String,
                             isActive: Bool,
