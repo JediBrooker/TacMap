@@ -90,6 +90,7 @@ struct TileMapContainer: UIViewRepresentable {
                 selectedID: mapVM.selectedDrawingID, drawingStore: drawingStore),
             graphicsLocked: graphicsLocked)
         context.coordinator.syncCalibrationMarkers(calibration)
+        context.coordinator.syncHeatmap(visible: visibility.terrainHeatmapVisible)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -126,6 +127,13 @@ struct TileMapContainer: UIViewRepresentable {
         private var handlesView: VertexHandlesOverlayView?
         let editing = MapEditingController()
 
+        /// Auto terrain heatmap (opt-in, samples Open-Meteo behind the online
+        /// lookups gate). Fetched debounced when the map settles.
+        private var heatmapView: HeatmapOverlayView?
+        private var heatmapVisible = false
+        private var heatmapTask: Task<Void, Never>?
+        private let heatmapService = TerrainHeatmapService()
+
         func attach(view: TileMapView, mapVM: MapViewModel) {
             self.view = view
             self.mapVM = mapVM
@@ -140,21 +148,25 @@ struct TileMapContainer: UIViewRepresentable {
             let project: (CLLocationCoordinate2D) -> CGPoint = { [weak view] coord in
                 view?.camera.screenPoint(for: coord) ?? .zero
             }
+            let heatmap = HeatmapOverlayView()
             let grid = MGRSGridOverlayView()
             let drawings = DrawingsOverlayView()
             let decorations = DrawingDecorationsOverlayView()
             let handles = VertexHandlesOverlayView()
             let presence = PresenceOverlayView()
-            for v in [grid, drawings, decorations, handles, presence] as [UIView] {
+            // Heatmap is a ground layer (just above the basemap), so it goes first.
+            for v in [heatmap, grid, drawings, decorations, handles, presence] as [UIView] {
                 v.frame = view.bounds
                 v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 view.addSubview(v)
             }
+            heatmap.project = project
             grid.project = project
             drawings.project = project
             decorations.project = project
             handles.project = project
             presence.project = project
+            heatmapView = heatmap
             gridView = grid
             drawingsView = drawings
             decorationsView = decorations
@@ -202,7 +214,44 @@ struct TileMapContainer: UIViewRepresentable {
             presenceView?.reproject()
             decorationsView?.reproject()
             handlesView?.reproject()
+            heatmapView?.reproject()
             refreshGrid()
+            // Re-fetch the heatmap for the new region once the map settles.
+            if heatmapVisible { scheduleHeatmapFetch() }
+        }
+
+        /// Turn the terrain heatmap on/off; kicks a debounced fetch when on.
+        func syncHeatmap(visible: Bool) {
+            guard visible != heatmapVisible else { return }
+            heatmapVisible = visible
+            if visible {
+                scheduleHeatmapFetch()
+            } else {
+                heatmapTask?.cancel(); heatmapTask = nil
+                heatmapView?.clear()
+            }
+        }
+
+        /// Sample the DEM for the current visible region 0.4s after the last
+        /// camera move (so panning doesn't fire a request per frame). The
+        /// service itself no-ops unless the online-lookups gate is on.
+        private func scheduleHeatmapFetch() {
+            guard heatmapVisible, let view else { return }
+            heatmapTask?.cancel()
+            let region = MapProjectionMath.visibleRegion(view.camera)
+            heatmapTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                if Task.isCancelled { return }
+                let image = await self?.heatmapService.generate(region: region)
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    guard let self, self.heatmapVisible, let image else { return }
+                    self.heatmapView?.update(image: image, region: (
+                        center: region.center,
+                        latDelta: region.span.latitudeDelta,
+                        lonDelta: region.span.longitudeDelta))
+                }
+            }
         }
 
         /// Attach/detach the imported-PDF image (+ dark mask) beneath the grid.
