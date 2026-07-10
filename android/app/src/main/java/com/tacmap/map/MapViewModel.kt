@@ -237,6 +237,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         _cameraLat.value = loc.latitude
         _cameraLng.value = loc.longitude
         _pendingCameraTarget.value = Triple(loc.latitude, loc.longitude, 15f)
+        // Re-orient north when recentering, so the map is always readable
+        // north-up after a "Centre on My Location".
+        requestResetNorth()
     }
 
     /** Fly camera to arbitrary coord. Used by waypoint list's "fly to"

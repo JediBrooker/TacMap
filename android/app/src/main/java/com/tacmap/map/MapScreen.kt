@@ -658,9 +658,9 @@ fun MapScreen(
                 )
             }
         )
-        // Compact online-tiles warning, tucked UNDER the header so it doesn't
-        // shove it down. Small pill, not a full-width strip.
-        if (onlineTilesActive) OnlineTilesPill(Modifier.padding(top = 4.dp))
+        // The online-tiles warning used to sit here under the header, but that's
+        // where the live-tracking record badge goes - they collided. It's paired
+        // with the Centre pill at the bottom now.
         }
 
         // live track-recording badge, only while recording. Tap to stop.
@@ -918,12 +918,17 @@ fun MapScreen(
                     .fillMaxWidth()
             )
         } else {
-            CentrePill(
-                onClick = { vm.centreOnUser() },
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp)
-            )
+                    .padding(bottom = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Online-basemap status sits right above the Centre pill, out of
+                // the top record-badge's way.
+                if (onlineTilesActive) OnlineTilesPill(Modifier.padding(bottom = 8.dp))
+                CentrePill(onClick = { vm.centreOnUser() })
+            }
         }
 
         // Snackbar for remote sync conflict notifications

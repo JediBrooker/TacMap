@@ -204,6 +204,9 @@ final class MapViewModel: ObservableObject {
         isBrowsing = false
         cameraCentre = coord
         cameraRequests.send(region)
+        // Re-orient north when recentering, so the map is always readable
+        // north-up after a "Centre on My Location".
+        resetNorthRequests.send(())
     }
 
     func resetNorth() {

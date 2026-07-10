@@ -424,11 +424,9 @@ struct ContentView: View {
             )
             .padding(.horizontal, 12)
 
-            // Compact online-tiles warning, tucked UNDER the header so it
-            // doesn't shove it down. A small pill, not a full-width strip.
-            if onlineTilesActive {
-                OnlineTilesPill().padding(.top, 4)
-            }
+            // The online-tiles warning used to sit here under the header, but
+            // that's exactly where the live-tracking record badge goes, so they
+            // collided. It's paired with the Centre button at the bottom now.
 
             if trackRecorder.isRecording {
                 RecordingIndicator(
@@ -627,8 +625,13 @@ struct ContentView: View {
                 .padding(.bottom, max(bottomInset - 32, 0))
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
-                CentreButton {
-                    mapVM.centreOnUser(locationService.lastLocation)
+                VStack(spacing: 6) {
+                    // Online-basemap status sits right above the Centre button,
+                    // out of the top record-badge's way.
+                    if onlineTilesActive { OnlineTilesPill() }
+                    CentreButton {
+                        mapVM.centreOnUser(locationService.lastLocation)
+                    }
                 }
                 .offset(y: max(bottomInset - 32, 0))
             }
