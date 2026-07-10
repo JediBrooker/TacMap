@@ -91,6 +91,10 @@ struct TileMapContainer: UIViewRepresentable {
             graphicsLocked: graphicsLocked)
         context.coordinator.syncCalibrationMarkers(calibration)
         context.coordinator.syncHeatmap(visible: visibility.terrainHeatmapVisible)
+        context.coordinator.syncUserLocation(
+            coordinate: locationService.lastLocation?.coordinate,
+            accuracy: locationService.lastLocation?.horizontalAccuracy ?? 0,
+            visible: visibility.userLocationVisible)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -120,6 +124,9 @@ struct TileMapContainer: UIViewRepresentable {
 
         /// Sync presence peers, on top of everything.
         private var presenceView: PresenceOverlayView?
+
+        /// The blue "you are here" dot (MKMapView drew this for free).
+        private var userLocationView: UserLocationOverlayView?
 
         /// Drawing decorations (tap dots, name pills, point pins) + interactive
         /// vertex-edit handles + the gesture layer that drives editing.
@@ -154,8 +161,10 @@ struct TileMapContainer: UIViewRepresentable {
             let decorations = DrawingDecorationsOverlayView()
             let handles = VertexHandlesOverlayView()
             let presence = PresenceOverlayView()
-            // Heatmap is a ground layer (just above the basemap), so it goes first.
-            for v in [heatmap, grid, drawings, decorations, handles, presence] as [UIView] {
+            let userLocation = UserLocationOverlayView()
+            // Heatmap is a ground layer (just above the basemap), so it goes
+            // first; the user dot sits on top of everything.
+            for v in [heatmap, grid, drawings, decorations, handles, presence, userLocation] as [UIView] {
                 v.frame = view.bounds
                 v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 view.addSubview(v)
@@ -166,12 +175,14 @@ struct TileMapContainer: UIViewRepresentable {
             decorations.project = project
             handles.project = project
             presence.project = project
+            userLocation.project = project
             heatmapView = heatmap
             gridView = grid
             drawingsView = drawings
             decorationsView = decorations
             handlesView = handles
             presenceView = presence
+            userLocationView = userLocation
 
             // The editing gesture layer. Its refs are wired here; per-frame
             // state (handles, graphicsLocked) is pushed in updateOverlays.
@@ -215,6 +226,7 @@ struct TileMapContainer: UIViewRepresentable {
             decorationsView?.reproject()
             handlesView?.reproject()
             heatmapView?.reproject()
+            userLocationView?.reproject(metresPerPoint: view?.camera.metresPerPoint ?? 1)
             refreshGrid()
             // Re-fetch the heatmap for the new region once the map settles.
             if heatmapVisible { scheduleHeatmapFetch() }
@@ -284,6 +296,12 @@ struct TileMapContainer: UIViewRepresentable {
             pv.updateFrame(project: { view.camera.screenPoint(for: $0) },
                            headingDegrees: view.camera.headingDegrees)
             pdfView = pv
+        }
+
+        /// Position/toggle the blue user-location dot.
+        func syncUserLocation(coordinate: CLLocationCoordinate2D?, accuracy: Double, visible: Bool) {
+            userLocationView?.update(coordinate: coordinate, accuracyMetres: accuracy, visible: visible)
+            userLocationView?.reproject(metresPerPoint: view?.camera.metresPerPoint ?? 1)
         }
 
         /// Forward fiduciary markers into the PDF overlay (no-op when there's
