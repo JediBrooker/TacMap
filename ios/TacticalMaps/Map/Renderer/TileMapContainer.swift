@@ -42,6 +42,7 @@ struct TileMapContainer: UIViewRepresentable {
     @ObservedObject var visibility: LayerVisibility
     @ObservedObject var locationService: LocationService
     @ObservedObject var opsec = OpsecSettings.shared
+    var peers: [String: PresencePeer] = [:]
 
     func makeUIView(context: Context) -> TileMapView {
         let start = locationService.lastLocation?.coordinate
@@ -74,7 +75,8 @@ struct TileMapContainer: UIViewRepresentable {
                 selectedDrawingID: mapVM.selectedDrawingID,
                 session: drawingSession,
                 measure: measureSession),
-            gridVisible: visibility.mgrsGridVisible)
+            gridVisible: visibility.mgrsGridVisible,
+            peers: peers)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -102,6 +104,9 @@ struct TileMapContainer: UIViewRepresentable {
         private var pdfMask: UIView?
         private var pdfSourceID: UUID?
 
+        /// Sync presence peers, on top of everything.
+        private var presenceView: PresenceOverlayView?
+
         func attach(view: TileMapView, mapVM: MapViewModel) {
             self.view = view
             self.mapVM = mapVM
@@ -117,15 +122,18 @@ struct TileMapContainer: UIViewRepresentable {
             }
             let grid = MGRSGridOverlayView()
             let drawings = DrawingsOverlayView()
-            for v in [grid, drawings] as [UIView] {
+            let presence = PresenceOverlayView()
+            for v in [grid, drawings, presence] as [UIView] {
                 v.frame = view.bounds
                 v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 view.addSubview(v)
             }
             grid.project = project
             drawings.project = project
+            presence.project = project
             gridView = grid
             drawingsView = drawings
+            presenceView = presence
         }
 
         /// Redraw overlays after a camera move (positions move; grid re-tessellates
@@ -137,6 +145,7 @@ struct TileMapContainer: UIViewRepresentable {
             }
             drawingsView?.reproject()
             gridView?.reproject()
+            presenceView?.reproject()
             refreshGrid()
         }
 
@@ -173,8 +182,10 @@ struct TileMapContainer: UIViewRepresentable {
         }
 
         /// Push new overlay geometry (drawings changed / selection changed).
-        func updateOverlays(drawings: [PDFVectorShape], gridVisible: Bool) {
+        func updateOverlays(drawings: [PDFVectorShape], gridVisible: Bool,
+                            peers: [String: PresencePeer]) {
             drawingsView?.update(shapes: drawings)
+            presenceView?.update(peers: peers)
             if gridVisible != self.gridVisible {
                 self.gridVisible = gridVisible
                 if !gridVisible { gridView?.clear(); lastGridFingerprint = "" }
