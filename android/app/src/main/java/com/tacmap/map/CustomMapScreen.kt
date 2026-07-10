@@ -19,6 +19,11 @@ import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.map.render.MapCamera
 import com.tacmap.map.render.OnlineRasterTileSource
 import com.tacmap.map.render.TileMapView
+import com.tacmap.map.render.MapProjection
+import com.tacmap.map.render.MgrsGridCanvas
+import com.tacmap.map.render.DrawingsCanvas
+import com.tacmap.map.render.WaypointSymbolsLayer
+import com.tacmap.map.render.UserLocationCanvas
 import com.tacmap.map.render.TileSource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,12 +43,23 @@ fun CustomMapScreen(
     modifier: Modifier = Modifier,
     mapSource: MapSource? = null,
     onlineBasemapsEnabled: Boolean = false,
+    waypoints: List<com.tacmap.waypoints.Waypoint> = emptyList(),
+    drawings: List<com.tacmap.drawings.DrawingFeature> = emptyList(),
+    drawingLayers: List<com.tacmap.drawings.DrawingLayer> = emptyList(),
+    draftDrawing: com.tacmap.drawings.DrawingFeature? = null,
+    selectedDrawingId: String? = null,
+    mgrsGridVisible: Boolean = false,
+    userLocationVisible: Boolean = true,
+    myLat: Double? = null,
+    myLon: Double? = null,
+    myAccuracyMetres: Float = 0f,
     pendingTarget: Triple<Double, Double, Float>? = null,
     resetNorthRequests: Flow<Unit>? = null,
     onConsumePendingTarget: () -> Unit = {},
     onCameraIdle: (lat: Double, lng: Double, byUser: Boolean) -> Unit = { _, _, _ -> },
     onBearingChanged: (Double) -> Unit = {}
 ) {
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
     var camera by remember {
         mutableStateOf(
             MapCamera(
@@ -99,6 +115,40 @@ fun CustomMapScreen(
             onGestureStart = { browsing = true },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Overlays, projected through the same camera. Visible-layer filtering
+        // mirrors GoogleMapScreen. Interaction (tap/drag/vertex) + PDF + presence
+        // + labels + heatmap get layered in following steps.
+        val visibleLayerIds = drawingLayers
+            .ifEmpty { com.tacmap.drawings.DrawingDocument.defaultLayers() }
+            .filter { it.isVisible }.map { it.id }.toSet()
+        val visibleDrawings = drawings.filter { it.layerId in visibleLayerIds }
+        val visibleWaypoints = if (drawingLayers.isEmpty()) waypoints
+            else waypoints.filter { it.layerId in visibleLayerIds }
+
+        if (mgrsGridVisible) {
+            MgrsGridCanvas(camera = camera, density = density, modifier = Modifier.fillMaxSize())
+        }
+        val projection = remember(camera, density) { MapProjection(camera, density) }
+        DrawingsCanvas(
+            features = visibleDrawings,
+            draft = draftDrawing,
+            selectedId = selectedDrawingId,
+            projection = projection,
+            modifier = Modifier.fillMaxSize()
+        )
+        WaypointSymbolsLayer(
+            waypoints = visibleWaypoints,
+            camera = camera,
+            density = density,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (userLocationVisible) {
+            UserLocationCanvas(
+                lat = myLat, lon = myLon, accuracyMetres = myAccuracyMetres,
+                camera = camera, density = density, modifier = Modifier.fillMaxSize()
+            )
+        }
 
         if (basemapBlank) {
             NoBasemapNoticeCustom(Modifier.align(Alignment.Center))
