@@ -280,9 +280,6 @@ fun GoogleMapScreen(
     /// No explicit source means we'd fall back to Google's own satellite
     /// basemap, which is an online tile fetch like any other.
     val wantsGoogleBasemap = mapSource == null || mapSource is SatelliteMapSourceAndroid
-    /// Is anything on screen actually pulling tiles off the internet right now?
-    val onlineTilesActive = onlineBasemapsEnabled &&
-        (wantsGoogleBasemap || mapSource is OnlineRasterMapSourceAndroid)
     /// Nothing to draw at all: no imported map, and online tiles are gated off.
     /// Say so, rather than showing a black rectangle and letting the user guess.
     val basemapBlank = !onlineBasemapsEnabled && wantsGoogleBasemap
@@ -531,10 +528,11 @@ fun GoogleMapScreen(
             )
         }
 
-        /// Last child so it paints over the map and every overlay.
-        if (onlineTilesActive) {
-            OnlineTilesBanner(Modifier.align(Alignment.TopCenter))
-        } else if (basemapBlank) {
+        /// Last child so it paints over the map and every overlay. The online
+        /// warning is NOT drawn here: MapScreen stacks the HUD on top of this
+        /// composable, so a banner rendered inside would end up behind the MGRS
+        /// header. It lives in the HUD column instead.
+        if (basemapBlank) {
             NoBasemapNotice(Modifier.align(Alignment.Center))
         }
     }
@@ -543,8 +541,10 @@ fun GoogleMapScreen(
 /// Persistent warning while the map is pulling tiles from the internet. The
 /// provider learns your area of interest from the tiles you request, so this
 /// should never be something you find out by accident.
+///
+/// Rendered by MapScreen at the top of the HUD column, above the MGRS header.
 @Composable
-private fun OnlineTilesBanner(modifier: Modifier = Modifier) {
+internal fun OnlineTilesBanner(modifier: Modifier = Modifier) {
     Text(
         text = "ONLINE BASEMAP  ·  tile requests reveal your area of interest",
         color = Color.White,
@@ -554,7 +554,6 @@ private fun OnlineTilesBanner(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .background(Color(0xFFB00020).copy(alpha = 0.92f))
-            .statusBarsPadding()
             .padding(horizontal = 12.dp, vertical = 6.dp)
             .semantics { contentDescription = "Warning: online basemap active, tile requests reveal your area of interest" }
     )

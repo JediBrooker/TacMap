@@ -143,6 +143,15 @@ fun MapScreen(
     val isRecordingTrack by vm.trackRecorder.isRecording.collectAsState()
     val trackPoints by vm.trackRecorder.points.collectAsState()
     val mapSource by vm.mapSource.collectAsState()
+
+    /// Is anything on screen actually pulling tiles off the internet right now?
+    /// Google's own satellite basemap counts, and so does no-source-selected,
+    /// which falls back to it.
+    val onlineTilesActive = onlineBasemapsEnabled && (
+        mapSource == null ||
+            mapSource is com.tacmap.calibration.SatelliteMapSourceAndroid ||
+            mapSource is com.tacmap.calibration.OnlineRasterMapSourceAndroid
+        )
     val waypointStore = remember { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
     val drawingStore = remember { DrawingStore(context) }
@@ -613,7 +622,16 @@ fun MapScreen(
         CrosshairOverlay()
 
         // MGRS header - anchored to top edge, offset by status-bar inset
-        // so dynamic island / hole-punch doesn't cover it
+        // so dynamic island / hole-punch doesn't cover it. The online-tiles
+        // warning stacks above it in the same column, otherwise the header
+        // (drawn after the map) would sit on top of the banner and hide it.
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .fillMaxWidth()
+        ) {
+        if (onlineTilesActive) OnlineTilesBanner()
         MgrsHeader(
             mgrs = vm.headerMgrs,
             wgs84 = vm.headerWgs84,
@@ -623,9 +641,9 @@ fun MapScreen(
             elevationApprox = centreElevation?.isStale == true,
             utm = vm.headerUtm,
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
+            // align + statusBarsPadding moved to the wrapping Column so the
+            // banner shares the same top inset.
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
                 .padding(top = 8.dp)
                 .fillMaxWidth(),
             onDropPin = {
@@ -645,6 +663,7 @@ fun MapScreen(
                 )
             }
         )
+        }
 
         // live track-recording badge, only while recording. Tap to stop.
         if (isRecordingTrack) {

@@ -44,7 +44,7 @@ TacMap treats the following as **untrusted** once data crosses into them:
 
 | Boundary | Trusted? | Why it matters |
 |---|---|---|
-| Your device | Trusted (see §7 caveats) | Holds cleartext data at rest. |
+| Your device | Trusted (see §7 caveats) | Holds the at-rest key, and can decrypt mission data. |
 | The sync relay | **Untrusted** | Routes encrypted traffic; can see metadata. |
 | Basemap / lookup providers | **Untrusted** | See the coordinates you request. |
 | The network path (ISP, Wi-Fi, carrier) | **Untrusted** | Sees who you talk to and when. |
@@ -118,9 +118,10 @@ request until you opt in.
 
 | Endpoint | Purpose | Triggered by | What the provider learns | Default | Mitigation |
 |---|---|---|---|---|---|
-| Apple Maps (iOS) / Google Maps SDK (Android) | Default online basemap tiles | Viewing the map on the online default basemap | Your IP + the coordinates/zoom you view = your area of interest, over time | **On** when using the online default basemap | Use offline basemap packs; see §6 |
-| `server.arcgisonline.com` (Esri World Imagery) | Optional satellite raster basemap | Selecting the Esri imagery layer online | Your IP + requested tile coordinates = your AO | Off unless selected | Pre-cache / offline packs |
-| `tile.opentopomap.org` | Optional topographic raster basemap | Selecting the OpenTopoMap layer online | Your IP + requested tile coordinates = your AO | Off unless selected | Pre-cache / offline packs |
+| Google Maps SDK (Android) | Default online basemap tiles | Viewing the map with online basemaps enabled | Your IP + the coordinates/zoom you view = your area of interest, over time | **Off** (online basemaps gate) | Leave the gate off; use offline packs, see §6 |
+| Apple Maps via the `geod` daemon (iOS) | Default online basemap tiles | **Having the map on screen at all** | Your IP + the coordinates/zoom you view = your area of interest, over time | **Cannot be turned off from inside the app.** See §6 | Airplane mode, or a network you control |
+| `server.arcgisonline.com` (Esri World Imagery) | Optional satellite raster basemap | Selecting the Esri imagery layer with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Pre-cache / offline packs |
+| `tile.opentopomap.org` | Optional topographic raster basemap | Selecting the OpenTopoMap layer with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Pre-cache / offline packs |
 | `api.open-meteo.com/v1/forecast` | Weather lookup | Opening the weather dialog | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
 | `api.open-meteo.com/v1/elevation` | Elevation + terrain heatmap | Elevation/terrain features | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
 | Sync relay (default: `tacmap-sync.<...>.workers.dev`) | Encrypted unit sync transport | Joining a sync room | Ciphertext + routing ID + your IP + traffic timing (see §4) | Off until you join a room | Self-host the relay; see §8 |
@@ -146,14 +147,53 @@ TacMap's controls:
 
 - **Online lookups (weather, elevation, terrain) are off by default.** They stay
   off until you explicitly enable them.
-- **Offline basemap packs** let you operate with no tile requests at all. This is
-  the recommended posture for any real operation. [TODO: link the offline pack
+- **Online basemaps are off by default**, behind their own OPSEC toggle
+  (Settings → Privacy & OPSEC → Online basemap tiles). While off, no Esri and no
+  OpenTopoMap tile is ever requested: the app does not construct the tile
+  provider at all, so there is no URL to fetch.
+- **A persistent red banner** sits across the top of the map whenever an online
+  tile source is active, so you never discover it by accident.
+- **Offline basemap packs** render with no tile requests of our own. This is the
+  recommended posture for any real operation. [TODO: link the offline pack
   build/import guide here.]
-- [PLANNED] Online basemaps gated behind the same explicit OPSEC toggle as
-  lookups, with a persistent in-map warning whenever online tiles are active.
+
+### The iOS exception, stated plainly
+
+On **Android** the gate is complete. `MapType.NONE` makes the Google Maps SDK
+render no basemap and request no basemap tiles, in-process, under our control.
+
+On **iOS it is not, and we cannot make it so.** MapKit has no "no basemap" mode.
+The only way to suppress Apple's basemap is to cover it with an overlay that
+declares `canReplaceMapContent`. That stops MapKit *drawing* the basemap. It
+does **not** stop it *fetching* the basemap. Apple's tiles are downloaded by
+`geod`, a system daemon outside our sandbox, and it keeps fetching tiles for the
+region on screen regardless of what we draw on top.
+
+This is measured, not assumed. On a freshly erased iPhone 17 Pro simulator, with
+an identical no-app baseline, sitting on the map for 35 seconds grew geod's tile
+store (`Caches/com.apple.geod/Vault/MapTiles`) by:
+
+| Online basemaps | Tile-store growth |
+|---|---|
+| Off | 457,320 bytes |
+| On | 453,200 bytes |
+
+The same tiles, either way. So on iOS the toggle buys you two real things, and
+you should know exactly which two: **no basemap imagery on screen** (what a
+shoulder-surfer, a screenshot, or the app-switcher thumbnail sees), and **no
+Esri/OpenTopoMap request**. It does not buy you zero egress to Apple.
+
+By the same mechanism, an imported **offline pack or GeoPDF on iOS does not stop
+Apple's basemap loading underneath it** — the offline tiles are drawn with the
+same `canReplaceMapContent` overlay. Pre-staging maps protects you from Esri and
+OpenTopoMap. It does not hide your AO from Apple.
+
+If your AO must not reach Apple, put the device in **airplane mode** or on a
+network you control. Closing this properly means replacing MKMapView with a
+renderer we own, which is not done. Android users are not affected.
 
 Rule of thumb: **if you can see the internet, the internet can see your AO.**
-Pre-stage offline maps before you need them.
+Pre-stage offline maps before you need them, and on iOS, kill the radio.
 
 ---
 
@@ -166,19 +206,51 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   tempo are inferable at the relay. Self-hosting moves this trust to you but does
   not remove it. A LAN/mesh transport removes the internet vector entirely
   [PLANNED].
-- **Online basemap AO leakage.** See §6. Online tiles reveal your area of
-  interest regardless of sync.
+- **Area-of-interest leakage on iOS.** See §6. Apple's basemap is fetched by a
+  system daemon whenever the map is on screen, and the app cannot prevent it.
+  This holds even with an offline pack loaded.
 - **Device compromise or capture.** Mission data (waypoints, drawings, track
-  logs) is stored as **plaintext JSON in the app's private storage** (`filesDir`).
-  TacMap adds **no application-level encryption** to it. At rest it is protected
-  only by (a) OS app-sandboxing, (b) the platform's own file-based / full-disk
-  encryption, which protects the data while the device is **locked** on any modern
-  iOS/Android device, and (c) exclusion from cloud and ADB backups
-  (`allowBackup=false`, `fullBackupContent=false`). The optional in-app PIN lock is
-  a **UI deterrent for a borrowed device, not encryption** — the code says so
-  explicitly. A forensic extraction of an **unlocked or rooted** device therefore
-  recovers everything. Treat a lost unlocked device as a compromise of all data on
-  it.
+  logs, PDF calibration) is **encrypted at rest** with AES-256-GCM. The key never
+  exists in plaintext on disk: on Android it is wrapped by a non-exportable
+  Android Keystore key, on iOS it lives in the Keychain
+  (`AfterFirstUnlockThisDeviceOnly`, never synced to iCloud, never in a backup).
+  What that does and does not defeat depends on one setting:
+
+  - **Default (device-bound key).** A forensic extraction of the *filesystem* —
+    a disk image, `adb pull`, a backup, a seized locked handset, a device you
+    binned or sent for repair — recovers **ciphertext only**. But the keystore
+    releases the key to this app automatically, so an attacker who achieves
+    **code execution as the app on a rooted or jailbroken device** can simply ask
+    the keystore to decrypt, and recovers everything. Non-exportable means the
+    key cannot be *copied*, not that it cannot be *used*.
+
+  - **"Require unlock to decrypt mission data" (auth-bound key), opt-in.** The
+    key is regenerated with a hardware user-authentication requirement, so the
+    TEE (Android) or Secure Enclave (iOS) refuses to release it without a fresh
+    device credential or biometric. Root or jailbreak alone recovers nothing.
+    The costs are real: after the process dies, nothing reads or writes mission
+    data until you authenticate, **including background track recording**; and on
+    Android, removing your device lockscreen destroys the key and the data with
+    it.
+
+  A note against overclaiming: on iOS the key is a raw AES key, so it is **not**
+  "in the Secure Enclave" — the SEP only holds P-256 keys. It is in the Keychain,
+  whose class keys the SEP wraps and holds. That is a genuine hardware guarantee,
+  and it is a different sentence.
+
+  The optional in-app PIN lock remains a **UI deterrent for a borrowed device,
+  not encryption**, and is independent of all of the above.
+
+  Overwritten plaintext from a pre-encryption build is replaced in place by an
+  atomic rename. On flash storage the old blocks may survive until wear-levelling
+  reclaims them, protected only by the platform's own full-disk encryption.
+
+- **Data that is still plaintext on disk.** Imported basemaps are not encrypted:
+  MBTiles packs and imported PDF/GeoPDF sheets sit in app-private storage as they
+  were imported. They reveal your area of interest to anyone who extracts them.
+  Only the *calibration sidecar* (which sheet, what ground it covers, the fitted
+  affine) is sealed. Encrypting the packs themselves would mean SQLCipher and
+  streaming decryption; it is not done.
 - **Your own room members.** Everyone with the join code sees everything shared
   in that room. Rotate codes and manage membership accordingly.
 - **A weak join code.** The 210k-iteration stretch raises the cost of guessing,
@@ -205,17 +277,25 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
 - Screen capture blocked (keeps live position out of screenshots and the recents
   thumbnail).
 - Online lookups off.
+- Online basemaps off.
+- Mission data encrypted at rest with a device-bound key.
 - Sync off until you join a room.
 
 **For real operations, additionally:**
 
-- Pre-stage **offline basemap packs**; do not use online tiles.
+- Pre-stage **offline basemap packs**; do not use online tiles. On iOS this is
+  not sufficient on its own, see §6: fly the device in **airplane mode**, or put
+  it on a network you control, if your AO must not reach Apple.
+- Turn on **"Require unlock to decrypt mission data"** if device capture is a
+  more realistic threat to you than a track cut short by a reboot. Read the
+  trade-off in §7 first, and on Android do not remove your lockscreen afterwards.
 - **Self-host the sync relay** so no traffic transits an account you do not
   control. The relay only forwards sealed blobs by routing ID, so a minimal
   self-hosted deployment is enough. Point the app at it in
   Settings → relay URL. [TODO: link self-host deploy guide.]
 - Use generated join codes and rotate them per activity.
-- Treat device loss as a data-loss event until §7 at-rest items are verified.
+- Treat a lost **unlocked** device as a compromise of all mission data on it. A
+  lost **locked** device, with the default device-bound key, yields ciphertext.
 
 ---
 
@@ -223,9 +303,16 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
 
 - Sync crypto: `android/.../sync/SyncCrypto.kt`, `ios/.../Sync/SyncCrypto.swift`,
   and the matching `SyncCryptoTest` suites.
-- Egress: every network call is in the services listed in §5. There is no
-  analytics, telemetry, or ad SDK; verify by searching the source for outbound
-  URLs.
+- At-rest crypto: `util/SealedEnvelope.{kt,swift}` (AES-256-GCM, wire format
+  `magic(7) || iv(12) || ct || tag(16)`, store label bound as AEAD associated
+  data) and `util/DataKey.{kt,swift}` (key custody + the auth-bound toggle).
+  Both `SealedEnvelopeTest` suites open the *same* fixture blobs, generated by a
+  third implementation, so Android and iOS are pinned to one wire format rather
+  than to each other.
+- Egress: every network call the *app* makes is in the services listed in §5.
+  There is no analytics, telemetry, or ad SDK; verify by searching the source for
+  outbound URLs. Note the iOS caveat in §6: `geod` makes requests on the app's
+  behalf that no source search will reveal, because they are not in our binary.
 - OPSEC defaults: `settings/OpsecSettings.kt` and the iOS equivalent.
 - Crash handling: `CrashReporter` (local file only).
 

@@ -129,9 +129,6 @@ struct ContentView: View {
                     peers: syncManager.peers
                 )
                 .ignoresSafeArea()
-                .overlay(alignment: .top) {
-                    if onlineTilesActive { OnlineTilesBanner() }
-                }
                 .overlay {
                     if basemapBlank { NoBasemapNotice() }
                 }
@@ -400,6 +397,10 @@ struct ContentView: View {
     @ViewBuilder
     private func hudOverlay(bottomInset: CGFloat) -> some View {
         VStack(spacing: 0) {
+            // Above the MGRS card, not behind it. Lives in the HUD stack rather
+            // than as a map overlay so the header can't cover the warning.
+            if onlineTilesActive { OnlineTilesBanner() }
+
             MGRSHeaderView(
                 mgrs: mapVM.headerMGRS,
                 wgs84: mapVM.headerWGS84,

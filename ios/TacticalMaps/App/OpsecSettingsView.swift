@@ -27,7 +27,11 @@ struct OpsecSettingsView: View {
                 Section {
                     Toggle("Online basemap tiles", isOn: $opsec.onlineBasemaps)
                 } footer: {
-                    Text("Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. Turning it on lets Apple, Esri or OpenTopoMap see the ground you are looking at, from your IP.")
+                    Text("""
+                    Off by default. While off, no Esri or OpenTopoMap tile is ever requested and no basemap imagery is drawn.
+
+                    It does NOT stop Apple. MapKit fetches its basemap through the system location daemon, outside this app's control, and measurement shows it downloads the same tiles for the region on screen whether this is on or off. Apple can still infer your area of interest. If that matters, put the device in airplane mode or on a network you control.
+                    """)
                 }
 
                 Section {
