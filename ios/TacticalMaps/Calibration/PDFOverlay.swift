@@ -87,15 +87,24 @@ final class PDFImageOverlayView: UIImageView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// Pin image to PDF's geographic bounds. Uses all four corners to derive
-    /// a rotation-invariant size, then re-applies map heading via affine
-    /// transform so image spins with the map instead of getting crushed
-    /// into an axis-aligned bbox.
+    /// Backward-compatible entry for the MKMapView path.
     func updateFrame(in mapView: MKMapView) {
+        updateFrame(project: { [weak mapView, weak self] coord in
+            guard let mapView, let self else { return .zero }
+            return mapView.convert(coord, toPointTo: self.superview ?? mapView)
+        }, headingDegrees: mapView.camera.heading)
+    }
+
+    /// Pin image to PDF's geographic bounds. Projects coordinates through
+    /// `project` (into the superview's coord space), uses all four corners to
+    /// derive a rotation-invariant size, then re-applies map heading so the
+    /// image spins with the map instead of collapsing into an axis-aligned bbox.
+    /// No MapKit dependency of its own, so it runs on MKMapView or TileMapView.
+    func updateFrame(project: (CLLocationCoordinate2D) -> CGPoint, headingDegrees: Double) {
         // Preferred path: place via the embedded affine so the sheet sits at its
         // true rotation (grid convergence) + scale and lines up with the MGRS
         // grid. Falls through to the lat/lon stretch when there's no affine.
-        if let t = placementTransform, applyAffinePlacement(t, in: mapView) {
+        if let t = placementTransform, applyAffinePlacement(t, project: project) {
             return
         }
 
@@ -104,9 +113,9 @@ final class PDFImageOverlayView: UIImageView {
         let ne = pdfNE
         let sw = pdfSW
 
-        let nwPt = mapView.convert(nw, toPointTo: mapView)
-        let nePt = mapView.convert(ne, toPointTo: mapView)
-        let swPt = mapView.convert(sw, toPointTo: mapView)
+        let nwPt = project(nw)
+        let nePt = project(ne)
+        let swPt = project(sw)
 
         // Side lengths in screen space, invariant under rotation
         // unlike an axis-aligned bounding box of two opposite corners.
@@ -123,7 +132,7 @@ final class PDFImageOverlayView: UIImageView {
             latitude:  (sw.latitude  + ne.latitude)  / 2,
             longitude: (sw.longitude + ne.longitude) / 2
         )
-        let centreScreen = mapView.convert(centreGeo, toPointTo: mapView)
+        let centreScreen = project(centreGeo)
 
         // Sizing without rotation (transform identity first so .bounds writes
         // are interpreted in screen-aligned coords).
@@ -135,9 +144,8 @@ final class PDFImageOverlayView: UIImageView {
         // heading=0 (north-up) = identity.
         // heading=90 (east-up) = image visually rotated 90 deg clockwise on screen
         // (positive rotationAngle in UIKit = clockwise because y-down).
-        let heading = mapView.camera.heading
-        if abs(heading) > 0.001 {
-            self.transform = CGAffineTransform(rotationAngle: heading * .pi / 180)
+        if abs(headingDegrees) > 0.001 {
+            self.transform = CGAffineTransform(rotationAngle: headingDegrees * .pi / 180)
         }
     }
 
@@ -146,14 +154,15 @@ final class PDFImageOverlayView: UIImageView {
     /// axis-aligned image rect onto that quad. Projected corners already fold
     /// in camera heading so no seperate heading term needed. Returns false on
     /// degenerate projection so updateFrame can fall back to lat/lon stretch.
-    private func applyAffinePlacement(_ t: AffineTransform2D, in mapView: MKMapView) -> Bool {
+    private func applyAffinePlacement(_ t: AffineTransform2D,
+                                      project: (CLLocationCoordinate2D) -> CGPoint) -> Bool {
         let r = pdfRenderRect
         // The image is rasterised from the crop with a Y-flip, so image-top maps
         // to crop-top (maxY) and image-bottom to crop-bottom (minY).
-        let pTL = mapView.convert(t.apply(CGPoint(x: r.minX, y: r.maxY)), toPointTo: mapView)
-        let pTR = mapView.convert(t.apply(CGPoint(x: r.maxX, y: r.maxY)), toPointTo: mapView)
-        let pBL = mapView.convert(t.apply(CGPoint(x: r.minX, y: r.minY)), toPointTo: mapView)
-        let pBR = mapView.convert(t.apply(CGPoint(x: r.maxX, y: r.minY)), toPointTo: mapView)
+        let pTL = project(t.apply(CGPoint(x: r.minX, y: r.maxY)))
+        let pTR = project(t.apply(CGPoint(x: r.maxX, y: r.maxY)))
+        let pBL = project(t.apply(CGPoint(x: r.minX, y: r.minY)))
+        let pBR = project(t.apply(CGPoint(x: r.maxX, y: r.minY)))
 
         let width  = hypot(pTR.x - pTL.x, pTR.y - pTL.y)
         let height = hypot(pBL.x - pTL.x, pBL.y - pTL.y)
