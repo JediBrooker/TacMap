@@ -60,6 +60,9 @@ fun SearchDialog(
     var placeResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
     var placesUnavailable by remember { mutableStateOf(false) }
+    // True = unavailable because online lookups are gated off (actionable via
+    // settings), vs genuinely offline / no geocoder.
+    var placesGated by remember { mutableStateOf(false) }
     val localResults = remember(query, waypoints, drawings, cameraLat, cameraLng) {
         buildSearchResults(query, waypoints, drawings, cameraLat, cameraLng)
     }
@@ -75,6 +78,17 @@ fun SearchDialog(
             return@LaunchedEffect
         }
         delay(350)
+        // Place-name search hits the platform Geocoder, which phones the OS map
+        // backend (Google) with the query. Gate it behind the online-lookups
+        // OPSEC toggle so nothing leaves the device by default. MGRS/grid/lat-lon
+        // parsing below is all offline and always available.
+        if (com.tacmap.settings.OpsecSettings.shared?.onlineLookups?.value != true) {
+            placesUnavailable = true
+            placesGated = true
+            isSearching = false
+            return@LaunchedEffect
+        }
+        placesGated = false
         isSearching = true
         val fetched = searchPlaces(context, trimmed, cameraLat, cameraLng)
         placesUnavailable = fetched == null // null = geocoder absent / errored
@@ -122,7 +136,10 @@ fun SearchDialog(
                     } else if (placesUnavailable && query.trim().length >= 2) {
                         item(key = "places-unavailable") {
                             Text(
-                                "Place search unavailable offline — MGRS, grid and lat/lon search still work.",
+                                if (placesGated)
+                                    "Place-name search is off. Enable online lookups in Privacy & OPSEC. MGRS, grid and lat/lon still work."
+                                else
+                                    "Place search unavailable offline — MGRS, grid and lat/lon search still work.",
                                 modifier = Modifier.padding(vertical = 8.dp),
                                 fontSize = 12.sp,
                                 color = Color(0xFFEF9A9A)
