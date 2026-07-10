@@ -57,6 +57,8 @@
 
   a{color:inherit;text-decoration:none}
   .mono{font-family:"IBM Plex Mono",monospace}
+  /* the nav is sticky, so jump targets land under it without this */
+  [id]{scroll-margin-top:80px}
 
   /* ---- shared type ---- */
   .eyebrow{
@@ -171,6 +173,23 @@
   .feat p{color:var(--ink-dim);font-size:15.5px}
   @media(max-width:760px){.feats{grid-template-columns:1fr}}
 
+  /* ---- screens rail ---- */
+  .rail{margin-top:40px;display:flex;gap:18px;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x proximity;padding:2px 2px 18px;
+    scrollbar-width:thin;scrollbar-color:var(--line) transparent;
+    overscroll-behavior-x:contain}
+  .rail:focus-visible{outline:1px solid var(--signal);outline-offset:6px;border-radius:2px}
+  .rail::-webkit-scrollbar{height:8px}
+  .rail::-webkit-scrollbar-track{background:transparent}
+  .rail::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+  .rail::-webkit-scrollbar-thumb:hover{background:var(--ink-faint)}
+  .shot{flex:0 0 auto;width:264px;scroll-snap-align:center}
+  .shot img{display:block;width:100%;height:auto;border-radius:6px;
+    border:1px solid var(--line);background:var(--void-2)}
+  .rail-hint{margin-top:6px;font-family:"IBM Plex Mono";font-size:11.5px;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+  @media(max-width:600px){.shot{width:228px}}
+
   /* ---- who ---- */
   .who{margin-top:40px;display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
   .who-card{border:1px solid var(--line);border-radius:5px;padding:24px 20px;
@@ -244,6 +263,10 @@
     .sweep{display:none}
   }
 </style>
+<!-- .rv starts at opacity 0 and only the observer turns it on, so with js off
+     everything below the hero is invisible. plenty of this audience runs
+     noscript. -->
+<noscript><style>.rv{opacity:1;transform:none;transition:none}</style></noscript>
 </head>
 <body>
 <span class="reg tl"></span><span class="reg tr"></span>
@@ -261,6 +284,7 @@
     <nav class="nav-links">
       <a href="#compare">vs TAK</a>
       <a href="#capabilities">Capabilities</a>
+      <a href="#screens">Screens</a>
       <a href="#verify">Security</a>
       <a href="#faq">FAQ</a>
       <a class="nav-cta" href="#get">GET TACMAP</a>
@@ -379,11 +403,96 @@
   </div>
 </section>
 
+<!-- SCREENS -->
+<a id="screens"></a>
+<section class="blk" style="padding-top:0">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 03</b> Screens</div>
+    <h2>The whole app, screen by screen.</h2>
+    <p class="sub">The iPhone App Store set, exactly as it ships. Scroll sideways,
+      or swipe on a phone.</p>
+
+    <div class="rail" tabindex="0" role="region" aria-label="TacMap screenshots, horizontally scrollable">
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/01-hero.webp" type="image/webp">
+          <img src="assets/store/01-hero.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Own the tactical picture. NATO APP-6 symbology over live MGRS and UTM, shared across the unit, end-to-end encrypted.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/02-unit-sync.webp" type="image/webp">
+          <img src="assets/store/02-unit-sync.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="One map, the whole unit. Symbols, drawings and waypoints sync live across iOS and Android, end-to-end encrypted.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/03-symbols.webp" type="image/webp">
+          <img src="assets/store/03-symbols.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Mark the ground. Place NATO APP-6 symbols, then trace routes and areas point by point.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/04-recording.webp" type="image/webp">
+          <img src="assets/store/04-recording.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Record your route. A live REC breadcrumb with point count, exported as standard GPX.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/05-weather.webp" type="image/webp">
+          <img src="assets/store/05-weather.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Go, caution, no-go. Map-centre wind and gusts drive the drone flight-safety call.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/06-basemaps.webp" type="image/webp">
+          <img src="assets/store/06-basemaps.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Satellite or terrain. Native satellite, Esri high-res imagery, or OpenTopoMap topography, switched in a tap.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/07-import-export.webp" type="image/webp">
+          <img src="assets/store/07-import-export.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="In and out, anywhere. Import GeoPDF, KML and KMZ; export GeoJSON and GPX.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/08-symbol-builder.webp" type="image/webp">
+          <img src="assets/store/08-symbol-builder.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Build any symbol. Affiliation, echelon and function with a live preview.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/09-search.webp" type="image/webp">
+          <img src="assets/store/09-search.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Jump to any grid. Search a place name, or a full or partial MGRS reference.">
+        </picture>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/10-pdfmap.webp" type="image/webp">
+          <img src="assets/store/10-pdfmap.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Bring your own map. Import a GeoPDF or defence map sheet, georeferenced on-device, with your live tactical picture on top.">
+        </picture>
+      </figure>
+    </div>
+    <p class="rail-hint">10 screens · iPhone</p>
+  </div>
+</section>
+
 <!-- WHO -->
 <a id="who"></a>
 <section class="blk" style="padding-top:0">
   <div class="wrap rv">
-    <div class="gridref"><b>REF 03</b> Built for</div>
+    <div class="gridref"><b>REF 04</b> Built for</div>
     <h2>Teams that move together where there is no signal.</h2>
     <div class="who">
       <div class="who-card">
@@ -416,7 +525,7 @@
   <div class="wrap rv">
     <div class="vgrid">
       <div>
-        <div class="gridref"><b>REF 04</b> Verify</div>
+        <div class="gridref"><b>REF 05</b> Verify</div>
         <h2>Don't take our word for it. Read it.</h2>
         <p class="sub">The whole security story is documented and open. The sync
           layer is end-to-end encrypted, the relay only ever handles sealed blobs
@@ -445,7 +554,7 @@
 <a id="faq"></a>
 <section class="blk">
   <div class="wrap rv">
-    <div class="gridref"><b>REF 05</b> FAQ</div>
+    <div class="gridref"><b>REF 06</b> FAQ</div>
     <h2>Straight answers.</h2>
     <div class="faq">
       <div class="qa"><div class="q">Do I need a server?</div>
