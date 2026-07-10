@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Threat model — TacMap</title>
+<meta name="description" content="What TacMap exposes, to whom, and where its guarantees stop. Written for users, unit security staff, and code auditors.">
+<link rel="canonical" href="https://tacmap.app/threat-model">
+<meta name="theme-color" content="#0E1519">
+<link rel="icon" type="image/png" href="assets/brand/play-icon-512.png">
+<meta property="og:title" content="TacMap threat model">
+<meta property="og:description" content="What TacMap exposes, to whom, and where its guarantees stop.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://tacmap.app/threat-model">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#0E1519; --void-2:#0B1013; --panel:#141E24;
+    --line:#243440; --line-2:#1B272E;
+    --ink:#E7EDEC; --ink-dim:#8DA2AA; --ink-faint:#5E727B;
+    --signal:#FF5A24; --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--void);color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.7;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--signal);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header.nav{position:sticky;top:0;z-index:20;
+    background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-2)}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:"Saira",sans-serif;
+    font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
+  .brand:hover{text-decoration:none}
+  .brand .glyph{width:26px;height:26px;flex:none}
+  .nav-in .back{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink-dim)}
+  .nav-in .back:hover{color:var(--ink);text-decoration:none}
+
+  main{max-width:var(--maxw);margin:0 auto;padding:56px 28px 96px}
+  h1,h2,h3,h4{font-family:"Saira",sans-serif;line-height:1.15;letter-spacing:-.01em;
+    color:var(--ink);scroll-margin-top:80px}
+  h1{font-size:clamp(32px,5vw,46px);font-weight:800;margin-bottom:8px}
+  h2{font-size:clamp(22px,3vw,30px);font-weight:700;margin:52px 0 16px;
+    padding-top:24px;border-top:1px solid var(--line-2)}
+  h3{font-size:19px;font-weight:600;margin:32px 0 12px;color:var(--ink)}
+  h4{font-size:16px;font-weight:600;margin:24px 0 8px}
+  p{margin:14px 0;color:var(--ink-dim)}
+  strong{color:var(--ink);font-weight:600}
+  ul,ol{margin:14px 0 14px 22px;color:var(--ink-dim)}
+  li{margin:7px 0}
+  hr{border:none;border-top:1px solid var(--line-2);margin:40px 0}
+  blockquote{border-left:2px solid var(--signal);padding-left:18px;margin:18px 0;
+    color:var(--ink-dim)}
+
+  code{font-family:"IBM Plex Mono",monospace;font-size:.9em;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line-2);
+    border-radius:3px;padding:1px 5px}
+  pre{background:var(--void-2);border:1px solid var(--line);border-radius:5px;
+    padding:16px 18px;overflow-x:auto;margin:18px 0}
+  pre code{background:none;border:none;padding:0;font-size:13px;line-height:1.6}
+
+  .tablewrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:5px}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-2);
+    vertical-align:top}
+  thead th{font-family:"Saira",sans-serif;font-weight:700;background:var(--void-2);
+    color:var(--ink);white-space:nowrap}
+  td{color:var(--ink-dim)}
+  tbody tr:last-child td{border-bottom:none}
+
+  footer{border-top:1px solid var(--line-2);background:var(--void-2);padding:32px 0}
+  .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;
+    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-faint);
+    letter-spacing:.06em}
+  .foot-in a{color:var(--ink-dim)}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="/">
+      <svg class="glyph" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="29" height="29" rx="2" stroke="#FF5A24" stroke-width="1.5"/>
+        <path d="M6 22 L13 10 L19 18 L26 8" stroke="#E7EDEC" stroke-width="1.5" fill="none"/>
+        <circle cx="19" cy="18" r="2.4" fill="#FF5A24"/>
+      </svg>
+      TACMAP
+    </a>
+    <a class="back" href="/">← Back to site</a>
+  </div>
+</header>
+<main>
+<h1 id="tacmap-threat-model">TacMap Threat Model</h1>
+<p><strong>Status:</strong> working draft · <strong>Audience:</strong> users, unit security staff, code auditors
+<strong>Scope:</strong> what information TacMap can expose, to whom, and where its guarantees stop.</p>
+<p>This document is deliberately plain. If you use TacMap to hold or share unit
+information, you should be able to read this in five minutes and know exactly
+what leaves your device, what a hostile party could learn, and what the app
+does <strong>not</strong> protect you from.</p>
+<p>Nothing here is marketing. Where a guarantee has a limit, the limit is stated.</p>
+<hr>
+<h2 id="1-what-tacmap-is">1. What TacMap is</h2>
+<p>An offline-first tactical mapping tool for iOS and Android: MGRS grid, drawing
+and measurement, military symbology, waypoints and track logs, import/export,
+and an <strong>optional</strong> unit sync feature that shares live presence and map objects
+between devices that share a join code.</p>
+<p>Everything except sync works with no network at all. Sync is off until a user
+joins a room.</p>
+<hr>
+<h2 id="2-critical-information-what-an-adversary-wants">2. Critical information (what an adversary wants)</h2>
+<p>If TacMap is holding real data, the sensitive items are:</p>
+<ul>
+<li><strong>Positions</strong> — your live position, and peers&#39; positions, headings, speeds.</li>
+<li><strong>Unit identity</strong> — callsigns, affiliation, echelon, function, HQ status.</li>
+<li><strong>Scheme of manoeuvre</strong> — waypoints, routes, tracks, drawn control measures.</li>
+<li><strong>Area of interest</strong> — the ground you are looking at, even without any markup.</li>
+<li><strong>Association and tempo</strong> — who is working with whom, and when activity spikes.</li>
+</ul>
+<p>The last two matter even when the first three are encrypted. Keep reading.</p>
+<hr>
+<h2 id="3-trust-boundaries">3. Trust boundaries</h2>
+<p>TacMap treats the following as <strong>untrusted</strong> once data crosses into them:</p>
+<div class="tablewrap"><table><thead><tr><th>Boundary</th><th>Trusted?</th><th>Why it matters</th></tr></thead><tbody><tr><td>Your device</td><td>Trusted (see §7 caveats)</td><td>Holds the at-rest key, and can decrypt mission data.</td></tr>
+<tr><td>The sync relay</td><td><strong>Untrusted</strong></td><td>Routes encrypted traffic; can see metadata.</td></tr>
+<tr><td>Basemap / lookup providers</td><td><strong>Untrusted</strong></td><td>See the coordinates you request.</td></tr>
+<tr><td>The network path (ISP, Wi-Fi, carrier)</td><td><strong>Untrusted</strong></td><td>Sees who you talk to and when.</td></tr>
+<tr><td>Other members of your sync room</td><td>Trusted by you</td><td>They hold the room key and see everything you share.</td></tr></tbody></table></div>
+<p>The design goal is that <strong>only your device and your own room members</strong> ever see
+critical information in cleartext. Everything else on this list sees ciphertext
+or coordinate requests, never unit data.</p>
+<hr>
+<h2 id="relay">4. What the sync relay can and cannot see</h2>
+<p>This is the core statement. Read it before trusting sync.</p>
+<p><strong>One-paragraph version.</strong> When you join a sync room, your device turns the
+human join code (e.g. <code>bravo-tonight</code>) into three separate values using a slow
+password-stretch (PBKDF2-HMAC-SHA256, 210,000 iterations). One value is a
+routing ID the relay uses to connect you to your room. A second is the
+encryption key, which <strong>never leaves your device</strong>. A third is a write token
+that only travels inside the connection handshake. Every map object and every
+presence update is sealed with AES-256-GCM using the encryption key before it is
+sent. The relay only ever forwards sealed blobs. It has no way to derive the key
+from the routing ID, because both come out of the same expensive one-way
+derivation. So the relay can route your traffic but cannot read it.</p>
+<p><strong>What the relay CAN see:</strong></p>
+<ul>
+<li>The <strong>routing room ID</strong> (a 256-bit opaque value; not your join code, and not
+reversible to it).</li>
+<li>The <strong>IP addresses</strong> of connected devices, and therefore approximate
+geographic origin.</li>
+<li><strong>Traffic metadata:</strong> when devices connect, how often they send, message sizes
+and timing.</li>
+<li>That a set of devices <strong>belong to the same room</strong> (co-membership).</li>
+</ul>
+<p><strong>What the relay CANNOT see:</strong></p>
+<ul>
+<li>Positions, headings, speeds.</li>
+<li>Callsigns, affiliation, echelon, function, HQ status.</li>
+<li>Waypoints, routes, tracks, drawn control measures.</li>
+<li>The join code, or anything typed by users.</li>
+<li>The contents of any synced object. All of it is AES-256-GCM ciphertext.</li>
+</ul>
+<p><strong>Why a hostile relay still cannot cheat.</strong> Each sealed object binds its own
+routing metadata (object ID, version, kind) into the encryption as associated
+data. A relay that tries to replay an object under a different ID, or move it
+between rooms, produces an authentication failure and the client rejects it. A
+leaked routing ID alone cannot write to a room either, because writing requires
+the separate write token.</p>
+<p><strong>The honest limit.</strong> Content is protected. <strong>Metadata is not.</strong> A relay
+operator, or anyone who compromises or coerces the relay or its host, can learn
+that a group of IPs form a unit, roughly where they are, and when they are
+active. That is enough to infer association and operational tempo. See §7.</p>
+<p>The relay is auditable: it only ever handles sealed blobs plus routing IDs. You
+do not have to trust ours. <strong>You can self-host it</strong> (see §8).</p>
+<p>Crypto reference for auditors: <code>SyncCrypto.kt</code> / <code>SyncCrypto.swift</code> and their
+test suites. Android and iOS produce byte-identical wire format
+(<code>iv(12) || ciphertext || tag(16)</code>).</p>
+<hr>
+<h2 id="5-network-egress-table">5. Network egress table</h2>
+<p>Every outbound connection TacMap can make, what triggers it, what the far end
+learns, and its default state. If a row is off by default, TacMap makes no such
+request until you opt in.</p>
+<div class="tablewrap"><table><thead><tr><th>Endpoint</th><th>Purpose</th><th>Triggered by</th><th>What the provider learns</th><th>Default</th><th>Mitigation</th></tr></thead><tbody><tr><td>Google Maps SDK tiles (Android)</td><td>Default online basemap tiles</td><td>Viewing the map with online basemaps enabled</td><td>Your IP + the coordinates/zoom you view = your area of interest, over time</td><td><strong>Off</strong> (online basemaps gate). Measured: no tile fetch while off, see §6</td><td>Leave the gate off; use offline packs, see §6</td></tr>
+<tr><td>Google Maps SDK provisioning (Android)</td><td>SDK config / telemetry check-in</td><td>Launching the app with the Google map view mounted, <strong>regardless of the basemap gate</strong></td><td>Your IP + that a Google-Maps app launched. <strong>Not</strong> the coordinates you view</td><td>On (can&#39;t be disabled while the SDK is linked). See §6</td><td>Removed once the app moves off the Google Maps SDK [PLANNED]</td></tr>
+<tr><td>Apple Maps via the <code>geod</code> daemon (iOS)</td><td>Default online basemap tiles</td><td><strong>Having the map on screen at all</strong></td><td>Your IP + the coordinates/zoom you view = your area of interest, over time</td><td><strong>Cannot be turned off from inside the app.</strong> See §6</td><td>Airplane mode, or a network you control</td></tr>
+<tr><td><code>server.arcgisonline.com</code> (Esri World Imagery)</td><td>Optional satellite raster basemap</td><td>Selecting the Esri imagery layer with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> (online basemaps gate)</td><td>Pre-cache / offline packs</td></tr>
+<tr><td><code>tile.opentopomap.org</code></td><td>Optional topographic raster basemap</td><td>Selecting the OpenTopoMap layer with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> (online basemaps gate)</td><td>Pre-cache / offline packs</td></tr>
+<tr><td><code>api.open-meteo.com/v1/forecast</code></td><td>Weather lookup</td><td>Opening the weather dialog</td><td>Your IP + the exact coordinates queried</td><td><strong>Off</strong> (online lookups gate)</td><td>Leave online lookups off</td></tr>
+<tr><td><code>api.open-meteo.com/v1/elevation</code></td><td>Elevation + terrain heatmap</td><td>Elevation/terrain features</td><td>Your IP + the exact coordinates queried</td><td><strong>Off</strong> (online lookups gate)</td><td>Leave online lookups off</td></tr>
+<tr><td>Sync relay (default: <code>tacmap-sync.&lt;...&gt;.workers.dev</code>)</td><td>Encrypted unit sync transport</td><td>Joining a sync room</td><td>Ciphertext + routing ID + your IP + traffic timing (see §4)</td><td>Off until you join a room</td><td>Self-host the relay; see §8</td></tr>
+<tr><td><code>play.google.com/redeem</code> / <code>apps.apple.com/redeem</code></td><td>Voucher / licence redemption</td><td>You tapping &quot;redeem&quot;</td><td>Standard store request; no map or unit data</td><td>User-initiated only</td><td>n/a</td></tr></tbody></table></div>
+<p><strong>Read this table as the whole story.</strong> If an endpoint is not listed here, the
+app does not contact it. <em>We</em> add no analytics SDK, no crash telemetry, no ad
+network; our own crash reports are written to local storage only and shared by
+you manually. The one piece of third-party telemetry is the Google Maps SDK
+provisioning check-in on Android (row 2), which is Google&#39;s, not ours, and which
+we cannot disable while their SDK is linked. It is auditable only in the sense
+that you can see it in a packet capture, not in our source, because it isn&#39;t in
+our source - which is itself a reason the app is moving off that SDK [PLANNED].</p>
+<hr>
+<h2 id="6-the-area-of-interest-problem-basemaps-and-lookups">6. The area-of-interest problem (basemaps and lookups)</h2>
+<p>Even with sync fully off, requesting online map tiles or online
+weather/elevation tells the provider which ground you care about. Panning to a
+grid square fetches tiles for that square from your IP. A provider, or anyone
+with access to its logs, can reconstruct your area of interest and how it moves
+over time. This is the same class of exposure as the 2018 fitness-app heatmap
+incident.</p>
+<p>TacMap&#39;s controls:</p>
+<ul>
+<li><strong>Online lookups (weather, elevation, terrain) are off by default.</strong> They stay
+off until you explicitly enable them.</li>
+<li><strong>Online basemaps are off by default</strong>, behind their own OPSEC toggle
+(Settings → Privacy &amp; OPSEC → Online basemap tiles). While off, no Esri and no
+OpenTopoMap tile is ever requested: the app does not construct the tile
+provider at all, so there is no URL to fetch.</li>
+<li><strong>A persistent red banner</strong> sits across the top of the map whenever an online
+tile source is active, so you never discover it by accident.</li>
+<li><strong>Offline basemap packs</strong> render with no tile requests of our own. This is the
+recommended posture for any real operation. [TODO: link the offline pack
+build/import guide here.]</li>
+</ul>
+<h3 id="the-two-platforms-measured">The two platforms, measured</h3>
+<p>On <strong>Android the tile gate is complete, and this is measured.</strong> With online
+basemaps off the map uses <code>MapType.NONE</code>, which fetches no basemap tiles. On a
+Pixel emulator (API 36), 45 seconds on the map from a fresh launch used:</p>
+<div class="tablewrap"><table><thead><tr><th>Basemap gate</th><th>App network</th></tr></thead><tbody><tr><td>Off (<code>MapType.NONE</code>)</td><td>~280 KB cold / ~24 KB warm, then <strong>0</strong> at idle</td></tr>
+<tr><td>On (Google satellite)</td><td>~1.6 MB (the ~1.3 MB difference is tiles)</td></tr></tbody></table></div>
+<p>So enabling the basemap adds ~1.3 MB of tiles; with the gate off that traffic
+simply does not happen, and a stationary map settles to zero.</p>
+<p>The honest caveat: <strong>off is not silent.</strong> That ~280 KB (cold) / ~24 KB (warm) is
+the Google Maps SDK itself phoning home on launch for provisioning and telemetry</p>
+<ul>
+<li>it happens whenever the Google map view is mounted, whatever the gate says. It
+carries your IP and the fact that a Google-Maps app started. It does <strong>not</strong>
+carry the coordinates you are looking at (that&#39;s what the tile gate stops). The
+only way to remove it is to stop linking Google&#39;s SDK, which is the same
+direction the iOS renderer work points. Until then, for a fully dark launch on
+Android too, use airplane mode.</li>
+</ul>
+<h3 id="the-ios-side-stated-plainly">The iOS side, stated plainly</h3>
+<p>On <strong>iOS the tile gate is not complete, and we cannot make it so.</strong> MapKit has no
+&quot;no basemap&quot; mode. The only way to suppress Apple&#39;s basemap is to cover it with
+an overlay that declares <code>canReplaceMapContent</code>. That stops MapKit <em>drawing</em> the
+basemap. It does <strong>not</strong> stop it <em>fetching</em> the basemap. Apple&#39;s tiles are
+downloaded by <code>geod</code>, a system daemon outside our sandbox, and it keeps fetching
+tiles for the region on screen regardless of what we draw on top.
+The only way to suppress Apple&#39;s basemap is to cover it with an overlay that
+declares <code>canReplaceMapContent</code>. That stops MapKit <em>drawing</em> the basemap. It
+does <strong>not</strong> stop it <em>fetching</em> the basemap. Apple&#39;s tiles are downloaded by
+<code>geod</code>, a system daemon outside our sandbox, and it keeps fetching tiles for the
+region on screen regardless of what we draw on top.</p>
+<p>This is measured, not assumed. On a freshly erased iPhone 17 Pro simulator, with
+an identical no-app baseline, sitting on the map for 35 seconds grew geod&#39;s tile
+store (<code>Caches/com.apple.geod/Vault/MapTiles</code>) by:</p>
+<div class="tablewrap"><table><thead><tr><th>Online basemaps</th><th>Tile-store growth</th></tr></thead><tbody><tr><td>Off</td><td>457,320 bytes</td></tr>
+<tr><td>On</td><td>453,200 bytes</td></tr></tbody></table></div>
+<p>The same tiles, either way. So on iOS the toggle buys you two real things, and
+you should know exactly which two: <strong>no basemap imagery on screen</strong> (what a
+shoulder-surfer, a screenshot, or the app-switcher thumbnail sees), and <strong>no
+Esri/OpenTopoMap request</strong>. It does not buy you zero egress to Apple.</p>
+<p>By the same mechanism, an imported <strong>offline pack or GeoPDF on iOS does not stop
+Apple&#39;s basemap loading underneath it</strong> — the offline tiles are drawn with the
+same <code>canReplaceMapContent</code> overlay. Pre-staging maps protects you from Esri and
+OpenTopoMap. It does not hide your AO from Apple.</p>
+<p>If your AO must not reach Apple, put the device in <strong>airplane mode</strong> or on a
+network you control. Closing this properly means replacing MKMapView with a
+renderer we own, which is not done. Android users are not affected.</p>
+<p>Rule of thumb: <strong>if you can see the internet, the internet can see your AO.</strong>
+Pre-stage offline maps before you need them, and on iOS, kill the radio.</p>
+<hr>
+<h2 id="7-what-tacmap-does-not-protect-you-from">7. What TacMap does NOT protect you from</h2>
+<p>Stated plainly, because a tool that hides its limits cannot be trusted.</p>
+<ul>
+<li><p><strong>Relay traffic analysis.</strong> Content is encrypted; the fact and pattern of
+communication is not. Co-membership, approximate location by IP, and activity
+tempo are inferable at the relay. Self-hosting moves this trust to you but does
+not remove it. A LAN/mesh transport removes the internet vector entirely
+[PLANNED].</p>
+</li>
+<li><p><strong>Area-of-interest leakage on iOS.</strong> See §6. Apple&#39;s basemap is fetched by a
+system daemon whenever the map is on screen, and the app cannot prevent it.
+This holds even with an offline pack loaded.</p>
+</li>
+<li><p><strong>Device compromise or capture.</strong> Mission data (waypoints, drawings, track
+logs, PDF calibration) is <strong>encrypted at rest</strong> with AES-256-GCM. The key never
+exists in plaintext on disk: on Android it is wrapped by a non-exportable
+Android Keystore key, on iOS it lives in the Keychain
+(<code>AfterFirstUnlockThisDeviceOnly</code>, never synced to iCloud, never in a backup).
+What that does and does not defeat depends on one setting:</p>
+<ul>
+<li><p><strong>Default (device-bound key).</strong> A forensic extraction of the <em>filesystem</em> —
+a disk image, <code>adb pull</code>, a backup, a seized locked handset, a device you
+binned or sent for repair — recovers <strong>ciphertext only</strong>. But the keystore
+releases the key to this app automatically, so an attacker who achieves
+<strong>code execution as the app on a rooted or jailbroken device</strong> can simply ask
+the keystore to decrypt, and recovers everything. Non-exportable means the
+key cannot be <em>copied</em>, not that it cannot be <em>used</em>.</p>
+</li>
+<li><p><strong>&quot;Require unlock to decrypt mission data&quot; (auth-bound key), opt-in.</strong> The
+key is regenerated with a hardware user-authentication requirement, so the
+TEE (Android) or Secure Enclave (iOS) refuses to release it without a fresh
+device credential or biometric. Root or jailbreak alone recovers nothing.
+The costs are real: after the process dies, nothing reads or writes mission
+data until you authenticate, <strong>including background track recording</strong>; and on
+Android, removing your device lockscreen destroys the key and the data with
+it.</p>
+</li>
+</ul>
+<p>A note against overclaiming: on iOS the key is a raw AES key, so it is <strong>not</strong>
+&quot;in the Secure Enclave&quot; — the SEP only holds P-256 keys. It is in the Keychain,
+whose class keys the SEP wraps and holds. That is a genuine hardware guarantee,
+and it is a different sentence.</p>
+<p>The optional in-app PIN lock remains a <strong>UI deterrent for a borrowed device,
+not encryption</strong>, and is independent of all of the above.</p>
+<p>Overwritten plaintext from a pre-encryption build is replaced in place by an
+atomic rename. On flash storage the old blocks may survive until wear-levelling
+reclaims them, protected only by the platform&#39;s own full-disk encryption.</p>
+</li>
+<li><p><strong>Data that is still plaintext on disk.</strong> Imported basemaps are not encrypted:
+MBTiles packs and imported PDF/GeoPDF sheets sit in app-private storage as they
+were imported. They reveal your area of interest to anyone who extracts them.
+Only the <em>calibration sidecar</em> (which sheet, what ground it covers, the fitted
+affine) is sealed. Encrypting the packs themselves would mean SQLCipher and
+streaming decryption; it is not done.</p>
+</li>
+<li><p><strong>Your own room members.</strong> Everyone with the join code sees everything shared
+in that room. Rotate codes and manage membership accordingly.</p>
+</li>
+<li><p><strong>A weak join code.</strong> The 210k-iteration stretch raises the cost of guessing,
+but a short or predictable code is still guessable against retained ciphertext.
+Use the in-app generator; do not invent your own.</p>
+</li>
+<li><p><strong>Export metadata.</strong> GPX and GeoJSON exports embed <strong>precise per-point
+timestamps</strong> alongside coordinates and elevation, plus the fixed string <code>TacMap</code>
+as the creator. They do <strong>not</strong> embed device identifiers, hardware IDs, your
+sync client ID, or callsigns. The residual exposure is the timestamps: a shared
+track file reveals exactly when you were at each point (pattern of life). Scrub
+timing before sharing a track outside your unit if that matters.</p>
+</li>
+<li><p><strong>Authorisation.</strong> This is not a technical control and TacMap cannot grant it.
+A well-engineered app is <strong>not</strong> an accredited one. Whether you are permitted
+to hold or transmit official information in this tool is a decision for your
+chain of command and your security authority, not for the app. If in doubt,
+ask before you load real data.</p>
+</li>
+</ul>
+<hr>
+<h2 id="8-recommended-posture-and-self-hosting">8. Recommended posture and self-hosting</h2>
+<p><strong>OPSEC-first defaults (already set):</strong></p>
+<ul>
+<li>Screen capture blocked (keeps live position out of screenshots and the recents
+thumbnail).</li>
+<li>Online lookups off.</li>
+<li>Online basemaps off.</li>
+<li>Mission data encrypted at rest with a device-bound key.</li>
+<li>Sync off until you join a room.</li>
+</ul>
+<p><strong>For real operations, additionally:</strong></p>
+<ul>
+<li>Pre-stage <strong>offline basemap packs</strong>; do not use online tiles. On iOS this is
+not sufficient on its own, see §6: fly the device in <strong>airplane mode</strong>, or put
+it on a network you control, if your AO must not reach Apple.</li>
+<li>Turn on <strong>&quot;Require unlock to decrypt mission data&quot;</strong> if device capture is a
+more realistic threat to you than a track cut short by a reboot. Read the
+trade-off in §7 first, and on Android do not remove your lockscreen afterwards.</li>
+<li><strong>Self-host the sync relay</strong> so no traffic transits an account you do not
+control. The relay only forwards sealed blobs by routing ID, so a minimal
+self-hosted deployment is enough. Point the app at it in
+Settings → relay URL. [TODO: link self-host deploy guide.]</li>
+<li>Use generated join codes and rotate them per activity.</li>
+<li>Treat a lost <strong>unlocked</strong> device as a compromise of all mission data on it. A
+lost <strong>locked</strong> device, with the default device-bound key, yields ciphertext.</li>
+</ul>
+<hr>
+<h2 id="9-for-auditors">9. For auditors</h2>
+<ul>
+<li>Sync crypto: <code>android/.../sync/SyncCrypto.kt</code>, <code>ios/.../Sync/SyncCrypto.swift</code>,
+and the matching <code>SyncCryptoTest</code> suites.</li>
+<li>At-rest crypto: <code>util/SealedEnvelope.{kt,swift}</code> (AES-256-GCM, wire format
+<code>magic(7) || iv(12) || ct || tag(16)</code>, store label bound as AEAD associated
+data) and <code>util/DataKey.{kt,swift}</code> (key custody + the auth-bound toggle).
+Both <code>SealedEnvelopeTest</code> suites open the <em>same</em> fixture blobs, generated by a
+third implementation, so Android and iOS are pinned to one wire format rather
+than to each other.</li>
+<li>Egress: every network call the <em>app</em> makes is in the services listed in §5.
+There is no analytics, telemetry, or ad SDK; verify by searching the source for
+outbound URLs. Note the iOS caveat in §6: <code>geod</code> makes requests on the app&#39;s
+behalf that no source search will reveal, because they are not in our binary.</li>
+<li>OPSEC defaults: <code>settings/OpsecSettings.kt</code> and the iOS equivalent.</li>
+<li>Crash handling: <code>CrashReporter</code> (local file only).</li>
+</ul>
+<p>Issues and disclosures welcome via the repository.</p>
+<hr>
+<p><em>This is a living document. Items marked TODO/VERIFY are not yet substantiated
+in this draft and must not be cited as guarantees until confirmed against the
+code.</em></p>
+
+</main>
+<footer>
+  <div class="foot-in">
+    <span>TACMAP · THREAT MODEL</span>
+    <span><a href="https://github.com/JediBrooker/TacMap">Source on GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>

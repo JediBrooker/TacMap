@@ -47,3 +47,6 @@ node_modules/
 spm-cache/
 
 scripts/__pycache__/
+
+# local miniflare state from `wrangler dev`
+site/.wrangler/

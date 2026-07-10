@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TacMap — Offline, encrypted team mapping</title>
+<meta name="description" content="TacMap is an offline-first, end-to-end encrypted team map. No server, no account, nothing phoning home. iOS and Android.">
+<link rel="canonical" href="https://tacmap.app/">
+<meta name="theme-color" content="#0E1519">
+<link rel="icon" type="image/png" href="assets/brand/play-icon-512.png">
+<meta property="og:title" content="TacMap — Offline, encrypted team mapping">
+<meta property="og:description" content="One map, your whole team, no signal required. End-to-end encrypted presence, offline charts, two-minute setup. No server, no account. iOS and Android.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://tacmap.app/">
+<meta property="og:image" content="https://tacmap.app/assets/brand/play-icon-512.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#0E1519;        /* deep cool gunmetal ground */
+    --void-2:#0B1013;      /* darker for bands */
+    --panel:#141E24;       /* raised panel */
+    --line:#243440;        /* contour / grid hairlines */
+    --line-2:#1B272E;      /* fainter grid */
+    --ink:#E7EDEC;         /* cool near-white */
+    --ink-dim:#8DA2AA;     /* muted slate text */
+    --ink-faint:#5E727B;   /* captions */
+    --signal:#FF5A24;      /* SAR / aviation signal orange */
+    --signal-soft:#FF7A4d;
+    --friendly:#4FB0C6;    /* muted map-blue, used sparingly */
+    --maxw:1180px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--void);
+    color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* ambient chart grid over the whole page */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:
+      linear-gradient(var(--line-2) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line-2) 1px,transparent 1px);
+    background-size:64px 64px;
+    -webkit-mask-image:radial-gradient(ellipse 120% 90% at 50% 0%,#000 30%,transparent 78%);
+            mask-image:radial-gradient(ellipse 120% 90% at 50% 0%,#000 30%,transparent 78%);
+    opacity:.5;
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px;position:relative;z-index:1}
+
+  a{color:inherit;text-decoration:none}
+  .mono{font-family:"IBM Plex Mono",monospace}
+
+  /* ---- shared type ---- */
+  .eyebrow{
+    font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--signal);
+    display:inline-flex;align-items:center;gap:10px;
+  }
+  .eyebrow::before{content:"";width:22px;height:1px;background:var(--signal)}
+  h1,h2,h3{font-family:"Saira",sans-serif;line-height:1.02;letter-spacing:-.01em}
+
+  /* ---- top nav ---- */
+  header.nav{position:sticky;top:0;z-index:20;
+    background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-2);}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:"Saira";font-weight:800;
+    font-size:19px;letter-spacing:.02em}
+  .brand .glyph{width:26px;height:26px;flex:none}
+  .nav-links{display:flex;gap:26px;align-items:center}
+  .nav-links a{font-size:14px;color:var(--ink-dim)}
+  .nav-links a:hover{color:var(--ink)}
+  .nav-cta{font-family:"IBM Plex Mono";font-size:13px;letter-spacing:.04em;
+    border:1px solid var(--signal);color:var(--signal);
+    padding:8px 16px;border-radius:2px;transition:.18s}
+  .nav-cta:hover{background:var(--signal);color:var(--void)}
+  @media(max-width:760px){.nav-links a:not(.nav-cta){display:none}}
+
+  /* ---- hero ---- */
+  .hero{position:relative;padding:86px 0 64px}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center}
+  .hero h1{font-size:clamp(40px,6.4vw,74px);font-weight:800;margin:22px 0 20px}
+  .hero h1 em{font-style:normal;color:var(--signal)}
+  .hero p.lead{font-size:19px;color:var(--ink-dim);max-width:33ch}
+  .cta-row{display:flex;gap:14px;margin-top:34px;flex-wrap:wrap}
+  .btn{font-family:"IBM Plex Mono";font-size:14px;letter-spacing:.03em;
+    padding:14px 24px;border-radius:2px;transition:.18s;display:inline-flex;
+    align-items:center;gap:10px;border:1px solid transparent}
+  .btn-primary{background:var(--signal);color:var(--void);font-weight:500}
+  .btn-primary:hover{background:var(--signal-soft);transform:translateY(-1px)}
+  .btn-ghost{border-color:var(--line);color:var(--ink)}
+  .btn-ghost:hover{border-color:var(--ink-dim)}
+  .hero-meta{margin-top:30px;font-family:"IBM Plex Mono";font-size:12.5px;
+    color:var(--ink-faint);letter-spacing:.04em}
+  .hero-meta b{color:var(--ink-dim);font-weight:500}
+
+  /* chart panel signature */
+  .chart{position:relative;aspect-ratio:5/4.4;border:1px solid var(--line);
+    border-radius:4px;background:
+      radial-gradient(120% 120% at 20% 10%, #16232b 0%, #0d151a 60%, #0a1014 100%);
+    overflow:hidden;box-shadow:0 30px 80px -40px #000}
+  .chart svg{position:absolute;inset:0;width:100%;height:100%}
+  .chart .readout{position:absolute;left:14px;bottom:12px;
+    font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.06em;color:var(--ink-dim)}
+  .chart .readout b{color:var(--signal);font-weight:500}
+  .chart .tag{position:absolute;top:12px;right:14px;font-family:"IBM Plex Mono";
+    font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+  @media(max-width:900px){
+    .hero-grid{grid-template-columns:1fr;gap:40px}
+    .hero{padding:56px 0 40px}
+  }
+
+  /* ---- trust strip ---- */
+  .strip{border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2);
+    background:var(--void-2)}
+  .strip-in{max-width:var(--maxw);margin:0 auto;padding:16px 28px;
+    display:flex;flex-wrap:wrap;gap:10px 30px;justify-content:center;
+    font-family:"IBM Plex Mono";font-size:12.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-dim)}
+  .strip-in span{display:inline-flex;align-items:center;gap:12px}
+  .strip-in span::before{content:"";width:5px;height:5px;background:var(--signal);
+    transform:rotate(45deg);flex:none}
+
+  /* ---- section scaffolding ---- */
+  section.blk{padding:78px 0;position:relative}
+  .gridref{font-family:"IBM Plex Mono";font-size:12px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-faint);
+    display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .gridref b{color:var(--signal);font-weight:500}
+  .gridref::after{content:"";flex:1;height:1px;background:var(--line-2);max-width:220px}
+  .blk h2{font-size:clamp(28px,3.8vw,44px);font-weight:700;max-width:20ch}
+  .blk .sub{color:var(--ink-dim);margin-top:14px;max-width:56ch;font-size:17px}
+
+  /* ---- compare ---- */
+  .cmp{margin-top:40px;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .cmp table{width:100%;border-collapse:collapse;font-size:15px}
+  .cmp th,.cmp td{text-align:left;padding:15px 18px;border-bottom:1px solid var(--line-2);
+    vertical-align:top}
+  .cmp thead th{font-family:"Saira";font-weight:700;font-size:16px;background:var(--void-2)}
+  .cmp thead th:first-child{color:var(--ink-faint);font-family:"IBM Plex Mono";
+    font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:500}
+  .cmp thead th.us{color:var(--signal)}
+  .cmp td:first-child{color:var(--ink-dim);font-family:"IBM Plex Mono";font-size:13px}
+  .cmp td.us{color:var(--ink);font-weight:500}
+  .cmp tr:last-child td{border-bottom:none}
+  .cmp-note{margin-top:16px;font-size:14px;color:var(--ink-faint);max-width:62ch}
+
+  /* ---- feature list ---- */
+  .feats{margin-top:44px;display:grid;grid-template-columns:1fr 1fr;gap:2px;
+    background:var(--line-2);border:1px solid var(--line-2);border-radius:6px;overflow:hidden}
+  .feat{background:var(--void);padding:34px 30px}
+  .feat .fnum{font-family:"IBM Plex Mono";font-size:12px;color:var(--signal);letter-spacing:.1em}
+  .feat h3{font-size:22px;font-weight:600;margin:14px 0 10px}
+  .feat p{color:var(--ink-dim);font-size:15.5px}
+  @media(max-width:760px){.feats{grid-template-columns:1fr}}
+
+  /* ---- who ---- */
+  .who{margin-top:40px;display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .who-card{border:1px solid var(--line);border-radius:5px;padding:24px 20px;
+    background:var(--panel);transition:.2s}
+  .who-card:hover{border-color:var(--signal);transform:translateY(-3px)}
+  .who-card .tag{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.1em;
+    color:var(--signal);text-transform:uppercase}
+  .who-card h3{font-size:18px;font-weight:600;margin:12px 0 8px}
+  .who-card p{font-size:14px;color:var(--ink-dim)}
+  @media(max-width:900px){.who{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.who{grid-template-columns:1fr}}
+
+  /* ---- verify band ---- */
+  .verify{background:var(--void-2);border-top:1px solid var(--line-2);
+    border-bottom:1px solid var(--line-2)}
+  .verify .vgrid{display:grid;grid-template-columns:1fr .9fr;gap:48px;align-items:center}
+  .verify h2{max-width:16ch}
+  .vlinks{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);
+    border-radius:6px;overflow:hidden}
+  .vlink{display:flex;align-items:center;justify-content:space-between;
+    padding:20px 22px;background:var(--void);transition:.18s;gap:16px}
+  .vlink:hover{background:var(--panel)}
+  .vlink .vt{font-family:"Saira";font-weight:600;font-size:17px}
+  .vlink .vd{font-size:13px;color:var(--ink-dim);margin-top:3px}
+  .vlink .arrow{color:var(--signal);font-family:"IBM Plex Mono";flex:none}
+  @media(max-width:900px){.verify .vgrid{grid-template-columns:1fr;gap:32px}}
+
+  /* ---- faq ---- */
+  .faq{margin-top:40px;border-top:1px solid var(--line-2)}
+  .qa{border-bottom:1px solid var(--line-2);padding:24px 0;display:grid;
+    grid-template-columns:.9fr 1.4fr;gap:30px}
+  .qa .q{font-family:"Saira";font-weight:600;font-size:19px;color:var(--ink)}
+  .qa .a{color:var(--ink-dim);font-size:15.5px}
+  .qa .a a{color:var(--signal);border-bottom:1px solid transparent}
+  .qa .a a:hover{border-color:var(--signal)}
+  @media(max-width:700px){.qa{grid-template-columns:1fr;gap:8px}}
+
+  /* ---- download band ---- */
+  .dl{padding:92px 0;text-align:center;position:relative}
+  .dl h2{font-size:clamp(32px,5vw,56px);font-weight:800;margin:18px auto 0;max-width:16ch}
+  .dl p{color:var(--ink-dim);margin:18px auto 0;max-width:46ch;font-size:17px}
+  .dl .cta-row{justify-content:center}
+  .store{display:inline-flex;align-items:center;gap:11px;border:1px solid var(--line);
+    padding:12px 22px;border-radius:3px;transition:.18s}
+  .store:hover{border-color:var(--ink-dim)}
+  .store .k{font-family:"IBM Plex Mono";font-size:10px;color:var(--ink-faint);
+    letter-spacing:.1em;text-transform:uppercase;display:block}
+  .store .v{font-family:"Saira";font-weight:600;font-size:16px;line-height:1.1}
+
+  /* ---- footer ---- */
+  footer{border-top:1px solid var(--line-2);padding:40px 0;background:var(--void-2)}
+  .foot-in{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+  .foot-in .mono{font-size:12px;color:var(--ink-faint);letter-spacing:.06em}
+  .foot-links{display:flex;gap:22px}
+  .foot-links a{font-size:13px;color:var(--ink-dim)}
+  .foot-links a:hover{color:var(--ink)}
+
+  /* corner registration ticks */
+  .reg{position:fixed;z-index:5;width:16px;height:16px;pointer-events:none;
+    border-color:var(--line);opacity:.7}
+  .reg.tl{top:64px;left:14px;border-left:1px solid;border-top:1px solid}
+  .reg.tr{top:64px;right:14px;border-right:1px solid;border-top:1px solid}
+  @media(max-width:900px){.reg{display:none}}
+
+  /* reveal */
+  .rv{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease}
+  .rv.in{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){
+    .rv{opacity:1;transform:none;transition:none}
+    html{scroll-behavior:auto}
+    .sweep{display:none}
+  }
+</style>
+</head>
+<body>
+<span class="reg tl"></span><span class="reg tr"></span>
+
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top">
+      <svg class="glyph" viewBox="0 0 32 32" fill="none">
+        <rect x="1.5" y="1.5" width="29" height="29" rx="2" stroke="#FF5A24" stroke-width="1.5"/>
+        <path d="M6 22 L13 10 L19 18 L26 8" stroke="#E7EDEC" stroke-width="1.5" fill="none"/>
+        <circle cx="19" cy="18" r="2.4" fill="#FF5A24"/>
+      </svg>
+      TACMAP
+    </a>
+    <nav class="nav-links">
+      <a href="#compare">vs TAK</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#verify">Security</a>
+      <a href="#faq">FAQ</a>
+      <a class="nav-cta" href="#get">GET TACMAP</a>
+    </nav>
+  </div>
+</header>
+
+<a id="top"></a>
+<div class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div class="rv in">
+        <span class="eyebrow">Offline-first · Encrypted · iOS + Android</span>
+        <h1>One map.<br>Your whole team.<br><em>No signal required.</em></h1>
+        <p class="lead">TacMap keeps everyone on the same map when you are off the
+          grid. End-to-end encrypted presence, offline charts, and a two-minute
+          setup. No server. No account.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#get">Get TacMap →</a>
+          <a class="btn btn-ghost" href="#verify">Read the threat model</a>
+        </div>
+        <div class="hero-meta">
+          <b>What the relay can read:</b> nothing. Positions and callsigns are
+          sealed before they leave your device.
+        </div>
+      </div>
+
+      <div class="chart rv in" aria-hidden="true">
+        <svg viewBox="0 0 400 352" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <pattern id="g" width="32" height="32" patternUnits="userSpaceOnUse">
+              <path d="M32 0H0V32" fill="none" stroke="#22333d" stroke-width="1"/>
+            </pattern>
+          </defs>
+          <rect width="400" height="352" fill="url(#g)"/>
+          <!-- contour lines -->
+          <g fill="none" stroke="#2c4650" stroke-width="1.3" opacity=".9">
+            <path d="M-20 120 C 70 60, 150 150, 230 90 S 380 60, 440 130"/>
+            <path d="M-20 160 C 80 110, 160 190, 240 130 S 380 110, 440 170"/>
+            <path d="M-20 205 C 90 165, 170 235, 250 180 S 380 170, 440 220"/>
+            <path d="M-20 255 C 90 220, 180 285, 260 235 S 380 230, 440 270"/>
+          </g>
+          <!-- route -->
+          <path d="M70 275 L145 205 L215 232 L300 150" fill="none"
+            stroke="#FF5A24" stroke-width="2.2" stroke-dasharray="2 6"
+            stroke-linecap="round"/>
+          <!-- friendly markers -->
+          <g>
+            <circle cx="70" cy="275" r="6" fill="#4FB0C6"/>
+            <circle cx="70" cy="275" r="12" fill="none" stroke="#4FB0C6" stroke-width="1" opacity=".5"/>
+            <rect x="209" y="226" width="12" height="12" fill="#4FB0C6" transform="rotate(45 215 232)"/>
+            <path d="M300 142 l7 12 h-14 z" fill="#FF5A24"/>
+          </g>
+          <text x="306" y="140" font-family="IBM Plex Mono" font-size="9" fill="#8DA2AA">OBJ</text>
+        </svg>
+        <span class="tag">Chart · illustrative</span>
+        <span class="readout">GRID <b>34T DP 4521 8763</b> · 3 UP · LINK SEALED</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="strip">
+  <div class="strip-in">
+    <span>No telemetry</span>
+    <span>No ads</span>
+    <span>No account</span>
+    <span>E2E encrypted</span>
+    <span>Open source</span>
+    <span>Self-hostable</span>
+  </div>
+</div>
+
+<!-- COMPARE -->
+<a id="compare"></a>
+<section class="blk">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 01</b> Compare</div>
+    <h2>You know ATAK. You know it is a lot to run.</h2>
+    <p class="sub">TAK is powerful and free, and it expects a server, a learning
+      curve, and a platform choice. TacMap is the shared map you can hand to a
+      whole team in two minutes.</p>
+
+    <div class="cmp">
+      <table>
+        <thead>
+          <tr><th></th><th class="us">TacMap</th><th>Typical TAK setup</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Platforms</td><td class="us">iOS and Android, one app</td><td>ATAK / iTAK / WinTAK, varying parity</td></tr>
+          <tr><td>Multi-user setup</td><td class="us">Share a join code</td><td>Often a TAK Server to run and secure</td></tr>
+          <tr><td>Account</td><td class="us">None</td><td>Depends on deployment</td></tr>
+          <tr><td>Presence encryption</td><td class="us">End-to-end, relay sees ciphertext</td><td>Depends on server / config</td></tr>
+          <tr><td>Time to first shared map</td><td class="us">Minutes</td><td>Setup and a real learning curve</td></tr>
+          <tr><td>Offline maps</td><td class="us">Default</td><td>Supported, more setup</td></tr>
+          <tr><td>Auditable</td><td class="us">Open source + published threat model</td><td>Open core</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cmp-note">TAK is the more powerful platform, and it is fair to say
+      so. TacMap wins on time to first shared map, cross-platform parity, and a
+      security story a non-specialist can verify for themselves.</p>
+  </div>
+</section>
+
+<!-- CAPABILITIES -->
+<a id="capabilities"></a>
+<section class="blk" style="padding-top:0">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 02</b> Capabilities</div>
+    <h2>Built to work when the network does not.</h2>
+    <div class="feats">
+      <div class="feat">
+        <div class="fnum">C-01</div>
+        <h3>Offline by default</h3>
+        <p>MGRS grid, military symbology, measurement, and imported maps. TacMap
+          makes zero tile requests until you explicitly turn on an online map.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-02</div>
+        <h3>Encrypted team presence</h3>
+        <p>See each other move in real time. Positions, callsigns, and markers are
+          sealed on-device. The relay routes ciphertext and cannot read any of it.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-03</div>
+        <h3>Nothing phones home</h3>
+        <p>No analytics, no ad SDKs, no crash telemetry. Crash logs are written to
+          your device and shared only if you choose to.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-04</div>
+        <h3>Two minutes, any team</h3>
+        <p>Share a join code and you are synced. No account, no server to stand up.
+          Run your own relay if you want to own the entire path.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHO -->
+<a id="who"></a>
+<section class="blk" style="padding-top:0">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 03</b> Built for</div>
+    <h2>Teams that move together where there is no signal.</h2>
+    <div class="who">
+      <div class="who-card">
+        <span class="tag">Field</span>
+        <h3>Milsim &amp; airsoft</h3>
+        <p>Run a real shared map for your whole element, fully offline.</p>
+      </div>
+      <div class="who-card">
+        <span class="tag">Response</span>
+        <h3>Search &amp; rescue</h3>
+        <p>Keep the team on one map in the valley where nothing else works.</p>
+      </div>
+      <div class="who-card">
+        <span class="tag">Ready</span>
+        <h3>Preparedness</h3>
+        <p>Your map, your team, no account and nothing leaving your devices.</p>
+      </div>
+      <div class="who-card">
+        <span class="tag">Pro</span>
+        <h3>Small units</h3>
+        <p>Shared situational awareness without standing up a server.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VERIFY -->
+<a id="verify"></a>
+<section class="blk verify">
+  <div class="wrap rv">
+    <div class="vgrid">
+      <div>
+        <div class="gridref"><b>REF 04</b> Verify</div>
+        <h2>Don't take our word for it. Read it.</h2>
+        <p class="sub">The whole security story is documented and open. The sync
+          layer is end-to-end encrypted, the relay only ever handles sealed blobs
+          and routing metadata, and the crypto ships with a test suite. If you can
+          read code, you can check every claim on this page.</p>
+      </div>
+      <div class="vlinks">
+        <a class="vlink" href="/threat-model">
+          <span><span class="vt">Threat model</span><span class="vd">What each party can and cannot see, in plain language.</span></span>
+          <span class="arrow">→</span>
+        </a>
+        <a class="vlink" href="https://github.com/JediBrooker/TacMap">
+          <span><span class="vt">Source on GitHub</span><span class="vd">The full app, open for audit.</span></span>
+          <span class="arrow">→</span>
+        </a>
+        <a class="vlink" href="/threat-model#relay">
+          <span><span class="vt">How sync encryption works</span><span class="vd">Key derivation, sealing, and what the relay handles.</span></span>
+          <span class="arrow">→</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<a id="faq"></a>
+<section class="blk">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 05</b> FAQ</div>
+    <h2>Straight answers.</h2>
+    <div class="faq">
+      <div class="qa"><div class="q">Do I need a server?</div>
+        <div class="a">No. Share a join code and your team is synced through an
+          encrypted relay. You can also self-host the relay if you want to own the
+          entire path.</div></div>
+      <div class="qa"><div class="q">What can the sync relay see?</div>
+        <div class="a">Ciphertext and routing metadata only. It never sees
+          positions, callsigns, or unit identity, because everything is sealed on
+          your device before it is sent. Details are in the
+          <a href="#verify">threat model</a>.</div></div>
+      <div class="qa"><div class="q">Is my data encrypted?</div>
+        <div class="a">Presence and sync are end-to-end encrypted in transit. On
+          your device, data stays in app-private storage protected by your device
+          lock. Nothing is uploaded to a cloud account.</div></div>
+      <div class="qa"><div class="q">Which platforms?</div>
+        <div class="a">iOS and Android, from one codebase, with matching behaviour
+          on both.</div></div>
+      <div class="qa"><div class="q">Is it really private?</div>
+        <div class="a">No analytics, no ad networks, no crash telemetry, no
+          account. The repo is open so you can confirm exactly what it does and
+          does not send.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOAD -->
+<a id="get"></a>
+<section class="dl">
+  <div class="wrap rv">
+    <span class="eyebrow" style="justify-content:center;display:flex">Free to try</span>
+    <h2>Get your team on one map.</h2>
+    <p>Download TacMap, share a join code, and you are moving as one. Offline,
+      encrypted, no account.</p>
+    <div class="cta-row">
+      <a class="store" href="https://apps.apple.com/au/app/tacmap/id6773175573"><span><span class="k">Download on the</span><span class="v">App Store</span></span></a>
+      <a class="store" href="https://play.google.com/store/apps/details?id=com.tacmap"><span><span class="k">Get it on</span><span class="v">Google Play</span></span></a>
+      <a class="btn btn-ghost" href="https://github.com/JediBrooker/TacMap">View source</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-in">
+    <span class="mono">TACMAP · 34T DP 4521 8763 · OFFLINE-FIRST</span>
+    <div class="foot-links">
+      <a href="#compare">vs TAK</a>
+      <a href="#verify">Security</a>
+      <a href="https://github.com/JediBrooker/TacMap">GitHub</a>
+      <a href="#faq">FAQ</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // scroll reveal
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
+  },{threshold:.12});
+  document.querySelectorAll(".rv").forEach(function(el){ io.observe(el); });
+
+  // rotate the hero grid readout for a live-instrument feel
+  var ro=document.querySelector(".chart .readout");
+  if(ro && !window.matchMedia("(prefers-reduced-motion:reduce)").matches){
+    var eastings=[4521,4530,4547,4562,4558,4544];
+    var i=0;
+    setInterval(function(){
+      i=(i+1)%eastings.length;
+      ro.innerHTML='GRID <b>34T DP '+eastings[i]+' 87'+(60+i*3)+'</b> · 3 UP · LINK SEALED';
+    },2600);
+  }
+</script>
+</body>
+</html>
