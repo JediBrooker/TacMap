@@ -118,24 +118,29 @@ request until you opt in.
 
 | Endpoint | Purpose | Triggered by | What the provider learns | Default | Mitigation |
 |---|---|---|---|---|---|
-| Google Maps SDK tiles (Android) | Default online basemap tiles | Viewing the map with online basemaps enabled | Your IP + the coordinates/zoom you view = your area of interest, over time | **Off** (online basemaps gate). Measured: no tile fetch while off, see §6 | Leave the gate off; use offline packs, see §6 |
-| Google Maps SDK provisioning (Android) | SDK config / telemetry check-in | Launching the app with the Google map view mounted, **regardless of the basemap gate** | Your IP + that a Google-Maps app launched. **Not** the coordinates you view | On (can't be disabled while the SDK is linked). See §6 | Removed once the app moves off the Google Maps SDK [PLANNED] |
-| Apple Maps via the `geod` daemon (iOS) | Default online basemap tiles | **Having the map on screen at all** | Your IP + the coordinates/zoom you view = your area of interest, over time | **Cannot be turned off from inside the app.** See §6 | Airplane mode, or a network you control |
-| `server.arcgisonline.com` (Esri World Imagery) | Optional satellite raster basemap | Selecting the Esri imagery layer with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Pre-cache / offline packs |
-| `tile.opentopomap.org` | Optional topographic raster basemap | Selecting the OpenTopoMap layer with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Pre-cache / offline packs |
+| `ibasemaps-api.arcgis.com` (Esri World Imagery) | Satellite basemap tiles (the default style) | Viewing the map with online basemaps enabled | Your IP + the tile coordinates/zoom you view = your area of interest, over time | **Off** (online basemaps gate) | Leave the gate off; use offline packs, see §6 |
+| `static-map-tiles-api.arcgis.com` (Esri) | Topographic + OSM-street basemap tiles (licensed) | Selecting those styles with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Leave the gate off; use offline packs |
+| `a.tile.opentopomap.org` | OpenTopoMap community topo tiles (the one keyless style) | Selecting the OSM-Topo style with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Leave the gate off; use offline packs |
+| Google Maps SDK provisioning (**Android only**) | SDK config / telemetry check-in | Launching the app while the Google map view is still the host on Android, **regardless of the basemap gate** | Your IP + that a Google-Maps app launched. **Not** the coordinates you view | On on Android (can't be disabled while the SDK is linked); **absent on iOS** | iOS is already off the SDK. Removed on Android once its renderer lands [PLANNED]. See §6 |
 | `api.open-meteo.com/v1/forecast` | Weather lookup | Opening the weather dialog | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
 | `api.open-meteo.com/v1/elevation` | Elevation + terrain heatmap | Elevation/terrain features | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
 | Sync relay (default: `tacmap-sync.<...>.workers.dev`) | Encrypted unit sync transport | Joining a sync room | Ciphertext + routing ID + your IP + traffic timing (see §4) | Off until you join a room | Self-host the relay; see §8 |
 | `play.google.com/redeem` / `apps.apple.com/redeem` | Voucher / licence redemption | You tapping "redeem" | Standard store request; no map or unit data | User-initiated only | n/a |
 
+The three basemap rows apply to **both platforms** — iOS and Android draw the
+same Esri/OSM raster tiles, gated off by default. There is **no Apple-Maps row
+any more**: iOS renders the map itself now (§6), so Apple's `geod` daemon is
+never invoked and fetches nothing (measured zero, §6).
+
 **Read this table as the whole story.** If an endpoint is not listed here, the
 app does not contact it. *We* add no analytics SDK, no crash telemetry, no ad
 network; our own crash reports are written to local storage only and shared by
-you manually. The one piece of third-party telemetry is the Google Maps SDK
-provisioning check-in on Android (row 2), which is Google's, not ours, and which
-we cannot disable while their SDK is linked. It is auditable only in the sense
-that you can see it in a packet capture, not in our source, because it isn't in
-our source - which is itself a reason the app is moving off that SDK [PLANNED].
+you manually. The one remaining piece of third-party telemetry is the Google
+Maps SDK provisioning check-in **on Android only**, which is Google's, not ours,
+and which we cannot disable while their SDK is linked. iOS no longer links any
+map SDK. That row is auditable only in the sense that you can see it in a packet
+capture, not in our source, because it isn't in our source - which is itself the
+reason Android is following iOS off that SDK [PLANNED].
 
 ---
 
@@ -164,66 +169,78 @@ TacMap's controls:
 
 ### The two platforms, measured
 
-On **Android the tile gate is complete, and this is measured.** With online
-basemaps off the map uses `MapType.NONE`, which fetches no basemap tiles. On a
-Pixel emulator (API 36), 45 seconds on the map from a fresh launch used:
+Both platforms draw the same Esri/OSM raster tiles and gate them off by default.
+The difference is the map engine underneath, and that difference is measured on
+each. **iOS is now fully closed** (in-app renderer, no Apple `geod`, zero Apple
+egress — see "The iOS side, now closed" below). **Android's tile gate is complete
+but its Google map host still phones home on launch** — detail here:
+
+On Android, with online basemaps off the Google map host uses `MapType.NONE`,
+which fetches no basemap tiles (the Esri/OSM raster overlay is simply not built).
+On a Pixel emulator (API 36), 45 seconds on the map from a fresh launch used:
 
 | Basemap gate | App network |
 |---|---|
-| Off (`MapType.NONE`) | ~280 KB cold / ~24 KB warm, then **0** at idle |
-| On (Google satellite) | ~1.6 MB (the ~1.3 MB difference is tiles) |
+| Off (`MapType.NONE`, no raster overlay) | ~280 KB cold / ~24 KB warm, then **0** at idle |
+| On (Esri/OSM raster overlay) | ~1.6 MB (the ~1.3 MB difference is tiles) |
 
 So enabling the basemap adds ~1.3 MB of tiles; with the gate off that traffic
 simply does not happen, and a stationary map settles to zero.
 
-The honest caveat: **off is not silent.** That ~280 KB (cold) / ~24 KB (warm) is
-the Google Maps SDK itself phoning home on launch for provisioning and telemetry
-- it happens whenever the Google map view is mounted, whatever the gate says. It
-carries your IP and the fact that a Google-Maps app started. It does **not**
-carry the coordinates you are looking at (that's what the tile gate stops). The
-only way to remove it is to stop linking Google's SDK, which is the same
-direction the iOS renderer work points. Until then, for a fully dark launch on
-Android too, use airplane mode.
+The honest caveat: **off is not silent on Android.** That ~280 KB (cold) / ~24 KB
+(warm) is the Google Maps SDK itself phoning home on launch for provisioning and
+telemetry - it happens whenever the Google map view is mounted, whatever the gate
+says. It carries your IP and the fact that a Google-Maps app started. It does
+**not** carry the coordinates you are looking at (that's what the tile gate
+stops). The only way to remove it is to stop linking Google's SDK. iOS has now
+done exactly that (below); Android is following, porting the same in-app renderer
+to drop the SDK [PLANNED]. Until that lands, for a fully dark launch on Android,
+use airplane mode.
 
-### The iOS side, stated plainly
+### The iOS side, now closed
 
-On **iOS the tile gate is not complete, and we cannot make it so.** MapKit has no
-"no basemap" mode. The only way to suppress Apple's basemap is to cover it with
-an overlay that declares `canReplaceMapContent`. That stops MapKit *drawing* the
-basemap. It does **not** stop it *fetching* the basemap. Apple's tiles are
-downloaded by `geod`, a system daemon outside our sandbox, and it keeps fetching
-tiles for the region on screen regardless of what we draw on top.
-The only way to suppress Apple's basemap is to cover it with an overlay that
-declares `canReplaceMapContent`. That stops MapKit *drawing* the basemap. It
-does **not** stop it *fetching* the basemap. Apple's tiles are downloaded by
-`geod`, a system daemon outside our sandbox, and it keeps fetching tiles for the
-region on screen regardless of what we draw on top.
+For most of this app's life, iOS had a hole here we could not close from inside
+MapKit. MapKit has no "no basemap" mode; the only way to suppress Apple's basemap
+was to cover it with a `canReplaceMapContent` overlay, which stops MapKit
+*drawing* the basemap but not *fetching* it. Apple's tiles are pulled by `geod`,
+a system daemon outside our sandbox, which kept fetching tiles for the on-screen
+region no matter what we drew on top. Measured on a freshly erased iPhone 17 Pro
+simulator, sitting on the map for 35 seconds grew geod's tile store
+(`Caches/com.apple.geod/Vault/MapTiles`) by ~457 KB whether the basemap toggle
+was on or off — the same tiles either way.
 
-This is measured, not assumed. On a freshly erased iPhone 17 Pro simulator, with
-an identical no-app baseline, sitting on the map for 35 seconds grew geod's tile
-store (`Caches/com.apple.geod/Vault/MapTiles`) by:
+**As of build 33 this is fixed.** iOS no longer uses MKMapView at all. The map is
+rendered by an in-app tile renderer we wrote (`TileMapView`), which draws only the
+raster source you chose — an Esri/OSM online style when the basemap gate is on, an
+offline pack/GeoPDF when you've imported one, or nothing when both are off. There
+is no MapKit view in the tree, so `geod` is never asked for a tile.
 
-| Online basemaps | Tile-store growth |
+This is measured, the same WAL way. After checkpointing geod's `MapTiles.sqlitedb-wal`
+to zero and then panning the renderer aggressively across fresh ground:
+
+| Map engine | geod tile-store growth while panning |
 |---|---|
-| Off | 457,320 bytes |
-| On | 453,200 bytes |
+| Old MKMapView | ~457 KB (fetched regardless of the gate) |
+| New in-app renderer | **0 bytes** |
 
-The same tiles, either way. So on iOS the toggle buys you two real things, and
-you should know exactly which two: **no basemap imagery on screen** (what a
-shoulder-surfer, a screenshot, or the app-switcher thumbnail sees), and **no
-Esri/OpenTopoMap request**. It does not buy you zero egress to Apple.
+During that pan the app fetched tiles the whole time — every request went to
+`ibasemaps-api.arcgis.com` (the Esri basemap you turned on), with **zero contact
+to any Apple map host** (`*.ls.apple.com`, `gspe*`, `cdn.apple-mapkit`). So on
+iOS the AO no longer leaks to Apple at all. What the online-basemaps gate now buys
+you is the ordinary thing it says: with it off, the app makes no basemap tile
+request of any kind, and an imported offline pack or GeoPDF genuinely hides your
+AO — there is no Apple fetch underneath it any more.
 
-By the same mechanism, an imported **offline pack or GeoPDF on iOS does not stop
-Apple's basemap loading underneath it** — the offline tiles are drawn with the
-same `canReplaceMapContent` overlay. Pre-staging maps protects you from Esri and
-OpenTopoMap. It does not hide your AO from Apple.
-
-If your AO must not reach Apple, put the device in **airplane mode** or on a
-network you control. Closing this properly means replacing MKMapView with a
-renderer we own, which is not done. Android users are not affected.
+The remaining ambient exposure is symmetric across the two providers you can
+still choose to use: turning the basemap gate **on** sends your tile coordinates
+to Esri/OpenTopoMap (your choice, with a persistent red banner while it's active),
+and on **Android only** the Google Maps SDK still phones home ~280 KB on launch
+until its renderer lands (above). iOS has no such SDK left.
 
 Rule of thumb: **if you can see the internet, the internet can see your AO.**
-Pre-stage offline maps before you need them, and on iOS, kill the radio.
+Pre-stage offline maps before you need them; the gate and the in-app renderer now
+make "offline pack loaded, radio on, nothing leaks" true on iOS, and on Android
+for tiles (the SDK launch check-in aside).
 
 ---
 
@@ -236,9 +253,12 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   tempo are inferable at the relay. Self-hosting moves this trust to you but does
   not remove it. A LAN/mesh transport removes the internet vector entirely
   [PLANNED].
-- **Area-of-interest leakage on iOS.** See §6. Apple's basemap is fetched by a
-  system daemon whenever the map is on screen, and the app cannot prevent it.
-  This holds even with an offline pack loaded.
+- **Area-of-interest leakage via online basemaps/lookups.** See §6. If you turn
+  the online-basemaps or online-lookups gate on, the tile/query coordinates go to
+  the provider (Esri/OpenTopoMap/Open-Meteo) from your IP. That is inherent to
+  using an online map and is off by default. (iOS no longer leaks to Apple's
+  `geod` at all, and on Android the Google SDK launch check-in carries no
+  coordinates — both covered in §6.)
 - **Device compromise or capture.** Mission data (waypoints, drawings, track
   logs, PDF calibration) is **encrypted at rest** with AES-256-GCM. The key never
   exists in plaintext on disk: on Android it is wrapped by a non-exportable
