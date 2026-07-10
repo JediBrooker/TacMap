@@ -99,11 +99,15 @@ fun LayersSheet(
                 selected = activeBaseMap == BaseMap.SATELLITE && !importedMapActive,
                 onClick = { onSelectBaseMap(BaseMap.SATELLITE) }
             )
-            BasemapRow(
-                label = "Satellite (Esri)",
-                selected = activeBaseMap == BaseMap.ESRI_SATELLITE && !importedMapActive,
-                onClick = { onSelectBaseMap(BaseMap.ESRI_SATELLITE) }
-            )
+            // Esri needs an ArcGIS key baked in at build time. No key -> no row,
+            // rather than offer a basemap that would just render blank.
+            if (com.tacmap.calibration.EsriKey.isAvailable) {
+                BasemapRow(
+                    label = "Satellite (Esri)",
+                    selected = activeBaseMap == BaseMap.ESRI_SATELLITE && !importedMapActive,
+                    onClick = { onSelectBaseMap(BaseMap.ESRI_SATELLITE) }
+                )
+            }
             BasemapRow(
                 label = "Terrain (OpenTopoMap)",
                 selected = activeBaseMap == BaseMap.TERRAIN && !importedMapActive,

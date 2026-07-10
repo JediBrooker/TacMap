@@ -23,12 +23,26 @@ sealed interface MapSource {
 
 enum class MapSourceKind { SATELLITE, ONLINE_RASTER, GEO_PDF, CALIBRATED_PDF, OFFLINE_TILES }
 
-/** Online raster basemap styles (no API key). Mirrors iOS BasemapStyle. */
-enum class BasemapStyle(val displayName: String, val urlTemplate: String, val maxZoom: Int) {
+/**
+ * Online raster basemap styles. Mirrors iOS BasemapStyle.
+ *
+ * Esri now points at the keyed ibasemaps World Imagery endpoint - the same
+ * raster source Esri's own current Basemap Styles service composes - instead of
+ * the old unauthenticated server.arcgisonline.com URL, which their terms only
+ * allow for noncommercial use. [requiresEsriKey] styles get `?token=` appended
+ * by RasterTileProvider and are unavailable when no key is configured.
+ */
+enum class BasemapStyle(
+    val displayName: String,
+    val urlTemplate: String,
+    val maxZoom: Int,
+    val requiresEsriKey: Boolean = false
+) {
     ESRI_SATELLITE(
         "Satellite (Esri)",
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        19
+        "https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        19,
+        requiresEsriKey = true
     ),
     TERRAIN(
         "Terrain (OpenTopoMap)",

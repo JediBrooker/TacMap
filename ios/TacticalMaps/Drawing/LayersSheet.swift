@@ -203,10 +203,14 @@ struct LayersSheet: View {
                        isActive: mapVM.mapSource is AppleSatelliteMapSource) {
                 mapVM.mapSource = AppleSatelliteMapSource()
             }
-            basemapRow(title: "Satellite (Esri)",
-                       systemImage: "globe.badge.chevron.backward",
-                       isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .esriSatellite) {
-                mapVM.mapSource = OnlineRasterBasemapSource(.esriSatellite)
+            // Esri needs an ArcGIS key baked in at build time. No key -> no row,
+            // rather than offer a basemap that would just render blank.
+            if EsriKey.isAvailable {
+                basemapRow(title: "Satellite (Esri)",
+                           systemImage: "globe.badge.chevron.backward",
+                           isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == .esriSatellite) {
+                    mapVM.mapSource = OnlineRasterBasemapSource(.esriSatellite)
+                }
             }
             basemapRow(title: "Terrain (OpenTopoMap)",
                        systemImage: "mountain.2.fill",

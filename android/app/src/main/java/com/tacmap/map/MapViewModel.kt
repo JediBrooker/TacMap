@@ -76,7 +76,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private var preferredBaseMap = BaseMap.SATELLITE
     private fun baseMapSource(choice: BaseMap): MapSource = when (choice) {
         BaseMap.SATELLITE -> SatelliteMapSourceAndroid()
-        BaseMap.ESRI_SATELLITE -> OnlineRasterMapSourceAndroid(BasemapStyle.ESRI_SATELLITE)
+        // Esri with no key would render blank, so fall back to Google satellite.
+        BaseMap.ESRI_SATELLITE ->
+            if (com.tacmap.calibration.EsriKey.isAvailable)
+                OnlineRasterMapSourceAndroid(BasemapStyle.ESRI_SATELLITE)
+            else SatelliteMapSourceAndroid()
         BaseMap.TERRAIN -> OnlineRasterMapSourceAndroid(BasemapStyle.TERRAIN)
     }
     private fun onlineBasemap(): MapSource = baseMapSource(preferredBaseMap)
