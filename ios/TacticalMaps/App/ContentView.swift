@@ -116,14 +116,14 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                MapContainerView(
+                TileMapContainer(
                     mapVM: mapVM,
-                    locationService: locationService,
                     waypointStore: waypointStore,
                     drawingStore: drawingStore,
                     drawingSession: drawingSession,
                     measureSession: measureSession,
                     visibility: visibility,
+                    locationService: locationService,
                     calibration: calibration,
                     graphicsLocked: graphicsLocked,
                     peers: syncManager.peers

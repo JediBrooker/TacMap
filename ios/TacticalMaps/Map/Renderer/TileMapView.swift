@@ -110,11 +110,21 @@ final class TileMapView: UIView {
 
     // MARK: gestures
 
+    /// The browse recognisers (pan/pinch/rotate). The editing layer flips these
+    /// off while dragging a shape or vertex so the basemap doesn't slide under
+    /// the finger - the MapKit path did this via `isScrollEnabled = false`.
+    private(set) var browseGestures: [UIGestureRecognizer] = []
+
+    func setBrowseGesturesEnabled(_ enabled: Bool) {
+        browseGestures.forEach { $0.isEnabled = enabled }
+    }
+
     private func installGestures() {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
         let rotate = UIRotationGestureRecognizer(target: self, action: #selector(handleRotate))
         [pan, pinch, rotate].forEach { $0.delegate = self; addGestureRecognizer($0) }
+        browseGestures = [pan, pinch, rotate]
     }
 
     // Gestures apply their INCREMENTAL delta each callback and reset it to zero.

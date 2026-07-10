@@ -41,7 +41,9 @@ struct TileMapContainer: UIViewRepresentable {
     @ObservedObject var measureSession: MeasureSession
     @ObservedObject var visibility: LayerVisibility
     @ObservedObject var locationService: LocationService
+    @ObservedObject var calibration: CalibrationSession
     @ObservedObject var opsec = OpsecSettings.shared
+    var graphicsLocked: Bool = false
     var peers: [String: PresencePeer] = [:]
 
     func makeUIView(context: Context) -> TileMapView {
@@ -57,6 +59,10 @@ struct TileMapContainer: UIViewRepresentable {
         }
         view.onGestureBegan = { [weak mapVM] in mapVM?.isBrowsing = true }
         context.coordinator.attach(view: view, mapVM: mapVM)
+        context.coordinator.wireEditing(
+            mapVM: mapVM, waypointStore: waypointStore, drawingStore: drawingStore,
+            drawingSession: drawingSession, measureSession: measureSession,
+            calibration: calibration)
         return view
     }
 
@@ -76,7 +82,14 @@ struct TileMapContainer: UIViewRepresentable {
                 session: drawingSession,
                 measure: measureSession),
             gridVisible: visibility.mgrsGridVisible,
-            peers: peers)
+            peers: peers,
+            decorations: Coordinator.buildDecorations(
+                drawingStore: drawingStore, drawingSession: drawingSession,
+                measureSession: measureSession, visibility: visibility),
+            handles: Coordinator.buildEditHandles(
+                selectedID: mapVM.selectedDrawingID, drawingStore: drawingStore),
+            graphicsLocked: graphicsLocked)
+        context.coordinator.syncCalibrationMarkers(calibration)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -107,6 +120,12 @@ struct TileMapContainer: UIViewRepresentable {
         /// Sync presence peers, on top of everything.
         private var presenceView: PresenceOverlayView?
 
+        /// Drawing decorations (tap dots, name pills, point pins) + interactive
+        /// vertex-edit handles + the gesture layer that drives editing.
+        private var decorationsView: DrawingDecorationsOverlayView?
+        private var handlesView: VertexHandlesOverlayView?
+        let editing = MapEditingController()
+
         func attach(view: TileMapView, mapVM: MapViewModel) {
             self.view = view
             self.mapVM = mapVM
@@ -116,24 +135,59 @@ struct TileMapContainer: UIViewRepresentable {
             }
 
             // Host the vector renderers as subviews, projected via the live
-            // camera. Grid below drawings. Taps fall through to the tile view.
+            // camera. Bottom-to-top: grid, drawings, decorations, edit handles,
+            // presence. Taps fall through to the tile view / editing layer.
             let project: (CLLocationCoordinate2D) -> CGPoint = { [weak view] coord in
                 view?.camera.screenPoint(for: coord) ?? .zero
             }
             let grid = MGRSGridOverlayView()
             let drawings = DrawingsOverlayView()
+            let decorations = DrawingDecorationsOverlayView()
+            let handles = VertexHandlesOverlayView()
             let presence = PresenceOverlayView()
-            for v in [grid, drawings, presence] as [UIView] {
+            for v in [grid, drawings, decorations, handles, presence] as [UIView] {
                 v.frame = view.bounds
                 v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 view.addSubview(v)
             }
             grid.project = project
             drawings.project = project
+            decorations.project = project
+            handles.project = project
             presence.project = project
             gridView = grid
             drawingsView = drawings
+            decorationsView = decorations
+            handlesView = handles
             presenceView = presence
+
+            // The editing gesture layer. Its refs are wired here; per-frame
+            // state (handles, graphicsLocked) is pushed in updateOverlays.
+            editing.handlesView = handles
+            editing.attach(to: view)
+        }
+
+        /// Wire the editing controller's store/session refs + calibration hooks.
+        /// Called from makeUIView after the coordinator is built.
+        func wireEditing(mapVM: MapViewModel, waypointStore: WaypointStore,
+                         drawingStore: DrawingStore, drawingSession: DrawingSessionViewModel,
+                         measureSession: MeasureSession, calibration: CalibrationSession) {
+            editing.mapVM = mapVM
+            editing.waypointStore = waypointStore
+            editing.drawingStore = drawingStore
+            editing.drawingSession = drawingSession
+            editing.measureSession = measureSession
+            editing.calibration = calibration
+            editing.pdfScreenTapToPDFPoint = { [weak self] pt in
+                guard let self, let pdf = self.pdfView, let view = self.view else { return nil }
+                return pdf.pdfPoint(forScreenTap: pt, inView: view)
+            }
+            editing.refreshCalibrationMarkers = { [weak self] in
+                guard let self else { return }
+                self.pdfView?.syncFiduciaryMarkers(
+                    calibration.isCalibrating ? calibration.fiduciaries : [],
+                    pendingPDFPoint: calibration.isCalibrating ? calibration.pendingTap?.pdfPoint : nil)
+            }
         }
 
         /// Redraw overlays after a camera move (positions move; grid re-tessellates
@@ -146,6 +200,8 @@ struct TileMapContainer: UIViewRepresentable {
             drawingsView?.reproject()
             gridView?.reproject()
             presenceView?.reproject()
+            decorationsView?.reproject()
+            handlesView?.reproject()
             refreshGrid()
         }
 
@@ -181,16 +237,94 @@ struct TileMapContainer: UIViewRepresentable {
             pdfView = pv
         }
 
+        /// Forward fiduciary markers into the PDF overlay (no-op when there's
+        /// no PDF or calibration is off) - matches the MKMapView coordinator.
+        func syncCalibrationMarkers(_ calibration: CalibrationSession) {
+            guard let pdfView else { return }
+            if calibration.isCalibrating {
+                pdfView.syncFiduciaryMarkers(calibration.fiduciaries,
+                                             pendingPDFPoint: calibration.pendingTap?.pdfPoint)
+            } else {
+                pdfView.syncFiduciaryMarkers([], pendingPDFPoint: nil)
+            }
+        }
+
         /// Push new overlay geometry (drawings changed / selection changed).
         func updateOverlays(drawings: [PDFVectorShape], gridVisible: Bool,
-                            peers: [String: PresencePeer]) {
+                            peers: [String: PresencePeer],
+                            decorations: DrawingDecorationsOverlayView.Model,
+                            handles: [EditHandle], graphicsLocked: Bool) {
             drawingsView?.update(shapes: drawings)
             presenceView?.update(peers: peers)
+            decorationsView?.update(model: decorations)
+            handlesView?.update(handles: handles)
+            editing.handles = handles
+            editing.graphicsLocked = graphicsLocked
             if gridVisible != self.gridVisible {
                 self.gridVisible = gridVisible
                 if !gridVisible { gridView?.clear(); lastGridFingerprint = "" }
                 else { refreshGrid() }
             }
+        }
+
+        // MARK: - Model builders (drawing decorations + vertex-edit handles)
+
+        static let measureDotHex = "#FFA62E"
+
+        static func buildDecorations(drawingStore: DrawingStore,
+                                     drawingSession: DrawingSessionViewModel,
+                                     measureSession: MeasureSession,
+                                     visibility: LayerVisibility)
+            -> DrawingDecorationsOverlayView.Model {
+            var m = DrawingDecorationsOverlayView.Model()
+            // Tap dots while drawing / measuring.
+            if drawingSession.isDrawing {
+                for c in drawingSession.inProgressCoordinates {
+                    m.dots.append(.init(lat: c.latitude, lon: c.longitude,
+                                        colorHex: drawingSession.strokeColorHex))
+                }
+            }
+            if measureSession.isActive {
+                for c in measureSession.points {
+                    m.dots.append(.init(lat: c.latitude, lon: c.longitude, colorHex: measureDotHex))
+                }
+            }
+            // Point pins + name pills for finished shapes.
+            guard visibility.drawingsVisible else { return m }
+            let labelsOn = visibility.drawingLabelsVisible
+            for shape in drawingStore.visibleShapes {
+                if shape.kind == .point, let c = shape.clEffectiveCoordinates.first {
+                    m.pins.append(.init(lat: c.latitude, lon: c.longitude,
+                                        colorHex: shape.style.strokeColorHex))
+                }
+                if labelsOn, let name = shape.name?.trimmingCharacters(in: .whitespaces),
+                   !name.isEmpty, let anchor = shape.labelAnchor {
+                    m.labels.append(.init(lat: anchor.latitude, lon: anchor.longitude, text: name))
+                }
+            }
+            return m
+        }
+
+        static func buildEditHandles(selectedID: UUID?, drawingStore: DrawingStore) -> [EditHandle] {
+            guard let selectedID,
+                  let shape = drawingStore.visibleShapes.first(where: { $0.id == selectedID })
+            else { return [] }
+            let coords = shape.clEffectiveCoordinates
+            let isFreehand = shape.kind == .freedraw || (shape.kind == .polyline && coords.count > 20)
+            guard !isFreehand, shape.kind == .polyline || shape.kind == .polygon else { return [] }
+            var out: [EditHandle] = []
+            for (i, c) in coords.enumerated() {
+                out.append(EditHandle(shapeID: shape.id, vertexIndex: i, isMidpoint: false,
+                                      lat: c.latitude, lon: c.longitude))
+            }
+            let segmentCount = shape.kind == .polygon ? coords.count : coords.count - 1
+            for i in 0 ..< max(segmentCount, 0) {
+                let a = coords[i], b = coords[(i + 1) % coords.count]
+                out.append(EditHandle(shapeID: shape.id, vertexIndex: i + 1, isMidpoint: true,
+                                      lat: (a.latitude + b.latitude) / 2,
+                                      lon: (a.longitude + b.longitude) / 2))
+            }
+            return out
         }
 
         /// Rebuild the MGRS grid for the current visible region, deduped by a

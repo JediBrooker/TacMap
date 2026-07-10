@@ -186,7 +186,13 @@ final class PDFImageOverlayView: UIImageView {
     /// (y-up, origin = bottom-left of pdfRenderRect). nil if tap is outside
     /// the rendered image.
     func pdfPoint(forScreenTap tap: CGPoint, in mapView: MKMapView) -> CGPoint? {
-        let local = self.convert(tap, from: mapView)
+        pdfPoint(forScreenTap: tap, inView: mapView)
+    }
+
+    /// Same, but takes the tap in any host view's coord space (the MapKit-free
+    /// renderer passes its TileMapView here instead of an MKMapView).
+    func pdfPoint(forScreenTap tap: CGPoint, inView host: UIView) -> CGPoint? {
+        let local = self.convert(tap, from: host)
         guard self.bounds.contains(local) else { return nil }
 
         // Image fills bounds (scaleToFill). View-local x/y map linearly to
