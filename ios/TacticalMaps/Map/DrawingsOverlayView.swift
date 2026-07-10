@@ -12,28 +12,37 @@ struct PDFVectorShape {
     let inProgress: Bool
 }
 
-/// Transparent subview that redraws drawing/measure/in-progress shapes
-/// ABOVE the imported PDF image.
+/// Transparent subview that strokes/fills drawing/measure/in-progress shapes in
+/// Core Graphics, projecting each coordinate through a `project` closure. Pure
+/// renderer - no MapKit dependency of its own, so it runs on either the old
+/// MKMapView (PDF path) or the new TileMapView.
 ///
-/// The problem: MKPolyline/MKPolygon overlays render in MapKit's overlay
-/// layer which is BENEATH the PDF UIImageView, so drawings just vanish
-/// under the imported map. This view reprojects coords with
-/// MKMapView.convert every camera change and strokes/fills in CG to
-/// match the overlay renderer. Only used while a PDF is active,
-/// plain-basemap path uses the cheaper MKOverlay renderer.
+/// (Originally added because MKPolyline/MKPolygon overlays render BENEATH the
+/// imported-PDF UIImageView; now it's also the drawings renderer for the
+/// MapKit-free renderer.)
 final class DrawingsOverlayView: UIView {
 
-    private weak var mapView: MKMapView?
+    /// Projects a WGS84 coordinate to a point in THIS view. Set by the host.
+    var project: ((CLLocationCoordinate2D) -> CGPoint)?
     private var shapes: [PDFVectorShape] = []
 
-    init(mapView: MKMapView) {
-        self.mapView = mapView
-        super.init(frame: mapView.bounds)
+    init() {
+        super.init(frame: .zero)
         backgroundColor = .clear
         isOpaque = false
         isUserInteractionEnabled = false   // taps fall through to the map
         autoresizingMask = [.flexibleWidth, .flexibleHeight]
         contentMode = .redraw
+    }
+
+    /// Backward-compatible convenience for the MKMapView PDF path.
+    convenience init(mapView: MKMapView) {
+        self.init()
+        frame = mapView.bounds
+        project = { [weak mapView, weak self] coord in
+            guard let mapView, let self else { return .zero }
+            return mapView.convert(coord, toPointTo: self)
+        }
     }
 
     @available(*, unavailable)
@@ -54,9 +63,9 @@ final class DrawingsOverlayView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
-        guard let mv = mapView else { return }
+        guard let project else { return }
         for shape in shapes where shape.coords.count >= 2 {
-            let pts = shape.coords.map { mv.convert($0, toPointTo: self) }
+            let pts = shape.coords.map(project)
             let path = UIBezierPath()
             path.move(to: pts[0])
             for p in pts.dropFirst() { path.addLine(to: p) }
