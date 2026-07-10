@@ -7,12 +7,12 @@
 <meta name="description" content="TacMap is an offline-first, end-to-end encrypted team map. No server, no account, nothing phoning home. iOS and Android.">
 <link rel="canonical" href="https://tacmap.app/">
 <meta name="theme-color" content="#0E1519">
-<link rel="icon" type="image/png" href="assets/brand/play-icon-512.png">
+<link rel="icon" type="image/png" href="assets/brand/app-icon-512.png">
 <meta property="og:title" content="TacMap — Offline, encrypted team mapping">
 <meta property="og:description" content="One map, your whole team, no signal required. End-to-end encrypted presence, offline charts, two-minute setup. No server, no account. iOS and Android.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tacmap.app/">
-<meta property="og:image" content="https://tacmap.app/assets/brand/play-icon-512.png">
+<meta property="og:image" content="https://tacmap.app/assets/brand/app-icon-512.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -77,8 +77,10 @@
     display:flex;align-items:center;justify-content:space-between;gap:20px}
   .brand{display:flex;align-items:center;gap:11px;font-family:"Saira";font-weight:800;
     font-size:19px;letter-spacing:.02em}
-  /* real app icon, same file as the favicon so it's already in cache */
-  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:4px}
+  /* the ios app icon, same file the favicon points at so its already cached.
+     source png is a bare square because ios masks the corners itself, so we
+     do it here. 22.4% is apple's ratio, near enough at this size. */
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
   .nav-links{display:flex;gap:26px;align-items:center}
   .nav-links a{font-size:14px;color:var(--ink-dim)}
   .nav-links a:hover{color:var(--ink)}
@@ -275,7 +277,7 @@
 <header class="nav">
   <div class="nav-in">
     <a class="brand" href="#top">
-      <img class="glyph" src="assets/brand/play-icon-512.png" width="26" height="26" alt="">
+      <img class="glyph" src="assets/brand/app-icon-512.png" width="26" height="26" alt="">
       TACMAP
     </a>
     <nav class="nav-links">

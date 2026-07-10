@@ -34,7 +34,7 @@ const CSS = `
   .brand{display:flex;align-items:center;gap:11px;font-family:"Saira",sans-serif;
     font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
   .brand:hover{text-decoration:none}
-  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:4px}
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
   .nav-in .back{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink-dim)}
   .nav-in .back:hover{color:var(--ink);text-decoration:none}
 
@@ -115,7 +115,7 @@ const html = `<!DOCTYPE html>
 <meta name="description" content="What TacMap exposes, to whom, and where its guarantees stop. Written for users, unit security staff, and code auditors.">
 <link rel="canonical" href="https://tacmap.app/threat-model">
 <meta name="theme-color" content="#0E1519">
-<link rel="icon" type="image/png" href="assets/brand/play-icon-512.png">
+<link rel="icon" type="image/png" href="assets/brand/app-icon-512.png">
 <meta property="og:title" content="TacMap threat model">
 <meta property="og:description" content="What TacMap exposes, to whom, and where its guarantees stop.">
 <meta property="og:type" content="article">
@@ -129,7 +129,7 @@ const html = `<!DOCTYPE html>
 <header class="nav">
   <div class="nav-in">
     <a class="brand" href="/">
-      <img class="glyph" src="assets/brand/play-icon-512.png" width="26" height="26" alt="">
+      <img class="glyph" src="assets/brand/app-icon-512.png" width="26" height="26" alt="">
       TACMAP
     </a>
     <a class="back" href="/">← Back to site</a>
