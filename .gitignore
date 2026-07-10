@@ -32,6 +32,8 @@ android/keystore/
 **/google-services.json
 **/*.api-key
 **/maps.key
+# iOS Esri key. The .example template IS committed; the real one is not.
+ios/Secrets.xcconfig
 
 # Sample / test PDFs — fetched on demand via scripts/fetch_samples.sh
 samples/*.pdf

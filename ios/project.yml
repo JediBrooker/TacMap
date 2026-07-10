@@ -17,6 +17,12 @@ targets:
   TacticalMaps:
     type: application
     platform: iOS
+    # Esri API key comes in via a gitignored xcconfig. Both configs point at
+    # the same file. scripts/bootstrap_ios_secrets.sh creates it (empty locally,
+    # real value from ESRI_API_KEY in CI) before xcodegen runs.
+    configFiles:
+      Debug: Secrets.xcconfig
+      Release: Secrets.xcconfig
     sources:
       - path: TacticalMaps
         excludes:
@@ -30,6 +36,13 @@ targets:
         CFBundleDisplayName: TacMap
         CFBundleShortVersionString: "1.2.0"
         CFBundleVersion: "28"
+        # Esri Location Platform key + expiry. The $(ESRI_API_KEY) reference is
+        # substituted from Secrets.xcconfig during Xcode's plist processing at
+        # build time (xcodegen writes it here verbatim). Not a secret - it ships
+        # in the bundle and is a quota control. Empty disables the Esri basemap.
+        # NOTE: this block regenerates Info.plist, so edit keys HERE, not there.
+        ESRIApiKey: $(ESRI_API_KEY)
+        ESRIKeyExpiry: "2027-06-30"
         UILaunchScreen:
           UIColorName: LaunchBackground
         # iOS 16+ devices are all arm64. armv7 is 32-bit and would

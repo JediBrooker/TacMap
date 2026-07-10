@@ -20,6 +20,10 @@
 	<string>1.2.0</string>
 	<key>CFBundleVersion</key>
 	<string>28</string>
+	<key>ESRIApiKey</key>
+	<string>$(ESRI_API_KEY)</string>
+	<key>ESRIKeyExpiry</key>
+	<string>2027-06-30</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

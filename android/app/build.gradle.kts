@@ -15,6 +15,17 @@ val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY")
     ?: System.getenv("MAPS_API_KEY")
     ?: ""
 
+// ArcGIS Location Platform key for the Esri satellite basemap. Same resolution
+// order as the Maps key. It ends up in BuildConfig, which means it ends up in
+// the APK: this is a quota/billing control, not a secret, and anyone can pull
+// it out of the binary. Keep pay-as-you-go OFF on the Esri account so the worst
+// a leaked key can do is burn the free tier, not run up a bill. Empty is fine -
+// the online basemap is opt-in and offline packs never touch it.
+val esriApiKey: String = localProperties.getProperty("ESRI_API_KEY")
+    ?: providers.gradleProperty("ESRI_API_KEY").orNull?.takeIf { it.isNotBlank() }
+    ?: System.getenv("ESRI_API_KEY")
+    ?: ""
+
 // CI injects a monotonic build number via -PVERSION_CODE so releases don't
 // require a manual bump; local/dev and the default fall back to the pinned
 // value below. Only the marketing versionName stays hardcoded.
@@ -48,6 +59,11 @@ android {
         vectorDrawables { useSupportLibrary = true }
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        buildConfigField("String", "ESRI_API_KEY", "\"$esriApiKey\"")
+        // Esri API keys expire. When this one lapses the Esri basemap starts
+        // 401ing in the field, so EsriKeyExpiryTest fails the build 60 days out
+        // to force a rotation before users notice. ISO-8601, UTC.
+        buildConfigField("String", "ESRI_KEY_EXPIRY", "\"2027-06-30\"")
     }
 
     signingConfigs {
