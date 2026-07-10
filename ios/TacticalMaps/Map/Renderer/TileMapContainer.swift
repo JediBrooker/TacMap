@@ -65,6 +65,7 @@ struct TileMapContainer: UIViewRepresentable {
         // publish() mutates mapVM, re-runs updateUIView, and loops.
         context.coordinator.syncSource(view: view, mapSource: mapVM.mapSource,
                                        onlineBasemaps: opsec.onlineBasemaps)
+        context.coordinator.syncPDF(source: mapVM.mapSource, view: view)
         context.coordinator.syncWaypoints(waypointStore.waypoints, view: view)
         context.coordinator.updateOverlays(
             drawings: DrawingVectorShapes.build(
@@ -96,6 +97,11 @@ struct TileMapContainer: UIViewRepresentable {
         private var gridVisible = false
         private var lastGridFingerprint = ""
 
+        /// Imported PDF/GeoPDF image + the dark mask beneath it, below the grid.
+        private var pdfView: PDFImageOverlayView?
+        private var pdfMask: UIView?
+        private var pdfSourceID: UUID?
+
         func attach(view: TileMapView, mapVM: MapViewModel) {
             self.view = view
             self.mapVM = mapVM
@@ -125,9 +131,45 @@ struct TileMapContainer: UIViewRepresentable {
         /// Redraw overlays after a camera move (positions move; grid re-tessellates
         /// only when the visible cells change).
         func reprojectOverlays() {
+            if let pdfView, let view {
+                pdfView.updateFrame(project: { view.camera.screenPoint(for: $0) },
+                                    headingDegrees: view.camera.headingDegrees)
+            }
             drawingsView?.reproject()
             gridView?.reproject()
             refreshGrid()
+        }
+
+        /// Attach/detach the imported-PDF image (+ dark mask) beneath the grid.
+        func syncPDF(source: MapSource, view: TileMapView) {
+            guard let pdf = source as? PDFMapSource, let bounds = pdf.bounds,
+                  let image = pdf.renderedImage() else {
+                pdfView?.removeFromSuperview(); pdfView = nil
+                pdfMask?.removeFromSuperview(); pdfMask = nil
+                pdfSourceID = nil
+                return
+            }
+            guard pdf.id != pdfSourceID else { return }
+            pdfSourceID = pdf.id
+            pdfView?.removeFromSuperview()
+            pdfMask?.removeFromSuperview()
+
+            // Dark mask so tiles don't show through the imported sheet.
+            let mask = UIView(frame: view.bounds)
+            mask.backgroundColor = UIColor(white: 0.10, alpha: 1.0)
+            mask.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            mask.isUserInteractionEnabled = false
+            view.insertSubview(mask, at: 0)
+            pdfMask = mask
+
+            let pv = PDFImageOverlayView(image: image, southWest: bounds.southWest,
+                                         northEast: bounds.northEast,
+                                         pdfRenderRect: pdf.pdfRenderRect,
+                                         placementTransform: pdf.placementTransform)
+            view.insertSubview(pv, aboveSubview: mask)
+            pv.updateFrame(project: { view.camera.screenPoint(for: $0) },
+                           headingDegrees: view.camera.headingDegrees)
+            pdfView = pv
         }
 
         /// Push new overlay geometry (drawings changed / selection changed).
