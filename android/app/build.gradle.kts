@@ -53,7 +53,7 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = injectedVersionCode ?: 26
+        versionCode = injectedVersionCode ?: 27
         versionName = "1.2.0"
 
         vectorDrawables { useSupportLibrary = true }
@@ -139,13 +139,13 @@ dependencies {
     // Google's fused provider - see LocationService. No play-services-location.
 
     // Google Play Billing — the one-time "unlock_full" in-app product that
-    // converts the 3-day free trial into permanent access.
+    // converts the 3-day free trial into permanent access. The one Google
+    // dependency genuinely unavoidable for a Play-Store paid app, and it only
+    // talks to the store on a user-initiated purchase/restore.
     implementation("com.android.billingclient:billing-ktx:7.1.1")
 
-    // Block Store — persists the trial first-launch stamp across
-    // uninstall/reinstall on devices with Play services (parity with the
-    // iOS Keychain). Degrades silently on de-Googled devices.
-    implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
+    // (Trial clock is local-only now - no Block Store, no Play Services. See
+    // TrialManager: the trade is that the Android trial resets on reinstall.)
 
     // MGRS conversion (NGA).
     implementation("mil.nga:mgrs:2.1.3")
