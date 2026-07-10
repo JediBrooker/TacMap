@@ -29,7 +29,30 @@ import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.drawings.LineGraphic
 import com.tacmap.map.SymbolIconFactory
+import android.graphics.Matrix
+import android.graphics.Paint
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import com.tacmap.calibration.Calibration
+import com.tacmap.calibration.PdfMapSource
+import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.mgrs.MgrsGridRenderer
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.Layout
+import com.tacmap.waypoints.MilitarySymbolSpec
+import com.tacmap.waypoints.SymbolAffiliation
+import com.tacmap.waypoints.SymbolEchelon
+import com.tacmap.waypoints.SymbolFunction
+import com.tacmap.waypoints.WaypointKind
+import com.tacmap.sync.PresencePeer
 import com.tacmap.waypoints.Waypoint
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -341,5 +364,156 @@ fun WaypointSymbolsLayer(
                           height = with(androidx.compose.ui.platform.LocalDensity.current) { img.height.toDp() })
             )
         }
+    }
+}
+
+// MARK: - Labels + presence (SDK-free, projected via MapProjection)
+
+private enum class ScreenAnchorC { CENTER, TOP }
+
+@Composable
+private fun ScreenAnchoredC(screenX: Int, screenY: Int, anchor: ScreenAnchorC = ScreenAnchorC.CENTER,
+                            content: @Composable () -> Unit) {
+    Layout(content = content) { measurables, constraints ->
+        val child = measurables.firstOrNull() ?: return@Layout layout(0, 0) {}
+        val placeable = child.measure(constraints.copy(minWidth = 0, minHeight = 0))
+        layout(0, 0) {
+            val yShift = if (anchor == ScreenAnchorC.CENTER) -placeable.height / 2 else 0
+            placeable.place(x = screenX - placeable.width / 2, y = screenY + yShift)
+        }
+    }
+}
+
+@Composable
+private fun LabelPillC(text: String) {
+    Text(text, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = Modifier.background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 2.dp))
+}
+
+/** Waypoint name labels (unit pill below the icon, task pill centred). */
+@Composable
+fun WaypointLabelsLayer(
+    waypoints: List<Waypoint>, camera: MapCamera, density: Float,
+    unitLabelsVisible: Boolean, taskLabelsVisible: Boolean
+) {
+    val context = LocalContext.current
+    val proj = remember(camera, density) { MapProjection(camera, density) }
+    waypoints.forEach { wp ->
+        val name = wp.name.trim()
+        if (name.isEmpty()) return@forEach
+        val isTask = wp.kind is WaypointKind.ControlMeasure
+        if (if (isTask) !taskLabelsVisible else !unitLabelsVisible) return@forEach
+        val s = proj.toScreen(wp.latitude, wp.longitude)
+        if (isTask) {
+            ScreenAnchoredC(s.x.roundToInt(), s.y.roundToInt()) { LabelPillC(name) }
+        } else {
+            val vb = SymbolIconFactory.visibleBoundsFor(context, wp)
+            val anchor = SymbolIconFactory.anchorFor(context, wp)
+            val d = SymbolIconFactory.drawableFor(context, wp)
+            val iconH = d.intrinsicHeight.coerceAtLeast(1)
+            val bottomY = s.y - anchor.second * iconH + vb.bottom + 3f * density
+            ScreenAnchoredC(s.x.roundToInt(), bottomY.roundToInt(), ScreenAnchorC.TOP) { LabelPillC(name) }
+        }
+    }
+}
+
+/** Drawing name labels at each shape's label anchor. */
+@Composable
+fun DrawingLabelsLayer(drawings: List<DrawingFeature>, camera: MapCamera, density: Float) {
+    val proj = remember(camera, density) { MapProjection(camera, density) }
+    drawings.forEach { f ->
+        val name = f.name.trim()
+        if (name.isEmpty()) return@forEach
+        val a = f.labelAnchor ?: return@forEach
+        val s = proj.toScreen(a.latitude, a.longitude)
+        ScreenAnchoredC(s.x.roundToInt(), s.y.roundToInt()) { LabelPillC(name) }
+    }
+}
+
+/** Presence peers: military symbol + callsign pill, projected. */
+@Composable
+fun PresenceLayer(peers: Map<String, PresencePeer>, camera: MapCamera, density: Float) {
+    val context = LocalContext.current
+    val proj = remember(camera, density) { MapProjection(camera, density) }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+        peers.values.forEach { peer ->
+            val wp = remember(peer.clientId, peer.affiliation, peer.echelon, peer.function, peer.isHQ,
+                              peer.lat, peer.lon, peer.callsign) {
+                val spec = MilitarySymbolSpec(
+                    affiliation = SymbolAffiliation.entries.firstOrNull { it.name.equals(peer.affiliation, true) } ?: SymbolAffiliation.FRIEND,
+                    echelon = SymbolEchelon.entries.firstOrNull { it.name.equals(peer.echelon, true) } ?: SymbolEchelon.TEAM,
+                    function = SymbolFunction.entries.firstOrNull { it.name.equals(peer.function, true) } ?: SymbolFunction.INFANTRY,
+                    isHeadquarters = peer.isHQ)
+                Waypoint(id = peer.clientId, name = peer.callsign, latitude = peer.lat, longitude = peer.lon,
+                    kind = WaypointKind.Military(spec))
+            }
+            val img = remember(wp.kind) {
+                SymbolIconFactory.drawableFor(context, wp).toBitmap(
+                    SymbolIconFactory.drawableFor(context, wp).intrinsicWidth.coerceAtLeast(1),
+                    SymbolIconFactory.drawableFor(context, wp).intrinsicHeight.coerceAtLeast(1)).asImageBitmap()
+            }
+            val s = proj.toScreen(peer.lat, peer.lon)
+            Image(bitmap = img, contentDescription = peer.callsign,
+                modifier = Modifier.offset { IntOffset((s.x - img.width / 2).roundToInt(), (s.y - img.height / 2).roundToInt()) }
+                    .size(with(androidx.compose.ui.platform.LocalDensity.current) { img.width.toDp() },
+                          with(androidx.compose.ui.platform.LocalDensity.current) { img.height.toDp() }))
+            if (peer.callsign.isNotBlank()) {
+                ScreenAnchoredC(s.x.roundToInt(), (s.y + img.height / 2 + 2).roundToInt(), ScreenAnchorC.TOP) { LabelPillC(peer.callsign) }
+            }
+        }
+    }
+}
+
+/** Imported PDF/GeoPDF ground overlay on the SDK-free renderer: renders the page
+ *  bitmap once and warps it to its projected geo corners with a poly matrix, so
+ *  it rides pan/zoom/rotate and lines up with the MGRS grid (same projection +
+ *  affine that fixed the SDK path). Non-georeferenced PDFs use the axis-aligned
+ *  bounds. */
+@Composable
+fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val proj = remember(camera, density) { MapProjection(camera, density) }
+    var bmp by remember(source.uri) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(source.uri) {
+        bmp = runCatching {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                PdfPageRenderer.renderFirstPage(context, source.uri).bitmap
+            }
+        }.getOrNull()
+    }
+    val image = bmp ?: return
+    val transform = (source.calibration as? Calibration.Fiduciaries)?.transform
+        ?: (source.calibration as? Calibration.Parsed)?.transform
+    val pageInfo = source.pageInfo
+
+    Canvas(modifier.fillMaxSize()) {
+        // Corners in lat/lon: georeferenced -> the affine page corners (bitmap top
+        // = page-top = PDF maxY), else the coverage bounds box.
+        val corners: List<Pair<Double, Double>> = if (transform != null && pageInfo != null) {
+            val pw = pageInfo.pageWidth.toDouble(); val ph = pageInfo.pageHeight.toDouble()
+            listOf(
+                transform.apply(0.0, ph).let { it.latitude to it.longitude },   // top-left
+                transform.apply(pw, ph).let { it.latitude to it.longitude },    // top-right
+                transform.apply(pw, 0.0).let { it.latitude to it.longitude },   // bottom-right
+                transform.apply(0.0, 0.0).let { it.latitude to it.longitude }   // bottom-left
+            )
+        } else {
+            val b = source.coverage ?: return@Canvas
+            listOf(
+                b.northeast.latitude to b.southwest.longitude,  // TL
+                b.northeast.latitude to b.northeast.longitude,  // TR
+                b.southwest.latitude to b.northeast.longitude,  // BR
+                b.southwest.latitude to b.southwest.longitude   // BL
+            )
+        }
+        val dst = FloatArray(8)
+        corners.forEachIndexed { i, (lat, lon) ->
+            val s = proj.toScreen(lat, lon); dst[i * 2] = s.x; dst[i * 2 + 1] = s.y
+        }
+        val w = image.width.toFloat(); val h = image.height.toFloat()
+        val src = floatArrayOf(0f, 0f, w, 0f, w, h, 0f, h)
+        val m = Matrix().apply { setPolyToPoly(src, 0, dst, 0, 4) }
+        drawContext.canvas.nativeCanvas.drawBitmap(image, m, Paint(Paint.FILTER_BITMAP_FLAG))
     }
 }

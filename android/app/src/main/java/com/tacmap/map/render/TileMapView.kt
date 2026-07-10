@@ -2,6 +2,7 @@ package com.tacmap.map.render
 
 import android.util.LruCache
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,13 +49,17 @@ fun TileMapView(
     onCameraChange: (MapCamera) -> Unit,
     source: TileSource?,
     modifier: Modifier = Modifier,
-    onGestureStart: () -> Unit = {}
+    onGestureStart: () -> Unit = {},
+    /// Fires on a tap that reached the basemap (no overlay claimed it) - the app
+    /// uses it to dismiss a selection, like the old onMapClick did.
+    onTap: () -> Unit = {}
 ) {
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
     val cameraState = rememberUpdatedState(camera)
     val onChange = rememberUpdatedState(onCameraChange)
     val onStart = rememberUpdatedState(onGestureStart)
+    val onTapState = rememberUpdatedState(onTap)
 
     // Decoded tiles, keyed by address. `version` bumps to force a redraw as
     // tiles arrive; `inFlight` dedupes concurrent loads of the same tile.
@@ -140,6 +145,11 @@ fun TileMapView(
 
                     onChange.value(next)
                 }
+            }
+            .pointerInput(Unit) {
+                // Taps that reach the basemap (no overlay claimed them) dismiss
+                // the current selection, replacing the old GoogleMap onMapClick.
+                detectTapGestures { onTapState.value() }
             }
     ) {
         version // read so newly-loaded tiles trigger a redraw

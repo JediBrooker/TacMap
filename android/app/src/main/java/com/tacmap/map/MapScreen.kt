@@ -206,6 +206,7 @@ fun MapScreen(
     var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
     var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
     var terrainHeatmapVisible by rememberPersistedBoolean("terrainHeatmap", false)
+    var userLocationVisible by rememberPersistedBoolean("userLocation", true)
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
     var isFreeDrawMode by remember { mutableStateOf(false) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
@@ -519,7 +520,7 @@ fun MapScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        GoogleMapScreen(
+        CustomMapScreen(
                 modifier = Modifier.fillMaxSize(),
                 waypoints = waypoints,
                 mapSource = mapSource,
@@ -528,6 +529,10 @@ fun MapScreen(
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,
                 graphicsLocked = graphicsLocked,
+                userLocationVisible = userLocationVisible,
+                myLat = lastLocation?.latitude,
+                myLon = lastLocation?.longitude,
+                myAccuracyMetres = lastLocation?.accuracy ?: 0f,
                 drawingInputEnabled = activeDrawTool != null || measureSession.isActive,
                 freeDrawActive = isFreeDrawMode,
                 onFreeDrawPoint = { lat, lng ->
@@ -549,8 +554,6 @@ fun MapScreen(
                 peers = presencePeers,
                 selectedDrawingId = selectedDrawingId,
                 selectedWaypointId = selectedWaypointId,
-                calibrationFiduciaries = calibrationFiduciaries,
-                myLocationEnabled = hasLocationPermission,
                 pendingTarget = pendingTarget,
                 resetNorthRequests = vm.resetNorthRequests,
                 onConsumePendingTarget = vm::consumePendingCameraTarget,

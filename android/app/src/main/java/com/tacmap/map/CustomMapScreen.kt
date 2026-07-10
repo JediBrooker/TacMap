@@ -16,60 +16,84 @@ import androidx.compose.ui.Modifier
 import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
+import com.tacmap.calibration.PdfMapSource
+import com.tacmap.drawings.DrawingDocument
+import com.tacmap.drawings.DrawingFeature
+import com.tacmap.drawings.DrawingGeometry
+import com.tacmap.drawings.DrawingLayer
+import com.tacmap.map.render.DrawingsCanvas
+import com.tacmap.map.render.DrawingLabelsLayer
 import com.tacmap.map.render.MapCamera
-import com.tacmap.map.render.OnlineRasterTileSource
-import com.tacmap.map.render.TileMapView
 import com.tacmap.map.render.MapProjection
 import com.tacmap.map.render.MgrsGridCanvas
-import com.tacmap.map.render.DrawingsCanvas
-import com.tacmap.map.render.WaypointSymbolsLayer
-import com.tacmap.map.render.UserLocationCanvas
+import com.tacmap.map.render.OnlineRasterTileSource
+import com.tacmap.map.render.PdfGroundLayer
+import com.tacmap.map.render.PresenceLayer
+import com.tacmap.map.render.TileMapView
 import com.tacmap.map.render.TileSource
+import com.tacmap.map.render.UserLocationCanvas
+import com.tacmap.map.render.WaypointLabelsLayer
+import com.tacmap.map.render.WaypointSymbolsLayer
+import com.tacmap.sync.PresencePeer
+import com.tacmap.waypoints.Waypoint
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 
 /**
- * The SDK-free replacement for [GoogleMapScreen]. Renders the basemap with the
- * custom [TileMapView] and drives a [MapCamera] we own, so nothing links the
- * Google Maps SDK. Overlays (drawings, symbols, presence, PDF, MGRS grid,
- * heatmap, touch, labels, vertex handles) are ported on top of this in following
- * steps; this first cut is basemap + camera + gestures so we can verify tiles
- * and pan/zoom/rotate against the real renderer.
+ * The SDK-free replacement for [GoogleMapScreen]. The basemap renders through the
+ * custom [TileMapView] and every overlay + interaction projects through a
+ * [MapCamera] we own, so nothing links the Google Maps SDK. Same call surface as
+ * GoogleMapScreen so MapScreen can drop it in.
  */
 @Composable
 fun CustomMapScreen(
     modifier: Modifier = Modifier,
+    waypoints: List<Waypoint> = emptyList(),
     mapSource: MapSource? = null,
-    onlineBasemapsEnabled: Boolean = false,
-    waypoints: List<com.tacmap.waypoints.Waypoint> = emptyList(),
-    drawings: List<com.tacmap.drawings.DrawingFeature> = emptyList(),
-    drawingLayers: List<com.tacmap.drawings.DrawingLayer> = emptyList(),
-    draftDrawing: com.tacmap.drawings.DrawingFeature? = null,
-    selectedDrawingId: String? = null,
+    drawings: List<DrawingFeature> = emptyList(),
+    drawingLayers: List<DrawingLayer> = emptyList(),
+    draftDrawing: DrawingFeature? = null,
+    graphicsLocked: Boolean = false,
+    drawingInputEnabled: Boolean = false,
+    freeDrawActive: Boolean = false,
+    onFreeDrawPoint: (lat: Double, lng: Double) -> Unit = { _, _ -> },
+    onFreeDrawEnd: () -> Unit = {},
+    calibrationInputEnabled: Boolean = false,
     mgrsGridVisible: Boolean = false,
+    terrainHeatmapVisible: Boolean = false,
+    unitLabelsVisible: Boolean = true,
+    taskLabelsVisible: Boolean = true,
+    drawingLabelsVisible: Boolean = true,
     userLocationVisible: Boolean = true,
+    peers: Map<String, PresencePeer> = emptyMap(),
+    selectedDrawingId: String? = null,
+    selectedWaypointId: String? = null,
     myLat: Double? = null,
     myLon: Double? = null,
     myAccuracyMetres: Float = 0f,
+    onlineBasemapsEnabled: Boolean = false,
     pendingTarget: Triple<Double, Double, Float>? = null,
     resetNorthRequests: Flow<Unit>? = null,
     onConsumePendingTarget: () -> Unit = {},
     onCameraIdle: (lat: Double, lng: Double, byUser: Boolean) -> Unit = { _, _, _ -> },
-    onBearingChanged: (Double) -> Unit = {}
+    onBearingChanged: (Double) -> Unit = {},
+    onMarkerTap: (Waypoint) -> Unit = {},
+    onWaypointMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit = { _, _, _ -> },
+    onDrawingTap: (lat: Double, lng: Double) -> Unit = { _, _ -> },
+    onCalibrationTap: (lat: Double, lng: Double) -> Unit = { _, _ -> },
+    onDrawingFeatureTap: (String) -> Unit = {},
+    onVertexMoved: (featureId: String, vertexIndex: Int, lat: Double, lng: Double) -> Unit = { _, _, _, _ -> },
+    onVertexInserted: (featureId: String, atIndex: Int, lat: Double, lng: Double) -> Unit = { _, _, _, _ -> },
+    onVertexDeleted: (featureId: String, vertexIndex: Int) -> Unit = { _, _ -> },
+    onShapeMoved: (featureId: String, deltaLat: Double, deltaLng: Double) -> Unit = { _, _, _ -> },
+    onMapTap: () -> Unit = {}
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     var camera by remember {
-        mutableStateOf(
-            MapCamera(
-                centerLat = 0.0, centerLon = 0.0, zoom = 2.0,
-                headingDegrees = 0.0, viewportWidth = 0.0, viewportHeight = 0.0
-            )
-        )
+        mutableStateOf(MapCamera(0.0, 0.0, 2.0, 0.0, 0.0, 0.0))
     }
-    // True while the last camera move came from a gesture (drives the "Map
-    // Centre" vs "Live Location" header, same as the SDK's byUser flag).
     var browsing by remember { mutableStateOf(false) }
 
     val source: TileSource? = remember(mapSource, onlineBasemapsEnabled) {
@@ -77,14 +101,12 @@ fun CustomMapScreen(
             is OnlineRasterMapSourceAndroid ->
                 if (onlineBasemapsEnabled) OnlineRasterTileSource(mapSource.style) else null
             is OfflineTileMapSourceAndroid -> mapSource.renderTileSource()
-            else -> null // PDF draws as an overlay (ported later); otherwise blank
+            else -> null // PDF draws as an overlay; otherwise blank
         }
     }
     val wantsOnlineRaster = mapSource is OnlineRasterMapSourceAndroid
     val basemapBlank = !onlineBasemapsEnabled && wantsOnlineRaster
 
-    // Fly to a requested target (snap for now; animated flyTo comes with the
-    // camera-control step).
     LaunchedEffect(pendingTarget) {
         pendingTarget?.let { (lat, lng, zoom) ->
             camera = camera.copy(centerLat = lat, centerLon = lng, zoom = zoom.toDouble())
@@ -92,20 +114,25 @@ fun CustomMapScreen(
             onConsumePendingTarget()
         }
     }
-
-    // Compass reset - heading back to north.
     LaunchedEffect(resetNorthRequests) {
         resetNorthRequests?.collect { camera = camera.copy(headingDegrees = 0.0) }
     }
-
-    // Report the centre once the camera settles (200ms after the last move).
     LaunchedEffect(camera.centerLat, camera.centerLon, camera.zoom) {
         delay(200)
         onCameraIdle(camera.centerLat, camera.centerLon, browsing)
         browsing = false
     }
-    // Keep the compass chip in sync with heading.
     LaunchedEffect(camera.headingDegrees) { onBearingChanged(camera.headingDegrees) }
+
+    val visibleLayerIds = drawingLayers.ifEmpty { DrawingDocument.defaultLayers() }
+        .filter { it.isVisible }.map { it.id }.toSet()
+    val visibleDrawings = drawings.filter { it.layerId in visibleLayerIds }
+    val visibleWaypoints = if (drawingLayers.isEmpty()) waypoints
+        else waypoints.filter { it.layerId in visibleLayerIds }
+    val selectedDrawing = visibleDrawings.firstOrNull {
+        it.id == selectedDrawingId &&
+            (it.geometry == DrawingGeometry.LINE || it.geometry == DrawingGeometry.POLYGON)
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         TileMapView(
@@ -113,40 +140,67 @@ fun CustomMapScreen(
             onCameraChange = { camera = it },
             source = source,
             onGestureStart = { browsing = true },
+            onTap = { if (!drawingInputEnabled && !calibrationInputEnabled && !freeDrawActive) onMapTap() },
             modifier = Modifier.fillMaxSize()
         )
 
-        // Overlays, projected through the same camera. Visible-layer filtering
-        // mirrors GoogleMapScreen. Interaction (tap/drag/vertex) + PDF + presence
-        // + labels + heatmap get layered in following steps.
-        val visibleLayerIds = drawingLayers
-            .ifEmpty { com.tacmap.drawings.DrawingDocument.defaultLayers() }
-            .filter { it.isVisible }.map { it.id }.toSet()
-        val visibleDrawings = drawings.filter { it.layerId in visibleLayerIds }
-        val visibleWaypoints = if (drawingLayers.isEmpty()) waypoints
-            else waypoints.filter { it.layerId in visibleLayerIds }
-
-        if (mgrsGridVisible) {
-            MgrsGridCanvas(camera = camera, density = density, modifier = Modifier.fillMaxSize())
+        // Imported PDF/GeoPDF sits just above the basemap.
+        (mapSource as? PdfMapSource)?.let { pdf ->
+            PdfGroundLayer(source = pdf, camera = camera, density = density)
         }
+
+        if (mgrsGridVisible && !freeDrawActive) {
+            MgrsGridCanvas(camera = camera, density = density)
+        }
+
         val projection = remember(camera, density) { MapProjection(camera, density) }
         DrawingsCanvas(
-            features = visibleDrawings,
-            draft = draftDrawing,
-            selectedId = selectedDrawingId,
-            projection = projection,
-            modifier = Modifier.fillMaxSize()
+            features = visibleDrawings, draft = draftDrawing,
+            selectedId = selectedDrawingId, projection = projection
         )
-        WaypointSymbolsLayer(
-            waypoints = visibleWaypoints,
-            camera = camera,
-            density = density,
-            modifier = Modifier.fillMaxSize()
-        )
+        WaypointSymbolsLayer(waypoints = visibleWaypoints, camera = camera, density = density)
+        PresenceLayer(peers = peers, camera = camera, density = density)
         if (userLocationVisible) {
-            UserLocationCanvas(
-                lat = myLat, lon = myLon, accuracyMetres = myAccuracyMetres,
-                camera = camera, density = density, modifier = Modifier.fillMaxSize()
+            UserLocationCanvas(myLat, myLon, myAccuracyMetres, camera, density)
+        }
+
+        // Labels above the symbols.
+        WaypointLabelsLayer(visibleWaypoints, camera, density, unitLabelsVisible, taskLabelsVisible)
+        if (drawingLabelsVisible && !freeDrawActive) {
+            DrawingLabelsLayer(visibleDrawings, camera, density)
+        }
+
+        // Interaction. Drawing/calibration/free-draw taps go through MapInputOverlay;
+        // otherwise the touch overlay hit-tests items for select/drag.
+        MapInputOverlay(
+            camera = camera, density = density,
+            drawingInputEnabled = drawingInputEnabled,
+            calibrationInputEnabled = calibrationInputEnabled,
+            freeDrawActive = freeDrawActive,
+            onDrawingTap = onDrawingTap,
+            onCalibrationTap = onCalibrationTap,
+            onFreeDrawPoint = onFreeDrawPoint,
+            onFreeDrawEnd = onFreeDrawEnd
+        )
+        if (!drawingInputEnabled && !calibrationInputEnabled && !freeDrawActive) {
+            MapItemTouchOverlayCustom(
+                waypoints = visibleWaypoints, drawings = visibleDrawings,
+                camera = camera, density = density,
+                drawingInputEnabled = false, calibrationInputEnabled = false,
+                locked = graphicsLocked,
+                onDragStateChange = { },
+                onWaypointTap = onMarkerTap,
+                onWaypointMoved = onWaypointMoved,
+                onDrawingTap = onDrawingFeatureTap,
+                onDrawingMoved = onShapeMoved,
+                onEmptyTap = onMapTap
+            )
+            VertexHandlesOverlayCustom(
+                feature = selectedDrawing.takeUnless { graphicsLocked },
+                camera = camera, density = density,
+                onVertexMoved = onVertexMoved,
+                onVertexInserted = onVertexInserted,
+                onVertexDeleted = onVertexDeleted
             )
         }
 
