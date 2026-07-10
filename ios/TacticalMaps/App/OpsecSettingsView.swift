@@ -30,7 +30,7 @@ struct OpsecSettingsView: View {
                     Text("""
                     Off by default. While off, no Esri or OpenTopoMap tile is ever requested and no basemap imagery is drawn.
 
-                    It does NOT stop Apple. MapKit fetches its basemap through the system location daemon, outside this app's control, and measurement shows it downloads the same tiles for the region on screen whether this is on or off. Apple can still infer your area of interest. If that matters, put the device in airplane mode or on a network you control.
+                    TacMap renders the map itself and does not use Apple MapKit, so nothing is fetched from Apple. When this is on, the tile coordinates you view go to Esri / OpenTopoMap from your IP, which reveals your area of interest — the red banner shows while that's happening. For a fully dark posture, leave this off and use an imported offline pack, or fly with the radio off.
                     """)
                 }
 
