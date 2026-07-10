@@ -23,6 +23,14 @@ final class TrackRecorder: ObservableObject {
     /// True when `points` were recovered from a previous, un-discarded session.
     @Published private(set) var recovered = false
 
+    /// Non-nil when a fix couldn't be written to disk. The UI has to say so: a
+    /// recording that looks live but isn't hitting the disk is the worst
+    /// possible failure for a field tool.
+    @Published var persistError: String?
+
+    /// Bound in as AEAD associated data. Matches Android's TrackLog.LABEL.
+    private static let label = "tracks/recording.ndjson"
+
     /// Min spacing between stored fixes. Drops GPS jitter so a stationary
     /// device doesn't bloat the track.
     private let minSpacingMetres: Double = 2
@@ -48,8 +56,9 @@ final class TrackRecorder: ObservableObject {
     func start() {
         points = []
         recovered = false
-        // Nuke any existing log and start fresh. Encrypted at rest but still
-        // readable after first unlock so background recording works.
+        persistError = nil
+        // Nuke any existing log and start fresh. Sealed per line, and the
+        // platform protection class still lets us append with the screen off.
         try? Data().write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         isRecording = true
     }
@@ -87,30 +96,70 @@ final class TrackRecorder: ObservableObject {
 
     // MARK: - Persistence
 
+    /// Each line is sealed on its own rather than sealing the whole file, for
+    /// two reasons. Appending to a whole-file envelope would mean decrypt-all,
+    /// re-encrypt-all, rewrite-all on every single GPS fix, which is O(n^2) over
+    /// a patrol. And per-line sealing keeps the property we actually care about:
+    /// a torn or garbled line fails its tag check and gets skipped, and every
+    /// other line still opens. One bad byte costs you one fix, not the track.
+    ///
+    /// So we don't bind line ordering into the AAD. Someone with write access to
+    /// the app sandbox could reorder or drop lines undetected. Took that trade
+    /// knowingly: binding the index would make one torn line invalidate the whole
+    /// tail, and an attacker inside our sandbox has already beaten at-rest crypto.
     private func append(_ point: TrackPoint) {
         let stored = StoredPoint(lat: point.coordinate.latitude,
                                  lon: point.coordinate.longitude,
                                  ele: point.elevation,
                                  t: point.time.timeIntervalSince1970)
-        guard var line = try? JSONEncoder().encode(stored) else { return }
-        line.append(0x0A) // newline
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-            FileManager.default.createFile(atPath: fileURL.path, contents: nil,
-                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        do {
+            let json = try JSONEncoder().encode(stored)
+            let sealed = try SealedEnvelope.sealLine(key: try SafeStore.keyProvider(),
+                                                     plaintext: json,
+                                                     label: Self.label)
+            guard let line = (sealed + "\n").data(using: .utf8) else { return }
+            if !FileManager.default.fileExists(atPath: fileURL.path) {
+                FileManager.default.createFile(atPath: fileURL.path, contents: nil,
+                    attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+            }
+            guard let handle = try? FileHandle(forWritingTo: fileURL) else {
+                persistError = "Track fix not saved to disk: could not open the log."
+                return
+            }
+            defer { try? handle.close() }
+            handle.seekToEndOfFile()
+            handle.write(line)
+            try handle.synchronize() // fsync, force to stable storage
+            persistError = nil
+        } catch {
+            persistError = "Track fix not saved to disk: \(error.localizedDescription)"
         }
-        guard let handle = try? FileHandle(forWritingTo: fileURL) else { return }
-        defer { try? handle.close() }
-        handle.seekToEndOfFile()
-        handle.write(line)
-        try? handle.synchronize() // fsync, force to stable storage
     }
 
     private func recover() {
         guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
+        let key: Data
+        do {
+            key = try SafeStore.keyProvider()
+        } catch {
+            // Locked. The log is intact, we just can't read it yet. Say nothing
+            // about "no track" because we genuinely don't know.
+            persistError = "Saved track is encrypted and locked. \(error.localizedDescription)"
+            return
+        }
+
         let decoder = JSONDecoder()
-        let restored: [TrackPoint] = text.split(separator: "\n").compactMap { line in
-            guard let data = line.data(using: .utf8),
-                  let sp = try? decoder.decode(StoredPoint.self, from: data) else { return nil }
+        var sawLegacyLine = false
+        let restored: [TrackPoint] = text.split(separator: "\n").compactMap { raw in
+            let line = String(raw)
+            let json: Data?
+            if SealedEnvelope.isSealedLine(line) {
+                json = SealedEnvelope.openLine(key: key, line: line, label: Self.label)
+            } else {
+                sawLegacyLine = true // written by a pre-encryption build
+                json = line.data(using: .utf8)
+            }
+            guard let json, let sp = try? decoder.decode(StoredPoint.self, from: json) else { return nil }
             return TrackPoint(coordinate: CLLocationCoordinate2D(latitude: sp.lat, longitude: sp.lon),
                               elevation: sp.ele,
                               time: Date(timeIntervalSince1970: sp.t))
@@ -118,6 +167,30 @@ final class TrackRecorder: ObservableObject {
         if !restored.isEmpty {
             points = restored
             recovered = true
+        }
+        if sawLegacyLine { reseal(restored) }
+    }
+
+    /// Rewrite a plaintext log from an older build with every line sealed. Goes
+    /// via atomic write so a crash halfway can't leave us half a track.
+    private func reseal(_ points: [TrackPoint]) {
+        do {
+            let key = try SafeStore.keyProvider()
+            let encoder = JSONEncoder()
+            var out = Data()
+            for point in points {
+                let stored = StoredPoint(lat: point.coordinate.latitude,
+                                         lon: point.coordinate.longitude,
+                                         ele: point.elevation,
+                                         t: point.time.timeIntervalSince1970)
+                let sealed = try SealedEnvelope.sealLine(key: key,
+                                                         plaintext: try encoder.encode(stored),
+                                                         label: Self.label)
+                out.append(contentsOf: Array((sealed + "\n").utf8))
+            }
+            try out.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } catch {
+            persistError = "Could not encrypt the recovered track: \(error.localizedDescription)"
         }
     }
 }

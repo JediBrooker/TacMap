@@ -24,6 +24,10 @@ struct MapContainerView: UIViewRepresentable {
     /// Remote peers broadcasting position via sync relay. Shown as presence annotations.
     var peers: [String: PresencePeer] = [:]
 
+    /// Observed, not just read, so flipping the basemap gate re-runs
+    /// updateUIView and the blank overlay goes on or comes off straight away.
+    @ObservedObject private var opsec = OpsecSettings.shared
+
     func makeUIView(context: Context) -> MKMapView {
         let mv = MKMapView()
         mv.delegate = context.coordinator
@@ -107,7 +111,9 @@ struct MapContainerView: UIViewRepresentable {
         context.coordinator.syncPDFOverlay(on: mv,
                                            source: mapVM.mapSource,
                                            visible: visibility.pdfOverlayVisible)
-        context.coordinator.syncTileOverlay(on: mv, source: mapVM.mapSource)
+        context.coordinator.syncTileOverlay(on: mv,
+                                           source: mapVM.mapSource,
+                                           onlineBasemaps: opsec.onlineBasemaps)
         context.coordinator.refresh(on: mv,
                                     waypoints: waypointStore.waypoints,
                                     drawings:  drawingStore.visibleShapes,
@@ -123,7 +129,9 @@ struct MapContainerView: UIViewRepresentable {
         context.coordinator.syncPDFOverlay(on: mv,
                                            source: mapVM.mapSource,
                                            visible: visibility.pdfOverlayVisible)
-        context.coordinator.syncTileOverlay(on: mv, source: mapVM.mapSource)
+        context.coordinator.syncTileOverlay(on: mv,
+                                           source: mapVM.mapSource,
+                                           onlineBasemaps: opsec.onlineBasemaps)
         context.coordinator.setHeatmapEnabled(visibility.terrainHeatmapVisible, on: mv)
         // Sync MGRS-grid toggle to coordinator and rebuild. Flipping
         // the switch needs to take effect immediately, can't wait for

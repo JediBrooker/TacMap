@@ -11,6 +11,27 @@ import CoreLocation
 enum PDFSessionStore {
     private static let key = "active_pdf_v1"
 
+    // The affine, fiduciaries and bounds in here pin down exactly which sheet is
+    // loaded and what ground it covers, so this is area-of-interest data and
+    // gets the same at-rest treatment as waypoints. UserDefaults only ever sees
+    // ciphertext. Labels are bound in as AEAD associated data so one blob can't
+    // be opened as the other.
+    private static let labelActive = "pdf_session/active_pdf"
+    private static let labelLibrary = "pdf_session/pdf_calibrations"
+
+    private static func seal(_ data: Data, _ label: String) -> Data? {
+        guard let key = try? SafeStore.keyProvider() else { return nil }
+        return try? SealedEnvelope.sealFile(key: key, plaintext: data, label: label)
+    }
+
+    /// Returns plaintext, or nil when locked / tampered. Pre-encryption builds
+    /// stored bare JSON, which has no magic, so it passes straight through.
+    private static func unseal(_ stored: Data, _ label: String) -> Data? {
+        guard SealedEnvelope.isSealedFile(stored) else { return stored }
+        guard let key = try? SafeStore.keyProvider() else { return nil }
+        return SealedEnvelope.openFile(key: key, blob: stored, label: label)
+    }
+
     static func save(_ source: PDFMapSource) {
         guard let bounds = source.bounds else {
             /// No bounds at all, nothing to anchor page to.
@@ -47,7 +68,11 @@ enum PDFSessionStore {
         )
         do {
             let data = try JSONEncoder().encode(dto)
-            UserDefaults.standard.set(data, forKey: key)
+            guard let sealed = seal(data, Self.labelActive) else {
+                NSLog("[PDFSessionStore] could not seal active PDF, not persisting")
+                return
+            }
+            UserDefaults.standard.set(sealed, forKey: key)
         } catch {
             /// Don't silently drop the write. A stale entry would then
             /// get restored on next launch with no clue why.
@@ -56,10 +81,17 @@ enum PDFSessionStore {
     }
 
     static func load() -> PDFMapSource? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        guard let stored = UserDefaults.standard.data(forKey: key) else { return nil }
+        // Locked key returns nil. Do NOT clear the entry: the user would lose
+        // their calibrated sheet just for opening the app before authenticating.
+        guard let data = unseal(stored, Self.labelActive) else { return nil }
         guard let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else {
             UserDefaults.standard.removeObject(forKey: key)
             return nil
+        }
+        // Written by a pre-encryption build, seal it in place.
+        if !SealedEnvelope.isSealedFile(stored), let sealed = seal(data, Self.labelActive) {
+            UserDefaults.standard.set(sealed, forKey: key)
         }
         guard let url = resolveImportedMap(named: dto.fileName) else {
             NSLog("[PDFSessionStore] file vanished, clearing: \(dto.fileName)")
@@ -130,13 +162,15 @@ enum PDFSessionStore {
     private static func saveToLibrary(fileName: String, _ cal: PersistedCalibration) {
         var lib = loadLibrary()
         lib[fileName] = cal
-        if let data = try? JSONEncoder().encode(lib) {
-            UserDefaults.standard.set(data, forKey: libraryKey)
+        if let data = try? JSONEncoder().encode(lib),
+           let sealed = seal(data, Self.labelLibrary) {
+            UserDefaults.standard.set(sealed, forKey: libraryKey)
         }
     }
 
     private static func loadLibrary() -> [String: PersistedCalibration] {
-        guard let data = UserDefaults.standard.data(forKey: libraryKey),
+        guard let stored = UserDefaults.standard.data(forKey: libraryKey),
+              let data = unseal(stored, Self.labelLibrary),
               let lib = try? JSONDecoder().decode([String: PersistedCalibration].self, from: data)
         else { return [:] }
         return lib

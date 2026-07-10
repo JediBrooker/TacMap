@@ -20,9 +20,16 @@ final class DrawingStore: ObservableObject {
     /// instead of just seeing a blank map and thinking there's no data.
     @Published var loadError: String?
 
+    /// True when the store couldn't be opened because the at-rest key is locked.
+    /// Blocks persist() so an empty doc never lands on readable-but-locked data.
+    @Published private(set) var locked = false
+
     /// Schema version. Bump when on-disk format changes so old files
     /// migrate instead of looking like corruption.
     private static let currentSchema = 1
+
+    /// Bound in as AEAD associated data.
+    private static let label = "drawings.json"
 
     /// Set by ContentView from @Environment(\.undoManager) after view
     /// appears. Weak so we don't extend the window's lifetime.
@@ -194,7 +201,7 @@ final class DrawingStore: ObservableObject {
     }
 
     private func load() {
-        switch SafeStore.read(url, decode: { try Self.decodeAny($0) }) {
+        switch SafeStore.read(url, label: Self.label, decode: { try Self.decodeAny($0) }) {
         case .loaded(let (payload, migrated)):
             layers = payload.layers
             shapes = payload.shapes
@@ -210,6 +217,15 @@ final class DrawingStore: ObservableObject {
             loadError = "Saved drawings could not be read and were set aside "
                 + "(\(quarantine?.lastPathComponent ?? "recovery copy")). Starting with an empty map."
             seedFreshInstall()
+        case .locked(let error):
+            // The file is intact, we just can't open it yet. Give the UI some
+            // layers to render but never write: persist() is gated on `locked`
+            // so an empty doc can't land on top of real drawings.
+            locked = true
+            loadError = "Drawings are encrypted and locked. \(error.localizedDescription)"
+            layers = DrawingLayer.seedDefaults
+            shapes = []
+            activeLayerID = layers.first?.id
         }
     }
 
@@ -235,13 +251,14 @@ final class DrawingStore: ObservableObject {
     }
 
     private func persist() {
+        guard !locked else { return }
         do {
             let payload = Persisted(schemaVersion: Self.currentSchema,
                                     layers: layers,
                                     shapes: shapes,
                                     activeLayerID: activeLayerID)
             let data = try JSONEncoder().encode(payload)
-            try SafeStore.write(data, to: url)
+            try SafeStore.write(data, to: url, label: Self.label)
             if loadError?.hasPrefix("Could not save") == true { loadError = nil }
         } catch {
             // don't swallow this, user is editing but nothing is hitting disk

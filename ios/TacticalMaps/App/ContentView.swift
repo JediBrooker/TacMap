@@ -96,6 +96,23 @@ struct ContentView: View {
     @State private var showAboutSheet      = false
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
 
+    @ObservedObject private var opsec = OpsecSettings.shared
+
+    /// Is anything on screen actually pulling tiles off the internet right now?
+    /// Apple's basemap counts: an imported PDF draws in a subview above it, so
+    /// "a PDF is loaded" does not mean "nothing is being fetched".
+    private var onlineTilesActive: Bool {
+        guard opsec.onlineBasemaps else { return false }
+        return !(mapVM.mapSource is OfflineTileMapSource)
+    }
+
+    /// Nothing to draw at all: no imported map, and online tiles are gated off.
+    private var basemapBlank: Bool {
+        !opsec.onlineBasemaps
+            && !(mapVM.mapSource is OfflineTileMapSource)
+            && !(mapVM.mapSource is PDFMapSource)
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -112,6 +129,12 @@ struct ContentView: View {
                     peers: syncManager.peers
                 )
                 .ignoresSafeArea()
+                .overlay(alignment: .top) {
+                    if onlineTilesActive { OnlineTilesBanner() }
+                }
+                .overlay {
+                    if basemapBlank { NoBasemapNotice() }
+                }
 
                 // SwiftUI overlay for tactical control measures. Sits
                 // directly above the map so symbols render WITHOUT
@@ -834,6 +857,43 @@ struct ContentView: View {
             userLocation: locationService.lastLocation?.coordinate
         )
         importMessage = "Loaded offline tiles: \(source.displayName)."
+    }
+}
+
+/// Persistent warning while the map is pulling tiles from the internet. The
+/// provider learns your area of interest from the tiles you request, so this
+/// should never be something you find out by accident.
+private struct OnlineTilesBanner: View {
+    var body: some View {
+        Text("ONLINE BASEMAP  ·  tile requests reveal your area of interest")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color(red: 0.69, green: 0, blue: 0.13).opacity(0.92))
+            .accessibilityLabel("Warning: online basemap active, tile requests reveal your area of interest")
+    }
+}
+
+/// Fresh install with no offline pack and online basemaps gated off draws
+/// nothing at all. Explain that, b/c a blank map with no message reads as a
+/// broken app rather than a deliberate OPSEC posture.
+private struct NoBasemapNotice: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("No basemap").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+            Text("Online basemaps are off. Import an offline map pack, or enable "
+                 + "online basemap tiles in Privacy & OPSEC.")
+                .font(.system(size: 11))
+                .foregroundStyle(Color(white: 0.73))
+                .multilineTextAlignment(.center)
+        }
+        .padding(16)
+        .background(Color.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 8))
+        .padding(24)
+        .allowsHitTesting(false)
     }
 }
 

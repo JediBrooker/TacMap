@@ -6,6 +6,8 @@ struct TacticalMapsApp: App {
     private let trial = TrialManager()
 
     init() {
+        // Has to come before any store is constructed - they all seal through it.
+        DataKey.install()
         // Local-only crash capture (no telemetry). Field crashes shouldn't be silent.
         CrashReporter.install()
         // Start the trial clock on first launch.

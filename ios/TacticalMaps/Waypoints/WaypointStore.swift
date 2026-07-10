@@ -56,12 +56,19 @@ final class WaypointStore: ObservableObject {
 
     // MARK: - Persistence
 
+    /// True when the store couldn't be opened because the at-rest key is locked.
+    /// Nothing may be persisted while this holds or we'd write an empty list
+    /// over data we simply couldn't read.
+    @Published private(set) var locked = false
+
+    private static let label = "waypoints.json"
+
     private func load() {
         // Fresh installs just start empty, no demo seed. We used to
         // ship a handful of "Pl, A Coy" / "Med Post" markers around
         // San Francisco so the map wasn't blank on first launch but
         // that confused real users who hadn't placed anything.
-        switch SafeStore.read(url, decode: { try JSONDecoder().decode([Waypoint].self, from: $0) }) {
+        switch SafeStore.read(url, label: Self.label, decode: { try JSONDecoder().decode([Waypoint].self, from: $0) }) {
         case .loaded(let decoded):
             waypoints = decoded
         case .empty:
@@ -71,13 +78,17 @@ final class WaypointStore: ObservableObject {
             // clobber it with a one-element list.
             loadError = "Saved waypoints could not be read and were set aside "
                 + "(\(quarantine?.lastPathComponent ?? "recovery copy")). Starting with no waypoints."
+        case .locked(let error):
+            locked = true
+            loadError = "Waypoints are encrypted and locked. \(error.localizedDescription)"
         }
     }
 
     private func persist() {
+        guard !locked else { return }
         do {
             let data = try JSONEncoder().encode(waypoints)
-            try SafeStore.write(data, to: url)
+            try SafeStore.write(data, to: url, label: Self.label)
             if loadError?.hasPrefix("Could not save") == true { loadError = nil }
         } catch {
             print("[WaypointStore] persist failed: \(error)")
