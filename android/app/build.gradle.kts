@@ -53,7 +53,7 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = injectedVersionCode ?: 24
+        versionCode = injectedVersionCode ?: 25
         versionName = "1.2.0"
 
         vectorDrawables { useSupportLibrary = true }
@@ -135,7 +135,8 @@ dependencies {
     implementation("com.google.maps.android:maps-compose:4.3.3")
     implementation("com.google.maps.android:android-maps-utils:3.8.2")
 
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Location is the platform LocationManager (GPS_PROVIDER, on-device), not
+    // Google's fused provider - see LocationService. No play-services-location.
 
     // Google Play Billing — the one-time "unlock_full" in-app product that
     // converts the 3-day free trial into permanent access.
