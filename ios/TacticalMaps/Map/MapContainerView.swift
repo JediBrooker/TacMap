@@ -530,38 +530,12 @@ struct MapContainerView: UIViewRepresentable {
             // vanish. While PDF active, redraw vectors into a subview above
             // the PDF. Symbols/labels are annotations so they're fine.
             if pdfImageView != nil {
-                var vectors: [PDFVectorShape] = []
-                if visibility?.drawingsVisible ?? true {
-                    for shape in drawings
-                    where shape.kind == .polyline || shape.kind == .polygon || shape.kind == .freedraw {
-                        vectors.append(PDFVectorShape(
-                            coords: shape.clEffectiveCoordinates,
-                            isPolygon: shape.kind == .polygon,
-                            style: shape.style,
-                            isSelected: shape.id == mapVM.selectedDrawingID,
-                            inProgress: false))
-                    }
-                }
-                if session.isDrawing, !session.inProgressCoordinates.isEmpty {
-                    let kind = session.activeKind ?? .polyline
-                    vectors.append(PDFVectorShape(
-                        coords: session.inProgressCoordinates.map {
-                            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                        },
-                        isPolygon: kind == .polygon,
-                        style: DrawingStyle(),
-                        isSelected: false,
-                        inProgress: true))
-                }
-                if measureSession.isActive, measureSession.points.count >= 2 {
-                    vectors.append(PDFVectorShape(
-                        coords: measureSession.points,
-                        isPolygon: false,
-                        style: DrawingStyle(strokeColorHex: "#FFA500", fillColorHex: nil,
-                                            strokeWidth: 3.0, fillOpacity: 0, dashPattern: [6, 4]),
-                        isSelected: false,
-                        inProgress: true))
-                }
+                let vectors = DrawingVectorShapes.build(
+                    drawings: drawings,
+                    drawingsVisible: visibility?.drawingsVisible ?? true,
+                    selectedDrawingID: mapVM.selectedDrawingID,
+                    session: session,
+                    measure: measureSession)
                 ensurePDFDrawingsView(on: mv).update(shapes: vectors)
             } else {
                 removePDFDrawingsView()

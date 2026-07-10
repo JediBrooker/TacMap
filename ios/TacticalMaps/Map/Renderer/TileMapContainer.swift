@@ -16,6 +16,10 @@ import CoreLocation
 struct TileMapContainer: UIViewRepresentable {
     @ObservedObject var mapVM: MapViewModel
     @ObservedObject var waypointStore: WaypointStore
+    @ObservedObject var drawingStore: DrawingStore
+    @ObservedObject var drawingSession: DrawingSessionViewModel
+    @ObservedObject var measureSession: MeasureSession
+    @ObservedObject var visibility: LayerVisibility
     @ObservedObject var locationService: LocationService
     @ObservedObject var opsec = OpsecSettings.shared
 
@@ -28,6 +32,7 @@ struct TileMapContainer: UIViewRepresentable {
         let view = TileMapView(camera: camera)
         view.onCameraChange = { [weak coordinator = context.coordinator] cam in
             coordinator?.publish(cam)
+            coordinator?.reprojectOverlays()
         }
         view.onGestureBegan = { [weak mapVM] in mapVM?.isBrowsing = true }
         context.coordinator.attach(view: view, mapVM: mapVM)
@@ -41,6 +46,13 @@ struct TileMapContainer: UIViewRepresentable {
         context.coordinator.syncSource(view: view, mapSource: mapVM.mapSource,
                                        onlineBasemaps: opsec.onlineBasemaps)
         context.coordinator.syncWaypoints(waypointStore.waypoints, view: view)
+        context.coordinator.updateOverlays(
+            drawings: DrawingVectorShapes.build(
+                drawings: drawingStore.visibleShapes,
+                drawingsVisible: visibility.drawingsVisible,
+                selectedDrawingID: mapVM.selectedDrawingID,
+                session: drawingSession,
+                measure: measureSession))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -57,6 +69,9 @@ struct TileMapContainer: UIViewRepresentable {
         private var currentSourceKey: String?
         private var lastWaypointIDs: [UUID] = []
 
+        /// Vector overlay drawn on top of the tiles, projected via the camera.
+        private var drawingsView: DrawingsOverlayView?
+
         func attach(view: TileMapView, mapVM: MapViewModel) {
             self.view = view
             self.mapVM = mapVM
@@ -64,6 +79,27 @@ struct TileMapContainer: UIViewRepresentable {
             resetNorthSink = mapVM.resetNorthRequests.sink { [weak view] _ in
                 view?.camera.headingDegrees = 0
             }
+
+            // Host the drawings renderer as a subview, projected via the live
+            // camera. Taps fall through to the tile view's gestures.
+            let drawings = DrawingsOverlayView()
+            drawings.frame = view.bounds
+            drawings.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            drawings.project = { [weak view] coord in
+                view?.camera.screenPoint(for: coord) ?? .zero
+            }
+            view.addSubview(drawings)
+            drawingsView = drawings
+        }
+
+        /// Redraw overlays after a camera move (geometry unchanged, positions move).
+        func reprojectOverlays() {
+            drawingsView?.reproject()
+        }
+
+        /// Push new overlay geometry (drawings changed / selection changed).
+        func updateOverlays(drawings: [PDFVectorShape]) {
+            drawingsView?.update(shapes: drawings)
         }
 
         /// Set the view's tile source, but only when it actually changes -
