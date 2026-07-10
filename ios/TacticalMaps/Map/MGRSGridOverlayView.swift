@@ -2,17 +2,10 @@ import UIKit
 import MapKit
 import MGRS
 
-/// Draws MGRS grid (lines + labels) as a transparent subview above the
-/// imported-PDF image view.
-///
-/// Needed b/c iOS 26 MapKit won't draw MKOverlays over satellite imagery
-/// (see syncPDFOverlay) so overlay-based grid lines end up underneath the
-/// PDF and disappear. We sidestep this by projecting grid coords to screen
-/// points via MKMapView.convert on every camera change and stroking with
-/// Core Graphics. Mirrors the Android Compose-canvas grid overlay.
-///
-/// Only used while a PDF is active - plain basemap uses the cheaper
-/// MKOverlay/annotation renderer.
+/// Draws MGRS grid (lines + labels) as a transparent subview, projecting each
+/// coordinate through a `project` closure and stroking with Core Graphics. Pure
+/// renderer - no MapKit tie of its own, so it runs on either the old MKMapView
+/// (PDF path) or the new TileMapView. Mirrors the Android Compose-canvas grid.
 final class MGRSGridOverlayView: UIView {
 
     private struct Line {
@@ -21,19 +14,29 @@ final class MGRSGridOverlayView: UIView {
         let gridType: GridType
     }
 
-    private weak var mapView: MKMapView?
+    /// Projects a WGS84 coordinate to a point in THIS view. Set by the host.
+    var project: ((CLLocationCoordinate2D) -> CGPoint)?
     private var lines: [Line] = []
     private var labels: [MGRSGridRenderer.LabelMark] = []
 
-    init(mapView: MKMapView) {
-        self.mapView = mapView
-        super.init(frame: mapView.bounds)
+    init() {
+        super.init(frame: .zero)
         backgroundColor = .clear
         isOpaque = false
         // Taps fall through to the map for pan / zoom / draw.
         isUserInteractionEnabled = false
         autoresizingMask = [.flexibleWidth, .flexibleHeight]
         contentMode = .redraw
+    }
+
+    /// Backward-compatible convenience for the MKMapView PDF path.
+    convenience init(mapView: MKMapView) {
+        self.init()
+        frame = mapView.bounds
+        project = { [weak mapView, weak self] coord in
+            guard let mapView, let self else { return .zero }
+            return mapView.convert(coord, toPointTo: self)
+        }
     }
 
     @available(*, unavailable)
@@ -66,13 +69,13 @@ final class MGRSGridOverlayView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
-        guard let mv = mapView, let ctx = UIGraphicsGetCurrentContext() else { return }
+        guard let project, let ctx = UIGraphicsGetCurrentContext() else { return }
 
         ctx.setStrokeColor(MGRSGridRenderer.inkColor.cgColor)
         ctx.setLineCap(.round)
         for line in lines {
-            let p1 = mv.convert(line.a, toPointTo: self)
-            let p2 = mv.convert(line.b, toPointTo: self)
+            let p1 = project(line.a)
+            let p2 = project(line.b)
             ctx.setLineWidth(MGRSGridRenderer.lineWidth(for: line.gridType))
             ctx.beginPath()
             ctx.move(to: p1)
@@ -83,8 +86,7 @@ final class MGRSGridOverlayView: UIView {
         // Dark-grey bold text + white halo. Vertical (easting) labels
         // rotated -90 so they run along the line.
         for mark in labels {
-            let pt = mv.convert(mark.coordinate, toPointTo: self)
-            drawLabel(mark, at: pt, in: ctx)
+            drawLabel(mark, at: project(mark.coordinate), in: ctx)
         }
     }
 
