@@ -77,7 +77,8 @@
     display:flex;align-items:center;justify-content:space-between;gap:20px}
   .brand{display:flex;align-items:center;gap:11px;font-family:"Saira";font-weight:800;
     font-size:19px;letter-spacing:.02em}
-  .brand .glyph{width:26px;height:26px;flex:none}
+  /* real app icon, same file as the favicon so it's already in cache */
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:4px}
   .nav-links{display:flex;gap:26px;align-items:center}
   .nav-links a{font-size:14px;color:var(--ink-dim)}
   .nav-links a:hover{color:var(--ink)}
@@ -274,11 +275,7 @@
 <header class="nav">
   <div class="nav-in">
     <a class="brand" href="#top">
-      <svg class="glyph" viewBox="0 0 32 32" fill="none">
-        <rect x="1.5" y="1.5" width="29" height="29" rx="2" stroke="#FF5A24" stroke-width="1.5"/>
-        <path d="M6 22 L13 10 L19 18 L26 8" stroke="#E7EDEC" stroke-width="1.5" fill="none"/>
-        <circle cx="19" cy="18" r="2.4" fill="#FF5A24"/>
-      </svg>
+      <img class="glyph" src="assets/brand/play-icon-512.png" width="26" height="26" alt="">
       TACMAP
     </a>
     <nav class="nav-links">

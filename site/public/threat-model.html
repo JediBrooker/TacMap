@@ -38,7 +38,7 @@
   .brand{display:flex;align-items:center;gap:11px;font-family:"Saira",sans-serif;
     font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
   .brand:hover{text-decoration:none}
-  .brand .glyph{width:26px;height:26px;flex:none}
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:4px}
   .nav-in .back{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink-dim)}
   .nav-in .back:hover{color:var(--ink);text-decoration:none}
 
@@ -86,11 +86,7 @@
 <header class="nav">
   <div class="nav-in">
     <a class="brand" href="/">
-      <svg class="glyph" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <rect x="1.5" y="1.5" width="29" height="29" rx="2" stroke="#FF5A24" stroke-width="1.5"/>
-        <path d="M6 22 L13 10 L19 18 L26 8" stroke="#E7EDEC" stroke-width="1.5" fill="none"/>
-        <circle cx="19" cy="18" r="2.4" fill="#FF5A24"/>
-      </svg>
+      <img class="glyph" src="assets/brand/play-icon-512.png" width="26" height="26" alt="">
       TACMAP
     </a>
     <a class="back" href="/">← Back to site</a>
