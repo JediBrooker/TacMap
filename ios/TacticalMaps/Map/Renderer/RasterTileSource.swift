@@ -63,3 +63,33 @@ final class OnlineRasterTileSource: RasterTileSource {
         return URL(string: s)
     }
 }
+
+// MARK: - Offline MBTiles (sideloaded raster, zero network)
+
+/// Reads tiles from a local MBTiles file via MBTilesStore. Decodes off the main
+/// thread so scrolling stays smooth. Never touches the network.
+final class OfflineRasterTileSource: RasterTileSource {
+    private let store: MBTilesStore
+    private let queue = DispatchQueue(label: "tacmap.offline-tiles", qos: .userInitiated)
+
+    var minZoom: Int { store.metadata.minZoom ?? 0 }
+    var maxZoom: Int { store.metadata.maxZoom ?? 19 }
+    var tilePixelSize: Int { 256 }
+
+    init(_ source: OfflineTileMapSource) { self.store = source.store }
+
+    private final class Request: RasterTileRequest {
+        var cancelled = false
+        func cancel() { cancelled = true }
+    }
+
+    func loadTile(_ tile: TileIndex, completion: @escaping (UIImage?) -> Void) -> RasterTileRequest? {
+        let req = Request()
+        queue.async {
+            if req.cancelled { DispatchQueue.main.async { completion(nil) }; return }
+            let image = self.store.tileData(z: tile.z, x: tile.x, y: tile.y).flatMap { UIImage(data: $0) }
+            DispatchQueue.main.async { completion(req.cancelled ? nil : image) }
+        }
+        return req
+    }
+}

@@ -52,7 +52,9 @@ struct TileMapContainer: UIViewRepresentable {
         private var cameraSink: AnyCancellable?
         private var resetNorthSink: AnyCancellable?
 
-        private var currentStyle: BasemapStyle??  // nil = never synced; .some(nil) = blank
+        /// Identity of the currently-installed source, so we only reassign (and
+        /// clear the tile cache) when it actually changes. nil = never synced.
+        private var currentSourceKey: String?
         private var lastWaypointIDs: [UUID] = []
 
         func attach(view: TileMapView, mapVM: MapViewModel) {
@@ -64,17 +66,30 @@ struct TileMapContainer: UIViewRepresentable {
             }
         }
 
-        /// Set the view's tile source, but only when the desired style actually
-        /// changes - assigning `source` clears the tile cache, so doing it every
-        /// updateUIView would wipe tiles before they render. Only the online
-        /// raster case is wired for now; offline/PDF/blank arrive with the
-        /// overlay port. Gated-off / unsupported -> nil (dark background).
+        /// Set the view's tile source, but only when it actually changes -
+        /// assigning `source` clears the tile cache, so doing it every
+        /// updateUIView would wipe tiles before they render.
+        ///
+        /// Online raster (gated on) -> fetch. Offline MBTiles -> local read.
+        /// Otherwise (gated-off online, or a PDF source whose image overlay draws
+        /// on top) -> nil = dark background.
         func syncSource(view: TileMapView, mapSource: MapSource, onlineBasemaps: Bool) {
-            let desired: BasemapStyle? = (mapSource as? OnlineRasterBasemapSource)
-                .flatMap { onlineBasemaps ? $0.style : nil }
-            if currentStyle != .some(desired) {
-                currentStyle = .some(desired)
-                view.source = desired.map { OnlineRasterTileSource($0) }
+            let key: String
+            let make: () -> RasterTileSource?
+            switch mapSource {
+            case let online as OnlineRasterBasemapSource where onlineBasemaps:
+                key = "online:\(online.style.rawValue)"
+                make = { OnlineRasterTileSource(online.style) }
+            case let offline as OfflineTileMapSource:
+                key = "offline:\(offline.id)"
+                make = { OfflineRasterTileSource(offline) }
+            default:
+                key = "blank"
+                make = { nil }
+            }
+            if currentSourceKey != key {
+                currentSourceKey = key
+                view.source = make()
             }
         }
 
