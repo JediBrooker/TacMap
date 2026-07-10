@@ -52,4 +52,12 @@ enum WebMercator {
         let lat = min(max(latitude, -latLimit), latLimit)
         return cos(lat * .pi / 180) * earthCircumference / mapSize(zoom: zoom)
     }
+
+    /// Inverse of `groundResolution`: the zoom that yields `metresPerPoint` at a
+    /// latitude. Used to fly to a region (fit its span to the viewport height).
+    static func zoom(latitude: Double, groundResolution mpp: Double) -> Double {
+        let lat = min(max(latitude, -latLimit), latLimit)
+        guard mpp > 0 else { return 0 }
+        return log2(cos(lat * .pi / 180) * earthCircumference / (tileSize * mpp))
+    }
 }

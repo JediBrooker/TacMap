@@ -28,6 +28,10 @@ final class TileMapView: UIView {
     /// Fired whenever a gesture (or a programmatic set) changes the camera.
     var onCameraChange: ((MapCamera) -> Void)?
 
+    /// Fired when the user starts a pan/pinch/rotate - the app flips into
+    /// browse mode (header reads map centre, not user location).
+    var onGestureBegan: (() -> Void)?
+
     // MARK: tile cache + in-flight
 
     private let cache = NSCache<NSString, UIImage>()
@@ -120,6 +124,7 @@ final class TileMapView: UIView {
     private var viewportCenter: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
 
     @objc private func handlePan(_ gr: UIPanGestureRecognizer) {
+        if gr.state == .began { onGestureBegan?() }
         let t = gr.translation(in: self)
         gr.setTranslation(.zero, in: self)
         // New centre = the coord currently at (centre - delta), so the map
@@ -129,6 +134,7 @@ final class TileMapView: UIView {
     }
 
     @objc private func handlePinch(_ gr: UIPinchGestureRecognizer) {
+        if gr.state == .began { onGestureBegan?() }
         guard let source else { return }
         let focal = gr.location(in: self)
         let anchor = camera.coordinate(for: focal) // coord under the fingers
