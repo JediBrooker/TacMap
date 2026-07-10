@@ -3,6 +3,26 @@ import MapKit
 import Combine
 import CoreLocation
 
+/// Small MapKit-typed helpers the container needs (MKCoordinateRegion is just a
+/// center+span struct; keeping this out of the MapKit-free MapCamera core).
+enum MapProjectionMath {
+    /// The lat/lon bounding box the camera currently shows, as a region - what
+    /// MGRSGridRenderer.build wants.
+    static func visibleRegion(_ camera: MapCamera) -> MKCoordinateRegion {
+        let w = camera.viewportSize.width, h = camera.viewportSize.height
+        let coords = [CGPoint(x: 0, y: 0), CGPoint(x: w, y: 0),
+                      CGPoint(x: 0, y: h), CGPoint(x: w, y: h)].map { camera.coordinate(for: $0) }
+        let lats = coords.map(\.latitude), lons = coords.map(\.longitude)
+        let minLat = lats.min() ?? 0, maxLat = lats.max() ?? 0
+        let minLon = lons.min() ?? 0, maxLon = lons.max() ?? 0
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2,
+                                           longitude: (minLon + maxLon) / 2),
+            span: MKCoordinateSpan(latitudeDelta: max(maxLat - minLat, 0.0001),
+                                   longitudeDelta: max(maxLon - minLon, 0.0001)))
+    }
+}
+
 /// SwiftUI host for the MapKit-free `TileMapView`. Drives the basemap tile
 /// source from the app's map state and publishes the projection contract
 /// (`waypointScreenPositions`, `screenToCoordinate`, `cameraCentre`, `heading`,
@@ -52,7 +72,8 @@ struct TileMapContainer: UIViewRepresentable {
                 drawingsVisible: visibility.drawingsVisible,
                 selectedDrawingID: mapVM.selectedDrawingID,
                 session: drawingSession,
-                measure: measureSession))
+                measure: measureSession),
+            gridVisible: visibility.mgrsGridVisible)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -69,8 +90,11 @@ struct TileMapContainer: UIViewRepresentable {
         private var currentSourceKey: String?
         private var lastWaypointIDs: [UUID] = []
 
-        /// Vector overlay drawn on top of the tiles, projected via the camera.
+        /// Vector overlays drawn on top of the tiles, projected via the camera.
         private var drawingsView: DrawingsOverlayView?
+        private var gridView: MGRSGridOverlayView?
+        private var gridVisible = false
+        private var lastGridFingerprint = ""
 
         func attach(view: TileMapView, mapVM: MapViewModel) {
             self.view = view
@@ -80,26 +104,55 @@ struct TileMapContainer: UIViewRepresentable {
                 view?.camera.headingDegrees = 0
             }
 
-            // Host the drawings renderer as a subview, projected via the live
-            // camera. Taps fall through to the tile view's gestures.
-            let drawings = DrawingsOverlayView()
-            drawings.frame = view.bounds
-            drawings.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            drawings.project = { [weak view] coord in
+            // Host the vector renderers as subviews, projected via the live
+            // camera. Grid below drawings. Taps fall through to the tile view.
+            let project: (CLLocationCoordinate2D) -> CGPoint = { [weak view] coord in
                 view?.camera.screenPoint(for: coord) ?? .zero
             }
-            view.addSubview(drawings)
+            let grid = MGRSGridOverlayView()
+            let drawings = DrawingsOverlayView()
+            for v in [grid, drawings] as [UIView] {
+                v.frame = view.bounds
+                v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                view.addSubview(v)
+            }
+            grid.project = project
+            drawings.project = project
+            gridView = grid
             drawingsView = drawings
         }
 
-        /// Redraw overlays after a camera move (geometry unchanged, positions move).
+        /// Redraw overlays after a camera move (positions move; grid re-tessellates
+        /// only when the visible cells change).
         func reprojectOverlays() {
             drawingsView?.reproject()
+            gridView?.reproject()
+            refreshGrid()
         }
 
         /// Push new overlay geometry (drawings changed / selection changed).
-        func updateOverlays(drawings: [PDFVectorShape]) {
+        func updateOverlays(drawings: [PDFVectorShape], gridVisible: Bool) {
             drawingsView?.update(shapes: drawings)
+            if gridVisible != self.gridVisible {
+                self.gridVisible = gridVisible
+                if !gridVisible { gridView?.clear(); lastGridFingerprint = "" }
+                else { refreshGrid() }
+            }
+        }
+
+        /// Rebuild the MGRS grid for the current visible region, deduped by a
+        /// coarse fingerprint so panning inside a cell doesn't re-tessellate.
+        private func refreshGrid() {
+            guard gridVisible, let view, let gridView else { return }
+            let region = MapProjectionMath.visibleRegion(view.camera)
+            let fp = String(format: "%.3f,%.3f,%.3f,%.3f,%.0f",
+                            region.center.latitude, region.center.longitude,
+                            region.span.latitudeDelta, region.span.longitudeDelta,
+                            view.bounds.width)
+            guard fp != lastGridFingerprint else { return }
+            lastGridFingerprint = fp
+            let built = MGRSGridRenderer.build(for: region, mapWidthPoints: view.bounds.width)
+            gridView.update(lines: built.lines, labels: built.labels)
         }
 
         /// Set the view's tile source, but only when it actually changes -
