@@ -208,6 +208,7 @@ enum GeoJSONExporter {
         case .generic:                  return "#FFD700"
         case .military(let spec):       return spec.affiliation.fillHex
         case .controlMeasure:           return "#1A1A1A"
+        case .marker(let mk):           return mk.colorHex
         }
     }
 
@@ -216,6 +217,7 @@ enum GeoJSONExporter {
         case .generic:                  return "marker"
         case .military(let spec):       return makiSymbol(for: spec)
         case .controlMeasure(let m):    return makiSymbol(for: m)
+        case .marker:                   return "marker"
         }
     }
 
@@ -241,6 +243,7 @@ enum GeoJSONExporter {
         case .generic:        return "generic"
         case .military:       return "military"
         case .controlMeasure: return "controlMeasure"
+        case .marker:         return "marker"
         }
     }
 
@@ -249,6 +252,7 @@ enum GeoJSONExporter {
         case .generic:        return "generic"
         case .military:       return "military"
         case .controlMeasure: return "control_measure"
+        case .marker:         return "marker"
         }
     }
 
@@ -257,6 +261,7 @@ enum GeoJSONExporter {
         case .generic:                return "generic"
         case .military(let spec):     return "\(spec.affiliation.rawValue).\(spec.function.rawValue).\(spec.echelon.rawValue)"
         case .controlMeasure(let m):  return m.rawValue
+        case .marker(let mk):         return "\(mk.set.rawValue).\(mk.symbolID)"
         }
     }
 

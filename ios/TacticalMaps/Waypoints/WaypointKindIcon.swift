@@ -22,6 +22,9 @@ struct WaypointKindIcon: View {
                                              rotation: rotation,
                                              color: taskColor.color,
                                              size: size)
+        } else if let mk = kind.markerSymbol {
+            Image(uiImage: MarkerSymbolRenderer.image(for: mk, size: size))
+                .frame(width: size, height: size)
         } else {
             Image(systemName: kind.sfSymbol)
                 .font(.system(size: size * 0.58, weight: .semibold))

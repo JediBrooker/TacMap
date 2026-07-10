@@ -95,7 +95,7 @@ final class OverlayContainerView: UIView {
             ? Set(waypoints.filter { wp in
                 switch wp.kind {
                 case .controlMeasure: return taskLabelsVisible
-                case .military, .generic: return unitLabelsVisible
+                case .military, .generic, .marker: return unitLabelsVisible
                 }
             }.map(\.id))
             : []
@@ -141,7 +141,7 @@ final class OverlayContainerView: UIView {
             let wantsLabel: Bool = {
                 switch wp.kind {
                 case .controlMeasure: return taskLabelsVisible
-                case .military, .generic: return unitLabelsVisible
+                case .military, .generic, .marker: return unitLabelsVisible
                 }
             }()
             if wantsLabel {
@@ -167,7 +167,7 @@ final class OverlayContainerView: UIView {
                     switch wp.kind {
                     case .controlMeasure:
                         label.center = CGPoint(x: pos.x, y: pos.y)
-                    case .military, .generic:
+                    case .military, .generic, .marker:
                         label.center = CGPoint(x: pos.x,
                                                y: frame.maxY + labelH / 2 + 2)
                     }
@@ -213,6 +213,8 @@ final class OverlayContainerView: UIView {
             let h: CGFloat = spec.affiliation == .friend ? 44 : 54
             return CGSize(width: 44, height: h)
         case .generic:
+            return CGSize(width: 34, height: 34)
+        case .marker:
             return CGSize(width: 34, height: 34)
         }
     }
@@ -344,6 +346,8 @@ final class BubbleView: UIView {
             imageView.image = MilitarySymbolRenderer.image(for: spec, size: 44)
         case .generic:
             imageView.image = Self.genericImage()
+        case .marker(let mk):
+            imageView.image = MarkerSymbolRenderer.image(for: mk, size: 34)
         }
     }
 

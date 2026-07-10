@@ -325,6 +325,8 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
             return CGSize(width: 44, height: 44)
         case .generic:
             return CGSize(width: 34, height: 34)
+        case .marker:
+            return CGSize(width: 34, height: 34)
         }
     }
 
