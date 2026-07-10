@@ -625,9 +625,9 @@ fun MapScreen(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .fillMaxWidth()
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-        if (onlineTilesActive) OnlineTilesBanner()
         MgrsHeader(
             mgrs = vm.headerMgrs,
             wgs84 = vm.headerWgs84,
@@ -637,8 +637,7 @@ fun MapScreen(
             elevationApprox = centreElevation?.isStale == true,
             utm = vm.headerUtm,
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
-            // align + statusBarsPadding moved to the wrapping Column so the
-            // banner shares the same top inset.
+            // align + statusBarsPadding moved to the wrapping Column.
             modifier = Modifier
                 .padding(top = 8.dp)
                 .fillMaxWidth(),
@@ -659,6 +658,9 @@ fun MapScreen(
                 )
             }
         )
+        // Compact online-tiles warning, tucked UNDER the header so it doesn't
+        // shove it down. Small pill, not a full-width strip.
+        if (onlineTilesActive) OnlineTilesPill(Modifier.padding(top = 4.dp))
         }
 
         // live track-recording badge, only while recording. Tap to stop.

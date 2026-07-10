@@ -397,10 +397,6 @@ struct ContentView: View {
     @ViewBuilder
     private func hudOverlay(bottomInset: CGFloat) -> some View {
         VStack(spacing: 0) {
-            // Above the MGRS card, not behind it. Lives in the HUD stack rather
-            // than as a map overlay so the header can't cover the warning.
-            if onlineTilesActive { OnlineTilesBanner() }
-
             MGRSHeaderView(
                 mgrs: mapVM.headerMGRS,
                 wgs84: mapVM.headerWGS84,
@@ -427,6 +423,12 @@ struct ContentView: View {
                 }
             )
             .padding(.horizontal, 12)
+
+            // Compact online-tiles warning, tucked UNDER the header so it
+            // doesn't shove it down. A small pill, not a full-width strip.
+            if onlineTilesActive {
+                OnlineTilesPill().padding(.top, 4)
+            }
 
             if trackRecorder.isRecording {
                 RecordingIndicator(
@@ -861,20 +863,24 @@ struct ContentView: View {
     }
 }
 
-/// Persistent warning while the map is pulling tiles from the internet. The
-/// provider learns your area of interest from the tiles you request, so this
-/// should never be something you find out by accident.
-private struct OnlineTilesBanner: View {
+/// Compact warning while the map is pulling tiles from the internet - the
+/// provider learns your area of interest from the tiles you request, so it
+/// shouldn't be something you find out by accident. Used to be a full-width
+/// strip that shoved the MGRS card down; now a small pill tucked under it.
+/// The full sentence lives in the accessibility label + THREAT_MODEL.
+private struct OnlineTilesPill: View {
     var body: some View {
-        Text("ONLINE BASEMAP  ·  tile requests reveal your area of interest")
-            .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(.white)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color(red: 0.69, green: 0, blue: 0.13).opacity(0.92))
-            .accessibilityLabel("Warning: online basemap active, tile requests reveal your area of interest")
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9, weight: .bold))
+            Text("Online basemap")
+                .font(.system(size: 10, weight: .bold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 3)
+        .background(Color(red: 0.69, green: 0, blue: 0.13).opacity(0.92), in: Capsule())
+        .accessibilityLabel("Online basemap active. Tile requests reveal your area of interest.")
     }
 }
 

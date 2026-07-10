@@ -10,7 +10,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -534,25 +540,38 @@ fun GoogleMapScreen(
     }
 }
 
-/// Persistent warning while the map is pulling tiles from the internet. The
-/// provider learns your area of interest from the tiles you request, so this
-/// should never be something you find out by accident.
-///
-/// Rendered by MapScreen at the top of the HUD column, above the MGRS header.
+/// Compact warning while the map is pulling tiles from the internet - the
+/// provider learns your area of interest from the tiles you request, so it
+/// shouldn't be something you find out by accident. Used to be a full-width
+/// strip that shoved the MGRS card down; now a small pill tucked under it.
+/// The full sentence lives in the accessibility label + THREAT_MODEL.
 @Composable
-internal fun OnlineTilesBanner(modifier: Modifier = Modifier) {
-    Text(
-        text = "ONLINE BASEMAP  ·  tile requests reveal your area of interest",
-        color = Color.White,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center,
+internal fun OnlineTilesPill(modifier: Modifier = Modifier) {
+    Row(
         modifier = modifier
-            .fillMaxWidth()
+            .clip(RoundedCornerShape(50))
             .background(Color(0xFFB00020).copy(alpha = 0.92f))
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .semantics { contentDescription = "Warning: online basemap active, tile requests reveal your area of interest" }
-    )
+            .padding(horizontal = 9.dp, vertical = 3.dp)
+            .semantics {
+                contentDescription =
+                    "Online basemap active. Tile requests reveal your area of interest."
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            Icons.Default.Warning,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(11.dp)
+        )
+        Text(
+            "Online basemap",
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
 }
 
 /// Fresh install with no offline pack and online basemaps gated off draws
