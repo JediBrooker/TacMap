@@ -125,11 +125,16 @@ fun TileMapView(
                     val (plat, plon) = next.coordinate(cx - panX, cy - panY)
                     next = next.copy(centerLat = plat, centerLon = plon)
 
-                    // 2) Focal zoom: keep the coord under the fingers fixed.
-                    if (zoom != 1f && source != null) {
+                    // 2) Focal zoom: keep the coord under the fingers fixed. A PDF/
+                    // blank map has no tile source, but the overlay still draws at
+                    // any zoom, so fall back to a sane global range rather than
+                    // refusing to zoom. Guarding on source != null here is what
+                    // broke pinch over an imported PDF.
+                    if (zoom != 1f) {
+                        val minZ = source?.minZoom?.toDouble() ?: 2.0
+                        val maxZ = source?.maxZoom?.toDouble() ?: 22.0
                         val (alat, alon) = next.coordinate(focalX, focalY)
-                        val nz = (next.zoom + log2(zoom.toDouble()))
-                            .coerceIn(source.minZoom.toDouble(), source.maxZoom.toDouble())
+                        val nz = (next.zoom + log2(zoom.toDouble())).coerceIn(minZ, maxZ)
                         next = next.copy(zoom = nz)
                         val landed = next.screenPoint(alat, alon)
                         val (clat, clon) = next.coordinate(cx + (landed.x - focalX), cy + (landed.y - focalY))
