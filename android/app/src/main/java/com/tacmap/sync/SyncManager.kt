@@ -35,6 +35,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -87,6 +88,7 @@ class SyncManager(
     /** Hook up a location supplier so sendPresence can grab the latest fix. */
     var locationProvider: (() -> Location?)? = null
 
+    private val appFilesDir: File = context.applicationContext.filesDir
     private val prefs = context.applicationContext.getSharedPreferences("sync", Context.MODE_PRIVATE)
     private val clientId: String = prefs.getString("clientId", null)
         ?: UUID.randomUUID().toString().also { prefs.edit().putString("clientId", it).apply() }
@@ -110,6 +112,9 @@ class SyncManager(
     // clientId, shared by presence + object writes. Room state cleared on leave.
     private val deviceSeed: ByteArray by lazy { loadOrCreateDeviceSeed() }
     private val myPublicKey: String by lazy { SyncSigning.publicKey(deviceSeed) }
+    private val myPublicKeyRaw: ByteArray by lazy {
+        SyncIdentity.urlB64Decode(myPublicKey)
+    }
     private val peerKeys = HashMap<String, String>()   // clientId -> pinned pubkey
     private val peerTs = HashMap<String, Long>()        // clientId -> last accepted presence ts
 
@@ -117,6 +122,13 @@ class SyncManager(
     private val versions = HashMap<String, Long>()        // id -> last-applied version
     private val lastContent = HashMap<String, String>()   // id -> last serialised GeoJSON (echo guard)
     private val kindById = HashMap<String, String>()       // id -> "waypoint" | "drawing"
+
+    // v3 protocol state
+    private var protocolVersion = 2
+    private var v3Keys: SyncCrypto.V3RoomKeys? = null
+    private var myActorId: String? = null
+    private var replayState: SyncReplayState? = null
+    private var sessionDomain: ByteArray? = null
 
     private var presenceJob: Job? = null
     private var stalenessSweepJob: Job? = null
@@ -132,14 +144,32 @@ class SyncManager(
         if (code.isEmpty()) return
         leave()
         wantConnected = true
-        // Derive routing id + room key + writer-auth token once from the code.
-        val keys = SyncCrypto.deriveRoom(code)
-        roomKey = keys.roomKey
-        authToken = keys.authToken
-        // Self-hosters repoint the relay in OPSEC settings; blank -> ours.
         relayBase = OpsecSettings.shared?.relayUrl?.value?.takeIf { it.isNotBlank() } ?: RELAY_BASE
-        _room.value = code
-        connect(keys.roomId)
+
+        if (code.startsWith("3:")) {
+            // v3 protocol: strip prefix, derive v3 keys, setup identity
+            protocolVersion = 3
+            val rawCode = code.removePrefix("3:")
+            val keys = SyncCrypto.deriveRoomV3(rawCode)
+            v3Keys = keys
+            roomKey = keys.roomKey
+            authToken = keys.authToken
+            myActorId = SyncIdentity.actorId(keys.roomIdRaw, myPublicKeyRaw)
+            sessionDomain = SyncIdentity.generateSessionDomain()
+            val replay = SyncReplayState(keys.roomId, appFilesDir)
+            replay.load()
+            replayState = replay
+            _room.value = code
+            connect(keys.roomId)
+        } else {
+            // v2 protocol: unchanged
+            protocolVersion = 2
+            val keys = SyncCrypto.deriveRoom(code)
+            roomKey = keys.roomKey
+            authToken = keys.authToken
+            _room.value = code
+            connect(keys.roomId)
+        }
         startObserving()
         startPresenceBroadcast()
         startStalenessSweep()
@@ -151,24 +181,36 @@ class SyncManager(
         presenceJob?.cancel(); presenceJob = null
         stalenessSweepJob?.cancel(); stalenessSweepJob = null
         ws?.close(1000, "leave"); ws = null
+        // v3: persist replay state before clearing transport (survives leave/restart)
+        replayState?.save()
         roomKey = null
         authToken = null
         _room.value = null
         _status.value = Status.OFFLINE
         _peers.value = emptyMap()
         versions.clear(); lastContent.clear(); kindById.clear()
-        peerKeys.clear(); peerTs.clear()  // re-pin fresh in the next room
+        peerKeys.clear(); peerTs.clear()
+        // v3 state: clear transport-session fields but NOT replayState (durable)
+        v3Keys = null
+        myActorId = null
+        sessionDomain = null
+        replayState = null
+        protocolVersion = 2
     }
 
     // ----- Connection -----
 
     private fun connect(roomId: String) {
         _status.value = Status.CONNECTING
-        val builder = Request.Builder().url(relayBase + roomId)
-        // Writer-auth: the relay 401s a socket with no bearer token. The token is
-        // derived from the join code and only ever rides the handshake header
-        // (never the URL or logs), so a leaked roomId alone can't write.
+        val path = if (protocolVersion == 3) "v3/room/" else "room/"
+        val base = if (relayBase.endsWith("/")) relayBase.dropLast(1) else relayBase
+        val url = "$base/$path$roomId"
+        val builder = Request.Builder().url(url)
         authToken?.let { builder.header("Authorization", "Bearer $it") }
+        if (protocolVersion == 3) {
+            builder.header("X-Protocol", "3")
+            builder.header("X-Room-Id", roomId)
+        }
         ws = http.newWebSocket(builder.build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 _status.value = Status.CONNECTED
@@ -207,7 +249,14 @@ class SyncManager(
         for (wp in wps) current[wp.id] = "waypoint" to GeoJsonExporter.export(listOf(wp), emptyList(), doc.layers)
         for (f in doc.features) current[f.id] = "drawing" to GeoJsonExporter.export(emptyList(), listOf(f), doc.layers)
 
-        // new / changed -> put
+        if (protocolVersion == 3) {
+            syncLocalStateV3(current)
+        } else {
+            syncLocalStateV2(current)
+        }
+    }
+
+    private fun syncLocalStateV2(current: HashMap<String, Pair<String, String>>) {
         for ((id, kc) in current) {
             val (kind, content) = kc
             if (lastContent[id] == content) continue
@@ -217,12 +266,38 @@ class SyncManager(
             kindById[id] = kind
             sendPut(id, clock, kind, content)
         }
-        // removed -> del
         val gone = lastContent.keys.filter { it !in current }
         for (id in gone) {
             clock += 1
             sendDel(id, clock)
             lastContent.remove(id); versions.remove(id); kindById.remove(id)
+        }
+    }
+
+    private fun syncLocalStateV3(current: HashMap<String, Pair<String, String>>) {
+        val keys = v3Keys ?: return
+        val actor = myActorId ?: return
+        val replay = replayState ?: return
+
+        for ((id, kc) in current) {
+            val (kind, content) = kc
+            if (lastContent[id] == content) continue
+            val wireId = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
+            val counter = replay.nextCounter()
+            val vs = VersionStamp(counter, actor)
+            replay.save()
+            lastContent[id] = content
+            kindById[id] = kind
+            sendPutV3(wireId, vs, kind, content)
+        }
+        val gone = lastContent.keys.filter { it !in current }
+        for (id in gone) {
+            val wireId = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
+            val counter = replay.nextCounter()
+            val vs = VersionStamp(counter, actor)
+            replay.save()
+            sendDelV3(wireId, vs)
+            lastContent.remove(id); kindById.remove(id)
         }
     }
 
@@ -243,10 +318,6 @@ class SyncManager(
 
     private fun sendDel(id: String, v: Long) {
         val key = roomKey ?: return
-        // Deletes used to be an unauthenticated {id,v} - a coerced relay could
-        // forge one and silently remove a contact. Now seal a signed proof: only
-        // a room-key holder can produce it (relay can't), and it's attributable
-        // to a device. AAD "del" so it can't be replayed as a put.
         val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, "del", clientId, ""))
         val inner = JSONObject().apply { put("pub", myPublicKey); put("sig", sig) }
         val aad = SyncCrypto.aad(id, v, "del")
@@ -256,12 +327,62 @@ class SyncManager(
         }.toString())
     }
 
+    // -- v3 outbound --
+
+    private fun sendHelloV3() {
+        val actor = myActorId ?: return
+        val sd = sessionDomain ?: return
+        ws?.send(JSONObject().apply {
+            put("t", "hello")
+            put("by", actor)
+            put("pub", myPublicKey)
+            put("sd", SyncIdentity.urlB64(sd))
+        }.toString())
+    }
+
+    private fun sendPutV3(wireId: String, vs: VersionStamp, kind: String, content: String) {
+        val key = roomKey ?: return
+        val keys = v3Keys ?: return
+        val actor = myActorId ?: return
+        val sd = sessionDomain ?: return
+        val payloadHash = SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8))
+        val preimage = SyncIdentity.buildPreimage(
+            SyncIdentity.DOMAIN_PUT, keys.roomIdRaw, actor, sd,
+            VersionStamp.counterHex16(vs.counter), wireId, kind, payloadHash)
+        val sig = SyncSigning.sign(deviceSeed, preimage)
+        val inner = JSONObject().apply { put("c", content); put("sig", sig) }
+        val aad = SyncCrypto.aadV3(wireId, vs.encode(), kind)
+        val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
+        ws?.send(JSONObject().apply {
+            put("t", "put"); put("id", wireId); put("vs", vs.encode())
+            put("by", actor); put("kind", kind); put("ct", ct); put("pub", myPublicKey)
+        }.toString())
+    }
+
+    private fun sendDelV3(wireId: String, vs: VersionStamp) {
+        val key = roomKey ?: return
+        val keys = v3Keys ?: return
+        val actor = myActorId ?: return
+        val sd = sessionDomain ?: return
+        val payloadHash = SyncIdentity.sha256(ByteArray(0))
+        val preimage = SyncIdentity.buildPreimage(
+            SyncIdentity.DOMAIN_DELETE, keys.roomIdRaw, actor, sd,
+            VersionStamp.counterHex16(vs.counter), wireId, "del", payloadHash)
+        val sig = SyncSigning.sign(deviceSeed, preimage)
+        val inner = JSONObject().apply { put("sig", sig) }
+        val aad = SyncCrypto.aadV3(wireId, vs.encode(), "del")
+        val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
+        ws?.send(JSONObject().apply {
+            put("t", "del"); put("id", wireId); put("vs", vs.encode())
+            put("by", actor); put("kind", "del"); put("ct", ct); put("pub", myPublicKey)
+        }.toString())
+    }
+
     // ----- Inbound -----
 
-    // v2 containment ceilings (pending v3 protocol limits)
     companion object {
-        /** Default E2E-blind relay. Self-hosters can swap in their own Worker. */
-        const val RELAY_BASE = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
+        /** Default E2E-blind relay base URL (path added per-protocol-version). */
+        const val RELAY_BASE = "wss://tacmap-sync.christianbrooker.workers.dev"
         /** SharedPreferences key holding the sealed presence-config blob. */
         private const val KEY_PRESENCE = "config_sealed"
         /** AEAD label binding that blob so it can't be opened as another pref. */
@@ -277,35 +398,73 @@ class SyncManager(
     }
 
     private fun handleMessage(text: String) {
-        // frame ceiling: drop oversized messages before parsing
         if (text.length > MAX_FRAME_BYTES) return
-        // fail-closed: any unexpected throw from downstream parsing is swallowed
-        // so a malformed frame never kills the coroutine scope
         try {
             val msg = JSONObject(text)
-            when (msg.optString("t")) {
-                "snapshot" -> {
-                    val items = msg.optJSONArray("items") ?: JSONArray()
-                    if (items.length() > MAX_SNAPSHOT_ITEMS) return
-                    for (i in 0 until items.length()) applyRecord(items.getJSONObject(i))
-                    val members = msg.optJSONArray("members")
-                    if (members != null) {
-                        val cap = minOf(members.length(), MAX_SNAPSHOT_ITEMS)
-                        for (i in 0 until cap) {
-                            applyPresence(members.getJSONObject(i))
-                        }
-                    }
-                }
-                "put" -> applyRecord(msg)
-                "del" -> applyDelete(msg)
-                "loc" -> applyPresence(msg)
-                "leave" -> {
-                    val peerId = msg.optString("clientId").ifEmpty { return }
-                    _peers.value = _peers.value - peerId
-                }
+            if (protocolVersion == 3) {
+                handleMessageV3(msg)
+            } else {
+                handleMessageV2(msg)
             }
         } catch (_: Throwable) {
-            // silently drop — don't log frame content (SEC-019)
+            // silently drop -- don't log frame content (SEC-019)
+        }
+    }
+
+    private fun handleMessageV2(msg: JSONObject) {
+        when (msg.optString("t")) {
+            "snapshot" -> {
+                val items = msg.optJSONArray("items") ?: JSONArray()
+                if (items.length() > MAX_SNAPSHOT_ITEMS) return
+                for (i in 0 until items.length()) applyRecord(items.getJSONObject(i))
+                val members = msg.optJSONArray("members")
+                if (members != null) {
+                    val cap = minOf(members.length(), MAX_SNAPSHOT_ITEMS)
+                    for (i in 0 until cap) {
+                        applyPresence(members.getJSONObject(i))
+                    }
+                }
+            }
+            "put" -> applyRecord(msg)
+            "del" -> applyDelete(msg)
+            "loc" -> applyPresence(msg)
+            "leave" -> {
+                val peerId = msg.optString("clientId").ifEmpty { return }
+                _peers.value = _peers.value - peerId
+            }
+        }
+    }
+
+    private fun handleMessageV3(msg: JSONObject) {
+        when (msg.optString("t")) {
+            "snapshot-begin" -> {
+                val seq = msg.optLong("seq", -1L)
+                val replay = replayState ?: return
+                if (replay.lastSnapshotSeq >= 0 && seq < replay.lastSnapshotSeq) {
+                    // relay is serving stale state -- log warning but still apply
+                    android.util.Log.w("SyncManager", "Snapshot gap: relay seq=$seq < last=${replay.lastSnapshotSeq}")
+                }
+            }
+            "snapshot" -> {
+                val items = msg.optJSONArray("items") ?: JSONArray()
+                if (items.length() > MAX_SNAPSHOT_ITEMS) return
+                for (i in 0 until items.length()) applyRecordV3(items.getJSONObject(i))
+            }
+            "snapshot-end" -> {
+                val seq = msg.optLong("seq", -1L)
+                if (seq >= 0) replayState?.updateSnapshotSeq(seq)
+                replayState?.save()
+                // send hello after snapshot to register our identity
+                sendHelloV3()
+            }
+            "hello" -> applyHelloV3(msg)
+            "put" -> applyRecordV3(msg)
+            "del" -> applyDeleteV3(msg)
+            "loc" -> applyPresenceV3(msg)
+            "leave" -> {
+                val peerId = msg.optString("by").ifEmpty { return }
+                _peers.value = _peers.value - peerId
+            }
         }
     }
 
@@ -398,6 +557,210 @@ class SyncManager(
         _remoteUpdates.tryEmit("$kindLabel deleted by another device")
     }
 
+    // -- v3 inbound handlers --
+
+    private fun applyHelloV3(msg: JSONObject) {
+        val by = msg.optString("by").ifEmpty { return }
+        val pub = msg.optString("pub").ifEmpty { return }
+        val sd = msg.optString("sd").ifEmpty { return }
+        if (by == myActorId) return
+        val replay = replayState ?: return
+        if (!replay.registerActor(by, pub)) return  // key swap -> reject
+        replay.updateSessionDomain(by, sd)
+        replay.save()
+    }
+
+    private fun applyRecordV3(rec: JSONObject) {
+        if (rec.optBoolean("deleted", false)) { applyDeleteV3(rec); return }
+        val wireId = rec.optString("id").ifEmpty { return }
+        val vsStr = rec.optString("vs").ifEmpty { return }
+        val vs = VersionStamp.parse(vsStr) ?: return
+        val by = rec.optString("by").ifEmpty { return }
+        val pub = rec.optString("pub").ifEmpty { return }
+        if (by == myActorId) return  // echo
+        val key = roomKey ?: return
+        val keys = v3Keys ?: return
+        val replay = replayState ?: return
+        val kind = rec.optString("kind", "unknown")
+        val ctB64 = rec.optString("ct")
+        if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return
+        // actor registration check
+        if (!replay.registerActor(by, pub)) return
+        // replay protection: stamp must be newer than anything we've seen
+        if (!replay.advance(wireId, vs)) return
+        // AEAD open
+        val aad = SyncCrypto.aadV3(wireId, vsStr, kind)
+        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
+        val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
+        val content = inner.optString("c")
+        val sig = inner.optString("sig").ifEmpty { return }
+        // verify Ed25519 signature over the binary preimage
+        val payloadHash = SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8))
+        val peerSd = SyncIdentity.urlB64Decode(replay.getSessionDomain(by) ?: return)
+        val preimage = SyncIdentity.buildPreimage(
+            SyncIdentity.DOMAIN_PUT, keys.roomIdRaw, by, peerSd,
+            VersionStamp.counterHex16(vs.counter), wireId, kind, payloadHash)
+        if (!SyncSigning.verify(pub, preimage, sig)) return
+        replay.save()
+
+        val doc = drawingStore.document.value
+        val fallback = doc.layers.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID
+        val parsed = runCatching {
+            GeoJsonImporter.parse(content, existingLayers = doc.layers, fallbackLayerId = fallback)
+        }.getOrNull() ?: return
+
+        parsed.newLayers.forEach { layer ->
+            if (doc.layers.none { it.id == layer.id }) drawingStore.addLayerVerbatim(layer)
+        }
+        parsed.waypoints.forEach { upsertWaypoint(it) }
+        parsed.drawings.forEach { upsertDrawing(it) }
+
+        // echo guard: track the last content we received so local diff doesn't bounce it
+        val sourceId = findLocalIdForWireId(wireId)
+        if (sourceId != null) {
+            kindById[sourceId] = if (parsed.waypoints.isNotEmpty()) "waypoint" else "drawing"
+            lastContent[sourceId] = reexport(sourceId)
+        }
+
+        val objectName = parsed.waypoints.firstOrNull()?.name
+            ?: parsed.drawings.firstOrNull()?.name ?: "Object"
+        val kindLabel = if (parsed.waypoints.isNotEmpty()) "Waypoint" else "Drawing"
+        _remoteUpdates.tryEmit("$kindLabel '$objectName' updated by another device")
+    }
+
+    private fun applyDeleteV3(rec: JSONObject) {
+        val wireId = rec.optString("id").ifEmpty { return }
+        val vsStr = rec.optString("vs").ifEmpty { return }
+        val vs = VersionStamp.parse(vsStr) ?: return
+        val by = rec.optString("by").ifEmpty { return }
+        val pub = rec.optString("pub").ifEmpty { return }
+        if (by == myActorId) return
+        val key = roomKey ?: return
+        val keys = v3Keys ?: return
+        val replay = replayState ?: return
+        val ctB64 = rec.optString("ct")
+        if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return
+        if (!replay.registerActor(by, pub)) return
+        if (!replay.tombstone(wireId, vs)) return
+        val aad = SyncCrypto.aadV3(wireId, vsStr, "del")
+        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
+        val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
+        val sig = inner.optString("sig").ifEmpty { return }
+        val payloadHash = SyncIdentity.sha256(ByteArray(0))
+        val peerSd = SyncIdentity.urlB64Decode(replay.getSessionDomain(by) ?: return)
+        val preimage = SyncIdentity.buildPreimage(
+            SyncIdentity.DOMAIN_DELETE, keys.roomIdRaw, by, peerSd,
+            VersionStamp.counterHex16(vs.counter), wireId, "del", payloadHash)
+        if (!SyncSigning.verify(pub, preimage, sig)) return
+        replay.save()
+
+        val sourceId = findLocalIdForWireId(wireId)
+        if (sourceId != null) {
+            val kindLabel = when (kindById[sourceId]) {
+                "drawing" -> "Drawing"
+                "waypoint" -> "Waypoint"
+                else -> "Object"
+            }
+            when (kindById[sourceId]) {
+                "drawing" -> drawingStore.removeFeature(sourceId)
+                "waypoint" -> waypointStore.waypoints.value.firstOrNull { it.id == sourceId }
+                    ?.let { waypointStore.remove(it) }
+                else -> {
+                    drawingStore.removeFeature(sourceId)
+                    waypointStore.waypoints.value.firstOrNull { it.id == sourceId }
+                        ?.let { waypointStore.remove(it) }
+                }
+            }
+            lastContent.remove(sourceId); kindById.remove(sourceId)
+            _remoteUpdates.tryEmit("$kindLabel deleted by another device")
+        }
+    }
+
+    private fun applyPresenceV3(msg: JSONObject) {
+        val by = msg.optString("by").ifEmpty { return }
+        if (by == myActorId) return
+        val pub = msg.optString("pub").ifEmpty { return }
+        val vsStr = msg.optString("vs").ifEmpty { return }
+        val vs = VersionStamp.parse(vsStr) ?: return
+        val key = roomKey ?: return
+        val keys = v3Keys ?: return
+        val replay = replayState ?: return
+        val ctB64 = msg.optString("ct").ifEmpty { return }
+        if (ctB64.length > MAX_BASE64_BYTES) return
+        if (!replay.registerActor(by, pub)) return
+        if (!replay.advancePresence(by, vs.counter)) return
+        val aad = SyncCrypto.aadPresenceV3(by, vsStr)
+        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
+        val obj = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
+        val sig = obj.optString("sig").ifEmpty { return }
+        val payloadBytes = buildPresencePayloadBytes(obj)
+        val payloadHash = SyncIdentity.sha256(payloadBytes)
+        val peerSd = SyncIdentity.urlB64Decode(replay.getSessionDomain(by) ?: return)
+        val preimage = SyncIdentity.buildPreimage(
+            SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, by, peerSd,
+            VersionStamp.counterHex16(vs.counter), "", "loc", payloadHash)
+        if (!SyncSigning.verify(pub, preimage, sig)) return
+        replay.save()
+
+        val callsign = obj.optString("callsign", "")
+        val affiliation = obj.optString("affiliation", "UNKNOWN")
+        val echelon = obj.optString("echelon", "TEAM")
+        val function = obj.optString("function", "INFANTRY")
+        val isHQ = obj.optBoolean("isHQ", false)
+        val lat = obj.optDouble("lat", 0.0)
+        val lon = obj.optDouble("lon", 0.0)
+        val heading = obj.optDouble("heading", 0.0)
+        val speed = obj.optDouble("speed", 0.0)
+        val peer = PresencePeer(
+            clientId = by,
+            callsign = callsign,
+            affiliation = affiliation,
+            echelon = echelon,
+            function = function,
+            isHQ = isHQ,
+            lat = lat, lon = lon, heading = heading, speed = speed,
+            ts = System.currentTimeMillis()
+        )
+        _peers.value = _peers.value + (by to peer)
+    }
+
+    private fun buildPresencePayloadBytes(obj: JSONObject): ByteArray {
+        // canonical JSON matching what the sender produces for hashing
+        val canonical = JSONObject()
+        canonical.put("lat", obj.optDouble("lat", 0.0))
+        canonical.put("lon", obj.optDouble("lon", 0.0))
+        canonical.put("heading", obj.optDouble("heading", 0.0))
+        canonical.put("speed", obj.optDouble("speed", 0.0))
+        canonical.put("callsign", obj.optString("callsign", ""))
+        canonical.put("affiliation", obj.optString("affiliation", "UNKNOWN"))
+        canonical.put("echelon", obj.optString("echelon", "TEAM"))
+        canonical.put("function", obj.optString("function", "INFANTRY"))
+        canonical.put("isHQ", obj.optBoolean("isHQ", false))
+        return canonical.toString().toByteArray(Charsets.UTF_8)
+    }
+
+    /**
+     * Reverse-lookup: given a v3 wire object ID, find the local UUID that maps to it.
+     * This is O(n) over local objects, which is fine for typical room sizes.
+     */
+    private fun findLocalIdForWireId(wireId: String): String? {
+        val keys = v3Keys ?: return null
+        for (id in lastContent.keys) {
+            val computed = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
+            if (computed == wireId) return id
+        }
+        // also check current stores
+        for (wp in waypointStore.waypoints.value) {
+            val computed = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(wp.id))
+            if (computed == wireId) return wp.id
+        }
+        for (f in drawingStore.document.value.features) {
+            val computed = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(f.id))
+            if (computed == wireId) return f.id
+        }
+        return null
+    }
+
     /** TOFU-pin [by]'s signing key and verify [signed] under it. Shared by
      *  object puts and deletes and by presence, so a device has one identity per
      *  clientId. Missing/garbage fields, or a key that doesn't match the existing
@@ -445,6 +808,7 @@ class SyncManager(
     }
 
     private fun sendPresence() {
+        if (protocolVersion == 3) { sendPresenceV3(); return }
         val loc = locationProvider?.invoke() ?: return
         val key = roomKey ?: return
         val cfg = presenceConfig
@@ -454,10 +818,6 @@ class SyncManager(
         val lon = loc.longitude
         val heading = if (loc.hasBearing()) loc.bearing.toDouble() else 0.0
         val speed = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0
-        // Sign the identity+position+ts with this device's Ed25519 key. The sig
-        // rides INSIDE the sealed payload (relay stays blind to it), so a room
-        // member can't forge another peer's presence and a replayed old blob is
-        // caught by the receiver's ts check.
         val sig = SyncSigning.sign(deviceSeed, SyncSigning.presenceMessage(
             clientId, ts, lat, lon, heading, speed,
             cfg.callsign, cfg.affiliation.name, cfg.echelon.name, cfg.function.name, cfg.isHQ))
@@ -481,6 +841,47 @@ class SyncManager(
             put("t", "loc")
             put("clientId", clientId)
             put("ct", ct)
+        }.toString())
+    }
+
+    private fun sendPresenceV3() {
+        val loc = locationProvider?.invoke() ?: return
+        val key = roomKey ?: return
+        val keys = v3Keys ?: return
+        val actor = myActorId ?: return
+        val sd = sessionDomain ?: return
+        val replay = replayState ?: return
+        val cfg = presenceConfig
+        if (cfg.callsign.isBlank()) return
+        val lat = loc.latitude
+        val lon = loc.longitude
+        val heading = if (loc.hasBearing()) loc.bearing.toDouble() else 0.0
+        val speed = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0
+        val counter = replay.nextCounter()
+        val vs = VersionStamp(counter, actor)
+        replay.save()
+        // canonical presence payload (key order matters for hash)
+        val payload = JSONObject()
+        payload.put("lat", lat)
+        payload.put("lon", lon)
+        payload.put("heading", heading)
+        payload.put("speed", speed)
+        payload.put("callsign", cfg.callsign)
+        payload.put("affiliation", cfg.affiliation.name)
+        payload.put("echelon", cfg.echelon.name)
+        payload.put("function", cfg.function.name)
+        payload.put("isHQ", cfg.isHQ)
+        val payloadHash = SyncIdentity.sha256(payload.toString().toByteArray(Charsets.UTF_8))
+        val preimage = SyncIdentity.buildPreimage(
+            SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, actor, sd,
+            VersionStamp.counterHex16(vs.counter), "", "loc", payloadHash)
+        val sig = SyncSigning.sign(deviceSeed, preimage)
+        payload.put("sig", sig)
+        val aad = SyncCrypto.aadPresenceV3(actor, vs.encode())
+        val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, payload.toString().toByteArray(Charsets.UTF_8), aad))
+        ws?.send(JSONObject().apply {
+            put("t", "loc"); put("by", actor); put("ct", ct)
+            put("pub", myPublicKey); put("vs", vs.encode())
         }.toString())
     }
 
