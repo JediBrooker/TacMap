@@ -242,6 +242,16 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         requestResetNorth()
     }
 
+    /** Re-frame the loaded offline/imported map's coverage. Paired with
+     *  centreOnUser so that after panning off (or centring on a distant live
+     *  location) the user can jump straight back to where the map actually is.
+     *  No-op for unbounded online basemaps. */
+    fun centreOnMap() {
+        val coverage = _mapSource.value.coverage ?: return
+        val c = coverage.center
+        flyTo(c.latitude, c.longitude, 13f)
+    }
+
     /** Fly camera to arbitrary coord. Used by waypoint list's "fly to"
      *  rows. Enters browse mode so header shows map centre not user. */
     fun flyTo(lat: Double, lng: Double, zoom: Float = 15f) {

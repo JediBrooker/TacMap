@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.ImportExport
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
@@ -148,6 +149,17 @@ fun MapScreen(
     /// Only the online raster styles (Esri/OSM) do; offline packs and PDFs don't.
     val onlineTilesActive = onlineBasemapsEnabled &&
         mapSource is com.tacmap.calibration.OnlineRasterMapSourceAndroid
+    /// An imported, location-bound basemap (MBTiles pack or PDF/GeoPDF). These
+    /// have coverage, so they get the "Centre on Map" button + green banner tag.
+    val importedMapLoaded = mapSource is com.tacmap.calibration.OfflineTileMapSourceAndroid ||
+        mapSource is com.tacmap.calibration.PdfMapSource
+    /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
+    val basemapLabel: String? = when {
+        importedMapLoaded -> "Offline basemap"
+        onlineTilesActive -> "Online basemap"
+        else -> null
+    }
+    val basemapColor = if (importedMapLoaded) Color(0xFF74E38A) else Color(0xFFFF5A5A)
     val waypointStore = remember { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
     val drawingStore = remember { DrawingStore(context) }
@@ -641,6 +653,8 @@ fun MapScreen(
             elevationApprox = centreElevation?.isStale == true,
             utm = vm.headerUtm,
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
+            basemapLabel = basemapLabel,
+            basemapColor = basemapColor,
             // align + statusBarsPadding moved to the wrapping Column.
             modifier = Modifier
                 .padding(top = 8.dp)
@@ -922,16 +936,28 @@ fun MapScreen(
                     .fillMaxWidth()
             )
         } else {
-            Column(
+            // Basemap status now lives in the MGRS banner, so the bottom is just
+            // the recentre pills. When an imported (offline/PDF) map is loaded, add
+            // a "Map" pill so centring on a distant live location doesn't strand the
+            // user away from their map. Side by side (stacking ate too much height);
+            // the location label shrinks when both show.
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Online-basemap status sits right above the Centre pill, out of
-                // the top record-badge's way.
-                if (onlineTilesActive) OnlineTilesPill(Modifier.padding(bottom = 8.dp))
-                CentrePill(onClick = { vm.centreOnUser() })
+                CentrePill(
+                    onClick = { vm.centreOnUser() },
+                    label = if (importedMapLoaded) "My Location" else "Centre on My Location"
+                )
+                if (importedMapLoaded) {
+                    CentrePill(
+                        onClick = { vm.centreOnMap() },
+                        label = "Map",
+                        icon = Icons.Default.Map
+                    )
+                }
             }
         }
 

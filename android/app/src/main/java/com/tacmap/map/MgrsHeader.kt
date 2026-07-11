@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -50,6 +49,11 @@ fun MgrsHeader(
     elevationApprox: Boolean = false,
     utm: String? = null,
     syncConnected: Boolean = false,
+    /// Basemap status shown where the old Live Location/Map Centre label was.
+    /// "Online basemap" (red) when pulling internet tiles, "Offline basemap"
+    /// (green) when an imported pack/PDF is active, null when neither.
+    basemapLabel: String? = null,
+    basemapColor: Color = Color.Unspecified,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -128,20 +132,18 @@ fun MgrsHeader(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Default.LocationSearching,
-                contentDescription = null,
-                tint = Color(0xFFF2A24A),
-                modifier = Modifier.size(12.dp)
-            )
-            Spacer(Modifier.size(5.dp))
-            Text(
-                if (isBrowsing) "Map Centre" else "Live Location",
-                color = Color(0xFFF2A24A),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 13.sp
-            )
+            // The old Live Location / Map Centre label lived here, but the card
+            // title already says which one, so this slot now carries the basemap
+            // status (red online / green offline) instead.
+            if (basemapLabel != null) {
+                Text(
+                    basemapLabel,
+                    color = basemapColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 13.sp
+                )
+            }
             Spacer(Modifier.weight(1f))
             if (syncConnected) {
                 Icon(
