@@ -40,6 +40,7 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
     val status by manager.status.collectAsState()
     val room by manager.room.collectAsState()
     var code by remember { mutableStateOf(room ?: "") }
+    var codeError by remember { mutableStateOf<String?>(null) }
 
     // Local copies of the presence config fields, initialised from the manager.
     var callsign by remember { mutableStateOf(manager.presenceConfig.callsign) }
@@ -90,16 +91,37 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
                 } else {
                     OutlinedTextField(
                         value = code,
-                        onValueChange = { code = it },
+                        onValueChange = { code = it; codeError = null },
                         label = { Text("Unit join code") },
+                        isError = codeError != null,
+                        supportingText = {
+                            Text(codeError
+                                ?: "Share this with your unit. Tap Generate for a strong one.")
+                        },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Button(
-                        enabled = code.isNotBlank(),
-                        onClick = { manager.join(code) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Join / create room") }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { code = SyncCrypto.generateJoinCode(); codeError = null },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Generate") }
+                        Button(
+                            enabled = code.isNotBlank(),
+                            onClick = {
+                                if (SyncCrypto.isJoinCodeTooWeak(code)) {
+                                    codeError = "Too short to be safe. Use at least " +
+                                        "${SyncCrypto.MIN_JOIN_CODE_LEN} characters, or tap Generate."
+                                } else {
+                                    manager.join(code)
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Join / create") }
+                    }
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))

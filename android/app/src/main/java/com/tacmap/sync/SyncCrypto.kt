@@ -39,6 +39,12 @@ object SyncCrypto {
     private const val PBKDF2_ITERATIONS = 210_000
     private const val IV_LEN = 12
     private const val TAG_BITS = 128
+    // Join-code generation + strength floor. The whole scheme's confidentiality
+    // rests on code entropy (roomId is relay-visible and code-derived), so make
+    // strong codes the easy path and reject the shortest guessable ones.
+    const val MIN_JOIN_CODE_LEN = 14
+    private const val GENERATED_CODE_LEN = 16
+    private const val CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"  // base32 minus 0/O 1/I/L U
 
     class RoomKeys(val roomId: String, val roomKey: ByteArray, val authToken: String)
 
@@ -55,6 +61,25 @@ object SyncCrypto {
     fun roomId(joinCode: String): String = deriveRoom(joinCode).roomId
     fun roomKey(joinCode: String): ByteArray = deriveRoom(joinCode).roomKey
     fun authToken(joinCode: String): String = deriveRoom(joinCode).authToken
+
+    /**
+     * A strong, unambiguous join code (~78 bits) - the recommended way to start
+     * a room. Security rests ENTIRELY on join-code entropy: because roomId is
+     * relay-visible and derived from the same code, a coerced relay can offline-
+     * guess a weak/human code ("bravo-tonight") and recover roomKey + authToken
+     * (see THREAT_MODEL). Uppercase base32 minus look-alikes so it survives being
+     * read out over the net.
+     */
+    fun generateJoinCode(): String {
+        val rnd = SecureRandom()
+        return buildString {
+            repeat(GENERATED_CODE_LEN) { append(CODE_ALPHABET[rnd.nextInt(CODE_ALPHABET.length)]) }
+        }
+    }
+
+    /** True when a code is too short to resist offline guessing against the
+     *  relay-visible roomId. Generated codes clear this comfortably. */
+    fun isJoinCodeTooWeak(code: String): Boolean = code.trim().length < MIN_JOIN_CODE_LEN
 
     private fun master(joinCode: String): ByteArray {
         val spec = PBEKeySpec(joinCode.toCharArray(), SALT.toByteArray(Charsets.UTF_8), PBKDF2_ITERATIONS, 256)
