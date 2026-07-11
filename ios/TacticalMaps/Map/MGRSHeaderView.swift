@@ -14,8 +14,14 @@ struct MGRSHeaderView: View {
     var utm: String? = nil
     /// True while connected to a Unit Sync room. Shows a blue indicator.
     var syncConnected: Bool = false
-    let isBrowsing: Bool
-    let accuracy: CLLocationAccuracy?
+    /// Basemap status shown where the old Live Location/Map Centre label was.
+    /// "Online basemap" (red) when pulling internet tiles, "Offline basemap"
+    /// (green) when an imported pack/PDF is active, nil when neither.
+    var basemapLabel: String? = nil
+    var basemapColor: Color = .clear
+    /// Grid-magnetic angle for compass work, raw degrees (+E / -W). Shown
+    /// bottom-right in mils by default; tap it to flip to degrees. nil hides it.
+    var gridMagneticDegrees: Double? = nil
     let elevation: CLLocationDistance?
     /// True when elevation is approximate (offline cache). Shown with
     /// leading "~". Defaults false (fresh/live reading).
@@ -26,13 +32,14 @@ struct MGRSHeaderView: View {
     var onDropPin: ((CLLocationCoordinate2D, String) -> Void)? = nil
 
     @State private var showCopiedToast: Bool = false
+    /// Grid-magnetic units. Mils by default (military standard); tapping the
+    /// G-M readout flips it to degrees. Persisted across launches.
+    @AppStorage("gridMagneticMils") private var gridMagneticMils = true
 
     var body: some View {
         VStack(spacing: 3) {
-            Text(isBrowsing ? "MGRS (Map Centre)" : "MGRS (Your Location)")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.7))
-
+            // The "MGRS (Map Centre)/(Your Location)" title used to sit here;
+            // dropped as redundant (the big readout is obviously the grid ref).
             Text(mgrs)
                 // Text-style not fixed 26pt so it scales with Dynamic Type.
                 // Still shrinks to fit.
@@ -67,9 +74,14 @@ struct MGRSHeaderView: View {
             }
 
             HStack(spacing: 6) {
-                Image(systemName: "scope").font(.caption2)
-                Text(isBrowsing ? "Map Centre" : "Live Location")
-                    .font(.caption.weight(.semibold))
+                // The old Live Location / Map Centre label lived here, but the
+                // card title already says which one, so this slot now carries the
+                // basemap status (red online / green offline) instead.
+                if let basemapLabel {
+                    Text(basemapLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(basemapColor)
+                }
                 Spacer()
                 if syncConnected {
                     HStack(spacing: 4) {
@@ -81,12 +93,21 @@ struct MGRSHeaderView: View {
                     .foregroundStyle(Color(red: 0.31, green: 0.66, blue: 1.0))
                     Spacer()
                 }
-                Text(accuracyText)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.75))
+                // Grid-magnetic angle (compass correction off the grid) replaces
+                // the old accuracy readout here. Mils by default; tap to flip to
+                // degrees (tap is scoped to this text so it doesn't copy MGRS).
+                if let gridMagneticDegrees {
+                    Text(GridMagnetic.label(degrees: gridMagneticDegrees, mils: gridMagneticMils))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.75))
+                        // Enlarge the tap target a little, and use a high-priority
+                        // gesture so this wins over the card's tap-to-copy-MGRS.
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(TapGesture().onEnded { gridMagneticMils.toggle() })
+                }
             }
             .padding(.top, 1)
-            .foregroundStyle(.orange)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
@@ -127,11 +148,6 @@ struct MGRSHeaderView: View {
         .accessibilityHint("Tap to copy MGRS. Long-press to drop a pin here.")
     }
 
-    private var accuracyText: String {
-        guard let acc = accuracy, acc >= 0 else { return "Accuracy N/A" }
-        return String(format: "Accuracy \u{00B1}%.0fm", acc)
-    }
-
     private var elevationText: String {
         guard let e = elevation else { return "ELEV —" }
         let mark = elevationIsApproximate ? "~" : ""
@@ -143,8 +159,7 @@ struct MGRSHeaderView: View {
     MGRSHeaderView(
         mgrs: "10SEG 51117 80976",
         wgs84: "37.77470° N, 122.41956° W",
-        isBrowsing: true,
-        accuracy: 5,
+        gridMagneticDegrees: 13.4,
         elevation: 1856
     )
     .padding()

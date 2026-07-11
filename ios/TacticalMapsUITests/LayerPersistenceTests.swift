@@ -63,7 +63,7 @@ final class LayerPersistenceTests: XCTestCase {
         let menu = app.buttons["Menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 10), "Menu button missing")
         menu.tap()
-        let layers = app.buttons["Layers"]
+        let layers = app.buttons["Layers and Labels"]
         XCTAssertTrue(layers.waitForExistence(timeout: 5), "Layers row missing")
         layers.tap()
         sleep(1)

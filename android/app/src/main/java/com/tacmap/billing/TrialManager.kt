@@ -1,25 +1,20 @@
 package com.tacmap.billing
 
 import android.content.Context
-import com.google.android.gms.auth.blockstore.Blockstore
-import com.google.android.gms.auth.blockstore.RetrieveBytesRequest
-import com.google.android.gms.auth.blockstore.StoreBytesData
 
 /**
- * Tracks free-trial window. Same sync API as before (isTrialActive /
- * daysRemaining) so MainActivity doesn't need changes beyond optionally
- * awaiting [restoreFromBlockStore] at startup.
+ * Tracks the free-trial window. Local-only: no Google Play Services, no network.
  *
- * Parity with iOS Keychain version:
- *  - First-launch timestamp mirrored to Block Store, which survives
- *    uninstall/reinstall on devices w/ Play services. On reinstall prefs
- *    are empty so we re-seed from Block Store - trial does NOT restart.
- *  - Monotonic "latest seen" timestamp blocks the clock-rollback trick:
- *    effective now = max(wall clock, latest seen).
- *  - On de-Googled devices Block Store calls fail silently and we just
- *    fall back to the old prefs-only model.
+ * We used to mirror the first-launch stamp to Google Block Store so it survived
+ * uninstall/reinstall (anti trial-reset), matching the iOS Keychain. Block Store
+ * is a Play Services component, so it's out for the no-phone-home posture.
  *
- * Gradle: implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
+ * The honest consequence: on Android the trial now RESETS on uninstall/reinstall.
+ * There is no Google-free store on Android that survives app deletion (iOS
+ * Keychain does, which is why iOS keeps the protection). A determined user can
+ * re-trial by reinstalling. For a one-time-unlock app that's a modest revenue
+ * nuisance, not a security issue, and it's the price of not touching Play
+ * Services. The clock-rollback guard below still holds within an install.
  */
 class TrialManager(context: Context) {
 
@@ -29,84 +24,25 @@ class TrialManager(context: Context) {
 
     init {
         if (!prefs.contains(KEY_FIRST_LAUNCH)) {
-            // Don't stamp yet, Block Store might have the real first launch
-            // from a previous install. Kick off async restore; if it comes
-            // back empty (true first install or no Play services) we stamp.
-            restoreFromBlockStore()
+            prefs.edit().putLong(KEY_FIRST_LAUNCH, System.currentTimeMillis()).apply()
         }
         touchLatestSeen(System.currentTimeMillis())
     }
 
-    /**
-     * Re-seed prefs from Block Store after reinstall, or write first-launch
-     * stamp to both if neither has one. Fire and forget - the sync getters
-     * below fall back to "now" until it lands, which is at worst briefly
-     * generous but not exploitable long-term.
-     */
-    fun restoreFromBlockStore(onComplete: (() -> Unit)? = null) {
-        val client = Blockstore.getClient(appContext)
-        val request = RetrieveBytesRequest.Builder()
-            .setKeys(listOf(KEY_FIRST_LAUNCH, KEY_LATEST_SEEN))
-            .build()
-        client.retrieveBytes(request)
-            .addOnSuccessListener { result ->
-                val map = result.blockstoreDataMap
-                val storedFirst = map[KEY_FIRST_LAUNCH]?.bytes?.toLongOrNull()
-                val storedSeen = map[KEY_LATEST_SEEN]?.bytes?.toLongOrNull()
-
-                if (storedFirst != null) {
-                    if (!prefs.contains(KEY_FIRST_LAUNCH)) {
-                        prefs.edit().putLong(KEY_FIRST_LAUNCH, storedFirst).apply()
-                    }
-                } else {
-                    stampFirstLaunchEverywhere()
-                }
-                if (storedSeen != null) {
-                    touchLatestSeen(storedSeen)
-                }
-                onComplete?.invoke()
-            }
-            .addOnFailureListener {
-                // no Play services / Block Store unavailable, prefs-only fallback
-                if (!prefs.contains(KEY_FIRST_LAUNCH)) stampFirstLaunchEverywhere()
-                onComplete?.invoke()
-            }
-    }
-
-    private fun stampFirstLaunchEverywhere() {
-        val now = System.currentTimeMillis()
-        if (!prefs.contains(KEY_FIRST_LAUNCH)) {
-            prefs.edit().putLong(KEY_FIRST_LAUNCH, now).apply()
-        }
-        writeToBlockStore(KEY_FIRST_LAUNCH, prefs.getLong(KEY_FIRST_LAUNCH, now))
-    }
-
-    private fun writeToBlockStore(key: String, value: Long) {
-        val data = StoreBytesData.Builder()
-            .setKey(key)
-            .setBytes(value.toString().toByteArray(Charsets.UTF_8))
-            .setShouldBackupToCloud(false) // device-bound, same as Keychain on iOS
-            .build()
-        Blockstore.getClient(appContext).storeBytes(data) // best-effort
-    }
-
-    private fun ByteArray.toLongOrNull(): Long? =
-        toString(Charsets.UTF_8).toLongOrNull()
-
     // ---- clock-rollback guard -------------------------------------------
 
-    /** Bump the high-water mark, returns effective "now". */
+    /** Bump the high-water mark, returns effective "now" so setting the system
+     *  clock back can't extend the trial. */
     private fun touchLatestSeen(now: Long): Long {
         val seen = prefs.getLong(KEY_LATEST_SEEN, 0L)
         val effective = maxOf(now, seen)
         if (effective > seen) {
             prefs.edit().putLong(KEY_LATEST_SEEN, effective).apply()
-            writeToBlockStore(KEY_LATEST_SEEN, effective)
         }
         return effective
     }
 
-    // ---- public API (unchanged) -----------------------------------------
+    // ---- public API -----------------------------------------------------
 
     private val firstLaunchMillis: Long
         get() = prefs.getLong(KEY_FIRST_LAUNCH, System.currentTimeMillis())

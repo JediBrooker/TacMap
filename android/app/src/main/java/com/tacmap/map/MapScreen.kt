@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.ImportExport
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
@@ -134,6 +135,7 @@ fun MapScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val onlineBasemapsEnabled by vm.opsec.onlineBasemaps.collectAsState()
     val isBrowsing by vm.isBrowsing.collectAsState()
     val pendingTarget by vm.pendingCameraTarget.collectAsState()
     val cameraLat by vm.cameraLat.collectAsState()
@@ -142,6 +144,22 @@ fun MapScreen(
     val isRecordingTrack by vm.trackRecorder.isRecording.collectAsState()
     val trackPoints by vm.trackRecorder.points.collectAsState()
     val mapSource by vm.mapSource.collectAsState()
+
+    /// Is anything on screen actually pulling tiles off the internet right now?
+    /// Only the online raster styles (Esri/OSM) do; offline packs and PDFs don't.
+    val onlineTilesActive = onlineBasemapsEnabled &&
+        mapSource is com.tacmap.calibration.OnlineRasterMapSourceAndroid
+    /// An imported, location-bound basemap (MBTiles pack or PDF/GeoPDF). These
+    /// have coverage, so they get the "Centre on Map" button + green banner tag.
+    val importedMapLoaded = mapSource is com.tacmap.calibration.OfflineTileMapSourceAndroid ||
+        mapSource is com.tacmap.calibration.PdfMapSource
+    /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
+    val basemapLabel: String? = when {
+        importedMapLoaded -> "Offline basemap"
+        onlineTilesActive -> "Online basemap"
+        else -> null
+    }
+    val basemapColor = if (importedMapLoaded) Color(0xFF74E38A) else Color(0xFFFF5A5A)
     val waypointStore = remember { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
     val drawingStore = remember { DrawingStore(context) }
@@ -200,6 +218,7 @@ fun MapScreen(
     var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
     var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
     var terrainHeatmapVisible by rememberPersistedBoolean("terrainHeatmap", false)
+    var userLocationVisible by rememberPersistedBoolean("userLocation", true)
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
     var isFreeDrawMode by remember { mutableStateOf(false) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
@@ -513,14 +532,19 @@ fun MapScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        GoogleMapScreen(
+        CustomMapScreen(
                 modifier = Modifier.fillMaxSize(),
                 waypoints = waypoints,
                 mapSource = mapSource,
+                onlineBasemapsEnabled = onlineBasemapsEnabled,
                 drawings = drawingDocument.features,
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,
                 graphicsLocked = graphicsLocked,
+                userLocationVisible = userLocationVisible,
+                myLat = lastLocation?.latitude,
+                myLon = lastLocation?.longitude,
+                myAccuracyMetres = lastLocation?.accuracy ?: 0f,
                 drawingInputEnabled = activeDrawTool != null || measureSession.isActive,
                 freeDrawActive = isFreeDrawMode,
                 onFreeDrawPoint = { lat, lng ->
@@ -534,6 +558,7 @@ fun MapScreen(
                     draftPoints = emptyList()
                 },
                 calibrationInputEnabled = isCalibratingPdf,
+                calibrationFiduciaries = if (isCalibratingPdf) calibrationFiduciaries else emptyList(),
                 mgrsGridVisible = mgrsGridVisible,
                 terrainHeatmapVisible = terrainHeatmapVisible,
                 unitLabelsVisible = unitLabelsVisible,
@@ -542,8 +567,6 @@ fun MapScreen(
                 peers = presencePeers,
                 selectedDrawingId = selectedDrawingId,
                 selectedWaypointId = selectedWaypointId,
-                calibrationFiduciaries = calibrationFiduciaries,
-                myLocationEnabled = hasLocationPermission,
                 pendingTarget = pendingTarget,
                 resetNorthRequests = vm.resetNorthRequests,
                 onConsumePendingTarget = vm::consumePendingCameraTarget,
@@ -608,22 +631,34 @@ fun MapScreen(
                 }
             )
 
-        CrosshairOverlay()
+        // Crosshair now renders inside CustomMapScreen (under the user-location
+        // dot) so the dot isn't swallowed when the map follows the user.
 
         // MGRS header - anchored to top edge, offset by status-bar inset
-        // so dynamic island / hole-punch doesn't cover it
+        // so dynamic island / hole-punch doesn't cover it. The online-tiles
+        // warning stacks above it in the same column, otherwise the header
+        // (drawn after the map) would sit on top of the banner and hide it.
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         MgrsHeader(
             mgrs = vm.headerMgrs,
             wgs84 = vm.headerWgs84,
-            isBrowsing = isBrowsing,
-            accuracy = lastLocation?.accuracy?.toDouble(),
             elevation = centreElevation?.metres,
             elevationApprox = centreElevation?.isStale == true,
             utm = vm.headerUtm,
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
+            basemapLabel = basemapLabel,
+            basemapColor = basemapColor,
+            gridMagneticDegrees = gridMagneticDegrees(
+                vm.headerCoordinate.first, vm.headerCoordinate.second, centreElevation?.metres
+            ),
+            // align + statusBarsPadding moved to the wrapping Column.
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
                 .padding(top = 8.dp)
                 .fillMaxWidth(),
             onDropPin = {
@@ -643,6 +678,10 @@ fun MapScreen(
                 )
             }
         )
+        // The online-tiles warning used to sit here under the header, but that's
+        // where the live-tracking record badge goes - they collided. It's paired
+        // with the Centre pill at the bottom now.
+        }
 
         // live track-recording badge, only while recording. Tap to stop.
         if (isRecordingTrack) {
@@ -656,12 +695,14 @@ fun MapScreen(
             )
         }
 
-        // hamburger (left) + compass (right), pinned below MGRS header
+        // hamburger (left) + compass (right), pinned below the MGRS header with
+        // a small gap. 100dp used to clip the header's bottom edge; the card is
+        // taller than that, so sit them a bit lower.
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .statusBarsPadding()
-                .padding(top = 100.dp, start = 12.dp, end = 12.dp)
+                .padding(top = 116.dp, start = 12.dp, end = 12.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween
@@ -897,12 +938,29 @@ fun MapScreen(
                     .fillMaxWidth()
             )
         } else {
-            CentrePill(
-                onClick = { vm.centreOnUser() },
+            // Basemap status now lives in the MGRS banner, so the bottom is just
+            // the recentre pills. When an imported (offline/PDF) map is loaded, add
+            // a "Map" pill so centring on a distant live location doesn't strand the
+            // user away from their map. Side by side (stacking ate too much height);
+            // the location label shrinks when both show.
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp)
-            )
+                    .padding(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CentrePill(
+                    onClick = { vm.centreOnUser() },
+                    label = if (importedMapLoaded) "My Location" else "Centre on My Location"
+                )
+                if (importedMapLoaded) {
+                    CentrePill(
+                        onClick = { vm.centreOnMap() },
+                        label = "Map",
+                        icon = Icons.Default.Map
+                    )
+                }
+            }
         }
 
         // Snackbar for remote sync conflict notifications
@@ -1032,11 +1090,13 @@ fun MapScreen(
     if (showLayersSheet) {
         LayersSheet(
             mgrsGridVisible = mgrsGridVisible,
+            userLocationVisible = userLocationVisible,
             unitLabelsVisible = unitLabelsVisible,
             taskLabelsVisible = taskLabelsVisible,
             drawingLabelsVisible = drawingLabelsVisible,
             terrainHeatmapVisible = terrainHeatmapVisible,
             onMgrsGridChange = { mgrsGridVisible = it },
+            onUserLocationChange = { userLocationVisible = it },
             onTerrainHeatmapChange = { terrainHeatmapVisible = it },
             onUnitLabelsChange = { unitLabelsVisible = it },
             onTaskLabelsChange = { taskLabelsVisible = it },
@@ -1044,13 +1104,7 @@ fun MapScreen(
             drawingLayers = drawingDocument.layers,
             drawingFeatures = drawingDocument.features,
             onSetLayerVisible = { id, v -> drawingStore.setLayerVisible(id, v) },
-            activeBaseMap = mapSource.let { ms ->
-                when (ms) {
-                    is OnlineRasterMapSourceAndroid ->
-                        if (ms.style == BasemapStyle.TERRAIN) BaseMap.TERRAIN else BaseMap.ESRI_SATELLITE
-                    else -> BaseMap.SATELLITE
-                }
-            },
+            activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
             hasPdfMap = pdfSource != null,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,

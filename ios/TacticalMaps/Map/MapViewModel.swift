@@ -15,7 +15,10 @@ final class MapViewModel: ObservableObject {
     @Published var cameraCentre: CLLocationCoordinate2D = .init(latitude: 0, longitude: 0)
     @Published var heading: CLLocationDirection = 0
     @Published var isBrowsing: Bool = false
-    @Published var mapSource: MapSource = AppleSatelliteMapSource() {
+    /// Default basemap: Esri Satellite when we have a key, else the one style
+    /// that needs none (OpenTopoMap) so a keyless dev build still shows a map.
+    /// The native Apple basemap is no longer a selectable source.
+    @Published var mapSource: MapSource = OnlineRasterBasemapSource.makeDefault() {
         didSet { NSLog("[MapVM] mapSource changed -> kind=\(mapSource.kind) name=\(mapSource.displayName)") }
     }
 
@@ -201,6 +204,20 @@ final class MapViewModel: ObservableObject {
         isBrowsing = false
         cameraCentre = coord
         cameraRequests.send(region)
+        // Re-orient north when recentering, so the map is always readable
+        // north-up after a "Centre on My Location".
+        resetNorthRequests.send(())
+    }
+
+    /// Re-frame the loaded offline/imported map's coverage. Paired with
+    /// centreOnUser so that after panning off (or centring on a distant live
+    /// location) the user can jump straight back to where the map actually is.
+    /// No-op for unbounded online basemaps.
+    func centreOnMap() {
+        guard let coverage = mapSource.coverage else { return }
+        isBrowsing = true
+        cameraCentre = coverage.center
+        cameraRequests.send(coverage)
     }
 
     func resetNorth() {

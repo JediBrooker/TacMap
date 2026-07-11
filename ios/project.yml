@@ -17,6 +17,12 @@ targets:
   TacticalMaps:
     type: application
     platform: iOS
+    # Esri API key comes in via a gitignored xcconfig. Both configs point at
+    # the same file. scripts/bootstrap_ios_secrets.sh creates it (empty locally,
+    # real value from ESRI_API_KEY in CI) before xcodegen runs.
+    configFiles:
+      Debug: Secrets.xcconfig
+      Release: Secrets.xcconfig
     sources:
       - path: TacticalMaps
         excludes:
@@ -29,7 +35,14 @@ targets:
       properties:
         CFBundleDisplayName: TacMap
         CFBundleShortVersionString: "1.2.0"
-        CFBundleVersion: "27"
+        CFBundleVersion: "51"
+        # Esri Location Platform key + expiry. The $(ESRI_API_KEY) reference is
+        # substituted from Secrets.xcconfig during Xcode's plist processing at
+        # build time (xcodegen writes it here verbatim). Not a secret - it ships
+        # in the bundle and is a quota control. Empty disables the Esri basemap.
+        # NOTE: this block regenerates Info.plist, so edit keys HERE, not there.
+        ESRIApiKey: $(ESRI_API_KEY)
+        ESRIKeyExpiry: "2027-06-30"
         UILaunchScreen:
           UIColorName: LaunchBackground
         # iOS 16+ devices are all arm64. armv7 is 32-bit and would
@@ -46,6 +59,7 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        NSFaceIDUsageDescription: "Face ID unlocks TacMap's locally encrypted mission data and optional app lock."
         NSLocationWhenInUseUsageDescription: TacMap shows your live position on the map, reads it as an MGRS grid reference, and records GPX patrol tracks.
         # Background location is declared for GPX track recording — the
         # persistent-location feature guideline 2.5.4 requires before
@@ -57,10 +71,11 @@ targets:
         UIBackgroundModes:
           - location
         ITSAppUsesNonExemptEncryption: false
-        # Surface the app's Documents folder in the Files app so the user can
-        # drop GeoPDFs into TacticalMaps from Files → "On My iPhone".
-        UIFileSharingEnabled: true
-        LSSupportsOpeningDocumentsInPlace: true
+        # File sharing is deliberately OFF. Exposing the app's Documents folder
+        # in Files/Finder would put imported operational maps (your AO) one tap
+        # from anyone with the unlocked device or a paired host - the opposite
+        # of dark-by-default. Imports come in through the in-app Import picker
+        # and are copied into app-private, file-protected storage instead.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tacticalmaps.app

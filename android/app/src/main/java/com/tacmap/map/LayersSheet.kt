@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tacmap.calibration.BasemapStyle
 
 /**
  * Overlay + label toggles, plus imported-map management. Opened from
@@ -42,11 +43,13 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun LayersSheet(
     mgrsGridVisible: Boolean,
+    userLocationVisible: Boolean,
     unitLabelsVisible: Boolean,
     taskLabelsVisible: Boolean,
     drawingLabelsVisible: Boolean,
     terrainHeatmapVisible: Boolean,
     onMgrsGridChange: (Boolean) -> Unit,
+    onUserLocationChange: (Boolean) -> Unit,
     onTerrainHeatmapChange: (Boolean) -> Unit,
     onUnitLabelsChange: (Boolean) -> Unit,
     onTaskLabelsChange: (Boolean) -> Unit,
@@ -54,8 +57,8 @@ fun LayersSheet(
     drawingLayers: List<DrawingLayer>,
     drawingFeatures: List<DrawingFeature>,
     onSetLayerVisible: (String, Boolean) -> Unit,
-    activeBaseMap: BaseMap,
-    onSelectBaseMap: (BaseMap) -> Unit,
+    activeBaseMap: BasemapStyle?,
+    onSelectBaseMap: (BasemapStyle) -> Unit,
     hasPdfMap: Boolean,
     hasOfflineTiles: Boolean,
     onCalibratePdf: () -> Unit,
@@ -76,6 +79,7 @@ fun LayersSheet(
 
             SectionHeader("Overlays")
             ToggleRow("MGRS Grid", mgrsGridVisible, onMgrsGridChange)
+            ToggleRow("My Location", userLocationVisible, onUserLocationChange)
             ToggleRow("Terrain Heat-map", terrainHeatmapVisible, onTerrainHeatmapChange)
 
             SectionHeader("Labels")
@@ -94,21 +98,18 @@ fun LayersSheet(
 
             SectionHeader("Basemap")
             val importedMapActive = hasPdfMap || hasOfflineTiles
-            BasemapRow(
-                label = "Satellite",
-                selected = activeBaseMap == BaseMap.SATELLITE && !importedMapActive,
-                onClick = { onSelectBaseMap(BaseMap.SATELLITE) }
-            )
-            BasemapRow(
-                label = "Satellite (Esri)",
-                selected = activeBaseMap == BaseMap.ESRI_SATELLITE && !importedMapActive,
-                onClick = { onSelectBaseMap(BaseMap.ESRI_SATELLITE) }
-            )
-            BasemapRow(
-                label = "Terrain (OpenTopoMap)",
-                selected = activeBaseMap == BaseMap.TERRAIN && !importedMapActive,
-                onClick = { onSelectBaseMap(BaseMap.TERRAIN) }
-            )
+            // Keyed styles (all but OSM Topo) need the ArcGIS key baked in at
+            // build time. No key -> hide them, rather than offer a basemap that
+            // would just render blank.
+            BasemapStyle.entries
+                .filter { !it.requiresEsriKey || com.tacmap.calibration.EsriKey.isAvailable }
+                .forEach { style ->
+                    BasemapRow(
+                        label = style.displayName,
+                        selected = activeBaseMap == style && !importedMapActive,
+                        onClick = { onSelectBaseMap(style) }
+                    )
+                }
             if (importedMapActive) {
                 Text(
                     "An imported map is active — pick a basemap to switch back to it.",

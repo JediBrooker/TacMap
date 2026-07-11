@@ -690,7 +690,12 @@ private fun DrawingStrokeStyle.next(): DrawingStrokeStyle =
     }
 
 @Composable
-internal fun CentrePill(onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun CentrePill(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "Centre on My Location",
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.GpsFixed
+) {
     Button(
         onClick = onClick,
         modifier = modifier.height(40.dp),
@@ -698,10 +703,10 @@ internal fun CentrePill(onClick: () -> Unit, modifier: Modifier = Modifier) {
         shape = CircleShape,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Icon(Icons.Default.GpsFixed, contentDescription = null, tint = Color.White,
+        Icon(icon, contentDescription = null, tint = Color.White,
              modifier = Modifier.size(16.dp))
         Spacer(Modifier.size(8.dp))
-        Text("Centre on My Location", color = Color.White,
+        Text(label, color = Color.White,
              fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }

@@ -4,10 +4,11 @@ import MapKit
 
 /// Abstract source of underlying basemap imagery.
 ///
-/// Three concrete kinds today:
-/// - AppleSatelliteMapSource - MapKit satellite (fallback when no PDF loaded).
+/// Concrete kinds today:
+/// - OnlineRasterBasemapSource - Esri Satellite/Topo, OSM Topo/Street tiles.
 /// - PDFMapSource (.geoPDF)  - GeoPDF with neat-line/projection tags parsed.
 /// - PDFMapSource (.calibrated) - regular PDF fitted with 3+ fiduciaries.
+/// - OfflineTileMapSource - sideloaded MBTiles raster.
 ///
 /// All sources expose a common contract: given WGS84 coord render the correct
 /// pixels; given screen point return the underlying WGS84 coord. Overlays
@@ -25,7 +26,7 @@ protocol MapSource: AnyObject {
     var calibration: Calibration? { get }
 }
 
-enum MapSourceKind: String, Codable { case appleSatellite, onlineRaster, geoPDF, calibratedPDF, offlineTiles }
+enum MapSourceKind: String, Codable { case onlineRaster, geoPDF, calibratedPDF, offlineTiles }
 
 /// Calibration metadata for a PDF source.
 enum Calibration {

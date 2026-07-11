@@ -6,6 +6,8 @@ import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.drawings.DrawingPoint
 import com.tacmap.drawings.DrawingStrokeStyle
+import com.tacmap.waypoints.MarkerSet
+import com.tacmap.waypoints.MarkerSymbol
 import com.tacmap.waypoints.MilitarySymbolSpec
 import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
@@ -107,7 +109,7 @@ object GeoJsonImporter {
             val category = resolveCategory(props)
             val isDrawing = category == "drawing"
             val isWaypoint = category == "symbol" || category == "military"
-                || category == "controlMeasure" || category == "generic"
+                || category == "controlMeasure" || category == "generic" || category == "marker"
 
             when {
                 isDrawing || (!isWaypoint && geomType != "Point") -> {
@@ -311,6 +313,7 @@ object GeoJsonImporter {
         val kind: WaypointKind = when (category) {
             "military" -> WaypointKind.Military(parseMilSpec(props))
             "controlMeasure" -> parseControlMeasure(props) ?: WaypointKind.Generic
+            "marker" -> WaypointKind.Marker(parseMarker(props))
             else -> WaypointKind.Generic
         }
         val taskColor = props["tacticalmaps:task_color"]?.jsonPrimitive?.contentOrNull
@@ -357,6 +360,21 @@ object GeoJsonImporter {
         }
             ?: return null
         return WaypointKind.ControlMeasure(measure)
+    }
+
+    /** Marker set/symbol/colour from the shared tacticalmaps:marker_* keys.
+     *  Unknown set falls back to AIRSOFT; missing fields use MarkerSymbol's
+     *  defaults so the pin still imports rather than being dropped. */
+    private fun parseMarker(props: JsonObject): MarkerSymbol {
+        val setToken = props["tacticalmaps:marker_set"]?.jsonPrimitive?.contentOrNull
+        val set = MarkerSet.entries.firstOrNull { it.name.equals(setToken, true) } ?: MarkerSet.AIRSOFT
+        return MarkerSymbol(
+            set = set,
+            symbolId = props["tacticalmaps:marker_symbol"]?.jsonPrimitive?.contentOrNull
+                ?: MarkerSymbol().symbolId,
+            colorHex = props["tacticalmaps:marker_color"]?.jsonPrimitive?.contentOrNull
+                ?: MarkerSymbol().colorHex
+        )
     }
 
     private fun parseAffiliation(raw: String?): SymbolAffiliation? =

@@ -1,0 +1,130 @@
+{
+  "_comment": "Malicious / malformed sync frames (SEC-006). Each entry is a raw JSON text string that would arrive over the WebSocket. Both platforms must silently drop every one without state mutation, crash, or hang.",
+  "cases": [
+    {
+      "name": "version_float_overflow",
+      "description": "1e100 as version exploits Int(Double) truncation to Int.max",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":1e100,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "version_negative",
+      "description": "negative version should be rejected",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":-1,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "version_nan_string",
+      "description": "NaN as a string where a number is expected",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":\"NaN\",\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "version_string",
+      "description": "version as a plain string instead of number",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":\"42\",\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "version_max_safe",
+      "description": "version at the edge of Number.MAX_SAFE_INTEGER",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":9007199254740992,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "version_above_max_v",
+      "description": "version exceeds MAX_V ceiling (1e12)",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":1000000000001,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "id_as_number",
+      "description": "id field as number instead of string",
+      "frame": "{\"t\":\"put\",\"id\":12345,\"v\":1,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "id_empty",
+      "description": "empty id string",
+      "frame": "{\"t\":\"put\",\"id\":\"\",\"v\":1,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "missing_type",
+      "description": "no t field at all",
+      "frame": "{\"id\":\"x\",\"v\":1,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "unknown_type",
+      "description": "unrecognized message type",
+      "frame": "{\"t\":\"exploit\",\"id\":\"x\",\"v\":1}"
+    },
+    {
+      "name": "truncated_base64_ct",
+      "description": "ciphertext that is not valid base64",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":1,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"not-valid-base64!!!\"}"
+    },
+    {
+      "name": "empty_ct",
+      "description": "empty ciphertext on a put (should need content)",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":1,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"\"}"
+    },
+    {
+      "name": "ct_too_short_for_aead",
+      "description": "base64 decodes to fewer bytes than nonce+tag minimum (28 bytes)",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":1,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AQID\"}"
+    },
+    {
+      "name": "snapshot_huge_items_array",
+      "description": "snapshot with items count claim exceeding ceiling",
+      "frame": "{\"t\":\"snapshot\",\"items\":[],\"members\":[]}"
+    },
+    {
+      "name": "null_values",
+      "description": "null where strings are expected",
+      "frame": "{\"t\":\"put\",\"id\":null,\"v\":null,\"by\":null,\"kind\":null,\"ct\":null}"
+    },
+    {
+      "name": "nested_object_as_id",
+      "description": "object injection in id field",
+      "frame": "{\"t\":\"put\",\"id\":{\"$gt\":\"\"},\"v\":1,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "array_as_version",
+      "description": "array where number is expected",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":[1,2,3],\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "presence_nan_lat",
+      "description": "NaN latitude in presence (after decryption, tested via direct parse)",
+      "frame": "{\"t\":\"loc\",\"clientId\":\"peer-1\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "invalid_json",
+      "description": "not valid JSON at all",
+      "frame": "this is not json {{"
+    },
+    {
+      "name": "empty_string",
+      "description": "empty message",
+      "frame": ""
+    },
+    {
+      "name": "just_whitespace",
+      "description": "whitespace-only message",
+      "frame": "   "
+    },
+    {
+      "name": "delete_missing_ct",
+      "description": "delete with no sealed proof",
+      "frame": "{\"t\":\"del\",\"id\":\"x\",\"v\":1,\"by\":\"a\"}"
+    },
+    {
+      "name": "version_fractional",
+      "description": "fractional double should be rejected as a version",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":1.5,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "version_boolean",
+      "description": "boolean true should not be accepted as a version",
+      "frame": "{\"t\":\"put\",\"id\":\"x\",\"v\":true,\"by\":\"a\",\"kind\":\"waypoint\",\"ct\":\"AAAA\"}"
+    },
+    {
+      "name": "boolean_type_field",
+      "description": "boolean where string type is expected",
+      "frame": "{\"t\":true,\"id\":\"x\",\"v\":1}"
+    }
+  ]
+}

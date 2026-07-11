@@ -1,0 +1,10 @@
+{
+  "name": "tacmapapp",
+  "compatibility_date": "2026-06-10",
+  "assets": {
+    "directory": "./public"
+  },
+  "observability": {
+    "enabled": false
+  }
+}

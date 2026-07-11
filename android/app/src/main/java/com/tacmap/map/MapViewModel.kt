@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
-import com.tacmap.calibration.SatelliteMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfSessionStore
 import com.tacmap.mgrs.MgrsFormatter
@@ -28,9 +27,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-/** User-selectable online basemap: native Google satellite, Esri imagery, or
- *  OpenTopoMap terrain. */
-enum class BaseMap { SATELLITE, ESRI_SATELLITE, TERRAIN }
+// Online basemap choice is just BasemapStyle now (Esri Satellite/Topo, OSM
+// Topo/Street). The old native-Google-satellite BaseMap enum is gone.
 
 /**
  * Map camera, browse-mode toggle, MGRS header readout.
@@ -69,24 +67,29 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private val pdfSessionStore = PdfSessionStore(app)
 
-    private val _mapSource = MutableStateFlow<MapSource>(SatelliteMapSourceAndroid())
+    /** Default basemap: Esri Satellite when we have a key, else the one style
+     *  that needs none (OpenTopoMap) so a keyless dev build still shows a map. */
+    private val defaultStyle: BasemapStyle =
+        if (com.tacmap.calibration.EsriKey.isAvailable) BasemapStyle.ESRI_SATELLITE
+        else BasemapStyle.OSM_TOPO
+
+    private val _mapSource = MutableStateFlow<MapSource>(OnlineRasterMapSourceAndroid(defaultStyle))
     val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
 
     /** Which online basemap to return to when an imported map is unloaded. */
-    private var preferredBaseMap = BaseMap.SATELLITE
-    private fun baseMapSource(choice: BaseMap): MapSource = when (choice) {
-        BaseMap.SATELLITE -> SatelliteMapSourceAndroid()
-        BaseMap.ESRI_SATELLITE -> OnlineRasterMapSourceAndroid(BasemapStyle.ESRI_SATELLITE)
-        BaseMap.TERRAIN -> OnlineRasterMapSourceAndroid(BasemapStyle.TERRAIN)
-    }
+    private var preferredBaseMap: BasemapStyle = defaultStyle
+    private fun baseMapSource(style: BasemapStyle): MapSource = OnlineRasterMapSourceAndroid(style)
     private fun onlineBasemap(): MapSource = baseMapSource(preferredBaseMap)
 
     /** Switch online basemap. Clears any imported PDF so the basemap shows. */
-    fun selectBaseMap(choice: BaseMap) {
-        preferredBaseMap = choice
-        _mapSource.value = baseMapSource(choice)
+    fun selectBaseMap(style: BasemapStyle) {
+        preferredBaseMap = style
+        _mapSource.value = baseMapSource(style)
         pdfSessionStore.clear()
     }
+
+    /** The style currently selected (for menu highlight). */
+    val activeBaseMapStyle: BasemapStyle? get() = (_mapSource.value as? OnlineRasterMapSourceAndroid)?.style
 
     /** Return to the preferred online basemap (e.g. after unloading offline tiles). */
     fun restoreOnlineBasemap() {
@@ -234,6 +237,19 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         _cameraLat.value = loc.latitude
         _cameraLng.value = loc.longitude
         _pendingCameraTarget.value = Triple(loc.latitude, loc.longitude, 15f)
+        // Re-orient north when recentering, so the map is always readable
+        // north-up after a "Centre on My Location".
+        requestResetNorth()
+    }
+
+    /** Re-frame the loaded offline/imported map's coverage. Paired with
+     *  centreOnUser so that after panning off (or centring on a distant live
+     *  location) the user can jump straight back to where the map actually is.
+     *  No-op for unbounded online basemaps. */
+    fun centreOnMap() {
+        val coverage = _mapSource.value.coverage ?: return
+        val c = coverage.center
+        flyTo(c.latitude, c.longitude, 13f)
     }
 
     /** Fly camera to arbitrary coord. Used by waypoint list's "fly to"

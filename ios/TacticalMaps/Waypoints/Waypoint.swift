@@ -152,10 +152,12 @@ enum WaypointKind: Hashable, Codable {
     case generic
     case military(MilitarySymbolSpec)
     case controlMeasure(TacticalControlMeasure)
+    /// Airsoft/milsim, SAR, or civilian POI markers (see MarkerSymbol).
+    case marker(MarkerSymbol)
 
     // MARK: Tagged Codable
 
-    private enum CodingKeys: String, CodingKey { case type, spec, control }
+    private enum CodingKeys: String, CodingKey { case type, spec, control, marker }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -167,6 +169,8 @@ enum WaypointKind: Hashable, Codable {
             self = .military(try c.decode(MilitarySymbolSpec.self, forKey: .spec))
         case "controlMeasure":
             self = .controlMeasure(try c.decode(TacticalControlMeasure.self, forKey: .control))
+        case "marker":
+            self = .marker(try c.decode(MarkerSymbol.self, forKey: .marker))
         default:
             self = .generic   // safe fallback for old/unknown persisted data
         }
@@ -183,6 +187,9 @@ enum WaypointKind: Hashable, Codable {
         case .controlMeasure(let m):
             try c.encode("controlMeasure", forKey: .type)
             try c.encode(m, forKey: .control)
+        case .marker(let mk):
+            try c.encode("marker", forKey: .type)
+            try c.encode(mk, forKey: .marker)
         }
     }
 
@@ -198,6 +205,7 @@ enum WaypointKind: Hashable, Codable {
             let role   = spec.function == .unspecified ? "" : spec.function.displayName + " "
             return "\(prefix) \(role)\(spec.echelon.displayName)"
         case .controlMeasure(let m):  return m.displayName
+        case .marker(let mk):         return mk.entry.name
         }
     }
 
@@ -207,6 +215,7 @@ enum WaypointKind: Hashable, Codable {
         case .generic:         return "Field Marker"
         case .military:        return "Military Unit (APP-6C)"
         case .controlMeasure:  return "Tactical Control Measure"
+        case .marker(let mk):  return mk.set.displayName
         }
     }
 
@@ -224,12 +233,19 @@ enum WaypointKind: Hashable, Codable {
         return nil
     }
 
+    /// Marker symbol (airsoft/SAR/POI), if any.
+    var markerSymbol: MarkerSymbol? {
+        if case .marker(let m) = self { return m }
+        return nil
+    }
+
     /// SF Symbol fallback for kinds without a custom drawing.
     var sfSymbol: String {
         switch self {
         case .generic:                  return "mappin"
         case .military:                 return "shield.fill"   // unused once militarySpec is wired
         case .controlMeasure:           return "flag.fill"
+        case .marker(let mk):           return mk.entry.sfSymbol
         }
     }
 
@@ -239,6 +255,7 @@ enum WaypointKind: Hashable, Codable {
         case .generic:        return .yellow
         case .military:       return .blue
         case .controlMeasure: return .black
+        case .marker(let mk): return Color(UIColor(hex: mk.colorHex))
         }
     }
 
@@ -253,6 +270,8 @@ enum WaypointKind: Hashable, Codable {
             return "m|\(s.affiliation.rawValue)|\(s.echelon.rawValue)|\(s.function.rawValue)|\(s.isHeadquarters)"
         case .controlMeasure(let m):
             return "c|\(m.rawValue)"
+        case .marker(let mk):
+            return "k|\(mk.set.rawValue)|\(mk.symbolID)|\(mk.colorHex)"
         }
     }
 }

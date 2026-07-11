@@ -10,9 +10,15 @@ val localProperties = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY")
-    ?: providers.gradleProperty("MAPS_API_KEY").orNull?.takeIf { it.isNotBlank() }
-    ?: System.getenv("MAPS_API_KEY")
+// ArcGIS Location Platform key for the Esri satellite basemap. Same resolution
+// order as the Maps key. It ends up in BuildConfig, which means it ends up in
+// the APK: this is a quota/billing control, not a secret, and anyone can pull
+// it out of the binary. Keep pay-as-you-go OFF on the Esri account so the worst
+// a leaked key can do is burn the free tier, not run up a bill. Empty is fine -
+// the online basemap is opt-in and offline packs never touch it.
+val esriApiKey: String = localProperties.getProperty("ESRI_API_KEY")
+    ?: providers.gradleProperty("ESRI_API_KEY").orNull?.takeIf { it.isNotBlank() }
+    ?: System.getenv("ESRI_API_KEY")
     ?: ""
 
 // CI injects a monotonic build number via -PVERSION_CODE so releases don't
@@ -42,12 +48,16 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = injectedVersionCode ?: 21
+        versionCode = injectedVersionCode ?: 47
         versionName = "1.2.0"
 
         vectorDrawables { useSupportLibrary = true }
 
-        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        buildConfigField("String", "ESRI_API_KEY", "\"$esriApiKey\"")
+        // Esri API keys expire. When this one lapses the Esri basemap starts
+        // 401ing in the field, so EsriKeyExpiryTest fails the build 60 days out
+        // to force a rotation before users notice. ISO-8601, UTC.
+        buildConfigField("String", "ESRI_KEY_EXPIRY", "\"2027-06-30\"")
     }
 
     signingConfigs {
@@ -90,6 +100,17 @@ android {
     }
 }
 
+configurations.all {
+    resolutionStrategy {
+        // CVE-2024-30172: crafted Ed25519 key/sig infinite-loops BC <= 1.78.
+        // PDFBox 2.0.27.0 pulls bcprov/bcpkix/bcutil transitively at 1.72;
+        // force all three to the patched family so nothing resolves old.
+        force("org.bouncycastle:bcprov-jdk15to18:1.84")
+        force("org.bouncycastle:bcpkix-jdk15to18:1.84")
+        force("org.bouncycastle:bcutil-jdk15to18:1.84")
+    }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
@@ -110,25 +131,24 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // SVG rasteriser used by SymbolIconFactory to render the milsymbol
-    // assets into BitmapDescriptors for Google Maps markers.
+    // assets into bitmaps for the custom renderer's waypoint symbols.
     implementation("com.caverock:androidsvg-aar:1.4")
 
-    // Google Maps SDK + Compose bindings. API key is read from
-    // local.properties (MAPS_API_KEY=…) or the MAPS_API_KEY env var.
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.maps.android:maps-compose:4.3.3")
-    implementation("com.google.maps.android:android-maps-utils:3.8.2")
+    // No Google Maps SDK. The map is a custom Compose/Canvas renderer
+    // (com.tacmap.map.render.*) that draws raster tiles + overlays itself, so
+    // nothing here phones home to Google for map content.
 
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Location is the platform LocationManager (GPS_PROVIDER, on-device), not
+    // Google's fused provider - see LocationService. No play-services-location.
 
     // Google Play Billing — the one-time "unlock_full" in-app product that
-    // converts the 3-day free trial into permanent access.
+    // converts the 3-day free trial into permanent access. The one Google
+    // dependency genuinely unavoidable for a Play-Store paid app, and it only
+    // talks to the store on a user-initiated purchase/restore.
     implementation("com.android.billingclient:billing-ktx:7.1.1")
 
-    // Block Store — persists the trial first-launch stamp across
-    // uninstall/reinstall on devices with Play services (parity with the
-    // iOS Keychain). Degrades silently on de-Googled devices.
-    implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
+    // (Trial clock is local-only now - no Block Store, no Play Services. See
+    // TrialManager: the trade is that the Android trial resets on reinstall.)
 
     // MGRS conversion (NGA).
     implementation("mil.nga:mgrs:2.1.3")
@@ -138,6 +158,14 @@ dependencies {
 
     // WebSocket client for real-time unit sync.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Ed25519 for per-device unit-sync identity (presence signing), via the
+    // low-level org.bouncycastle.crypto API (no JCA provider to register) so it
+    // interops with iOS CryptoKit Curve25519 (both RFC 8032). minSdk 26 has no
+    // platform Ed25519 (that landed in API 33). Bouncycastle is already on the
+    // classpath transitively (pdfbox-android); pin the same artifact so it's an
+    // explicit, single dependency rather than an accidental transitive one.
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.84")
 
     // PDF parsing — used to extract OGC GeoPDF / Adobe LGIDict
     // georeferencing dictionaries so imported GeoPDFs land in the

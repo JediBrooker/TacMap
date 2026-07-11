@@ -131,8 +131,13 @@ class DrawingStore(context: Context) {
         _canRedo.value = false
     }
 
+    /** True when the store couldn't be opened b/c the at-rest key is locked.
+     *  Blocks persist() so an empty doc never lands on readable-but-locked data. */
+    private val _locked = MutableStateFlow(false)
+    val locked: StateFlow<Boolean> = _locked.asStateFlow()
+
     private fun load() {
-        when (val r = SafeStore.readOrQuarantine(file) { json.decodeFromString<DrawingDocument>(it) }) {
+        when (val r = SafeStore.readOrQuarantine(file, LABEL) { json.decodeFromString<DrawingDocument>(it) }) {
             is SafeStore.LoadResult.Loaded -> _document.value = r.value.withDefaultLayers()
             is SafeStore.LoadResult.Empty -> Unit // fresh install, keep default document
             is SafeStore.LoadResult.Corrupt ->
@@ -141,13 +146,20 @@ class DrawingStore(context: Context) {
                 // edit would silently persist an empty doc over it.
                 _loadError.value = "Saved drawings could not be read and were set aside " +
                     "(${r.quarantinedTo?.name ?: "recovery copy"}). Starting with an empty map."
+            is SafeStore.LoadResult.Locked -> {
+                _locked.value = true
+                _loadError.value = "Drawings are encrypted and locked. ${r.error.message}"
+            }
         }
     }
 
     private fun persist() {
-        runCatching { SafeStore.writeAtomically(file, json.encodeToString(_document.value)) }
+        if (_locked.value) return
+        runCatching { SafeStore.writeAtomically(file, LABEL, json.encodeToString(_document.value)) }
             .onFailure { _loadError.value = "Could not save drawings to disk: ${it.message}" }
     }
+
+    private companion object { const val LABEL = "drawings.json" }
 
     private fun DrawingDocument.withDefaultLayers(): DrawingDocument {
         val existingById = layers.associateBy { it.id }

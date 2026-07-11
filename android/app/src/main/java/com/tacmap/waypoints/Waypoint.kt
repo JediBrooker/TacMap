@@ -79,6 +79,12 @@ sealed interface WaypointKind {
         override val displayName: String get() = measure.displayName
         override val categoryDisplayName: String = "Tactical Task"
     }
+
+    @Serializable
+    data class Marker(val marker: MarkerSymbol = MarkerSymbol()) : WaypointKind {
+        override val displayName: String get() = marker.entry.displayName
+        override val categoryDisplayName: String get() = marker.set.displayName
+    }
 }
 
 object WaypointKindSerializer : KSerializer<WaypointKind> {
@@ -98,6 +104,10 @@ object WaypointKindSerializer : KSerializer<WaypointKind> {
                 is WaypointKind.ControlMeasure -> {
                     put("type", "controlMeasure")
                     put("control", json.encodeToJsonElement(value.measure))
+                }
+                is WaypointKind.Marker -> {
+                    put("type", "marker")
+                    put("marker", json.encodeToJsonElement(value.marker))
                 }
             }
         }
@@ -123,6 +133,10 @@ object WaypointKindSerializer : KSerializer<WaypointKind> {
             "controlMeasure" -> WaypointKind.ControlMeasure(
                 obj["control"]?.let { json.decodeFromJsonElement<TacticalControlMeasure>(it) }
                     ?: TacticalControlMeasure.ASSEMBLY_AREA
+            )
+            "marker" -> WaypointKind.Marker(
+                obj["marker"]?.let { json.decodeFromJsonElement<MarkerSymbol>(it) }
+                    ?: MarkerSymbol()
             )
             else -> WaypointKind.Generic
         }

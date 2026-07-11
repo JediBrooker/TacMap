@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -43,13 +43,19 @@ import androidx.compose.ui.unit.sp
 fun MgrsHeader(
     mgrs: String,
     wgs84: String,
-    isBrowsing: Boolean,
-    accuracy: Double?,
     modifier: Modifier = Modifier,
     elevation: Double? = null,
     elevationApprox: Boolean = false,
     utm: String? = null,
     syncConnected: Boolean = false,
+    /// Basemap status shown where the old Live Location/Map Centre label was.
+    /// "Online basemap" (red) when pulling internet tiles, "Offline basemap"
+    /// (green) when an imported pack/PDF is active, null when neither.
+    basemapLabel: String? = null,
+    basemapColor: Color = Color.Unspecified,
+    /// Grid-magnetic angle for compass work, raw degrees (+E / -W). Shown
+    /// bottom-right in mils by default; tap it to flip to degrees. null hides it.
+    gridMagneticDegrees: Double? = null,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -79,12 +85,9 @@ fun MgrsHeader(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
-            text = if (isBrowsing) "MGRS (Map Centre)" else "MGRS (Your Location)",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 10.sp,
-            lineHeight = 12.sp
-        )
+        // The "MGRS (Map Centre)/(Your Location)" title used to sit here; dropped
+        // as redundant (the big readout is obviously the grid ref). Card leads
+        // straight into it now.
         Text(
             text = mgrs,
             color = Color(0xFF8CF28C),
@@ -93,7 +96,10 @@ fun MgrsHeader(
             fontSize = 24.sp,
             lineHeight = 26.sp
         )
+        // Rows below the big readout are full-width and left-aligned (matches
+        // the iOS card), with elevation pushed to the right of the WGS84 row.
         Row(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -101,20 +107,19 @@ fun MgrsHeader(
                  fontWeight = FontWeight.Bold, lineHeight = 12.sp)
             Text(wgs84, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
                  fontFamily = FontFamily.Monospace, lineHeight = 12.sp)
-            elevation?.let { metres ->
-                Text("·", color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
-                     lineHeight = 12.sp)
-                Text(
-                    (if (elevationApprox) "~" else "") + "%.0f m MSL".format(metres),
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 12.sp
-                )
-            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                elevationText(elevation, elevationApprox),
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 12.sp
+            )
         }
         utm?.let { utmText ->
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -128,20 +133,18 @@ fun MgrsHeader(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Default.LocationSearching,
-                contentDescription = null,
-                tint = Color(0xFFF2A24A),
-                modifier = Modifier.size(12.dp)
-            )
-            Spacer(Modifier.size(5.dp))
-            Text(
-                if (isBrowsing) "Map Centre" else "Live Location",
-                color = Color(0xFFF2A24A),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 13.sp
-            )
+            // The old Live Location / Map Centre label lived here, but the card
+            // title already says which one, so this slot now carries the basemap
+            // status (red online / green offline) instead.
+            if (basemapLabel != null) {
+                Text(
+                    basemapLabel,
+                    color = basemapColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 13.sp
+                )
+            }
             Spacer(Modifier.weight(1f))
             if (syncConnected) {
                 Icon(
@@ -160,16 +163,30 @@ fun MgrsHeader(
                 )
                 Spacer(Modifier.weight(1f))
             }
-            Text(
-                accuracy?.let { "Accuracy ±%.0fm".format(it) } ?: "Accuracy N/A",
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                lineHeight = 12.sp,
-                textAlign = TextAlign.End
-            )
+            // Grid-magnetic angle (compass correction off the grid) replaces the
+            // old accuracy readout here. Mils by default; tap to flip to degrees.
+            if (gridMagneticDegrees != null) {
+                val gmMils = rememberPersistedBoolean("gridMagneticMils", true)
+                Text(
+                    formatGridMagnetic(gridMagneticDegrees, gmMils.value),
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 12.sp,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.clickable { gmMils.value = !gmMils.value }
+                )
+            }
         }
     }
+}
+
+/// iOS-matching elevation readout: "ELEV 0 m", "ELEV ~1025 m" (~ = approximate
+/// / offline cache), or "ELEV —" when there's no reading.
+private fun elevationText(elevation: Double?, approx: Boolean): String {
+    if (elevation == null) return "ELEV —"
+    val mark = if (approx) "~" else ""
+    return "ELEV %s%.0f m".format(mark, elevation)
 }
 
 private val SyncBlue = Color(0xFF4FA8FF)

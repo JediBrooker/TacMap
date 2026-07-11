@@ -19,5 +19,20 @@
   // current recommended storage backend.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }
+  ],
+  // Per-IP rate limiting for connection and room-creation abuse control.
+  // Eventually consistent (not exact accounting); durable per-room quotas
+  // are the primary defense. Self-hosters can adjust or remove these.
+  "ratelimits": [
+    {
+      "name": "CONN_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "period": 60, "limit": 60 }
+    },
+    {
+      "name": "ROOM_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "period": 60, "limit": 10 }
+    }
   ]
 }

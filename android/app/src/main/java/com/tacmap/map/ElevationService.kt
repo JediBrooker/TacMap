@@ -1,5 +1,6 @@
 package com.tacmap.map
 
+import com.tacmap.settings.OpsecSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -99,18 +100,27 @@ class ElevationService(
      * (no network AND nothing close enough cached). Skips 0,0 sentinel.
      */
     suspend fun reading(lat: Double, lng: Double): ElevationReading? {
+        // OPSEC: an elevation lookup ships the coordinate to a third party
+        // (Open-Meteo), so gate it HERE, not just in the caller - that way no
+        // future call site can leak the AO while online lookups are off.
+        if (OpsecSettings.shared?.onlineLookups?.value != true) return null
         if (lat == 0.0 && lng == 0.0) return null
 
-        cache.exact(lat, lng)?.let { return ElevationReading(it, isStale = false) }
+        // Coarsen to ~110 m (3dp) so the exact map centre isn't disclosed,
+        // matching iOS + the Weather/Terrain services.
+        val cLat = Math.round(lat * 1000.0) / 1000.0
+        val cLng = Math.round(lng * 1000.0) / 1000.0
 
-        val fetched = fetch(lat, lng)
+        cache.exact(cLat, cLng)?.let { return ElevationReading(it, isStale = false) }
+
+        val fetched = fetch(cLat, cLng)
         if (fetched != null) {
-            cache.insert(lat, lng, fetched)
+            cache.insert(cLat, cLng, fetched)
             return ElevationReading(fetched, isStale = false)
         }
 
         // Network failed, fall back to nearest height we already know
-        cache.nearest(lat, lng, staleFallbackMetres)?.let {
+        cache.nearest(cLat, cLng, staleFallbackMetres)?.let {
             return ElevationReading(it, isStale = true)
         }
         return null

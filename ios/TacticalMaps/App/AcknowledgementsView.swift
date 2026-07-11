@@ -13,19 +13,24 @@ struct AcknowledgementsView: View {
             List {
                 Section("Map data") {
                     LinkRow(
-                        title: "Apple MapKit Satellite Imagery",
-                        subtitle: "Apple Inc. — Use governed by the Apple Maps Service",
-                        url: URL(string: "https://www.apple.com/legal/internet-services/maps/terms-en.html")
+                        title: "Esri World Imagery (Satellite basemap)",
+                        subtitle: "Esri, Maxar, Earthstar Geographics, and the GIS User Community.",
+                        url: URL(string: "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9")
                     )
                     LinkRow(
-                        title: "OpenTopoMap (Terrain basemap)",
+                        title: "Esri Basemap Styles (Topographic + Street)",
+                        subtitle: "Esri, TomTom, Garmin, FAO, NOAA, USGS · map data © OpenStreetMap contributors.",
+                        url: URL(string: "https://developers.arcgis.com/documentation/mapping-and-location-services/mapping/basemap-styles-service/")
+                    )
+                    LinkRow(
+                        title: "OpenTopoMap (Topographic basemap)",
                         subtitle: "© OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors (ODbL).",
                         url: URL(string: "https://opentopomap.org/about")
                     )
                     LinkRow(
-                        title: "Esri World Imagery (Satellite basemap)",
-                        subtitle: "Esri, Maxar, Earthstar Geographics, and the GIS User Community.",
-                        url: URL(string: "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9")
+                        title: "OpenStreetMap",
+                        subtitle: "Map data © OpenStreetMap contributors, ODbL.",
+                        url: URL(string: "https://www.openstreetmap.org/copyright")
                     )
                     LinkRow(
                         title: "Open-Meteo Elevation API",

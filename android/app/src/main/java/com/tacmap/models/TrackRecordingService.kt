@@ -10,29 +10,30 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import com.tacmap.app.TacticalApp
 
 /**
  * Foreground service that keeps GPS location delivery alive while a GPX track
  * is recording and the app is backgrounded or the screen is locked.
  *
- * Runs its own [LocationCallback] so fixes keep flowing into the app-scoped
- * [TrackRecorder] even when the Activity (and its ViewModel) is destroyed.
+ * Uses the platform [LocationManager] GPS_PROVIDER (on-device satellites), not
+ * Google's fused provider, so background recording leaks nothing to Google. See
+ * [LocationService] for the why. Runs its own listener so fixes keep flowing
+ * into the app-scoped [TrackRecorder] even when the Activity is destroyed.
  */
 class TrackRecordingService : Service() {
 
-    private var locationCallback: LocationCallback? = null
+    private var locationListener: LocationListener? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -46,30 +47,32 @@ class TrackRecordingService : Service() {
             startForeground(NOTIF_ID, notification)
         }
 
-        if (locationCallback == null && hasLocationPermission()) {
+        if (locationListener == null && hasLocationPermission()) {
             val recorder = (application as TacticalApp).trackRecorder
-            val client = LocationServices.getFusedLocationProviderClient(this)
-            val cb = object : LocationCallback() {
-                override fun onLocationResult(result: LocationResult) {
-                    result.lastLocation?.let { recorder.onLocation(it) }
-                }
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val listener = object : LocationListener {
+                override fun onLocationChanged(location: Location) { recorder.onLocation(location) }
+                override fun onProviderEnabled(provider: String) {}
+                override fun onProviderDisabled(provider: String) {}
+                @Deprecated("Deprecated in API 29, still required on API 26-28")
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
             }
-            val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L)
-                .setMinUpdateIntervalMillis(500L)
-                .build()
-            client.requestLocationUpdates(req, cb, Looper.getMainLooper())
-            locationCallback = cb
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                lm.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER, 1_000L, 0f, listener, Looper.getMainLooper()
+                )
+                locationListener = listener
+            }
         }
 
         return START_STICKY
     }
 
     override fun onDestroy() {
-        locationCallback?.let {
-            LocationServices.getFusedLocationProviderClient(this)
-                .removeLocationUpdates(it)
+        locationListener?.let {
+            (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(it)
         }
-        locationCallback = null
+        locationListener = null
         super.onDestroy()
     }
 

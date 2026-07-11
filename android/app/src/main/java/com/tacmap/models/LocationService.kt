@@ -5,35 +5,47 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
 import android.os.Looper
 import androidx.core.app.ActivityCompat
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Thin wrapper around FusedLocationProviderClient. Exposes the latest fix as a
- * StateFlow so Composables can observe it directly.
+ * Latest GPS fix as a StateFlow so Composables can observe it directly.
+ *
+ * Deliberately the PLATFORM [LocationManager] with GPS_PROVIDER, not Google's
+ * FusedLocationProviderClient. Fused is network-assisted: it phones Google
+ * servers for Wi-Fi/cell positioning. GPS_PROVIDER is pure on-device satellites,
+ * so acquiring a fix leaks nothing. For a tool whose whole point is not phoning
+ * home, that trade (raw GPS, no network assist) is the right one.
+ *
+ * GPS needs ACCESS_FINE_LOCATION. With only coarse granted we don't fall back to
+ * NETWORK_PROVIDER, because that's the network-assisted path we're avoiding - a
+ * coarse-only install simply gets no fix, and the app already handles that.
  */
 class LocationService(context: Context) {
 
     private val appContext = context.applicationContext
-    private val client = LocationServices.getFusedLocationProviderClient(appContext)
+    private val locationManager =
+        appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
     private val _lastLocation = MutableStateFlow<Location?>(null)
     val lastLocation: StateFlow<Location?> = _lastLocation.asStateFlow()
 
     private var isRunning = false
 
-    private val callback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            result.lastLocation?.let { _lastLocation.value = it }
-        }
+    // API 26 still needs the full interface (the extra methods only got defaults
+    // in API 30), so this can't be a lambda.
+    private val listener = object : LocationListener {
+        override fun onLocationChanged(location: Location) { _lastLocation.value = location }
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+        @Deprecated("Deprecated in API 29, still required on API 26-28")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
     }
 
     fun hasPermission(): Boolean =
@@ -49,23 +61,27 @@ class LocationService(context: Context) {
 
     @SuppressLint("MissingPermission")
     fun start() {
-        if (!hasPermission()) return
         if (isRunning) return
-        val priority = if (hasFineLocationPermission()) {
-            Priority.PRIORITY_HIGH_ACCURACY
-        } else {
-            Priority.PRIORITY_BALANCED_POWER_ACCURACY
-        }
-        val req = LocationRequest.Builder(priority, 1_000L)
-            .setMinUpdateIntervalMillis(500L)
-            .build()
-        client.requestLocationUpdates(req, callback, Looper.getMainLooper())
+        // GPS_PROVIDER requires fine location. Coarse-only can't do dark GPS.
+        if (!hasFineLocationPermission()) return
+        if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) return
+
+        // Seed with the last known GPS fix so we're not blank while acquiring.
+        locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            ?.let { _lastLocation.value = it }
+        locationManager.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER,
+            1_000L, // ~1s, matches the old fused cadence
+            0f,
+            listener,
+            Looper.getMainLooper()
+        )
         isRunning = true
     }
 
     fun stop() {
         if (!isRunning) return
-        client.removeLocationUpdates(callback)
+        locationManager.removeUpdates(listener)
         isRunning = false
     }
 }

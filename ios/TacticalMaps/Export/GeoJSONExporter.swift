@@ -28,7 +28,7 @@ enum GeoJSONExporter {
         // timestamp in the filename instead.
         let collection: [String: Any] = [
             "type":      "FeatureCollection",
-            "generator": "TacMap iOS prototype \(generatorVersion)",
+            "generator": "TacMap",
             "features":  features
         ]
 
@@ -103,6 +103,14 @@ enum GeoJSONExporter {
                 // hand-dialed slider and just clutters the diff.
                 props["tacticalmaps:rotation_deg"] = (wp.rotation.rounded() as Double)
             }
+        }
+        // Marker set/symbol/colour, keyed the same as Android so a marker
+        // waypoint round-trips across platforms (was previously dropped to a
+        // generic pin on import).
+        if case .marker(let mk) = wp.kind {
+            props["tacticalmaps:marker_set"] = mk.set.rawValue
+            props["tacticalmaps:marker_symbol"] = mk.symbolID
+            props["tacticalmaps:marker_color"] = mk.colorHex
         }
         if let n = wp.notes {
             props["description"] = n     // simplestyle uses "description"
@@ -208,6 +216,7 @@ enum GeoJSONExporter {
         case .generic:                  return "#FFD700"
         case .military(let spec):       return spec.affiliation.fillHex
         case .controlMeasure:           return "#1A1A1A"
+        case .marker(let mk):           return mk.colorHex
         }
     }
 
@@ -216,6 +225,7 @@ enum GeoJSONExporter {
         case .generic:                  return "marker"
         case .military(let spec):       return makiSymbol(for: spec)
         case .controlMeasure(let m):    return makiSymbol(for: m)
+        case .marker:                   return "marker"
         }
     }
 
@@ -241,6 +251,7 @@ enum GeoJSONExporter {
         case .generic:        return "generic"
         case .military:       return "military"
         case .controlMeasure: return "controlMeasure"
+        case .marker:         return "marker"
         }
     }
 
@@ -249,6 +260,7 @@ enum GeoJSONExporter {
         case .generic:        return "generic"
         case .military:       return "military"
         case .controlMeasure: return "control_measure"
+        case .marker:         return "marker"
         }
     }
 
@@ -257,8 +269,7 @@ enum GeoJSONExporter {
         case .generic:                return "generic"
         case .military(let spec):     return "\(spec.affiliation.rawValue).\(spec.function.rawValue).\(spec.echelon.rawValue)"
         case .controlMeasure(let m):  return m.rawValue
+        case .marker(let mk):         return "\(mk.set.rawValue).\(mk.symbolID)"
         }
     }
-
-    private static let generatorVersion = "v0.2"
 }

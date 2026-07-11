@@ -2,7 +2,10 @@ package com.tacmap.calibration
 
 import android.content.Context
 import android.net.Uri
+import android.util.Base64
 import android.util.Log
+import com.tacmap.util.SafeStore
+import com.tacmap.util.SealedEnvelope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -52,7 +55,7 @@ class PdfSessionStore(private val context: Context) {
             ),
             coverage = coverage
         )
-        runCatching { json.encodeToString(dto) }
+        runCatching { sealPref(LABEL_PDF, json.encodeToString(dto)) }
             .onSuccess { prefs.edit().putString(KEY_PDF, it).apply() }
             .onFailure { Log.w(TAG, "Couldn't encode PDF for persistence: ${it.message}") }
         // Also stash in the per-PDF library so switching PDFs and back
@@ -65,10 +68,14 @@ class PdfSessionStore(private val context: Context) {
     }
 
     fun load(): PdfMapSource? {
-        val raw = prefs.getString(KEY_PDF, null) ?: return null
+        val stored = prefs.getString(KEY_PDF, null) ?: return null
+        val raw = openPref(LABEL_PDF, stored) ?: return null
         val dto = runCatching { json.decodeFromString<PersistedPdfSource>(raw) }
             .onFailure { Log.w(TAG, "Couldn't decode persisted PDF: ${it.message}") }
             .getOrNull() ?: return null
+        // Written by a pre-encryption build, seal it in place.
+        if (isLegacyPlaintext(stored)) runCatching { sealPref(LABEL_PDF, raw) }
+            .onSuccess { prefs.edit().putString(KEY_PDF, it).apply() }
         val pdfDir = File(context.filesDir, "pdf_maps")
         val file = File(pdfDir, dto.fileName)
         if (!file.exists()) {
@@ -109,16 +116,42 @@ class PdfSessionStore(private val context: Context) {
     private fun saveToLibrary(key: String, cal: Calibration.Fiduciaries) {
         val lib = loadLibrary().toMutableMap()
         lib[key] = PersistedCalibration(cal.fids, cal.transform)
-        runCatching { json.encodeToString(lib) }
+        runCatching { sealPref(LABEL_LIBRARY, json.encodeToString(lib)) }
             .onSuccess { prefs.edit().putString(KEY_LIBRARY, it).apply() }
             .onFailure { Log.w(TAG, "Couldn't encode PDF calibration library: ${it.message}") }
     }
 
     private fun loadLibrary(): Map<String, PersistedCalibration> {
-        val raw = prefs.getString(KEY_LIBRARY, null) ?: return emptyMap()
+        val stored = prefs.getString(KEY_LIBRARY, null) ?: return emptyMap()
+        val raw = openPref(LABEL_LIBRARY, stored) ?: return emptyMap()
         return runCatching { json.decodeFromString<Map<String, PersistedCalibration>>(raw) }
             .getOrDefault(emptyMap())
     }
+
+    // MARK: at-rest sealing
+    //
+    // The affine + fiduciaries + coverage bounds in here pin down exactly which
+    // sheet is loaded and what ground it covers, so this is area-of-interest
+    // data and gets the same treatment as waypoints. Values are sealed and
+    // base64'd; SharedPreferences only ever sees ciphertext.
+
+    private fun sealPref(label: String, plaintext: String): String =
+        Base64.encodeToString(
+            SealedEnvelope.sealFile(SafeStore.keyProvider.key(), plaintext.toByteArray(Charsets.UTF_8), label),
+            Base64.NO_WRAP
+        )
+
+    /** Returns plaintext, or null when locked / tampered. Legacy values pass through. */
+    private fun openPref(label: String, stored: String): String? {
+        if (isLegacyPlaintext(stored)) return stored
+        return runCatching {
+            val blob = Base64.decode(stored, Base64.NO_WRAP)
+            SealedEnvelope.openFile(SafeStore.keyProvider.key(), blob, label)?.toString(Charsets.UTF_8)
+        }.onFailure { Log.w(TAG, "Couldn't open sealed pref $label: ${it.message}") }.getOrNull()
+    }
+
+    /** Pre-encryption builds stored bare JSON. Base64 of the seal never starts with '{'. */
+    private fun isLegacyPlaintext(stored: String): Boolean = stored.startsWith("{")
 
     /** SHA-256 of the file bytes, streamed so big PDFs dont load whole. */
     private fun contentKeyFor(file: File): String {
@@ -139,6 +172,9 @@ class PdfSessionStore(private val context: Context) {
         const val KEY_PDF = "active_pdf"
         const val KEY_LIBRARY = "pdf_calibrations"
         const val TAG = "PdfSessionStore"
+        /** AEAD associated data, keeps one pref's blob from opening as the other. */
+        const val LABEL_PDF = "pdf_session/active_pdf"
+        const val LABEL_LIBRARY = "pdf_session/pdf_calibrations"
     }
 }
 

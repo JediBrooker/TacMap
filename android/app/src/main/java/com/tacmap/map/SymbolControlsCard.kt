@@ -81,6 +81,7 @@ fun SymbolControlsCard(
                 WaypointKind.Generic -> null
                 is WaypointKind.Military -> { { editMode = SymbolEditorMode.MILITARY } }
                 is WaypointKind.ControlMeasure -> { { editMode = SymbolEditorMode.TASK } }
+                is WaypointKind.Marker -> { { editMode = SymbolEditorMode.MARKER } }
             }
         )
 
@@ -92,6 +93,7 @@ fun SymbolControlsCard(
                 onWaypointChangeDraft = store::updateNoUndo
             )
             is WaypointKind.Military -> Unit
+            is WaypointKind.Marker -> Unit
         }
 
         LayerSelectorButton(
@@ -142,6 +144,7 @@ fun SymbolControlsCard(
             title = when (mode) {
                 SymbolEditorMode.MILITARY -> "Change Military Unit"
                 SymbolEditorMode.TASK -> "Change Tactical Task"
+                SymbolEditorMode.MARKER -> "Change Marker"
             },
             actionLabel = "Save",
             fullScreen = mode != SymbolEditorMode.TASK,

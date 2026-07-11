@@ -1,13 +1,18 @@
 import SwiftUI
 
-/// The big pill button that re-centres the camera on the user.
+/// A pill button that re-centres the camera. Defaults to "Centre on My
+/// Location"; pass a shorter title + icon for the paired "Map" button that
+/// reframes an imported offline map.
 struct CentreButton: View {
+    var title: String = "Centre on My Location"
+    var systemImage: String = "location.viewfinder"
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Label("Centre on My Location", systemImage: "location.viewfinder")
+            Label(title, systemImage: systemImage)
                 .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 12)
                 .background(.black.opacity(0.78), in: Capsule())
@@ -15,6 +20,6 @@ struct CentreButton: View {
                 .overlay(Capsule().stroke(.white.opacity(0.15)))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Centre map on my location")
+        .accessibilityLabel(title)
     }
 }

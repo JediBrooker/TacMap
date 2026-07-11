@@ -159,6 +159,20 @@ struct SearchSheet: View {
         }
         if Task.isCancelled { return }
 
+        // MKLocalSearch sends the query to Apple's map servers. Gate it behind
+        // the online-lookups OPSEC toggle so nothing leaves the device by
+        // default. The coordinate/MGRS results above are all offline.
+        guard OpsecSettings.shared.onlineLookups else {
+            await MainActor.run {
+                places = []
+                isSearching = false
+                if inferredCoordinates.isEmpty {
+                    statusMessage = "Place-name search is off. Enable online lookups in Privacy & OPSEC. MGRS, grid and lat/lon still work."
+                }
+            }
+            return
+        }
+
         await runPlaceSearch(for: trimmed)
     }
 

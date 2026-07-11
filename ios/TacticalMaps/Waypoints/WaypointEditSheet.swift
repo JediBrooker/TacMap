@@ -23,6 +23,10 @@ struct WaypointEditSheet: View {
     @State private var rotation:    Double                 = 0
     @State private var scaleX:      Double                 = 1.0
     @State private var scaleY:      Double                 = 1.0
+    // Marker (airsoft / SAR / POI)
+    @State private var markerSet:      MarkerSet = .airsoft
+    @State private var markerSymbolID: String    = "team"
+    @State private var markerColorHex: String    = "#3B7BE0"
     @State private var notes: String = ""
     @State private var elevationText: String = ""
     @State private var showDeleteConfirm = false
@@ -53,6 +57,11 @@ struct WaypointEditSheet: View {
             case .controlMeasure(let m):
                 _category = State(initialValue: .controlMeasure)
                 _control  = State(initialValue: m)
+            case .marker(let mk):
+                _category       = State(initialValue: .marker)
+                _markerSet      = State(initialValue: mk.set)
+                _markerSymbolID = State(initialValue: mk.symbolID)
+                _markerColorHex = State(initialValue: mk.colorHex)
             }
         } else {
             // New control measure: start at zoom-appropriate scale on
@@ -133,6 +142,37 @@ struct WaypointEditSheet: View {
                         }
                         .pickerStyle(.navigationLink)
                         Toggle("Headquarters", isOn: $isHeadquarters)
+                    }
+
+                case .marker:
+                    Section("Symbol Set") {
+                        Picker("Set", selection: $markerSet) {
+                            ForEach(MarkerSet.allCases, id: \.self) { s in
+                                Text(s.displayName).tag(s)
+                            }
+                        }
+                        .onChange(of: markerSet) { newSet in
+                            // Snap to the new set's first symbol + its colour.
+                            let first = MarkerCatalog.entries(for: newSet)[0]
+                            markerSymbolID = first.id
+                            markerColorHex = first.defaultColorHex
+                        }
+                    }
+                    Section("Symbol") {
+                        Picker("Symbol", selection: $markerSymbolID) {
+                            ForEach(MarkerCatalog.entries(for: markerSet), id: \.id) { e in
+                                Label(e.name, systemImage: e.sfSymbol).tag(e.id)
+                            }
+                        }
+                        .pickerStyle(.navigationLink)
+                        .onChange(of: markerSymbolID) { newID in
+                            markerColorHex = MarkerCatalog.entry(set: markerSet, id: newID).defaultColorHex
+                        }
+                    }
+                    Section("Colour") {
+                        MarkerColorSwatches(selection: $markerColorHex)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
 
                 case .controlMeasure:
@@ -306,6 +346,9 @@ struct WaypointEditSheet: View {
                                                      function: function,
                                                      isHeadquarters: isHeadquarters))
         case .controlMeasure: return .controlMeasure(control)
+        case .marker:         return .marker(MarkerSymbol(set: markerSet,
+                                                          symbolID: markerSymbolID,
+                                                          colorHex: markerColorHex))
         }
     }
 
@@ -376,14 +419,42 @@ struct WaypointEditSheet: View {
 
 /// Top-level category in the edit sheet picker.
 private enum KindCategory: String, CaseIterable, Hashable {
-    case generic, military, controlMeasure
+    case generic, military, controlMeasure, marker
 
     var displayName: String {
         switch self {
         case .generic:        return "Point"
         case .military:       return "Military"
         case .controlMeasure: return "Tasks"
+        case .marker:         return "Markers"
         }
+    }
+}
+
+/// Preset colour swatches for markers (the airsoft team colours plus a couple
+/// of neutrals), with the current pick ringed.
+private struct MarkerColorSwatches: View {
+    @Binding var selection: String
+
+    private let swatches: [String] = MarkerCatalog.teamColors.map(\.hex) + ["#8A93A6", "#111417"]
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(swatches, id: \.self) { hex in
+                Circle()
+                    .fill(Color(UIColor(hex: hex)))
+                    .frame(width: 30, height: 30)
+                    .overlay(
+                        Circle().stroke(Color.primary,
+                                        lineWidth: selection.caseInsensitiveCompare(hex) == .orderedSame ? 3 : 0)
+                    )
+                    .overlay(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1))
+                    .onTapGesture { selection = hex }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 }
 

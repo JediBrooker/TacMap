@@ -1,56 +1,42 @@
 /// <reference types="@cloudflare/workers-types" />
 
-/**
- * TacMap sync backend - an E2E-blind relay for the shared tactical picture.
- * One Durable Object per unit "room"; clients connect over WebSocket and
- * exchange opaque encrypted blobs. Server only ever sees ciphertext plus
- * minimal routing metadata (random object id, version, coarse `kind`).
- * E2E keys are derived on-device from the unit join-code and never leave
- * (see README + client increments).
- *
- * Access control (relay is content-blind but NOT blind to who may write):
- *  - Room id in the URL is 256-bit, derived from join code via 210k-iter
- *    PBKDF2 - unguessable without the code.
- *  - Every socket must present a seperate writer-auth token in the
- *    Authorization: Bearer handshake header (never in URL so it never
- *    hits infra logs). Room pins the first token it sees and rejects any
- *    socket that doesn't match. A leaked room id alone can't read the
- *    snapshot or write to the room.
- *
- * Abuse limits: bounded `v`, per-room object cap, per-socket rate limit,
- * per-room connection cap, and per-message ciphertext ceiling keep a
- * single client from inflating DO storage/billing or DoS-ing a room.
- *
- * Storage gives offline store-and-forward: DO keeps latest blob per
- * object id (last-write-wins by version, client-id tie-break) so a
- * device that was offline catches up via snapshot on reconnect.
- * Self-hostable: stock Worker + DO, a unit can just wrangler deploy
- * to their own account.
- */
+// TacMap sync relay -- E2E-blind store-and-forward for the shared tactical
+// picture. One Durable Object per room. Clients exchange opaque AEAD
+// ciphertext; the relay never sees plaintext.
+//
+// Phase 2 hardening (SEC-001, SEC-007, SEC-022, SEC-024):
+//  - atomic record+byte quotas via storage.transaction()
+//  - phantom delete rejection (delete must target a known record)
+//  - paged storage.list() everywhere (never unbounded)
+//  - tombstones persist for room lifetime; whole-room idle expiry replaces
+//    per-record 7-day GC
+//  - snapshot fence with relay sequence counter
+//  - frame-size ceiling before JSON.parse
+//  - rate limiting bindings for connections and room creation
+//  - privacy-safe operational counters
 
 export interface Env {
   SYNC_ROOM: DurableObjectNamespace
+  CONN_LIMITER?: RateLimit
+  ROOM_LIMITER?: RateLimit
 }
 
-// Room ids are 256-bit (43-char base64url) output of client PBKDF2, so
-// require >=32 chars. Rejects short/guessable ids, raises enumeration bar.
-const ROOM_RE = /^\/room\/([A-Za-z0-9_-]{32,128})$/
+const ROOM_V2_RE = /^\/room\/([A-Za-z0-9_-]{32,128})$/
+const ROOM_V3_RE = /^\/v3\/room\/([A-Za-z0-9_-]{32,128})$/
 
-// Web origins allowed to open a socket. Empty b/c TacMap ships only native
-// clients which never send Origin. A self-hoster adding a browser client
-// would list its origin(s) here (e.g. "https://map.example.mil").
 const ALLOWED_ORIGINS = new Set<string>([])
 
-// Abuse ceilings.
-const MAX_CONNECTIONS = 64          // sockets per room
-const MAX_OBJECTS = 5000            // stored objects per room (live only)
-const MAX_V = 1e12                  // sane lamport/HLC upper bound
-const CT_MAX = 700_000             // ~512 KiB ciphertext (DO value limit)
+// abuse ceilings
+const MAX_CONNECTIONS = 64
+const MAX_RECORDS = 10_000
+const MAX_STORED_BYTES = 50_000_000
+const MAX_V = 1e12
+const CT_MAX = 700_000
+const MAX_FRAME_CHARS = 1_048_576
 const RATE_WINDOW_MS = 10_000
-const RATE_MAX_MSGS = 200           // per socket per window
-const SNAPSHOT_CHUNK = 100          // objects per snapshot msg
-const TOMBSTONE_TTL_MS = 7 * 24 * 60 * 60 * 1000  // 7 days
-const GC_INTERVAL_MS = 6 * 60 * 60 * 1000         // GC every 6h
+const RATE_MAX_MSGS = 200
+const SNAPSHOT_CHUNK = 100
+const IDLE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -58,94 +44,213 @@ export default {
     if (url.pathname === "/health") {
       return new Response("ok", { headers: { "content-type": "text/plain" } })
     }
-    const match = url.pathname.match(ROOM_RE)
+    const v2Match = url.pathname.match(ROOM_V2_RE)
+    const v3Match = url.pathname.match(ROOM_V3_RE)
+    const match = v2Match || v3Match
     if (!match) return new Response("Not found", { status: 404 })
+    const protocol = v3Match ? 3 : 2
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket upgrade", { status: 426 })
     }
-    // CSWSH defense: browsers always attach Origin to WS handshakes and can't
-    // set Authorization header on one, so an Origin-bearing request is a
-    // drive-by from a web page, never a real TacMap client. Native clients
-    // send no Origin and always pass. Self-hosted web client would go in
-    // ALLOWED_ORIGINS. Belt-and-suspenders on top of bearer-token check.
     const origin = req.headers.get("Origin")
     if (origin !== null && !ALLOWED_ORIGINS.has(origin)) {
       return new Response("Forbidden origin", { status: 403 })
     }
+    if (env.CONN_LIMITER) {
+      const ip = req.headers.get("CF-Connecting-IP") ?? "unknown"
+      const { success } = await env.CONN_LIMITER.limit({ key: ip })
+      if (!success) {
+        metric("conn_rate_limited")
+        return new Response("Too many requests", { status: 429 })
+      }
+    }
     const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName(match[1]))
-    return stub.fetch(req)
+    // pass protocol version to the DO via header
+    const doReq = new Request(req.url, req)
+    doReq.headers.set("X-Protocol", String(protocol))
+    doReq.headers.set("X-Room-Id", match[1])
+    return stub.fetch(doReq)
   },
 }
 
-/** One stored object: opaque ciphertext + metadata for routing + merge. */
 interface SyncRecord {
   id: string
-  v: number        // logical version (client Lamport/HLC clock)
-  by: string       // client id, deterministic tie-break for equal versions
-  kind: string     // coarse type hint: "waypoint" | "drawing" | "layer"
-  ct: string       // base64 ciphertext (server never decrypts)
-  deleted: boolean // tombstone so deletes reach late joiners
-  deletedAt?: number // epoch-ms when this record became a tombstone (for GC)
+  v: number
+  by: string
+  kind: string
+  ct: string
+  deleted: boolean
+  deletedAt?: number
 }
 
-/** Per-socket state carried across hibernation. Rate-limit counters +
- *  optional presence identity the client announced at join time. */
+interface SyncRecordV3 {
+  id: string
+  vs: string
+  by: string
+  kind: string
+  ct: string
+  deleted: boolean
+  pub: string
+}
+
 interface SocketState {
   windowStart: number
   msgs: number
+  protocol: 2 | 3
   presence?: PresenceInfo
 }
 
-/** Opaque encrypted presence blob. Relay is E2E-blind to presence content
- *  (location, callsign, unit composition). Only stores client id (random
- *  UUID, not PII) for routing leave broadcasts, and the ciphertext for
- *  relaying to peers and including in snapshots. */
 interface PresenceInfo {
   clientId: string
-  ct: string           // base64 AEAD ciphertext of the presence payload
+  ct: string
 }
 
-/** True when `a` should overwrite `b` under last-write-wins. */
 function isNewer(a: { v: number; by: string }, b: { v: number; by: string }): boolean {
   return a.v > b.v || (a.v === b.v && a.by > b.by)
 }
 
-/** Constant-time string comparison (tokens are fixed-length base64url). */
+// v3 VersionStamp: "counterHex16:actorId"
+function parseStamp(vs: string): { counter: bigint; actorId: string } | null {
+  const colon = vs.indexOf(":")
+  if (colon !== 16) return null
+  const hex = vs.slice(0, 16)
+  if (!/^[0-9a-f]{16}$/.test(hex)) return null
+  const actorId = vs.slice(17)
+  if (actorId.length === 0 || actorId.length > 64) return null
+  return { counter: BigInt("0x" + hex), actorId }
+}
+
+function isNewerStamp(incoming: string, existing: string): boolean {
+  const a = parseStamp(incoming)
+  const b = parseStamp(existing)
+  if (!a || !b) return false
+  if (a.counter !== b.counter) return a.counter > b.counter
+  return a.actorId > b.actorId
+}
+
+const MAX_COUNTER = 0x7FFFFFFFFFFFFFFFn
+const ADVANCE_WINDOW = 10_000n
+
 function constantTimeEqual(a: string, b: string): boolean {
   const enc = new TextEncoder()
   const ab = enc.encode(a)
   const bb = enc.encode(b)
-  if (ab.length !== bb.length) return false
-  let diff = 0
-  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i]
+  const maxLen = Math.max(ab.length, bb.length)
+  let diff = ab.length ^ bb.length
+  for (let i = 0; i < maxLen; i++) diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0)
   return diff === 0
+}
+
+async function hashToken(token: string): Promise<string> {
+  const data = new TextEncoder().encode(token)
+  const hash = await crypto.subtle.digest("SHA-256", data)
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("")
+}
+
+function base64urlDecode(s: string): ArrayBuffer | null {
+  try {
+    const padded = s.replace(/-/g, "+").replace(/_/g, "/")
+    const pad = (4 - (padded.length % 4)) % 4
+    const b64 = padded + "=".repeat(pad)
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return bytes.buffer
+  } catch {
+    return null
+  }
+}
+
+function uint8ToBase64url(bytes: Uint8Array): string {
+  let bin = ""
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
+function recordBytes(rec: SyncRecord): number {
+  return rec.ct.length + rec.id.length + rec.by.length + rec.kind.length + 64
+}
+
+function metric(name: string, fields?: Record<string, string | number>): void {
+  console.log(JSON.stringify({ metric: name, ...fields }))
 }
 
 export class SyncRoom {
   private state: DurableObjectState
+  private env: Env
 
-  constructor(state: DurableObjectState, _env: Env) {
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state
+    this.env = env
   }
 
   async fetch(req: Request): Promise<Response> {
-    // Writer-auth: bearer token proves possession of the join-code-derived
-    // auth key without revealing it (relay stays content-blind). In a header
-    // not the URL, so it never hits request logs.
     const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "")
     if (token.length < 20 || token.length > 200) {
       return new Response("Unauthorized", { status: 401 })
     }
-    const pinned = await this.state.storage.get<string>("meta:auth")
-    if (pinned === undefined) {
-      // TOFU: first client (who must already know the room id, itself only
-      // derivable from join code) pins the token for the room.
-      await this.state.storage.put("meta:auth", token)
-    } else if (!constantTimeEqual(pinned, token)) {
-      return new Response("Forbidden", { status: 403 })
+
+    const protocol = parseInt(req.headers.get("X-Protocol") ?? "2", 10) as 2 | 3
+    const requestedRoomId = req.headers.get("X-Room-Id") ?? ""
+
+    // check protocol version consistency
+    const storedProtocol = await this.state.storage.get<number>("meta:protocol")
+    if (storedProtocol !== undefined && storedProtocol !== protocol) {
+      return new Response("Protocol mismatch", { status: 426 })
     }
 
-    // cap concurrent connections so one room can't exhaust the DO
+    if (protocol === 3) {
+      // v3: verified auth binding -- SHA-256("tacmap-room-id-v3\0" || rawToken) must == roomId
+      const rawToken = base64urlDecode(token)
+      if (!rawToken || rawToken.byteLength !== 32) {
+        return new Response("Unauthorized", { status: 401 })
+      }
+      const prefix = new TextEncoder().encode("tacmap-room-id-v3\0")
+      const concat = new Uint8Array(prefix.length + rawToken.byteLength)
+      concat.set(prefix)
+      concat.set(new Uint8Array(rawToken), prefix.length)
+      const computed = await crypto.subtle.digest("SHA-256", concat)
+      const computedB64 = uint8ToBase64url(new Uint8Array(computed))
+      if (computedB64 !== requestedRoomId) {
+        return new Response("Forbidden", { status: 403 })
+      }
+      // v3 pins the verified hash (same as v2 pattern but we verified first)
+      const tokenHash = await hashToken(token)
+      const pinned = await this.state.storage.get<string>("meta:auth")
+      if (pinned === undefined) {
+        if (this.env.ROOM_LIMITER) {
+          const ip = req.headers.get("CF-Connecting-IP") ?? "unknown"
+          const { success } = await this.env.ROOM_LIMITER.limit({ key: ip })
+          if (!success) {
+            metric("room_rate_limited")
+            return new Response("Too many rooms", { status: 429 })
+          }
+        }
+        await this.state.storage.put("meta:auth", tokenHash)
+        await this.state.storage.put("meta:protocol", 3)
+      } else if (!constantTimeEqual(pinned, tokenHash)) {
+        return new Response("Forbidden", { status: 403 })
+      }
+    } else {
+      // v2: blind TOFU (existing behavior)
+      const tokenHash = await hashToken(token)
+      const pinned = await this.state.storage.get<string>("meta:auth")
+      if (pinned === undefined) {
+        if (this.env.ROOM_LIMITER) {
+          const ip = req.headers.get("CF-Connecting-IP") ?? "unknown"
+          const { success } = await this.env.ROOM_LIMITER.limit({ key: ip })
+          if (!success) {
+            metric("room_rate_limited")
+            return new Response("Too many rooms", { status: 429 })
+          }
+        }
+        await this.state.storage.put("meta:auth", tokenHash)
+        await this.state.storage.put("meta:protocol", 2)
+      } else if (!constantTimeEqual(pinned, tokenHash)) {
+        return new Response("Forbidden", { status: 403 })
+      }
+    }
+
     if (this.state.getWebSockets().length >= MAX_CONNECTIONS) {
       return new Response("Room full", { status: 503 })
     }
@@ -153,43 +258,75 @@ export class SyncRoom {
     const pair = new WebSocketPair()
     const client = pair[0]
     const server = pair[1]
-    // hibernatable WS - DO can evict from memory between messages
     this.state.acceptWebSocket(server)
-    server.serializeAttachment({ windowStart: 0, msgs: 0 } satisfies SocketState)
+    server.serializeAttachment({ windowStart: 0, msgs: 0, protocol } satisfies SocketState)
+
     await this.sendSnapshot(server)
-    const existing = await this.state.storage.getAlarm()
-    if (existing === null) {
-      await this.state.storage.setAlarm(Date.now() + GC_INTERVAL_MS)
-    }
+    await this.touchActivity()
+
     return new Response(null, { status: 101, webSocket: client })
   }
 
-  // ----- Hibernation API handlers -----
+  // ----- hibernation API -----
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    if (!this.allow(ws)) {
-      try { ws.close(4008, "rate limit") } catch { /* already closed */ }
+    const text = typeof message === "string" ? message : new TextDecoder().decode(message)
+
+    // frame ceiling before any parse
+    if (text.length > MAX_FRAME_CHARS) {
+      metric("frame_rejected", { reason: "oversized", len: text.length })
+      try { ws.close(4009, "frame too large") } catch { /* closed */ }
       return
     }
+
+    if (!this.allow(ws)) {
+      try { ws.close(4008, "rate limit") } catch { /* closed */ }
+      return
+    }
+
     let msg: any
     try {
-      const text = typeof message === "string" ? message : new TextDecoder().decode(message)
       msg = JSON.parse(text)
     } catch {
+      metric("frame_rejected", { reason: "bad_json" })
       return
     }
+
+    const socketState = ws.deserializeAttachment() as SocketState | null
+    const proto = socketState?.protocol ?? 2
+
     switch (msg?.t) {
       case "put":
-        await this.applyChange(ws, msg, false)
+        if (proto === 3) {
+          await this.applyChangeV3(ws, msg, false)
+        } else {
+          await this.applyChange(ws, msg, false)
+        }
+        await this.touchActivity()
         break
       case "del":
-        await this.applyChange(ws, msg, true)
+        if (proto === 3) {
+          await this.applyChangeV3(ws, msg, true)
+        } else {
+          await this.applyChange(ws, msg, true)
+        }
+        await this.touchActivity()
         break
       case "loc":
-        this.handlePresence(ws, msg)
+        if (proto === 3) {
+          await this.handlePresenceV3(ws, msg)
+        } else {
+          this.handlePresence(ws, msg)
+        }
+        await this.touchActivity()
+        break
+      case "hello":
+        if (proto === 3) await this.handleHello(ws, msg)
         break
       case "ping":
         try { ws.send(JSON.stringify({ t: "pong" })) } catch { /* closed */ }
+        break
+      default:
         break
     }
   }
@@ -200,37 +337,46 @@ export class SyncRoom {
       this.broadcast({ t: "leave", clientId: s.presence.clientId }, ws)
     }
     try { ws.close(code, "closing") } catch { /* already closed */ }
+
+    // if this was the last socket, schedule idle expiry
+    if (this.state.getWebSockets().length <= 1) {
+      await this.touchActivity()
+    }
   }
 
-  async webSocketError(_ws: WebSocket, _err: unknown): Promise<void> {
-    // nothing to do, runtime tears down the socket
-  }
+  async webSocketError(_ws: WebSocket, _err: unknown): Promise<void> {}
 
   async alarm(): Promise<void> {
     const now = Date.now()
-    const map = await this.state.storage.list<SyncRecord>({ prefix: "obj:" })
-    const toDelete: string[] = []
-    for (const [key, rec] of map) {
-      if (rec.deleted && rec.deletedAt && now - rec.deletedAt > TOMBSTONE_TTL_MS) {
-        toDelete.push(key)
-      }
+    const sockets = this.state.getWebSockets()
+
+    if (sockets.length > 0) {
+      // room is active, reschedule
+      await this.state.storage.setAlarm(now + IDLE_TTL_MS)
+      return
     }
-    if (toDelete.length > 0) {
-      await this.state.storage.delete(toDelete)
-    }
-    if (this.state.getWebSockets().length > 0) {
-      await this.state.storage.setAlarm(now + GC_INTERVAL_MS)
+
+    const lastActivity = (await this.state.storage.get<number>("meta:lastActivity")) ?? 0
+    const elapsed = now - lastActivity
+
+    if (elapsed >= IDLE_TTL_MS) {
+      // room has been idle long enough, delete everything
+      metric("room_expired")
+      await this.state.storage.deleteAll()
+    } else {
+      // not yet expired, reschedule for remaining TTL
+      await this.state.storage.setAlarm(now + (IDLE_TTL_MS - elapsed))
     }
   }
 
-  // ----- Presence (ephemeral, never stored) -----
+  // ----- presence (ephemeral, never stored) -----
 
   private handlePresence(sender: WebSocket, msg: any): void {
     const clientId = typeof msg.clientId === "string" ? msg.clientId.slice(0, 128) : ""
     const ct = typeof msg.ct === "string" ? msg.ct : ""
     if (!clientId || !ct || ct.length > CT_MAX) return
     const p: PresenceInfo = { clientId, ct }
-    const s = (sender.deserializeAttachment() as SocketState | null) ?? { windowStart: 0, msgs: 0 }
+    const s = (sender.deserializeAttachment() as SocketState | null) ?? { windowStart: 0, msgs: 0, protocol: 2 as const }
     s.presence = p
     sender.serializeAttachment(s)
     this.broadcast({ t: "loc", clientId, ct }, sender)
@@ -246,13 +392,11 @@ export class SyncRoom {
     return members
   }
 
-  // ----- Core -----
+  // ----- core -----
 
-  /** Sliding-window per-socket rate limit. Returns false when socket has
-   *  blown its message budget for the current window. */
   private allow(ws: WebSocket): boolean {
     const now = Date.now()
-    const s = (ws.deserializeAttachment() as SocketState | null) ?? { windowStart: now, msgs: 0 }
+    const s = (ws.deserializeAttachment() as SocketState | null) ?? { windowStart: now, msgs: 0, protocol: 2 as const }
     if (now - s.windowStart > RATE_WINDOW_MS) {
       s.windowStart = now
       s.msgs = 0
@@ -263,58 +407,285 @@ export class SyncRoom {
   }
 
   private async applyChange(sender: WebSocket, msg: any, deleted: boolean): Promise<void> {
+    // strict field validation
     const id = msg.id
-    const v = msg.v
-    const by = typeof msg.by === "string" ? msg.by.slice(0, 128) : ""
-    const kind = typeof msg.kind === "string" ? msg.kind.slice(0, 32) : "unknown"
-    const ct = typeof msg.ct === "string" ? msg.ct : ""
     if (typeof id !== "string" || id.length === 0 || id.length > 256) return
-    // bound v: non-negative safe integer within a sane window. Without this
-    // an attacker (or clock bug) could send v = MAX_VALUE and permanently
-    // pin a record so no honest update ever wins LWW.
+    const v = msg.v
     if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0 || v > MAX_V) return
-    if (!deleted && ct.length === 0) return
+    const by = typeof msg.by === "string" ? msg.by.slice(0, 128) : ""
+    if (by.length === 0) return
+    const kind = typeof msg.kind === "string" ? msg.kind.slice(0, 32) : ""
+    if (kind.length === 0 && !deleted) return
+    const ct = typeof msg.ct === "string" ? msg.ct : ""
     if (ct.length > CT_MAX) return
+    // puts require ciphertext; deletes require sealed proof
+    if (ct.length === 0) return
 
     const key = "obj:" + id
-    const existing = await this.state.storage.get<SyncRecord>(key)
-    if (existing && !isNewer({ v, by }, existing)) return // stale, drop it
+    let seq: number | undefined
+    let committed: SyncRecord | undefined
 
-    const wasLive = existing != null && !existing.deleted
-    const willLive = !deleted
+    await this.state.storage.transaction(async (txn) => {
+      const existing = await txn.get<SyncRecord>(key)
 
-    if (!wasLive && willLive) {
-      const count = (await this.state.storage.get<number>("meta:count")) ?? 0
-      if (count >= MAX_OBJECTS) return
-      await this.state.storage.put("meta:count", count + 1)
-    } else if (wasLive && !willLive) {
-      const count = (await this.state.storage.get<number>("meta:count")) ?? 1
-      await this.state.storage.put("meta:count", Math.max(0, count - 1))
-    }
-
-    const record: SyncRecord = { id, v, by, kind, ct, deleted, ...(deleted ? { deletedAt: Date.now() } : {}) }
-    await this.state.storage.put(key, record)
-    this.broadcast({ t: deleted ? "del" : "put", ...record }, sender)
-  }
-
-  private async sendSnapshot(ws: WebSocket): Promise<void> {
-    const map = await this.state.storage.list<SyncRecord>({ prefix: "obj:" })
-    const items = [...map.values()]
-    const members = this.collectMembers(ws)
-    try {
-      if (items.length === 0) {
-        ws.send(JSON.stringify({ t: "snapshot", items: [], members }))
+      // reject phantom deletes: can't delete what was never stored
+      if (deleted && existing === undefined) {
+        metric("phantom_delete_rejected")
         return
       }
-      for (let i = 0; i < items.length; i += SNAPSHOT_CHUNK) {
-        const slice = items.slice(i, i + SNAPSHOT_CHUNK)
-        const isFirst = i === 0
-        const payload: any = { t: "snapshot", items: slice, more: i + SNAPSHOT_CHUNK < items.length }
+
+      if (existing && !isNewer({ v, by }, existing)) return
+
+      const liveRecords = (await txn.get<number>("meta:liveRecords")) ?? 0
+      const totalRecords = (await txn.get<number>("meta:totalRecords")) ?? 0
+      const bytes = (await txn.get<number>("meta:bytes")) ?? 0
+      const currentSeq = (await txn.get<number>("meta:seq")) ?? 0
+
+      const newRecBytes = recordBytes({ id, v, by, kind: kind || "unknown", ct, deleted })
+      const oldRecBytes = existing ? recordBytes(existing) : 0
+      const isNewRecord = existing === undefined
+      const wasPreviouslyDeleted = existing?.deleted === true
+
+      let newLiveRecords = liveRecords
+      let newTotalRecords = totalRecords
+      let newBytes = bytes
+
+      if (isNewRecord) {
+        newTotalRecords = totalRecords + 1
+        if (!deleted) newLiveRecords = liveRecords + 1
+        newBytes = bytes + newRecBytes
+      } else {
+        // transitioning live -> deleted: decrement live count
+        if (deleted && !wasPreviouslyDeleted) newLiveRecords = liveRecords - 1
+        // transitioning deleted -> live (re-put after tombstone): increment live count
+        if (!deleted && wasPreviouslyDeleted) newLiveRecords = liveRecords + 1
+        newBytes = bytes - oldRecBytes + newRecBytes
+      }
+
+      // quota check: cap on live records (tombstones don't count against it)
+      if (newLiveRecords > MAX_RECORDS) {
+        metric("quota_exceeded", { type: "records", current: newLiveRecords })
+        return
+      }
+      if (newBytes > MAX_STORED_BYTES) {
+        metric("quota_exceeded", { type: "bytes", current: newBytes })
+        return
+      }
+
+      const record: SyncRecord = {
+        id, v, by,
+        kind: kind || "unknown",
+        ct, deleted,
+        ...(deleted ? { deletedAt: Date.now() } : {}),
+      }
+
+      seq = currentSeq + 1
+      committed = record
+      await txn.put(key, record)
+      await txn.put("meta:liveRecords", newLiveRecords)
+      await txn.put("meta:totalRecords", newTotalRecords)
+      await txn.put("meta:bytes", newBytes)
+      await txn.put("meta:seq", seq)
+    })
+
+    if (seq !== undefined && committed) {
+      this.broadcast({ t: deleted ? "del" : "put", ...committed, seq }, sender)
+    }
+  }
+
+  // ----- v3 protocol handlers -----
+
+  private async handleHello(ws: WebSocket, msg: any): Promise<void> {
+    const by = typeof msg.by === "string" ? msg.by : ""
+    const pub = typeof msg.pub === "string" ? msg.pub : ""
+    const sd = typeof msg.sd === "string" ? msg.sd : ""
+    if (by.length < 20 || by.length > 64) return
+    if (pub.length < 20 || pub.length > 64) return
+    if (sd.length < 20 || sd.length > 64) return
+
+    const ok = await this.registerActor(by, pub)
+    if (!ok) {
+      try { ws.close(4010, "actor key mismatch") } catch { /* closed */ }
+      return
+    }
+    // broadcast hello to all other sockets
+    this.broadcast({ t: "hello", by, pub, sd }, ws)
+  }
+
+  private async registerActor(actorId: string, pubkey: string): Promise<boolean> {
+    const key = "actor:" + actorId
+    const existing = await this.state.storage.get<{ pubkey: string; firstSeen: number }>(key)
+    if (existing === undefined) {
+      await this.state.storage.put(key, { pubkey, firstSeen: Date.now() })
+      return true
+    }
+    return existing.pubkey === pubkey
+  }
+
+  private async applyChangeV3(sender: WebSocket, msg: any, deleted: boolean): Promise<void> {
+    const id = msg.id
+    if (typeof id !== "string" || id.length === 0 || id.length > 64) return
+    const vs = msg.vs
+    if (typeof vs !== "string") return
+    const parsed = parseStamp(vs)
+    if (!parsed) return
+    if (parsed.counter < 0n || parsed.counter > MAX_COUNTER) return
+    const by = typeof msg.by === "string" ? msg.by : ""
+    if (by.length < 20 || by.length > 64) return
+    // actorId in stamp must match by field
+    if (parsed.actorId !== by) return
+    const kind = typeof msg.kind === "string" ? msg.kind.slice(0, 32) : ""
+    if (kind.length === 0) return
+    const ct = typeof msg.ct === "string" ? msg.ct : ""
+    if (ct.length > CT_MAX || ct.length === 0) return
+    const pub = typeof msg.pub === "string" ? msg.pub : ""
+    if (pub.length < 20 || pub.length > 64) return
+
+    // register/verify actor
+    const actorOk = await this.registerActor(by, pub)
+    if (!actorOk) {
+      try { sender.close(4010, "actor key mismatch") } catch { /* closed */ }
+      return
+    }
+
+    const key = "obj:" + id
+    let seq: number | undefined
+    let committed: SyncRecordV3 | undefined
+
+    await this.state.storage.transaction(async (txn) => {
+      const existing = await txn.get<SyncRecordV3>(key)
+
+      if (deleted && existing === undefined) {
+        metric("phantom_delete_rejected")
+        return
+      }
+
+      if (existing && !isNewerStamp(vs, existing.vs)) return
+
+      // counter advance window check
+      const roomHW = (await txn.get<string>("meta:highWater")) ?? "0000000000000000"
+      const hwParsed = parseStamp(roomHW + ":x")
+      const hwCounter = hwParsed ? hwParsed.counter : 0n
+      if (parsed.counter > hwCounter + ADVANCE_WINDOW) {
+        metric("counter_advance_rejected", { counter: vs })
+        return
+      }
+
+      const liveRecords = (await txn.get<number>("meta:liveRecords")) ?? 0
+      const totalRecords = (await txn.get<number>("meta:totalRecords")) ?? 0
+      const bytes = (await txn.get<number>("meta:bytes")) ?? 0
+      const currentSeq = (await txn.get<number>("meta:seq")) ?? 0
+
+      const record: SyncRecordV3 = { id, vs, by, kind, ct, deleted, pub }
+      const newRecBytes = record.ct.length + record.id.length + record.by.length + record.kind.length + record.vs.length + 80
+      const oldRecBytes = existing ? existing.ct.length + existing.id.length + existing.by.length + existing.kind.length + existing.vs.length + 80 : 0
+      const isNewRecord = existing === undefined
+      const wasPreviouslyDeleted = existing?.deleted === true
+
+      let newLiveRecords = liveRecords
+      let newTotalRecords = totalRecords
+      let newBytes = bytes
+
+      if (isNewRecord) {
+        newTotalRecords = totalRecords + 1
+        if (!deleted) newLiveRecords = liveRecords + 1
+        newBytes = bytes + newRecBytes
+      } else {
+        if (deleted && !wasPreviouslyDeleted) newLiveRecords = liveRecords - 1
+        if (!deleted && wasPreviouslyDeleted) newLiveRecords = liveRecords + 1
+        newBytes = bytes - oldRecBytes + newRecBytes
+      }
+
+      if (newLiveRecords > MAX_RECORDS) {
+        metric("quota_exceeded", { type: "records", current: newLiveRecords })
+        return
+      }
+      if (newBytes > MAX_STORED_BYTES) {
+        metric("quota_exceeded", { type: "bytes", current: newBytes })
+        return
+      }
+
+      seq = currentSeq + 1
+      committed = record
+      await txn.put(key, record)
+      await txn.put("meta:liveRecords", newLiveRecords)
+      await txn.put("meta:totalRecords", newTotalRecords)
+      await txn.put("meta:bytes", newBytes)
+      await txn.put("meta:seq", seq)
+
+      // update room high-water counter
+      if (parsed.counter > hwCounter) {
+        await txn.put("meta:highWater", parsed.counter.toString(16).padStart(16, "0"))
+      }
+    })
+
+    if (seq !== undefined && committed) {
+      this.broadcast({ t: deleted ? "del" : "put", ...committed, seq }, sender)
+    }
+  }
+
+  private async handlePresenceV3(ws: WebSocket, msg: any): Promise<void> {
+    const by = typeof msg.by === "string" ? msg.by : ""
+    const ct = typeof msg.ct === "string" ? msg.ct : ""
+    const pub = typeof msg.pub === "string" ? msg.pub : ""
+    const vs = typeof msg.vs === "string" ? msg.vs : ""
+    if (by.length < 20 || by.length > 64) return
+    if (!ct || ct.length > CT_MAX) return
+    if (pub.length < 20 || pub.length > 64) return
+    if (!parseStamp(vs)) return
+
+    const actorOk = await this.registerActor(by, pub)
+    if (!actorOk) {
+      try { ws.close(4010, "actor key mismatch") } catch { /* closed */ }
+      return
+    }
+
+    const s = (ws.deserializeAttachment() as SocketState | null) ?? { windowStart: 0, msgs: 0, protocol: 3 as const }
+    s.presence = { clientId: by, ct }
+    ws.serializeAttachment(s)
+    this.broadcast({ t: "loc", by, ct, pub, vs }, ws)
+  }
+
+  // ----- snapshot -----
+
+  private async sendSnapshot(ws: WebSocket): Promise<void> {
+    const seq = (await this.state.storage.get<number>("meta:seq")) ?? 0
+    const members = this.collectMembers(ws)
+
+    try {
+      ws.send(JSON.stringify({ t: "snapshot-begin", seq }))
+
+      let cursor: string | undefined
+      let isFirst = true
+
+      while (true) {
+        const opts: DurableObjectListOptions = { prefix: "obj:", limit: SNAPSHOT_CHUNK }
+        if (cursor) opts.startAfter = cursor
+        const page = await this.state.storage.list<SyncRecord>(opts)
+
+        if (page.size === 0) {
+          if (isFirst) {
+            ws.send(JSON.stringify({ t: "snapshot", items: [], members }))
+          }
+          break
+        }
+
+        const items = [...page.values()]
+        const keys = [...page.keys()]
+        cursor = keys[keys.length - 1]
+        const hasMore = page.size === SNAPSHOT_CHUNK
+
+        const payload: Record<string, unknown> = { t: "snapshot", items, more: hasMore }
         if (isFirst) payload.members = members
         ws.send(JSON.stringify(payload))
+
+        isFirst = false
+        if (!hasMore) break
       }
+
+      ws.send(JSON.stringify({ t: "snapshot-end", seq }))
     } catch {
-      /* socket closed before snapshot, ignore */
+      // socket closed mid-snapshot
     }
   }
 
@@ -322,7 +693,16 @@ export class SyncRoom {
     const data = JSON.stringify(payload)
     for (const ws of this.state.getWebSockets()) {
       if (ws === except) continue
-      try { ws.send(data) } catch { /* drop dead sockets */ }
+      try { ws.send(data) } catch { /* dead socket */ }
+    }
+  }
+
+  private async touchActivity(): Promise<void> {
+    const now = Date.now()
+    await this.state.storage.put("meta:lastActivity", now)
+    const existing = await this.state.storage.getAlarm()
+    if (existing === null) {
+      await this.state.storage.setAlarm(now + IDLE_TTL_MS)
     }
   }
 }

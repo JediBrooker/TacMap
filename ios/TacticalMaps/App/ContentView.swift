@@ -3,10 +3,20 @@ import MapKit
 import UniformTypeIdentifiers
 
 enum ImportedMapFileCopier {
-    static func copyToDocuments(_ source: URL,
-                                fileManager: FileManager = .default) throws -> URL {
-        let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return try copy(source, into: docsDir, fileManager: fileManager)
+    /// Copy an imported map (PDF/GeoPDF/MBTiles) into the app-private,
+    /// file-protected ImportedMaps dir - NOT Documents. Keeps the picture of
+    /// your AO off the Files.app / Finder file-sharing surface, where it used
+    /// to sit readable to anyone with the unlocked device or a paired host.
+    static func copyToImportedMaps(_ source: URL,
+                                   fileManager: FileManager = .default) throws -> URL {
+        let dir = try importedMapsDirectory(fileManager: fileManager)
+        let dest = try copy(source, into: dir, fileManager: fileManager)
+        // After-first-unlock so a backgrounded map / recording read still
+        // works; matches the migration path in PDFSessionStore.
+        try? fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+            ofItemAtPath: dest.path)
+        return dest
     }
 
     static func copy(_ source: URL,
@@ -96,22 +106,66 @@ struct ContentView: View {
     @State private var showAboutSheet      = false
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
 
+    @ObservedObject private var opsec = OpsecSettings.shared
+
+    /// Is anything on screen actually pulling tiles off the internet right now?
+    /// Apple's basemap counts: an imported PDF draws in a subview above it, so
+    /// "a PDF is loaded" does not mean "nothing is being fetched".
+    private var onlineTilesActive: Bool {
+        guard opsec.onlineBasemaps else { return false }
+        return !(mapVM.mapSource is OfflineTileMapSource)
+    }
+
+    /// Nothing to draw at all: no imported map, and online tiles are gated off.
+    private var basemapBlank: Bool {
+        !opsec.onlineBasemaps
+            && !(mapVM.mapSource is OfflineTileMapSource)
+            && !(mapVM.mapSource is PDFMapSource)
+    }
+
+    /// An imported, location-bound basemap (offline pack or PDF/GeoPDF). These
+    /// have coverage, so they get the "Centre on Map" button + green banner tag.
+    private var importedMapLoaded: Bool {
+        mapVM.mapSource is OfflineTileMapSource || mapVM.mapSource is PDFMapSource
+    }
+
+    /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
+    private var basemapLabel: String? {
+        if importedMapLoaded { return "Offline basemap" }
+        if onlineTilesActive { return "Online basemap" }
+        return nil
+    }
+    private var basemapColor: Color {
+        importedMapLoaded
+            ? Color(red: 0.45, green: 0.89, blue: 0.54)   // offline: green
+            : Color(red: 1.0, green: 0.35, blue: 0.35)    // online: red
+    }
+
+    /// The coordinate the banner is reading out: the crosshair when browsing,
+    /// else the live position. Drives the MGRS readout, drop-pin, and G-M angle.
+    private var headerCoordinate: CLLocationCoordinate2D? {
+        mapVM.isBrowsing ? mapVM.cameraCentre : locationService.lastLocation?.coordinate
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                MapContainerView(
+                TileMapContainer(
                     mapVM: mapVM,
-                    locationService: locationService,
                     waypointStore: waypointStore,
                     drawingStore: drawingStore,
                     drawingSession: drawingSession,
                     measureSession: measureSession,
                     visibility: visibility,
+                    locationService: locationService,
                     calibration: calibration,
                     graphicsLocked: graphicsLocked,
                     peers: syncManager.peers
                 )
                 .ignoresSafeArea()
+                .overlay {
+                    if basemapBlank { NoBasemapNotice() }
+                }
 
                 // SwiftUI overlay for tactical control measures. Sits
                 // directly above the map so symbols render WITHOUT
@@ -146,9 +200,15 @@ struct ContentView: View {
 
                 // Crosshair: always visible except while drawing (taps go
                 // to vertex placement, crosshair would compete with
-                // tap-target markers).
+                // tap-target markers). Must ignore the safe area like the map
+                // does - otherwise it centres on the safe-area rect (~14pt low
+                // since the top inset > the bottom) and drifts below the user
+                // dot, which sits at the map's true geometric centre.
                 if !drawingSession.isDrawing {
-                    CrosshairOverlay().allowsHitTesting(false)
+                    CrosshairOverlay()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
                 }
 
                 freehandCaptureOverlay
@@ -382,13 +442,14 @@ struct ContentView: View {
                 wgs84: mapVM.headerWGS84,
                 utm: mapVM.headerUTM,
                 syncConnected: syncManager.status == .connected,
-                isBrowsing: mapVM.isBrowsing,
-                accuracy: locationService.lastAccuracy,
+                basemapLabel: basemapLabel,
+                basemapColor: basemapColor,
+                gridMagneticDegrees: GridMagnetic.angle(
+                    latitude: headerCoordinate?.latitude,
+                    longitude: headerCoordinate?.longitude),
                 elevation: mapVM.centreElevation ?? locationService.lastAltitude,
                 elevationIsApproximate: mapVM.centreElevationIsApproximate,
-                coordinate: mapVM.isBrowsing
-                    ? mapVM.cameraCentre
-                    : locationService.lastLocation?.coordinate,
+                coordinate: headerCoordinate,
                 onDropPin: { coord, mgrs in
                     let layerID = drawingStore.activeLayerID
                         ?? drawingStore.layers.first?.id
@@ -403,6 +464,10 @@ struct ContentView: View {
                 }
             )
             .padding(.horizontal, 12)
+
+            // The online-tiles warning used to sit here under the header, but
+            // that's exactly where the live-tracking record badge goes, so they
+            // collided. It's paired with the Centre button at the bottom now.
 
             if trackRecorder.isRecording {
                 RecordingIndicator(
@@ -601,8 +666,22 @@ struct ContentView: View {
                 .padding(.bottom, max(bottomInset - 32, 0))
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
-                CentreButton {
-                    mapVM.centreOnUser(locationService.lastLocation)
+                // Basemap status now lives in the MGRS banner. When an imported
+                // (offline/PDF) map is loaded, add a "Map" button beside the
+                // recentre pill so centring on a distant live location doesn't
+                // strand the user away from their map. Side by side to save height;
+                // the location label shrinks when both show.
+                HStack(spacing: 8) {
+                    CentreButton(
+                        title: importedMapLoaded ? "My Location" : "Centre on My Location"
+                    ) {
+                        mapVM.centreOnUser(locationService.lastLocation)
+                    }
+                    if importedMapLoaded {
+                        CentreButton(title: "Map", systemImage: "map") {
+                            mapVM.centreOnMap()
+                        }
+                    }
                 }
                 .offset(y: max(bottomInset - 32, 0))
             }
@@ -757,13 +836,14 @@ struct ContentView: View {
         }
 
         // File picker may hand us a security-scoped URL (came from outside
-        // sandbox). Copy into Documents for stable access.
+        // sandbox). Copy into app-private, file-protected storage for stable
+        // access - never Documents, which is exposed via file sharing.
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         let dest: URL
         do {
-            dest = try ImportedMapFileCopier.copyToDocuments(url)
+            dest = try ImportedMapFileCopier.copyToImportedMaps(url)
         } catch {
             importMessage = "Couldn't import this PDF map: \(error.localizedDescription)"
             return
@@ -802,9 +882,9 @@ struct ContentView: View {
         }
     }
 
-    /// Import local MBTiles raster pyramid as offline basemap. Copies
-    /// picked file into Documents (stable sandbox access), installs an
-    /// OfflineTileMapSource served with no network via MKTileOverlay.
+    /// Import local MBTiles raster pyramid as offline basemap. Copies the
+    /// picked file into app-private, file-protected storage (not Documents),
+    /// installs an OfflineTileMapSource served with no network.
     private func handleMBTilesImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure(let error) = result {
@@ -818,7 +898,7 @@ struct ContentView: View {
 
         let dest: URL
         do {
-            dest = try ImportedMapFileCopier.copyToDocuments(url)
+            dest = try ImportedMapFileCopier.copyToImportedMaps(url)
         } catch {
             importMessage = "Couldn't import this MBTiles map: \(error.localizedDescription)"
             return
@@ -834,6 +914,26 @@ struct ContentView: View {
             userLocation: locationService.lastLocation?.coordinate
         )
         importMessage = "Loaded offline tiles: \(source.displayName)."
+    }
+}
+
+/// Fresh install with no offline pack and online basemaps gated off draws
+/// nothing at all. Explain that, b/c a blank map with no message reads as a
+/// broken app rather than a deliberate OPSEC posture.
+private struct NoBasemapNotice: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("No basemap").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+            Text("Online basemaps are off. Import an offline map pack, or enable "
+                 + "online basemap tiles in Privacy & OPSEC.")
+                .font(.system(size: 11))
+                .foregroundStyle(Color(white: 0.73))
+                .multilineTextAlignment(.center)
+        }
+        .padding(16)
+        .background(Color.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 8))
+        .padding(24)
+        .allowsHitTesting(false)
     }
 }
 

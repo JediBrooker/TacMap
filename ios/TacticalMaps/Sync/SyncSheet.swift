@@ -5,6 +5,7 @@ struct SyncSheet: View {
     @ObservedObject var manager: SyncManager
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
+    @State private var codeError: String?
 
     var body: some View {
         NavigationStack {
@@ -102,12 +103,26 @@ struct SyncSheet: View {
                         TextField("Unit join code", text: $code)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
+                            .onChange(of: code) { _ in codeError = nil }
                         Button {
-                            manager.join(code)
+                            code = SyncCrypto.generateJoinCode()
+                            codeError = nil
+                        } label: {
+                            Label("Generate strong code", systemImage: "wand.and.stars")
+                        }
+                        Button {
+                            if SyncCrypto.isJoinCodeTooWeak(code) {
+                                codeError = "Too short to be safe. Use at least \(SyncCrypto.minJoinCodeLength) characters, or tap Generate."
+                            } else {
+                                manager.join(code)
+                            }
                         } label: {
                             Label("Join / create room", systemImage: "antenna.radiowaves.left.and.right")
                         }
                         .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty)
+                        if let codeError {
+                            Text(codeError).font(.caption).foregroundStyle(.red)
+                        }
                     }
                 }
 

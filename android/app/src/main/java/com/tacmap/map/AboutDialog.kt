@@ -32,8 +32,10 @@ fun AboutDialog(onDismiss: () -> Unit) {
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text("Satellite: Google Maps / Esri World Imagery (Esri, Maxar, Earthstar Geographics)", fontSize = 12.sp)
+                Text("Satellite: Esri World Imagery (Esri, Maxar, Earthstar Geographics)", fontSize = 12.sp)
+                Text("Topographic / street: Esri basemap styles · map data © OpenStreetMap contributors", fontSize = 12.sp)
                 Text("Terrain: OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors", fontSize = 12.sp)
+                Text("Elevation / weather: Open-Meteo · Copernicus DEM (CC BY 4.0)", fontSize = 12.sp)
                 Text("APP-6C symbols: spatialillusions/milsymbol", fontSize = 12.sp)
                 Text("PDF maps and overlays stay on this device unless exported.", fontSize = 12.sp)
 
