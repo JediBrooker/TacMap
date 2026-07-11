@@ -4,8 +4,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.TimeUnit
+import org.junit.rules.Timeout
+import org.junit.Rule
 
 class SyncSigningTest {
+
+    // hard ceiling so the CVE-2024-30172 infinite-loop test can't hang CI
+    @get:Rule val globalTimeout: Timeout = Timeout(10, TimeUnit.SECONDS)
 
     private fun hex(s: String) = ByteArray(s.length / 2) {
         ((s[it * 2].digitToInt(16) shl 4) or s[it * 2 + 1].digitToInt(16)).toByte()
@@ -68,5 +74,33 @@ class SyncSigningTest {
         assertFalse("tampered message", SyncSigning.verify(pub, "grid 1234 5679".toByteArray(), sig))
         assertFalse("wrong key = impersonation attempt", SyncSigning.verify(pubB64, msg, sig))
         assertFalse("garbage sig never throws", SyncSigning.verify(pub, msg, "not-base64!!"))
+    }
+
+    /**
+     * CVE-2024-30172 regression: crafted Ed25519 public keys with certain
+     * small-order points caused BC <= 1.78 to loop forever in verify(). If
+     * this test hangs instead of returning false, the BC version is vulnerable.
+     */
+    @Test
+    fun cve2024_30172_malformedKeyDoesNotHang() {
+        // 32-byte all-zeros is a small-order point that triggered the bug
+        val badPub = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(ByteArray(32))
+        val fakeSig = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(ByteArray(64))
+        assertFalse(SyncSigning.verify(badPub, "anything".toByteArray(), fakeSig))
+
+        // all-ones is another degenerate case
+        val onesPub = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(ByteArray(32) { 0xFF.toByte() })
+        assertFalse(SyncSigning.verify(onesPub, "anything".toByteArray(), fakeSig))
+    }
+
+    @Test
+    fun bouncyCastleVersionIsCurrent() {
+        // make sure no transitive dep quietly downgrades us
+        val info = org.bouncycastle.jce.provider.BouncyCastleProvider()
+        val ver = info.version
+        assertTrue("BC version $ver must be >= 1.84", ver >= 1.84)
     }
 }

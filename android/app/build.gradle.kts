@@ -100,6 +100,17 @@ android {
     }
 }
 
+configurations.all {
+    resolutionStrategy {
+        // CVE-2024-30172: crafted Ed25519 key/sig infinite-loops BC <= 1.78.
+        // PDFBox 2.0.27.0 pulls bcprov/bcpkix/bcutil transitively at 1.72;
+        // force all three to the patched family so nothing resolves old.
+        force("org.bouncycastle:bcprov-jdk15to18:1.84")
+        force("org.bouncycastle:bcpkix-jdk15to18:1.84")
+        force("org.bouncycastle:bcutil-jdk15to18:1.84")
+    }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
@@ -154,7 +165,7 @@ dependencies {
     // platform Ed25519 (that landed in API 33). Bouncycastle is already on the
     // classpath transitively (pdfbox-android); pin the same artifact so it's an
     // explicit, single dependency rather than an accidental transitive one.
-    implementation("org.bouncycastle:bcprov-jdk15to18:1.72")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.84")
 
     // PDF parsing — used to extract OGC GeoPDF / Adobe LGIDict
     // georeferencing dictionaries so imported GeoPDFs land in the
