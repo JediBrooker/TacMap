@@ -69,6 +69,18 @@ object SyncSigning {
         ).joinToString("\u001F").toByteArray(Charsets.UTF_8)
     }
 
+    /**
+     * Canonical bytes that an object-write signature covers: the routing
+     * metadata a receiver reconstructs from the relay record ([id], [v],
+     * [kind], [by]) plus the exact plaintext [content] that was sealed. Joined
+     * by U+001F like [presenceMessage] so it is serialization-independent and
+     * byte-identical to iOS. For a delete, kind is "del" and content is "".
+     * Signing [by] and [v] means the relay cannot re-attribute or roll back a
+     * write - either change breaks the signature. iOS must match exactly.
+     */
+    fun objectMessage(id: String, v: Long, kind: String, by: String, content: String): ByteArray =
+        listOf(id, v.toString(), kind, by, content).joinToString("\u001F").toByteArray(Charsets.UTF_8)
+
     private fun urlB64(bytes: ByteArray): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 

@@ -41,6 +41,24 @@ class SyncSigningTest {
     }
 
     @Test
+    fun objectMessageIsPinnedForCrossPlatform() {
+        // The exact bytes an object-write signature covers, put and delete.
+        // iOS SyncSigningTests pins the identical hex, so an Android-signed
+        // object write verifies on iOS and vice-versa.
+        val put = SyncSigning.objectMessage("obj-1", 7L, "waypoint", "dev-1", "GEO")
+        assertEquals("6f626a2d311f371f776179706f696e741f6465762d311f47454f", put.joinToString("") { "%02x".format(it) })
+        val del = SyncSigning.objectMessage("obj-1", 7L, "del", "dev-1", "")
+        assertEquals("6f626a2d311f371f64656c1f6465762d311f", del.joinToString("") { "%02x".format(it) })
+        // A signature over the put must not verify against the delete message
+        // (kind + content differ), so a relay can't swap a write for a delete.
+        val s2 = SyncSigning.generateSeed()
+        val pub = SyncSigning.publicKey(s2)
+        val putSig = SyncSigning.sign(s2, put)
+        assertTrue(SyncSigning.verify(pub, put, putSig))
+        assertFalse(SyncSigning.verify(pub, del, putSig))
+    }
+
+    @Test
     fun rejectsTamperedMessageWrongKeyAndGarbage() {
         val seed2 = SyncSigning.generateSeed()
         val msg = "grid 1234 5678".toByteArray()

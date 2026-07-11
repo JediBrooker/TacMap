@@ -105,12 +105,13 @@ class SyncManager(
     private var observeJob: Job? = null
 
     // Per-device Ed25519 signing identity. Seed is sealed at rest; the public
-    // key rides every presence so peers pin it (TOFU) and reject a room member
-    // impersonating an established peer. Room state (keys/ts) is cleared on leave.
+    // key rides every presence AND every object write so peers pin it (TOFU) and
+    // reject a room member impersonating an established device. One identity per
+    // clientId, shared by presence + object writes. Room state cleared on leave.
     private val deviceSeed: ByteArray by lazy { loadOrCreateDeviceSeed() }
     private val myPublicKey: String by lazy { SyncSigning.publicKey(deviceSeed) }
     private val peerKeys = HashMap<String, String>()   // clientId -> pinned pubkey
-    private val peerTs = HashMap<String, Long>()        // clientId -> last accepted ts
+    private val peerTs = HashMap<String, Long>()        // clientId -> last accepted presence ts
 
     private var clock: Long = 0
     private val versions = HashMap<String, Long>()        // id -> last-applied version
@@ -227,16 +228,31 @@ class SyncManager(
 
     private fun sendPut(id: String, v: Long, kind: String, content: String) {
         val key = roomKey ?: return
+        // Sign the write, then seal {content, pub, sig} together. The signature
+        // rides INSIDE the sealed blob so the relay stays E2E-blind to device
+        // identity; a receiver proves room-key possession by opening it and
+        // device authorship by verifying the sig against the pinned key.
+        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, kind, clientId, content))
+        val inner = JSONObject().apply { put("c", content); put("pub", myPublicKey); put("sig", sig) }
         val aad = SyncCrypto.aad(id, v, kind)
-        val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, content.toByteArray(Charsets.UTF_8), aad))
+        val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
         ws?.send(JSONObject().apply {
             put("t", "put"); put("id", id); put("v", v); put("by", clientId); put("kind", kind); put("ct", ct)
         }.toString())
     }
 
     private fun sendDel(id: String, v: Long) {
+        val key = roomKey ?: return
+        // Deletes used to be an unauthenticated {id,v} - a coerced relay could
+        // forge one and silently remove a contact. Now seal a signed proof: only
+        // a room-key holder can produce it (relay can't), and it's attributable
+        // to a device. AAD "del" so it can't be replayed as a put.
+        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, "del", clientId, ""))
+        val inner = JSONObject().apply { put("pub", myPublicKey); put("sig", sig) }
+        val aad = SyncCrypto.aad(id, v, "del")
+        val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
         ws?.send(JSONObject().apply {
-            put("t", "del"); put("id", id); put("v", v); put("by", clientId)
+            put("t", "del"); put("id", id); put("v", v); put("by", clientId); put("ct", ct)
         }.toString())
     }
 
@@ -257,7 +273,7 @@ class SyncManager(
                 }
             }
             "put" -> applyRecord(msg)
-            "del" -> applyDelete(msg.optString("id"), msg.optLong("v"))
+            "del" -> applyDelete(msg)
             "loc" -> applyPresence(msg)
             "leave" -> {
                 val peerId = msg.optString("clientId").ifEmpty { return }
@@ -267,16 +283,29 @@ class SyncManager(
     }
 
     private fun applyRecord(rec: JSONObject) {
+        // Snapshot tombstones arrive as records with deleted=true; route them
+        // through the same signed-delete verification as a live "del".
+        if (rec.optBoolean("deleted", false)) { applyDelete(rec); return }
         val id = rec.optString("id").ifEmpty { return }
         val v = rec.optLong("v")
-        if ((versions[id] ?: Long.MIN_VALUE) >= v && lastContent.containsKey(id)) return // stale
+        // Monotonic per-id version: reject anything <= the highest we've applied,
+        // and keep rejecting even after a delete (versions[id] survives as a
+        // tombstone) so a relay can't resurrect a deleted object by replaying an
+        // older-but-validly-signed put.
+        val known = versions[id]
+        if (known != null && known >= v) return // stale / superseded / post-delete
         clock = maxOf(clock, v)
-        if (rec.optBoolean("deleted", false)) { applyDelete(id, v); return }
         val key = roomKey ?: return
         val kind = rec.optString("kind", "unknown")
+        val by = rec.optString("by")
         val aad = SyncCrypto.aad(id, v, kind)
         val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(rec.optString("ct")), aad) ?: return
-        val content = String(plain, Charsets.UTF_8)
+        val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
+        val content = inner.optString("c")
+        // Device authorship: the write must be signed by the key pinned to `by`
+        // (TOFU). A room member can't forge a write as another established
+        // device; a key that doesn't match the pin is rejected as a swap.
+        if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(id, v, kind, by, content))) return
 
         val doc = drawingStore.document.value
         val fallback = doc.layers.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID
@@ -304,8 +333,19 @@ class SyncManager(
         _remoteUpdates.tryEmit("$kindLabel '$objectName' updated by another device")
     }
 
-    private fun applyDelete(id: String, v: Long) {
-        if (id.isEmpty()) return
+    private fun applyDelete(rec: JSONObject) {
+        val id = rec.optString("id").ifEmpty { return }
+        val v = rec.optLong("v")
+        val known = versions[id]
+        if (known != null && known >= v) return // stale / already-superseded delete
+        val key = roomKey ?: return
+        val by = rec.optString("by")
+        // Open the sealed proof (proves room-key possession, so a relay with no
+        // room key can't forge a delete) then verify the device signature.
+        val aad = SyncCrypto.aad(id, v, "del")
+        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(rec.optString("ct")), aad) ?: return
+        val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
+        if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(id, v, "del", by, ""))) return
         clock = maxOf(clock, v)
         val kindLabel = when (kindById[id]) {
             "drawing" -> "Drawing"
@@ -323,6 +363,19 @@ class SyncManager(
         versions[id] = v
         lastContent.remove(id); kindById.remove(id)
         _remoteUpdates.tryEmit("$kindLabel deleted by another device")
+    }
+
+    /** TOFU-pin [by]'s signing key and verify [signed] under it. Shared by
+     *  object puts and deletes and by presence, so a device has one identity per
+     *  clientId. Missing/garbage fields, or a key that doesn't match the existing
+     *  pin, -> false (the write is rejected). */
+    private fun verifyObjectSig(by: String, inner: JSONObject, signed: ByteArray): Boolean {
+        if (by.isEmpty()) return false
+        val pub = inner.optString("pub").ifEmpty { return false }
+        val sig = inner.optString("sig").ifEmpty { return false }
+        val pinned = peerKeys[by]
+        if (pinned == null) peerKeys[by] = pub else if (pinned != pub) return false
+        return SyncSigning.verify(pub, signed, sig)
     }
 
     private fun upsertWaypoint(wp: Waypoint) {
