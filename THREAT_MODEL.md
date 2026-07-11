@@ -146,6 +146,7 @@ request until you opt in.
 | `a.tile.opentopomap.org` | OpenTopoMap community topo tiles (the one keyless style) | Selecting the OSM-Topo style with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Leave the gate off; use offline packs |
 | `api.open-meteo.com/v1/forecast` | Weather lookup | Opening the weather dialog | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
 | `api.open-meteo.com/v1/elevation` | Elevation + terrain heatmap | Elevation/terrain features | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
+| Place-name search — iOS `MKLocalSearch` (Apple), Android `Geocoder` (Google/OEM on GMS devices) | Turning a typed place name into a coordinate | Typing 2+ characters in Search | Your IP + the search string, which can itself reveal your AO (searching a FOB/village name) | **Off** (online lookups gate) | Leave online lookups off; navigate by MGRS/grid instead |
 | Sync relay (default: `tacmap-sync.<...>.workers.dev`) | Encrypted unit sync transport | Joining a sync room | Ciphertext + routing ID + your IP + traffic timing (see §4) | Off until you join a room | Self-host the relay; see §8 |
 | `play.google.com/redeem` / `apps.apple.com/redeem` | Voucher / licence redemption | You tapping "redeem" | Standard store request; no map or unit data | User-initiated only | n/a |
 
@@ -187,8 +188,8 @@ TacMap's controls:
 - **A persistent red banner** sits across the top of the map whenever an online
   tile source is active, so you never discover it by accident.
 - **Offline basemap packs** render with no tile requests of our own. This is the
-  recommended posture for any real operation. [TODO: link the offline pack
-  build/import guide here.]
+  recommended posture for any real operation: pre-stage an MBTiles pack or a
+  GeoPDF sheet before you deploy, then leave both online gates off in the field.
 
 ### The two platforms, both now closed
 
@@ -249,9 +250,12 @@ to zero and then panning the renderer aggressively across fresh ground:
 | New in-app renderer | **0 bytes** |
 
 During that pan the app fetched tiles the whole time — every request went to
-`ibasemaps-api.arcgis.com` (the Esri basemap you turned on), with **zero contact
-to any Apple map host** (`*.ls.apple.com`, `gspe*`, `cdn.apple-mapkit`). So on
-iOS the AO no longer leaks to Apple at all. What the online-basemaps gate now buys
+`ibasemaps-api.arcgis.com` (the Esri basemap you turned on), with **zero
+basemap-tile contact to any Apple map host** (`*.ls.apple.com`, `gspe*`,
+`cdn.apple-mapkit`). So on iOS the AO no longer leaks to Apple *through the
+basemap*. (One thing still can: place-name **search** uses `MKLocalSearch`,
+which sends the query you type to Apple's servers - but only if you enable
+online lookups and use the search box. See §5.) What the online-basemaps gate now buys
 you is the ordinary thing it says: with it off, the app makes no basemap tile
 request of any kind, and an imported offline pack or GeoPDF genuinely hides your
 AO — there is no Apple fetch underneath it any more.
@@ -277,6 +281,15 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   tempo are inferable at the relay. Self-hosting moves this trust to you but does
   not remove it. A LAN/mesh transport removes the internet vector entirely
   [PLANNED].
+- **A coerced relay can suppress or roll back, not just observe.** AEAD stops the
+  relay forging a blob, replaying it under a different id, or moving it between
+  rooms (§4) - but it gives no *freshness or completeness* guarantee. A hostile
+  relay can silently drop an update (you never see the new enemy contact), serve a
+  joining or reinstalled client an older-but-validly-sealed snapshot (rollback),
+  or withhold a deletion. The clients only reject *older* versions of objects they
+  already track; they cannot detect an omission. Treat the shared picture as
+  advisory and confirm critical changes out-of-band. Tamper-evident sequencing is
+  a planned hardening.
 - **Area-of-interest leakage via online basemaps/lookups.** See §6. If you turn
   the online-basemaps or online-lookups gate on, the tile/query coordinates go to
   the provider (Esri/OpenTopoMap/Open-Meteo) from your IP. That is inherent to
@@ -291,12 +304,16 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   What that does and does not defeat depends on one setting:
 
   - **Default (device-bound key).** A forensic extraction of the *filesystem* —
-    a disk image, `adb pull`, a backup, a seized locked handset, a device you
-    binned or sent for repair — recovers **ciphertext only**. But the keystore
-    releases the key to this app automatically, so an attacker who achieves
-    **code execution as the app on a rooted or jailbroken device** can simply ask
-    the keystore to decrypt, and recovers everything. Non-exportable means the
-    key cannot be *copied*, not that it cannot be *used*.
+    a disk image, `adb pull`, a backup, a **powered-off or before-first-unlock**
+    seized handset, a device you binned or sent for repair — recovers
+    **ciphertext only**. Two caveats. A device seized **after** first unlock and
+    still powered on holds the key's class key resident, so a current forensic
+    exploit could lift the data key - effectively the code-execution case below.
+    And the keystore releases the key to this app automatically, so an attacker
+    who achieves **code execution as the app on a rooted or jailbroken device**
+    can simply ask the keystore to decrypt, and recovers everything.
+    Non-exportable means the key cannot be *copied*, not that it cannot be *used*.
+    Auth-bound mode (below) is the answer to both.
 
   - **"Require unlock to decrypt mission data" (auth-bound key), opt-in.** The
     key is regenerated with a hardware user-authentication requirement, so the
@@ -319,14 +336,27 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   atomic rename. On flash storage the old blocks may survive until wear-levelling
   reclaims them, protected only by the platform's own full-disk encryption.
 
-- **Data that is still plaintext on disk.** Imported basemaps are not encrypted:
-  MBTiles packs and imported PDF/GeoPDF sheets sit in app-private storage as they
-  were imported. They reveal your area of interest to anyone who extracts them.
-  Only the *calibration sidecar* (which sheet, what ground it covers, the fitted
-  affine) is sealed. Encrypting the packs themselves would mean SQLCipher and
-  streaming decryption; it is not done.
+- **Data that is still plaintext on disk.** Imported basemaps are not sealed under
+  the app key: MBTiles packs and imported PDF/GeoPDF sheets sit in app-private
+  storage (on iOS, in a `FileProtection`-covered directory and no longer exposed
+  through Files/Finder file sharing) but as their original bytes. They reveal your
+  area of interest to anyone who extracts them at the filesystem level. Only the
+  *calibration sidecar* (which sheet, what ground it covers, the fitted affine) is
+  sealed. Encrypting the packs themselves would mean SQLCipher and streaming
+  decryption; it is not done.
+- **Crash logs are local and plaintext.** An uncaught-exception / fatal-signal
+  handler writes a short stack trace to app-private storage (never transmitted -
+  you export it yourself from About). It is not sealed: the fatal-signal path has
+  to be async-signal-safe (no allocation or crypto), and doing keystore crypto
+  inside a crash handler is fragile. Stack traces rarely contain coordinates but
+  can carry an imported map's file name; clear it if that matters.
 - **Your own room members.** Everyone with the join code sees everything shared
   in that room. Rotate codes and manage membership accordingly.
+- **Peer identity is asserted, not proven.** There are no per-device keys within a
+  room: a client stamps its own callsign and client id onto the presence it sends.
+  So anyone holding the join code - any member, or anyone who guessed a weak code -
+  can spoof another member's callsign and position, not merely read. Per-device
+  signing is a planned hardening; for now room membership is the trust boundary.
 - **A weak join code.** The 210k-iteration stretch raises the cost of guessing,
   but a short or predictable code is still guessable - offline, against the
   relay-visible routing ID, and once per code for the whole user base because
@@ -352,7 +382,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
 **OPSEC-first defaults (already set):**
 
 - Screen capture blocked (keeps live position out of screenshots and the recents
-  thumbnail).
+  thumbnail). This is literal on Android (`FLAG_SECURE` blocks screenshots,
+  screen recording, and the recents thumbnail). On iOS there is no public API to
+  block an in-app screenshot, so the toggle only covers the **app-switcher
+  snapshot** (an opaque cover while the app is backgrounded) - a deliberate
+  screenshot of the live map is still possible.
 - Online lookups off.
 - Online basemaps off.
 - Mission data encrypted at rest with a device-bound key.
@@ -367,9 +401,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   more realistic threat to you than a track cut short by a reboot. Read the
   trade-off in §7 first, and on Android do not remove your lockscreen afterwards.
 - **Self-host the sync relay** so no traffic transits an account you do not
-  control. The relay only forwards sealed blobs by routing ID, so a minimal
-  self-hosted deployment is enough. Point the app at it in
-  Settings → relay URL. [TODO: link self-host deploy guide.]
+  control. The relay is a single Cloudflare Worker + Durable Object
+  (`sync/src/index.ts`); deploy it to your own account and point the app at it in
+  Settings → relay URL. It only ever forwards sealed blobs by routing ID, so a
+  minimal deployment is enough.
 - Use generated join codes and rotate them per activity.
 - Treat a lost **unlocked** device as a compromise of all mission data on it. A
   lost **locked** device, with the default device-bound key, yields ciphertext.
@@ -388,8 +423,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   than to each other.
 - Egress: every network call the *app* makes is in the services listed in §5.
   There is no analytics, telemetry, or ad SDK; verify by searching the source for
-  outbound URLs. Note the iOS caveat in §6: `geod` makes requests on the app's
-  behalf that no source search will reveal, because they are not in our binary.
+  outbound URLs. (Historically iOS leaked map tiles through Apple's `geod` daemon,
+  which no source search would reveal; §6 documents how that was closed - there
+  is no MapKit view left, so `geod` is never asked for a tile.)
 - OPSEC defaults: `settings/OpsecSettings.kt` and the iOS equivalent.
 - Crash handling: `CrashReporter` (local file only).
 
