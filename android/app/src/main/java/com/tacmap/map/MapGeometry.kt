@@ -3,8 +3,9 @@ package com.tacmap.map
 import androidx.compose.ui.geometry.Offset
 
 /**
- * Pure screen-space hit-test geometry extracted from GoogleMapScreen.kt so it
- * can be unit-tested without Compose/Maps. Mirrors the iOS MapGeometry helpers
+ * Pure screen-space hit-test geometry used by the custom map's touch layer,
+ * kept free of Compose/renderer types so it can be unit-tested. Mirrors the
+ * iOS MapGeometry helpers
  * (point-to-segment distance, polyline distance, point-in-polygon).
  */
 

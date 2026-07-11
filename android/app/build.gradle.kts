@@ -10,11 +10,6 @@ val localProperties = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY")
-    ?: providers.gradleProperty("MAPS_API_KEY").orNull?.takeIf { it.isNotBlank() }
-    ?: System.getenv("MAPS_API_KEY")
-    ?: ""
-
 // ArcGIS Location Platform key for the Esri satellite basemap. Same resolution
 // order as the Maps key. It ends up in BuildConfig, which means it ends up in
 // the APK: this is a quota/billing control, not a secret, and anyone can pull
@@ -53,12 +48,11 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = injectedVersionCode ?: 31
+        versionCode = injectedVersionCode ?: 32
         versionName = "1.2.0"
 
         vectorDrawables { useSupportLibrary = true }
 
-        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "ESRI_API_KEY", "\"$esriApiKey\"")
         // Esri API keys expire. When this one lapses the Esri basemap starts
         // 401ing in the field, so EsriKeyExpiryTest fails the build 60 days out
@@ -126,14 +120,12 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // SVG rasteriser used by SymbolIconFactory to render the milsymbol
-    // assets into BitmapDescriptors for Google Maps markers.
+    // assets into bitmaps for the custom renderer's waypoint symbols.
     implementation("com.caverock:androidsvg-aar:1.4")
 
-    // Google Maps SDK + Compose bindings. API key is read from
-    // local.properties (MAPS_API_KEY=…) or the MAPS_API_KEY env var.
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.maps.android:maps-compose:4.3.3")
-    implementation("com.google.maps.android:android-maps-utils:3.8.2")
+    // No Google Maps SDK. The map is a custom Compose/Canvas renderer
+    // (com.tacmap.map.render.*) that draws raster tiles + overlays itself, so
+    // nothing here phones home to Google for map content.
 
     // Location is the platform LocationManager (GPS_PROVIDER, on-device), not
     // Google's fused provider - see LocationService. No play-services-location.

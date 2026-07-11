@@ -1,7 +1,6 @@
 package com.tacmap.app
 
 import android.app.Application
-import com.google.android.gms.maps.MapsInitializer
 import com.tacmap.models.TrackRecorder
 import com.tacmap.settings.OpsecSettings
 import com.tacmap.util.DataKey
@@ -25,10 +24,6 @@ class TacticalApp : Application() {
         DataKey.install(this)
         opsec = OpsecSettings(this)
         trackRecorder = TrackRecorder(this)
-        // Maps SDK 18+ "latest" renderer eats way more GL/Java heap on init.
-        // Use legacy renderer to keep peak memory under the largeHeap limit
-        // (512 MB) on constrained devices and emulators.
-        MapsInitializer.initialize(this, MapsInitializer.Renderer.LEGACY, null)
         CrashReporter.install(this)
     }
 }

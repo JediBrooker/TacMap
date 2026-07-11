@@ -1,10 +1,22 @@
 package com.tacmap.map
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,10 +54,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 
 /**
- * The SDK-free replacement for [GoogleMapScreen]. The basemap renders through the
- * custom [TileMapView] and every overlay + interaction projects through a
- * [MapCamera] we own, so nothing links the Google Maps SDK. Same call surface as
- * GoogleMapScreen so MapScreen can drop it in.
+ * The map surface for the whole app. The basemap renders through the custom
+ * [TileMapView] and every overlay + interaction projects through a [MapCamera]
+ * we own, so nothing links the Google Maps SDK - this is what lets Android ship
+ * with no Google map dependency at all.
  */
 @Composable
 fun CustomMapScreen(
@@ -207,6 +219,39 @@ fun CustomMapScreen(
         if (basemapBlank) {
             NoBasemapNoticeCustom(Modifier.align(Alignment.Center))
         }
+    }
+}
+
+/// Compact warning while the map is pulling tiles from the internet - the
+/// provider learns your area of interest from the tiles you request, so it
+/// shouldn't be something you find out by accident. A small pill tucked under
+/// the MGRS card, above the Centre pill and clear of the record badge.
+@Composable
+internal fun OnlineTilesPill(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color(0xFFB00020).copy(alpha = 0.92f))
+            .padding(horizontal = 9.dp, vertical = 3.dp)
+            .semantics {
+                contentDescription =
+                    "Online basemap active. Tile requests reveal your area of interest."
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            Icons.Default.Warning,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(11.dp)
+        )
+        Text(
+            "Online basemap",
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

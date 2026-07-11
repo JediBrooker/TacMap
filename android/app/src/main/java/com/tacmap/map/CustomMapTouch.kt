@@ -34,6 +34,11 @@ import com.tacmap.waypoints.Waypoint
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
+data class MapItemDrag(
+    val kind: Kind, val itemId: String,
+    val startX: Float, val startY: Float, val offsetX: Float, val offsetY: Float, val didDrag: Boolean
+) { enum class Kind { WAYPOINT, DRAWING } }
+
 // The SDK-free interaction layer for CustomMapScreen. Ports MapItemTouchOverlay +
 // VertexHandlesOverlay off the Google Projection onto MapProjection(MapCamera).
 // Unlike the SDK path (where waypoints used native draggable markers), this
