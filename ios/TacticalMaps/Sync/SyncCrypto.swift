@@ -90,7 +90,7 @@ enum SyncCrypto {
     }
 
     /// AEAD associated data - binds ciphertext to routing metadata.
-    static func aad(id: String, v: Int, kind: String) -> Data {
+    static func aad(id: String, v: Int64, kind: String) -> Data {
         Data("\(id)|\(v)|\(kind)".utf8)
     }
 

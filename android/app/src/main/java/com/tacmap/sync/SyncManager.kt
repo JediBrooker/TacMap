@@ -258,27 +258,54 @@ class SyncManager(
 
     // ----- Inbound -----
 
+    // v2 containment ceilings (pending v3 protocol limits)
+    companion object {
+        /** Default E2E-blind relay. Self-hosters can swap in their own Worker. */
+        const val RELAY_BASE = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
+        /** SharedPreferences key holding the sealed presence-config blob. */
+        private const val KEY_PRESENCE = "config_sealed"
+        /** AEAD label binding that blob so it can't be opened as another pref. */
+        private const val PRESENCE_LABEL = "sync/presenceConfig"
+        /** Sealed per-device Ed25519 signing seed + its AEAD label. */
+        private const val KEY_DEVICE_SEED = "device_seed"
+        private const val DEVICE_SEED_LABEL = "sync/deviceSeed"
+
+        private const val MAX_FRAME_BYTES = 1_048_576        // 1 MiB text
+        private const val MAX_BASE64_BYTES = 1_048_576        // 1 MiB encoded ct
+        private const val MAX_SNAPSHOT_ITEMS = 10_000
+        private const val MAX_VERSION = 1_000_000_000_000L   // matches relay MAX_V
+    }
+
     private fun handleMessage(text: String) {
-        val msg = runCatching { JSONObject(text) }.getOrNull() ?: return
-        when (msg.optString("t")) {
-            "snapshot" -> {
-                val items = msg.optJSONArray("items") ?: JSONArray()
-                for (i in 0 until items.length()) applyRecord(items.getJSONObject(i))
-                // populate peers from snapshot's members array (first chunk)
-                val members = msg.optJSONArray("members")
-                if (members != null) {
-                    for (i in 0 until members.length()) {
-                        applyPresence(members.getJSONObject(i))
+        // frame ceiling: drop oversized messages before parsing
+        if (text.length > MAX_FRAME_BYTES) return
+        // fail-closed: any unexpected throw from downstream parsing is swallowed
+        // so a malformed frame never kills the coroutine scope
+        try {
+            val msg = JSONObject(text)
+            when (msg.optString("t")) {
+                "snapshot" -> {
+                    val items = msg.optJSONArray("items") ?: JSONArray()
+                    if (items.length() > MAX_SNAPSHOT_ITEMS) return
+                    for (i in 0 until items.length()) applyRecord(items.getJSONObject(i))
+                    val members = msg.optJSONArray("members")
+                    if (members != null) {
+                        val cap = minOf(members.length(), MAX_SNAPSHOT_ITEMS)
+                        for (i in 0 until cap) {
+                            applyPresence(members.getJSONObject(i))
+                        }
                     }
                 }
+                "put" -> applyRecord(msg)
+                "del" -> applyDelete(msg)
+                "loc" -> applyPresence(msg)
+                "leave" -> {
+                    val peerId = msg.optString("clientId").ifEmpty { return }
+                    _peers.value = _peers.value - peerId
+                }
             }
-            "put" -> applyRecord(msg)
-            "del" -> applyDelete(msg)
-            "loc" -> applyPresence(msg)
-            "leave" -> {
-                val peerId = msg.optString("clientId").ifEmpty { return }
-                _peers.value = _peers.value - peerId
-            }
+        } catch (_: Throwable) {
+            // silently drop — don't log frame content (SEC-019)
         }
     }
 
@@ -287,25 +314,29 @@ class SyncManager(
         // through the same signed-delete verification as a live "del".
         if (rec.optBoolean("deleted", false)) { applyDelete(rec); return }
         val id = rec.optString("id").ifEmpty { return }
-        val v = rec.optLong("v")
+        val v = strictVersion(rec, "v") ?: return
         // Monotonic per-id version: reject anything <= the highest we've applied,
         // and keep rejecting even after a delete (versions[id] survives as a
         // tombstone) so a relay can't resurrect a deleted object by replaying an
         // older-but-validly-signed put.
         val known = versions[id]
         if (known != null && known >= v) return // stale / superseded / post-delete
-        clock = maxOf(clock, v)
         val key = roomKey ?: return
         val kind = rec.optString("kind", "unknown")
         val by = rec.optString("by")
+        val ctB64 = rec.optString("ct")
+        if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return
         val aad = SyncCrypto.aad(id, v, kind)
-        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(rec.optString("ct")), aad) ?: return
+        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
         val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
         val content = inner.optString("c")
         // Device authorship: the write must be signed by the key pinned to `by`
         // (TOFU). A room member can't forge a write as another established
         // device; a key that doesn't match the pin is rejected as a swap.
         if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(id, v, kind, by, content))) return
+        // advance clock only AFTER AEAD + sig pass — a hostile relay can't
+        // poison the clock with a forged message it can't sign
+        clock = maxOf(clock, v)
 
         val doc = drawingStore.document.value
         val fallback = doc.layers.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID
@@ -335,15 +366,17 @@ class SyncManager(
 
     private fun applyDelete(rec: JSONObject) {
         val id = rec.optString("id").ifEmpty { return }
-        val v = rec.optLong("v")
+        val v = strictVersion(rec, "v") ?: return
         val known = versions[id]
         if (known != null && known >= v) return // stale / already-superseded delete
         val key = roomKey ?: return
         val by = rec.optString("by")
+        val ctB64 = rec.optString("ct")
+        if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return
         // Open the sealed proof (proves room-key possession, so a relay with no
         // room key can't forge a delete) then verify the device signature.
         val aad = SyncCrypto.aad(id, v, "del")
-        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(rec.optString("ct")), aad) ?: return
+        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
         val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
         if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(id, v, "del", by, ""))) return
         clock = maxOf(clock, v)
@@ -456,6 +489,7 @@ class SyncManager(
         if (peerId == clientId) return
         val key = roomKey ?: return
         val ctB64 = msg.optString("ct").ifEmpty { return }
+        if (ctB64.length > MAX_BASE64_BYTES) return
         val aad = "loc|$peerId".toByteArray(Charsets.UTF_8)
         val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
         val obj = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
@@ -614,15 +648,17 @@ class SyncManager(
         return seed
     }
 
-    companion object {
-        /** Default E2E-blind relay. Self-hosters can swap in their own Worker. */
-        const val RELAY_BASE = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
-        /** SharedPreferences key holding the sealed presence-config blob. */
-        private const val KEY_PRESENCE = "config_sealed"
-        /** AEAD label binding that blob so it can't be opened as another pref. */
-        private const val PRESENCE_LABEL = "sync/presenceConfig"
-        /** Sealed per-device Ed25519 signing seed + its AEAD label. */
-        private const val KEY_DEVICE_SEED = "device_seed"
-        private const val DEVICE_SEED_LABEL = "sync/deviceSeed"
+    /** Strict version parsing — rejects NaN, infinity, fractional, negative, and
+     *  out-of-range values that optLong would silently coerce to 0 or truncate. */
+    private fun strictVersion(rec: JSONObject, key: String): Long? {
+        if (!rec.has(key)) return null
+        val raw = rec.opt(key) ?: return null
+        // reject strings, booleans, arrays, objects — only Number accepted
+        if (raw !is Number) return null
+        val d = raw.toDouble()
+        if (!d.isFinite() || d != kotlin.math.floor(d) || d < 0 || d > MAX_VERSION.toDouble()) return null
+        val v = raw.toLong()
+        if (v < 0 || v > MAX_VERSION) return null
+        return v
     }
 }

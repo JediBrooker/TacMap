@@ -65,7 +65,7 @@ enum SyncSigning {
     /// Android. For a delete, kind is "del" and content is "". Signing `by` and
     /// `v` means the relay can't re-attribute or roll back a write - either
     /// change breaks the signature. MUST byte-match Android's `objectMessage`.
-    static func objectMessage(_ id: String, _ v: Int, _ kind: String, _ by: String, _ content: String) -> Data {
+    static func objectMessage(_ id: String, _ v: Int64, _ kind: String, _ by: String, _ content: String) -> Data {
         Data([id, String(v), kind, by, content].joined(separator: "\u{1F}").utf8)
     }
 

@@ -60,11 +60,17 @@ final class SyncManager: ObservableObject {
     private static let deviceSeedLabel = "sync/deviceSeed"
 
     private let clientId: String
-    private var clock = 0
-    private var versions: [String: Int] = [:]
+    private var clock: Int64 = 0
+    private var versions: [String: Int64] = [:]
     private var lastContent: [String: String] = [:]
     private var kindById: [String: String] = [:]
     private var observers = Set<AnyCancellable>()
+
+    // v2 containment ceilings (pending v3 protocol limits)
+    private static let maxFrameBytes = 1_048_576        // 1 MiB text
+    private static let maxBase64Bytes = 1_048_576        // 1 MiB encoded ct
+    private static let maxSnapshotItems = 10_000
+    private static let maxVersion: Int64 = 1_000_000_000_000  // matches relay MAX_V
 
     /// Broadcasts `loc` messages every 5 seconds.
     private var presenceTimer: Timer?
@@ -180,6 +186,7 @@ final class SyncManager: ObservableObject {
         authToken = nil
         room = nil
         status = .offline
+        clock = 0
         versions.removeAll(); lastContent.removeAll(); kindById.removeAll()
         peers.removeAll()
         peerKeys.removeAll(); peerTs.removeAll()  // re-pin fresh in the next room
@@ -273,7 +280,7 @@ final class SyncManager: ObservableObject {
         }
     }
 
-    private func sendPut(id: String, v: Int, kind: String, content: String) {
+    private func sendPut(id: String, v: Int64, kind: String, content: String) {
         guard let key = roomKey else { return }
         // Sign the write, then seal {content, pub, sig} together. The signature
         // rides INSIDE the sealed blob so the relay stays E2E-blind to device
@@ -287,7 +294,7 @@ final class SyncManager: ObservableObject {
               "ct": sealed.base64EncodedString()])
     }
 
-    private func sendDel(id: String, v: Int) {
+    private func sendDel(id: String, v: Int64) {
         guard let key = roomKey else { return }
         // Deletes used to be an unauthenticated {id,v} - a coerced relay could
         // forge one and silently remove a contact. Now seal a signed proof: only
@@ -381,14 +388,27 @@ final class SyncManager: ObservableObject {
     // MARK: Inbound
 
     private func handleMessage(_ text: String) {
+        // frame ceiling: drop anything bigger than 1 MiB before even parsing
+        guard text.utf8.count <= Self.maxFrameBytes else { return }
         guard let data = text.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        // fail-closed: any unexpected throw from downstream parsing is swallowed
+        // so a malformed frame never kills the receive loop
+        do {
+            try handleParsedMessage(obj)
+        } catch {
+            // silently drop — don't log the frame content (SEC-019)
+        }
+    }
+
+    private func handleParsedMessage(_ obj: [String: Any]) throws {
         switch obj["t"] as? String {
         case "snapshot":
-            for item in (obj["items"] as? [[String: Any]] ?? []) { applyRecord(item) }
-            // Populate peers from the snapshot's members array.
+            let items = obj["items"] as? [[String: Any]] ?? []
+            guard items.count <= Self.maxSnapshotItems else { return }
+            for item in items { applyRecord(item) }
             if let members = obj["members"] as? [[String: Any]] {
-                for member in members {
+                for member in members.prefix(Self.maxSnapshotItems) {
                     applyPresence(member)
                 }
             }
@@ -414,6 +434,7 @@ final class SyncManager: ObservableObject {
         guard cid != clientId else { return }
         guard let key = roomKey,
               let ctB64 = obj["ct"] as? String,
+              ctB64.utf8.count <= Self.maxBase64Bytes,
               let blob = Data(base64Encoded: ctB64),
               let plain = SyncCrypto.open(key, blob, aad: Data("loc|\(cid)".utf8)),
               let p = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
@@ -423,8 +444,10 @@ final class SyncManager: ObservableObject {
         let echelon = p["echelon"] as? String ?? "team"
         let function = p["function"] as? String ?? "infantry"
         let isHQ = p["isHQ"] as? Bool ?? false
-        let lat = doubleValue(p["lat"]); let lon = doubleValue(p["lon"])
-        let heading = doubleValue(p["heading"]); let speed = doubleValue(p["speed"])
+        guard let lat = strictDouble(p["lat"]),
+              let lon = strictDouble(p["lon"]) else { return }
+        let heading = strictDouble(p["heading"]) ?? 0
+        let speed = strictDouble(p["speed"]) ?? 0
         let ts = (p["ts"] as? NSNumber)?.int64Value ?? 0
 
         // Per-device auth: pin the peer's key on first sight (TOFU), then require
@@ -461,17 +484,17 @@ final class SyncManager: ObservableObject {
         // through the same signed-delete verification as a live "del".
         if (rec["deleted"] as? Bool) == true { applyDelete(rec); return }
         guard let id = rec["id"] as? String, !id.isEmpty else { return }
-        let v = intValue(rec["v"])
+        guard let v = strictVersion(rec["v"]) else { return }
         // Monotonic per-id version: reject anything <= the highest applied, and
         // keep rejecting after a delete (versions[id] survives as a tombstone) so
         // a relay can't resurrect a deleted object by replaying an older-but-
         // validly-signed put.
         if let known = versions[id], known >= v { return } // stale / superseded / post-delete
-        clock = max(clock, v)
         let recKind = rec["kind"] as? String ?? "unknown"
         let by = rec["by"] as? String ?? ""
         guard let key = roomKey,
               let ctB64 = rec["ct"] as? String,
+              ctB64.utf8.count <= Self.maxBase64Bytes,
               let blob = Data(base64Encoded: ctB64),
               let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: id, v: v, kind: recKind)),
               let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
@@ -482,6 +505,9 @@ final class SyncManager: ObservableObject {
         guard verifyObjectSig(by: by, inner: inner,
                               signed: SyncSigning.objectMessage(id, v, recKind, by, content)),
               let contentData = content.data(using: .utf8) else { return }
+        // advance clock only AFTER AEAD + sig pass — a hostile relay can't
+        // poison the clock with a forged message it can't sign
+        clock = max(clock, v)
 
         let fallback = drawingStore.activeLayerID ?? drawingStore.layers.first?.id ?? DrawingLayer.legacyFallbackID
         guard let parsed = try? GeoJSONImporter.parse(contentData, existingLayers: drawingStore.layers,
@@ -503,13 +529,14 @@ final class SyncManager: ObservableObject {
 
     private func applyDelete(_ rec: [String: Any]) {
         guard let id = rec["id"] as? String, !id.isEmpty else { return }
-        let v = intValue(rec["v"])
+        guard let v = strictVersion(rec["v"]) else { return }
         if let known = versions[id], known >= v { return } // stale / already-superseded delete
         let by = rec["by"] as? String ?? ""
         // Open the sealed proof (proves room-key possession, so a relay with no
         // room key can't forge a delete) then verify the device signature.
         guard let key = roomKey,
               let ctB64 = rec["ct"] as? String,
+              ctB64.utf8.count <= Self.maxBase64Bytes,
               let blob = Data(base64Encoded: ctB64),
               let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: id, v: v, kind: "del")),
               let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
@@ -562,17 +589,31 @@ final class SyncManager: ObservableObject {
         return ""
     }
 
-    private func intValue(_ any: Any?) -> Int {
-        if let i = any as? Int { return i }
-        if let d = any as? Double { return Int(d) }
-        if let n = any as? NSNumber { return n.intValue }
-        return 0
+    // strict parsing helpers (SEC-006) — reject anything that isn't an exact,
+    // in-range, finite value instead of silently coercing garbage
+
+    /// Non-negative integer version in [0, maxVersion]. Rejects floats with
+    /// fractional parts, NaN, infinity, out-of-range, and wrong types.
+    private func strictVersion(_ any: Any?) -> Int64? {
+        guard let n = any as? NSNumber, !(any is Bool) else { return nil }
+        // NSJSONSerialization represents JSON integers as Int/Int64 and floats
+        // as Double. Reject fractional doubles (1e100, 1.5, NaN, Inf).
+        let d = n.doubleValue
+        guard d.isFinite, d == d.rounded(.towardZero), d >= 0,
+              d <= Double(Self.maxVersion) else { return nil }
+        let v = n.int64Value
+        guard v >= 0, v <= Self.maxVersion else { return nil }
+        return v
     }
 
-    private func doubleValue(_ any: Any?) -> Double {
-        if let d = any as? Double { return d }
+    /// Finite double, or nil for NaN/infinity/wrong type.
+    private func strictDouble(_ any: Any?) -> Double? {
+        if let d = any as? Double { return d.isFinite ? d : nil }
         if let i = any as? Int { return Double(i) }
-        if let n = any as? NSNumber { return n.doubleValue }
-        return 0
+        if let n = any as? NSNumber {
+            let d = n.doubleValue
+            return d.isFinite ? d : nil
+        }
+        return nil
     }
 }
