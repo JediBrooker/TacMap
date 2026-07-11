@@ -45,6 +45,26 @@ enum SyncCrypto {
     static func roomKey(_ joinCode: String) -> SymmetricKey { deriveRoom(joinCode).roomKey }
     static func authToken(_ joinCode: String) -> String { deriveRoom(joinCode).authToken }
 
+    /// Below this a join code is too short to resist offline guessing against
+    /// the relay-visible roomId. Generated codes clear it comfortably.
+    static let minJoinCodeLength = 14
+
+    /// A strong, unambiguous join code (~78 bits) - the recommended way to start
+    /// a room. Confidentiality rests ENTIRELY on join-code entropy: roomId is
+    /// relay-visible and derived from the same code, so a coerced relay can
+    /// offline-guess a weak/human code ("bravo-tonight") and recover roomKey +
+    /// authToken (see THREAT_MODEL). Uppercase base32 minus look-alikes so it
+    /// survives being read out over the net. randomElement() draws from the
+    /// system CSPRNG.
+    static func generateJoinCode() -> String {
+        let alphabet = Array("23456789ABCDEFGHJKMNPQRSTVWXYZ")
+        return String((0..<16).map { _ in alphabet.randomElement()! })
+    }
+
+    static func isJoinCodeTooWeak(_ code: String) -> Bool {
+        code.trimmingCharacters(in: .whitespacesAndNewlines).count < minJoinCodeLength
+    }
+
     private static func master(_ joinCode: String) -> Data {
         let pwd = Array(joinCode.utf8)
         let saltBytes = Array(salt.utf8)
