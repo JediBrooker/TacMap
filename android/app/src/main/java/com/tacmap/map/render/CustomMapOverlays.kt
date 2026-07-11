@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import com.tacmap.calibration.Calibration
 import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.PdfMapSource
+import com.tacmap.calibration.Wgs84Bounds
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.mgrs.MgrsGridRenderer
 import androidx.compose.foundation.layout.padding
@@ -324,8 +325,12 @@ fun UserLocationCanvas(
             drawCircle(Color(0x263B7BE0), radiusPx, c)
             drawCircle(Color(0x593B7BE0), radiusPx, c, style = Stroke(width = 1f * density))
         }
-        drawCircle(Color.White, 9f * density, c)
-        drawCircle(Color(0xFF1E88E5), 6.5f * density, c)
+        // Prominent you-are-here marker: soft glow + fat white halo + blue core.
+        // Sized to read clearly - it draws on top of the centre crosshair, which
+        // used to swallow the old smaller dot when the map was following the user.
+        drawCircle(Color(0x333B7BE0), 16f * density, c)   // soft glow
+        drawCircle(Color.White, 11f * density, c)         // white halo
+        drawCircle(Color(0xFF1E88E5), 7.5f * density, c)  // blue core
     }
 }
 
@@ -567,5 +572,36 @@ fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modi
         val src = floatArrayOf(0f, 0f, w, 0f, w, h, 0f, h)
         val m = Matrix().apply { setPolyToPoly(src, 0, dst, 0, 4) }
         drawContext.canvas.nativeCanvas.drawBitmap(image, m, Paint(Paint.FILTER_BITMAP_FLAG))
+    }
+}
+
+/**
+ * Terrain-heatmap ground overlay on the SDK-free renderer. Draws the coloured
+ * DEM bitmap from [TerrainHeatmapService] stretched across its sampled [bounds],
+ * projected through the camera - same Matrix.setPolyToPoly trick as
+ * [PdfGroundLayer]. Bitmap origin is the NW corner (row 0 = north, col 0 = west).
+ * Replaces the old GroundOverlay.
+ */
+@Composable
+fun HeatmapGroundLayer(
+    bitmap: Bitmap, bounds: Wgs84Bounds,
+    camera: MapCamera, density: Float, modifier: Modifier = Modifier
+) {
+    val proj = remember(camera, density) { MapProjection(camera, density) }
+    Canvas(modifier.fillMaxSize()) {
+        val corners = listOf(
+            bounds.northeast.latitude to bounds.southwest.longitude,  // NW = top-left
+            bounds.northeast.latitude to bounds.northeast.longitude,  // NE = top-right
+            bounds.southwest.latitude to bounds.northeast.longitude,  // SE = bottom-right
+            bounds.southwest.latitude to bounds.southwest.longitude   // SW = bottom-left
+        )
+        val dst = FloatArray(8)
+        corners.forEachIndexed { i, (lat, lon) ->
+            val s = proj.toScreen(lat, lon); dst[i * 2] = s.x; dst[i * 2 + 1] = s.y
+        }
+        val w = bitmap.width.toFloat(); val h = bitmap.height.toFloat()
+        val src = floatArrayOf(0f, 0f, w, 0f, w, h, 0f, h)
+        val m = Matrix().apply { setPolyToPoly(src, 0, dst, 0, 4) }
+        drawContext.canvas.nativeCanvas.drawBitmap(bitmap, m, Paint(Paint.FILTER_BITMAP_FLAG))
     }
 }

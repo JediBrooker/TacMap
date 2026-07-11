@@ -631,7 +631,8 @@ fun MapScreen(
                 }
             )
 
-        CrosshairOverlay()
+        // Crosshair now renders inside CustomMapScreen (under the user-location
+        // dot) so the dot isn't swallowed when the map follows the user.
 
         // MGRS header - anchored to top edge, offset by status-bar inset
         // so dynamic island / hole-punch doesn't cover it. The online-tiles
@@ -647,14 +648,15 @@ fun MapScreen(
         MgrsHeader(
             mgrs = vm.headerMgrs,
             wgs84 = vm.headerWgs84,
-            isBrowsing = isBrowsing,
-            accuracy = lastLocation?.accuracy?.toDouble(),
             elevation = centreElevation?.metres,
             elevationApprox = centreElevation?.isStale == true,
             utm = vm.headerUtm,
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
             basemapLabel = basemapLabel,
             basemapColor = basemapColor,
+            gridMagnetic = gridMagneticLabel(
+                vm.headerCoordinate.first, vm.headerCoordinate.second, centreElevation?.metres
+            ),
             // align + statusBarsPadding moved to the wrapping Column.
             modifier = Modifier
                 .padding(top = 8.dp)

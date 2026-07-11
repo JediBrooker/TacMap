@@ -42,8 +42,6 @@ import androidx.compose.ui.unit.sp
 fun MgrsHeader(
     mgrs: String,
     wgs84: String,
-    isBrowsing: Boolean,
-    accuracy: Double?,
     modifier: Modifier = Modifier,
     elevation: Double? = null,
     elevationApprox: Boolean = false,
@@ -54,6 +52,9 @@ fun MgrsHeader(
     /// (green) when an imported pack/PDF is active, null when neither.
     basemapLabel: String? = null,
     basemapColor: Color = Color.Unspecified,
+    /// Grid-magnetic angle for compass work, preformatted e.g. "G-M 13.4°E".
+    /// Replaces the old accuracy readout in the bottom-right. null hides it.
+    gridMagnetic: String? = null,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -83,12 +84,9 @@ fun MgrsHeader(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
-            text = if (isBrowsing) "MGRS (Map Centre)" else "MGRS (Your Location)",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 10.sp,
-            lineHeight = 12.sp
-        )
+        // The "MGRS (Map Centre)/(Your Location)" title used to sit here; dropped
+        // as redundant (the big readout is obviously the grid ref). Card leads
+        // straight into it now.
         Text(
             text = mgrs,
             color = Color(0xFF8CF28C),
@@ -162,14 +160,18 @@ fun MgrsHeader(
                 )
                 Spacer(Modifier.weight(1f))
             }
-            Text(
-                accuracy?.let { "Accuracy ±%.0fm".format(it) } ?: "Accuracy N/A",
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                lineHeight = 12.sp,
-                textAlign = TextAlign.End
-            )
+            // Grid-magnetic angle (compass correction off the grid) replaces the
+            // old accuracy readout here.
+            if (gridMagnetic != null) {
+                Text(
+                    gridMagnetic,
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 12.sp,
+                    textAlign = TextAlign.End
+                )
+            }
         }
     }
 }

@@ -29,6 +29,7 @@ import com.tacmap.map.render.MapProjection
 import com.tacmap.map.render.MgrsGridCanvas
 import com.tacmap.map.render.OnlineRasterTileSource
 import com.tacmap.map.render.CalibrationFiduciariesLayer
+import com.tacmap.map.render.HeatmapGroundLayer
 import com.tacmap.map.render.PdfGroundLayer
 import com.tacmap.map.render.PresenceLayer
 import com.tacmap.map.render.TileMapView
@@ -127,6 +128,27 @@ fun CustomMapScreen(
     }
     LaunchedEffect(camera.headingDegrees) { onBearingChanged(camera.headingDegrees) }
 
+    // Terrain heatmap: sample the visible-region DEM once the camera settles and
+    // draw a coloured overlay across it. The fetch self-gates on the online-lookups
+    // OPSEC toggle inside the service, so nothing leaves the device unless opted in.
+    val heatmapService = remember { com.tacmap.map.TerrainHeatmapService() }
+    var heatmap by remember { mutableStateOf<Pair<android.graphics.Bitmap, com.tacmap.calibration.Wgs84Bounds>?>(null) }
+    LaunchedEffect(terrainHeatmapVisible, camera.centerLat, camera.centerLon, camera.zoom, camera.headingDegrees) {
+        if (!terrainHeatmapVisible || camera.viewportWidth <= 0.0) { heatmap = null; return@LaunchedEffect }
+        delay(500) // debounce; a new camera cancels this
+        val w = camera.viewportWidth; val h = camera.viewportHeight
+        val cs = listOf(
+            camera.coordinate(0.0, 0.0), camera.coordinate(w, 0.0),
+            camera.coordinate(w, h), camera.coordinate(0.0, h)
+        )
+        val lats = cs.map { it.first }; val lons = cs.map { it.second }
+        val wb = com.tacmap.calibration.Wgs84Bounds(
+            com.tacmap.calibration.Wgs84Coordinate(lats.min(), lons.min()),
+            com.tacmap.calibration.Wgs84Coordinate(lats.max(), lons.max())
+        )
+        heatmapService.generate(wb)?.let { bmp -> heatmap = bmp to wb }
+    }
+
     val visibleLayerIds = drawingLayers.ifEmpty { DrawingDocument.defaultLayers() }
         .filter { it.isVisible }.map { it.id }.toSet()
     val visibleDrawings = drawings.filter { it.layerId in visibleLayerIds }
@@ -152,6 +174,13 @@ fun CustomMapScreen(
             PdfGroundLayer(source = pdf, camera = camera, density = density)
         }
 
+        // Terrain heatmap sits above the basemap/PDF, under the grid + symbols.
+        if (terrainHeatmapVisible) {
+            heatmap?.let { (bmp, bounds) ->
+                HeatmapGroundLayer(bmp, bounds, camera, density)
+            }
+        }
+
         if (mgrsGridVisible && !freeDrawActive) {
             MgrsGridCanvas(camera = camera, density = density)
         }
@@ -163,6 +192,9 @@ fun CustomMapScreen(
         )
         WaypointSymbolsLayer(waypoints = visibleWaypoints, camera = camera, density = density)
         PresenceLayer(peers = peers, camera = camera, density = density)
+        // Centre reticle sits under the user dot so "you are here" is never
+        // swallowed by the crosshair when the map is following the user.
+        CrosshairOverlay()
         if (userLocationVisible) {
             UserLocationCanvas(myLat, myLon, myAccuracyMetres, camera, density)
         }
