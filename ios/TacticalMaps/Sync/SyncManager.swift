@@ -48,6 +48,16 @@ final class SyncManager: ObservableObject {
     private var wantConnected = false
     private var roomId: String?
 
+    // Per-device Ed25519 signing identity. Seed sealed at rest; the public key
+    // rides every presence so peers pin it (TOFU) and reject a room member
+    // impersonating an established peer. Room state cleared on leave.
+    private lazy var deviceSeed: Data = loadOrCreateDeviceSeed()
+    private lazy var myPublicKey: String = SyncSigning.publicKey(deviceSeed) ?? ""
+    private var peerKeys: [String: String] = [:]   // clientId -> pinned pubkey
+    private var peerTs: [String: Int64] = [:]        // clientId -> last accepted ts
+    private static let deviceSeedKey = "sync.deviceSeed"
+    private static let deviceSeedLabel = "sync/deviceSeed"
+
     private let clientId: String
     private var clock = 0
     private var versions: [String: Int] = [:]
@@ -118,6 +128,26 @@ final class SyncManager: ObservableObject {
         if wasLegacyPlaintext { savePresenceConfig() }
     }
 
+    /// The device's Ed25519 signing seed, sealed at rest. Generated once and
+    /// reused so this device keeps a stable identity across sessions (peers pin
+    /// it). If the seal can't be persisted (locked auth-bound key), a fresh seed
+    /// is used for this session only.
+    private func loadOrCreateDeviceSeed() -> Data {
+        if let stored = UserDefaults.standard.data(forKey: Self.deviceSeedKey),
+           SealedEnvelope.isSealedFile(stored),
+           let key = try? SafeStore.keyProvider(),
+           let seed = SealedEnvelope.openFile(key: key, blob: stored, label: Self.deviceSeedLabel),
+           seed.count == 32 {
+            return seed
+        }
+        let seed = SyncSigning.generateSeed()
+        if let key = try? SafeStore.keyProvider(),
+           let sealed = try? SealedEnvelope.sealFile(key: key, plaintext: seed, label: Self.deviceSeedLabel) {
+            UserDefaults.standard.set(sealed, forKey: Self.deviceSeedKey)
+        }
+        return seed
+    }
+
     // MARK: API
 
     func join(_ joinCode: String) {
@@ -151,6 +181,7 @@ final class SyncManager: ObservableObject {
         status = .offline
         versions.removeAll(); lastContent.removeAll(); kindById.removeAll()
         peers.removeAll()
+        peerKeys.removeAll(); peerTs.removeAll()  // re-pin fresh in the next room
     }
 
     // MARK: Connection
@@ -269,17 +300,33 @@ final class SyncManager: ObservableObject {
               let key = roomKey,
               let loc = locationService?.lastLocation else { return }
 
+        let cfg = presenceConfig
+        // Milliseconds since epoch (Int64), matching Android, so the signed
+        // canonical message and the ts freshness check line up cross-platform.
+        let ts = Int64(Date().timeIntervalSince1970 * 1000)
+        let lat = loc.coordinate.latitude
+        let lon = loc.coordinate.longitude
+        let heading = max(0, loc.course)
+        let speed = max(0, loc.speed)
+        // Sign identity+position+ts with this device's Ed25519 key. The sig rides
+        // INSIDE the sealed payload (relay stays blind), so a room member can't
+        // forge another peer's presence and a replayed old blob fails the ts check.
+        let sig = SyncSigning.sign(deviceSeed, SyncSigning.presenceMessage(
+            clientId, ts, lat, lon, heading, speed,
+            cfg.callsign, cfg.affiliation, cfg.echelon, cfg.function, cfg.isHQ)) ?? ""
         let payload: [String: Any] = [
-            "callsign": presenceConfig.callsign,
-            "affiliation": presenceConfig.affiliation,
-            "echelon": presenceConfig.echelon,
-            "function": presenceConfig.function,
-            "isHQ": presenceConfig.isHQ,
-            "lat": loc.coordinate.latitude,
-            "lon": loc.coordinate.longitude,
-            "heading": max(0, loc.course),
-            "speed": max(0, loc.speed),
-            "ts": Date().timeIntervalSince1970
+            "callsign": cfg.callsign,
+            "affiliation": cfg.affiliation,
+            "echelon": cfg.echelon,
+            "function": cfg.function,
+            "isHQ": cfg.isHQ,
+            "lat": lat,
+            "lon": lon,
+            "heading": heading,
+            "speed": speed,
+            "ts": ts,
+            "pub": myPublicKey,
+            "sig": sig
         ]
         guard let payloadData = try? JSONSerialization.data(withJSONObject: payload),
               let sealed = SyncCrypto.seal(key, payloadData, aad: Data("loc|\(clientId)".utf8)) else { return }
@@ -354,21 +401,42 @@ final class SyncManager: ObservableObject {
               let plain = SyncCrypto.open(key, blob, aad: Data("loc|\(cid)".utf8)),
               let p = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
 
-        let peer = PresencePeer(
+        let callsign = p["callsign"] as? String ?? ""
+        let affiliation = p["affiliation"] as? String ?? "unknown"
+        let echelon = p["echelon"] as? String ?? "team"
+        let function = p["function"] as? String ?? "infantry"
+        let isHQ = p["isHQ"] as? Bool ?? false
+        let lat = doubleValue(p["lat"]); let lon = doubleValue(p["lon"])
+        let heading = doubleValue(p["heading"]); let speed = doubleValue(p["speed"])
+        let ts = (p["ts"] as? NSNumber)?.int64Value ?? 0
+
+        // Per-device auth: pin the peer's key on first sight (TOFU), then require
+        // every later presence to be signed by that same key. A room member can't
+        // impersonate an established peer; a changed key is rejected as a possible
+        // swap; a relay replaying an old (signed) blob is caught by the ts check.
+        guard let pub = p["pub"] as? String, !pub.isEmpty,
+              let sig = p["sig"] as? String, !sig.isEmpty else { return }
+        if let pinned = peerKeys[cid] { if pinned != pub { return } } else { peerKeys[cid] = pub }
+        let signed = SyncSigning.presenceMessage(cid, ts, lat, lon, heading, speed,
+                                                 callsign, affiliation, echelon, function, isHQ)
+        guard SyncSigning.verify(pub, signed, sig) else { return }
+        if let last = peerTs[cid], ts <= last { return }  // replay / rollback
+        peerTs[cid] = ts
+
+        peers[cid] = PresencePeer(
             clientId: cid,
-            callsign: p["callsign"] as? String ?? "",
-            affiliation: p["affiliation"] as? String ?? "unknown",
-            echelon: p["echelon"] as? String ?? "team",
-            function: p["function"] as? String ?? "infantry",
-            isHQ: p["isHQ"] as? Bool ?? false,
-            lat: doubleValue(p["lat"]),
-            lon: doubleValue(p["lon"]),
-            heading: doubleValue(p["heading"]),
-            speed: doubleValue(p["speed"]),
-            ts: doubleValue(p["ts"]),
+            callsign: callsign,
+            affiliation: affiliation,
+            echelon: echelon,
+            function: function,
+            isHQ: isHQ,
+            lat: lat,
+            lon: lon,
+            heading: heading,
+            speed: speed,
+            ts: Double(ts),
             receivedAt: Date()
         )
-        peers[cid] = peer
     }
 
     private func applyRecord(_ rec: [String: Any]) {

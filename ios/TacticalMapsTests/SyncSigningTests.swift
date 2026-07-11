@@ -33,6 +33,19 @@ final class SyncSigningTests: XCTestCase {
                                          SyncSigning.sign(seed, Data())!))
     }
 
+    func testPresenceMessageIsPinnedForCrossPlatform() {
+        // Same hex as Android SyncSigningTest.presenceMessageIsPinnedForCrossPlatform,
+        // so an Android-signed presence verifies on iOS and vice-versa.
+        let msg = SyncSigning.presenceMessage(
+            "dev-1", 1_700_000_000_000, 37.8065, -122.4103, 90.0, 1.5,
+            "ALPHA-1", "FRIEND", "TEAM", "INFANTRY", true)
+        let hex = msg.map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(hex,
+            "6465762d311f313730303030303030303030301f33372e3830363530301f2d3132322e34313033" +
+            "30301f39302e3030303030301f312e3530303030301f414c5048412d311f465249454e441f5445" +
+            "414d1f494e46414e5452591f31")
+    }
+
     func testRejectsTamperedMessageWrongKeyAndGarbage() {
         let seed = SyncSigning.generateSeed()
         let msg = Data("grid 1234 5678".utf8)

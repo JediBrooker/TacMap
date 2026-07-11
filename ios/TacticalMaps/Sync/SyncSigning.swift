@@ -42,6 +42,22 @@ enum SyncSigning {
         return pub.isValidSignature(sigBytes, for: message)
     }
 
+    /// Canonical, serialization-independent bytes a presence signature covers.
+    /// Fields are joined by U+001F (unit separator); coordinates use fixed %.6f
+    /// so both platforms - and sender vs receiver - build byte-identical input.
+    /// MUST byte-match Android's `SyncSigning.presenceMessage`.
+    static func presenceMessage(
+        _ clientId: String, _ ts: Int64, _ lat: Double, _ lon: Double,
+        _ heading: Double, _ speed: Double, _ callsign: String,
+        _ affiliation: String, _ echelon: String, _ function: String, _ isHQ: Bool
+    ) -> Data {
+        func f(_ x: Double) -> String { String(format: "%.6f", x) }
+        let s = [clientId, String(ts), f(lat), f(lon), f(heading), f(speed),
+                 callsign, affiliation, echelon, function, isHQ ? "1" : "0"]
+            .joined(separator: "\u{1F}")
+        return Data(s.utf8)
+    }
+
     private static func b64url(_ data: Data) -> String {
         data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
