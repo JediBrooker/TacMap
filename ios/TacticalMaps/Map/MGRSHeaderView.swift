@@ -19,8 +19,9 @@ struct MGRSHeaderView: View {
     /// (green) when an imported pack/PDF is active, nil when neither.
     var basemapLabel: String? = nil
     var basemapColor: Color = .clear
-    let isBrowsing: Bool
-    let accuracy: CLLocationAccuracy?
+    /// Grid-magnetic angle for compass work, preformatted e.g. "G-M 13.4°E".
+    /// Replaces the old accuracy readout in the bottom-right. nil hides it.
+    var gridMagnetic: String? = nil
     let elevation: CLLocationDistance?
     /// True when elevation is approximate (offline cache). Shown with
     /// leading "~". Defaults false (fresh/live reading).
@@ -34,10 +35,8 @@ struct MGRSHeaderView: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            Text(isBrowsing ? "MGRS (Map Centre)" : "MGRS (Your Location)")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.7))
-
+            // The "MGRS (Map Centre)/(Your Location)" title used to sit here;
+            // dropped as redundant (the big readout is obviously the grid ref).
             Text(mgrs)
                 // Text-style not fixed 26pt so it scales with Dynamic Type.
                 // Still shrinks to fit.
@@ -91,9 +90,13 @@ struct MGRSHeaderView: View {
                     .foregroundStyle(Color(red: 0.31, green: 0.66, blue: 1.0))
                     Spacer()
                 }
-                Text(accuracyText)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.75))
+                // Grid-magnetic angle (compass correction off the grid) replaces
+                // the old accuracy readout here.
+                if let gridMagnetic {
+                    Text(gridMagnetic)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.75))
+                }
             }
             .padding(.top, 1)
         }
@@ -136,11 +139,6 @@ struct MGRSHeaderView: View {
         .accessibilityHint("Tap to copy MGRS. Long-press to drop a pin here.")
     }
 
-    private var accuracyText: String {
-        guard let acc = accuracy, acc >= 0 else { return "Accuracy N/A" }
-        return String(format: "Accuracy \u{00B1}%.0fm", acc)
-    }
-
     private var elevationText: String {
         guard let e = elevation else { return "ELEV —" }
         let mark = elevationIsApproximate ? "~" : ""
@@ -152,8 +150,7 @@ struct MGRSHeaderView: View {
     MGRSHeaderView(
         mgrs: "10SEG 51117 80976",
         wgs84: "37.77470° N, 122.41956° W",
-        isBrowsing: true,
-        accuracy: 5,
+        gridMagnetic: "G-M 13.4°E",
         elevation: 1856
     )
     .padding()

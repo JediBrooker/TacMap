@@ -131,6 +131,12 @@ struct ContentView: View {
             : Color(red: 1.0, green: 0.35, blue: 0.35)    // online: red
     }
 
+    /// The coordinate the banner is reading out: the crosshair when browsing,
+    /// else the live position. Drives the MGRS readout, drop-pin, and G-M angle.
+    private var headerCoordinate: CLLocationCoordinate2D? {
+        mapVM.isBrowsing ? mapVM.cameraCentre : locationService.lastLocation?.coordinate
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -422,13 +428,12 @@ struct ContentView: View {
                 syncConnected: syncManager.status == .connected,
                 basemapLabel: basemapLabel,
                 basemapColor: basemapColor,
-                isBrowsing: mapVM.isBrowsing,
-                accuracy: locationService.lastAccuracy,
+                gridMagnetic: GridMagnetic.label(
+                    latitude: headerCoordinate?.latitude,
+                    longitude: headerCoordinate?.longitude),
                 elevation: mapVM.centreElevation ?? locationService.lastAltitude,
                 elevationIsApproximate: mapVM.centreElevationIsApproximate,
-                coordinate: mapVM.isBrowsing
-                    ? mapVM.cameraCentre
-                    : locationService.lastLocation?.coordinate,
+                coordinate: headerCoordinate,
                 onDropPin: { coord, mgrs in
                     let layerID = drawingStore.activeLayerID
                         ?? drawingStore.layers.first?.id
