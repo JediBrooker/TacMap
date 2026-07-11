@@ -148,6 +148,14 @@ dependencies {
     // WebSocket client for real-time unit sync.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // Ed25519 for per-device unit-sync identity (presence signing), via the
+    // low-level org.bouncycastle.crypto API (no JCA provider to register) so it
+    // interops with iOS CryptoKit Curve25519 (both RFC 8032). minSdk 26 has no
+    // platform Ed25519 (that landed in API 33). Bouncycastle is already on the
+    // classpath transitively (pdfbox-android); pin the same artifact so it's an
+    // explicit, single dependency rather than an accidental transitive one.
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.72")
+
     // PDF parsing — used to extract OGC GeoPDF / Adobe LGIDict
     // georeferencing dictionaries so imported GeoPDFs land in the
     // correct geographic position without manual calibration.
