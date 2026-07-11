@@ -19,23 +19,19 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.2.0</string>
 	<key>CFBundleVersion</key>
-	<string>45</string>
+	<string>46</string>
 	<key>ESRIApiKey</key>
 	<string>$(ESRI_API_KEY)</string>
 	<key>ESRIKeyExpiry</key>
 	<string>2027-06-30</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>TacMap shows your live position on the map, reads it as an MGRS grid reference, and records GPX patrol tracks.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 	</array>
-	<key>UIFileSharingEnabled</key>
-	<true/>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

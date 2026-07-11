@@ -3,10 +3,20 @@ import MapKit
 import UniformTypeIdentifiers
 
 enum ImportedMapFileCopier {
-    static func copyToDocuments(_ source: URL,
-                                fileManager: FileManager = .default) throws -> URL {
-        let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return try copy(source, into: docsDir, fileManager: fileManager)
+    /// Copy an imported map (PDF/GeoPDF/MBTiles) into the app-private,
+    /// file-protected ImportedMaps dir - NOT Documents. Keeps the picture of
+    /// your AO off the Files.app / Finder file-sharing surface, where it used
+    /// to sit readable to anyone with the unlocked device or a paired host.
+    static func copyToImportedMaps(_ source: URL,
+                                   fileManager: FileManager = .default) throws -> URL {
+        let dir = try importedMapsDirectory(fileManager: fileManager)
+        let dest = try copy(source, into: dir, fileManager: fileManager)
+        // After-first-unlock so a backgrounded map / recording read still
+        // works; matches the migration path in PDFSessionStore.
+        try? fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+            ofItemAtPath: dest.path)
+        return dest
     }
 
     static func copy(_ source: URL,
@@ -826,13 +836,14 @@ struct ContentView: View {
         }
 
         // File picker may hand us a security-scoped URL (came from outside
-        // sandbox). Copy into Documents for stable access.
+        // sandbox). Copy into app-private, file-protected storage for stable
+        // access - never Documents, which is exposed via file sharing.
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         let dest: URL
         do {
-            dest = try ImportedMapFileCopier.copyToDocuments(url)
+            dest = try ImportedMapFileCopier.copyToImportedMaps(url)
         } catch {
             importMessage = "Couldn't import this PDF map: \(error.localizedDescription)"
             return
@@ -871,9 +882,9 @@ struct ContentView: View {
         }
     }
 
-    /// Import local MBTiles raster pyramid as offline basemap. Copies
-    /// picked file into Documents (stable sandbox access), installs an
-    /// OfflineTileMapSource served with no network via MKTileOverlay.
+    /// Import local MBTiles raster pyramid as offline basemap. Copies the
+    /// picked file into app-private, file-protected storage (not Documents),
+    /// installs an OfflineTileMapSource served with no network.
     private func handleMBTilesImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure(let error) = result {
@@ -887,7 +898,7 @@ struct ContentView: View {
 
         let dest: URL
         do {
-            dest = try ImportedMapFileCopier.copyToDocuments(url)
+            dest = try ImportedMapFileCopier.copyToImportedMaps(url)
         } catch {
             importMessage = "Couldn't import this MBTiles map: \(error.localizedDescription)"
             return

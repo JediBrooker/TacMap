@@ -35,7 +35,7 @@ targets:
       properties:
         CFBundleDisplayName: TacMap
         CFBundleShortVersionString: "1.2.0"
-        CFBundleVersion: "45"
+        CFBundleVersion: "46"
         # Esri Location Platform key + expiry. The $(ESRI_API_KEY) reference is
         # substituted from Secrets.xcconfig during Xcode's plist processing at
         # build time (xcodegen writes it here verbatim). Not a secret - it ships
@@ -70,10 +70,11 @@ targets:
         UIBackgroundModes:
           - location
         ITSAppUsesNonExemptEncryption: false
-        # Surface the app's Documents folder in the Files app so the user can
-        # drop GeoPDFs into TacticalMaps from Files → "On My iPhone".
-        UIFileSharingEnabled: true
-        LSSupportsOpeningDocumentsInPlace: true
+        # File sharing is deliberately OFF. Exposing the app's Documents folder
+        # in Files/Finder would put imported operational maps (your AO) one tap
+        # from anyone with the unlocked device or a paired host - the opposite
+        # of dark-by-default. Imports come in through the in-app Import picker
+        # and are copied into app-private, file-protected storage instead.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tacticalmaps.app
