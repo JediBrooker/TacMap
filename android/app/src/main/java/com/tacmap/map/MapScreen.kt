@@ -654,7 +654,7 @@ fun MapScreen(
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
             basemapLabel = basemapLabel,
             basemapColor = basemapColor,
-            gridMagnetic = gridMagneticLabel(
+            gridMagneticDegrees = gridMagneticDegrees(
                 vm.headerCoordinate.first, vm.headerCoordinate.second, centreElevation?.metres
             ),
             // align + statusBarsPadding moved to the wrapping Column.

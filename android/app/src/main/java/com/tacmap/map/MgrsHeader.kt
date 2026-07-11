@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,9 +53,9 @@ fun MgrsHeader(
     /// (green) when an imported pack/PDF is active, null when neither.
     basemapLabel: String? = null,
     basemapColor: Color = Color.Unspecified,
-    /// Grid-magnetic angle for compass work, preformatted e.g. "G-M 13.4°E".
-    /// Replaces the old accuracy readout in the bottom-right. null hides it.
-    gridMagnetic: String? = null,
+    /// Grid-magnetic angle for compass work, raw degrees (+E / -W). Shown
+    /// bottom-right in mils by default; tap it to flip to degrees. null hides it.
+    gridMagneticDegrees: Double? = null,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -95,7 +96,10 @@ fun MgrsHeader(
             fontSize = 24.sp,
             lineHeight = 26.sp
         )
+        // Rows below the big readout are full-width and left-aligned (matches
+        // the iOS card), with elevation pushed to the right of the WGS84 row.
         Row(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -103,20 +107,19 @@ fun MgrsHeader(
                  fontWeight = FontWeight.Bold, lineHeight = 12.sp)
             Text(wgs84, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
                  fontFamily = FontFamily.Monospace, lineHeight = 12.sp)
-            elevation?.let { metres ->
-                Text("·", color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
-                     lineHeight = 12.sp)
-                Text(
-                    (if (elevationApprox) "~" else "") + "%.0f m MSL".format(metres),
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 12.sp
-                )
-            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                elevationText(elevation, elevationApprox),
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 12.sp
+            )
         }
         utm?.let { utmText ->
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -161,19 +164,29 @@ fun MgrsHeader(
                 Spacer(Modifier.weight(1f))
             }
             // Grid-magnetic angle (compass correction off the grid) replaces the
-            // old accuracy readout here.
-            if (gridMagnetic != null) {
+            // old accuracy readout here. Mils by default; tap to flip to degrees.
+            if (gridMagneticDegrees != null) {
+                val gmMils = rememberPersistedBoolean("gridMagneticMils", true)
                 Text(
-                    gridMagnetic,
+                    formatGridMagnetic(gridMagneticDegrees, gmMils.value),
                     color = Color.White.copy(alpha = 0.75f),
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                     lineHeight = 12.sp,
-                    textAlign = TextAlign.End
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.clickable { gmMils.value = !gmMils.value }
                 )
             }
         }
     }
+}
+
+/// iOS-matching elevation readout: "ELEV 0 m", "ELEV ~1025 m" (~ = approximate
+/// / offline cache), or "ELEV —" when there's no reading.
+private fun elevationText(elevation: Double?, approx: Boolean): String {
+    if (elevation == null) return "ELEV —"
+    val mark = if (approx) "~" else ""
+    return "ELEV %s%.0f m".format(mark, elevation)
 }
 
 private val SyncBlue = Color(0xFF4FA8FF)

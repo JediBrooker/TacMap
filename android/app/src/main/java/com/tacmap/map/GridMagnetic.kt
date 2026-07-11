@@ -4,6 +4,7 @@ import android.hardware.GeomagneticField
 import kotlin.math.abs
 import kotlin.math.atan
 import kotlin.math.floor
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.tan
 
@@ -17,10 +18,10 @@ import kotlin.math.tan
  *  - convergence (true -> grid) = atan(tan(lon - centralMeridian) * sin(lat)),
  *    the small rotation between true north and the UTM grid's north.
  *
- * Returns a preformatted string like "G-M 13.4°E" / "G-M 2.1°W", or null when
- * there's no coordinate to compute for.
+ * Returns the raw angle in degrees (+E / -W), or null when there's no
+ * coordinate to compute for. [formatGridMagnetic] turns it into banner text.
  */
-fun gridMagneticLabel(lat: Double?, lon: Double?, altitudeMetres: Double? = null): String? {
+fun gridMagneticDegrees(lat: Double?, lon: Double?, altitudeMetres: Double? = null): Double? {
     if (lat == null || lon == null) return null
     val declination = GeomagneticField(
         lat.toFloat(), lon.toFloat(), (altitudeMetres ?: 0.0).toFloat(),
@@ -34,7 +35,20 @@ fun gridMagneticLabel(lat: Double?, lon: Double?, altitudeMetres: Double? = null
         atan(tan(Math.toRadians(lon - centralMeridian)) * sin(Math.toRadians(lat)))
     )
 
-    val gm = declination - convergence
-    val dir = if (gm >= 0) "E" else "W"
-    return "G-M %.1f°%s".format(abs(gm), dir)
+    return declination - convergence
+}
+
+/**
+ * Banner text for a G-M angle. Mils by default (NATO 6400/circle - what a
+ * compass dial and a fire mission actually read); tapping the banner flips it
+ * to degrees. E/W suffix. e.g. "G-M 222 mils E" or "G-M 12.5°E".
+ */
+fun formatGridMagnetic(degrees: Double, mils: Boolean): String {
+    val dir = if (degrees >= 0) "E" else "W"
+    return if (mils) {
+        val m = (abs(degrees) * 6400.0 / 360.0).roundToInt()
+        "G-M $m mils $dir"
+    } else {
+        "G-M %.1f°%s".format(abs(degrees), dir)
+    }
 }
