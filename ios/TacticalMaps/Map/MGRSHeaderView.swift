@@ -14,6 +14,11 @@ struct MGRSHeaderView: View {
     var utm: String? = nil
     /// True while connected to a Unit Sync room. Shows a blue indicator.
     var syncConnected: Bool = false
+    /// Basemap status shown where the old Live Location/Map Centre label was.
+    /// "Online basemap" (red) when pulling internet tiles, "Offline basemap"
+    /// (green) when an imported pack/PDF is active, nil when neither.
+    var basemapLabel: String? = nil
+    var basemapColor: Color = .clear
     let isBrowsing: Bool
     let accuracy: CLLocationAccuracy?
     let elevation: CLLocationDistance?
@@ -67,9 +72,14 @@ struct MGRSHeaderView: View {
             }
 
             HStack(spacing: 6) {
-                Image(systemName: "scope").font(.caption2)
-                Text(isBrowsing ? "Map Centre" : "Live Location")
-                    .font(.caption.weight(.semibold))
+                // The old Live Location / Map Centre label lived here, but the
+                // card title already says which one, so this slot now carries the
+                // basemap status (red online / green offline) instead.
+                if let basemapLabel {
+                    Text(basemapLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(basemapColor)
+                }
                 Spacer()
                 if syncConnected {
                     HStack(spacing: 4) {
@@ -86,7 +96,6 @@ struct MGRSHeaderView: View {
                     .foregroundStyle(.white.opacity(0.75))
             }
             .padding(.top, 1)
-            .foregroundStyle(.orange)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)

@@ -209,6 +209,17 @@ final class MapViewModel: ObservableObject {
         resetNorthRequests.send(())
     }
 
+    /// Re-frame the loaded offline/imported map's coverage. Paired with
+    /// centreOnUser so that after panning off (or centring on a distant live
+    /// location) the user can jump straight back to where the map actually is.
+    /// No-op for unbounded online basemaps.
+    func centreOnMap() {
+        guard let coverage = mapSource.coverage else { return }
+        isBrowsing = true
+        cameraCentre = coverage.center
+        cameraRequests.send(coverage)
+    }
+
     func resetNorth() {
         resetNorthRequests.send(())
     }

@@ -113,6 +113,24 @@ struct ContentView: View {
             && !(mapVM.mapSource is PDFMapSource)
     }
 
+    /// An imported, location-bound basemap (offline pack or PDF/GeoPDF). These
+    /// have coverage, so they get the "Centre on Map" button + green banner tag.
+    private var importedMapLoaded: Bool {
+        mapVM.mapSource is OfflineTileMapSource || mapVM.mapSource is PDFMapSource
+    }
+
+    /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
+    private var basemapLabel: String? {
+        if importedMapLoaded { return "Offline basemap" }
+        if onlineTilesActive { return "Online basemap" }
+        return nil
+    }
+    private var basemapColor: Color {
+        importedMapLoaded
+            ? Color(red: 0.45, green: 0.89, blue: 0.54)   // offline: green
+            : Color(red: 1.0, green: 0.35, blue: 0.35)    // online: red
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -402,6 +420,8 @@ struct ContentView: View {
                 wgs84: mapVM.headerWGS84,
                 utm: mapVM.headerUTM,
                 syncConnected: syncManager.status == .connected,
+                basemapLabel: basemapLabel,
+                basemapColor: basemapColor,
                 isBrowsing: mapVM.isBrowsing,
                 accuracy: locationService.lastAccuracy,
                 elevation: mapVM.centreElevation ?? locationService.lastAltitude,
@@ -625,12 +645,21 @@ struct ContentView: View {
                 .padding(.bottom, max(bottomInset - 32, 0))
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
-                VStack(spacing: 6) {
-                    // Online-basemap status sits right above the Centre button,
-                    // out of the top record-badge's way.
-                    if onlineTilesActive { OnlineTilesPill() }
-                    CentreButton {
+                // Basemap status now lives in the MGRS banner. When an imported
+                // (offline/PDF) map is loaded, add a "Map" button beside the
+                // recentre pill so centring on a distant live location doesn't
+                // strand the user away from their map. Side by side to save height;
+                // the location label shrinks when both show.
+                HStack(spacing: 8) {
+                    CentreButton(
+                        title: importedMapLoaded ? "My Location" : "Centre on My Location"
+                    ) {
                         mapVM.centreOnUser(locationService.lastLocation)
+                    }
+                    if importedMapLoaded {
+                        CentreButton(title: "Map", systemImage: "map") {
+                            mapVM.centreOnMap()
+                        }
                     }
                 }
                 .offset(y: max(bottomInset - 32, 0))
@@ -863,27 +892,6 @@ struct ContentView: View {
             userLocation: locationService.lastLocation?.coordinate
         )
         importMessage = "Loaded offline tiles: \(source.displayName)."
-    }
-}
-
-/// Compact warning while the map is pulling tiles from the internet - the
-/// provider learns your area of interest from the tiles you request, so it
-/// shouldn't be something you find out by accident. Used to be a full-width
-/// strip that shoved the MGRS card down; now a small pill tucked under it.
-/// The full sentence lives in the accessibility label + THREAT_MODEL.
-private struct OnlineTilesPill: View {
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 9, weight: .bold))
-            Text("Online basemap")
-                .font(.system(size: 10, weight: .bold))
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 3)
-        .background(Color(red: 0.69, green: 0, blue: 0.13).opacity(0.92), in: Capsule())
-        .accessibilityLabel("Online basemap active. Tile requests reveal your area of interest.")
     }
 }
 
