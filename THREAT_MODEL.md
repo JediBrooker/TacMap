@@ -283,13 +283,15 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   [PLANNED].
 - **A coerced relay can suppress or roll back, not just observe.** AEAD stops the
   relay forging a blob, replaying it under a different id, or moving it between
-  rooms (§4) - but it gives no *freshness or completeness* guarantee. A hostile
-  relay can silently drop an update (you never see the new enemy contact), serve a
-  joining or reinstalled client an older-but-validly-sealed snapshot (rollback),
-  or withhold a deletion. The clients only reject *older* versions of objects they
-  already track; they cannot detect an omission. Treat the shared picture as
-  advisory and confirm critical changes out-of-band. Tamper-evident sequencing is
-  a planned hardening.
+  rooms (§4). **Presence** additionally carries a per-device signature over a
+  monotonic timestamp, so a relay replaying an older presence blob is rejected -
+  a peer's live position can't be rolled back. But there is still no
+  *completeness* guarantee: a hostile relay can silently drop an update (you
+  never see the new enemy contact) or serve a joining/reinstalled client an
+  older-but-validly-sealed **object** (waypoint/drawing) snapshot, since object
+  updates aren't signed yet and clients only reject *older* versions of objects
+  they already track. Treat the shared picture as advisory and confirm critical
+  changes out-of-band. Signed object sequencing is a planned hardening.
 - **Area-of-interest leakage via online basemaps/lookups.** See §6. If you turn
   the online-basemaps or online-lookups gate on, the tile/query coordinates go to
   the provider (Esri/OpenTopoMap/Open-Meteo) from your IP. That is inherent to
@@ -352,11 +354,17 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   can carry an imported map's file name; clear it if that matters.
 - **Your own room members.** Everyone with the join code sees everything shared
   in that room. Rotate codes and manage membership accordingly.
-- **Peer identity is asserted, not proven.** There are no per-device keys within a
-  room: a client stamps its own callsign and client id onto the presence it sends.
-  So anyone holding the join code - any member, or anyone who guessed a weak code -
-  can spoof another member's callsign and position, not merely read. Per-device
-  signing is a planned hardening; for now room membership is the trust boundary.
+- **Peer identity: established peers are signed; brand-new peers are not.** Each
+  device holds a per-device Ed25519 key and signs every **presence** update; the
+  first time you see a client id you pin its public key (trust-on-first-use), and
+  any later presence for that id must carry a valid signature under the pinned
+  key. So one room member **cannot** impersonate another *established* peer's
+  callsign/position, and a key change is rejected as a possible swap. What this
+  does **not** stop: anyone holding the join code can still (a) introduce a
+  brand-new fake client id with its own key (TOFU can't distinguish a new peer
+  from a fake one - room membership is the boundary), and (b) forge or roll back
+  **object** writes (waypoints/drawings), which aren't signed yet. Signing object
+  writes and out-of-band identity confirmation are planned hardenings.
 - **A weak join code.** The 210k-iteration stretch raises the cost of guessing,
   but a short or predictable code is still guessable - offline, against the
   relay-visible routing ID, and once per code for the whole user base because
