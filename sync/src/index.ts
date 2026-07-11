@@ -31,7 +31,7 @@ const MAX_RECORDS = 10_000
 const MAX_STORED_BYTES = 50_000_000
 const MAX_V = 1e12
 const CT_MAX = 700_000
-const MAX_FRAME_BYTES = 1_048_576
+const MAX_FRAME_CHARS = 1_048_576
 const RATE_WINDOW_MS = 10_000
 const RATE_MAX_MSGS = 200
 const SNAPSHOT_CHUNK = 100
@@ -95,10 +95,16 @@ function constantTimeEqual(a: string, b: string): boolean {
   const enc = new TextEncoder()
   const ab = enc.encode(a)
   const bb = enc.encode(b)
-  if (ab.length !== bb.length) return false
-  let diff = 0
-  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i]
+  const maxLen = Math.max(ab.length, bb.length)
+  let diff = ab.length ^ bb.length
+  for (let i = 0; i < maxLen; i++) diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0)
   return diff === 0
+}
+
+async function hashToken(token: string): Promise<string> {
+  const data = new TextEncoder().encode(token)
+  const hash = await crypto.subtle.digest("SHA-256", data)
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("")
 }
 
 function recordBytes(rec: SyncRecord): number {
@@ -123,9 +129,10 @@ export class SyncRoom {
     if (token.length < 20 || token.length > 200) {
       return new Response("Unauthorized", { status: 401 })
     }
+    const tokenHash = await hashToken(token)
     const pinned = await this.state.storage.get<string>("meta:auth")
     if (pinned === undefined) {
-      // TOFU: first connection pins the auth token for the room
+      // TOFU: first connection pins the auth token hash for the room
       if (this.env.ROOM_LIMITER) {
         const ip = req.headers.get("CF-Connecting-IP") ?? "unknown"
         const { success } = await this.env.ROOM_LIMITER.limit({ key: ip })
@@ -134,8 +141,8 @@ export class SyncRoom {
           return new Response("Too many rooms", { status: 429 })
         }
       }
-      await this.state.storage.put("meta:auth", token)
-    } else if (!constantTimeEqual(pinned, token)) {
+      await this.state.storage.put("meta:auth", tokenHash)
+    } else if (!constantTimeEqual(pinned, tokenHash)) {
       return new Response("Forbidden", { status: 403 })
     }
 
@@ -161,7 +168,7 @@ export class SyncRoom {
     const text = typeof message === "string" ? message : new TextDecoder().decode(message)
 
     // frame ceiling before any parse
-    if (text.length > MAX_FRAME_BYTES) {
+    if (text.length > MAX_FRAME_CHARS) {
       metric("frame_rejected", { reason: "oversized", len: text.length })
       try { ws.close(4009, "frame too large") } catch { /* closed */ }
       return
@@ -183,12 +190,15 @@ export class SyncRoom {
     switch (msg?.t) {
       case "put":
         await this.applyChange(ws, msg, false)
+        await this.touchActivity()
         break
       case "del":
         await this.applyChange(ws, msg, true)
+        await this.touchActivity()
         break
       case "loc":
         this.handlePresence(ws, msg)
+        await this.touchActivity()
         break
       case "ping":
         try { ws.send(JSON.stringify({ t: "pong" })) } catch { /* closed */ }
@@ -196,8 +206,6 @@ export class SyncRoom {
       default:
         break
     }
-
-    await this.touchActivity()
   }
 
   async webSocketClose(ws: WebSocket, code: number, _reason: string, _clean: boolean): Promise<void> {
@@ -284,7 +292,7 @@ export class SyncRoom {
     const by = typeof msg.by === "string" ? msg.by.slice(0, 128) : ""
     if (by.length === 0) return
     const kind = typeof msg.kind === "string" ? msg.kind.slice(0, 32) : ""
-    if (kind.length === 0 && !deleted) kind || (deleted ? "unknown" : undefined)
+    if (kind.length === 0 && !deleted) return
     const ct = typeof msg.ct === "string" ? msg.ct : ""
     if (ct.length > CT_MAX) return
     // puts require ciphertext; deletes require sealed proof
@@ -292,6 +300,7 @@ export class SyncRoom {
 
     const key = "obj:" + id
     let seq: number | undefined
+    let committed: SyncRecord | undefined
 
     await this.state.storage.transaction(async (txn) => {
       const existing = await txn.get<SyncRecord>(key)
@@ -304,27 +313,35 @@ export class SyncRoom {
 
       if (existing && !isNewer({ v, by }, existing)) return
 
-      const records = (await txn.get<number>("meta:records")) ?? 0
+      const liveRecords = (await txn.get<number>("meta:liveRecords")) ?? 0
+      const totalRecords = (await txn.get<number>("meta:totalRecords")) ?? 0
       const bytes = (await txn.get<number>("meta:bytes")) ?? 0
       const currentSeq = (await txn.get<number>("meta:seq")) ?? 0
 
       const newRecBytes = recordBytes({ id, v, by, kind: kind || "unknown", ct, deleted })
       const oldRecBytes = existing ? recordBytes(existing) : 0
       const isNewRecord = existing === undefined
+      const wasPreviouslyDeleted = existing?.deleted === true
 
-      let newRecords = records
+      let newLiveRecords = liveRecords
+      let newTotalRecords = totalRecords
       let newBytes = bytes
 
       if (isNewRecord) {
-        newRecords = records + 1
+        newTotalRecords = totalRecords + 1
+        if (!deleted) newLiveRecords = liveRecords + 1
         newBytes = bytes + newRecBytes
       } else {
+        // transitioning live -> deleted: decrement live count
+        if (deleted && !wasPreviouslyDeleted) newLiveRecords = liveRecords - 1
+        // transitioning deleted -> live (re-put after tombstone): increment live count
+        if (!deleted && wasPreviouslyDeleted) newLiveRecords = liveRecords + 1
         newBytes = bytes - oldRecBytes + newRecBytes
       }
 
-      // quota check
-      if (newRecords > MAX_RECORDS) {
-        metric("quota_exceeded", { type: "records", current: newRecords })
+      // quota check: cap on live records (tombstones don't count against it)
+      if (newLiveRecords > MAX_RECORDS) {
+        metric("quota_exceeded", { type: "records", current: newLiveRecords })
         return
       }
       if (newBytes > MAX_STORED_BYTES) {
@@ -340,19 +357,16 @@ export class SyncRoom {
       }
 
       seq = currentSeq + 1
+      committed = record
       await txn.put(key, record)
-      await txn.put("meta:records", newRecords)
+      await txn.put("meta:liveRecords", newLiveRecords)
+      await txn.put("meta:totalRecords", newTotalRecords)
       await txn.put("meta:bytes", newBytes)
       await txn.put("meta:seq", seq)
     })
 
-    // broadcast only if transaction committed (seq was set)
-    if (seq !== undefined) {
-      const key2 = "obj:" + id
-      const stored = await this.state.storage.get<SyncRecord>(key2)
-      if (stored) {
-        this.broadcast({ t: deleted ? "del" : "put", ...stored, seq }, sender)
-      }
+    if (seq !== undefined && committed) {
+      this.broadcast({ t: deleted ? "del" : "put", ...committed, seq }, sender)
     }
   }
 
@@ -365,7 +379,6 @@ export class SyncRoom {
 
       let cursor: string | undefined
       let isFirst = true
-      let sent = false
 
       while (true) {
         const opts: DurableObjectListOptions = { prefix: "obj:", limit: SNAPSHOT_CHUNK }
@@ -389,7 +402,6 @@ export class SyncRoom {
         ws.send(JSON.stringify(payload))
 
         isFirst = false
-        sent = true
         if (!hasMore) break
       }
 

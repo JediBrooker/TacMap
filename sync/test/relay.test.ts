@@ -342,6 +342,21 @@ describe("Input hardening", () => {
     wsB.close()
   })
 
+  it("rejects put with missing kind field", async () => {
+    const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("bad-no-kind"))
+    const wsA = await openSocket(stub)
+    await drainSnapshot(wsA)
+    const wsB = await openSocket(stub)
+    await drainSnapshot(wsB)
+
+    wsA.send(JSON.stringify({ t: "put", id: "x", v: 1, by: "a", ct: "AAAA" }))
+    const msgs = await collectMessages(wsB, 1, 300)
+    expect(msgs.length).toBe(0)
+
+    wsA.close()
+    wsB.close()
+  })
+
   it("closes socket on oversized frame", async () => {
     const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("oversized"))
     const ws = await openSocket(stub)
@@ -386,6 +401,119 @@ describe("Storage accounting", () => {
 
     ws.close()
     ws2.close()
+  })
+})
+
+describe("Live record accounting", () => {
+  it("tombstones do not permanently cap the room — re-put works after delete", async () => {
+    const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("tombstone-reput"))
+    const wsA = await openSocket(stub)
+    await drainSnapshot(wsA)
+    const wsB = await openSocket(stub)
+    await drainSnapshot(wsB)
+
+    // put then delete
+    wsA.send(JSON.stringify({ t: "put", id: "obj1", v: 1, by: "a", kind: "waypoint", ct: "AAAA" }))
+    await collectMessages(wsB, 1)
+    wsA.send(JSON.stringify({ t: "del", id: "obj1", v: 2, by: "a", kind: "waypoint", ct: "DEL1" }))
+    await collectMessages(wsB, 1)
+
+    // a fresh put with a new ID should succeed (live count decremented on delete)
+    wsA.send(JSON.stringify({ t: "put", id: "obj2", v: 1, by: "a", kind: "waypoint", ct: "BBBB" }))
+    const msgs = await collectMessages(wsB, 1)
+    expect(msgs.length).toBe(1)
+    expect(msgs[0].id).toBe("obj2")
+
+    wsA.close()
+    wsB.close()
+  })
+
+  it("re-putting a tombstoned record increments live count", async () => {
+    const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("tombstone-reput2"))
+    const wsA = await openSocket(stub)
+    await drainSnapshot(wsA)
+
+    wsA.send(JSON.stringify({ t: "put", id: "r1", v: 1, by: "a", kind: "waypoint", ct: "AAAA" }))
+    await sleep(50)
+    wsA.send(JSON.stringify({ t: "del", id: "r1", v: 2, by: "a", kind: "waypoint", ct: "DEL1" }))
+    await sleep(50)
+    // re-put with higher version
+    wsA.send(JSON.stringify({ t: "put", id: "r1", v: 3, by: "a", kind: "waypoint", ct: "BBBB" }))
+    await sleep(50)
+
+    const ws2 = await openSocket(stub)
+    const snap = await drainSnapshot(ws2)
+    // should have the record back as live
+    const r1 = snap.items.find((i: any) => i.id === "r1")
+    expect(r1).toBeDefined()
+    expect(r1.deleted).toBe(false)
+    expect(r1.v).toBe(3)
+
+    wsA.close()
+    ws2.close()
+  })
+})
+
+describe("LWW conflict resolution", () => {
+  it("higher version wins", async () => {
+    const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("lww-version"))
+    const wsA = await openSocket(stub)
+    await drainSnapshot(wsA)
+
+    // put v=1 then v=5
+    wsA.send(JSON.stringify({ t: "put", id: "c1", v: 1, by: "a", kind: "waypoint", ct: "OLD" }))
+    await sleep(50)
+    wsA.send(JSON.stringify({ t: "put", id: "c1", v: 5, by: "b", kind: "waypoint", ct: "NEW" }))
+    await sleep(50)
+
+    const ws2 = await openSocket(stub)
+    const snap = await drainSnapshot(ws2)
+    const c1 = snap.items.find((i: any) => i.id === "c1")
+    expect(c1.v).toBe(5)
+    expect(c1.ct).toBe("NEW")
+
+    wsA.close()
+    ws2.close()
+  })
+
+  it("same version: higher client-id wins", async () => {
+    const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("lww-tiebreak"))
+    const wsA = await openSocket(stub)
+    await drainSnapshot(wsA)
+
+    wsA.send(JSON.stringify({ t: "put", id: "c2", v: 3, by: "alice", kind: "waypoint", ct: "ALICE" }))
+    await sleep(50)
+    // same version, "bob" > "alice" lexicographically
+    wsA.send(JSON.stringify({ t: "put", id: "c2", v: 3, by: "bob", kind: "waypoint", ct: "BOB" }))
+    await sleep(50)
+
+    const ws2 = await openSocket(stub)
+    const snap = await drainSnapshot(ws2)
+    const c2 = snap.items.find((i: any) => i.id === "c2")
+    expect(c2.by).toBe("bob")
+    expect(c2.ct).toBe("BOB")
+
+    wsA.close()
+    ws2.close()
+  })
+
+  it("lower version is rejected", async () => {
+    const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("lww-stale"))
+    const wsA = await openSocket(stub)
+    await drainSnapshot(wsA)
+    const wsB = await openSocket(stub)
+    await drainSnapshot(wsB)
+
+    wsA.send(JSON.stringify({ t: "put", id: "c3", v: 5, by: "a", kind: "waypoint", ct: "CURRENT" }))
+    await collectMessages(wsB, 1)
+
+    // stale version should be silently dropped (no broadcast)
+    wsA.send(JSON.stringify({ t: "put", id: "c3", v: 2, by: "a", kind: "waypoint", ct: "STALE" }))
+    const msgs = await collectMessages(wsB, 1, 300)
+    expect(msgs.length).toBe(0)
+
+    wsA.close()
+    wsB.close()
   })
 })
 
