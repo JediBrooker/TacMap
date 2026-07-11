@@ -30,7 +30,7 @@ final class SyncManager: ObservableObject {
     /// can flash a conflict/update notification.
     let remoteUpdateSubject = PassthroughSubject<String, Never>()
 
-    static let relayBase = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
+    static let relayBase = "wss://tacmap-sync.christianbrooker.workers.dev"
 
     // Set once via configure() so this can be a @StateObject. Needs to be
     // created without referencing other @StateObject stores at init time.
@@ -47,6 +47,14 @@ final class SyncManager: ObservableObject {
     private var relayEndpoint = SyncManager.relayBase
     private var wantConnected = false
     private var roomId: String?
+
+    // v3 protocol state
+    private var protocolVersion: Int = 2
+    private var v3Keys: SyncCrypto.V3RoomKeys?
+    private var myActorId: String?
+    private var replayState: SyncReplayState?
+    private var sessionDomain: Data?
+    private var myPublicKeyRaw: Data?
 
     // Per-device Ed25519 signing identity. Seed sealed at rest; the public key
     // rides every presence AND every object write so peers pin it (TOFU) and
@@ -162,14 +170,35 @@ final class SyncManager: ObservableObject {
         guard !code.isEmpty else { return }
         leave()
         wantConnected = true
-        // Derive routing id + room key + writer-auth token once from the code.
-        let keys = SyncCrypto.deriveRoom(code)
-        roomKey = keys.roomKey
-        roomId = keys.roomId
-        authToken = keys.authToken
+
         // Self-hosters repoint the relay in OPSEC settings; blank -> ours.
         let configured = OpsecSettings.shared.relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
         relayEndpoint = configured.isEmpty ? Self.relayBase : configured
+
+        if code.hasPrefix("3:") {
+            protocolVersion = 3
+            let rawCode = String(code.dropFirst(2))
+            let keys = SyncCrypto.deriveRoomV3(rawCode)
+            v3Keys = keys
+            roomKey = keys.roomKey
+            roomId = keys.roomId
+            authToken = keys.authToken
+            let pubRaw = SyncSigning.publicKeyRaw(deviceSeed) ?? Data()
+            myPublicKeyRaw = pubRaw
+            myActorId = SyncIdentity.actorId(roomIdRaw: keys.roomIdRaw, pubkeyRaw: pubRaw)
+            let containerURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            let rs = SyncReplayState(roomId: keys.roomId, containerURL: containerURL)
+            rs.load()
+            replayState = rs
+            sessionDomain = SyncIdentity.generateSessionDomain()
+        } else {
+            protocolVersion = 2
+            let keys = SyncCrypto.deriveRoom(code)
+            roomKey = keys.roomKey
+            roomId = keys.roomId
+            authToken = keys.authToken
+        }
+
         room = code
         connect()
         observeStores()
@@ -182,6 +211,10 @@ final class SyncManager: ObservableObject {
         stopPresenceTimers()
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
+
+        // v3: persist replay state but don't clear it (survives leave/restart)
+        replayState?.save()
+
         roomKey = nil
         authToken = nil
         room = nil
@@ -189,19 +222,30 @@ final class SyncManager: ObservableObject {
         clock = 0
         versions.removeAll(); lastContent.removeAll(); kindById.removeAll()
         peers.removeAll()
-        peerKeys.removeAll(); peerTs.removeAll()  // re-pin fresh in the next room
+        peerKeys.removeAll(); peerTs.removeAll()
+
+        // v3 state cleared per-session (not durable)
+        v3Keys = nil
+        myActorId = nil
+        replayState = nil
+        sessionDomain = nil
+        myPublicKeyRaw = nil
+        protocolVersion = 2
     }
 
     // MARK: Connection
 
     private func connect() {
-        guard let roomId, let url = URL(string: relayEndpoint + roomId) else { return }
+        guard let roomId else { return }
+        let path = protocolVersion == 3 ? "/v3/room/\(roomId)" : "/room/\(roomId)"
+        guard let url = URL(string: relayEndpoint + path) else { return }
         status = .connecting
         var req = URLRequest(url: url)
-        // Writer-auth: the relay 401s a socket with no bearer token. The token is
-        // derived from the join code and only rides the handshake header (never
-        // the URL or logs), so a leaked roomId alone can't write.
         if let authToken { req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization") }
+        if protocolVersion == 3 {
+            req.setValue("3", forHTTPHeaderField: "X-Protocol")
+            req.setValue(roomId, forHTTPHeaderField: "X-Room-Id")
+        }
         let t = URLSession.shared.webSocketTask(with: req)
         task = t
         t.resume()
@@ -247,7 +291,12 @@ final class SyncManager: ObservableObject {
         )
         .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
         .sink { [weak self] wps, shapes, layers in
-            self?.syncLocalState(waypoints: wps, shapes: shapes, layers: layers)
+            guard let self else { return }
+            if self.protocolVersion == 3 {
+                self.syncLocalStateV3(waypoints: wps, shapes: shapes, layers: layers)
+            } else {
+                self.syncLocalState(waypoints: wps, shapes: shapes, layers: layers)
+            }
         }
         .store(in: &observers)
     }
@@ -313,12 +362,125 @@ final class SyncManager: ObservableObject {
         task?.send(.string(text)) { _ in }
     }
 
+    // MARK: - v3 Outbound
+
+    private func syncLocalStateV3(waypoints: [Waypoint], shapes: [DrawingShape], layers: [DrawingLayer]) {
+        guard status == .connected, let keys = v3Keys else { return }
+        var current: [String: (kind: String, content: String, localId: UUID)] = [:]
+        for wp in waypoints {
+            if let s = try? GeoJSONExporter.export(waypoints: [wp], drawings: [], layers: layers) {
+                current[wp.id.uuidString] = ("waypoint", s, wp.id)
+            }
+        }
+        for shape in shapes {
+            if let s = try? GeoJSONExporter.export(waypoints: [], drawings: [shape], layers: layers) {
+                current[shape.id.uuidString] = ("drawing", s, shape.id)
+            }
+        }
+
+        for (id, entry) in current where lastContent[id] != entry.content {
+            lastContent[id] = entry.content
+            kindById[id] = entry.kind
+            let wireId = SyncIdentity.wireObjectId(
+                metadataKey: keys.metadataKey,
+                localUuidBytes: SyncIdentity.uuidToBytes(entry.localId))
+            sendPutV3(wireObjectId: wireId, kind: entry.kind, content: entry.content)
+        }
+        for id in lastContent.keys where current[id] == nil {
+            if let uuid = UUID(uuidString: id) {
+                let wireId = SyncIdentity.wireObjectId(
+                    metadataKey: keys.metadataKey,
+                    localUuidBytes: SyncIdentity.uuidToBytes(uuid))
+                sendDelV3(wireObjectId: wireId, kind: kindById[id] ?? "unknown")
+            }
+            lastContent[id] = nil; kindById[id] = nil
+        }
+    }
+
+    private func sendPutV3(wireObjectId: String, kind: String, content: String) {
+        guard let key = roomKey, let actorId = myActorId, let rs = replayState,
+              let sd = sessionDomain, let keys = v3Keys else { return }
+        let counter = rs.nextCounter()
+        let counterHex = VersionStamp.counterHex16(counter)
+        let vs = VersionStamp(counter: counter, actorId: actorId).encode()
+        let contentData = Data(content.utf8)
+        let payloadHash = SyncIdentity.sha256(contentData)
+        let preimage = SyncIdentity.buildPreimage(
+            domain: SyncIdentity.domainPut, roomIdRaw: keys.roomIdRaw,
+            actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
+            objectId: wireObjectId, kind: kind, payloadHash: payloadHash)
+        guard let sig = SyncSigning.sign(deviceSeed, preimage) else { return }
+        let inner: [String: Any] = ["c": content, "pub": myPublicKey, "sig": sig]
+        guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
+              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aadV3(wireObjectId: wireObjectId, vs: vs, kind: kind)) else { return }
+        send(["t": "put", "id": wireObjectId, "vs": vs, "by": actorId, "kind": kind,
+              "ct": sealed.base64EncodedString()])
+        rs.save()
+    }
+
+    private func sendDelV3(wireObjectId: String, kind: String) {
+        guard let key = roomKey, let actorId = myActorId, let rs = replayState,
+              let sd = sessionDomain, let keys = v3Keys else { return }
+        let counter = rs.nextCounter()
+        let counterHex = VersionStamp.counterHex16(counter)
+        let vs = VersionStamp(counter: counter, actorId: actorId).encode()
+        let payloadHash = SyncIdentity.sha256(Data())
+        let preimage = SyncIdentity.buildPreimage(
+            domain: SyncIdentity.domainDelete, roomIdRaw: keys.roomIdRaw,
+            actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
+            objectId: wireObjectId, kind: kind, payloadHash: payloadHash)
+        guard let sig = SyncSigning.sign(deviceSeed, preimage) else { return }
+        let inner: [String: Any] = ["pub": myPublicKey, "sig": sig]
+        guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
+              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aadV3(wireObjectId: wireObjectId, vs: vs, kind: "del")) else { return }
+        send(["t": "del", "id": wireObjectId, "vs": vs, "by": actorId, "kind": kind,
+              "ct": sealed.base64EncodedString()])
+        rs.save()
+    }
+
+    private func sendPresenceV3() {
+        guard status == .connected, presenceConfig.shareLocation,
+              let key = roomKey, let actorId = myActorId, let rs = replayState,
+              let sd = sessionDomain, let keys = v3Keys,
+              let loc = locationService?.lastLocation else { return }
+
+        let cfg = presenceConfig
+        let lat = loc.coordinate.latitude
+        let lon = loc.coordinate.longitude
+        let heading = max(0, loc.course)
+        let speed = max(0, loc.speed)
+        let counter = rs.nextCounter()
+        let counterHex = VersionStamp.counterHex16(counter)
+        let vs = VersionStamp(counter: counter, actorId: actorId).encode()
+
+        let payload: [String: Any] = [
+            "callsign": cfg.callsign, "affiliation": cfg.affiliation,
+            "echelon": cfg.echelon, "function": cfg.function, "isHQ": cfg.isHQ,
+            "lat": lat, "lon": lon, "heading": heading, "speed": speed,
+            "pub": myPublicKey
+        ]
+        guard let payloadData = try? JSONSerialization.data(withJSONObject: payload, options: .sortedKeys) else { return }
+        let payloadHash = SyncIdentity.sha256(payloadData)
+        let preimage = SyncIdentity.buildPreimage(
+            domain: SyncIdentity.domainPresence, roomIdRaw: keys.roomIdRaw,
+            actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
+            objectId: actorId, kind: "presence", payloadHash: payloadHash)
+        guard let sig = SyncSigning.sign(deviceSeed, preimage) else { return }
+        var signedPayload = payload
+        signedPayload["sig"] = sig
+        guard let signedData = try? JSONSerialization.data(withJSONObject: signedPayload),
+              let sealed = SyncCrypto.seal(key, signedData, aad: SyncCrypto.aadPresenceV3(actorId: actorId, vs: vs)) else { return }
+        send(["t": "loc", "actorId": actorId, "vs": vs, "ct": sealed.base64EncodedString()])
+        rs.save()
+    }
+
     // MARK: - Presence broadcasting
 
     /// Fire-and-forget the device's GPS position + presenceConfig as a
     /// `loc` message. Runs on the 5s presence timer while connected and
     /// location sharing is on.
     func sendPresence() {
+        if protocolVersion == 3 { sendPresenceV3(); return }
         guard status == .connected,
               presenceConfig.shareLocation,
               let key = roomKey,
@@ -402,6 +564,7 @@ final class SyncManager: ObservableObject {
     }
 
     private func handleParsedMessage(_ obj: [String: Any]) throws {
+        if protocolVersion == 3 { handleParsedMessageV3(obj); return }
         switch obj["t"] as? String {
         case "snapshot":
             let items = obj["items"] as? [[String: Any]] ?? []
@@ -613,6 +776,203 @@ final class SyncManager: ObservableObject {
         if let n = any as? NSNumber {
             let d = n.doubleValue
             return d.isFinite ? d : nil
+        }
+        return nil
+    }
+
+    // MARK: - v3 Inbound
+
+    private func handleParsedMessageV3(_ obj: [String: Any]) {
+        switch obj["t"] as? String {
+        case "snapshot":
+            let items = obj["items"] as? [[String: Any]] ?? []
+            guard items.count <= Self.maxSnapshotItems else { return }
+            for item in items {
+                if (item["deleted"] as? Bool) == true { applyDeleteV3(item) }
+                else { applyRecordV3(item) }
+            }
+            if let members = obj["members"] as? [[String: Any]] {
+                for member in members.prefix(Self.maxSnapshotItems) {
+                    applyPresenceV3(member)
+                }
+            }
+        case "put":
+            applyRecordV3(obj)
+        case "del":
+            applyDeleteV3(obj)
+        case "loc":
+            applyPresenceV3(obj)
+        case "leave":
+            if let aid = obj["actorId"] as? String {
+                peers.removeValue(forKey: aid)
+            }
+        default:
+            break
+        }
+    }
+
+    private func applyRecordV3(_ rec: [String: Any]) {
+        guard let wireId = rec["id"] as? String, !wireId.isEmpty,
+              let vsStr = rec["vs"] as? String,
+              let stamp = VersionStamp.parse(vsStr),
+              let rs = replayState else { return }
+        let by = rec["by"] as? String ?? ""
+        let recKind = rec["kind"] as? String ?? "unknown"
+        guard rs.advance(wireId, stamp) else { return }
+        guard let key = roomKey,
+              let ctB64 = rec["ct"] as? String,
+              ctB64.utf8.count <= Self.maxBase64Bytes,
+              let blob = Data(base64Encoded: ctB64),
+              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aadV3(wireObjectId: wireId, vs: vsStr, kind: recKind)),
+              let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
+        let content = inner["c"] as? String ?? ""
+        guard let pub = inner["pub"] as? String, !pub.isEmpty,
+              let sig = inner["sig"] as? String, !sig.isEmpty else { return }
+        if !rs.registerActor(by, pubkey: pub) { return }
+        guard let contentData = content.data(using: .utf8) else { return }
+        let payloadHash = SyncIdentity.sha256(contentData)
+        guard let keys = v3Keys, let sd = rs.getSessionDomain(by).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain else { return }
+        let preimage = SyncIdentity.buildPreimage(
+            domain: SyncIdentity.domainPut, roomIdRaw: keys.roomIdRaw,
+            actorId: by, sessionDomain: sd, counterHex16: VersionStamp.counterHex16(stamp.counter),
+            objectId: wireId, kind: recKind, payloadHash: payloadHash)
+        guard SyncSigning.verify(pub, preimage, sig) else { return }
+
+        let fallback = drawingStore.activeLayerID ?? drawingStore.layers.first?.id ?? DrawingLayer.legacyFallbackID
+        guard let parsed = try? GeoJSONImporter.parse(contentData, existingLayers: drawingStore.layers,
+                                                      fallbackLayerID: fallback) else { return }
+        for layer in parsed.newLayers where !drawingStore.layers.contains(where: { $0.id == layer.id }) {
+            drawingStore.addLayerVerbatim(layer)
+        }
+        for wp in parsed.waypoints { upsert(waypoint: wp) }
+        for shape in parsed.drawings { upsert(shape: shape) }
+
+        let localId = findLocalIdForWireId(wireId)
+        if let lid = localId {
+            kindById[lid] = parsed.waypoints.isEmpty ? "drawing" : "waypoint"
+            lastContent[lid] = reexport(id: lid)
+        }
+        rs.save()
+        let kind = parsed.waypoints.isEmpty ? "Drawing" : "Waypoint"
+        remoteUpdateSubject.send("\(kind) updated by another device")
+    }
+
+    private func applyDeleteV3(_ rec: [String: Any]) {
+        guard let wireId = rec["id"] as? String, !wireId.isEmpty,
+              let vsStr = rec["vs"] as? String,
+              let stamp = VersionStamp.parse(vsStr),
+              let rs = replayState else { return }
+        let by = rec["by"] as? String ?? ""
+        let recKind = rec["kind"] as? String ?? "unknown"
+        guard rs.tombstone(wireId, stamp) else { return }
+        guard let key = roomKey,
+              let ctB64 = rec["ct"] as? String,
+              ctB64.utf8.count <= Self.maxBase64Bytes,
+              let blob = Data(base64Encoded: ctB64),
+              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aadV3(wireObjectId: wireId, vs: vsStr, kind: "del")),
+              let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
+        guard let pub = inner["pub"] as? String, !pub.isEmpty,
+              let sig = inner["sig"] as? String, !sig.isEmpty else { return }
+        if !rs.registerActor(by, pubkey: pub) { return }
+        let payloadHash = SyncIdentity.sha256(Data())
+        guard let keys = v3Keys, let sd = rs.getSessionDomain(by).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain else { return }
+        let preimage = SyncIdentity.buildPreimage(
+            domain: SyncIdentity.domainDelete, roomIdRaw: keys.roomIdRaw,
+            actorId: by, sessionDomain: sd, counterHex16: VersionStamp.counterHex16(stamp.counter),
+            objectId: wireId, kind: recKind, payloadHash: payloadHash)
+        guard SyncSigning.verify(pub, preimage, sig) else { return }
+
+        if let localId = findLocalIdForWireId(wireId) {
+            if let wp = waypointStore.waypoints.first(where: { $0.id.uuidString == localId }) {
+                waypointStore.remove(wp)
+            }
+            if let shape = drawingStore.shapes.first(where: { $0.id.uuidString == localId }) {
+                drawingStore.remove(shape)
+            }
+            lastContent[localId] = nil; kindById[localId] = nil
+        }
+        rs.save()
+        remoteUpdateSubject.send("Object removed by another device")
+    }
+
+    private func applyPresenceV3(_ obj: [String: Any]) {
+        guard let actorId = obj["actorId"] as? String, !actorId.isEmpty,
+              actorId != myActorId else { return }
+        guard let vsStr = obj["vs"] as? String,
+              let stamp = VersionStamp.parse(vsStr),
+              let rs = replayState else { return }
+        guard rs.advancePresence(actorId, counter: stamp.counter) else { return }
+        guard let key = roomKey,
+              let ctB64 = obj["ct"] as? String,
+              ctB64.utf8.count <= Self.maxBase64Bytes,
+              let blob = Data(base64Encoded: ctB64),
+              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aadPresenceV3(actorId: actorId, vs: vsStr)),
+              let p = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
+
+        guard let pub = p["pub"] as? String, !pub.isEmpty,
+              let sig = p["sig"] as? String, !sig.isEmpty else { return }
+        if !rs.registerActor(actorId, pubkey: pub) { return }
+
+        // rebuild payload without sig for hash verification
+        var payloadForHash: [String: Any] = p
+        payloadForHash.removeValue(forKey: "sig")
+        guard let payloadData = try? JSONSerialization.data(withJSONObject: payloadForHash, options: .sortedKeys),
+              let keys = v3Keys, let sd = rs.getSessionDomain(actorId).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain else { return }
+        let payloadHash = SyncIdentity.sha256(payloadData)
+        let preimage = SyncIdentity.buildPreimage(
+            domain: SyncIdentity.domainPresence, roomIdRaw: keys.roomIdRaw,
+            actorId: actorId, sessionDomain: sd, counterHex16: VersionStamp.counterHex16(stamp.counter),
+            objectId: actorId, kind: "presence", payloadHash: payloadHash)
+        guard SyncSigning.verify(pub, preimage, sig) else { return }
+
+        let callsign = p["callsign"] as? String ?? ""
+        let affiliation = p["affiliation"] as? String ?? "unknown"
+        let echelon = p["echelon"] as? String ?? "team"
+        let function = p["function"] as? String ?? "infantry"
+        let isHQ = p["isHQ"] as? Bool ?? false
+        guard let lat = strictDouble(p["lat"]),
+              let lon = strictDouble(p["lon"]) else { return }
+        let heading = strictDouble(p["heading"]) ?? 0
+        let speed = strictDouble(p["speed"]) ?? 0
+
+        peers[actorId] = PresencePeer(
+            clientId: actorId,
+            callsign: callsign,
+            affiliation: affiliation,
+            echelon: echelon,
+            function: function,
+            isHQ: isHQ,
+            lat: lat,
+            lon: lon,
+            heading: heading,
+            speed: speed,
+            ts: Date().timeIntervalSince1970 * 1000,
+            receivedAt: Date()
+        )
+    }
+
+    /// Reverse-lookup: find the local UUID string that maps to a given wire object ID.
+    private func findLocalIdForWireId(_ wireId: String) -> String? {
+        guard let keys = v3Keys else { return nil }
+        for id in lastContent.keys {
+            guard let uuid = UUID(uuidString: id) else { continue }
+            let computed = SyncIdentity.wireObjectId(
+                metadataKey: keys.metadataKey,
+                localUuidBytes: SyncIdentity.uuidToBytes(uuid))
+            if computed == wireId { return id }
+        }
+        // also check stores directly
+        for wp in waypointStore.waypoints {
+            let computed = SyncIdentity.wireObjectId(
+                metadataKey: keys.metadataKey,
+                localUuidBytes: SyncIdentity.uuidToBytes(wp.id))
+            if computed == wireId { return wp.id.uuidString }
+        }
+        for shape in drawingStore.shapes {
+            let computed = SyncIdentity.wireObjectId(
+                metadataKey: keys.metadataKey,
+                localUuidBytes: SyncIdentity.uuidToBytes(shape.id))
+            if computed == wireId { return shape.id.uuidString }
         }
         return nil
     }

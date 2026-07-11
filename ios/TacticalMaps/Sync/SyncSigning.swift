@@ -26,6 +26,12 @@ enum SyncSigning {
         return b64url(priv.publicKey.rawRepresentation)
     }
 
+    /// Raw 32-byte public key bytes derived from `seed`.
+    static func publicKeyRaw(_ seed: Data) -> Data? {
+        guard let priv = try? Curve25519.Signing.PrivateKey(rawRepresentation: seed) else { return nil }
+        return priv.publicKey.rawRepresentation
+    }
+
     /// Ed25519 signature over `message`, base64url (no pad), or nil on failure.
     static func sign(_ seed: Data, _ message: Data) -> String? {
         guard let priv = try? Curve25519.Signing.PrivateKey(rawRepresentation: seed),

@@ -31,6 +31,14 @@ enum SyncCrypto {
         let authToken: String
     }
 
+    struct V3RoomKeys {
+        let roomId: String
+        let roomIdRaw: Data
+        let roomKey: SymmetricKey
+        let metadataKey: Data
+        let authToken: String
+    }
+
     /// Run the expensive PBKDF2 once and derive all three room values.
     static func deriveRoom(_ joinCode: String) -> RoomKeys {
         let key = SymmetricKey(data: master(joinCode))
@@ -38,6 +46,23 @@ enum SyncCrypto {
             roomId: subKey(key, "tacmap-roomid-v2").base64URLEncodedStringNoPad(),
             roomKey: SymmetricKey(data: subKey(key, "tacmap-roomkey-v2")),
             authToken: subKey(key, "tacmap-auth-v2").base64URLEncodedStringNoPad()
+        )
+    }
+
+    /// v3 derivation: PBKDF2 once -> master -> 4 sub-keys with verified auth binding.
+    static func deriveRoomV3(_ joinCode: String) -> V3RoomKeys {
+        let key = SymmetricKey(data: masterV3(joinCode))
+        let authTokenRaw = subKey(key, "tacmap-auth-v3")
+        var hasher = SHA256()
+        hasher.update(data: Data("tacmap-room-id-v3\0".utf8))
+        hasher.update(data: authTokenRaw)
+        let roomIdRaw = Data(hasher.finalize())
+        return V3RoomKeys(
+            roomId: roomIdRaw.base64URLEncodedStringNoPad(),
+            roomIdRaw: roomIdRaw,
+            roomKey: SymmetricKey(data: subKey(key, "tacmap-roomkey-v3")),
+            metadataKey: subKey(key, "tacmap-metadata-v3"),
+            authToken: authTokenRaw.base64URLEncodedStringNoPad()
         )
     }
 
@@ -63,6 +88,28 @@ enum SyncCrypto {
 
     static func isJoinCodeTooWeak(_ code: String) -> Bool {
         code.trimmingCharacters(in: .whitespacesAndNewlines).count < minJoinCodeLength
+    }
+
+    private static let saltV3 = "tacmap-sync-salt-v3"
+
+    private static func masterV3(_ joinCode: String) -> Data {
+        let pwd = Array(joinCode.utf8)
+        let saltBytes = Array(saltV3.utf8)
+        var out = [UInt8](repeating: 0, count: 32)
+        let status = pwd.withUnsafeBufferPointer { pwdPtr in
+            saltBytes.withUnsafeBufferPointer { saltPtr in
+                CCKeyDerivationPBKDF(
+                    CCPBKDFAlgorithm(kCCPBKDF2),
+                    pwdPtr.baseAddress, pwd.count,
+                    saltPtr.baseAddress, saltBytes.count,
+                    CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                    pbkdf2Iterations,
+                    &out, out.count
+                )
+            }
+        }
+        precondition(status == kCCSuccess, "PBKDF2 v3 derivation failed")
+        return Data(out)
     }
 
     private static func master(_ joinCode: String) -> Data {
@@ -92,6 +139,16 @@ enum SyncCrypto {
     /// AEAD associated data - binds ciphertext to routing metadata.
     static func aad(id: String, v: Int64, kind: String) -> Data {
         Data("\(id)|\(v)|\(kind)".utf8)
+    }
+
+    /// v3 AEAD AAD for object puts/deletes.
+    static func aadV3(wireObjectId: String, vs: String, kind: String) -> Data {
+        Data("\(wireObjectId)|\(vs)|\(kind)".utf8)
+    }
+
+    /// v3 AEAD AAD for presence messages.
+    static func aadPresenceV3(actorId: String, vs: String) -> Data {
+        Data("\(actorId)|\(vs)|presence".utf8)
     }
 
     /// Seal plaintext into nonce+ct+tag, authenticating [aad]. nil on failure.
