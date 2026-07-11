@@ -190,9 +190,15 @@ struct ContentView: View {
 
                 // Crosshair: always visible except while drawing (taps go
                 // to vertex placement, crosshair would compete with
-                // tap-target markers).
+                // tap-target markers). Must ignore the safe area like the map
+                // does - otherwise it centres on the safe-area rect (~14pt low
+                // since the top inset > the bottom) and drifts below the user
+                // dot, which sits at the map's true geometric centre.
                 if !drawingSession.isDrawing {
-                    CrosshairOverlay().allowsHitTesting(false)
+                    CrosshairOverlay()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
                 }
 
                 freehandCaptureOverlay

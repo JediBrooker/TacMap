@@ -145,13 +145,16 @@ final class TileMapView: UIView {
 
     @objc private func handlePinch(_ gr: UIPinchGestureRecognizer) {
         if gr.state == .began { onGestureBegan?() }
-        guard let source else { return }
         let focal = gr.location(in: self)
         let anchor = camera.coordinate(for: focal) // coord under the fingers
 
+        // A PDF/blank map has no tile source, but the overlay still draws at any
+        // zoom - so fall back to a sane global range instead of refusing to zoom.
+        // Guarding on `source` here is what broke pinch over an imported PDF.
+        let minZ = Double(source?.minZoom ?? 2)
+        let maxZ = Double(source?.maxZoom ?? 22)
         var next = camera
-        next.zoom = (camera.zoom + log2(Double(gr.scale)))
-            .clamped(to: Double(source.minZoom)...Double(source.maxZoom))
+        next.zoom = (camera.zoom + log2(Double(gr.scale))).clamped(to: minZ...maxZ)
         gr.scale = 1
         // Keep that coord under the fingers while zooming.
         let landed = next.screenPoint(for: anchor)
