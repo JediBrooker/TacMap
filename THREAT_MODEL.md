@@ -67,14 +67,18 @@ routing ID the relay uses to connect you to your room. A second is the
 encryption key, which **never leaves your device**. A third is a write token
 that only travels inside the connection handshake. Every map object and every
 presence update is sealed with AES-256-GCM using the encryption key before it is
-sent. The relay only ever forwards sealed blobs. It has no way to derive the key
-from the routing ID, because both come out of the same expensive one-way
-derivation. So the relay can route your traffic but cannot read it.
+sent. The relay only ever forwards sealed blobs. It cannot reverse the routing
+ID straight back to the key. But the routing ID and the key are both derived
+from the same join code, so the protection is only ever as strong as that code:
+a weak or human-memorable code can be guessed offline (see *Your join code is
+the whole ballgame*, below). With a strong, generated code the relay can route
+your traffic but cannot read it.
 
 **What the relay CAN see:**
 
-- The **routing room ID** (a 256-bit opaque value; not your join code, and not
-  reversible to it).
+- The **routing room ID** (a 256-bit value derived from your join code; not
+  directly reversible, but it doubles as an offline *verifier* for guessed
+  codes - see *Your join code is the whole ballgame*, below).
 - The **IP addresses** of connected devices, and therefore approximate
   geographic origin.
 - **Traffic metadata:** when devices connect, how often they send, message sizes
@@ -100,6 +104,25 @@ the separate write token.
 operator, or anyone who compromises or coerces the relay or its host, can learn
 that a group of IPs form a unit, roughly where they are, and when they are
 active. That is enough to infer association and operational tempo. See §7.
+
+**Your join code is the whole ballgame.** The routing ID, the encryption key,
+and the write token are all derived from the join code through one fixed,
+app-wide salt. There is no per-room salt on purpose: the relay has to route by a
+value anyone with the code can compute. Two things follow. Because the salt is a
+constant, an attacker can precompute a `code -> (routing ID, key, token)`
+dictionary once and reuse it against every room, forever. And because the relay
+sees every routing ID, that ID is a free offline **confirmation oracle**: guess
+codes, derive their routing IDs, match them against observed rooms, and any hit
+hands over the encryption key (read) and the write token (write). PBKDF2 at
+210,000 iterations makes each guess cost real work, but a short or memorable
+code - a couple of dictionary words like `bravo-tonight` - still falls to a GPU
+rig in minutes. **So sync is only private if your join code has real entropy.**
+The app generates a strong ~78-bit code for you and refuses codes under 14
+characters; use the generator and pass the code out-of-band. A code you invent
+yourself, especially a memorable one, is guessable and is not covered by the
+guarantees above. (A memory-hard KDF - Argon2id/scrypt - would raise the
+per-guess cost further and is a planned hardening; it does not remove the need
+for an entropic code.)
 
 The relay is auditable: it only ever handles sealed blobs plus routing IDs. You
 do not have to trust ours. **You can self-host it** (see §8).
@@ -305,8 +328,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
 - **Your own room members.** Everyone with the join code sees everything shared
   in that room. Rotate codes and manage membership accordingly.
 - **A weak join code.** The 210k-iteration stretch raises the cost of guessing,
-  but a short or predictable code is still guessable against retained ciphertext.
-  Use the in-app generator; do not invent your own.
+  but a short or predictable code is still guessable - offline, against the
+  relay-visible routing ID, and once per code for the whole user base because
+  the salt is a global constant (see §4, *Your join code is the whole
+  ballgame*). The Unit Sync screen generates a strong ~78-bit code and rejects
+  codes under 14 characters; use the generator and do not invent your own.
 - **Export metadata.** GPX and GeoJSON exports embed **precise per-point
   timestamps** alongside coordinates and elevation, plus the fixed string `TacMap`
   as the creator. They do **not** embed device identifiers, hardware IDs, your
