@@ -46,6 +46,24 @@ final class SyncSigningTests: XCTestCase {
             "414d1f494e46414e5452591f31")
     }
 
+    func testObjectMessageIsPinnedForCrossPlatform() {
+        // Same hex as Android SyncSigningTest.objectMessageIsPinnedForCrossPlatform,
+        // so an Android-signed object write verifies on iOS and vice-versa.
+        let put = SyncSigning.objectMessage("obj-1", 7, "waypoint", "dev-1", "GEO")
+        XCTAssertEqual(put.map { String(format: "%02x", $0) }.joined(),
+                       "6f626a2d311f371f776179706f696e741f6465762d311f47454f")
+        let del = SyncSigning.objectMessage("obj-1", 7, "del", "dev-1", "")
+        XCTAssertEqual(del.map { String(format: "%02x", $0) }.joined(),
+                       "6f626a2d311f371f64656c1f6465762d311f")
+        // A signature over the put must not verify against the delete message, so
+        // a relay can't swap a write for a delete.
+        let seed = SyncSigning.generateSeed()
+        let pub = SyncSigning.publicKey(seed)!
+        let putSig = SyncSigning.sign(seed, put)!
+        XCTAssertTrue(SyncSigning.verify(pub, put, putSig))
+        XCTAssertFalse(SyncSigning.verify(pub, del, putSig))
+    }
+
     func testRejectsTamperedMessageWrongKeyAndGarbage() {
         let seed = SyncSigning.generateSeed()
         let msg = Data("grid 1234 5678".utf8)

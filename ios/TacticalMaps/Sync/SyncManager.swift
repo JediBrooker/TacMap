@@ -49,12 +49,13 @@ final class SyncManager: ObservableObject {
     private var roomId: String?
 
     // Per-device Ed25519 signing identity. Seed sealed at rest; the public key
-    // rides every presence so peers pin it (TOFU) and reject a room member
-    // impersonating an established peer. Room state cleared on leave.
+    // rides every presence AND every object write so peers pin it (TOFU) and
+    // reject a room member impersonating an established device. One identity per
+    // clientId, shared by presence + object writes. Room state cleared on leave.
     private lazy var deviceSeed: Data = loadOrCreateDeviceSeed()
     private lazy var myPublicKey: String = SyncSigning.publicKey(deviceSeed) ?? ""
     private var peerKeys: [String: String] = [:]   // clientId -> pinned pubkey
-    private var peerTs: [String: Int64] = [:]        // clientId -> last accepted ts
+    private var peerTs: [String: Int64] = [:]        // clientId -> last accepted presence ts
     private static let deviceSeedKey = "sync.deviceSeed"
     private static let deviceSeedLabel = "sync/deviceSeed"
 
@@ -273,14 +274,30 @@ final class SyncManager: ObservableObject {
     }
 
     private func sendPut(id: String, v: Int, kind: String, content: String) {
-        guard let key = roomKey,
-              let sealed = SyncCrypto.seal(key, Data(content.utf8), aad: SyncCrypto.aad(id: id, v: v, kind: kind)) else { return }
+        guard let key = roomKey else { return }
+        // Sign the write, then seal {content, pub, sig} together. The signature
+        // rides INSIDE the sealed blob so the relay stays E2E-blind to device
+        // identity; a receiver proves room-key possession by opening it and
+        // device authorship by verifying the sig against the pinned key.
+        let sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, kind, clientId, content)) ?? ""
+        let inner: [String: Any] = ["c": content, "pub": myPublicKey, "sig": sig]
+        guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
+              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aad(id: id, v: v, kind: kind)) else { return }
         send(["t": "put", "id": id, "v": v, "by": clientId, "kind": kind,
               "ct": sealed.base64EncodedString()])
     }
 
     private func sendDel(id: String, v: Int) {
-        send(["t": "del", "id": id, "v": v, "by": clientId])
+        guard let key = roomKey else { return }
+        // Deletes used to be an unauthenticated {id,v} - a coerced relay could
+        // forge one and silently remove a contact. Now seal a signed proof: only
+        // a room-key holder can produce it (relay can't), and it's attributable
+        // to a device. AAD "del" so it can't be replayed as a put.
+        let sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, "del", clientId, "")) ?? ""
+        let inner: [String: Any] = ["pub": myPublicKey, "sig": sig]
+        guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
+              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aad(id: id, v: v, kind: "del")) else { return }
+        send(["t": "del", "id": id, "v": v, "by": clientId, "ct": sealed.base64EncodedString()])
     }
 
     private func send(_ obj: [String: Any]) {
@@ -378,7 +395,7 @@ final class SyncManager: ObservableObject {
         case "put":
             applyRecord(obj)
         case "del":
-            applyDelete(id: obj["id"] as? String ?? "", v: intValue(obj["v"]))
+            applyDelete(obj)
         case "loc":
             applyPresence(obj)
         case "leave":
@@ -440,19 +457,34 @@ final class SyncManager: ObservableObject {
     }
 
     private func applyRecord(_ rec: [String: Any]) {
+        // Snapshot tombstones arrive as records with deleted=true; route them
+        // through the same signed-delete verification as a live "del".
+        if (rec["deleted"] as? Bool) == true { applyDelete(rec); return }
         guard let id = rec["id"] as? String, !id.isEmpty else { return }
         let v = intValue(rec["v"])
-        if let known = versions[id], known >= v, lastContent[id] != nil { return } // stale
+        // Monotonic per-id version: reject anything <= the highest applied, and
+        // keep rejecting after a delete (versions[id] survives as a tombstone) so
+        // a relay can't resurrect a deleted object by replaying an older-but-
+        // validly-signed put.
+        if let known = versions[id], known >= v { return } // stale / superseded / post-delete
         clock = max(clock, v)
-        if (rec["deleted"] as? Bool) == true { applyDelete(id: id, v: v); return }
         let recKind = rec["kind"] as? String ?? "unknown"
+        let by = rec["by"] as? String ?? ""
         guard let key = roomKey,
               let ctB64 = rec["ct"] as? String,
               let blob = Data(base64Encoded: ctB64),
-              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: id, v: v, kind: recKind)) else { return }
+              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: id, v: v, kind: recKind)),
+              let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
+        let content = inner["c"] as? String ?? ""
+        // Device authorship: the write must be signed by the key pinned to `by`
+        // (TOFU). A room member can't forge a write as another established
+        // device; a key that doesn't match the pin is rejected as a swap.
+        guard verifyObjectSig(by: by, inner: inner,
+                              signed: SyncSigning.objectMessage(id, v, recKind, by, content)),
+              let contentData = content.data(using: .utf8) else { return }
 
         let fallback = drawingStore.activeLayerID ?? drawingStore.layers.first?.id ?? DrawingLayer.legacyFallbackID
-        guard let parsed = try? GeoJSONImporter.parse(plain, existingLayers: drawingStore.layers,
+        guard let parsed = try? GeoJSONImporter.parse(contentData, existingLayers: drawingStore.layers,
                                                       fallbackLayerID: fallback) else { return }
         for layer in parsed.newLayers where !drawingStore.layers.contains(where: { $0.id == layer.id }) {
             drawingStore.addLayerVerbatim(layer)
@@ -469,8 +501,20 @@ final class SyncManager: ObservableObject {
         remoteUpdateSubject.send("\(kind) updated by another device")
     }
 
-    private func applyDelete(id: String, v: Int) {
-        guard !id.isEmpty else { return }
+    private func applyDelete(_ rec: [String: Any]) {
+        guard let id = rec["id"] as? String, !id.isEmpty else { return }
+        let v = intValue(rec["v"])
+        if let known = versions[id], known >= v { return } // stale / already-superseded delete
+        let by = rec["by"] as? String ?? ""
+        // Open the sealed proof (proves room-key possession, so a relay with no
+        // room key can't forge a delete) then verify the device signature.
+        guard let key = roomKey,
+              let ctB64 = rec["ct"] as? String,
+              let blob = Data(base64Encoded: ctB64),
+              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: id, v: v, kind: "del")),
+              let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
+              verifyObjectSig(by: by, inner: inner,
+                              signed: SyncSigning.objectMessage(id, v, "del", by, "")) else { return }
         clock = max(clock, v)
         if let wp = waypointStore.waypoints.first(where: { $0.id.uuidString == id }) {
             waypointStore.remove(wp)
@@ -482,6 +526,18 @@ final class SyncManager: ObservableObject {
         lastContent[id] = nil; kindById[id] = nil
 
         remoteUpdateSubject.send("Object removed by another device")
+    }
+
+    /// TOFU-pin `by`'s signing key and verify `signed` under it. Shared by
+    /// object puts and deletes and by presence, so a device has one identity per
+    /// clientId. Missing/garbage fields, or a key that doesn't match the existing
+    /// pin, return false (the write is rejected).
+    private func verifyObjectSig(by: String, inner: [String: Any], signed: Data) -> Bool {
+        guard !by.isEmpty,
+              let pub = inner["pub"] as? String, !pub.isEmpty,
+              let sig = inner["sig"] as? String, !sig.isEmpty else { return false }
+        if let pinned = peerKeys[by] { if pinned != pub { return false } } else { peerKeys[by] = pub }
+        return SyncSigning.verify(pub, signed, sig)
     }
 
     private func upsert(waypoint wp: Waypoint) {

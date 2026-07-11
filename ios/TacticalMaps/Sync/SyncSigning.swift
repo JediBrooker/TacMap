@@ -58,6 +58,17 @@ enum SyncSigning {
         return Data(s.utf8)
     }
 
+    /// Canonical bytes an object-write signature covers: the routing metadata a
+    /// receiver reconstructs from the relay record (id, v, kind, by) plus the
+    /// exact plaintext content that was sealed. Joined by U+001F like
+    /// `presenceMessage` so it's serialization-independent and byte-identical to
+    /// Android. For a delete, kind is "del" and content is "". Signing `by` and
+    /// `v` means the relay can't re-attribute or roll back a write - either
+    /// change breaks the signature. MUST byte-match Android's `objectMessage`.
+    static func objectMessage(_ id: String, _ v: Int, _ kind: String, _ by: String, _ content: String) -> Data {
+        Data([id, String(v), kind, by, content].joined(separator: "\u{1F}").utf8)
+    }
+
     private static func b64url(_ data: Data) -> String {
         data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
