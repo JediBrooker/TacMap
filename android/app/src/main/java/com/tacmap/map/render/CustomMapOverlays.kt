@@ -498,7 +498,9 @@ fun PresenceLayer(peers: Map<String, PresencePeer>, camera: MapCamera, density: 
             val wp = remember(peer.clientId, peer.affiliation, peer.echelon, peer.function, peer.isHQ,
                               peer.lat, peer.lon, peer.callsign) {
                 val spec = MilitarySymbolSpec(
-                    affiliation = SymbolAffiliation.entries.firstOrNull { it.name.equals(peer.affiliation, true) } ?: SymbolAffiliation.FRIEND,
+                    // Garbled/unknown affiliation renders UNKNOWN, not FRIEND -
+                    // an unidentified contact must never look friendly.
+                    affiliation = SymbolAffiliation.entries.firstOrNull { it.name.equals(peer.affiliation, true) } ?: SymbolAffiliation.UNKNOWN,
                     echelon = SymbolEchelon.entries.firstOrNull { it.name.equals(peer.echelon, true) } ?: SymbolEchelon.TEAM,
                     function = SymbolFunction.entries.firstOrNull { it.name.equals(peer.function, true) } ?: SymbolFunction.INFANTRY,
                     isHeadquarters = peer.isHQ)

@@ -2,6 +2,7 @@ package com.tacmap.sync
 
 import android.content.Context
 import android.location.Location
+import android.util.Base64
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.export.GeoJsonExporter
@@ -13,6 +14,8 @@ import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointStore
 import com.tacmap.drawings.DrawingStore
 import com.tacmap.settings.OpsecSettings
+import com.tacmap.util.SafeStore
+import com.tacmap.util.SealedEnvelope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -383,7 +386,9 @@ class SyncManager(
         val peer = PresencePeer(
             clientId = peerId,
             callsign = obj.optString("callsign", ""),
-            affiliation = obj.optString("affiliation", "FRIEND"),
+            // A peer whose affiliation field is missing is UNKNOWN, never
+            // FRIEND - don't paint an unidentified contact friendly-blue.
+            affiliation = obj.optString("affiliation", "UNKNOWN"),
             echelon = obj.optString("echelon", "TEAM"),
             function = obj.optString("function", "INFANTRY"),
             isHQ = obj.optBoolean("isHQ", false),
@@ -413,38 +418,85 @@ class SyncManager(
     }
 
     // ----- Presence config persistence -----
+    //
+    // Callsign + affiliation/echelon/function/HQ are unit identity - exactly
+    // what a seized device shouldn't hand over in cleartext - so they're sealed
+    // at rest (AES-256-GCM under the app data key) like waypoints. Prefs only
+    // ever hold the sealed blob; a legacy install's plaintext keys are read once
+    // then wiped on the next save.
 
     private fun savePresenceConfig() {
         val cfg = presenceConfig
+        val jsonStr = JSONObject()
+            .put("callsign", cfg.callsign)
+            .put("shareLocation", cfg.shareLocation)
+            .put("affiliation", cfg.affiliation.name)
+            .put("echelon", cfg.echelon.name)
+            .put("function", cfg.function.name)
+            .put("isHQ", cfg.isHQ)
+            .toString()
+        val sealed = runCatching {
+            Base64.encodeToString(
+                SealedEnvelope.sealFile(
+                    SafeStore.keyProvider.key(), jsonStr.toByteArray(Charsets.UTF_8), PRESENCE_LABEL),
+                Base64.NO_WRAP
+            )
+        }.getOrNull() ?: return  // key locked/unavailable: keep what's on disk, don't wipe legacy
         prefs.edit()
-            .putString("callsign", cfg.callsign)
-            .putBoolean("shareLocation", cfg.shareLocation)
-            .putString("affiliation", cfg.affiliation.name)
-            .putString("echelon", cfg.echelon.name)
-            .putString("function", cfg.function.name)
-            .putBoolean("isHQ", cfg.isHQ)
+            .putString(KEY_PRESENCE, sealed)
+            .remove("callsign").remove("shareLocation").remove("affiliation")
+            .remove("echelon").remove("function").remove("isHQ")
             .apply()
     }
 
     private fun loadPresenceConfig() {
-        presenceConfig = PresenceConfig(
-            callsign = prefs.getString("callsign", "") ?: "",
-            shareLocation = prefs.getBoolean("shareLocation", false),
-            affiliation = prefs.getString("affiliation", null)?.let { name ->
-                SymbolAffiliation.entries.firstOrNull { it.name == name }
-            } ?: SymbolAffiliation.FRIEND,
-            echelon = prefs.getString("echelon", null)?.let { name ->
-                SymbolEchelon.entries.firstOrNull { it.name == name }
-            } ?: SymbolEchelon.TEAM,
-            function = prefs.getString("function", null)?.let { name ->
-                SymbolFunction.entries.firstOrNull { it.name == name }
-            } ?: SymbolFunction.INFANTRY,
-            isHQ = prefs.getBoolean("isHQ", false)
+        // Setting presenceConfig triggers savePresenceConfig() (its setter),
+        // which seals it and wipes any legacy plaintext - so a legacy install
+        // self-migrates to sealed on first launch.
+        presenceConfig = readSealedPresenceConfig() ?: readLegacyPresenceConfig()
+    }
+
+    private fun readSealedPresenceConfig(): PresenceConfig? {
+        val stored = prefs.getString(KEY_PRESENCE, null) ?: return null
+        val obj = runCatching {
+            val blob = Base64.decode(stored, Base64.NO_WRAP)
+            SealedEnvelope.openFile(SafeStore.keyProvider.key(), blob, PRESENCE_LABEL)
+                ?.let { JSONObject(String(it, Charsets.UTF_8)) }
+        }.getOrNull() ?: return null
+        return PresenceConfig(
+            callsign = obj.optString("callsign", ""),
+            shareLocation = obj.optBoolean("shareLocation", false),
+            affiliation = SymbolAffiliation.entries.firstOrNull { it.name == obj.optString("affiliation") }
+                ?: SymbolAffiliation.FRIEND,
+            echelon = SymbolEchelon.entries.firstOrNull { it.name == obj.optString("echelon") }
+                ?: SymbolEchelon.TEAM,
+            function = SymbolFunction.entries.firstOrNull { it.name == obj.optString("function") }
+                ?: SymbolFunction.INFANTRY,
+            isHQ = obj.optBoolean("isHQ", false)
         )
     }
+
+    private fun readLegacyPresenceConfig(): PresenceConfig = PresenceConfig(
+        callsign = prefs.getString("callsign", "") ?: "",
+        shareLocation = prefs.getBoolean("shareLocation", false),
+        affiliation = prefs.getString("affiliation", null)?.let { name ->
+            SymbolAffiliation.entries.firstOrNull { it.name == name }
+        } ?: SymbolAffiliation.FRIEND,
+        echelon = prefs.getString("echelon", null)?.let { name ->
+            SymbolEchelon.entries.firstOrNull { it.name == name }
+        } ?: SymbolEchelon.TEAM,
+        function = prefs.getString("function", null)?.let { name ->
+            SymbolFunction.entries.firstOrNull { it.name == name }
+        } ?: SymbolFunction.INFANTRY,
+        isHQ = prefs.getBoolean("isHQ", false)
+    )
 
     companion object {
         /** Default E2E-blind relay. Self-hosters can swap in their own Worker. */
         const val RELAY_BASE = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
+        /** SharedPreferences key holding the sealed presence-config blob. */
+        private const val KEY_PRESENCE = "config_sealed"
+        /** AEAD label binding that blob so it can't be opened as another pref. */
+        private const val PRESENCE_LABEL = "sync/presenceConfig"
     }
 }
