@@ -90,7 +90,7 @@ enum GeoJSONImporter {
                                             layerID: layerID) {
                     result.drawings.append(shape)
                 }
-            case "military", "controlMeasure", "generic":
+            case "military", "controlMeasure", "generic", "marker":
                 if geomType == "Point",
                    let wp = parseWaypoint(feature: feature,
                                           geometry: geometry,
@@ -314,6 +314,12 @@ enum GeoJSONImporter {
             } else {
                 kind = .generic
             }
+        case "marker":
+            let set = (props["tacticalmaps:marker_set"] as? String)
+                .flatMap(MarkerSet.init(rawValue:)) ?? .airsoft
+            let symbolID = (props["tacticalmaps:marker_symbol"] as? String) ?? "team"
+            let colorHex = (props["tacticalmaps:marker_color"] as? String) ?? "#3B7BE0"
+            kind = .marker(MarkerSymbol(set: set, symbolID: symbolID, colorHex: colorHex))
         default:
             kind = .generic
         }
