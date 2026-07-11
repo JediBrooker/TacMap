@@ -1061,11 +1061,13 @@ fun MapScreen(
     if (showLayersSheet) {
         LayersSheet(
             mgrsGridVisible = mgrsGridVisible,
+            userLocationVisible = userLocationVisible,
             unitLabelsVisible = unitLabelsVisible,
             taskLabelsVisible = taskLabelsVisible,
             drawingLabelsVisible = drawingLabelsVisible,
             terrainHeatmapVisible = terrainHeatmapVisible,
             onMgrsGridChange = { mgrsGridVisible = it },
+            onUserLocationChange = { userLocationVisible = it },
             onTerrainHeatmapChange = { terrainHeatmapVisible = it },
             onUnitLabelsChange = { unitLabelsVisible = it },
             onTaskLabelsChange = { taskLabelsVisible = it },

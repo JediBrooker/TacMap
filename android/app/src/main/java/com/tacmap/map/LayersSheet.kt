@@ -43,11 +43,13 @@ import com.tacmap.calibration.BasemapStyle
 @Composable
 fun LayersSheet(
     mgrsGridVisible: Boolean,
+    userLocationVisible: Boolean,
     unitLabelsVisible: Boolean,
     taskLabelsVisible: Boolean,
     drawingLabelsVisible: Boolean,
     terrainHeatmapVisible: Boolean,
     onMgrsGridChange: (Boolean) -> Unit,
+    onUserLocationChange: (Boolean) -> Unit,
     onTerrainHeatmapChange: (Boolean) -> Unit,
     onUnitLabelsChange: (Boolean) -> Unit,
     onTaskLabelsChange: (Boolean) -> Unit,
@@ -77,6 +79,7 @@ fun LayersSheet(
 
             SectionHeader("Overlays")
             ToggleRow("MGRS Grid", mgrsGridVisible, onMgrsGridChange)
+            ToggleRow("My Location", userLocationVisible, onUserLocationChange)
             ToggleRow("Terrain Heat-map", terrainHeatmapVisible, onTerrainHeatmapChange)
 
             SectionHeader("Labels")
