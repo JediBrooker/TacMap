@@ -56,10 +56,13 @@ final class PresenceOverlayView: UIView {
 
     /// One peer: 40pt symbol centred on the coord, callsign pill just below.
     private func makeMarker(for peer: PresencePeer) -> UIView {
+        // rawValues are lowercase; lowercase the incoming token so an Android
+        // peer (uppercase enum names on the wire) maps correctly, and fall back
+        // to UNKNOWN - never .friend - for a missing/garbled affiliation.
         let spec = MilitarySymbolSpec(
-            affiliation: SymbolAffiliation(rawValue: peer.affiliation) ?? .friend,
-            echelon: SymbolEchelon(rawValue: peer.echelon) ?? .team,
-            function: SymbolFunction(rawValue: peer.function) ?? .infantry,
+            affiliation: SymbolAffiliation(rawValue: peer.affiliation.lowercased()) ?? .unknown,
+            echelon: SymbolEchelon(rawValue: peer.echelon.lowercased()) ?? .team,
+            function: SymbolFunction(rawValue: peer.function.lowercased()) ?? .infantry,
             isHeadquarters: peer.isHQ)
 
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 40, height: 40))

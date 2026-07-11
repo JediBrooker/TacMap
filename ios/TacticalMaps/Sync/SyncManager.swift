@@ -85,18 +85,37 @@ final class SyncManager: ObservableObject {
     // MARK: - Presence config persistence
 
     private static let presenceConfigKey = "sync.presenceConfig"
+    /// AEAD label binding the presence blob so it can't open as another store.
+    private static let presenceLabel = "sync/presenceConfig"
 
     private func savePresenceConfig() {
-        if let data = try? JSONEncoder().encode(presenceConfig) {
-            UserDefaults.standard.set(data, forKey: Self.presenceConfigKey)
+        guard let data = try? JSONEncoder().encode(presenceConfig) else { return }
+        // Callsign + affiliation/echelon/function/HQ is unit identity - seal it
+        // at rest like waypoints instead of leaving it plaintext in UserDefaults
+        // (which is also captured in device/iCloud backups, unlike the DEK).
+        guard let key = try? SafeStore.keyProvider(),
+              let sealed = try? SealedEnvelope.sealFile(
+                key: key, plaintext: data, label: Self.presenceLabel) else {
+            return  // locked/unavailable: keep what's stored, don't downgrade to plaintext
         }
+        UserDefaults.standard.set(sealed, forKey: Self.presenceConfigKey)
     }
 
     private func loadPresenceConfig() {
-        if let data = UserDefaults.standard.data(forKey: Self.presenceConfigKey),
-           let config = try? JSONDecoder().decode(PresenceConfig.self, from: data) {
-            presenceConfig = config
-        }
+        guard let stored = UserDefaults.standard.data(forKey: Self.presenceConfigKey) else { return }
+        // Sealed (current) or legacy bare-JSON (pre-sealing) - the magic prefix
+        // tells them apart.
+        let wasLegacyPlaintext = !SealedEnvelope.isSealedFile(stored)
+        let plain: Data? = wasLegacyPlaintext
+            ? stored
+            : (try? SafeStore.keyProvider()).flatMap {
+                SealedEnvelope.openFile(key: $0, blob: stored, label: Self.presenceLabel)
+              }
+        guard let plain,
+              let config = try? JSONDecoder().decode(PresenceConfig.self, from: plain) else { return }
+        presenceConfig = config
+        // Migrate a legacy plaintext blob to sealed at rest (idempotent).
+        if wasLegacyPlaintext { savePresenceConfig() }
     }
 
     // MARK: API
