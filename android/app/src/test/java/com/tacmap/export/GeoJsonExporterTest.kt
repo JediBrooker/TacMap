@@ -6,6 +6,8 @@ import com.tacmap.drawings.DrawingLayer
 import com.tacmap.drawings.DrawingPoint
 import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.waypoints.TaskColor
+import com.tacmap.waypoints.MarkerSet
+import com.tacmap.waypoints.MarkerSymbol
 import com.tacmap.waypoints.MilitarySymbolSpec
 import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
@@ -49,7 +51,8 @@ class GeoJsonExporterTest {
         val root = Json.parseToJsonElement(json).jsonObject
 
         assertEquals("FeatureCollection", root["type"]!!.jsonPrimitive.content)
-        assertTrue(root["generator"]!!.jsonPrimitive.content.contains("TacMap Android prototype"))
+        // generator is the fixed string "TacMap" - no platform/version leak (F10).
+        assertEquals("TacMap", root["generator"]!!.jsonPrimitive.content)
 
         val features = root["features"]!!.jsonArray
         assertEquals(3, features.size)
@@ -136,6 +139,27 @@ class GeoJsonExporterTest {
         assertEquals(42.0, importedControl.rotation, 1e-9)
         assertEquals(2.5, importedControl.scaleX, 1e-9)
         assertEquals(0.75, importedControl.scaleY, 1e-9)
+    }
+
+    @Test
+    fun roundTripsMarkerWaypoint() {
+        // A marker waypoint used to degrade to a generic pin on import (Fable
+        // data-loss finding). Its set/symbol/colour must now survive.
+        val marker = Waypoint(
+            id = "mk-1",
+            name = "Objective",
+            latitude = -33.88,
+            longitude = 151.23,
+            kind = WaypointKind.Marker(
+                MarkerSymbol(set = MarkerSet.AIRSOFT, symbolId = "objective", colorHex = "#F2872E")
+            )
+        )
+        val json = GeoJsonExporter.export(listOf(marker), emptyList(), emptyList())
+        val result = GeoJsonImporter.parse(json, existingLayers = emptyList(), fallbackLayerId = "fallback")
+        val kind = result.waypoints.single().kind as WaypointKind.Marker
+        assertEquals(MarkerSet.AIRSOFT, kind.marker.set)
+        assertEquals("objective", kind.marker.symbolId)
+        assertEquals("#F2872E", kind.marker.colorHex)
     }
 
     /**

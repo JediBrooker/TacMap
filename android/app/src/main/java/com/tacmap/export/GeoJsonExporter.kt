@@ -40,7 +40,7 @@ object GeoJsonExporter {
 
         val collection = buildJsonObject {
             put("type", "FeatureCollection")
-            put("generator", "TacMap Android prototype")
+            put("generator", "TacMap")
             put("features", features)
         }
         return Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), collection)
