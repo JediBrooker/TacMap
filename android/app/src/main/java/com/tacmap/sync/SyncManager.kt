@@ -12,6 +12,7 @@ import com.tacmap.waypoints.SymbolFunction
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointStore
 import com.tacmap.drawings.DrawingStore
+import com.tacmap.settings.OpsecSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,6 +94,10 @@ class SyncManager(
 
     private var ws: WebSocket? = null
     private var roomKey: ByteArray? = null
+    private var authToken: String? = null
+    // Resolved from OPSEC settings at join time so a self-hoster's relay is
+    // actually used; falls back to ours. Kept for the reconnect path.
+    private var relayBase: String = RELAY_BASE
     private var wantConnected = false
     private var observeJob: Job? = null
 
@@ -115,9 +120,14 @@ class SyncManager(
         if (code.isEmpty()) return
         leave()
         wantConnected = true
-        roomKey = SyncCrypto.roomKey(code)
+        // Derive routing id + room key + writer-auth token once from the code.
+        val keys = SyncCrypto.deriveRoom(code)
+        roomKey = keys.roomKey
+        authToken = keys.authToken
+        // Self-hosters repoint the relay in OPSEC settings; blank -> ours.
+        relayBase = OpsecSettings.shared?.relayUrl?.value?.takeIf { it.isNotBlank() } ?: RELAY_BASE
         _room.value = code
-        connect(SyncCrypto.roomId(code))
+        connect(keys.roomId)
         startObserving()
         startPresenceBroadcast()
         startStalenessSweep()
@@ -130,6 +140,7 @@ class SyncManager(
         stalenessSweepJob?.cancel(); stalenessSweepJob = null
         ws?.close(1000, "leave"); ws = null
         roomKey = null
+        authToken = null
         _room.value = null
         _status.value = Status.OFFLINE
         _peers.value = emptyMap()
@@ -140,8 +151,12 @@ class SyncManager(
 
     private fun connect(roomId: String) {
         _status.value = Status.CONNECTING
-        val request = Request.Builder().url(RELAY_BASE + roomId).build()
-        ws = http.newWebSocket(request, object : WebSocketListener() {
+        val builder = Request.Builder().url(relayBase + roomId)
+        // Writer-auth: the relay 401s a socket with no bearer token. The token is
+        // derived from the join code and only ever rides the handshake header
+        // (never the URL or logs), so a leaked roomId alone can't write.
+        authToken?.let { builder.header("Authorization", "Bearer $it") }
+        ws = http.newWebSocket(builder.build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 _status.value = Status.CONNECTED
             }

@@ -41,6 +41,10 @@ final class SyncManager: ObservableObject {
 
     private var task: URLSessionWebSocketTask?
     private var roomKey: SymmetricKey?
+    private var authToken: String?
+    /// Resolved from OPSEC settings at join time so a self-hoster's relay is
+    /// actually used; falls back to ours. Held for the reconnect path.
+    private var relayEndpoint = SyncManager.relayBase
     private var wantConnected = false
     private var roomId: String?
 
@@ -102,8 +106,14 @@ final class SyncManager: ObservableObject {
         guard !code.isEmpty else { return }
         leave()
         wantConnected = true
-        roomKey = SyncCrypto.roomKey(code)
-        roomId = SyncCrypto.roomId(code)
+        // Derive routing id + room key + writer-auth token once from the code.
+        let keys = SyncCrypto.deriveRoom(code)
+        roomKey = keys.roomKey
+        roomId = keys.roomId
+        authToken = keys.authToken
+        // Self-hosters repoint the relay in OPSEC settings; blank -> ours.
+        let configured = OpsecSettings.shared.relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        relayEndpoint = configured.isEmpty ? Self.relayBase : configured
         room = code
         connect()
         observeStores()
@@ -117,6 +127,7 @@ final class SyncManager: ObservableObject {
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         roomKey = nil
+        authToken = nil
         room = nil
         status = .offline
         versions.removeAll(); lastContent.removeAll(); kindById.removeAll()
@@ -126,9 +137,14 @@ final class SyncManager: ObservableObject {
     // MARK: Connection
 
     private func connect() {
-        guard let roomId, let url = URL(string: Self.relayBase + roomId) else { return }
+        guard let roomId, let url = URL(string: relayEndpoint + roomId) else { return }
         status = .connecting
-        let t = URLSession.shared.webSocketTask(with: url)
+        var req = URLRequest(url: url)
+        // Writer-auth: the relay 401s a socket with no bearer token. The token is
+        // derived from the join code and only rides the handshake header (never
+        // the URL or logs), so a leaked roomId alone can't write.
+        if let authToken { req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization") }
+        let t = URLSession.shared.webSocketTask(with: req)
         task = t
         t.resume()
         receive()
