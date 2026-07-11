@@ -104,6 +104,14 @@ class SyncManager(
     private var wantConnected = false
     private var observeJob: Job? = null
 
+    // Per-device Ed25519 signing identity. Seed is sealed at rest; the public
+    // key rides every presence so peers pin it (TOFU) and reject a room member
+    // impersonating an established peer. Room state (keys/ts) is cleared on leave.
+    private val deviceSeed: ByteArray by lazy { loadOrCreateDeviceSeed() }
+    private val myPublicKey: String by lazy { SyncSigning.publicKey(deviceSeed) }
+    private val peerKeys = HashMap<String, String>()   // clientId -> pinned pubkey
+    private val peerTs = HashMap<String, Long>()        // clientId -> last accepted ts
+
     private var clock: Long = 0
     private val versions = HashMap<String, Long>()        // id -> last-applied version
     private val lastContent = HashMap<String, String>()   // id -> last serialised GeoJSON (echo guard)
@@ -148,6 +156,7 @@ class SyncManager(
         _status.value = Status.OFFLINE
         _peers.value = emptyMap()
         versions.clear(); lastContent.clear(); kindById.clear()
+        peerKeys.clear(); peerTs.clear()  // re-pin fresh in the next room
     }
 
     // ----- Connection -----
@@ -354,17 +363,31 @@ class SyncManager(
         val key = roomKey ?: return
         val cfg = presenceConfig
         if (cfg.callsign.isBlank()) return
+        val ts = System.currentTimeMillis()
+        val lat = loc.latitude
+        val lon = loc.longitude
+        val heading = if (loc.hasBearing()) loc.bearing.toDouble() else 0.0
+        val speed = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0
+        // Sign the identity+position+ts with this device's Ed25519 key. The sig
+        // rides INSIDE the sealed payload (relay stays blind to it), so a room
+        // member can't forge another peer's presence and a replayed old blob is
+        // caught by the receiver's ts check.
+        val sig = SyncSigning.sign(deviceSeed, SyncSigning.presenceMessage(
+            clientId, ts, lat, lon, heading, speed,
+            cfg.callsign, cfg.affiliation.name, cfg.echelon.name, cfg.function.name, cfg.isHQ))
         val payload = JSONObject().apply {
             put("callsign", cfg.callsign)
             put("affiliation", cfg.affiliation.name)
             put("echelon", cfg.echelon.name)
             put("function", cfg.function.name)
             put("isHQ", cfg.isHQ)
-            put("lat", loc.latitude)
-            put("lon", loc.longitude)
-            put("heading", if (loc.hasBearing()) loc.bearing.toDouble() else 0.0)
-            put("speed", if (loc.hasSpeed()) loc.speed.toDouble() else 0.0)
-            put("ts", System.currentTimeMillis())
+            put("lat", lat)
+            put("lon", lon)
+            put("heading", heading)
+            put("speed", speed)
+            put("ts", ts)
+            put("pub", myPublicKey)
+            put("sig", sig)
         }
         val aad = "loc|$clientId".toByteArray(Charsets.UTF_8)
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, payload.toString().toByteArray(Charsets.UTF_8), aad))
@@ -383,20 +406,47 @@ class SyncManager(
         val aad = "loc|$peerId".toByteArray(Charsets.UTF_8)
         val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
         val obj = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
+
+        // A peer whose affiliation field is missing is UNKNOWN, never FRIEND -
+        // don't paint an unidentified contact friendly-blue.
+        val callsign = obj.optString("callsign", "")
+        val affiliation = obj.optString("affiliation", "UNKNOWN")
+        val echelon = obj.optString("echelon", "TEAM")
+        val function = obj.optString("function", "INFANTRY")
+        val isHQ = obj.optBoolean("isHQ", false)
+        val lat = obj.optDouble("lat", 0.0)
+        val lon = obj.optDouble("lon", 0.0)
+        val heading = obj.optDouble("heading", 0.0)
+        val speed = obj.optDouble("speed", 0.0)
+        val ts = obj.optLong("ts", 0L)
+
+        // Per-device auth: pin the peer's key on first sight (TOFU), then require
+        // every later presence to be signed by that same key. A room member
+        // cannot impersonate an established peer; a changed key is rejected as a
+        // possible swap; a relay replaying an old (signed) blob is caught by ts.
+        val pub = obj.optString("pub").ifEmpty { return }
+        val sig = obj.optString("sig").ifEmpty { return }
+        val pinned = peerKeys[peerId]
+        if (pinned == null) peerKeys[peerId] = pub else if (pinned != pub) return
+        val signed = SyncSigning.presenceMessage(
+            peerId, ts, lat, lon, heading, speed, callsign, affiliation, echelon, function, isHQ)
+        if (!SyncSigning.verify(pub, signed, sig)) return
+        val lastTs = peerTs[peerId]
+        if (lastTs != null && ts <= lastTs) return  // replay / rollback
+        peerTs[peerId] = ts
+
         val peer = PresencePeer(
             clientId = peerId,
-            callsign = obj.optString("callsign", ""),
-            // A peer whose affiliation field is missing is UNKNOWN, never
-            // FRIEND - don't paint an unidentified contact friendly-blue.
-            affiliation = obj.optString("affiliation", "UNKNOWN"),
-            echelon = obj.optString("echelon", "TEAM"),
-            function = obj.optString("function", "INFANTRY"),
-            isHQ = obj.optBoolean("isHQ", false),
-            lat = obj.optDouble("lat", 0.0),
-            lon = obj.optDouble("lon", 0.0),
-            heading = obj.optDouble("heading", 0.0),
-            speed = obj.optDouble("speed", 0.0),
-            ts = obj.optLong("ts", 0L)
+            callsign = callsign,
+            affiliation = affiliation,
+            echelon = echelon,
+            function = function,
+            isHQ = isHQ,
+            lat = lat,
+            lon = lon,
+            heading = heading,
+            speed = speed,
+            ts = ts
         )
         _peers.value = _peers.value + (peerId to peer)
     }
@@ -491,6 +541,26 @@ class SyncManager(
         isHQ = prefs.getBoolean("isHQ", false)
     )
 
+    /** The device's Ed25519 signing seed, sealed at rest. Generated once and
+     *  reused so this device keeps a stable identity across sessions (peers pin
+     *  it). If the seal can't be persisted (locked auth-bound key), a fresh seed
+     *  is used for this session only. */
+    private fun loadOrCreateDeviceSeed(): ByteArray {
+        prefs.getString(KEY_DEVICE_SEED, null)?.let { stored ->
+            runCatching {
+                SealedEnvelope.openFile(
+                    SafeStore.keyProvider.key(), Base64.decode(stored, Base64.NO_WRAP), DEVICE_SEED_LABEL)
+            }.getOrNull()?.takeIf { it.size == 32 }?.let { return it }
+        }
+        val seed = SyncSigning.generateSeed()
+        runCatching {
+            val sealed = Base64.encodeToString(
+                SealedEnvelope.sealFile(SafeStore.keyProvider.key(), seed, DEVICE_SEED_LABEL), Base64.NO_WRAP)
+            prefs.edit().putString(KEY_DEVICE_SEED, sealed).apply()
+        }
+        return seed
+    }
+
     companion object {
         /** Default E2E-blind relay. Self-hosters can swap in their own Worker. */
         const val RELAY_BASE = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
@@ -498,5 +568,8 @@ class SyncManager(
         private const val KEY_PRESENCE = "config_sealed"
         /** AEAD label binding that blob so it can't be opened as another pref. */
         private const val PRESENCE_LABEL = "sync/presenceConfig"
+        /** Sealed per-device Ed25519 signing seed + its AEAD label. */
+        private const val KEY_DEVICE_SEED = "device_seed"
+        private const val DEVICE_SEED_LABEL = "sync/deviceSeed"
     }
 }

@@ -51,6 +51,24 @@ object SyncSigning {
         false
     }
 
+    /**
+     * Canonical, serialization-independent bytes that a presence signature
+     * covers. Fields are joined by U+001F (unit separator) so they can't run
+     * together ambiguously; coordinates use fixed %.6f (US locale) so both
+     * platforms - and sender vs receiver - build byte-identical input from the
+     * same values. iOS [SyncSigning.presenceMessage] must match exactly.
+     */
+    fun presenceMessage(
+        clientId: String, ts: Long, lat: Double, lon: Double, heading: Double, speed: Double,
+        callsign: String, affiliation: String, echelon: String, function: String, isHQ: Boolean
+    ): ByteArray {
+        fun f(x: Double) = String.format(java.util.Locale.US, "%.6f", x)
+        return listOf(
+            clientId, ts.toString(), f(lat), f(lon), f(heading), f(speed),
+            callsign, affiliation, echelon, function, if (isHQ) "1" else "0"
+        ).joinToString("\u001F").toByteArray(Charsets.UTF_8)
+    }
+
     private fun urlB64(bytes: ByteArray): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 

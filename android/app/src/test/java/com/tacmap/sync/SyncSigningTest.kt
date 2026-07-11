@@ -26,6 +26,21 @@ class SyncSigningTest {
     }
 
     @Test
+    fun presenceMessageIsPinnedForCrossPlatform() {
+        // The exact bytes a presence signature covers. iOS SyncSigningTests pins
+        // the identical hex - fixed %.6f + U+001F join means an Android-signed
+        // presence verifies on iOS and vice-versa.
+        val msg = SyncSigning.presenceMessage(
+            "dev-1", 1_700_000_000_000L, 37.8065, -122.4103, 90.0, 1.5,
+            "ALPHA-1", "FRIEND", "TEAM", "INFANTRY", true)
+        assertEquals(
+            "6465762d311f313730303030303030303030301f33372e3830363530301f2d3132322e343130" +
+                "3330301f39302e3030303030301f312e3530303030301f414c5048412d311f465249454e44" +
+                "1f5445414d1f494e46414e5452591f31",
+            msg.joinToString("") { "%02x".format(it) })
+    }
+
+    @Test
     fun rejectsTamperedMessageWrongKeyAndGarbage() {
         val seed2 = SyncSigning.generateSeed()
         val msg = "grid 1234 5678".toByteArray()
