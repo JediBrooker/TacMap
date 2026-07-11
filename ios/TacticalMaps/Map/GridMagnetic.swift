@@ -9,9 +9,10 @@ import Foundation
 ///  - convergence (true -> grid) = atan(tan(lon - centralMeridian) * sin(lat)),
 ///    the small rotation between true north and the UTM grid's north.
 enum GridMagnetic {
-    /// Preformatted like "G-M 13.4°E" / "G-M 2.1°W", or nil when there's no
-    /// coordinate to compute for.
-    static func label(latitude: Double?, longitude: Double?, altitudeMeters: Double = 0) -> String? {
+    /// Raw grid-magnetic angle in degrees (+E / -W), or nil when there's no
+    /// coordinate to compute for. Feed it to `label(degrees:mils:)` for the
+    /// banner text.
+    static func angle(latitude: Double?, longitude: Double?, altitudeMeters: Double = 0) -> Double? {
         guard let lat = latitude, let lon = longitude else { return nil }
         let declination = GeoMagnetism.declinationDegrees(
             latitude: lat, longitude: lon, altitudeMeters: altitudeMeters)
@@ -21,7 +22,19 @@ enum GridMagnetic {
         let convergence = atan(tan((lon - centralMeridian) * .pi / 180.0)
                                * sin(lat * .pi / 180.0)) * 180.0 / .pi
 
-        let gm = declination - convergence
-        return String(format: "G-M %.1f°%@", abs(gm), gm >= 0 ? "E" : "W")
+        return declination - convergence
+    }
+
+    /// Banner text for a G-M angle. Mils by default (NATO 6400/circle - what a
+    /// compass dial and a fire mission actually read); tapping the banner flips
+    /// it to degrees. e.g. "G-M 222 mils E" / "G-M 12.5°W".
+    static func label(degrees: Double, mils: Bool) -> String {
+        let dir = degrees >= 0 ? "E" : "W"
+        if mils {
+            let m = Int((abs(degrees) * 6400.0 / 360.0).rounded())
+            return "G-M \(m) mils \(dir)"
+        } else {
+            return String(format: "G-M %.1f°%@", abs(degrees), dir)
+        }
     }
 }

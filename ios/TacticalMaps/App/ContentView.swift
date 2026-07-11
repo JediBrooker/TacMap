@@ -434,7 +434,7 @@ struct ContentView: View {
                 syncConnected: syncManager.status == .connected,
                 basemapLabel: basemapLabel,
                 basemapColor: basemapColor,
-                gridMagnetic: GridMagnetic.label(
+                gridMagneticDegrees: GridMagnetic.angle(
                     latitude: headerCoordinate?.latitude,
                     longitude: headerCoordinate?.longitude),
                 elevation: mapVM.centreElevation ?? locationService.lastAltitude,

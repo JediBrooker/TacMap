@@ -19,9 +19,9 @@ struct MGRSHeaderView: View {
     /// (green) when an imported pack/PDF is active, nil when neither.
     var basemapLabel: String? = nil
     var basemapColor: Color = .clear
-    /// Grid-magnetic angle for compass work, preformatted e.g. "G-M 13.4°E".
-    /// Replaces the old accuracy readout in the bottom-right. nil hides it.
-    var gridMagnetic: String? = nil
+    /// Grid-magnetic angle for compass work, raw degrees (+E / -W). Shown
+    /// bottom-right in mils by default; tap it to flip to degrees. nil hides it.
+    var gridMagneticDegrees: Double? = nil
     let elevation: CLLocationDistance?
     /// True when elevation is approximate (offline cache). Shown with
     /// leading "~". Defaults false (fresh/live reading).
@@ -32,6 +32,9 @@ struct MGRSHeaderView: View {
     var onDropPin: ((CLLocationCoordinate2D, String) -> Void)? = nil
 
     @State private var showCopiedToast: Bool = false
+    /// Grid-magnetic units. Mils by default (military standard); tapping the
+    /// G-M readout flips it to degrees. Persisted across launches.
+    @AppStorage("gridMagneticMils") private var gridMagneticMils = true
 
     var body: some View {
         VStack(spacing: 3) {
@@ -91,11 +94,17 @@ struct MGRSHeaderView: View {
                     Spacer()
                 }
                 // Grid-magnetic angle (compass correction off the grid) replaces
-                // the old accuracy readout here.
-                if let gridMagnetic {
-                    Text(gridMagnetic)
+                // the old accuracy readout here. Mils by default; tap to flip to
+                // degrees (tap is scoped to this text so it doesn't copy MGRS).
+                if let gridMagneticDegrees {
+                    Text(GridMagnetic.label(degrees: gridMagneticDegrees, mils: gridMagneticMils))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.white.opacity(0.75))
+                        // Enlarge the tap target a little, and use a high-priority
+                        // gesture so this wins over the card's tap-to-copy-MGRS.
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(TapGesture().onEnded { gridMagneticMils.toggle() })
                 }
             }
             .padding(.top, 1)
@@ -150,7 +159,7 @@ struct MGRSHeaderView: View {
     MGRSHeaderView(
         mgrs: "10SEG 51117 80976",
         wgs84: "37.77470° N, 122.41956° W",
-        gridMagnetic: "G-M 13.4°E",
+        gridMagneticDegrees: 13.4,
         elevation: 1856
     )
     .padding()
