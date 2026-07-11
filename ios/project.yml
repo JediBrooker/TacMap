@@ -59,6 +59,7 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        NSFaceIDUsageDescription: "Face ID unlocks TacMap's locally encrypted mission data and optional app lock."
         NSLocationWhenInUseUsageDescription: TacMap shows your live position on the map, reads it as an MGRS grid reference, and records GPX patrol tracks.
         # Background location is declared for GPX track recording — the
         # persistent-location feature guideline 2.5.4 requires before
