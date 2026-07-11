@@ -546,6 +546,7 @@ fun MapScreen(
                     draftPoints = emptyList()
                 },
                 calibrationInputEnabled = isCalibratingPdf,
+                calibrationFiduciaries = if (isCalibratingPdf) calibrationFiduciaries else emptyList(),
                 mgrsGridVisible = mgrsGridVisible,
                 terrainHeatmapVisible = terrainHeatmapVisible,
                 unitLabelsVisible = unitLabelsVisible,

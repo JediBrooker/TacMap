@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.tacmap.calibration.Calibration
+import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.mgrs.MgrsGridRenderer
@@ -325,6 +326,57 @@ fun UserLocationCanvas(
         }
         drawCircle(Color.White, 9f * density, c)
         drawCircle(Color(0xFF1E88E5), 6.5f * density, c)
+    }
+}
+
+/**
+ * Numbered orange pins for the PDF-calibration fiduciaries on the SDK-free
+ * renderer. Each fiducial's geographic position (the grid the user typed for a
+ * PDF point) projects to screen and the pin's tail tip sits on that point, so
+ * you can see where you've placed each correspondence while calibrating.
+ * Tactical orange to pop against satellite and PDF basemaps. Replaces the old
+ * native CalibrationFiduciaryMarker.
+ */
+@Composable
+fun CalibrationFiduciariesLayer(
+    fiduciaries: List<Fiduciary>,
+    camera: MapCamera, density: Float, modifier: Modifier = Modifier
+) {
+    if (fiduciaries.isEmpty()) return
+    val proj = remember(camera, density) { MapProjection(camera, density) }
+    Canvas(modifier.fillMaxSize()) {
+        val nc = drawContext.canvas.nativeCanvas
+        val disc = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFA63D.toInt() }
+        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFFFFF.toInt()
+            style = Paint.Style.STROKE
+            strokeWidth = 2f * density
+        }
+        val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF1A1A1A.toInt()
+            textAlign = Paint.Align.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textSize = 13f * density
+        }
+        val r = 13f * density
+        val tail = 9f * density
+        fiduciaries.forEachIndexed { i, fid ->
+            val p = proj.toScreen(fid.latitude, fid.longitude)
+            val cx = p.x
+            // disc centre sits above the point so the tail tip lands on it
+            val cy = p.y - tail - r
+            val path = android.graphics.Path().apply {
+                moveTo(cx - 5f * density, cy + r - 1f)
+                lineTo(cx + 5f * density, cy + r - 1f)
+                lineTo(cx, p.y)
+                close()
+            }
+            nc.drawPath(path, disc)
+            nc.drawCircle(cx, cy, r, disc)
+            nc.drawCircle(cx, cy, r, ring)
+            val fm = label.fontMetrics
+            nc.drawText("${i + 1}", cx, cy - (fm.ascent + fm.descent) / 2f, label)
+        }
     }
 }
 

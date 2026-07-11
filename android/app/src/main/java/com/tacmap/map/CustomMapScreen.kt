@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
@@ -39,6 +40,7 @@ import com.tacmap.map.render.MapCamera
 import com.tacmap.map.render.MapProjection
 import com.tacmap.map.render.MgrsGridCanvas
 import com.tacmap.map.render.OnlineRasterTileSource
+import com.tacmap.map.render.CalibrationFiduciariesLayer
 import com.tacmap.map.render.PdfGroundLayer
 import com.tacmap.map.render.PresenceLayer
 import com.tacmap.map.render.TileMapView
@@ -73,6 +75,7 @@ fun CustomMapScreen(
     onFreeDrawPoint: (lat: Double, lng: Double) -> Unit = { _, _ -> },
     onFreeDrawEnd: () -> Unit = {},
     calibrationInputEnabled: Boolean = false,
+    calibrationFiduciaries: List<Fiduciary> = emptyList(),
     mgrsGridVisible: Boolean = false,
     terrainHeatmapVisible: Boolean = false,
     unitLabelsVisible: Boolean = true,
@@ -175,6 +178,9 @@ fun CustomMapScreen(
         if (userLocationVisible) {
             UserLocationCanvas(myLat, myLon, myAccuracyMetres, camera, density)
         }
+
+        // Calibration fiducial pins (only while calibrating a PDF).
+        CalibrationFiduciariesLayer(calibrationFiduciaries, camera, density)
 
         // Labels above the symbols.
         WaypointLabelsLayer(visibleWaypoints, camera, density, unitLabelsVisible, taskLabelsVisible)

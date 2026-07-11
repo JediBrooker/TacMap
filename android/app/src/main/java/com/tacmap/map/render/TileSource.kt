@@ -38,14 +38,25 @@ class OnlineRasterTileSource(private val style: BasemapStyle) : TileSource {
     override val maxZoom = style.maxZoom
     override val tileSizePx = style.tileSize
 
-    override suspend fun loadTile(tile: TileIndex): Bitmap? = withContext(Dispatchers.IO) {
-        if (tile.z > style.maxZoom) return@withContext null
-        if (style.requiresEsriKey && !EsriKey.isAvailable) return@withContext null
+    /**
+     * The HTTPS URL for one tile, or null if we must not fetch it: past the
+     * style's max zoom, or a keyed style with no ArcGIS key configured (we refuse
+     * rather than hot-link the unauthenticated endpoint). Pure + no network, so
+     * the basemap wiring is unit-testable (RasterTileSourceTest).
+     */
+    fun tileUrl(tile: TileIndex): String? {
+        if (tile.z > style.maxZoom) return null
+        if (style.requiresEsriKey && !EsriKey.isAvailable) return null
         var url = style.urlTemplate
             .replace("{z}", tile.z.toString())
             .replace("{x}", tile.x.toString())
             .replace("{y}", tile.y.toString())
         if (style.requiresEsriKey) url += "?token=${EsriKey.token}"
+        return url
+    }
+
+    override suspend fun loadTile(tile: TileIndex): Bitmap? = withContext(Dispatchers.IO) {
+        val url = tileUrl(tile) ?: return@withContext null
         try {
             client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext null
