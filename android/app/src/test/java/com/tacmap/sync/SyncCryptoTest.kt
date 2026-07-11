@@ -35,6 +35,23 @@ class SyncCryptoTest {
     }
 
     @Test
+    fun derivationIsPinnedForCrossPlatformInterop() {
+        // Byte-pinned so Android and iOS PROVABLY derive the same room from the
+        // same join code (the threat model's "both platforms interoperate on the
+        // same join code" claim, which was otherwise untested). The iOS
+        // SyncCryptoTests pin the identical values. Reference: PBKDF2-HMAC-SHA256
+        // 210k over "tacmap-sync-salt-v2", HMAC-SHA256 subkeys, base64url no-pad.
+        // If you rev the KDF/salt, regenerate on ONE impl and update BOTH here.
+        val keys = SyncCrypto.deriveRoom("alpha-bravo-charlie")
+        assertEquals("rw6A3NDGVQLSoee4dXFKgBcEJDW5Vlo--Mvvymguc0k", keys.roomId)
+        assertEquals("KMnOnROo3p8dpbSRyU38w56daHTftk6NN3F6ApgXv7c", keys.authToken)
+        assertEquals(
+            "bf0fc618150a534d2dceaba7f956ecc8db0e389e58f1ec87b3e62305ec15b742",
+            keys.roomKey.joinToString("") { "%02x".format(it) }
+        )
+    }
+
+    @Test
     fun sealOpenRoundTrips() {
         val key = SyncCrypto.roomKey("unit-7-key")
         val plaintext = """{"id":"abc","name":"OP North"}""".toByteArray(Charsets.UTF_8)
