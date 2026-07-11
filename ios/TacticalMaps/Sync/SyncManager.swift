@@ -410,11 +410,11 @@ final class SyncManager: ObservableObject {
             actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
             objectId: wireObjectId, kind: kind, payloadHash: payloadHash)
         guard let sig = SyncSigning.sign(deviceSeed, preimage) else { return }
-        let inner: [String: Any] = ["c": content, "pub": myPublicKey, "sig": sig]
+        let inner: [String: Any] = ["c": content, "sig": sig]
         guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
               let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aadV3(wireObjectId: wireObjectId, vs: vs, kind: kind)) else { return }
         send(["t": "put", "id": wireObjectId, "vs": vs, "by": actorId, "kind": kind,
-              "ct": sealed.base64EncodedString()])
+              "ct": sealed.base64EncodedString(), "pub": myPublicKey])
         rs.save()
     }
 
@@ -428,14 +428,20 @@ final class SyncManager: ObservableObject {
         let preimage = SyncIdentity.buildPreimage(
             domain: SyncIdentity.domainDelete, roomIdRaw: keys.roomIdRaw,
             actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
-            objectId: wireObjectId, kind: kind, payloadHash: payloadHash)
+            objectId: wireObjectId, kind: "del", payloadHash: payloadHash)
         guard let sig = SyncSigning.sign(deviceSeed, preimage) else { return }
-        let inner: [String: Any] = ["pub": myPublicKey, "sig": sig]
+        let inner: [String: Any] = ["sig": sig]
         guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
               let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aadV3(wireObjectId: wireObjectId, vs: vs, kind: "del")) else { return }
-        send(["t": "del", "id": wireObjectId, "vs": vs, "by": actorId, "kind": kind,
-              "ct": sealed.base64EncodedString()])
+        send(["t": "del", "id": wireObjectId, "vs": vs, "by": actorId, "kind": "del",
+              "ct": sealed.base64EncodedString(), "pub": myPublicKey])
         rs.save()
+    }
+
+    private func sendHelloV3() {
+        guard let actorId = myActorId, let sd = sessionDomain else { return }
+        send(["t": "hello", "by": actorId, "pub": myPublicKey,
+              "sd": SyncIdentity.urlB64Encode(sd)])
     }
 
     private func sendPresenceV3() {
@@ -453,25 +459,46 @@ final class SyncManager: ObservableObject {
         let counterHex = VersionStamp.counterHex16(counter)
         let vs = VersionStamp(counter: counter, actorId: actorId).encode()
 
-        let payload: [String: Any] = [
-            "callsign": cfg.callsign, "affiliation": cfg.affiliation,
-            "echelon": cfg.echelon, "function": cfg.function, "isHQ": cfg.isHQ,
-            "lat": lat, "lon": lon, "heading": heading, "speed": speed,
-            "pub": myPublicKey
-        ]
-        guard let payloadData = try? JSONSerialization.data(withJSONObject: payload, options: .sortedKeys) else { return }
-        let payloadHash = SyncIdentity.sha256(payloadData)
+        // canonical payload WITHOUT pub (matches Android's buildPresencePayloadBytes)
+        let payload = buildPresencePayloadBytes(
+            lat: lat, lon: lon, heading: heading, speed: speed,
+            callsign: cfg.callsign, affiliation: cfg.affiliation,
+            echelon: cfg.echelon, function: cfg.function, isHQ: cfg.isHQ)
+        guard let payload else { return }
+        let payloadHash = SyncIdentity.sha256(payload)
         let preimage = SyncIdentity.buildPreimage(
             domain: SyncIdentity.domainPresence, roomIdRaw: keys.roomIdRaw,
             actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
-            objectId: actorId, kind: "presence", payloadHash: payloadHash)
+            objectId: "", kind: "loc", payloadHash: payloadHash)
         guard let sig = SyncSigning.sign(deviceSeed, preimage) else { return }
-        var signedPayload = payload
-        signedPayload["sig"] = sig
-        guard let signedData = try? JSONSerialization.data(withJSONObject: signedPayload),
-              let sealed = SyncCrypto.seal(key, signedData, aad: SyncCrypto.aadPresenceV3(actorId: actorId, vs: vs)) else { return }
-        send(["t": "loc", "actorId": actorId, "vs": vs, "ct": sealed.base64EncodedString()])
+        // sealed payload includes all fields + sig + pub
+        let sealedDict: [String: Any] = [
+            "lat": lat, "lon": lon, "heading": heading, "speed": speed,
+            "callsign": cfg.callsign, "affiliation": cfg.affiliation,
+            "echelon": cfg.echelon, "function": cfg.function, "isHQ": cfg.isHQ,
+            "pub": myPublicKey, "sig": sig
+        ]
+        guard let sealedData = try? JSONSerialization.data(withJSONObject: sealedDict),
+              let sealed = SyncCrypto.seal(key, sealedData, aad: SyncCrypto.aadPresenceV3(actorId: actorId, vs: vs)) else { return }
+        send(["t": "loc", "by": actorId, "ct": sealed.base64EncodedString(),
+              "pub": myPublicKey, "vs": vs])
         rs.save()
+    }
+
+    /// Canonical presence payload bytes for hashing (matches Android's buildPresencePayloadBytes).
+    /// Key order: lat, lon, heading, speed, callsign, affiliation, echelon, function, isHQ.
+    /// NO pub field — pub rides outside in the wire message.
+    private func buildPresencePayloadBytes(
+        lat: Double, lon: Double, heading: Double, speed: Double,
+        callsign: String, affiliation: String, echelon: String,
+        function: String, isHQ: Bool
+    ) -> Data? {
+        let canonical: [String: Any] = [
+            "lat": lat, "lon": lon, "heading": heading, "speed": speed,
+            "callsign": callsign, "affiliation": affiliation,
+            "echelon": echelon, "function": function, "isHQ": isHQ
+        ]
+        return try? JSONSerialization.data(withJSONObject: canonical, options: .sortedKeys)
     }
 
     // MARK: - Presence broadcasting
@@ -784,6 +811,11 @@ final class SyncManager: ObservableObject {
 
     private func handleParsedMessageV3(_ obj: [String: Any]) {
         switch obj["t"] as? String {
+        case "snapshot-begin":
+            let seq = (obj["seq"] as? NSNumber)?.int64Value ?? -1
+            if let rs = replayState, rs.lastSnapshotSeq >= 0, seq < rs.lastSnapshotSeq {
+                // relay is serving stale state -- still apply but we noticed
+            }
         case "snapshot":
             let items = obj["items"] as? [[String: Any]] ?? []
             guard items.count <= Self.maxSnapshotItems else { return }
@@ -791,11 +823,13 @@ final class SyncManager: ObservableObject {
                 if (item["deleted"] as? Bool) == true { applyDeleteV3(item) }
                 else { applyRecordV3(item) }
             }
-            if let members = obj["members"] as? [[String: Any]] {
-                for member in members.prefix(Self.maxSnapshotItems) {
-                    applyPresenceV3(member)
-                }
-            }
+        case "snapshot-end":
+            let seq = (obj["seq"] as? NSNumber)?.int64Value ?? -1
+            if seq >= 0 { replayState?.updateSnapshotSeq(seq) }
+            replayState?.save()
+            sendHelloV3()
+        case "hello":
+            applyHelloV3(obj)
         case "put":
             applyRecordV3(obj)
         case "del":
@@ -803,12 +837,23 @@ final class SyncManager: ObservableObject {
         case "loc":
             applyPresenceV3(obj)
         case "leave":
-            if let aid = obj["actorId"] as? String {
+            if let aid = obj["by"] as? String {
                 peers.removeValue(forKey: aid)
             }
         default:
             break
         }
+    }
+
+    private func applyHelloV3(_ obj: [String: Any]) {
+        guard let by = obj["by"] as? String, !by.isEmpty,
+              let pub = obj["pub"] as? String, !pub.isEmpty,
+              let sd = obj["sd"] as? String, !sd.isEmpty,
+              by != myActorId,
+              let rs = replayState else { return }
+        guard rs.registerActor(by, pubkey: pub) else { return }
+        rs.updateSessionDomain(by, sd: sd)
+        rs.save()
     }
 
     private func applyRecordV3(_ rec: [String: Any]) {
@@ -817,8 +862,11 @@ final class SyncManager: ObservableObject {
               let stamp = VersionStamp.parse(vsStr),
               let rs = replayState else { return }
         let by = rec["by"] as? String ?? ""
+        let pub = rec["pub"] as? String ?? ""
+        if by == myActorId { return }
         let recKind = rec["kind"] as? String ?? "unknown"
         guard rs.advance(wireId, stamp) else { return }
+        guard !pub.isEmpty, rs.registerActor(by, pubkey: pub) else { return }
         guard let key = roomKey,
               let ctB64 = rec["ct"] as? String,
               ctB64.utf8.count <= Self.maxBase64Bytes,
@@ -826,12 +874,12 @@ final class SyncManager: ObservableObject {
               let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aadV3(wireObjectId: wireId, vs: vsStr, kind: recKind)),
               let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
         let content = inner["c"] as? String ?? ""
-        guard let pub = inner["pub"] as? String, !pub.isEmpty,
-              let sig = inner["sig"] as? String, !sig.isEmpty else { return }
-        if !rs.registerActor(by, pubkey: pub) { return }
+        guard let sig = inner["sig"] as? String, !sig.isEmpty else { return }
         guard let contentData = content.data(using: .utf8) else { return }
         let payloadHash = SyncIdentity.sha256(contentData)
-        guard let keys = v3Keys, let sd = rs.getSessionDomain(by).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain else { return }
+        guard let keys = v3Keys else { return }
+        let sd = rs.getSessionDomain(by).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain
+        guard let sd else { return }
         let preimage = SyncIdentity.buildPreimage(
             domain: SyncIdentity.domainPut, roomIdRaw: keys.roomIdRaw,
             actorId: by, sessionDomain: sd, counterHex16: VersionStamp.counterHex16(stamp.counter),
@@ -863,23 +911,24 @@ final class SyncManager: ObservableObject {
               let stamp = VersionStamp.parse(vsStr),
               let rs = replayState else { return }
         let by = rec["by"] as? String ?? ""
-        let recKind = rec["kind"] as? String ?? "unknown"
+        let pub = rec["pub"] as? String ?? ""
         guard rs.tombstone(wireId, stamp) else { return }
+        guard !pub.isEmpty, rs.registerActor(by, pubkey: pub) else { return }
         guard let key = roomKey,
               let ctB64 = rec["ct"] as? String,
               ctB64.utf8.count <= Self.maxBase64Bytes,
               let blob = Data(base64Encoded: ctB64),
               let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aadV3(wireObjectId: wireId, vs: vsStr, kind: "del")),
               let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
-        guard let pub = inner["pub"] as? String, !pub.isEmpty,
-              let sig = inner["sig"] as? String, !sig.isEmpty else { return }
-        if !rs.registerActor(by, pubkey: pub) { return }
+        guard let sig = inner["sig"] as? String, !sig.isEmpty else { return }
         let payloadHash = SyncIdentity.sha256(Data())
-        guard let keys = v3Keys, let sd = rs.getSessionDomain(by).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain else { return }
+        guard let keys = v3Keys else { return }
+        let sd = rs.getSessionDomain(by).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain
+        guard let sd else { return }
         let preimage = SyncIdentity.buildPreimage(
             domain: SyncIdentity.domainDelete, roomIdRaw: keys.roomIdRaw,
             actorId: by, sessionDomain: sd, counterHex16: VersionStamp.counterHex16(stamp.counter),
-            objectId: wireId, kind: recKind, payloadHash: payloadHash)
+            objectId: wireId, kind: "del", payloadHash: payloadHash)
         guard SyncSigning.verify(pub, preimage, sig) else { return }
 
         if let localId = findLocalIdForWireId(wireId) {
@@ -896,11 +945,13 @@ final class SyncManager: ObservableObject {
     }
 
     private func applyPresenceV3(_ obj: [String: Any]) {
-        guard let actorId = obj["actorId"] as? String, !actorId.isEmpty,
+        guard let actorId = obj["by"] as? String, !actorId.isEmpty,
               actorId != myActorId else { return }
+        guard let pub = obj["pub"] as? String, !pub.isEmpty else { return }
         guard let vsStr = obj["vs"] as? String,
               let stamp = VersionStamp.parse(vsStr),
               let rs = replayState else { return }
+        guard rs.registerActor(actorId, pubkey: pub) else { return }
         guard rs.advancePresence(actorId, counter: stamp.counter) else { return }
         guard let key = roomKey,
               let ctB64 = obj["ct"] as? String,
@@ -909,21 +960,7 @@ final class SyncManager: ObservableObject {
               let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aadPresenceV3(actorId: actorId, vs: vsStr)),
               let p = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
 
-        guard let pub = p["pub"] as? String, !pub.isEmpty,
-              let sig = p["sig"] as? String, !sig.isEmpty else { return }
-        if !rs.registerActor(actorId, pubkey: pub) { return }
-
-        // rebuild payload without sig for hash verification
-        var payloadForHash: [String: Any] = p
-        payloadForHash.removeValue(forKey: "sig")
-        guard let payloadData = try? JSONSerialization.data(withJSONObject: payloadForHash, options: .sortedKeys),
-              let keys = v3Keys, let sd = rs.getSessionDomain(actorId).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain else { return }
-        let payloadHash = SyncIdentity.sha256(payloadData)
-        let preimage = SyncIdentity.buildPreimage(
-            domain: SyncIdentity.domainPresence, roomIdRaw: keys.roomIdRaw,
-            actorId: actorId, sessionDomain: sd, counterHex16: VersionStamp.counterHex16(stamp.counter),
-            objectId: actorId, kind: "presence", payloadHash: payloadHash)
-        guard SyncSigning.verify(pub, preimage, sig) else { return }
+        guard let sig = p["sig"] as? String, !sig.isEmpty else { return }
 
         let callsign = p["callsign"] as? String ?? ""
         let affiliation = p["affiliation"] as? String ?? "unknown"
@@ -934,6 +971,23 @@ final class SyncManager: ObservableObject {
               let lon = strictDouble(p["lon"]) else { return }
         let heading = strictDouble(p["heading"]) ?? 0
         let speed = strictDouble(p["speed"]) ?? 0
+
+        // rebuild canonical payload (without pub/sig) for hash
+        let payloadBytes = buildPresencePayloadBytes(
+            lat: lat, lon: lon, heading: heading, speed: speed,
+            callsign: callsign, affiliation: affiliation,
+            echelon: echelon, function: function, isHQ: isHQ)
+        guard let payloadBytes else { return }
+        guard let keys = v3Keys else { return }
+        let sd = rs.getSessionDomain(actorId).flatMap({ SyncIdentity.urlB64Decode($0) }) ?? sessionDomain
+        guard let sd else { return }
+        let payloadHash = SyncIdentity.sha256(payloadBytes)
+        let preimage = SyncIdentity.buildPreimage(
+            domain: SyncIdentity.domainPresence, roomIdRaw: keys.roomIdRaw,
+            actorId: actorId, sessionDomain: sd, counterHex16: VersionStamp.counterHex16(stamp.counter),
+            objectId: "", kind: "loc", payloadHash: payloadHash)
+        guard SyncSigning.verify(pub, preimage, sig) else { return }
+        rs.save()
 
         peers[actorId] = PresencePeer(
             clientId: actorId,

@@ -97,32 +97,37 @@ final class SyncReplayState {
         return max
     }
 
-    // -- Persistence --
+    // -- Persistence (sealed at rest via SafeStore) --
+
+    private var storeLabel: String { "sync/room/\(roomId)" }
+
+    private func serialize() -> Data? {
+        var dict: [String: Any] = [
+            "schemaVersion": 3,
+            "localCounter": VersionStamp.counterHex16(localCounter),
+            "lastSnapshotSeq": lastSnapshotSeq
+        ]
+        dict["stamps"] = stamps.mapValues { $0.encode() }
+        dict["tombstones"] = tombstones.mapValues { $0.encode() }
+        dict["contentHashes"] = contentHashes
+        dict["actors"] = actors
+        dict["presenceSeq"] = presenceSeq.mapValues { VersionStamp.counterHex16($0) }
+        dict["sessionDomains"] = sessionDomains
+        return try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
+    }
 
     func save() {
-        guard let url = fileURL else { return }
-        do {
-            var dict: [String: Any] = [
-                "schemaVersion": 3,
-                "localCounter": VersionStamp.counterHex16(localCounter),
-                "lastSnapshotSeq": lastSnapshotSeq
-            ]
-            dict["stamps"] = stamps.mapValues { $0.encode() }
-            dict["tombstones"] = tombstones.mapValues { $0.encode() }
-            dict["contentHashes"] = contentHashes
-            dict["actors"] = actors
-            dict["presenceSeq"] = presenceSeq.mapValues { VersionStamp.counterHex16($0) }
-            dict["sessionDomains"] = sessionDomains
-            let data = try JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
-            try data.write(to: url, options: .atomic)
-        } catch { }
+        guard let url = fileURL, let data = serialize() else { return }
+        try? SafeStore.write(data, to: url, label: storeLabel)
     }
 
     @discardableResult
     func load() -> Bool {
-        guard let url = fileURL,
-              let data = try? Data(contentsOf: url),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let url = fileURL else { return false }
+        let result = SafeStore.read(url, label: storeLabel) { data -> [String: Any]? in
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        }
+        guard case .loaded(let dict?) = result,
               dict["schemaVersion"] as? Int == 3 else { return false }
 
         if let lc = dict["localCounter"] as? String {

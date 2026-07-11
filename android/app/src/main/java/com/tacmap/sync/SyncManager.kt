@@ -725,17 +725,17 @@ class SyncManager(
     }
 
     private fun buildPresencePayloadBytes(obj: JSONObject): ByteArray {
-        // canonical JSON matching what the sender produces for hashing
+        // canonical JSON -- keys alphabetical to match iOS JSONSerialization(.sortedKeys)
         val canonical = JSONObject()
-        canonical.put("lat", obj.optDouble("lat", 0.0))
-        canonical.put("lon", obj.optDouble("lon", 0.0))
-        canonical.put("heading", obj.optDouble("heading", 0.0))
-        canonical.put("speed", obj.optDouble("speed", 0.0))
-        canonical.put("callsign", obj.optString("callsign", ""))
         canonical.put("affiliation", obj.optString("affiliation", "UNKNOWN"))
+        canonical.put("callsign", obj.optString("callsign", ""))
         canonical.put("echelon", obj.optString("echelon", "TEAM"))
         canonical.put("function", obj.optString("function", "INFANTRY"))
+        canonical.put("heading", obj.optDouble("heading", 0.0))
         canonical.put("isHQ", obj.optBoolean("isHQ", false))
+        canonical.put("lat", obj.optDouble("lat", 0.0))
+        canonical.put("lon", obj.optDouble("lon", 0.0))
+        canonical.put("speed", obj.optDouble("speed", 0.0))
         return canonical.toString().toByteArray(Charsets.UTF_8)
     }
 
@@ -860,17 +860,18 @@ class SyncManager(
         val counter = replay.nextCounter()
         val vs = VersionStamp(counter, actor)
         replay.save()
-        // canonical presence payload (key order matters for hash)
+        // canonical presence payload -- keys MUST be alphabetical so the hash
+        // matches iOS's JSONSerialization(.sortedKeys) byte-for-byte
         val payload = JSONObject()
-        payload.put("lat", lat)
-        payload.put("lon", lon)
-        payload.put("heading", heading)
-        payload.put("speed", speed)
-        payload.put("callsign", cfg.callsign)
         payload.put("affiliation", cfg.affiliation.name)
+        payload.put("callsign", cfg.callsign)
         payload.put("echelon", cfg.echelon.name)
         payload.put("function", cfg.function.name)
+        payload.put("heading", heading)
         payload.put("isHQ", cfg.isHQ)
+        payload.put("lat", lat)
+        payload.put("lon", lon)
+        payload.put("speed", speed)
         val payloadHash = SyncIdentity.sha256(payload.toString().toByteArray(Charsets.UTF_8))
         val preimage = SyncIdentity.buildPreimage(
             SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, actor, sd,

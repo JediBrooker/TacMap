@@ -141,14 +141,14 @@ enum SyncCrypto {
         Data("\(id)|\(v)|\(kind)".utf8)
     }
 
-    /// v3 AEAD AAD for object puts/deletes.
+    /// v3 AEAD AAD for object puts/deletes: wireObjectId:vs:kind
     static func aadV3(wireObjectId: String, vs: String, kind: String) -> Data {
-        Data("\(wireObjectId)|\(vs)|\(kind)".utf8)
+        Data("\(wireObjectId):\(vs):\(kind)".utf8)
     }
 
-    /// v3 AEAD AAD for presence messages.
+    /// v3 AEAD AAD for presence: loc:actorId:vs
     static func aadPresenceV3(actorId: String, vs: String) -> Data {
-        Data("\(actorId)|\(vs)|presence".utf8)
+        Data("loc:\(actorId):\(vs)".utf8)
     }
 
     /// Seal plaintext into nonce+ct+tag, authenticating [aad]. nil on failure.
