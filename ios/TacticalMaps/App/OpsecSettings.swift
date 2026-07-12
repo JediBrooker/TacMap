@@ -17,7 +17,10 @@ final class OpsecSettings: ObservableObject {
     @Published var onlineBasemaps: Bool { didSet { defaults.set(onlineBasemaps, forKey: Keys.basemaps) } }
     @Published var relayURL: String { didSet { defaults.set(relayURL, forKey: Keys.relay) } }
 
-    static let defaultRelay = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
+    // Host only, no "/room/" - SyncManager appends the full "/room/<id>" path
+    // itself. (Matches SyncManager.relayBase; a trailing "/room/" here would
+    // double up the path and the relay would 404 the socket.)
+    static let defaultRelay = "wss://tacmap-sync.christianbrooker.workers.dev"
 
     private let defaults = UserDefaults.standard
 

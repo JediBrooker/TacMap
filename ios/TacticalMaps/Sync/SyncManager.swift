@@ -237,8 +237,17 @@ final class SyncManager: ObservableObject {
 
     private func connect() {
         guard let roomId else { return }
+        // Normalize the base before appending the room path. OpsecSettings'
+        // default relay (and older persisted self-host URLs) end in "/room/", but
+        // we append the full "/room/<id>" here - without stripping it we'd request
+        // "…/room//room/<id>", which the relay's strict ^/room/<id>$ route 404s and
+        // the socket never connects. Strip a trailing "/room/" and/or slash so the
+        // path is single regardless of how the base was entered.
+        var base = relayEndpoint
+        if base.hasSuffix("/room/") { base = String(base.dropLast(6)) }
+        while base.hasSuffix("/") { base = String(base.dropLast()) }
         let path = protocolVersion == 3 ? "/v3/room/\(roomId)" : "/room/\(roomId)"
-        guard let url = URL(string: relayEndpoint + path) else { return }
+        guard let url = URL(string: base + path) else { return }
         status = .connecting
         var req = URLRequest(url: url)
         if let authToken { req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization") }
