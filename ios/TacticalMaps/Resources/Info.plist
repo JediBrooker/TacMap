@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.0</string>
+	<string>1.2.1</string>
 	<key>CFBundleVersion</key>
-	<string>53</string>
+	<string>28</string>
 	<key>ESRIApiKey</key>
 	<string>$(ESRI_API_KEY)</string>
 	<key>ESRIKeyExpiry</key>
