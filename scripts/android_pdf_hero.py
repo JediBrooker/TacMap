@@ -31,11 +31,22 @@ except Exception:
 
 def adb(*a, **k): return subprocess.run(["adb", *a], capture_output=True, **k)
 def sh(c): return adb("shell", *c.split()).stdout.decode("utf-8", "replace")
-def nodes():
+def _dump_once():
     adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
     x = adb("shell", "cat", "/sdcard/ui.xml").stdout.decode("utf-8", "replace"); x = x[x.find("<?xml"):]
     try: return list(ET.fromstring(x).iter("node"))
     except ET.ParseError: return []
+def nodes():
+    # uiautomator dumps over this Compose UI are RACY - often a near-empty tree
+    # comes back mid-frame, which is what makes taps miss. Keep the fullest of a
+    # few tries; any real screen here has well over a dozen nodes.
+    best = _dump_once()
+    for _ in range(3):
+        if len(best) >= 12: break
+        time.sleep(0.4)
+        d = _dump_once()
+        if len(d) > len(best): best = d
+    return best
 def ctr(b): m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", b); return (int(m.group(1))+int(m.group(3)))//2, (int(m.group(2))+int(m.group(4)))//2
 def tap(x, y, p=2.0): adb("shell", "input", "tap", str(x), str(y)); time.sleep(p)
 def tapt(t, p=2.0):
@@ -53,12 +64,31 @@ def ham():
 def back(n=1):
     for _ in range(n): adb("shell", "input", "keyevent", "4"); time.sleep(1.2)
 def on_map():
-    return any("centre on my location" in n.get("text", "").lower() for n in nodes())
+    # With an offline (PDF) map loaded the single "Centre on My Location" button
+    # splits into two shorter ones, "My Location" + "Map" - match either so
+    # ensure_map() doesn't think we've left the map and BACK out of everything.
+    txt = " ".join(n.get("text", "").lower() for n in nodes())
+    return "my location" in txt or "centre on map" in txt
 def ensure_map(tries=5):
     for _ in range(tries):
         if on_map(): return True
         back(1)
     adb("shell", "am", "start", "-n", ACT); time.sleep(3); return on_map()
+def menu_open():
+    labs = " ".join((n.get("text", "") + n.get("content-desc", "")) for n in nodes())
+    return "Unit Sync" in labs and "Weather" in labs
+def open_menu(tries=4):
+    for _ in range(tries):
+        if menu_open(): return True
+        ensure_map(); ham(); time.sleep(1.2)
+        if menu_open(): return True
+        back(1); time.sleep(0.8)
+    return menu_open()
+def menu_tap(label, p=2.5, retries=4):
+    for _ in range(retries):
+        if open_menu() and tapt(label, p): return True
+        ensure_map(); time.sleep(0.6)
+    print("  [!] menu_tap failed for", repr(label)); return False
 def grab_png(): return adb("exec-out", "screencap", "-p").stdout
 def png_dims(png):
     """WxH from the IHDR. Correct even on a black FLAG_SECURE frame, and robust
@@ -91,12 +121,14 @@ def read_pref_blocking():
     m = re.search(r'name="block_screen_capture"\s+value="(true|false)"', xml)
     return None if not m else (m.group(1) == "true")
 def write_opsec(block):
-    """Overwrite opsec.xml with capture blocking as asked, plus online basemaps +
-    lookups on so tiles and weather populate. Needs a debuggable build for run-as."""
+    """Overwrite opsec.xml with capture blocking as asked. online_basemaps is OFF
+    for this slide: the whole point is the imported GeoPDF as the basemap, and an
+    online satellite layer would render on top of it. Sync (relay websocket) and
+    the vector situation overlay don't depend on it. Needs a debuggable build."""
     xml = (
         "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n"
         "<map>\n"
-        '    <boolean name="online_basemaps" value="true" />\n'
+        '    <boolean name="online_basemaps" value="false" />\n'
         '    <boolean name="online_lookups" value="true" />\n'
         f'    <boolean name="block_screen_capture" value="{"true" if block else "false"}" />\n'
         f'    <string name="relay_url">{RELAY}</string>\n'
@@ -155,35 +187,39 @@ print("disabling block_screen_capture (FLAG_SECURE)...")
 original_block = disable_secure()
 
 try:
-    # load the GeoPDF basemap
+    # Import the GeoPDF as the basemap (Import / Export -> PDF Map -> pick the
+    # file) and frame it. online_basemaps is off (write_opsec) so the georeferenced
+    # PDF sheet shows through instead of an online satellite layer on top.
+    #
+    # NOTE: deliberately NO sync join here. Joining the room from inside this
+    # script - on top of a 39MB PDF import - was by far the flakiest step (the
+    # Unit Sync sheet intermittently came up without its code field, and a missed
+    # Done left it open and blocked every later tap). The slide's job is to show a
+    # georeferenced imported map sheet aligned to the MGRS grid; that stands on its
+    # own. ROOM/LON/LAT are still accepted for compatibility.
     ensure_map()
-    ham(); (tapt("Import / Export") or tapt("Import")); tapt("PDF Map", 3); tapt(PDF, 8); time.sleep(5)
-    # join the (re-centred) situation room from a fresh dialog
-    ham(); tapt("Unit Sync"); time.sleep(1)
-    if any("Room code" in n.get("text", "") for n in nodes()):
-        tapt("Leave room", 2); adb("shell", "input", "keyevent", "4"); time.sleep(1); ham(); tapt("Unit Sync"); time.sleep(1)
-    ef = None
-    for n in nodes():
-        if n.get("class", "").endswith("EditText") and n.get("bounds"): ef = ctr(n.get("bounds")); break
-    if ef:
-        tap(*ef, p=1.0); adb("shell", "input", "text", ROOM); time.sleep(1.5)
-        print("  field:", [n.get("text") for n in nodes() if n.get("class", "").endswith("EditText")])
-        adb("shell", "input", "keyevent", "111"); time.sleep(1.2); tapt("create room", 10)
-    adb("shell", "input", "keyevent", "4"); time.sleep(2)
-    # frame: centre on device location (= PDF/situation centre)
-    tapt("Centre on My Location", 3); time.sleep(3)
-    # labels on
-    ham(); tapt("Layers and Labels")
-    for lbl in ["Unit Labels", "Task Labels", "Drawing Labels"]:
-        ly = None
+    menu_tap("Import / Export") or menu_tap("Import"); time.sleep(2.0)
+    for _ in range(4):
+        if tapt("PDF Map", 3): break
+        time.sleep(1.2)
+    time.sleep(1.5)
+    def file_node():
+        # the file ROW, NOT its "Preview the file <name>" button (both carry the
+        # name and the preview lists first, so a plain substring tap only previews)
         for n in nodes():
-            if n.get("text", "").strip() == lbl and n.get("bounds"): ly = ctr(n.get("bounds"))[1]; break
-        if ly:
-            for n in nodes():
-                if n.get("checkable") == "true" and n.get("bounds"):
-                    x, y = ctr(n.get("bounds"))
-                    if abs(y-ly) < 60 and n.get("checked") == "false": tap(x, y, 1.0); break
-    adb("shell", "input", "keyevent", "4"); time.sleep(2)
+            lab = n.get("text", "") + "|" + n.get("content-desc", "")
+            if PDF in lab and "Preview" not in lab and n.get("bounds"): return ctr(n.get("bounds"))
+        return None
+    # The SAF picker opens on Recent (tablet) or Downloads (phone); a freshly
+    # pushed file only lists under Downloads, so route through the roots drawer.
+    for _ in range(5):
+        hit = file_node()
+        if hit: tap(*hit, 8); print("  tapped file", PDF); break
+        (tapt("Show roots", 1.5) or ham() or time.sleep(0)); time.sleep(1.0)
+        tapt("Downloads", 2.0); time.sleep(1.5)
+    time.sleep(12)   # 39MB GeoPDF: allow parse + first render
+    # frame: centre on device location (= PDF centre) so the sheet fills the frame
+    ensure_map(); (tapt("Centre on My Location", 3) or tapt("My Location", 3)); time.sleep(3)
     snap("pdf-hero")
     print("done")
 finally:

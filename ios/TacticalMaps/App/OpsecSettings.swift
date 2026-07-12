@@ -29,6 +29,19 @@ final class OpsecSettings: ObservableObject {
         onlineLookups = defaults.object(forKey: Keys.online) as? Bool ?? false
         onlineBasemaps = defaults.object(forKey: Keys.basemaps) as? Bool ?? false
         relayURL = defaults.string(forKey: Keys.relay) ?? Self.defaultRelay
+        // Marketing-screenshot mode: the store XCUITest sets this env var so the
+        // shots show real online tiles/lookups instead of the OPSEC-default dark
+        // basemap. Never set in production (env vars can't be injected into a
+        // shipped app), so this is inert outside the screenshot harness.
+        let env = ProcessInfo.processInfo.environment
+        if env["TACMAP_UITEST_ONLINE"] == "1" {
+            onlineBasemaps = true
+            onlineLookups = true
+        } else if env["TACMAP_UITEST_OFFLINE_BASEMAP"] == "1" {
+            // GeoPDF slide: force the online basemap OFF (authoritatively, over any
+            // value a prior run persisted) so the imported PDF sheet is what shows.
+            onlineBasemaps = false
+        }
     }
 
     // The "require auth to decrypt" toggle deliberately isn't here. It has to

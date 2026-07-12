@@ -36,6 +36,23 @@ function seal(plaintext, aad) {
 }
 const uuid = () => crypto.randomUUID();
 
+// --- per-device Ed25519 identity (unit sync now signs every object write AND
+// presence). The app pins a key per clientId (TOFU) and REJECTS any object or
+// presence that isn't signed by it, so this push has to present a stable device
+// key and sign exactly like a real client would. base64url(no pad), byte-for-
+// byte matching SyncSigning on iOS + Android. ---
+const { publicKey: edPub, privateKey: edPriv } = crypto.generateKeyPairSync("ed25519");
+const PUB = edPub.export({ format: "jwk" }).x;   // base64url(no pad) of the raw 32-byte key
+const US = "\u001f";
+const edSign = (msg) => crypto.sign(null, Buffer.from(msg, "utf8"), edPriv).toString("base64url");
+const f6 = (x) => Number(x).toFixed(6);
+// Canonical signed messages - MUST match SyncSigning.objectMessage /
+// presenceMessage exactly (U+001F join, %.6f coords, ts in epoch-ms).
+const objectMessage = (id, v, kind, by, content) => [id, String(v), kind, by, content].join(US);
+const presenceMessage = (clientId, ts, lat, lon, heading, speed, callsign, aff, ech, fn, isHQ) =>
+  [clientId, String(ts), f6(lat), f6(lon), f6(heading), f6(speed),
+   callsign, aff, ech, fn, isHQ ? "1" : "0"].join(US);
+
 // --- situation builders, centre = device location (Blue Mountains) ---
 const C = { lon: 150.305, lat: -33.700 };
 const DLON = (process.env.CENTER_LON ? parseFloat(process.env.CENTER_LON) : C.lon) - C.lon;
@@ -138,15 +155,25 @@ ws.on("open", () => {
     const id = obj.feature.id;
     const aad = `${id}|${v}|${obj.kind}`;
     const content = JSON.stringify({ type: "FeatureCollection", features: [obj.feature] });
-    ws.send(JSON.stringify({ t: "put", id, v, by: "ops-hq", kind: obj.kind, ct: seal(content, aad) }));
+    // Sign the write, then seal {c, pub, sig} - the client verifies the sig
+    // against the key it pins for by="ops-hq" before it'll show the object.
+    const sig = edSign(objectMessage(id, v, obj.kind, "ops-hq", content));
+    const inner = JSON.stringify({ c: content, pub: PUB, sig });
+    ws.send(JSON.stringify({ t: "put", id, v, by: "ops-hq", kind: obj.kind, ct: seal(inner, aad) }));
     console.log("pushed", obj.kind, obj.feature.properties.name);
   }
   console.log(`pushed ${SITUATION.length} objects.`);
 
-  // fire off presence for each mock peer, then keep broadcasting every 5s
+  // fire off presence for each mock peer, then keep broadcasting every 5s.
+  // ts is epoch-ms (Int64) to match the client's signed presence + freshness
+  // check; each peer's presence is signed so the client will render it.
   function sendPresence() {
+    const ts = Date.now();
     for (const peer of PRESENCE_PEERS) {
-      const payload = JSON.stringify({ ...peer, ts: Date.now() / 1000 });
+      const sig = edSign(presenceMessage(peer.clientId, ts, peer.lat, peer.lon,
+        peer.heading, peer.speed, peer.callsign, peer.affiliation, peer.echelon,
+        peer.function, peer.isHQ));
+      const payload = JSON.stringify({ ...peer, ts, pub: PUB, sig });
       const aad = `loc|${peer.clientId}`;
       ws.send(JSON.stringify({ t: "loc", clientId: peer.clientId, ct: seal(payload, aad) }));
     }

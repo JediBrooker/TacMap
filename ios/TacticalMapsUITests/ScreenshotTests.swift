@@ -17,9 +17,18 @@ final class ScreenshotTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = true
         app = XCUIApplication()
+        // Force online basemaps + lookups on for the shots (OPSEC defaults them
+        // off, which would render a dark basemap). Read by OpsecSettings.init.
+        // EXCEPT the GeoPDF slide: it wants the imported PDF sheet as the basemap,
+        // and an online satellite layer would render on top of it.
+        if name.contains("GeoPdf") {
+            app.launchEnvironment["TACMAP_UITEST_OFFLINE_BASEMAP"] = "1"
+        } else {
+            app.launchEnvironment["TACMAP_UITEST_ONLINE"] = "1"
+        }
         app.launch()
         allowLocationIfNeeded()
-        // Let MapKit load satellite tiles + the first location fix settle.
+        // Let the raster basemap stream its first tiles + the location fix settle.
         sleep(8)
     }
 
@@ -198,10 +207,10 @@ final class ScreenshotTests: XCTestCase {
         let codeField = app.textFields.firstMatch
         if codeField.waitForExistence(timeout: 6) {
             codeField.tap(); sleep(1)
-            codeField.typeText("WOLFPACK-6")
+            codeField.typeText("WOLFPACKSHOOT26")
             sleep(1)
             _ = tapContaining("Join")     // "Join / create room"
-            sleep(5)                       // WebSocket handshake to the live relay
+            sleep(18)                       // WebSocket handshake to the live relay
         }
         snap("m03-unit-sync")
         dismissSheet()
@@ -275,10 +284,10 @@ final class ScreenshotTests: XCTestCase {
         let codeField = app.textFields.firstMatch
         if codeField.waitForExistence(timeout: 6) {
             codeField.tap(); sleep(1)
-            codeField.typeText("INDIA-11")
+            codeField.typeText("WOLFPACKSHOOT26")
             sleep(1)
             _ = tapContaining("Join")
-            sleep(8)               // connect + snapshot + render the situation
+            sleep(20)               // connect + snapshot + render the situation
         }
         dismissSheet()
         sleep(2)
@@ -304,10 +313,12 @@ final class ScreenshotTests: XCTestCase {
     // its tiles so the terrain step waits ages for them to stream in.
     func testCaptureBasemaps() {
         sleep(2)
+        // No Apple/MapKit basemap any more - the map is a custom raster renderer.
+        // Three visually distinct offline-capable basemaps for the fan.
         let maps: [(String, String, UInt32)] = [
-            ("Satellite (Apple)", "bm-satellite", 8),
-            ("Satellite (Esri)", "bm-esri", 14),
-            ("Terrain (OpenTopoMap)", "bm-terrain", 95)
+            ("Satellite (Esri)", "bm-satellite", 10),
+            ("Topographic (Esri)", "bm-esri", 12),
+            ("Topographic (OpenTopoMap)", "bm-terrain", 95)
         ]
         for (label, name, wait) in maps {
             openMenu()
@@ -352,8 +363,10 @@ final class ScreenshotTests: XCTestCase {
         // lives in the app's own Documents → surfaced under "On My iPhone/iPad ›
         // TacMap". Navigate there if the file isn't already on screen.
         func fileQuery() -> XCUIElement {
+            // The georeferenced USGS SF North US Topo (FortIrwin has no georef and
+            // lands at the camera fallback). Seeded into the app's Documents.
             app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS[c] %@", "FortIrwin")).firstMatch
+                .matching(NSPredicate(format: "label CONTAINS[c] %@", "USGS_SF_North")).firstMatch
         }
         func tapFirst(containing text: String, timeout: TimeInterval = 5) -> Bool {
             let e = app.descendants(matching: .any)
@@ -362,42 +375,27 @@ final class ScreenshotTests: XCTestCase {
             e.tap(); return true
         }
         if !fileQuery().waitForExistence(timeout: 4) {
-            // iPhone: bottom tab "Browse" → Locations list. iPad: the sidebar is
-            // already shown, so this is a no-op.
-            let browse = app.buttons["Browse"]
-            if browse.waitForExistence(timeout: 4) { browse.tap(); sleep(1) }
+            // iPhone: bottom tab "Browse" → Locations list (there can be more than
+            // one "Browse" element in Files, so take the first hittable one). iPad:
+            // the sidebar is already shown, so this is best-effort.
+            let browse = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Browse")).firstMatch
+            if browse.waitForExistence(timeout: 4), browse.isHittable { browse.tap(); sleep(1) }
             // "On My iPhone" / "On My iPad" → TacMap (the app's Documents container)
             _ = tapFirst(containing: "On My i"); sleep(1)
             let folder = app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label MATCHES[c] %@", "TacMap")).firstMatch
-            if folder.waitForExistence(timeout: 5) { folder.tap() }
+            if folder.waitForExistence(timeout: 5), folder.isHittable { folder.tap() }
             sleep(1)
         }
         let file = fileQuery()
         if file.waitForExistence(timeout: 8) { file.tap() }
-        sleep(7)                       // import + georeference + persist + fly to PDF
+        sleep(9)                       // import + georeference + persist + fly to PDF
         dismissSheet()
-        // 2) join the re-centred situation
-        openMenu()
-        _ = tapContaining("Unit Sync")
-        sleep(2)
-        let codeField = app.textFields.firstMatch
-        if codeField.waitForExistence(timeout: 6) {
-            codeField.tap(); sleep(1); codeField.typeText("ROMEO-19"); sleep(1)
-            _ = tapContaining("Join"); sleep(8)
-        }
-        dismissSheet()
-        // 3) labels on
-        openMenu()
-        _ = tap("Layers and Labels")
-        sleep(2)
-        for label in ["Unit Labels", "Task Labels", "Drawing Labels"] {
-            let sw = app.switches[label]
-            if sw.waitForExistence(timeout: 3), (sw.value as? String) == "0" { sw.tap(); sleep(1) }
-        }
-        dismissSheet()
-        // 4) centre on device location (= PDF/situation centre)
-        _ = tapContaining("Centre on My Location")
+        // Centre on device location (= PDF centre). With an offline map loaded the
+        // single button splits into "My Location" / "Map", so match either.
+        // No sync join here - the slide's message is the georeferenced imported
+        // sheet aligned to the MGRS grid, matching the Android PDF slide.
+        _ = tapContaining("My Location")
         sleep(5)
         snap("pdf-hero")
     }

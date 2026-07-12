@@ -49,11 +49,23 @@ except Exception:
 
 def adb(*a, **k): return subprocess.run(["adb", *a], capture_output=True, **k)
 def sh(c): return adb("shell", *c.split()).stdout.decode("utf-8", "replace")
-def nodes():
+def _dump_once():
     adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
     x = adb("shell", "cat", "/sdcard/ui.xml").stdout.decode("utf-8", "replace"); x = x[x.find("<?xml"):]
     try: return list(ET.fromstring(x).iter("node"))
     except ET.ParseError: return []
+def nodes():
+    # uiautomator dumps over this Compose UI are RACY - it often returns a
+    # near-empty tree (1-5 nodes) mid-frame, which is what makes ham()/tapt()
+    # intermittently miss. Re-dump until the tree looks complete, keeping the
+    # fullest we saw. Any real screen here has well over a dozen nodes.
+    best = _dump_once()
+    for _ in range(3):
+        if len(best) >= 12: break
+        time.sleep(0.4)
+        d = _dump_once()
+        if len(d) > len(best): best = d
+    return best
 def ctr(b): m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", b); return (int(m.group(1))+int(m.group(3)))//2, (int(m.group(2))+int(m.group(4)))//2
 def tap(x, y, p=2.0): adb("shell", "input", "tap", str(x), str(y)); time.sleep(p)
 def tapt(t, p=2.0, exact=False):
@@ -80,6 +92,27 @@ def ensure_map(tries=5):
         if on_map(): return True
         back(1)
     adb("shell", "am", "start", "-n", ACT); time.sleep(3); return on_map()
+def menu_open():
+    """The hamburger icon rail is open when its item descriptions are exposed."""
+    labs = " ".join((n.get("text", "") + n.get("content-desc", "")) for n in nodes())
+    return "Unit Sync" in labs and "Weather" in labs
+def open_menu(tries=4):
+    """Open the hamburger rail and VERIFY it opened - ham() alone is flaky once
+    the situation adds clickable annotations near the top-left, so retry."""
+    for _ in range(tries):
+        if menu_open(): return True
+        ensure_map(); ham(1.2)
+        if menu_open(): return True
+        back(1); time.sleep(0.8)          # a stray sheet may be covering it
+    return menu_open()
+def menu_tap(label, p=2.5, retries=4):
+    """Open the rail (verified) then tap a menu item, retrying the whole thing.
+    The rail dump is still occasionally partial, so give each item several
+    open+tap attempts before giving up - a missed slide is worse than slow."""
+    for _ in range(retries):
+        if open_menu() and tapt(label, p): return True
+        ensure_map(); time.sleep(0.6)
+    print("  [!] menu_tap failed for", repr(label)); return False
 
 def grab_png():
     return adb("exec-out", "screencap", "-p").stdout
@@ -186,7 +219,7 @@ original_block = disable_secure()
 
 try:
     # ---- basemap: Esri Satellite (the app's default; custom raster renderer) ----
-    ensure_map(); ham(); tapt("Layers and Labels")
+    menu_tap("Layers and Labels")
     if not tapt("Satellite (Esri)", 3):
         # the basemap rows can sit below the fold - scroll the sheet up and retry
         adb("shell", "input", "swipe", str(CX), str(int(H*0.8)), str(CX), str(int(H*0.3)), "300"); time.sleep(1)
@@ -194,26 +227,51 @@ try:
     back(1); time.sleep(4)
 
     # ---- join the NATO situation room ----
-    ensure_map(); ham(); tapt("Unit Sync"); time.sleep(1)
+    # Two gotchas learned the hard way: (1) the join-code field is a Compose
+    # EditText but `input text` silently drops chars, so type-read-back-retry
+    # until it matches - a truncated code trips the <14-char weak-code guard and
+    # the Join button just no-ops. (2) do NOT press BACK to dismiss the IME: on
+    # this Compose ModalBottomSheet BACK closes the whole sheet, so Join is gone
+    # before we can tap it. Tap "Join / create" directly - it sits above any IME.
+    menu_tap("Unit Sync"); time.sleep(1.5)
     if any("Room code" in n.get("text", "") or "Leave" in n.get("text", "") for n in nodes()):
-        tapt("Leave", 2); back(1); time.sleep(1); ham(); tapt("Unit Sync"); time.sleep(1)
-    ef = None
-    for n in nodes():
-        if n.get("class", "").endswith("EditText") and n.get("bounds"): ef = ctr(n.get("bounds")); break
-    if ef:
-        tap(*ef, p=1.0); adb("shell", "input", "text", ROOM); time.sleep(1.2)
-        adb("shell", "input", "keyevent", "4"); time.sleep(1.0)        # BACK kills the soft keyboard
-        btn = None                                                     # find "Join / create room" button by node
+        tapt("Leave", 2); menu_tap("Unit Sync"); time.sleep(1.5)
+    def code_field():
+        for n in nodes():
+            if n.get("class", "").endswith("EditText") and n.get("bounds"): return n
+        return None
+    fn = code_field()
+    if fn is not None:
+        tap(*ctr(fn.get("bounds")), 1.2)
+        # `input text <wholestring>` drops trailing chars on this Compose field
+        # (consistently loses the last couple), so type char-by-char with a small
+        # gap and read back, retrying until the field matches ROOM exactly.
+        for _ in range(4):
+            f = code_field(); cur = f.get("text", "") if f is not None else ""
+            if cur == ROOM: break
+            for _ in range(len(cur) + 8): adb("shell", "input", "keyevent", "67")   # KEYCODE_DEL clear
+            time.sleep(0.4)
+            for ch in ROOM:
+                adb("shell", "input", "text", ch); time.sleep(0.14)
+            time.sleep(0.7)
+        f = code_field()
+        print("  join code entered:", repr(f.get("text", "") if f is not None else None))
+        btn = None                                                     # find "Join / create" button by node
         for n in nodes():
             if "join / create" in n.get("text", "").lower() and n.get("bounds"): btn = ctr(n.get("bounds")); break
         if btn: tap(*btn, p=2.0)
-        for _ in range(8):                                             # wait for CONNECTED
+        for _ in range(10):                                            # wait for CONNECTED
             if any(n.get("text", "") == "Connected" for n in nodes()): print("  sync CONNECTED"); break
             time.sleep(2)
-    back(1); time.sleep(2)
+        else:
+            print("  [!] sync did NOT reach Connected")
+    else:
+        print("  [!] join-code field not found")
+    if not tapt("Done", 1.5): back(1)
+    time.sleep(2)
 
     # ---- labels on ----
-    ensure_map(); ham(); tapt("Layers and Labels")
+    menu_tap("Layers and Labels")
     for lbl in ["Unit Labels", "Task Labels", "Drawing Labels"]:
         ly = None
         for n in nodes():
@@ -237,25 +295,25 @@ try:
     adb("shell", "input", "swipe", str(CX), str(CY-40), str(CX), str(CY+40), "120"); time.sleep(1)
 
     # ---- unit-sync sheet (Connected) ----
-    ensure_map(); ham(); tapt("Unit Sync"); time.sleep(2); snap("unit-sync"); back(1); time.sleep(1)
+    menu_tap("Unit Sync"); time.sleep(2); snap("unit-sync"); back(1); time.sleep(1)
 
     # ---- recording (REC indicator) ----
-    ensure_map(); ham(); tapt("Start Track Recording", 3); time.sleep(2); snap("recording")
-    ham(); tapt("Stop Track Recording", 2); time.sleep(1)            # stop it again
+    menu_tap("Start Track Recording", 3); time.sleep(2); snap("recording")
+    menu_tap("Stop Track Recording", 2); time.sleep(1)            # stop it again
 
     # ---- weather ----
-    ensure_map(); ham(); tapt("Weather", 4); time.sleep(2); snap("weather"); back(1); time.sleep(1)
+    menu_tap("Weather", 4); time.sleep(2); snap("weather"); back(1); time.sleep(1)
 
     # ---- import / export ----
-    ensure_map(); ham(); tapt("Import / Export", 3); time.sleep(1); snap("import-export"); back(1); time.sleep(1)
+    menu_tap("Import / Export", 3); time.sleep(1); snap("import-export"); back(1); time.sleep(1)
 
     # ---- symbol builder (APP-6 editor) ----
-    ensure_map(); ham(); tapt("Symbology", 3)
+    menu_tap("Symbology", 3)
     tapt("Add Military Unit", 3); time.sleep(1); snap("symbol-builder")
     tapt("Cancel", 2); back(2); time.sleep(1)
 
     # ---- search ----
-    ensure_map(); ham(); tapt("Search", 3); time.sleep(1); snap("search"); back(1)
+    menu_tap("Search", 3); time.sleep(1); snap("search"); back(1)
     print("DONE android_capture_set")
 finally:
     # always put OPSEC back the way we found it
