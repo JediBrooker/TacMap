@@ -52,7 +52,7 @@ final class MBTilesWriter {
         sqlite3_bind_int(stmt, 1, Int32(z))
         sqlite3_bind_int(stmt, 2, Int32(x))
         sqlite3_bind_int(stmt, 3, Int32(tmsRow))
-        data.withUnsafeBytes { raw in
+        _ = data.withUnsafeBytes { raw in
             sqlite3_bind_blob(stmt, 4, raw.baseAddress, Int32(data.count), SQLITE_TRANSIENT)
         }
         if sqlite3_step(stmt) != SQLITE_DONE { hadError = true }

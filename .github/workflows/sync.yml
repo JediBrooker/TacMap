@@ -1,15 +1,22 @@
 name: Sync Worker
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
     paths:
       - 'sync/**'
+      - 'testdata/**'
+      - 'docs/security/ADR-001-sync-protocol-v3.md'
       - '.github/workflows/sync.yml'
   pull_request:
     branches: [main]
     paths:
       - 'sync/**'
+      - 'testdata/**'
+      - 'docs/security/ADR-001-sync-protocol-v3.md'
       - '.github/workflows/sync.yml'
   workflow_dispatch:
 
@@ -17,6 +24,7 @@ jobs:
   check:
     name: Typecheck + bundle
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: sync
@@ -24,29 +32,29 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: sync/package-lock.json
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Typecheck
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run typecheck
 
       - name: Bundle (wrangler dry-run — no deploy, no auth)
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run check
 
-      - name: Unit tests (if present)
+      - name: Relay and shared-fixture tests
         run: |
-          set -o pipefail
-          # No-op until the vitest suite lands; kept so adding tests wires in
-          # automatically. `--if-present` never fails when the script is absent.
-          npm test --if-present
+          set -euo pipefail
+          npm test

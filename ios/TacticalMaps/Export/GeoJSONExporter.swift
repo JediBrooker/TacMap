@@ -45,11 +45,12 @@ enum GeoJSONExporter {
                              drawings:  [DrawingShape],
                              layers:    [DrawingLayer] = []) throws -> URL {
         let json = try export(waypoints: waypoints, drawings: drawings, layers: layers)
-        let dir  = FileManager.default.temporaryDirectory
         let stamp = ISO8601DateFormatter().string(from: .now)
             .replacingOccurrences(of: ":", with: "-")
-        let url = dir.appendingPathComponent("TacMap-\(stamp).geojson")
-        try json.write(to: url, atomically: true, encoding: .utf8)
+        let url = try ExportFileSecurity.freshURL(fileName: "TacMap-\(stamp).geojson")
+        guard let bytes = json.data(using: .utf8) else { throw CocoaError(.fileWriteInapplicableStringEncoding) }
+        try bytes.write(to: url, options: [.atomic, .completeFileProtection])
+        try ExportFileSecurity.protect(url)
         return url
     }
 

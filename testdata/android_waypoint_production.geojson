@@ -1,0 +1,40 @@
+{
+    "type": "FeatureCollection",
+    "generator": "TacMap",
+    "features": [
+        {
+            "type": "Feature",
+            "id": "8a6f62b1-6ec7-4c92-a463-22b71ecf973d",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    151.2093,
+                    -33.8688
+                ]
+            },
+            "properties": {
+                "name": "Android Alpha",
+                "source": "symbol",
+                "kind": "marker",
+                "kind_display": "Team Member",
+                "tacticalmaps:category": "marker",
+                "tacticalmaps:kind": "airsoft.team",
+                "layer_id": "default",
+                "tacticalmaps:layer_id": "default",
+                "layer_name": "Friendly",
+                "tacticalmaps:layer": "Friendly",
+                "tacticalmaps:layer_color": "#1E88E5",
+                "tacticalmaps:marker_set": "airsoft",
+                "tacticalmaps:marker_symbol": "team",
+                "tacticalmaps:marker_color": "#3B7BE0",
+                "tacticalmaps:task_color": "black",
+                "notes": "actual production exporter fixture",
+                "description": "actual production exporter fixture",
+                "elevation_m": 42.0,
+                "tacticalmaps:elevation_m": 42.0,
+                "created_at": "2023-11-14T22:13:20Z",
+                "tacticalmaps:created_at": "2023-11-14T22:13:20Z"
+            }
+        }
+    ]
+}

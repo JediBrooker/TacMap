@@ -5,6 +5,42 @@ import XCTest
 /// to UserDefaults now, so a toggle set before quitting must survive a
 /// cold relaunch.
 final class LayerPersistenceTests: XCTestCase {
+
+    func testFreshInstallCanPersistSigningIdentity() {
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 10))
+
+        // Exercise the normal device-bound background/resume path before the
+        // first identity is created.
+        XCUIDevice.shared.press(.home)
+        sleep(2)
+        app.activate()
+        XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 10))
+        join(app, code: "3:probe-fresh-install-identity-20260712")
+
+        // A cold process relaunch drops DataKey's in-memory cache. The existing
+        // device-bound DEK and sealed signing seed must both be reacquired.
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 10))
+        join(app, code: "3:probe-relaunch-identity-20260712")
+    }
+
+    private func join(_ app: XCUIApplication, code: String) {
+        app.buttons["Menu"].tap()
+        let sync = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Unit Sync")).firstMatch
+        XCTAssertTrue(sync.waitForExistence(timeout: 5))
+        sync.tap()
+        let field = app.textFields["Unit join code"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(code)
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Join / create room")).firstMatch.tap()
+        XCTAssertTrue(app.staticTexts[code].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Signing identity is locked or unavailable. Unlock the device and try again."].exists)
+        app.buttons["Done"].tap()
+    }
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     func testUnitLabelsTogglePersistsAcrossRelaunch() {

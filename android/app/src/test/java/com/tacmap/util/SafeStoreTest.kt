@@ -15,15 +15,24 @@ class SafeStoreTest {
 
     private val testKey = ByteArray(32) { it.toByte() }
     private val label = "waypoints.json"
+    private val sealedLabels = mutableSetOf<String>()
 
     @Before fun installTestKey() {
         // Real key lives in the Android Keystore which isn't there on the host
         // JVM, so swap in a fixed one. The envelope code under test is the same.
         SafeStore.keyProvider = SafeStore.KeyProvider { testKey }
+        SafeStore.migrationPolicy = object : SafeStore.MigrationPolicy {
+            override fun isSealedOnly(label: String) = label in sealedLabels
+            override fun markSealedOnly(label: String) { sealedLabels += label }
+        }
     }
 
     @After fun restoreKeyProvider() {
         SafeStore.keyProvider = SafeStore.KeyProvider { DataKey.key() }
+        SafeStore.migrationPolicy = object : SafeStore.MigrationPolicy {
+            override fun isSealedOnly(label: String) = DataKey.isStoreSealedOnly(label)
+            override fun markSealedOnly(label: String) = DataKey.markStoreSealedOnly(label)
+        }
     }
 
     private fun tempDir(): File = Files.createTempDirectory("safestore").toFile()
@@ -96,6 +105,40 @@ class SafeStoreTest {
         // and it still reads back
         val again = SafeStore.readOrQuarantine(f, label) { it }
         assertEquals("""{"legacy":true}""", (again as SafeStore.LoadResult.Loaded).value)
+    }
+
+    @Test fun plaintextDowngradeIsRejectedAfterMigration() {
+        val dir = tempDir()
+        val f = File(dir, "data.json")
+        f.writeText("""{"legacy":true}""")
+        assertTrue(SafeStore.readOrQuarantine(f, label) { it } is SafeStore.LoadResult.Loaded)
+        // Simulate an attacker restoring an old plaintext copy after migration.
+        f.writeText("""{"downgrade":true}""")
+        val result = SafeStore.readOrQuarantine(f, label) { it }
+        assertTrue(result is SafeStore.LoadResult.Corrupt)
+    }
+
+    @Test fun deletingCompatibilityMarkerDoesNotReopenPlaintextMigration() {
+        val dir = tempDir()
+        val f = File(dir, "data.json")
+        f.writeText("""{"legacy":true}""")
+        assertTrue(SafeStore.readOrQuarantine(f, label) { it } is SafeStore.LoadResult.Loaded)
+        dir.listFiles()!!.filter { it.name.contains("sealed-only") }.forEach { it.delete() }
+        f.writeText("""{"injected":true}""")
+        assertTrue(SafeStore.readOrQuarantine(f, label) { it } is SafeStore.LoadResult.Corrupt)
+    }
+
+    @Test fun tamperedAuthenticatedMigrationLedgerFailsClosed() {
+        val f = File(tempDir(), "data.json")
+        f.writeText("""{"looksLegacy":true}""")
+        SafeStore.migrationPolicy = object : SafeStore.MigrationPolicy {
+            override fun isSealedOnly(label: String): Boolean =
+                throw java.io.IOException("migration ledger authentication failed")
+            override fun markSealedOnly(label: String) = Unit
+        }
+        val result = SafeStore.readOrQuarantine(f, label) { it }
+        assertTrue(result is SafeStore.LoadResult.Locked)
+        assertTrue(f.exists())
     }
 
     @Test fun lockedKeyLeavesTheFileAloneAndDoesNotQuarantine() {

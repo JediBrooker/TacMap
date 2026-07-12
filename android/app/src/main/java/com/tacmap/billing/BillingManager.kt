@@ -16,6 +16,7 @@ import com.android.billingclient.api.QueryPurchasesParams
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.lang.ref.WeakReference
 
 /**
  * Wraps Google Play Billing for the single one-time, non-consumable
@@ -28,13 +29,16 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClientStateListener {
 
-    private val _isPurchased = MutableStateFlow(false)
+    private val prefs = context.applicationContext.getSharedPreferences("billing_entitlement", Context.MODE_PRIVATE)
+
+    private val _isPurchased = MutableStateFlow(cachedEntitlementIsValid())
     val isPurchased: StateFlow<Boolean> = _isPurchased.asStateFlow()
 
     private val _priceText = MutableStateFlow<String?>(null)
     val priceText: StateFlow<String?> = _priceText.asStateFlow()
 
     private var productDetails: ProductDetails? = null
+    private val whenConnected = mutableListOf<() -> Unit>()
 
     private val client = BillingClient.newBuilder(context.applicationContext)
         .setListener(this)
@@ -44,24 +48,25 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         .build()
 
     fun start() {
-        when (client.connectionState) {
-            BillingClient.ConnectionState.CONNECTED -> {
-                queryProduct()
-                restore()
-            }
-            BillingClient.ConnectionState.CONNECTING -> Unit
-            else -> client.startConnection(this)
-        }
+        connect { queryProduct() }
     }
 
     fun end() {
+        synchronized(whenConnected) { whenConnected.clear() }
         client.endConnection()
+    }
+
+    /** Local-only expiry check; foregrounding the app never contacts Play. */
+    fun refreshLocalEntitlement() {
+        _isPurchased.value = cachedEntitlementIsValid()
     }
 
     override fun onBillingSetupFinished(result: BillingResult) {
         if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-            queryProduct()
-            restore()
+            val actions = synchronized(whenConnected) { whenConnected.toList().also { whenConnected.clear() } }
+            actions.forEach { it() }
+        } else {
+            synchronized(whenConnected) { whenConnected.clear() }
         }
     }
 
@@ -69,7 +74,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         // BillingClient is single-use per connection; the next start() reconnects.
     }
 
-    private fun queryProduct() {
+    private fun queryProduct(after: (() -> Unit)? = null) {
         val params = QueryProductDetailsParams.newBuilder()
             .setProductList(
                 listOf(
@@ -85,16 +90,17 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
                 productDetails = productDetailsList.firstOrNull()
                 _priceText.value =
                     productDetails?.oneTimePurchaseOfferDetails?.formattedPrice
+                after?.invoke()
             }
         }
     }
 
     /** Re-check Play for an existing entitlement ("Restore purchase"). */
     fun restore() {
-        if (client.connectionState != BillingClient.ConnectionState.CONNECTED) {
-            start()
-            return
-        }
+        connect { queryPurchases() }
+    }
+
+    private fun queryPurchases() {
         val params = QueryPurchasesParams.newBuilder()
             .setProductType(BillingClient.ProductType.INAPP)
             .build()
@@ -102,12 +108,29 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             if (result.responseCode != BillingClient.BillingResponseCode.OK) return@queryPurchasesAsync
             val activePurchases = purchases.filter(::isEntitlingPurchase)
             _isPurchased.value = activePurchases.isNotEmpty()
+            prefs.edit()
+                .putBoolean(KEY_CACHED_ENTITLEMENT, activePurchases.isNotEmpty())
+                .putLong(KEY_LAST_VERIFIED_MS, System.currentTimeMillis())
+                .apply()
             activePurchases.forEach(::acknowledgeIfNeeded)
         }
     }
 
     fun launchPurchase(activity: Activity) {
-        val details = productDetails ?: return
+        val activityRef = WeakReference(activity)
+        connect {
+            val launch: () -> Unit = {
+                val current = activityRef.get()
+                if (current != null && !current.isFinishing && !current.isDestroyed) {
+                    productDetails?.let { launchPurchaseWithDetails(current, it) }
+                }
+                Unit
+            }
+            if (productDetails == null) queryProduct(launch) else launch()
+        }
+    }
+
+    private fun launchPurchaseWithDetails(activity: Activity, details: ProductDetails) {
         val params = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(
                 listOf(
@@ -118,6 +141,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             )
             .build()
         client.launchBillingFlow(activity, params)
+        Unit
     }
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
@@ -130,7 +154,23 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         if (!isEntitlingPurchase(purchase)) return
 
         _isPurchased.value = true
+        prefs.edit()
+            .putBoolean(KEY_CACHED_ENTITLEMENT, true)
+            .putLong(KEY_LAST_VERIFIED_MS, System.currentTimeMillis())
+            .apply()
         acknowledgeIfNeeded(purchase)
+    }
+
+    /** Billing is deliberately cold until a purchase/restore/paywall action. */
+    private fun connect(action: () -> Unit) {
+        when (client.connectionState) {
+            BillingClient.ConnectionState.CONNECTED -> action()
+            BillingClient.ConnectionState.CONNECTING -> synchronized(whenConnected) { whenConnected += action }
+            else -> {
+                synchronized(whenConnected) { whenConnected += action }
+                client.startConnection(this)
+            }
+        }
     }
 
     private fun isEntitlingPurchase(purchase: Purchase): Boolean =
@@ -147,8 +187,17 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         }
     }
 
+    private fun cachedEntitlementIsValid(now: Long = System.currentTimeMillis()): Boolean {
+        if (!prefs.getBoolean(KEY_CACHED_ENTITLEMENT, false)) return false
+        val checked = prefs.getLong(KEY_LAST_VERIFIED_MS, 0L)
+        return checked > 0L && now >= checked && now - checked <= ENTITLEMENT_VALIDITY_MS
+    }
+
     companion object {
         /** Must match the in-app product ID created in Play Console. */
         const val PRODUCT_ID = "unlock_full"
+        private const val KEY_CACHED_ENTITLEMENT = "cached_entitlement_v1"
+        private const val KEY_LAST_VERIFIED_MS = "last_verified_ms_v1"
+        private const val ENTITLEMENT_VALIDITY_MS = 7L * 24L * 60L * 60L * 1000L
     }
 }

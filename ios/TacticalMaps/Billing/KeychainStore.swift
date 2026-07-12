@@ -45,6 +45,18 @@ enum KeychainStore {
         return status == errSecSuccess
     }
 
+    /// Remove a cached value. Missing is already the desired state.
+    @discardableResult
+    static func removeData(for account: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
     // Convenience: dates stored as epoch-seconds Double.
     static func date(for account: String) -> Date? {
         guard let d = data(for: account), d.count == 8 else { return nil }

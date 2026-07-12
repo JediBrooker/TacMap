@@ -20,14 +20,14 @@ struct VersionStamp: Comparable, Equatable, Codable {
     }
 
     static func parse(_ vs: String) -> VersionStamp? {
-        guard let colonIdx = vs.firstIndex(of: ":"),
-              vs.distance(from: vs.startIndex, to: colonIdx) == 16 else {
-            return nil
-        }
+        guard vs.utf8.count == 60,
+              let colonIdx = vs.firstIndex(of: ":"),
+              vs.distance(from: vs.startIndex, to: colonIdx) == 16 else { return nil }
         let hexPart = String(vs[vs.startIndex..<colonIdx])
         let actor = String(vs[vs.index(after: colonIdx)...])
-        guard !actor.isEmpty else { return nil }
-        guard let counter = UInt64(hexPart, radix: 16),
+        guard hexPart.allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) }),
+              SyncIdentity.decodeCanonical32(actor) != nil,
+              let counter = UInt64(hexPart, radix: 16),
               counter <= UInt64(maxCounter) else { return nil }
         return VersionStamp(counter: Int64(counter), actorId: actor)
     }

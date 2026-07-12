@@ -7,6 +7,92 @@ import Foundation
 /// implicit polygon ring closure.
 final class GeoJSONExporterTests: XCTestCase {
 
+    func testEmitProductionWaypointInteropFixture() throws {
+        let waypoint = Waypoint(
+            id: UUID(uuidString: "71D0F3D2-7D33-4AF4-A593-D4CB70FB808D")!,
+            name: "iOS Alpha",
+            notes: "actual production exporter fixture",
+            latitude: -33.8688,
+            longitude: 151.2093,
+            elevation: 42,
+            kind: .generic,
+            layerID: DrawingLayer.legacyFallbackID,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let payload = try GeoJSONExporter.export(waypoints: [waypoint], layers: DrawingLayer.seedDefaults)
+        let fixture = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("testdata/ios_waypoint_production.geojson")
+        XCTAssertEqual(payload.trimmingCharacters(in: .whitespacesAndNewlines),
+                       try String(contentsOf: fixture, encoding: .utf8)
+                        .trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func testImportsAndroidProductionFixtureThroughSealedStoreAndReceiverHash() throws {
+        let fixture = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("testdata/android_waypoint_production.geojson")
+        let source = try Data(contentsOf: fixture)
+        let imported = try GeoJSONImporter.parse(
+            source, existingLayers: DrawingLayer.seedDefaults,
+            fallbackLayerID: DrawingLayer.legacyFallbackID)
+        XCTAssertEqual(imported.invalidSkipped, 0)
+        XCTAssertEqual(imported.waypoints.count, 1)
+        XCTAssertTrue(imported.drawings.isEmpty)
+        XCTAssertEqual(imported.waypoints[0].name, "Android Alpha")
+
+        let support = try XCTUnwrap(
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+        let storeURL = support.appendingPathComponent("waypoints.json")
+        let backup = FileManager.default.temporaryDirectory
+            .appendingPathComponent("android-fixture-waypoints-\(UUID().uuidString)")
+        let hadStore = FileManager.default.fileExists(atPath: storeURL.path)
+        if hadStore { try FileManager.default.moveItem(at: storeURL, to: backup) }
+        let previousKeyProvider = SafeStore.keyProvider
+        let testKey = Data(repeating: 0x6b, count: 32)
+        SafeStore.keyProvider = { testKey }
+        SealedMigrationPolicy.resetForTests(key: testKey)
+        defer {
+            SafeStore.keyProvider = previousKeyProvider
+            try? FileManager.default.removeItem(at: storeURL)
+            if hadStore { try? FileManager.default.moveItem(at: backup, to: storeURL) }
+        }
+
+        let store = WaypointStore()
+        store.add(imported.waypoints[0])
+        XCTAssertEqual(store.waypoints.count, 1)
+        XCTAssertEqual(store.waypoints.first?.name, "Android Alpha")
+        XCTAssertTrue(SealedEnvelope.isSealedFile(try Data(contentsOf: storeURL)))
+
+        var layers = DrawingLayer.seedDefaults
+        for layer in imported.newLayers where !layers.contains(where: { $0.id == layer.id }) {
+            layers.append(layer)
+        }
+        let localContent = try GeoJSONExporter.export(waypoints: store.waypoints, layers: layers)
+        let rawHash = SyncIdentity.bytesToHex(SyncIdentity.sha256(source))
+        let expectedModelHash = SyncIdentity.bytesToHex(SyncIdentity.sha256(Data(localContent.utf8)))
+        XCTAssertNotEqual(rawHash, expectedModelHash)
+
+        let seed = Data((0..<32).map(UInt8.init))
+        let publicKey = try XCTUnwrap(SyncSigning.publicKey(seed))
+        let publicRaw = try XCTUnwrap(SyncSigning.publicKeyRaw(seed))
+        let keys = SyncCrypto.deriveRoomV3("ANDROID-FIXTURE-ROOM")
+        let actor = SyncIdentity.actorId(roomIdRaw: keys.roomIdRaw, pubkeyRaw: publicRaw)
+        let wireID = SyncIdentity.wireObjectId(
+            metadataKey: keys.metadataKey,
+            localUuidBytes: SyncIdentity.uuidToBytes(imported.waypoints[0].id))
+        let mutation = SyncReplayState.DurableMutation(
+            wireObjectId: wireID, stamp: VersionStamp(counter: 1, actorId: actor),
+            publicKey: publicKey, kind: .put(contentHash: rawHash))
+        let replay = SyncReplayState(roomId: keys.roomId)
+        XCTAssertTrue(try replay.commitRemote(.init(
+            mutation: mutation, priorModelHash: nil,
+            localModelId: imported.waypoints[0].id.uuidString,
+            expectedModelHash: expectedModelHash)))
+        XCTAssertEqual(replay.pendingModelDecision(
+            mutation, currentModelHash: expectedModelHash), .alreadyApplied)
+    }
+
     private func parse(_ json: String) throws -> [String: Any] {
         let data = try XCTUnwrap(json.data(using: .utf8))
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

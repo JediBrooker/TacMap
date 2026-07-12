@@ -1,248 +1,592 @@
 package com.tacmap.sync
 
 import com.tacmap.util.SafeStore
+import com.tacmap.models.ModelMutationEvent
+import com.tacmap.models.ModelMutationOrigin
 import org.json.JSONObject
 import java.io.File
+import java.math.BigInteger
+import java.util.UUID
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
- * Durable per-room replay state for v3 protocol. Survives leave/restart so
- * the relay can't roll back a reconnecting client. Sealed at rest via
- * SafeStore so a seized device can't read stamps.
+ * Durable v3 rollback state. Security-sensitive changes are committed here
+ * before the corresponding model mutation or network send. A failed sealed
+ * write rolls the in-memory change back and is reported to the caller.
  */
-class SyncReplayState(private val roomId: String, private val filesDir: File? = null) {
+class SyncReplayState(
+    private val roomId: String,
+    private val filesDir: File? = null,
+    private val persistOverride: (() -> Boolean)? = null,
+) {
 
     companion object {
         const val ADVANCE_WINDOW = 10_000L
     }
+
+    data class AuthenticatedMutation(
+        val wireObjectId: String,
+        val stamp: VersionStamp,
+        val pubkey: String,
+        val contentHash: String?,
+        val deleted: Boolean,
+    )
+
+    /** Null [priorModelHash] means the object was absent before acceptance. */
+    data class RemoteMutation(
+        val mutation: AuthenticatedMutation,
+        val priorModelHash: String?,
+        val localModelId: String? = null,
+        val acceptedGeneration: Long = 0L,
+        val expectedModelHash: String? = if (mutation.deleted) null else mutation.contentHash,
+    )
+
+    enum class PendingModelDecision { NONE, APPLY_INCOMING, ALREADY_APPLIED, LOCAL_DIVERGED }
 
     var localCounter: Long = 0L
         private set
     var lastSnapshotSeq: Long = -1L
         private set
 
-    // wireObjId -> highest accepted VersionStamp
     private val stamps = HashMap<String, VersionStamp>()
-    // wireObjId -> delete VersionStamp (tombstone persists across reconnect)
     private val tombstones = HashMap<String, VersionStamp>()
-    // wireObjId -> SHA-256 hex of last accepted plaintext
     private val contentHashes = HashMap<String, String>()
-    // actorId -> pinned pubkey (base64url)
     private val actors = HashMap<String, String>()
-    // actorId -> highest accepted presence counter
-    private val presenceSeq = HashMap<String, Long>()
-    // actorId -> session domain (base64url)
-    private val sessionDomains = HashMap<String, String>()
+    private val helloEpochs = HashMap<String, String>()
+    private val pendingModelApplications = HashMap<String, RemoteMutation>()
+    private val transientPresenceSeq = HashMap<String, Long>()
 
-    /**
-     * Try to advance the stamp for [wireObjId]. Returns true if the incoming
-     * stamp is strictly newer than anything we've seen (including tombstones).
-     * Enforces the counter advance window relative to roomHighWater.
-     */
-    fun advance(wireObjId: String, incoming: VersionStamp): Boolean {
-        if (incoming.counter > roomHighWater() + ADVANCE_WINDOW) return false
-        val existing = stamps[wireObjId]
-        val tomb = tombstones[wireObjId]
-        if (existing != null && incoming <= existing) return false
-        if (tomb != null && incoming <= tomb) return false
-        stamps[wireObjId] = incoming
-        return true
+    private data class MemorySnapshot(
+        val localCounter: Long,
+        val lastSnapshotSeq: Long,
+        val stamps: HashMap<String, VersionStamp>,
+        val tombstones: HashMap<String, VersionStamp>,
+        val hashes: HashMap<String, String>,
+        val actors: HashMap<String, String>,
+        val helloEpochs: HashMap<String, String>,
+        val pendingModelApplications: HashMap<String, RemoteMutation>,
+    )
+
+    private fun memorySnapshot() = MemorySnapshot(
+        localCounter, lastSnapshotSeq, HashMap(stamps), HashMap(tombstones),
+        HashMap(contentHashes), HashMap(actors), HashMap(helloEpochs), HashMap(pendingModelApplications)
+    )
+
+    private fun restore(snapshot: MemorySnapshot) {
+        localCounter = snapshot.localCounter
+        lastSnapshotSeq = snapshot.lastSnapshotSeq
+        stamps.clear(); stamps.putAll(snapshot.stamps)
+        tombstones.clear(); tombstones.putAll(snapshot.tombstones)
+        contentHashes.clear(); contentHashes.putAll(snapshot.hashes)
+        actors.clear(); actors.putAll(snapshot.actors)
+        helloEpochs.clear(); helloEpochs.putAll(snapshot.helloEpochs)
+        pendingModelApplications.clear(); pendingModelApplications.putAll(snapshot.pendingModelApplications)
+    }
+
+    private inline fun persistTransaction(change: () -> Unit): Boolean {
+        val before = memorySnapshot()
+        return try {
+            change()
+            if (!save()) throw IllegalStateException("replay-state persistence failed")
+            true
+        } catch (_: Throwable) {
+            restore(before)
+            false
+        }
+    }
+
+    private fun beatsCurrent(wireObjectId: String, incoming: VersionStamp): Boolean {
+        val stamp = stamps[wireObjectId]
+        val tomb = tombstones[wireObjectId]
+        return (stamp == null || incoming > stamp) && (tomb == null || incoming > tomb)
+    }
+
+    fun canAcceptLive(wireObjectId: String, incoming: VersionStamp): Boolean {
+        val high = roomHighWater()
+        val withinWindow = incoming.counter <= high || incoming.counter - high <= ADVANCE_WINDOW
+        return withinWindow && beatsCurrent(wireObjectId, incoming)
+    }
+
+    fun canAcceptSnapshot(wireObjectId: String, incoming: VersionStamp): Boolean =
+        beatsCurrent(wireObjectId, incoming)
+
+    /** Commit one fully authenticated live mutation before touching app models. */
+    fun commitAuthenticated(mutation: AuthenticatedMutation): Boolean {
+        if (mutation.stamp.actorId.isEmpty() || !validMutationKind(mutation) || !canAcceptLive(mutation.wireObjectId, mutation.stamp)) return false
+        val pinned = actors[mutation.stamp.actorId]
+        if (pinned != null && pinned != mutation.pubkey) return false
+        return persistTransaction { applyMutation(mutation) }
+    }
+
+    /** Accept a verified remote mutation and its pre-apply model fingerprint atomically. */
+    fun commitRemoteAuthenticated(remote: RemoteMutation): Boolean {
+        val mutation = remote.mutation
+        if (!validRemote(remote) || !canAcceptLive(mutation.wireObjectId, mutation.stamp)) return false
+        val pinned = actors[mutation.stamp.actorId]
+        if (pinned != null && pinned != mutation.pubkey) return false
+        return persistTransaction {
+            applyMutation(mutation)
+            pendingModelApplications[mutation.wireObjectId] = remote
+        }
     }
 
     /**
-     * Record a tombstone for [wireObjId]. Returns true if the incoming delete
-     * stamp is strictly newer than any existing stamp/tombstone.
+     * Atomically commit a fully authenticated snapshot and its fence. Snapshot
+     * counters establish the reconnect baseline and therefore do not use the
+     * live advance window. Older records are ignored but the fence is monotonic.
      */
-    fun tombstone(wireObjId: String, incoming: VersionStamp): Boolean {
-        if (incoming.counter > roomHighWater() + ADVANCE_WINDOW) return false
-        val existing = stamps[wireObjId]
-        val tomb = tombstones[wireObjId]
-        if (existing != null && incoming <= existing) return false
-        if (tomb != null && incoming <= tomb) return false
-        tombstones[wireObjId] = incoming
-        stamps[wireObjId] = incoming
+    fun commitSnapshot(mutations: List<AuthenticatedMutation>, seq: Long): Boolean {
+        if (seq < 0) return false
+        val actorPins = HashMap(actors)
+        for (mutation in mutations) {
+            if (!validMutationKind(mutation)) return false
+            val pinned = actorPins[mutation.stamp.actorId]
+            if (pinned != null && pinned != mutation.pubkey) return false
+            actorPins[mutation.stamp.actorId] = mutation.pubkey
+        }
+        return persistTransaction {
+            for (mutation in mutations) {
+                if (beatsCurrent(mutation.wireObjectId, mutation.stamp)) applyMutation(mutation)
+            }
+            lastSnapshotSeq = maxOf(lastSnapshotSeq, seq)
+        }
+    }
+
+    /** Snapshot variant that durably records model application work for new mutations. */
+    fun commitRemoteSnapshot(remotes: List<RemoteMutation>, seq: Long): Boolean {
+        if (seq < 0) return false
+        val actorPins = HashMap(actors)
+        for (remote in remotes) {
+            if (!validRemote(remote)) return false
+            val mutation = remote.mutation
+            val pinned = actorPins[mutation.stamp.actorId]
+            if (pinned != null && pinned != mutation.pubkey) return false
+            actorPins[mutation.stamp.actorId] = mutation.pubkey
+        }
+        return persistTransaction {
+            for (remote in remotes) {
+                val mutation = remote.mutation
+                if (beatsCurrent(mutation.wireObjectId, mutation.stamp)) {
+                    applyMutation(mutation)
+                    pendingModelApplications[mutation.wireObjectId] = remote
+                }
+                // Exact persisted records retain an existing matching pending
+                // marker. Exact records without one were already resolved.
+            }
+            lastSnapshotSeq = maxOf(lastSnapshotSeq, seq)
+        }
+    }
+
+    private fun applyMutation(mutation: AuthenticatedMutation) {
+        actors[mutation.stamp.actorId] = mutation.pubkey
+        stamps[mutation.wireObjectId] = mutation.stamp
+        localCounter = maxOf(localCounter, mutation.stamp.counter)
+        if (mutation.deleted) {
+            tombstones[mutation.wireObjectId] = mutation.stamp
+            contentHashes.remove(mutation.wireObjectId)
+        } else {
+            tombstones.remove(mutation.wireObjectId)
+            mutation.contentHash?.let { contentHashes[mutation.wireObjectId] = it }
+        }
+    }
+
+    private fun validMutationKind(mutation: AuthenticatedMutation): Boolean =
+        if (mutation.deleted) mutation.contentHash == null
+        else mutation.contentHash?.matches(Regex("^[0-9a-f]{64}$")) == true
+
+    private fun validRemote(remote: RemoteMutation): Boolean =
+        validMutationKind(remote.mutation) &&
+            (remote.priorModelHash == null || remote.priorModelHash.matches(Regex("^[0-9a-f]{64}$"))) &&
+            (remote.expectedModelHash == null) == remote.mutation.deleted &&
+            (remote.expectedModelHash == null || remote.expectedModelHash.matches(Regex("^[0-9a-f]{64}$"))) &&
+            (remote.localModelId == null || runCatching { java.util.UUID.fromString(remote.localModelId) }.isSuccess) &&
+            remote.acceptedGeneration in 0..VersionStamp.MAX_COUNTER
+
+    /** Reserve a strictly increasing unsigned-64 hello epoch before signing. */
+    fun reserveHelloEpoch(actorId: String): String? {
+        if (SyncIdentity.urlB64Decode32(actorId) == null) return null
+        val current = helloEpochs[actorId]?.let { runCatching { BigInteger(it, 16) }.getOrNull() } ?: BigInteger.ZERO
+        val next = current + BigInteger.ONE
+        if (next > BigInteger("ffffffffffffffff", 16)) return null
+        val hex = next.toString(16).padStart(16, '0')
+        return hex.takeIf { persistTransaction { helloEpochs[actorId] = hex } }
+    }
+
+    /** Persist a verified remote actor pin/epoch; equal or older is replay. */
+    fun commitActorHello(actorId: String, pubkey: String, epochHex: String): Boolean {
+        if (SyncIdentity.parseHelloEpoch(epochHex) == null) return false
+        val pinned = actors[actorId]
+        if (pinned != null && pinned != pubkey) return false
+        val old = helloEpochs[actorId]
+        if (old != null && epochHex <= old) return false
+        return persistTransaction { actors[actorId] = pubkey; helloEpochs[actorId] = epochHex }
+    }
+
+    fun getHelloEpoch(actorId: String): String? = helloEpochs[actorId]
+
+    /** Reserve and persist an outbound put stamp/hash before transmission. */
+    fun reserveLocalPut(wireObjectId: String, actorId: String, pubkey: String, contentHash: String): VersionStamp? {
+        if (SyncIdentity.urlB64Decode32(wireObjectId) == null ||
+            SyncIdentity.urlB64Decode32(actorId) == null || SyncIdentity.urlB64Decode32(pubkey) == null ||
+            !contentHash.matches(Regex("^[0-9a-f]{64}$"))) return null
+        if (localCounter >= VersionStamp.MAX_COUNTER) return null
+        val next = maxOf(localCounter, roomHighWater()) + 1
+        if (next < 0 || next > VersionStamp.MAX_COUNTER) return null
+        val stamp = VersionStamp(next, actorId)
+        val ok = persistTransaction {
+            localCounter = next
+            actors[actorId] = pubkey
+            stamps[wireObjectId] = stamp
+            tombstones.remove(wireObjectId)
+            contentHashes[wireObjectId] = contentHash
+        }
+        return stamp.takeIf { ok }
+    }
+
+    /** Reserve and persist an outbound tombstone before transmission. */
+    fun reserveLocalDelete(wireObjectId: String, actorId: String, pubkey: String): VersionStamp? {
+        if (SyncIdentity.urlB64Decode32(wireObjectId) == null ||
+            SyncIdentity.urlB64Decode32(actorId) == null || SyncIdentity.urlB64Decode32(pubkey) == null) return null
+        if (localCounter >= VersionStamp.MAX_COUNTER) return null
+        val next = maxOf(localCounter, roomHighWater()) + 1
+        if (next < 0 || next > VersionStamp.MAX_COUNTER) return null
+        val stamp = VersionStamp(next, actorId)
+        val ok = persistTransaction {
+            localCounter = next
+            actors[actorId] = pubkey
+            stamps[wireObjectId] = stamp
+            tombstones[wireObjectId] = stamp
+            contentHashes.remove(wireObjectId)
+        }
+        return stamp.takeIf { ok }
+    }
+
+    // Compatibility helpers retained for the pure replay-state tests.
+    fun advance(wireObjectId: String, incoming: VersionStamp): Boolean {
+        if (!canAcceptLive(wireObjectId, incoming)) return false
+        stamps[wireObjectId] = incoming
+        localCounter = maxOf(localCounter, incoming.counter)
         return true
     }
 
-    fun isTombstoned(wireObjId: String): Boolean = tombstones.containsKey(wireObjId)
+    fun tombstone(wireObjectId: String, incoming: VersionStamp): Boolean {
+        if (!canAcceptLive(wireObjectId, incoming)) return false
+        stamps[wireObjectId] = incoming
+        tombstones[wireObjectId] = incoming
+        localCounter = maxOf(localCounter, incoming.counter)
+        return true
+    }
 
-    fun getStamp(wireObjId: String): VersionStamp? = stamps[wireObjId]
-
-    /**
-     * TOFU-pin actorId -> pubkey. Returns true if ok (new pin or same key).
-     * Returns false on key mismatch (swap attempt).
-     */
     fun registerActor(actorId: String, pubkey: String): Boolean {
         val pinned = actors[actorId]
-        if (pinned == null) {
-            actors[actorId] = pubkey
-            return true
-        }
-        return pinned == pubkey
+        if (pinned == null) actors[actorId] = pubkey
+        return pinned == null || pinned == pubkey
     }
 
+    fun isTombstoned(wireObjectId: String): Boolean = tombstones.containsKey(wireObjectId)
+    fun getStamp(wireObjectId: String): VersionStamp? = stamps[wireObjectId]
     fun getPinnedPubkey(actorId: String): String? = actors[actorId]
-
-    fun updateSessionDomain(actorId: String, sd: String) {
-        sessionDomains[actorId] = sd
-    }
-
-    fun getSessionDomain(actorId: String): String? = sessionDomains[actorId]
-
-    /**
-     * Check + advance presence counter for [actorId]. Returns true if counter
-     * is strictly higher than what we've seen. Prevents presence replay.
-     */
+    /** Session-only compatibility helper; deliberately absent from persistence. */
     fun advancePresence(actorId: String, counter: Long): Boolean {
-        val existing = presenceSeq[actorId] ?: -1L
-        if (counter <= existing) return false
-        presenceSeq[actorId] = counter
+        val prior = transientPresenceSeq[actorId] ?: 0L
+        if (counter <= prior) return false
+        transientPresenceSeq[actorId] = counter
         return true
     }
-
-    fun setContentHash(wireObjId: String, hash: String) {
-        contentHashes[wireObjId] = hash
-    }
-
-    fun getContentHash(wireObjId: String): String? = contentHashes[wireObjId]
+    fun setContentHash(wireObjectId: String, hash: String) { contentHashes[wireObjectId] = hash }
+    fun getContentHash(wireObjectId: String): String? = contentHashes[wireObjectId]
 
     /**
-     * Allocate the next counter value for a local write. Persisted BEFORE
-     * send so a crash between persist and send just wastes one value.
+     * True only when the complete authenticated mutation is already durable.
+     * Stamp equality alone is insufficient: after a persist-before-model crash,
+     * a snapshot may use the same stamp with a conflicting key, hash, or kind.
      */
-    fun nextCounter(): Long {
-        localCounter += 1
-        return localCounter
+    fun isExactPersistedMutation(mutation: AuthenticatedMutation): Boolean {
+        if (!validMutationKind(mutation) || stamps[mutation.wireObjectId] != mutation.stamp ||
+            actors[mutation.stamp.actorId] != mutation.pubkey) return false
+        return if (mutation.deleted) {
+            tombstones[mutation.wireObjectId] == mutation.stamp && contentHashes[mutation.wireObjectId] == null
+        } else {
+            !tombstones.containsKey(mutation.wireObjectId) &&
+                contentHashes[mutation.wireObjectId] == mutation.contentHash
+        }
     }
 
-    fun updateSnapshotSeq(seq: Long) {
-        lastSnapshotSeq = seq
+    fun hasPendingModelApplications(): Boolean = pendingModelApplications.isNotEmpty()
+    fun pendingRemoteMutations(): List<RemoteMutation> = pendingModelApplications.values.toList()
+
+    fun pendingModelDecision(
+        mutation: AuthenticatedMutation,
+        currentModelHash: String?,
+        currentGeneration: Long = 0L,
+    ): PendingModelDecision {
+        val pending = pendingModelApplications[mutation.wireObjectId]
+            ?.takeIf { it.mutation == mutation } ?: return PendingModelDecision.NONE
+        val incomingHash = pending.expectedModelHash
+        if (currentModelHash == incomingHash) return PendingModelDecision.ALREADY_APPLIED
+        if (currentGeneration != pending.acceptedGeneration) return PendingModelDecision.LOCAL_DIVERGED
+        return if (currentModelHash == pending.priorModelHash) PendingModelDecision.APPLY_INCOMING
+        else PendingModelDecision.LOCAL_DIVERGED
     }
 
-    private fun roomHighWater(): Long {
+    /** Clear only the exact pending record; persistence failure leaves it intact. */
+    fun clearPendingModelApplication(mutation: AuthenticatedMutation): Boolean {
+        pendingModelApplications[mutation.wireObjectId]
+            ?.takeIf { it.mutation == mutation } ?: return false
+        return persistTransaction { pendingModelApplications.remove(mutation.wireObjectId) }
+    }
+
+    fun recoverableLocalPut(wireObjectId: String, actorId: String, pubkey: String, contentHash: String): VersionStamp? {
+        val stamp = stamps[wireObjectId] ?: return null
+        return stamp.takeIf {
+            it.actorId == actorId && actors[actorId] == pubkey && !tombstones.containsKey(wireObjectId) &&
+                contentHashes[wireObjectId] == contentHash
+        }
+    }
+
+    fun recoverableLocalDeletes(actorId: String, pubkey: String): List<Pair<String, VersionStamp>> =
+        tombstones.mapNotNull { (id, tomb) ->
+            (id to tomb).takeIf {
+                tomb.actorId == actorId && actors[actorId] == pubkey && stamps[id] == tomb && contentHashes[id] == null
+            }
+        }
+
+    fun roomHighWater(): Long {
         var max = localCounter
-        for ((_, vs) in stamps) {
-            if (vs.counter > max) max = vs.counter
-        }
-        for ((_, vs) in tombstones) {
-            if (vs.counter > max) max = vs.counter
-        }
+        for (vs in stamps.values) max = maxOf(max, vs.counter)
+        for (vs in tombstones.values) max = maxOf(max, vs.counter)
         return max
     }
-
-    // -- Persistence via SafeStore atomic write --
 
     private val label = "sync/room/$roomId"
 
     private fun stateFile(): File? {
         val dir = filesDir ?: return null
         val syncDir = File(dir, "sync_replay")
-        if (!syncDir.exists()) syncDir.mkdirs()
+        if (!syncDir.exists() && !syncDir.mkdirs()) throw IllegalStateException("cannot create replay-state directory")
         return File(syncDir, "$roomId.json")
     }
 
-    fun save() {
-        val file = stateFile() ?: return
-        try {
-            val json = JSONObject()
-            json.put("schemaVersion", 3)
-            json.put("localCounter", VersionStamp.counterHex16(localCounter))
-            json.put("lastSnapshotSeq", lastSnapshotSeq)
-
-            val stampsObj = JSONObject()
-            for ((k, v) in stamps) stampsObj.put(k, v.encode())
-            json.put("stamps", stampsObj)
-
-            val tombObj = JSONObject()
-            for ((k, v) in tombstones) tombObj.put(k, v.encode())
-            json.put("tombstones", tombObj)
-
-            val hashObj = JSONObject()
-            for ((k, v) in contentHashes) hashObj.put(k, v)
-            json.put("contentHashes", hashObj)
-
-            val actorsObj = JSONObject()
-            for ((k, v) in actors) actorsObj.put(k, v)
-            json.put("actors", actorsObj)
-
-            val presObj = JSONObject()
-            for ((k, v) in presenceSeq) presObj.put(k, VersionStamp.counterHex16(v))
-            json.put("presenceSeq", presObj)
-
-            val sdObj = JSONObject()
-            for ((k, v) in sessionDomains) sdObj.put(k, v)
-            json.put("sessionDomains", sdObj)
-
-            SafeStore.writeAtomically(file, label, json.toString())
+    /** Returns false instead of swallowing a locked key or failed atomic write. */
+    fun save(): Boolean {
+        persistOverride?.let { return runCatching { it() }.getOrDefault(false) }
+        val file = stateFile() ?: return true
+        return try {
+            SafeStore.writeAtomically(file, label, encode().toString())
+            true
         } catch (_: Throwable) {
-            // key unavailable (auth-bound, locked) -- state kept in memory only
+            false
         }
     }
 
+    /** Empty state is valid; locked, corrupt, or invalid state fails closed. */
     fun load(): Boolean {
-        val file = stateFile() ?: return false
-        try {
-            val result = SafeStore.readOrQuarantine(file, label) { JSONObject(it) }
-            val json = when (result) {
-                is SafeStore.LoadResult.Loaded -> result.value
-                else -> return false
-            }
-            if (json.optInt("schemaVersion", 0) != 3) return false
-
-            localCounter = java.lang.Long.parseUnsignedLong(
-                json.optString("localCounter", "0000000000000000"), 16)
-            lastSnapshotSeq = json.optLong("lastSnapshotSeq", -1L)
-
-            val stampsObj = json.optJSONObject("stamps")
-            if (stampsObj != null) {
-                for (k in stampsObj.keys()) {
-                    VersionStamp.parse(stampsObj.getString(k))?.let { stamps[k] = it }
+        val file = try { stateFile() } catch (_: Throwable) { return false } ?: return true
+        return try {
+            when (val result = SafeStore.readOrQuarantine(file, label) { decode(JSONObject(it)) }) {
+                is SafeStore.LoadResult.Empty -> true
+                is SafeStore.LoadResult.Loaded -> {
+                    restore(result.value)
+                    true
                 }
+                is SafeStore.LoadResult.Locked, is SafeStore.LoadResult.Corrupt -> false
             }
-
-            val tombObj = json.optJSONObject("tombstones")
-            if (tombObj != null) {
-                for (k in tombObj.keys()) {
-                    VersionStamp.parse(tombObj.getString(k))?.let { tombstones[k] = it }
-                }
-            }
-
-            val hashObj = json.optJSONObject("contentHashes")
-            if (hashObj != null) {
-                for (k in hashObj.keys()) contentHashes[k] = hashObj.getString(k)
-            }
-
-            val actorsObj = json.optJSONObject("actors")
-            if (actorsObj != null) {
-                for (k in actorsObj.keys()) actors[k] = actorsObj.getString(k)
-            }
-
-            val presObj = json.optJSONObject("presenceSeq")
-            if (presObj != null) {
-                for (k in presObj.keys()) {
-                    presenceSeq[k] = java.lang.Long.parseUnsignedLong(presObj.getString(k), 16)
-                }
-            }
-
-            val sdObj = json.optJSONObject("sessionDomains")
-            if (sdObj != null) {
-                for (k in sdObj.keys()) sessionDomains[k] = sdObj.getString(k)
-            }
-
-            return true
         } catch (_: Throwable) {
-            return false
+            false
         }
+    }
+
+    private fun encode(): JSONObject = JSONObject().apply {
+        put("schemaVersion", 3)
+        put("localCounter", VersionStamp.counterHex16(localCounter))
+        put("lastSnapshotSeq", lastSnapshotSeq)
+        put("stamps", JSONObject().also { out -> for ((k, v) in stamps) out.put(k, v.encode()) })
+        put("tombstones", JSONObject().also { out -> for ((k, v) in tombstones) out.put(k, v.encode()) })
+        put("contentHashes", JSONObject().also { out -> for ((k, v) in contentHashes) out.put(k, v) })
+        put("actors", JSONObject().also { out -> for ((k, v) in actors) out.put(k, v) })
+        put("helloEpochs", JSONObject().also { out -> for ((k, v) in helloEpochs) out.put(k, v) })
+        put("pendingModelApplications", JSONObject().also { out ->
+            for ((id, remote) in pendingModelApplications) out.put(id, encodeRemote(remote))
+        })
+    }
+
+    private fun encodeRemote(remote: RemoteMutation): JSONObject = JSONObject().apply {
+        val mutation = remote.mutation
+        put("vs", mutation.stamp.encode())
+        put("pub", mutation.pubkey)
+        put("deleted", mutation.deleted)
+        if (!mutation.deleted) put("hash", mutation.contentHash)
+        put("priorHash", remote.priorModelHash ?: JSONObject.NULL)
+        put("expectedHash", remote.expectedModelHash ?: JSONObject.NULL)
+        put("localId", remote.localModelId ?: JSONObject.NULL)
+        put("generation", VersionStamp.counterHex16(remote.acceptedGeneration))
+    }
+
+    private fun decode(json: JSONObject): MemorySnapshot {
+        require(json.optInt("schemaVersion", 0) == 3)
+        val local = parseCounter(json.getString("localCounter"))
+        val seq = json.getLong("lastSnapshotSeq").also { require(it >= -1) }
+        val decodedStamps = decodeStamps(json.getJSONObject("stamps"))
+        val decodedTombs = decodeStamps(json.getJSONObject("tombstones"))
+        val hashes = decodeStrings(json.getJSONObject("contentHashes"))
+        val actorPins = decodeStrings(json.getJSONObject("actors"))
+        val epochs = decodeStrings(json.optJSONObject("helloEpochs") ?: JSONObject())
+        val pending = decodePending(json.optJSONObject("pendingModelApplications") ?: JSONObject())
+        require(actorPins.all { (actor, pub) ->
+            SyncIdentity.urlB64Decode32(actor) != null && SyncIdentity.urlB64Decode32(pub) != null
+        })
+        require(decodedStamps.all { (id, stamp) ->
+            SyncIdentity.urlB64Decode32(id) != null && actorPins[stamp.actorId] != null
+        })
+        require(decodedTombs.all { (id, stamp) -> decodedStamps[id] == stamp })
+        require(hashes.all { (id, hash) -> id in decodedStamps && id !in decodedTombs && hash.matches(Regex("^[0-9a-f]{64}$")) })
+        require(decodedStamps.keys.all { (it in decodedTombs) xor (it in hashes) })
+        require(epochs.all { (actor, epoch) -> actor in actorPins && SyncIdentity.parseHelloEpoch(epoch) != null })
+        require(pending.all { (id, remote) ->
+            id == remote.mutation.wireObjectId && validRemote(remote) &&
+                actorPins[remote.mutation.stamp.actorId] == remote.mutation.pubkey &&
+                exactMutationIn(id, remote.mutation, decodedStamps, decodedTombs, hashes)
+        })
+        val authenticatedMax = decodedStamps.values.maxOfOrNull { it.counter } ?: 0L
+        require(local >= authenticatedMax)
+        return MemorySnapshot(local, seq, decodedStamps, decodedTombs, hashes, actorPins, epochs, pending)
+    }
+
+    private fun decodePending(obj: JSONObject): HashMap<String, RemoteMutation> {
+        val out = HashMap<String, RemoteMutation>()
+        for (id in obj.keys()) {
+            val value = obj.getJSONObject(id)
+            val stamp = VersionStamp.parse(value.getString("vs")) ?: error("invalid pending stamp")
+            val deleted = value.getBoolean("deleted")
+            val hash = if (deleted) null else value.getString("hash")
+            require(if (deleted) !value.has("hash") else hash != null)
+            val prior = if (value.isNull("priorHash")) null else value.getString("priorHash")
+            val expected = if (value.has("expectedHash")) {
+                if (value.isNull("expectedHash")) null else value.getString("expectedHash")
+            } else hash
+            val localId = if (value.isNull("localId")) null else value.getString("localId")
+            val generation = parseCounter(value.optString("generation", "0000000000000000"))
+            out[id] = RemoteMutation(
+                AuthenticatedMutation(id, stamp, value.getString("pub"), hash, deleted), prior, localId, generation, expected)
+        }
+        return out
+    }
+
+    private fun exactMutationIn(
+        id: String,
+        mutation: AuthenticatedMutation,
+        savedStamps: Map<String, VersionStamp>,
+        savedTombs: Map<String, VersionStamp>,
+        savedHashes: Map<String, String>,
+    ): Boolean = savedStamps[id] == mutation.stamp && if (mutation.deleted) {
+        savedTombs[id] == mutation.stamp && savedHashes[id] == null
+    } else {
+        savedTombs[id] == null && savedHashes[id] == mutation.contentHash
+    }
+
+    private fun decodeStamps(obj: JSONObject): HashMap<String, VersionStamp> {
+        val out = HashMap<String, VersionStamp>()
+        for (key in obj.keys()) out[key] = VersionStamp.parse(obj.getString(key)) ?: error("invalid stamp")
+        return out
+    }
+
+    private fun decodeStrings(obj: JSONObject): HashMap<String, String> {
+        val out = HashMap<String, String>()
+        for (key in obj.keys()) out[key] = obj.getString(key)
+        return out
+    }
+
+    private fun parseCounter(value: String): Long {
+        require(value.matches(Regex("^[0-7][0-9a-f]{15}$")))
+        return java.lang.Long.parseUnsignedLong(value, 16)
     }
 
     fun clear() {
         localCounter = 0L
         lastSnapshotSeq = -1L
-        stamps.clear()
-        tombstones.clear()
-        contentHashes.clear()
-        actors.clear()
-        presenceSeq.clear()
-        sessionDomains.clear()
-        stateFile()?.delete()
+        stamps.clear(); tombstones.clear(); contentHashes.clear(); actors.clear(); helloEpochs.clear()
+        pendingModelApplications.clear(); transientPresenceSeq.clear()
+        try { stateFile()?.delete() } catch (_: Throwable) { /* explicit forget is best effort */ }
+    }
+}
+
+/**
+ * App-global mutation journal, independent of any room. It survives Leave and
+ * lets a later room reconnect distinguish hash ABA from no local mutation.
+ */
+class LocalModelRevisionJournal(
+    private val filesDir: File,
+    private val persistOverride: (() -> Boolean)? = null,
+) {
+    internal var lastPersistenceError: Throwable? = null
+        private set
+    private val generations = HashMap<String, Long>()
+    private val file = File(filesDir, "sync_model_revisions.json")
+    private val label = "sync/model-revisions"
+
+    @Synchronized fun generation(localId: String?): Long = localId?.let { generations[it] } ?: 0L
+
+    @Synchronized fun bump(localId: String): Boolean {
+        if (runCatching { UUID.fromString(localId) }.isFailure) return false
+        val current = generations[localId] ?: 0L
+        if (current >= VersionStamp.MAX_COUNTER) return false
+        generations[localId] = current + 1
+        if (save()) return true
+        if (current == 0L) generations.remove(localId) else generations[localId] = current
+        return false
+    }
+
+    @Synchronized fun load(): Boolean = try {
+        when (val result = SafeStore.readOrQuarantine(file, label) { decodeJournal(it) }) {
+            is SafeStore.LoadResult.Empty -> true
+            is SafeStore.LoadResult.Loaded -> { generations.clear(); generations.putAll(result.value); true }
+            is SafeStore.LoadResult.Locked, is SafeStore.LoadResult.Corrupt -> false
+        }
+    } catch (_: Throwable) { false }
+
+    private fun save(): Boolean {
+        persistOverride?.let { return runCatching { it() }.getOrDefault(false) }
+        return try {
+            val json = buildJsonObject {
+                put("schemaVersion", 1)
+                put("generations", buildJsonObject {
+                    for ((id, generation) in generations) put(id, VersionStamp.counterHex16(generation))
+                })
+            }
+            SafeStore.writeAtomically(file, label, json.toString())
+            true
+        } catch (error: Throwable) { lastPersistenceError = error; false }
+    }
+
+    private fun decodeJournal(text: String): HashMap<String, Long> {
+        val json = Json.parseToJsonElement(text).jsonObject
+        require(json["schemaVersion"]?.jsonPrimitive?.int == 1)
+        val values = json["generations"]!!.jsonObject
+        val out = HashMap<String, Long>()
+        for ((id, element) in values) {
+            require(runCatching { UUID.fromString(id) }.isSuccess)
+            val encoded = element.jsonPrimitive.content
+            require(encoded.matches(Regex("^[0-7][0-9a-f]{15}$")))
+            out[id] = java.lang.Long.parseUnsignedLong(encoded, 16)
+        }
+        return out
+    }
+}
+
+/** Extracted production event handler so lossless store paths are testable. */
+class LocalRevisionEventProcessor(
+    private val journal: LocalModelRevisionJournal,
+    private val onPersistenceFailure: () -> Unit,
+) {
+    fun process(event: ModelMutationEvent): Boolean {
+        if (event.origin == ModelMutationOrigin.REMOTE_SYNC) return true
+        if (event.localIds.all { journal.bump(it) }) return true
+        onPersistenceFailure()
+        return false
     }
 }

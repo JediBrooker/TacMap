@@ -1,30 +1,56 @@
 import SwiftUI
 import MapKit
+import PDFKit
 import UniformTypeIdentifiers
 
 enum ImportedMapFileCopier {
+    static let maxPDFBytes = 512 * 1024 * 1024
+    static let maxMBTilesBytes = 2 * 1024 * 1024 * 1024
     /// Copy an imported map (PDF/GeoPDF/MBTiles) into the app-private,
     /// file-protected ImportedMaps dir - NOT Documents. Keeps the picture of
     /// your AO off the Files.app / Finder file-sharing surface, where it used
     /// to sit readable to anyone with the unlocked device or a paired host.
     static func copyToImportedMaps(_ source: URL,
+                                   maximumBytes: Int = maxPDFBytes,
                                    fileManager: FileManager = .default) throws -> URL {
         let dir = try importedMapsDirectory(fileManager: fileManager)
-        let dest = try copy(source, into: dir, fileManager: fileManager)
+        let dest = try copy(source, into: dir, maximumBytes: maximumBytes, fileManager: fileManager)
         // After-first-unlock so a backgrounded map / recording read still
         // works; matches the migration path in PDFSessionStore.
-        try? fileManager.setAttributes(
-            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-            ofItemAtPath: dest.path)
+        do {
+            try fileManager.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                ofItemAtPath: dest.path)
+        } catch {
+            try? fileManager.removeItem(at: dest)
+            throw error
+        }
         return dest
     }
 
     static func copy(_ source: URL,
                      into directory: URL,
+                     maximumBytes: Int = maxPDFBytes,
                      fileManager: FileManager = .default) throws -> URL {
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]
+        let before = try source.resourceValues(forKeys: keys)
+        guard before.isRegularFile == true, before.isSymbolicLink != true,
+              let size = before.fileSize, size >= 0, size <= maximumBytes else {
+            throw CocoaError(.fileReadTooLarge)
+        }
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = uniqueDestination(for: source, in: directory, fileManager: fileManager)
-        try fileManager.copyItem(at: source, to: destination)
+        do {
+            try fileManager.copyItem(at: source, to: destination)
+            let copied = try destination.resourceValues(forKeys: keys)
+            guard copied.isRegularFile == true, copied.isSymbolicLink != true,
+                  let copiedSize = copied.fileSize, copiedSize == size, copiedSize <= maximumBytes else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            throw error
+        }
         return destination
     }
 
@@ -61,6 +87,21 @@ enum ImportedMapFileCopier {
     }
 }
 
+private enum BoundedImportReader {
+    static func read(_ url: URL, maximumBytes: Int) throws -> Data {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true else { throw CocoaError(.fileReadUnsupportedScheme) }
+        guard let size = values.fileSize, size >= 0, size <= maximumBytes else {
+            throw GeoJSONImporter.ImportError.limitExceeded("file is over \(maximumBytes / 1_048_576) MB")
+        }
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe, .uncached])
+        guard data.count <= maximumBytes else {
+            throw GeoJSONImporter.ImportError.limitExceeded("file changed while it was being read")
+        }
+        return data
+    }
+}
+
 struct ContentView: View {
     @StateObject private var locationService = LocationService()
     @StateObject private var waypointStore   = WaypointStore()
@@ -94,6 +135,8 @@ struct ContentView: View {
     @State private var showSyncSheet       = false
     @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: String? = nil
+    @State private var missionUnlockError: String? = nil
+    @State private var dataKeyEpoch = 0
     /// Brief toast for remote sync updates (conflict notification).
     @State private var syncToast: String? = nil
     /// Share sheet URL for "Export All Data"
@@ -145,6 +188,12 @@ struct ContentView: View {
     /// else the live position. Drives the MGRS readout, drop-pin, and G-M angle.
     private var headerCoordinate: CLLocationCoordinate2D? {
         mapVM.isBrowsing ? mapVM.cameraCentre : locationService.lastLocation?.coordinate
+    }
+
+    private var missionDataLocked: Bool {
+        _ = dataKeyEpoch
+        return (DataKey.isAuthBound && !DataKey.isUnlocked)
+            || waypointStore.locked || drawingStore.locked || trackRecorder.requiresUnlock
     }
 
     var body: some View {
@@ -218,6 +267,31 @@ struct ContentView: View {
                 syncToastOverlay
             }
         }
+        .overlay {
+            if missionDataLocked {
+                MissionDataUnlockView(
+                    detail: missionUnlockError
+                        ?? waypointStore.loadError
+                        ?? drawingStore.loadError
+                        ?? trackRecorder.persistError,
+                    unlock: unlockMissionData
+                )
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: DataKey.lockChanged)) { _ in
+            dataKeyEpoch &+= 1
+        }
+        .alert("Track Recording", isPresented: Binding(
+            get: { trackRecorder.persistError != nil && !trackRecorder.requiresUnlock },
+            set: { if !$0 { trackRecorder.persistError = nil } }
+        )) {
+            if !trackRecorder.points.isEmpty || trackRecorder.recovered {
+                Button("Discard Saved Track", role: .destructive) { trackRecorder.discard() }
+            }
+            Button("OK", role: .cancel) { trackRecorder.persistError = nil }
+        } message: {
+            Text(trackRecorder.persistError ?? "Track recording failed.")
+        }
         .task {
             drawingStore.undoManager = undoManager
             waypointStore.undoManager = undoManager
@@ -239,7 +313,7 @@ struct ContentView: View {
             /// lives in Documents, calibration is in UserDefaults -
             /// see PDFSessionStore.
             if let restored = PDFSessionStore.load() {
-                NSLog("[Import] restored persisted PDF: \(restored.displayName)")
+                NSLog("[Import] restored persisted PDF")
                 mapVM.mapSource = restored
                 /// Frame restored map same way an import does so a PDF
                 /// whose coverage doesn't contain user doesn't open
@@ -315,6 +389,11 @@ struct ContentView: View {
         // Feed every fix into the track recorder. It just ignores them unless recording.
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
             trackRecorder.ingest(loc)
+        }
+        .onChange(of: trackRecorder.isRecording) { active in
+            // Background location follows the recorder's *durable* state. A
+            // failed start or append immediately tears the capability down.
+            locationService.setBackgroundUpdates(active)
         }
         .sheet(isPresented: $showSearchSheet) {
             SearchSheet(mapVM: mapVM)
@@ -474,7 +553,6 @@ struct ContentView: View {
                     pointCount: trackRecorder.points.count,
                     onStop: {
                         trackRecorder.stop()
-                        locationService.setBackgroundUpdates(false)
                     }
                 )
                 .padding(.top, 8)
@@ -537,10 +615,8 @@ struct ContentView: View {
                             drawingsPanelOpen = false
                             if trackRecorder.isRecording {
                                 trackRecorder.stop()
-                                locationService.setBackgroundUpdates(false)
                             } else {
-                                trackRecorder.start()
-                                locationService.setBackgroundUpdates(true)
+                                _ = trackRecorder.start()
                             }
                         },
                         onExportGPX: {
@@ -713,6 +789,24 @@ struct ContentView: View {
         canRedo = undoManager?.canRedo ?? false
     }
 
+    private func unlockMissionData() {
+        missionUnlockError = nil
+        do {
+            _ = try DataKey.key()
+            dataKeyEpoch &+= 1
+            waypointStore.reloadAfterUnlock()
+            drawingStore.reloadAfterUnlock()
+            trackRecorder.retryRecoveryAfterUnlock()
+            guard !missionDataLocked else { throw DataKey.LockedError() }
+            if !(mapVM.mapSource is PDFMapSource), let restored = PDFSessionStore.load() {
+                mapVM.mapSource = restored
+                mapVM.frameCamera(for: restored, userLocation: locationService.lastLocation?.coordinate)
+            }
+        } catch {
+            missionUnlockError = error.localizedDescription
+        }
+    }
+
     /// Export all waypoints + drawings + layers to GeoJSON and show
     /// system share sheet.
     private func exportAllData() {
@@ -738,7 +832,7 @@ struct ContentView: View {
             let didStart = url.startAccessingSecurityScopedResource()
             defer { if didStart { url.stopAccessingSecurityScopedResource() } }
             do {
-                let data = try Data(contentsOf: url)
+                let data = try BoundedImportReader.read(url, maximumBytes: GeoJSONImporter.maxInputBytes)
                 let fallback = drawingStore.activeLayerID
                     ?? drawingStore.layers.first?.id
                     ?? DrawingLayer.legacyFallbackID
@@ -771,7 +865,7 @@ struct ContentView: View {
             let didStart = url.startAccessingSecurityScopedResource()
             defer { if didStart { url.stopAccessingSecurityScopedResource() } }
             do {
-                let data = try Data(contentsOf: url)
+                let data = try BoundedImportReader.read(url, maximumBytes: KMLImporter.maxInputBytes)
                 let fallback = drawingStore.activeLayerID
                     ?? drawingStore.layers.first?.id
                     ?? DrawingLayer.legacyFallbackID
@@ -843,19 +937,25 @@ struct ContentView: View {
 
         let dest: URL
         do {
-            dest = try ImportedMapFileCopier.copyToImportedMaps(url)
+            dest = try ImportedMapFileCopier.copyToImportedMaps(
+                url, maximumBytes: ImportedMapFileCopier.maxPDFBytes)
         } catch {
             importMessage = "Couldn't import this PDF map: \(error.localizedDescription)"
             return
         }
+        guard PDFDocument(url: dest) != nil else {
+            try? FileManager.default.removeItem(at: dest)
+            importMessage = "Couldn't import this file as a valid PDF map."
+            return
+        }
 
-        NSLog("[Import] picked \(url.lastPathComponent) -> dest=\(dest.path)")
+        NSLog("[Import] copied PDF into protected app storage")
         let cameraAtImport = mapVM.cameraCentre
         Task.detached(priority: .userInitiated) { [mapVM] in
             let parsed = GeoPDFReader.bounds(from: dest)
-            NSLog("[Import] LGIDict/known-sheet parse: \(String(describing: parsed))")
+            NSLog("[Import] geospatial metadata parse complete")
             let resolvedBounds = parsed ?? GeoPDFReader.fallbackBounds(centeredOn: cameraAtImport)
-            NSLog("[Import] resolved bounds SW=\(resolvedBounds.southWest.latitude),\(resolvedBounds.southWest.longitude) NE=\(resolvedBounds.northEast.latitude),\(resolvedBounds.northEast.longitude)")
+            NSLog("[Import] map bounds resolved")
             let fromGeoPDF = (parsed != nil)
 
             await MainActor.run {
@@ -898,13 +998,15 @@ struct ContentView: View {
 
         let dest: URL
         do {
-            dest = try ImportedMapFileCopier.copyToImportedMaps(url)
+            dest = try ImportedMapFileCopier.copyToImportedMaps(
+                url, maximumBytes: ImportedMapFileCopier.maxMBTilesBytes)
         } catch {
             importMessage = "Couldn't import this MBTiles map: \(error.localizedDescription)"
             return
         }
 
         guard let source = OfflineTileMapSource(url: dest) else {
+            try? FileManager.default.removeItem(at: dest)
             importMessage = "Couldn't open this file as an MBTiles map."
             return
         }
@@ -914,6 +1016,26 @@ struct ContentView: View {
             userLocation: locationService.lastLocation?.coordinate
         )
         importMessage = "Loaded offline tiles: \(source.displayName)."
+    }
+}
+
+private struct MissionDataUnlockView: View {
+    let detail: String?
+    let unlock: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "lock.shield.fill").font(.system(size: 46)).foregroundStyle(.green)
+                Text("Mission data locked").font(.title2.bold()).foregroundStyle(.white)
+                Text(detail ?? "Authenticate to load and edit encrypted mission data.")
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Button("Unlock mission data", action: unlock)
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding(28)
+        }
     }
 }
 

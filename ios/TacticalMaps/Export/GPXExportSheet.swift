@@ -48,6 +48,7 @@ struct GPXExportSheet: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
             .task { generate() }
+            .onDisappear { ExportFileSecurity.remove(generatedURL) }
         }
     }
 

@@ -83,11 +83,13 @@ enum SyncCrypto {
     /// system CSPRNG.
     static func generateJoinCode() -> String {
         let alphabet = Array("23456789ABCDEFGHJKMNPQRSTVWXYZ")
-        return String((0..<16).map { _ in alphabet.randomElement()! })
+        return "3:" + String((0..<16).map { _ in alphabet.randomElement()! })
     }
 
     static func isJoinCodeTooWeak(_ code: String) -> Bool {
-        code.trimmingCharacters(in: .whitespacesAndNewlines).count < minJoinCodeLength
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = (trimmed.hasPrefix("3:") || trimmed.hasPrefix("2:")) ? String(trimmed.dropFirst(2)) : trimmed
+        return secret.count < minJoinCodeLength
     }
 
     private static let saltV3 = "tacmap-sync-salt-v3"

@@ -180,7 +180,7 @@ enum GeoPDFReader {
             // stretched to the lat/lon box. Falls back to nil (bbox placement)
             // if viewport lacks LPTS or the fit is degenerate.
             let affine = g.crop.flatMap { viewportAffine(g.viewport, crop: $0) }
-            NSLog("[GeoPDF] Adobe Geospatial: \(count) viewport(s); chose largest geo (area=\(Int(g.area))) SW=\(g.sw.latitude),\(g.sw.longitude) NE=\(g.ne.latitude),\(g.ne.longitude) crop=\(String(describing: g.crop)) affine=\(affine != nil ? "yes" : "no")")
+            NSLog("[GeoPDF] Adobe Geospatial: \(count) viewport(s); selected valid geospatial viewport; affine=\(affine != nil ? "yes" : "no")")
             return ParsedLGI(southWest: g.sw, northEast: g.ne, pdfCropRect: g.crop, placementAffine: affine)
         }
         if let c = bestCrop {
@@ -397,8 +397,7 @@ enum GeoPDFReader {
         let chosen = entries.first { dict in
             dictString(dict, "Description") == "Layers"
         } ?? entries[0]
-        let chosenDesc = dictString(chosen, "Description") ?? "<none>"
-        NSLog("[GeoPDF] LGIDict: \(entries.count) entries; using '\(chosenDesc)'")
+        NSLog("[GeoPDF] LGIDict: \(entries.count) entries; selected supported entry")
         let entryDict = chosen
 
         // CTM (PDF user space -> projection coords). 6 numbers, may be strings.
@@ -467,8 +466,7 @@ enum GeoPDFReader {
         var stdParallel2:    Double = 0
         // Resolved source datum: ellipsoid + geocentric translation to WGS84.
         // Populated from either an inline /Datum dict (USGS US Topo and many
-        // OGC GeoPDFs) or a 2-letter /Datum name. datumCode is just for logging.
-        var datumCode:       String = "WE"
+        // OGC GeoPDFs) or a 2-letter /Datum name.
         var srcEllipsoid = Ellipsoid.wgs84
         var datumDx = 0.0, datumDy = 0.0, datumDz = 0.0
 
@@ -504,7 +502,6 @@ enum GeoPDFReader {
             // fell through to WGS84 identity).
             var datumDict: CGPDFDictionaryRef?
             if CGPDFDictionaryGetDictionary(pDict, "Datum", &datumDict), let dDict = datumDict {
-                datumCode = dictString(dDict, "Description") ?? "inline"
                 var ellDict: CGPDFDictionaryRef?
                 if CGPDFDictionaryGetDictionary(dDict, "Ellipsoid", &ellDict), let eDict = ellDict,
                    let a = dictReal(eDict, "SemiMajorAxis"), a > 0,
@@ -521,7 +518,6 @@ enum GeoPDFReader {
                 let p = DatumShift.params(for: d.uppercased())
                 srcEllipsoid = p.ellipsoid
                 datumDx = p.dx; datumDy = p.dy; datumDz = p.dz
-                datumCode = d.uppercased()
             }
         }
 
@@ -610,14 +606,14 @@ enum GeoPDFReader {
         }()
 
         guard let proj = projection else {
-            NSLog("[GeoPDF] LGIDict projection='\(projectionType)' not supported - crop only")
+            NSLog("[GeoPDF] LGIDict projection not supported - crop only")
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
         }
 
-        NSLog("[GeoPDF] dispatching projection=\(proj) datum=\(datumCode) (\(projected.count) corners)")
+        NSLog("[GeoPDF] decoding \(projected.count) projected corners")
         for (idx, pt) in projected.enumerated() {
             guard let g = proj.inverse(easting: pt.x, northing: pt.y) else {
-                NSLog("[GeoPDF] corner \(idx) inverse failed (E=\(pt.x), N=\(pt.y))")
+            NSLog("[GeoPDF] projected corner \(idx) inverse failed")
                 return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
             }
             // Shift off source datum onto WGS84 (identity for modern datums;
@@ -626,7 +622,7 @@ enum GeoPDFReader {
             let w = DatumShift.toWGS84(lat: g.lat, lon: g.lon,
                                        sourceEllipsoid: srcEllipsoid,
                                        dx: datumDx, dy: datumDy, dz: datumDz)
-            NSLog("[GeoPDF] corner \(idx): E=\(pt.x) N=\(pt.y) -> lat=\(w.lat) lon=\(w.lon) (datum \(datumCode))")
+            NSLog("[GeoPDF] projected corner \(idx) decoded")
             lats.append(w.lat)
             lons.append(w.lon)
         }
@@ -644,11 +640,11 @@ enum GeoPDFReader {
               latRange.contains(minLat),
               latRange.contains(maxLat),
               minLon != maxLon, minLat != maxLat else {
-            NSLog("[GeoPDF] decoded bounds rejected: lat=\(minLat)..\(maxLat) lon=\(minLon)..\(maxLon)")
+            NSLog("[GeoPDF] decoded bounds rejected")
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
         }
 
-        NSLog("[GeoPDF] LGIDict decoded bounds SW=\(minLat),\(minLon) NE=\(maxLat),\(maxLon)")
+        NSLog("[GeoPDF] LGIDict bounds decoded")
         return ParsedLGI(
             southWest: CLLocationCoordinate2D(latitude: minLat, longitude: minLon),
             northEast: CLLocationCoordinate2D(latitude: maxLat, longitude: maxLon),

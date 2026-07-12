@@ -179,4 +179,5 @@ dependencies {
     // no emulator). The pure-logic suites for the affine solve, MGRS
     // formatting, and GeoJSON export live in src/test.
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

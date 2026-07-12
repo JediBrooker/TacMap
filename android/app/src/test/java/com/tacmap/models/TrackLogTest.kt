@@ -16,13 +16,22 @@ import java.nio.file.Files
 class TrackLogTest {
 
     private val testKey = ByteArray(32) { it.toByte() }
+    private val sealedLabels = mutableSetOf<String>()
 
     @Before fun installTestKey() {
         SafeStore.keyProvider = SafeStore.KeyProvider { testKey }
+        SafeStore.migrationPolicy = object : SafeStore.MigrationPolicy {
+            override fun isSealedOnly(label: String) = label in sealedLabels
+            override fun markSealedOnly(label: String) { sealedLabels += label }
+        }
     }
 
     @After fun restoreKeyProvider() {
         SafeStore.keyProvider = SafeStore.KeyProvider { DataKey.key() }
+        SafeStore.migrationPolicy = object : SafeStore.MigrationPolicy {
+            override fun isSealedOnly(label: String) = DataKey.isStoreSealedOnly(label)
+            override fun markSealedOnly(label: String) = DataKey.markStoreSealedOnly(label)
+        }
     }
 
     private fun tempFile(): File = File(Files.createTempDirectory("tracklog").toFile(), "recording.ndjson")
@@ -105,6 +114,17 @@ class TrackLogTest {
         assertEquals(legacy, after.points)
         assertFalse(after.hadLegacyLines)
         assertTrue(f.readLines().filter { it.isNotBlank() }.all { SealedEnvelope.isSealedLine(it) })
+    }
+
+    @Test fun plaintextDowngradeIsRejectedAfterReseal() {
+        val f = tempFile()
+        val json = Json { ignoreUnknownKeys = true }
+        f.writeText(json.encodeToString(TrackPoint.serializer(), pt(1)) + "\n")
+        val recovered = TrackLog.read(f)
+        TrackLog.reseal(f, recovered.points)
+        f.writeText(json.encodeToString(TrackPoint.serializer(), pt(2)) + "\n")
+        val failure = runCatching { TrackLog.read(f) }.exceptionOrNull()
+        assertTrue(failure is java.io.IOException)
     }
 
     @Test fun lineFromAnotherStoreDoesNotOpen() {

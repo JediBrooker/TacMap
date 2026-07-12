@@ -74,4 +74,19 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: firstDest), Data("first".utf8))
         XCTAssertEqual(try Data(contentsOf: secondDest), Data("second".utf8))
     }
+
+    func testImportedMapFileCopierRejectsOversizedInputWithoutResidue() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("import-limit-\(UUID().uuidString)", isDirectory: true)
+        let destination = root.appendingPathComponent("dest", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("oversized.mbtiles")
+        try Data("12345".utf8).write(to: source)
+
+        XCTAssertThrowsError(try ImportedMapFileCopier.copy(
+            source, into: destination, maximumBytes: 4
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+    }
 }

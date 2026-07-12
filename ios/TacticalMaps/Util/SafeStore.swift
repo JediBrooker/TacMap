@@ -1,4 +1,90 @@
 import Foundation
+import Security
+import CryptoKit
+
+/// Versioned downgrade policy stored outside the file tree and authenticated
+/// under the mission DEK. Deleting/replacing a `.sealed-only` sidecar used to
+/// reopen the legacy plaintext reader; a sealed Keychain record cannot be
+/// forged without both Keychain access and the DEK.
+enum SealedMigrationPolicy {
+    private static let service = "com.tacmap.sealed-policy"
+    private static let envelopeLabel = "sealed-migration-policy/v1"
+    private static let lock = NSLock()
+
+    private struct State: Codable { var version = 1; var identifiers: Set<String> = [] }
+
+    #if DEBUG
+    /// Unit-test hosts do not consistently receive the app's Keychain access.
+    /// Tests explicitly opt a fixed key into this process-local backend.
+    private static var testStates: [String: State] = [:]
+    #endif
+
+    static func requiresSealed(_ identifier: String, key: Data) throws -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        #if DEBUG
+        if let state = testStates[account(for: key)] {
+            return state.identifiers.contains(identifier)
+        }
+        #endif
+        return try load(key: key).identifiers.contains(identifier)
+    }
+
+    static func markSealed(_ identifier: String, key: Data) throws {
+        lock.lock(); defer { lock.unlock() }
+        #if DEBUG
+        let keyAccount = account(for: key)
+        if var state = testStates[keyAccount] {
+            state.identifiers.insert(identifier)
+            testStates[keyAccount] = state
+            return
+        }
+        #endif
+        var state = try load(key: key)
+        guard state.identifiers.insert(identifier).inserted else { return }
+        let plain = try JSONEncoder().encode(state)
+        let sealed = try SealedEnvelope.sealFile(key: key, plaintext: plain, label: envelopeLabel)
+        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrService as String: service,
+                                  kSecAttrAccount as String: account(for: key)]
+        var status = SecItemUpdate(base as CFDictionary,
+                                   [kSecValueData as String: sealed] as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = base
+            add[kSecValueData as String] = sealed
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(add as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw CocoaError(.fileWriteNoPermission) }
+    }
+
+    private static func load(key: Data) throws -> State {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: service,
+                                    kSecAttrAccount as String: account(for: key),
+                                    kSecReturnData as String: true,
+                                    kSecMatchLimit as String: kSecMatchLimitOne]
+        var out: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        if status == errSecItemNotFound { return State() }
+        guard status == errSecSuccess, let sealed = out as? Data,
+              let plain = SealedEnvelope.openFile(key: key, blob: sealed, label: envelopeLabel),
+              let state = try? JSONDecoder().decode(State.self, from: plain), state.version == 1 else {
+            throw SafeStore.SealError()
+        }
+        return state
+    }
+
+    private static func account(for key: Data) -> String {
+        "policy.v1." + SHA256.hash(data: key).prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    #if DEBUG
+    static func resetForTests(key: Data) {
+        lock.lock(); defer { lock.unlock() }
+        testStates[account(for: key)] = State()
+    }
+    #endif
+}
 
 /// Shared persistence helpers for on-device stores.
 ///
@@ -48,8 +134,10 @@ enum SafeStore {
 
     /// Seal `data` under `label` and atomically replace the file at `url`.
     static func write(_ data: Data, to url: URL, label: String) throws {
-        let sealed = try SealedEnvelope.sealFile(key: try keyProvider(), plaintext: data, label: label)
+        let key = try keyProvider()
+        let sealed = try SealedEnvelope.sealFile(key: key, plaintext: data, label: label)
         try writeSealed(sealed, to: url)
+        try SealedMigrationPolicy.markSealed(policyID(url, label), key: key)
     }
 
     static func read<T>(_ url: URL, label: String, decode: (Data) throws -> T) -> Load<T> {
@@ -68,6 +156,9 @@ enum SafeStore {
         do {
             let raw = try Data(contentsOf: url)
             let wasSealed = SealedEnvelope.isSealedFile(raw)
+            let legacyMarker = fm.fileExists(atPath: legacyMarkerURL(for: url).path)
+            if legacyMarker { try SealedMigrationPolicy.markSealed(policyID(url, label), key: key) }
+            let sealedOnly = try SealedMigrationPolicy.requiresSealed(policyID(url, label), key: key)
             let plain: Data
             if wasSealed {
                 guard let opened = SealedEnvelope.openFile(key: key, blob: raw, label: label) else {
@@ -75,12 +166,17 @@ enum SafeStore {
                 }
                 plain = opened
             } else {
+                guard !sealedOnly else { throw SealError() }
                 plain = raw // pre-encryption build wrote this
             }
             let value = try decode(plain)
             if !wasSealed {
                 try writeSealed(SealedEnvelope.sealFile(key: key, plaintext: plain, label: label), to: url)
             }
+            // Durable downgrade barrier: after a successful sealed read or
+            // migration, this path will never again accept plaintext.
+            try SealedMigrationPolicy.markSealed(policyID(url, label), key: key)
+            if legacyMarker { try? fm.removeItem(at: legacyMarkerURL(for: url)) }
             return .loaded(value)
         } catch {
             let quarantine = url.deletingLastPathComponent()
@@ -96,5 +192,13 @@ enum SafeStore {
     /// GPX recording with the screen off.
     private static func writeSealed(_ bytes: Data, to url: URL) throws {
         try bytes.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    private static func legacyMarkerURL(for url: URL) -> URL {
+        url.appendingPathExtension("sealed-only")
+    }
+
+    private static func policyID(_ url: URL, _ label: String) -> String {
+        "file:\(url.standardizedFileURL.path):\(label)"
     }
 }

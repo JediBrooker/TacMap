@@ -139,6 +139,7 @@ struct TileMapContainer: UIViewRepresentable {
         private var heatmapView: HeatmapOverlayView?
         private var heatmapVisible = false
         private var heatmapTask: Task<Void, Never>?
+        private var heatmapGeneration: UInt64 = 0
         private let heatmapService = TerrainHeatmapService()
 
         func attach(view: TileMapView, mapVM: MapViewModel) {
@@ -239,6 +240,7 @@ struct TileMapContainer: UIViewRepresentable {
             if visible {
                 scheduleHeatmapFetch()
             } else {
+                heatmapGeneration &+= 1
                 heatmapTask?.cancel(); heatmapTask = nil
                 heatmapView?.clear()
             }
@@ -250,19 +252,20 @@ struct TileMapContainer: UIViewRepresentable {
         private func scheduleHeatmapFetch() {
             guard heatmapVisible, let view else { return }
             heatmapTask?.cancel()
+            heatmapGeneration &+= 1
+            let generation = heatmapGeneration
             let region = MapProjectionMath.visibleRegion(view.camera)
-            heatmapTask = Task { [weak self] in
+            heatmapTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 if Task.isCancelled { return }
                 let image = await self?.heatmapService.generate(region: region)
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    guard let self, self.heatmapVisible, let image else { return }
-                    self.heatmapView?.update(image: image, region: (
-                        center: region.center,
-                        latDelta: region.span.latitudeDelta,
-                        lonDelta: region.span.longitudeDelta))
-                }
+                guard !Task.isCancelled, let self,
+                      generation == self.heatmapGeneration,
+                      self.heatmapVisible, let image else { return }
+                self.heatmapView?.update(image: image, region: (
+                    center: region.center,
+                    latDelta: region.span.latitudeDelta,
+                    lonDelta: region.span.longitudeDelta))
             }
         }
 

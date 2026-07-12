@@ -9,7 +9,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -55,15 +54,21 @@ fun TileMapView(
     onTap: () -> Unit = {}
 ) {
     val density = LocalDensity.current.density
-    val scope = rememberCoroutineScope()
     val cameraState = rememberUpdatedState(camera)
     val onChange = rememberUpdatedState(onCameraChange)
     val onStart = rememberUpdatedState(onGestureStart)
     val onTapState = rememberUpdatedState(onTap)
+    val sourceState = rememberUpdatedState(source)
 
     // Decoded tiles, keyed by address. `version` bumps to force a redraw as
     // tiles arrive; `inFlight` dedupes concurrent loads of the same tile.
-    val cache = remember { LruCache<TileIndex, ImageBitmap>(400) }
+    val cache = remember {
+        object : LruCache<TileIndex, ImageBitmap>(48 * 1024) {
+            override fun sizeOf(key: TileIndex, value: ImageBitmap): Int =
+                ((value.width.toLong() * value.height.toLong() * 4L + 1023L) / 1024L)
+                    .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        }
+    }
     val inFlight = remember { HashSet<TileIndex>() }
     var version by remember { mutableIntStateOf(0) }
 
@@ -87,10 +92,9 @@ fun TileMapView(
         val s = source ?: return@LaunchedEffect
         tiles.forEach { t ->
             if (cache.get(t) == null && inFlight.add(t)) {
-                scope.launch {
-                    val bmp = s.loadTile(t)
-                    inFlight.remove(t)
-                    if (bmp != null) {
+                launch {
+                    val bmp = try { s.loadTile(t) } finally { inFlight.remove(t) }
+                    if (bmp != null && sourceState.value === s) {
                         cache.put(t, bmp.asImageBitmap())
                         version++
                     }

@@ -61,6 +61,13 @@ final class WaypointStore: ObservableObject {
     /// over data we simply couldn't read.
     @Published private(set) var locked = false
 
+    func reloadAfterUnlock() {
+        guard locked else { return }
+        locked = false
+        loadError = nil
+        load()
+    }
+
     private static let label = "waypoints.json"
 
     private func load() {
@@ -71,6 +78,7 @@ final class WaypointStore: ObservableObject {
         switch SafeStore.read(url, label: Self.label, decode: { try JSONDecoder().decode([Waypoint].self, from: $0) }) {
         case .loaded(let decoded):
             waypoints = decoded
+            locked = false
         case .empty:
             break // genuine fresh install
         case .corrupt(let quarantine, _):
@@ -91,7 +99,7 @@ final class WaypointStore: ObservableObject {
             try SafeStore.write(data, to: url, label: Self.label)
             if loadError?.hasPrefix("Could not save") == true { loadError = nil }
         } catch {
-            print("[WaypointStore] persist failed: \(error)")
+            print("[WaypointStore] persist failed")
             loadError = "Could not save waypoints to disk: \(error.localizedDescription)"
         }
     }

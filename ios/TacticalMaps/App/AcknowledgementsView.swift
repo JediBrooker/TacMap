@@ -98,6 +98,7 @@ struct AcknowledgementsView: View {
                         }
                         Button(role: .destructive) {
                             CrashReporter.clear()
+                            ExportFileSecurity.remove(crashURL)
                             self.crashURL = nil
                         } label: {
                             Label("Clear crash log", systemImage: "trash")
@@ -114,6 +115,7 @@ struct AcknowledgementsView: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
         }
+        .onDisappear { ExportFileSecurity.remove(crashURL) }
     }
 }
 

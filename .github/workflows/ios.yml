@@ -1,5 +1,8 @@
 name: iOS Build
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -17,25 +20,47 @@ on:
 
 jobs:
   build:
-    name: Build for iPhone Simulator
+    name: Test and build for iPhone Simulator
     runs-on: macos-15
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Select latest Xcode
+        shell: bash
         run: |
-          XCODE=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
-          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
+          set -euo pipefail
+          XCODE=$(find /Applications -maxdepth 1 -type d -name 'Xcode_16*.app' -print | sort -V | tail -1)
+          XCODE=${XCODE:-/Applications/Xcode.app}
+          test -d "$XCODE/Contents/Developer"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
 
       - name: Xcode + Simulator runtime info
+        shell: bash
         run: |
+          set -euo pipefail
           xcodebuild -version
           xcrun simctl list runtimes
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install pinned XcodeGen
+        shell: bash
+        env:
+          XCODEGEN_VERSION: '2.45.4'
+          XCODEGEN_SHA256: '090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef'
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcodegen.zip"
+          install_dir="$RUNNER_TEMP/xcodegen"
+          curl --fail --silent --show-error --location \
+            --proto '=https' --tlsv1.2 \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip" \
+            --output "$archive"
+          echo "${XCODEGEN_SHA256}  ${archive}" | shasum -a 256 --check
+          mkdir -p "$install_dir"
+          ditto -x -k "$archive" "$install_dir"
+          echo "$install_dir/xcodegen/bin" >> "$GITHUB_PATH"
 
       # Secrets.xcconfig is gitignored (holds the Esri key) but xcodegen needs it
       # to exist before it can generate the project. Materialise it from the repo
@@ -48,10 +73,14 @@ jobs:
 
       - name: Generate Xcode project
         working-directory: ios
-        run: xcodegen generate
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodegen --version
+          xcodegen generate
 
       - name: Cache SwiftPM
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: /tmp/spm-cache
           key: spm-${{ runner.os }}-${{ hashFiles('ios/project.yml') }}
@@ -60,20 +89,23 @@ jobs:
 
       - name: Resolve SwiftPM packages
         working-directory: ios
+        shell: bash
         run: |
+          set -euo pipefail
           xcodebuild -resolvePackageDependencies \
             -project TacticalMaps.xcodeproj \
             -scheme TacticalMaps \
             -clonedSourcePackagesDirPath /tmp/spm-cache
 
-      - name: Build (Debug, iPhone Simulator)
+      - name: Build (Release, iPhone Simulator)
         working-directory: ios
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           xcodebuild \
             -project TacticalMaps.xcodeproj \
             -scheme TacticalMaps \
+            -configuration Release \
             -destination "generic/platform=iOS Simulator" \
             -clonedSourcePackagesDirPath /tmp/spm-cache \
             -derivedDataPath build \
@@ -83,7 +115,7 @@ jobs:
 
       - name: Upload build log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ios-build-log
           path: ios/build.log
@@ -94,7 +126,7 @@ jobs:
         working-directory: ios
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           DEST=$(xcrun simctl list devices available \
             | grep -oE 'iPhone [0-9]+ Pro \([A-F0-9-]+\)' \
             | tail -1 \
@@ -104,6 +136,10 @@ jobs:
               | grep -oE 'iPhone [0-9]+ \([A-F0-9-]+\)' \
               | tail -1 \
               | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          fi
+          if [ -z "$DEST" ]; then
+            echo "No available iPhone simulator found" >&2
+            exit 1
           fi
           echo "Testing on simulator $DEST"
           xcodebuild \
@@ -119,7 +155,7 @@ jobs:
 
       - name: Upload .app artefact
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: TacticalMaps-iOS-debug
           path: ios/build/Build/Products/Debug-iphonesimulator/TacticalMaps.app

@@ -130,6 +130,10 @@ fun MapScreen(
     vm: MapViewModel = viewModel(),
     isPurchased: Boolean = true,
     trialDaysRemaining: Int = 0,
+    pendingGeoJsonImportUri: Uri? = null,
+    onRequestGeoJsonImport: ((Array<String>) -> Unit)? = null,
+    onGeoJsonImportConsumed: (Uri) -> Unit = {},
+    onRequestAuthBoundChange: ((Boolean) -> Unit)? = null,
     onUnlock: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -143,6 +147,7 @@ fun MapScreen(
     val centreElevation by vm.centreElevation.collectAsState()
     val isRecordingTrack by vm.trackRecorder.isRecording.collectAsState()
     val trackPoints by vm.trackRecorder.points.collectAsState()
+    val trackPersistError by vm.trackRecorder.persistError.collectAsState()
     val mapSource by vm.mapSource.collectAsState()
 
     /// Is anything on screen actually pulling tiles off the internet right now?
@@ -181,6 +186,8 @@ fun MapScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLayersSheet by remember { mutableStateOf(false) }
     var showImportExportSheet by remember { mutableStateOf(false) }
+    var showOpsecSettings by remember { mutableStateOf(false) }
+    var showDiscardTrackConfirmation by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
     /// weather/UAV widget target = (lat, lng) of map centre, null when closed
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
@@ -189,6 +196,9 @@ fun MapScreen(
     var showSyncDialog by remember { mutableStateOf(false) }
     val syncManager = remember {
         com.tacmap.sync.SyncManager(waypointStore, drawingStore, scope, context)
+    }
+    DisposableEffect(syncManager) {
+        onDispose { syncManager.dispose() }
     }
     val syncStatus by syncManager.status.collectAsState()
     val presencePeers by syncManager.peers.collectAsState()
@@ -287,44 +297,46 @@ fun MapScreen(
         }
     }
 
-    val geoJsonImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            val json = runCatching {
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                        stream.bufferedReader().readText()
-                    }
-                }
-            }.getOrNull()
-            if (json == null) {
-                Toast.makeText(context, "Couldn't read file", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
+    suspend fun importSelectedGeoJson(uri: Uri) {
             val fallback = drawingDocument.layers
                 .firstOrNull { it.id == activeDrawingLayerId }?.id
                 ?: drawingDocument.layers.firstOrNull()?.id
                 ?: com.tacmap.drawings.DrawingDocument.DEFAULT_LAYER_ID
-            val parsed = runCatching {
-                com.tacmap.export.GeoJsonImporter.parse(
-                    json = json,
+            val parsed = withContext(Dispatchers.IO) {
+                parseGeoJsonDocument(
+                    input = runCatching { context.contentResolver.openInputStream(uri) }.getOrNull(),
                     existingLayers = drawingDocument.layers,
-                    fallbackLayerId = fallback
+                    fallbackLayerId = fallback,
                 )
-            }.getOrElse { e ->
-                Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
-                return@launch
             }
-            parsed.newLayers.forEach { drawingStore.addLayerVerbatim(it) }
-            parsed.drawings.forEach { drawingStore.addFeature(it) }
-            parsed.waypoints.forEach { waypointStore.add(it) }
+            val feedback = applyGeoJsonImportResult(parsed) { imported ->
+                drawingStore.addImported(imported.newLayers, imported.drawings)
+                waypointStore.addAll(imported.waypoints)
+            }
             Toast.makeText(
                 context,
-                "Imported ${parsed.waypoints.size} waypoint(s) and ${parsed.drawings.size} drawing(s)",
-                Toast.LENGTH_SHORT
+                feedback.message,
+                if (feedback.succeeded) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
             ).show()
+    }
+
+    val geoJsonImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch { importSelectedGeoJson(uri) }
+    }
+
+    // MainActivity owns the production launcher because opening DocumentsUI
+    // intentionally locks the mission key and tears this composition down.
+    // Once the Activity has unlocked/recreated MapScreen, consume the returned
+    // URI exactly once through the same bounded parser/application path.
+    LaunchedEffect(pendingGeoJsonImportUri) {
+        val uri = pendingGeoJsonImportUri ?: return@LaunchedEffect
+        try {
+            importSelectedGeoJson(uri)
+        } finally {
+            onGeoJsonImportConsumed(uri)
         }
     }
 
@@ -352,9 +364,8 @@ fun MapScreen(
                 Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
                 return@launch
             }
-            parsed.newLayers.forEach { drawingStore.addLayerVerbatim(it) }
-            parsed.drawings.forEach { drawingStore.addFeature(it) }
-            parsed.waypoints.forEach { waypointStore.add(it) }
+            drawingStore.addImported(parsed.newLayers, parsed.drawings)
+            waypointStore.addAll(parsed.waypoints)
             Toast.makeText(
                 context,
                 "Imported ${parsed.waypoints.size} waypoint(s) and ${parsed.drawings.size} drawing(s)",
@@ -687,7 +698,7 @@ fun MapScreen(
         if (isRecordingTrack) {
             RecordingIndicator(
                 pointCount = trackPoints.size,
-                onStop = { vm.trackRecorder.stop() },
+                onStop = { vm.stopTrackRecording() },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
@@ -832,6 +843,16 @@ fun MapScreen(
                             showAppLockSetup = true
                         },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(PRIVACY_OPSEC_LABEL) },
+                        onClick = {
+                            openPrivacyAndOpsecFromMenu(
+                                setMenuOpen = { hamburgerOpen = it },
+                                setDialogVisible = { showOpsecSettings = it },
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Default.Tune, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("About & Credits") },
@@ -1062,6 +1083,59 @@ fun MapScreen(
         com.tacmap.app.AppLockSetupDialog(appLock = appLock, onDismiss = { showAppLockSetup = false })
     }
 
+    if (showOpsecSettings) {
+        OpsecSettingsDialog(
+            opsec = vm.opsec,
+            onRequestAuthBoundChange = onRequestAuthBoundChange,
+            onDismiss = { showOpsecSettings = false },
+        )
+    }
+
+    if (showDiscardTrackConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardTrackConfirmation = false },
+            title = {
+                Text(if (isRecordingTrack) "Stop and discard track?" else "Discard saved track?")
+            },
+            text = {
+                Text(
+                    if (isRecordingTrack) {
+                        "Recording will stop and the encrypted track log, including all " +
+                            "${trackPoints.size} saved point(s), will be permanently deleted."
+                    } else {
+                        "The encrypted track log and all ${trackPoints.size} saved point(s) " +
+                            "will be permanently deleted. Export GPX first if you need a copy."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardTrackConfirmation = false
+                        vm.discardTrackRecording()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF5A5A)),
+                ) {
+                    Text(if (isRecordingTrack) "Stop & Discard" else "Discard")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardTrackConfirmation = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    trackPersistError?.let { message ->
+        AlertDialog(
+            onDismissRequest = vm.trackRecorder::acknowledgePersistError,
+            title = { Text("Track recording") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = vm.trackRecorder::acknowledgePersistError) { Text("OK") }
+            },
+        )
+    }
+
     if (showSyncDialog) {
         com.tacmap.sync.SyncDialog(manager = syncManager, onDismiss = { showSyncDialog = false })
     }
@@ -1164,7 +1238,8 @@ fun MapScreen(
             },
             onImportGeoJson = {
                 showImportExportSheet = false
-                geoJsonImportLauncher.launch(arrayOf("application/geo+json", "application/json", "*/*"))
+                val mimeTypes = arrayOf("application/geo+json", "application/json", "*/*")
+                onRequestGeoJsonImport?.invoke(mimeTypes) ?: geoJsonImportLauncher.launch(mimeTypes)
             },
             onImportKml = {
                 showImportExportSheet = false
@@ -1196,6 +1271,12 @@ fun MapScreen(
                     drawings = drawingDocument.features,
                     layers = drawingDocument.layers
                 )
+            },
+            hasSavedTrack = trackPoints.isNotEmpty(),
+            isRecordingTrack = isRecordingTrack,
+            onDiscardTrack = {
+                showImportExportSheet = false
+                showDiscardTrackConfirmation = true
             },
             onDismiss = { showImportExportSheet = false }
         )

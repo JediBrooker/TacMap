@@ -1,12 +1,8 @@
 package com.tacmap.map
 
 import com.tacmap.settings.OpsecSettings
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.math.roundToInt
 
 /** Current-conditions reading from Open-Meteo (same provider as elevation).
@@ -91,17 +87,7 @@ class WeatherService {
             "&current=temperature_2m,wind_speed_10m,wind_gusts_10m,weather_code" +
             "&hourly=visibility&wind_speed_unit=ms&forecast_days=1&timezone=auto"
 
-        val body = withContext(Dispatchers.IO) {
-            runCatching {
-                val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"; connectTimeout = 8_000; readTimeout = 8_000
-                }
-                try {
-                    if (conn.responseCode != 200) return@runCatching null
-                    conn.inputStream.bufferedReader().use { it.readText() }
-                } finally { conn.disconnect() }
-            }.getOrNull()
-        } ?: return null
+        val body = boundedHttpsGet(url, MAX_RESPONSE_BYTES) ?: return null
 
         val decoded = runCatching { json.decodeFromString<Response>(body) }.getOrNull() ?: return null
         val c = decoded.current ?: return null
@@ -121,4 +107,6 @@ class WeatherService {
         val idx = currentTime?.let { times.indexOf(it) } ?: -1
         return if (idx in vis.indices) vis[idx] else vis.firstOrNull()
     }
+
+    private companion object { const val MAX_RESPONSE_BYTES = 1024 * 1024 }
 }

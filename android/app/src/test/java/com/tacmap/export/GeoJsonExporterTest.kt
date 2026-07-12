@@ -3,6 +3,7 @@ package com.tacmap.export
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingLayer
+import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingPoint
 import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.waypoints.TaskColor
@@ -21,8 +22,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Mirror of the iOS GeoJSONExporterTests: pins the FeatureCollection shape,
@@ -30,6 +33,60 @@ import org.junit.Test
  * Android export stays interchangeable with the iOS one.
  */
 class GeoJsonExporterTest {
+
+    @Test
+    fun emitsAndroidProductionWaypointFixtureByteForByte() {
+        val waypoint = Waypoint(
+            id = "8a6f62b1-6ec7-4c92-a463-22b71ecf973d",
+            name = "Android Alpha",
+            notes = "actual production exporter fixture",
+            latitude = -33.8688,
+            longitude = 151.2093,
+            elevationMetres = 42.0,
+            kind = WaypointKind.Marker(MarkerSymbol()),
+            layerId = DrawingDocument.DEFAULT_LAYER_ID,
+            createdAt = 1_700_000_000_000L
+        )
+        val actual = GeoJsonExporter.export(listOf(waypoint), layers = DrawingDocument.defaultLayers())
+        assertEquals(fixture("android_waypoint_production.geojson").trim(), actual.trim())
+    }
+
+    @Test
+    fun importsActualIosProductionWaypointFixture() {
+        var dir: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
+        var fixture: File? = null
+        repeat(8) {
+            val candidate = File(dir, "testdata/ios_waypoint_production.geojson")
+            if (candidate.exists()) { fixture = candidate; return@repeat }
+            dir = dir?.parentFile
+        }
+        val source = requireNotNull(fixture).readText()
+        val result = GeoJsonImporter.parse(
+            json = source,
+            existingLayers = emptyList(),
+            fallbackLayerId = "00000000-0000-0000-0000-000000000001"
+        )
+        assertEquals(0, result.invalidSkipped)
+        assertEquals(1, result.waypoints.size)
+        assertEquals(0, result.drawings.size)
+        assertEquals("71d0f3d2-7d33-4af4-a593-d4cb70fb808d", result.waypoints.single().id)
+        assertEquals("iOS Alpha", result.waypoints.single().name)
+        val local = GeoJsonExporter.export(result.waypoints, result.drawings, result.newLayers)
+        assertNotEquals(
+            com.tacmap.sync.SyncIdentity.bytesToHex(com.tacmap.sync.SyncIdentity.sha256(source.toByteArray())),
+            com.tacmap.sync.SyncIdentity.bytesToHex(com.tacmap.sync.SyncIdentity.sha256(local.toByteArray()))
+        )
+    }
+
+    private fun fixture(name: String): String {
+        var dir: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
+        repeat(8) {
+            val candidate = File(dir, "testdata/$name")
+            if (candidate.exists()) return candidate.readText()
+            dir = dir?.parentFile
+        }
+        error("Could not locate testdata/$name")
+    }
 
     @Test
     fun exportsFeatureCollectionStructure() {

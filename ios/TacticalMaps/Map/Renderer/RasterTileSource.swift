@@ -25,30 +25,34 @@ protocol RasterTileRequest: AnyObject {
 /// token when needed) and fetches over HTTPS. No MapKit involved.
 final class OnlineRasterTileSource: RasterTileSource {
     private let style: BasemapStyle
-    private let session: URLSession
 
     var minZoom: Int { 0 }
     var maxZoom: Int { style.maximumZ }
     var tilePixelSize: Int { style.tileSize }
 
-    init(_ style: BasemapStyle, session: URLSession = .shared) {
+    init(_ style: BasemapStyle) {
         self.style = style
-        self.session = session
     }
 
     private final class Request: RasterTileRequest {
-        let task: URLSessionDataTask
-        init(_ task: URLSessionDataTask) { self.task = task }
+        let task: Task<Void, Never>
+        init(_ task: Task<Void, Never>) { self.task = task }
         func cancel() { task.cancel() }
     }
 
     func loadTile(_ tile: TileIndex, completion: @escaping (UIImage?) -> Void) -> RasterTileRequest? {
         guard let url = url(for: tile) else { completion(nil); return nil }
-        let task = session.dataTask(with: url) { data, _, _ in
-            let image = data.flatMap { UIImage(data: $0) }
-            DispatchQueue.main.async { completion(image) }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let task = Task {
+            let image: UIImage?
+            do {
+                let (data, response) = try await NetworkSession.data(for: request, maximumBytes: 4 * 1024 * 1024)
+                let acceptable = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
+                image = acceptable ? UIImage(data: data) : nil
+            } catch { image = nil }
+            if !Task.isCancelled { await MainActor.run { completion(image) } }
         }
-        task.resume()
         return Request(task)
     }
 

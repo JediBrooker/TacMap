@@ -98,7 +98,7 @@ final class CalibrationSession: ObservableObject {
             lastFitRMSMetres = result.rmsMetres
             return result
         } catch {
-            print("[Calibration] affine fit failed: \(error)")
+            print("[Calibration] affine fit failed")
             return nil
         }
     }

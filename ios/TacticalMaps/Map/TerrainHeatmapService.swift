@@ -36,6 +36,7 @@ actor TerrainHeatmapService {
         var elev = [Double?](repeating: nil, count: grid * grid)
         var i = 0
         while i < elev.count {
+            guard OpsecSettings.shared.onlineLookups, !Task.isCancelled else { return nil }
             let end = min(i + 100, elev.count)   // Open-Meteo: <=100 points/request
             let latStr = (i..<end).map { String(lat[$0]) }.joined(separator: ",")
             let lonStr = (i..<end).map { String(lon[$0]) }.joined(separator: ",")
@@ -47,7 +48,11 @@ actor TerrainHeatmapService {
             guard let url = comps.url else { return nil }
             var req = URLRequest(url: url); req.timeoutInterval = 8
             do {
-                let (data, _) = try await URLSession.shared.data(for: req)
+                req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                let (data, response) = try await NetworkSession.data(for: req, maximumBytes: 256 * 1024)
+                guard OpsecSettings.shared.onlineLookups, !Task.isCancelled,
+                      let http = response as? HTTPURLResponse,
+                      (200...299).contains(http.statusCode) else { return nil }
                 let decoded = try JSONDecoder().decode(Response.self, from: data)
                 for k in decoded.elevation.indices where i + k < elev.count { elev[i + k] = decoded.elevation[k] }
             } catch {

@@ -31,7 +31,11 @@ import com.tacmap.util.DataKey
  *  online lookups and basemaps, at-rest key binding, and the (self-hostable)
  *  sync relay URL. */
 @Composable
-fun OpsecSettingsDialog(opsec: OpsecSettings, onDismiss: () -> Unit) {
+fun OpsecSettingsDialog(
+    opsec: OpsecSettings,
+    onRequestAuthBoundChange: ((Boolean) -> Unit)? = null,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     val blockCapture by opsec.blockScreenCapture.collectAsState()
     val online by opsec.onlineLookups.collectAsState()
@@ -40,56 +44,49 @@ fun OpsecSettingsDialog(opsec: OpsecSettings, onDismiss: () -> Unit) {
     var relayField by remember(relay) { mutableStateOf(relay) }
 
     var authBound by remember { mutableStateOf(DataKey.isAuthBound) }
-    var pendingAuthBound by remember { mutableStateOf<Boolean?>(null) }
     var keyError by remember { mutableStateOf<String?>(null) }
+    val authController = remember {
+        AuthBoundChangeController(object : AuthBoundChangeController.KeyProtection {
+            override val isAuthBound: Boolean get() = DataKey.isAuthBound
+            override fun setAuthBound(enabled: Boolean) = DataKey.setAuthBound(enabled)
+        })
+    }
 
     // Re-wrap the data key once the user has cleared the device credential prompt.
     val credentialLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val target = pendingAuthBound
-        pendingAuthBound = null
-        if (target == null || result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
-        runCatching { DataKey.setAuthBound(target) }
-            .onSuccess { authBound = DataKey.isAuthBound; keyError = null }
-            .onFailure { keyError = it.message }
+        val completion = authController.completeCredential(result.resultCode == Activity.RESULT_OK)
+        authBound = completion.isAuthBound
+        keyError = completion.error
     }
 
     fun requestAuthBound(target: Boolean) {
         keyError = null
-        val keyguard = context.getSystemService<KeyguardManager>()
-        if (target && keyguard?.isDeviceSecure != true) {
-            // Keystore would throw something unreadable about no enrolled
-            // credential. Say the actual thing instead.
-            keyError = "Set a device PIN, pattern or password first, then try again."
+        if (onRequestAuthBoundChange != null) {
+            onRequestAuthBoundChange(target)
             return
         }
-        // Try straight away. Going device -> auth needs no prompt (the current
-        // KEK is unbound); coming back the other way does, and so does any
-        // re-wrap once the auth window has expired.
-        runCatching { DataKey.setAuthBound(target) }
-            .onSuccess { authBound = DataKey.isAuthBound }
-            .onFailure { e ->
-                if (e is DataKey.LockedException) {
-                    // Deprecated in favour of BiometricPrompt, but that means
-                    // pulling in androidx.biometric for one dialog. The keyguard
-                    // intent still does exactly what we need on every supported
-                    // API level, so eat the warning.
-                    @Suppress("DEPRECATION")
-                    val intent = keyguard?.createConfirmDeviceCredentialIntent(
-                        "Unlock mission data",
-                        "Confirm your device credential to change how the data key is protected."
-                    )
-                    if (intent != null) {
-                        pendingAuthBound = target
-                        credentialLauncher.launch(intent)
-                    } else {
-                        keyError = "No device lockscreen is set, so this can't be changed."
-                    }
+        val keyguard = context.getSystemService<KeyguardManager>()
+        when (val request = authController.request(target, keyguard?.isDeviceSecure == true)) {
+            AuthBoundChangeController.Request.NoChange -> authBound = DataKey.isAuthBound
+            is AuthBoundChangeController.Request.Error -> keyError = request.message
+            AuthBoundChangeController.Request.PromptCredential -> {
+                // Always prompt before either direction. In particular, a cached
+                // DEK must never let an unattended user weaken auth-bound storage.
+                @Suppress("DEPRECATION")
+                val intent = keyguard?.createConfirmDeviceCredentialIntent(
+                    "Confirm mission-data protection change",
+                    "Authenticate to change how the mission-data key is protected."
+                )
+                if (intent != null) {
+                    credentialLauncher.launch(intent)
                 } else {
-                    keyError = e.message
+                    authController.cancelPending()
+                    keyError = "No device lockscreen is set, so this can't be changed."
                 }
             }
+        }
     }
 
     AlertDialog(
@@ -97,7 +94,7 @@ fun OpsecSettingsDialog(opsec: OpsecSettings, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(onClick = { opsec.setRelayUrl(relayField); onDismiss() }) { Text("Done") }
         },
-        title = { Text("Privacy & OPSEC") },
+        title = { Text(PRIVACY_OPSEC_LABEL) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SettingRow(blockCapture, { opsec.setBlockScreenCapture(it) }, "Block screenshots & recents preview")

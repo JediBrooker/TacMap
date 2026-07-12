@@ -20,6 +20,8 @@ import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingPoint
 import com.tacmap.export.GeoJsonExporter
 import java.io.File
+import android.os.Handler
+import android.os.Looper
 
 // Non-composable helpers extracted from MapScreen.kt: angle normalisation,
 // drawing defaults/naming, PDF import + georeferencing, GeoJSON sharing.
@@ -110,8 +112,7 @@ internal fun shareGeoJson(
     layers: List<com.tacmap.drawings.DrawingLayer>
 ) {
     val geoJson = GeoJsonExporter.export(waypoints, drawings, layers)
-    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-    val exportFile = File(exportDir, "TacMap-${System.currentTimeMillis()}.geojson")
+    val exportFile = prepareExportFile(context, "TacMap.geojson")
     exportFile.writeText(geoJson)
     val exportUri = FileProvider.getUriForFile(
         context,
@@ -128,7 +129,9 @@ internal fun shareGeoJson(
     }
     runCatching {
         context.startActivity(Intent.createChooser(intent, "Export GeoJSON"))
+        scheduleExportCleanup(exportFile)
     }.onFailure {
+        runCatching { exportFile.delete() }
         Toast.makeText(context, "No app available to export GeoJSON.", Toast.LENGTH_SHORT).show()
     }
 }
@@ -142,8 +145,7 @@ internal fun shareGpx(
         return
     }
     val gpx = com.tacmap.export.GpxExporter.export(points)
-    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-    val exportFile = File(exportDir, "TacMap-track-${System.currentTimeMillis()}.gpx")
+    val exportFile = prepareExportFile(context, "TacMap-track.gpx")
     exportFile.writeText(gpx)
     val exportUri = FileProvider.getUriForFile(
         context,
@@ -160,7 +162,9 @@ internal fun shareGpx(
     }
     runCatching {
         context.startActivity(Intent.createChooser(intent, "Export GPX"))
+        scheduleExportCleanup(exportFile)
     }.onFailure {
+        runCatching { exportFile.delete() }
         Toast.makeText(context, "No app available to export GPX.", Toast.LENGTH_SHORT).show()
     }
 }
@@ -177,8 +181,7 @@ internal fun exportAllData(
         return
     }
     val geoJson = GeoJsonExporter.export(waypoints, drawings, layers)
-    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-    val exportFile = File(exportDir, "TacMap-AllData-${System.currentTimeMillis()}.geojson")
+    val exportFile = prepareExportFile(context, "TacMap-AllData.geojson")
     exportFile.writeText(geoJson)
     val exportUri = FileProvider.getUriForFile(
         context,
@@ -195,9 +198,24 @@ internal fun exportAllData(
     }
     runCatching {
         context.startActivity(Intent.createChooser(intent, "Export All Data"))
+        scheduleExportCleanup(exportFile)
     }.onFailure {
+        runCatching { exportFile.delete() }
         Toast.makeText(context, "No app available to share the export.", Toast.LENGTH_SHORT).show()
     }
+}
+
+internal fun cleanupExportArtifacts(context: Context) {
+    File(context.cacheDir, "exports").listFiles()?.forEach { runCatching { it.delete() } }
+}
+
+private fun prepareExportFile(context: Context, name: String): File {
+    cleanupExportArtifacts(context)
+    return File(File(context.cacheDir, "exports").apply { mkdirs() }, name)
+}
+
+private fun scheduleExportCleanup(file: File) {
+    Handler(Looper.getMainLooper()).postDelayed({ runCatching { file.delete() } }, 15 * 60 * 1000L)
 }
 
 internal fun importPdfMapSource(
@@ -212,7 +230,12 @@ internal fun importPdfMapSource(
 
     context.contentResolver.openInputStream(sourceUri).use { input ->
         requireNotNull(input) { "Unable to open selected PDF" }
-        dest.outputStream().use { output -> input.copyTo(output) }
+        try {
+            dest.outputStream().use { output -> input.copyToBounded(output, MAX_PDF_IMPORT_BYTES) }
+        } catch (e: Throwable) {
+            dest.delete()
+            throw e
+        }
     }
 
     val fileUri = Uri.fromFile(dest)
@@ -245,14 +268,7 @@ internal fun importPdfMapSource(
     val geo = GeoPdfParser.parse(context, fileUri) ?: return base
     val fiducials = geo.correspondences.map { it.toFiduciary() }
     val fit = runCatching { AffineFitter.fit(fiducials) }.getOrNull() ?: return base
-    Log.i(
-        "GeoPdfImport",
-        "auto-parsed ${fiducials.size} correspondences; centre≈" +
-            "%.4f,%.4f".format(
-                fiducials.map { it.latitude }.average(),
-                fiducials.map { it.longitude }.average()
-            )
-    )
+    Log.i("GeoPdfImport", "auto-parsed ${fiducials.size} correspondences")
     return base.calibrated(fit.transform, fiducials)
 }
 
@@ -286,7 +302,28 @@ internal fun importMBTilesMapSource(context: Context, sourceUri: Uri): OfflineTi
     val dest = File(dir, "${System.currentTimeMillis()}_$base.mbtiles")
     context.contentResolver.openInputStream(sourceUri).use { input ->
         requireNotNull(input) { "Unable to open selected MBTiles" }
-        dest.outputStream().use { output -> input.copyTo(output) }
+        try {
+            dest.outputStream().use { output -> input.copyToBounded(output, MAX_MBTILES_IMPORT_BYTES) }
+        } catch (e: Throwable) {
+            dest.delete()
+            throw e
+        }
     }
     return OfflineTileMapSourceAndroid.open(dest.path)
+}
+
+private const val MAX_PDF_IMPORT_BYTES = 256L * 1024 * 1024
+private const val MAX_MBTILES_IMPORT_BYTES = 4L * 1024 * 1024 * 1024
+
+private fun java.io.InputStream.copyToBounded(output: java.io.OutputStream, maxBytes: Long) {
+    val buffer = ByteArray(64 * 1024)
+    var total = 0L
+    while (true) {
+        val n = read(buffer)
+        if (n < 0) break
+        total += n
+        require(total <= maxBytes) { "Import exceeds the supported size limit" }
+        output.write(buffer, 0, n)
+    }
+    output.flush()
 }

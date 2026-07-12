@@ -8,6 +8,13 @@ import CoreLocation
 /// become drawings on the active layer.
 enum GeoJSONImporter {
 
+    static let maxInputBytes = 16 * 1024 * 1024
+    private static let maxFeatures = 10_000
+    private static let maxCoordinates = 100_000
+    private static let maxJSONDepth = 64
+    private static let maxJSONNodes = 300_000
+    private static let parseDeadline: TimeInterval = 4
+
     struct Result {
         var waypoints: [Waypoint] = []
         var drawings:  [DrawingShape] = []
@@ -41,9 +48,20 @@ enum GeoJSONImporter {
         }
     }
 
-    enum ImportError: Error {
+    enum ImportError: Error, LocalizedError {
         case invalidJSON
         case notAFeatureCollection
+        case limitExceeded(String)
+        case cancelled
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidJSON: return "This file isn't valid GeoJSON."
+            case .notAFeatureCollection: return "This GeoJSON is not a FeatureCollection."
+            case .limitExceeded(let reason): return "Import safety limit exceeded: \(reason)."
+            case .cancelled: return "Import cancelled."
+            }
+        }
     }
 
     /// Parse a `.geojson` file and return the reconstructed objects.
@@ -52,20 +70,32 @@ enum GeoJSONImporter {
     static func parse(_ data: Data,
                       existingLayers: [DrawingLayer],
                       fallbackLayerID: UUID) throws -> Result {
+        guard data.count <= maxInputBytes else { throw ImportError.limitExceeded("file is over 16 MB") }
+        let deadline = Date().addingTimeInterval(parseDeadline)
         guard let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ImportError.invalidJSON
         }
+        var nodeCount = 0
+        try validateStructure(raw, depth: 0, nodes: &nodeCount)
         guard (raw["type"] as? String) == "FeatureCollection",
               let features = raw["features"] as? [[String: Any]] else {
             throw ImportError.notAFeatureCollection
         }
+        guard features.count <= maxFeatures else { throw ImportError.limitExceeded("more than 10,000 features") }
 
         var result = Result()
         var layersByID = Dictionary(uniqueKeysWithValues: existingLayers.map { ($0.id.uuidString, $0) })
+        var coordinateCount = 0
 
         for feature in features {
+            if Date() > deadline { throw ImportError.limitExceeded("parsing took too long") }
+            if withUnsafeCurrentTask(body: { $0?.isCancelled ?? false }) { throw ImportError.cancelled }
             guard let geometry = feature["geometry"] as? [String: Any],
                   let geomType = geometry["type"] as? String else { continue }
+            coordinateCount += coordinatePairCount(geometry)
+            guard coordinateCount <= maxCoordinates else {
+                throw ImportError.limitExceeded("more than 100,000 coordinates")
+            }
             // Bail out on non-finite / out-of-range coords. Don't let a corrupt
             // file drop a symbol at NaN or somewhere off the globe.
             guard geometryValid(geometry) else { result.invalidSkipped += 1; continue }
@@ -118,6 +148,31 @@ enum GeoJSONImporter {
             }
         }
         return result
+    }
+
+    private static func validateStructure(_ value: Any, depth: Int, nodes: inout Int) throws {
+        guard depth <= maxJSONDepth else { throw ImportError.limitExceeded("JSON nesting is too deep") }
+        nodes += 1
+        guard nodes <= maxJSONNodes else { throw ImportError.limitExceeded("JSON has too many values") }
+        if let dict = value as? [String: Any] {
+            for (key, child) in dict {
+                guard key.utf8.count <= 4_096 else { throw ImportError.limitExceeded("property name is too long") }
+                try validateStructure(child, depth: depth + 1, nodes: &nodes)
+            }
+        } else if let array = value as? [Any] {
+            for child in array { try validateStructure(child, depth: depth + 1, nodes: &nodes) }
+        } else if let string = value as? String, string.utf8.count > 1_048_576 {
+            throw ImportError.limitExceeded("text field is over 1 MB")
+        }
+    }
+
+    private static func coordinatePairCount(_ geometry: [String: Any]) -> Int {
+        switch geometry["type"] as? String {
+        case "Point": return 1
+        case "LineString": return (geometry["coordinates"] as? [[Any]])?.count ?? 0
+        case "Polygon": return (geometry["coordinates"] as? [[[Any]]])?.reduce(0) { $0 + $1.count } ?? 0
+        default: return 0
+        }
     }
 
     // MARK: - Layer resolution
@@ -226,10 +281,11 @@ enum GeoJSONImporter {
         if let fill = (props["fill"] as? String) ?? rgbFromArgb(props["fill_color"] as? String) {
             style.fillColorHex = fill
         }
-        if let w = doubleValue(props["stroke-width"]) ?? doubleValue(props["stroke_width"]) {
+        if let w = boundedDouble(props["stroke-width"], 0.1...100)
+            ?? boundedDouble(props["stroke_width"], 0.1...100) {
             style.strokeWidth = w
         }
-        if let o = doubleValue(props["fill-opacity"]) { style.fillOpacity = o }
+        if let o = boundedDouble(props["fill-opacity"], 0...1) { style.fillOpacity = o }
         // Dash style: shared namespaced key, falls back to Android legacy key.
         let strokeStyle = (props["tacticalmaps:stroke_style"] as? String) ?? (props["stroke_style"] as? String)
         if strokeStyle?.lowercased() == "dashed" { style.dashPattern = [8, 4] }
@@ -284,8 +340,8 @@ enum GeoJSONImporter {
         let coord = CLLocationCoordinate2D(latitude: c[1], longitude: c[0])
         let name = (props["name"] as? String) ?? "Imported"
         let notes = (props["description"] as? String) ?? (props["notes"] as? String)
-        let elevation = doubleValue(props["tacticalmaps:elevation_m"])
-            ?? doubleValue(props["elevation_m"])
+        let elevation = boundedDouble(props["tacticalmaps:elevation_m"], -12_000...100_000)
+            ?? boundedDouble(props["elevation_m"], -12_000...100_000)
         let id = (feature["id"] as? String).flatMap { UUID(uuidString: $0) } ?? UUID()
 
         let kind: WaypointKind
@@ -324,14 +380,14 @@ enum GeoJSONImporter {
             kind = .generic
         }
 
-        let rotation = doubleValue(props["tacticalmaps:rotation_deg"])
-            ?? doubleValue(props["rotation"])
+        let rotation = boundedDouble(props["tacticalmaps:rotation_deg"], -3_600...3_600)
+            ?? boundedDouble(props["rotation"], -3_600...3_600)
             ?? 0
-        let scaleX = doubleValue(props["tacticalmaps:scale_x"])
-            ?? doubleValue(props["scale_x"])
+        let scaleX = boundedDouble(props["tacticalmaps:scale_x"], 0.05...100)
+            ?? boundedDouble(props["scale_x"], 0.05...100)
             ?? 1
-        let scaleY = doubleValue(props["tacticalmaps:scale_y"])
-            ?? doubleValue(props["scale_y"])
+        let scaleY = boundedDouble(props["tacticalmaps:scale_y"], 0.05...100)
+            ?? boundedDouble(props["scale_y"], 0.05...100)
             ?? 1
         let taskColor = (props["tacticalmaps:task_color"] as? String)
             .flatMap { TaskColor(rawValue: $0.lowercased()) } ?? .black
@@ -367,6 +423,11 @@ enum GeoJSONImporter {
         if let value = any as? NSNumber { return value.doubleValue }
         if let value = any as? String { return Double(value) }
         return nil
+    }
+
+    private static func boundedDouble(_ any: Any?, _ range: ClosedRange<Double>) -> Double? {
+        guard let value = doubleValue(any), value.isFinite, range.contains(value) else { return nil }
+        return value
     }
 
     private static func boolValue(_ any: Any?) -> Bool? {

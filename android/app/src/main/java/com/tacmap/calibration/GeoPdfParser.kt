@@ -69,9 +69,7 @@ object GeoPdfParser {
                     correspondences = correspondences
                 )
             }
-        }.onFailure {
-            Log.w(TAG, "GeoPDF parse failed: ${it.message}")
-        }.getOrNull()
+        }.onFailure { Log.w(TAG, "GeoPDF parse failed") }.getOrNull()
     }
 
     /**

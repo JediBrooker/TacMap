@@ -39,6 +39,11 @@ class TrackRecordingService : Service() {
 
     @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val recorder = (application as TacticalApp).trackRecorder
+        if (!recorder.isRecording.value) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
@@ -47,11 +52,19 @@ class TrackRecordingService : Service() {
             startForeground(NOTIF_ID, notification)
         }
 
-        if (locationListener == null && hasLocationPermission()) {
-            val recorder = (application as TacticalApp).trackRecorder
+        if (!hasLocationPermission()) {
+            recorder.failRecording("Location permission is unavailable; recording stopped.")
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        if (locationListener == null) {
             val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val listener = object : LocationListener {
-                override fun onLocationChanged(location: Location) { recorder.onLocation(location) }
+                override fun onLocationChanged(location: Location) {
+                    recorder.onLocation(location)
+                    if (!recorder.isRecording.value) stopSelf()
+                }
                 override fun onProviderEnabled(provider: String) {}
                 override fun onProviderDisabled(provider: String) {}
                 @Deprecated("Deprecated in API 29, still required on API 26-28")
@@ -62,10 +75,13 @@ class TrackRecordingService : Service() {
                     LocationManager.GPS_PROVIDER, 1_000L, 0f, listener, Looper.getMainLooper()
                 )
                 locationListener = listener
+            } else {
+                recorder.failRecording("GPS provider is unavailable; recording stopped.")
+                stopSelf(startId)
             }
         }
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {

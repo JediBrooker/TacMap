@@ -87,10 +87,16 @@ enum CrashReporter {
     /// Write report to a temp .txt for sharing via system share sheet.
     static func exportURL() -> URL? {
         guard let report = lastReport() else { return nil }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("TacMap-crash.txt")
-        try? report.data(using: .utf8)?.write(to: url)
-        return url
+        guard let url = try? ExportFileSecurity.freshURL(fileName: "TacMap-crash.txt"),
+              let data = report.data(using: .utf8) else { return nil }
+        do {
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            try ExportFileSecurity.protect(url)
+            return url
+        } catch {
+            ExportFileSecurity.remove(url)
+            return nil
+        }
     }
 
     static func clear() {

@@ -1,12 +1,17 @@
 package com.tacmap.app
 
 import android.content.ActivityNotFoundException
+import android.app.Activity
+import android.app.KeyguardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
@@ -26,6 +31,8 @@ import com.tacmap.billing.BillingManager
 import com.tacmap.billing.PaywallScreen
 import com.tacmap.billing.TrialManager
 import com.tacmap.map.MapScreen
+import com.tacmap.map.AuthBoundChangeController
+import com.tacmap.util.DataKey
 
 class MainActivity : ComponentActivity() {
 
@@ -36,16 +43,62 @@ class MainActivity : ComponentActivity() {
     // True when PIN gate needs to show. Armed on launch + every pause
     // so coming back to the app re-prompts.
     private val locked = mutableStateOf(false)
+    private val missionKeyReady = mutableStateOf(false)
+    private val missionKeyError = mutableStateOf<String?>(null)
+    private lateinit var credentialLauncher: ActivityResultLauncher<Intent>
+    private lateinit var authBoundChangeLauncher: ActivityResultLauncher<Intent>
+    private lateinit var geoJsonImportLauncher: ActivityResultLauncher<Array<String>>
+    private val pendingGeoJsonImportUri = mutableStateOf<Uri?>(null)
+    private val authBoundChangeController by lazy {
+        AuthBoundChangeController(object : AuthBoundChangeController.KeyProtection {
+            override val isAuthBound: Boolean get() = DataKey.isAuthBound
+            override fun setAuthBound(enabled: Boolean) = DataKey.setAuthBound(enabled)
+        })
+    }
 
     // bump on resume so trial-expiry check re-fires when user comes back
     // (e.g. days later) without a cold restart
     private val resumeTick = mutableLongStateOf(System.currentTimeMillis())
+    private var restoreAfterRedeem = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        credentialLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+            runCatching { DataKey.key() }
+                .onSuccess {
+                    (application as TacticalApp).trackRecorder.reloadAfterUnlock()
+                    missionKeyError.value = null
+                    missionKeyReady.value = true
+                }
+                .onFailure { missionKeyError.value = it.message }
+        }
+        // Activity-owned because the platform credential screen intentionally
+        // pauses the app and tears down MapScreen with the mission key.
+        authBoundChangeLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val completion = authBoundChangeController.completeCredential(result.resultCode == Activity.RESULT_OK)
+            completion.error?.let { missionKeyError.value = it }
+            if (result.resultCode == Activity.RESULT_OK && completion.error == null) {
+                missionKeyError.value = null
+                missionKeyReady.value = true
+            }
+        }
+        // Activity-owned so the result survives the intentional MapScreen
+        // teardown/DataKey lock while the system document picker is foreground.
+        geoJsonImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            pendingGeoJsonImportUri.value = uri
+        }
         trial = TrialManager(this)
-        billing = BillingManager(this).also { it.start() }
+        // Constructing BillingManager is local-only. It connects to Play only
+        // after the user opens Unlock, taps purchase, or explicitly restores.
+        billing = BillingManager(this)
         locked.value = appLock.isEnabled
+        if (locked.value) {
+            DataKey.lock()
+            missionKeyReady.value = false
+        } else {
+            prepareMissionKey()
+        }
 
         // OPSEC: keep the map (w/ live position) out of recents thumbnail,
         // screenshots, screen recordings. Follows user's setting reactively.
@@ -67,7 +120,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 if (locked.value) {
-                    AppLockScreen(appLock) { locked.value = false }
+                    AppLockScreen(appLock) {
+                        locked.value = false
+                        prepareMissionKey()
+                    }
+                    return@MaterialTheme
+                }
+                if (!missionKeyReady.value) {
+                    MissionKeyUnlockScreen(missionKeyError.value, ::requestMissionKeyUnlock)
                     return@MaterialTheme
                 }
                 val purchased by billing.isPurchased.collectAsState()
@@ -82,7 +142,16 @@ class MainActivity : ComponentActivity() {
                         MapScreen(
                             isPurchased = purchased,
                             trialDaysRemaining = trial.daysRemaining(now),
-                            onUnlock = { showPaywall = true },
+                            pendingGeoJsonImportUri = pendingGeoJsonImportUri.value,
+                            onRequestGeoJsonImport = geoJsonImportLauncher::launch,
+                            onGeoJsonImportConsumed = { uri ->
+                                if (pendingGeoJsonImportUri.value == uri) pendingGeoJsonImportUri.value = null
+                            },
+                            onRequestAuthBoundChange = ::requestAuthBoundChange,
+                            onUnlock = {
+                                billing.start()
+                                showPaywall = true
+                            },
                         )
                         // on-demand paywall from the menu Unlock row during trial
                         if (showPaywall && !purchased) {
@@ -111,16 +180,34 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        // Never retain the mission DEK behind an App Lock/background boundary.
+        // Device-bound mode can unwrap again locally; auth-bound mode requires
+        // a fresh platform authentication window.
+        (application as TacticalApp).trackRecorder.onMissionKeyLock()
+        DataKey.lock()
+        // Tear down MapScreen and its observers for both key modes. Otherwise
+        // device-bound mode could automatically unwrap the DEK again from a
+        // retained background sync/store callback immediately after lock().
+        missionKeyReady.value = false
         // re-arm app lock so coming back requires PIN again
         if (appLock.isEnabled) locked.value = true
     }
 
     override fun onResume() {
         super.onResume()
-        // re-check trial window + entitlement on return. Also picks up
-        // an unlock from a Play promo code redeemed while we were backgrounded.
+        // Re-check the local trial clock only. Store entitlement refresh is an
+        // explicit Restore action so a normal foreground transition has no egress.
         resumeTick.longValue = System.currentTimeMillis()
-        billing.restore()
+        billing.refreshLocalEntitlement()
+        if (!appLock.isEnabled && !DataKey.isAuthBound && !missionKeyReady.value) {
+            // Device-bound mode needs no network or user prompt; rebuild the
+            // mission stores only after the Activity is foreground again.
+            prepareMissionKey()
+        }
+        if (restoreAfterRedeem) {
+            restoreAfterRedeem = false
+            billing.restore()
+        }
     }
 
     /**
@@ -131,11 +218,54 @@ class MainActivity : ComponentActivity() {
      * Falls back to browser if Play Store app isnt installed.
      */
     private fun openPlayRedeem() {
+        restoreAfterRedeem = true
         val redeem = Uri.parse("https://play.google.com/redeem")
         try {
             startActivity(Intent(Intent.ACTION_VIEW, redeem).setPackage("com.android.vending"))
         } catch (_: ActivityNotFoundException) {
             startActivity(Intent(Intent.ACTION_VIEW, redeem))
+        }
+    }
+
+    private fun requestMissionKeyUnlock() {
+        val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        @Suppress("DEPRECATION")
+        val intent = keyguard.createConfirmDeviceCredentialIntent(
+            "Unlock mission data",
+            "Confirm your device credential to decrypt maps and mission data."
+        )
+        if (intent == null) {
+            missionKeyError.value = "No device credential is available for this protected key."
+        } else {
+            credentialLauncher.launch(intent)
+        }
+    }
+
+    private fun requestAuthBoundChange(target: Boolean) {
+        val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        when (val request = authBoundChangeController.request(target, keyguard.isDeviceSecure)) {
+            AuthBoundChangeController.Request.NoChange -> Unit
+            is AuthBoundChangeController.Request.Error -> missionKeyError.value = request.message
+            AuthBoundChangeController.Request.PromptCredential -> {
+                @Suppress("DEPRECATION")
+                val intent = keyguard.createConfirmDeviceCredentialIntent(
+                    "Confirm mission-data protection change",
+                    "Authenticate to change how the mission-data key is protected."
+                )
+                if (intent == null) {
+                    authBoundChangeController.cancelPending()
+                    missionKeyError.value = "No device lockscreen is set, so this can't be changed."
+                } else {
+                    authBoundChangeLauncher.launch(intent)
+                }
+            }
+        }
+    }
+
+    private fun prepareMissionKey() {
+        missionKeyReady.value = runCatching { DataKey.key(); true }.getOrElse {
+            missionKeyError.value = it.message
+            false
         }
     }
 
