@@ -37,6 +37,15 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      # Secrets.xcconfig is gitignored (holds the Esri key) but xcodegen needs it
+      # to exist before it can generate the project. Materialise it from the repo
+      # secret; an unset secret writes an empty key (build still compiles, Esri
+      # basemap just disabled). Without this, xcodegen fails on a missing config.
+      - name: Bootstrap iOS Secrets.xcconfig
+        env:
+          ESRI_API_KEY: ${{ secrets.ESRI_API_KEY }}
+        run: scripts/bootstrap_ios_secrets.sh
+
       - name: Generate Xcode project
         working-directory: ios
         run: xcodegen generate
