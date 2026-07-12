@@ -132,6 +132,7 @@ struct ContentView: View {
     @State private var showGPXExporter     = false
     @State private var showWeatherSheet    = false
     @State private var showAppLockSheet    = false
+    @State private var showOpsecSheet      = false
     @State private var showSyncSheet       = false
     @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: String? = nil
@@ -368,6 +369,10 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showAppLockSheet) {
             AppLockSetupView()
+                .padSheetSizing()
+        }
+        .sheet(isPresented: $showOpsecSheet) {
+            OpsecSettingsView()
                 .padSheetSizing()
         }
         .sheet(isPresented: $showSyncSheet) {
@@ -634,6 +639,10 @@ struct ContentView: View {
                         onAppLock:   {
                             drawingsPanelOpen = false
                             showAppLockSheet = true
+                        },
+                        onOpsec:     {
+                            drawingsPanelOpen = false
+                            showOpsecSheet = true
                         },
                         onAbout:     {
                             drawingsPanelOpen = false

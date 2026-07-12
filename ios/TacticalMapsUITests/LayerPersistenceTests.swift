@@ -6,6 +6,22 @@ import XCTest
 /// cold relaunch.
 final class LayerPersistenceTests: XCTestCase {
 
+    func testPrivacyAndOpsecIsReachableFromMainMenu() {
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 10))
+        app.buttons["Menu"].tap()
+
+        let privacy = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "Privacy & OPSEC")
+        ).firstMatch
+        XCTAssertTrue(privacy.waitForExistence(timeout: 5), "Privacy & OPSEC menu row missing")
+        privacy.tap()
+
+        XCTAssertTrue(app.switches["Online basemap tiles"].waitForExistence(timeout: 5),
+                      "Privacy & OPSEC screen did not open")
+    }
+
     func testFreshInstallCanPersistSigningIdentity() {
         let app = XCUIApplication()
         app.launch()
