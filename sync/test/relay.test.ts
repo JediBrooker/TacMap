@@ -236,6 +236,35 @@ describe("durable records, fences, and quotas", () => {
     a.close(); b.close()
   })
 
+  it("accepts hardened mobile v2 deletes without outer kind but rejects plaintext legacy deletes", async () => {
+    const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("mobile-v2-delete-contract"))
+    const a = await openSocket(stub); await drainSnapshot(a)
+    const b = await openSocket(stub); await drainSnapshot(b)
+
+    const firstPut = collectMessages(b, 1)
+    a.send(JSON.stringify({ t: "put", id: "kept", v: 1, by: "mobile-a", kind: "waypoint", ct: sealed() }))
+    await firstPut
+
+    // Exact outer shape emitted by both hardened mobile clients: the signed
+    // delete proof is inside ct and the redundant outer kind is absent.
+    const deleted = collectMessages(b, 1)
+    a.send(JSON.stringify({ t: "del", id: "kept", v: 2, by: "mobile-a", ct: sealed() }))
+    expect((await deleted)[0]).toMatchObject({ t: "del", id: "kept", kind: "del", deleted: true })
+
+    const secondPut = collectMessages(b, 1)
+    a.send(JSON.stringify({ t: "put", id: "still-kept", v: 1, by: "mobile-a", kind: "waypoint", ct: sealed() }))
+    await secondPut
+    const unexpected = collectMessages(b, 1, 350)
+    a.send(JSON.stringify({ t: "del", id: "still-kept", v: 2, by: "legacy-a" }))
+    expect(await unexpected).toEqual([])
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect((await state.storage.get<any>("obj:kept")).kind).toBe("del")
+      expect((await state.storage.get<any>("obj:still-kept")).deleted).toBe(false)
+    })
+    a.close(); b.close()
+  })
+
   it("chunks snapshots by encoded bytes, not only item count", { timeout: 15_000 }, async () => {
     const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("byte-pages"))
     const a = await openSocket(stub); await drainSnapshot(a)

@@ -453,9 +453,14 @@ export class SyncRoom {
     if (typeof msg.id !== "string" || msg.id.length === 0 || msg.id.length > 256) return
     if (typeof msg.v !== "number" || !Number.isSafeInteger(msg.v) || msg.v < 0 || msg.v > MAX_V) return
     if (typeof msg.by !== "string" || msg.by.length === 0 || msg.by.length > 128) return
-    if (typeof msg.kind !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(msg.kind)) return
+    // Hardened Android/iOS v2 clients seal and sign deletes but historically
+    // omitted the redundant outer `kind`. Normalize only that exact shape;
+    // plaintext legacy deletes still fail the ciphertext check below.
+    const kind = deleted && msg.kind === undefined ? "del" : msg.kind
+    if (typeof kind !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(kind)) return
+    if ((deleted && kind !== "del") || (!deleted && kind === "del")) return
     if (!isValidCiphertext(msg.ct, CT_MAX)) return
-    const record: SyncRecord = { id: msg.id, v: msg.v, by: msg.by, kind: msg.kind, ct: msg.ct, deleted, ...(deleted ? { deletedAt: Date.now() } : {}) }
+    const record: SyncRecord = { id: msg.id, v: msg.v, by: msg.by, kind, ct: msg.ct, deleted, ...(deleted ? { deletedAt: Date.now() } : {}) }
     const key = "obj:" + record.id
     let seq: number | undefined
     await this.state.storage.transaction(async txn => {
