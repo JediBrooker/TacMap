@@ -31,11 +31,11 @@ SPEC = [
  ("03-symbols",       "single","symbols.png",       "03 · SYMBOLOGY","Mark the ground","Place NATO APP-6 symbols, then trace routes and areas point by point.","green"),
  ("04-recording",     "single","recording.png",     "04 · GPX TRACKS","Record your route","A live REC breadcrumb with point count — export as standard GPX.","amber"),
  ("05-weather",       "single","weather.png",       "05 · WEATHER + UAV","Go, caution, no-go","Map-centre wind and gusts drive the drone flight-safety call.","amber"),
- ("06-basemaps",      "fan",   None,                 "06 · BASEMAPS & TERRAIN","Satellite or terrain","Native satellite, Esri high-res imagery, or OpenTopoMap topography — switch basemap in a tap.","green"),
+ ("06-basemaps",      "fan",   None,                 "06 · BASEMAPS & TERRAIN","Satellite or terrain","Esri satellite imagery, Esri topographic, or OpenTopoMap terrain — switch basemap in a tap.","green"),
  ("07-import-export", "single","import-export.png", "07 · IMPORT & EXPORT","In and out, anywhere","Import GeoPDF, KML and KMZ; export GeoJSON and GPX.","blue"),
  ("08-symbol-builder","single","symbol-builder.png","08 · APP-6 BUILDER","Build any symbol","Affiliation, echelon and function with a live preview.","blue"),
  ("09-search",        "single","search.png",        "09 · SEARCH","Jump to any grid","Search a place name, or a full / partial MGRS reference.","green"),
- ("10-pdfmap",        "single","pdf-hero.png",      "10 · OFFLINE MAPS","Bring your own map","Import a GeoPDF or defence map sheet — georeferenced on-device, with your live tactical picture on top.","amber"),
+ ("10-pdfmap",        "single","pdf-hero.png",      "10 · OFFLINE MAPS","Bring your own map","Import a GeoPDF or defence map sheet — georeferenced on-device and aligned to your live MGRS grid.","amber"),
 ]
 
 def main():

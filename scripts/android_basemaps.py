@@ -29,11 +29,23 @@ except Exception:
 
 def adb(*a, **k): return subprocess.run(["adb", *a], capture_output=True, **k)
 def sh(c): return adb("shell", *c.split()).stdout.decode("utf-8", "replace")
-def dump():
+def _dump_once():
     adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
     x = adb("shell", "cat", "/sdcard/ui.xml").stdout.decode("utf-8", "replace"); x = x[x.find("<?xml"):]
     try: return ET.fromstring(x)
     except ET.ParseError: return None
+def dump():
+    # uiautomator dumps over this Compose UI are RACY - often a near-empty tree
+    # comes back mid-frame, which is what makes taps miss. Keep the fullest of a
+    # few tries; any real screen here has well over a dozen nodes.
+    best, bestn = None, -1
+    for _ in range(4):
+        r = _dump_once()
+        n = len(list(r.iter("node"))) if r is not None else 0
+        if n > bestn: best, bestn = r, n
+        if bestn >= 12: break
+        time.sleep(0.4)
+    return best
 def ctr(b): m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", b); return (int(m.group(1))+int(m.group(3)))//2, (int(m.group(2))+int(m.group(4)))//2
 def find(t):
     r = dump()
@@ -87,6 +99,23 @@ def ensure_map(tries=5):
         if on_map(): return True
         back(1)
     adb("shell", "am", "start", "-n", ACT); time.sleep(3); return on_map()
+def menu_open():
+    r = dump()
+    if r is None: return False
+    labs = " ".join((n.get("text", "") + n.get("content-desc", "")) for n in r.iter("node"))
+    return "Unit Sync" in labs and "Weather" in labs
+def open_menu(tries=4):
+    for _ in range(tries):
+        if menu_open(): return True
+        ensure_map(); ham(); time.sleep(1.2)
+        if menu_open(): return True
+        back(1); time.sleep(0.8)
+    return menu_open()
+def menu_tap(label, p=2.5, retries=4):
+    for _ in range(retries):
+        if open_menu() and tapt(label, p): return True
+        ensure_map(); time.sleep(0.6)
+    print("  [!] menu_tap failed for", repr(label)); return False
 
 # ---- FLAG_SECURE / block_screen_capture ----
 def read_pref_blocking():
@@ -146,12 +175,12 @@ def restore_secure(original):
 
 SCREEN_W, SCREEN_H = 1080, 2400   # gets overwritten at runtime from screencap
 def select_basemap(label):
-    ham(); tapt("Layers and Labels"); time.sleep(1)
-    # scroll sheet up so basemap rows are actually reachable
+    menu_tap("Layers and Labels"); time.sleep(1)
+    # scroll sheet up so basemap rows are actually reachable, retry the row tap
     for _ in range(4):
+        if tapt(label, p=2.5): break
         adb("shell", "input", "swipe", str(SCREEN_W//2), str(int(SCREEN_H*0.8)),
             str(SCREEN_W//2), str(int(SCREEN_H*0.28)), "300"); time.sleep(1)
-    tapt(label, p=2.5)
     back(1); time.sleep(1)
 
 # ---- install + launch (debug APK; run-as below needs it debuggable) ----
@@ -175,10 +204,12 @@ try:
     # zoom in one notch so terrain detail reads
     adb("shell","input","tap",str(CX),str(CY)); adb("shell","input","tap",str(CX),str(CY)); time.sleep(3)
 
-    # 1) Satellite (Esri is the app's default basemap)
-    print("Satellite..."); time.sleep(8); snap("bm-satellite")
-    # 2) Esri
-    print("Esri..."); select_basemap("Satellite (Esri)"); time.sleep(10); snap("bm-esri")
+    # Three VISUALLY DISTINCT basemaps for the fan (the app default is
+    # Satellite (Esri), so start there, then Esri topo, then OpenTopoMap terrain).
+    # 1) Satellite imagery (Esri) - the app's default basemap
+    print("Satellite..."); select_basemap("Satellite (Esri)"); time.sleep(8); snap("bm-satellite")
+    # 2) Esri topographic (distinct from both satellite and OpenTopoMap)
+    print("Esri topo..."); select_basemap("Topographic (Esri)"); time.sleep(10); snap("bm-esri")
     # 3) OpenTopoMap terrain - long load, need to pan to trigger tiles
     print("Terrain (OpenTopoMap)..."); select_basemap("Topographic (OpenTopoMap)")
     for _ in range(5):
