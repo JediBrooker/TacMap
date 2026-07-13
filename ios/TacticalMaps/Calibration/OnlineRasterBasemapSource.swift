@@ -100,6 +100,7 @@ final class OnlineRasterBasemapSource: MapSource {
         // than hot-link the unauthenticated endpoint - and the Layers UI hides
         // the option in the first place, so this is the safety net.
         var template = style.urlTemplate
+        template = template.replacingOccurrences(of: "{s}", with: "a")
         if style.requiresEsriKey {
             guard EsriKey.isAvailable else {
                 let dead = MKTileOverlay(urlTemplate: nil) // no source, draws nothing

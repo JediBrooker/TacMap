@@ -148,10 +148,23 @@ jobs:
             -destination "id=$DEST" \
             -clonedSourcePackagesDirPath /tmp/spm-cache \
             -derivedDataPath build \
-            -skip-testing:TacticalMapsUITests \
+            -only-testing:TacticalMapsTests \
+            -parallel-testing-enabled NO \
+            -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             test 2>&1 | tee test.log | xcbeautify --renderer github-actions
+
+      - name: Upload test diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-test-diagnostics
+          path: |
+            ios/test.log
+            ios/TestResults.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload .app artefact
         if: success()
