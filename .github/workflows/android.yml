@@ -22,7 +22,7 @@ jobs:
   build:
     name: Test, lint, and assemble
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -59,18 +59,6 @@ jobs:
           ./gradlew --no-daemon --dependency-verification strict \
             lintRelease compileReleaseKotlin
 
-      - name: Assemble debug APK
-        working-directory: android
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Built WITHOUT a Maps key on purpose: the uploaded artefact is public
-          # (this is a public repo), so we never bake a real key into it — the map
-          # just renders blank in the CI APK. Monotonic version code from the run
-          # number (offset so it always exceeds the pinned default).
-          ./gradlew --no-daemon --dependency-verification strict assembleDebug \
-            -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
-
       - name: Assemble release APK (R8 / resource shrink verification)
         working-directory: android
         shell: bash
@@ -78,15 +66,46 @@ jobs:
           set -euo pipefail
           # Exercises R8 + resource shrinking so ProGuard-rule regressions
           # (e.g. kotlinx.serialization stripping) fail CI instead of only
-          # crashing the shipped Play build. Unsigned + no Maps key is fine — the
+          # crashing the shipped Play build. Unsigned with no Maps key is fine; the
           # signing config is conditional on TACTICALMAPS_RELEASE_* being present.
           ./gradlew --no-daemon --dependency-verification strict assembleRelease \
             -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
 
-      - name: Upload APK artefact
-        if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+  pdf-import-smoke:
+    name: PDF import smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
-          name: TacticalMaps-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 14
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chmod 666 /dev/kvm
+
+      - name: Run end-to-end PDF import smoke test
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          emulator-boot-timeout: 300
+          working-directory: android
+          script: >-
+            timeout 600 ./gradlew --no-daemon --dependency-verification strict
+            :app:connectedDebugAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.tacmap.map.PdfImportSmokeTest
+            --stacktrace

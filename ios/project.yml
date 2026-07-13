@@ -126,9 +126,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGNING_ALLOWED: "NO"
 
-  # UI-test target used only to capture App Store screenshots
-  # deterministically (Menu → sheets → snap). Not part of CI logic;
-  # run with -only-testing:TacticalMapsUITests. See scripts/ios_screenshots.sh.
+  # UI-test target for release smoke coverage and App Store screenshots.
+  # Run selected tests with -only-testing:TacticalMapsUITests.
   TacticalMapsUITests:
     type: bundle.ui-testing
     platform: iOS

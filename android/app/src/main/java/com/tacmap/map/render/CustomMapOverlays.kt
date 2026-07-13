@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import android.graphics.Bitmap
 import androidx.core.graphics.drawable.toBitmap
@@ -546,7 +548,11 @@ fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modi
         ?: (source.calibration as? Calibration.Parsed)?.transform
     val pageInfo = source.pageInfo
 
-    Canvas(modifier.fillMaxSize()) {
+    Canvas(
+        modifier
+            .fillMaxSize()
+            .semantics { contentDescription = "PDF map rendered: ${source.displayName}" }
+    ) {
         // Corners in lat/lon: georeferenced -> the affine page corners (bitmap top
         // = page-top = PDF maxY), else the coverage bounds box.
         val corners: List<Pair<Double, Double>> = if (transform != null && pageInfo != null) {

@@ -960,34 +960,27 @@ struct ContentView: View {
 
         let dest: URL
         do {
-            dest = try ImportedMapFileCopier.copyToImportedMaps(
-                url, maximumBytes: ImportedMapFileCopier.maxPDFBytes)
+            dest = try PDFMapImporter.copyAndValidate(url)
+        } catch let error as PDFMapImportError {
+            importMessage = error.localizedDescription
+            return
         } catch {
             importMessage = "Couldn't import this PDF map: \(error.localizedDescription)"
-            return
-        }
-        guard PDFDocument(url: dest) != nil else {
-            try? FileManager.default.removeItem(at: dest)
-            importMessage = "Couldn't import this file as a valid PDF map."
             return
         }
 
         NSLog("[Import] copied PDF into protected app storage")
         let cameraAtImport = mapVM.cameraCentre
         Task.detached(priority: .userInitiated) { [mapVM] in
-            let parsed = GeoPDFReader.bounds(from: dest)
+            let source = PDFMapImporter.makeMapSource(
+                from: dest,
+                cameraCentre: cameraAtImport
+            )
             NSLog("[Import] geospatial metadata parse complete")
-            let resolvedBounds = parsed ?? GeoPDFReader.fallbackBounds(centeredOn: cameraAtImport)
             NSLog("[Import] map bounds resolved")
-            let fromGeoPDF = (parsed != nil)
 
             await MainActor.run {
                 NSLog("[Import] installing PDFMapSource on MainActor")
-                let source = PDFMapSource(
-                    url: dest,
-                    bounds: resolvedBounds,
-                    fromGeoPDF: fromGeoPDF
-                )
                 // If PDF was calibrated in a previous session, restore
                 // fiduciaries + affine so it re-imports already aligned.
                 PDFSessionStore.applyCalibrationIfKnown(to: source)
