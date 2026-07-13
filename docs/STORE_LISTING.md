@@ -1,27 +1,31 @@
 # Store listing copy — App Store & Google Play
 
-Paste-ready listing text. **Deliberately leads with the wedges against the
-nearest competitor (TacticMap):** pay-once vs subscription, global/offline-
-anywhere vs region-locked, open interchange (GeoJSON/KML) vs a proprietary
-format, broad device support, and zero data collection. Keep this in sync with
-the screenshots in `docs/store/`.
+Paste-ready listing text. **Repositioned for a broad field audience** — outdoor
+recreation (hikers, hunters, overlanders), public safety / search-and-rescue,
+professional / field-GIS, and military — while keeping the wedges against the
+nearest competitor (TacticMap): pay-once vs subscription, offline-anywhere vs
+region-locked, open interchange (GeoJSON/KML) vs a proprietary format, broad
+device support, and zero data collection. Keep this in sync with the screenshots
+in `docs/store/`.
 
-> Positioning one-liner: **"Buy once. Works offline anywhere on Earth. Exports
-> to the GIS tools your unit already uses."**
+> Positioning one-liner: **"Buy once. Works offline anywhere on Earth. Your
+> maps, your data, your tools."**
 
 ---
 
 ## App name / title
-- **TacMap — Offline Tactical Maps**  *(App Store: 30-char title is `TacMap`; use the subtitle for the rest)*
+- **App Store**: 30-char title is `TacMap` (the brand carries the tactical nod).
+- **Google Play title (≤30)**: **TacMap: Offline GPS Field Maps** *(30)*
 
 ## App Store subtitle (≤30 chars)
-- **MGRS, NATO symbols, offline**
+- **Offline GPS field maps + grid** *(29)*
+- Alt (keeps MGRS visible): **Offline field maps, MGRS grid** *(29)*
 
 ## Google Play short description (≤80 chars)
-- **Pay once. Offline MGRS maps, NATO APP-6 symbology, GeoPDF & GeoJSON/KML.**
+- **Pay once. Offline field maps for hiking, hunting, SAR, survey & tactical work.** *(78)*
 
 ## App Store promotional text (≤170 chars, editable without review)
-- **One-time unlock — no subscription. Import any GeoPDF or scanned map, work fully offline anywhere, and export GeoJSON/KML straight into QGIS, ArcGIS or Google Earth.**
+- **One-time unlock, no subscription. Import any GeoPDF or scanned map, navigate fully offline anywhere on Earth, and export GeoJSON/KML/GPX to the tools you already use.** *(166)*
 
 ---
 
@@ -36,43 +40,47 @@ Both are well under the 4,000-character limit.
 ### Apple App Store
 
 ```
-TacMap is a field-grade tactical map for your phone — buy it once and own it. No subscription. No account. Nothing collected.
+TacMap is a serious offline map for the field — buy it once and own it. No subscription. No account. Nothing collected, ever.
 
-Built for military, search-and-rescue, and back-country use, where the network isn't there and the map still has to be right.
+Built for anyone who works or plays where the signal drops: hikers, hunters and overlanders; search-and-rescue, fire and EMS crews; survey, forestry and drone-mapping teams; and military and cadet users who live in MGRS and NATO symbology. One map, offline anywhere, and your data stays yours.
 
 
 WORKS OFFLINE, ANYWHERE ON EARTH
-• Import any GeoPDF or scanned defence map sheet and georeference it on-device
-• Calibrate any image map with a quick 3-point fix — reports its accuracy in metres so you know you can trust it
+• Import any GeoPDF or scanned map sheet and georeference it on-device
+• Calibrate any image or paper map with a quick 3-point fix — it reports its accuracy in metres so you know you can trust it
 • Sideload MBTiles offline tile sets — no regional lock-in, no curated country list, no network required
-• Terrain heatmap overlay — DEM-shaded elevation visualisation you can toggle on the fly
+• Terrain heatmap — a DEM-shaded elevation overlay you can toggle on the fly
 
-MILITARY-GRADE TOOLING
-• Live MGRS readout to 10 figures, plus WGS84 lat/long, UTM, and elevation at the crosshair
-• NATO mils compass (6400) with true-north marker
-• NATO APP-6 symbology — build any unit from affiliation × echelon × function, add an HQ flag, and place tactical control measures and task graphics (block, breach, seize, screen, axis of advance, phase lines, boundaries, FLOT/FEBA, and more)
+KNOW EXACTLY WHERE YOU ARE
+• Live position readout in MGRS (to 10 figures), lat/long, and UTM — with elevation at the crosshair
+• Compass with true-north marker, in degrees or NATO mils (6400)
+• Measure distance, area, and bearing — in degrees and mils
+• Drop and label waypoints; record and export your route as a GPX track
+
+MARK UP THE MAP
 • Drawing tools: points, lines, areas, and freehand sketch — each with its own colour, width, and opacity, organised on named layers
-• Distance, area, and bearing measurement in degrees AND NATO mils
 • Full undo/redo
+• Marker sets beyond the military kit: Search & Rescue (point last seen, IPP, ICP, helispot…), Points of Interest, and airsoft / milsim
+• NATO APP-6 symbology for tactical users — build any unit from affiliation × echelon × function, add an HQ flag, and place control measures and task graphics (phase lines, boundaries, axis of advance, block/breach/seize/screen, FLOT/FEBA, and more)
 
-SHARE THE PICTURE, IN REAL TIME
-• Unit Sync — share drawings and symbols live across devices over an end-to-end encrypted channel
-• Live presence — see where your team is on the map in real time, with callsign, affiliation, and heading, all end-to-end encrypted
-• The relay never sees your plaintext; a connected indicator on the header shows you're linked up
-• Conflict detection — if a teammate edits the same object, you get a clear notification instead of a silent overwrite
-• Weather + UAV flight-safety widget — live wind, gusts, visibility, and a SAFE / CAUTION / DANGER drone-flight read for the map centre
+SHARE THE PICTURE, LIVE
+• Unit Sync — share drawings and symbols across devices in real time over an end-to-end encrypted channel
+• Live presence — see your team on the map with callsign, heading, and position, all end-to-end encrypted
+• The relay never sees your plaintext; a connected indicator shows you're linked up
+• Conflict alerts — if a teammate edits the same object, you get a notification instead of a silent overwrite
+• Weather + drone flight-safety widget — live wind, gusts, visibility, and a SAFE / CAUTION / DANGER read for the map centre
 
 OPEN BY DESIGN — YOUR DATA STAYS YOURS
 • Import and export GeoJSON (RFC 7946) — round-trips cleanly through QGIS, ArcGIS, Felt, Leaflet, and Google Earth
-• Import KML / KMZ from Google Earth and ATAK exports
+• Import KML / KMZ from Google Earth and ATAK
 • Record and export GPX tracks
 • Export All — one-tap backup of every symbol, drawing, waypoint, and track as a single GeoJSON file
-• No proprietary format. Everything you draw exports to the tools your unit already uses.
+• No proprietary format. Everything you make exports to the tools you already use.
 
-RUNS ON THE GEAR YOU ALREADY FIELD
-• Universal iPhone and iPad
-• Optional Face ID / Touch ID lock to secure the app
+PRIVATE BY DEFAULT
 • All processing on-device. Zero data collected — no telemetry, no ads, no third-party SDKs.
+• Optional Face ID / Touch ID app lock
+• Universal iPhone and iPad — not gated behind the newest OS
 
 
 PAY ONCE — US$4.99
@@ -81,54 +89,27 @@ PAY ONCE — US$4.99
 
 ### Google Play
 
-```
-TacMap is a field-grade tactical map for your phone — buy it once and own it. No subscription. No account. Nothing collected.
-
-Built for military, search-and-rescue, and back-country use, where the network isn't there and the map still has to be right.
-
-
-WORKS OFFLINE, ANYWHERE ON EARTH
-• Import any GeoPDF or scanned defence map sheet and georeference it on-device
-• Calibrate any image map with a quick 3-point fix — reports its accuracy in metres so you know you can trust it
-• Sideload MBTiles offline tile sets — no regional lock-in, no curated country list, no network required
-• Terrain heatmap overlay — DEM-shaded elevation visualisation you can toggle on the fly
-
-MILITARY-GRADE TOOLING
-• Live MGRS readout to 10 figures, plus WGS84 lat/long, UTM, and elevation at the crosshair
-• NATO mils compass (6400) with true-north marker
-• NATO APP-6 symbology — build any unit from affiliation × echelon × function, add an HQ flag, and place tactical control measures and task graphics (block, breach, seize, screen, axis of advance, phase lines, boundaries, FLOT/FEBA, and more)
-• Drawing tools: points, lines, areas, and freehand sketch — each with its own colour, width, and opacity, organised on named layers
-• Distance, area, and bearing measurement in degrees AND NATO mils
-• Full undo/redo
-
-SHARE THE PICTURE, IN REAL TIME
-• Unit Sync — share drawings and symbols live across devices over an end-to-end encrypted channel
-• Live presence — see where your team is on the map in real time, with callsign, affiliation, and heading, all end-to-end encrypted
-• The relay never sees your plaintext; a connected indicator on the header shows you're linked up
-• Conflict detection — if a teammate edits the same object, you get a clear notification instead of a silent overwrite
-• Weather + UAV flight-safety widget — live wind, gusts, visibility, and a SAFE / CAUTION / DANGER drone-flight read for the map centre
-
-OPEN BY DESIGN — YOUR DATA STAYS YOURS
-• Import and export GeoJSON (RFC 7946) — round-trips cleanly through QGIS, ArcGIS, Felt, Leaflet, and Google Earth
-• Import KML / KMZ from Google Earth and ATAK exports
-• Record and export GPX tracks
-• Export All — one-tap backup of every symbol, drawing, waypoint, and track as a single GeoJSON file
-• No proprietary format. Everything you draw exports to the tools your unit already uses.
-
-RUNS ON THE GEAR YOU ALREADY FIELD
-• Broad Android support — not gated behind the newest OS version
-• Optional PIN or biometric lock to secure the app
-• All processing on-device. Zero data collected — no telemetry, no ads, no third-party SDKs.
-
-
-PAY ONCE — A$5
-3-day free trial, then a one-time unlock. No subscription, ever.
-```
+Same body as the App Store block above, with these platform swaps:
+- `PRIVATE BY DEFAULT` — replace the two Apple device/lock lines with:
+  - `• Optional PIN or biometric app lock`
+  - `• Broad Android support — not gated behind the newest OS version`
+- Final line: `PAY ONCE — A$5` (instead of `US$4.99`).
 
 ---
 
 ## App Store keywords (≤100 chars, comma-separated, no spaces)
-`mgrs,nato,app-6,tactical,offline,map,gis,geojson,kml,geopdf,military,grid,utm,navigation,sar`
+`mgrs,utm,topo,hunting,hiking,overland,geopdf,geojson,kml,waypoint,gpx,nato,sar,survey,gis,trail`  *(95 chars)*
+
+- Deliberately omits words already in the title/subtitle (`tactical`, `offline`,
+  `map/maps`, `field`, `grid`, `gps`) — those index from there, so the budget
+  goes to new-audience terms.
+- Balanced across the four audiences: outdoor (`hunting, hiking, overland, topo,
+  trail, waypoint, gpx`), public-safety (`sar`), professional / field-GIS
+  (`mgrs, utm, geopdf, geojson, kml, survey, gis`), military (`nato`).
+- ~5 chars spare — add one short term to lean an audience harder if you like:
+  `4x4` (overland), `rescue` (SAR), or `camp`.
+- Google Play has no keyword field (it indexes the description); the copy above
+  already works those terms in naturally.
 
 ## What's New (release note snippet)
 
@@ -150,16 +131,23 @@ PAY ONCE — A$5
 ---
 
 ### Why this copy (rationale for future edits)
-- **Lead with "buy once / no subscription"** — the competitor is subscription
-  ($1.99/mo–$12.99/yr); this is the cleanest differentiator for a store browser.
-- **"Offline anywhere on Earth" + GeoPDF/calibration** — the competitor's offline
-  coverage is essentially one region and it has no scanned-map georeferencing.
-- **GeoJSON + KML interop** — the competitor uses a proprietary overlay format;
-  open export is a concrete reason-to-switch for GIS-literate units.
-- **"Runs on the gear you already field"** — counters the competitor's high OS
-  floor without naming it.
-- **"Zero data collected"** — reinforces the privacy stance and OPSEC posture.
-- **Real-time Unit Sync, Weather + UAV safety, and terrain heatmap** — all
-  shipped on both platforms in 1.1.0 and verified in code; the E2E-encrypted
-  ("relay never sees plaintext") framing doubles as a privacy/OPSEC selling
-  point rather than just a feature line.
+- **Big-tent audience** — the lead line and the "built for…" line name outdoor
+  recreation, public safety / SAR, professional / field-GIS, and military. The
+  old copy led with "military" alone, which narrows the market and draws extra
+  App Review scrutiny (spell out in review notes that it is *not* a
+  weapons/defence system — see `docs/APPSTORE_CHECKLIST.md`).
+- **Wedges still lead the pitch** — "buy once / no subscription" and "offline
+  anywhere on Earth" are the cleanest differentiators for any store browser vs
+  the subscription, region-locked competitor.
+- **Military tooling is now depth, not identity** — MGRS / NATO / mils moved
+  under "know exactly where you are" and "mark up the map" so the outdoor / pro
+  segments don't bounce, while users who search for it still find it (`nato`,
+  `mgrs`, `utm`).
+- **Marker sets** (SAR / POI / airsoft) are called out in the copy — a concrete
+  signal the app serves the new audiences, not just military units.
+- **GeoJSON + KML interop** and **zero data collected** carry the GIS-interop
+  and OPSEC / privacy stories for the professional and tactical crowds.
+- **Screenshots match** in `docs/store/{ios,android}/`: slide 06 is
+  Satellite / Topographic / Street basemaps, 08 is Measurement (range / area /
+  bearing), 10 is a georeferenced GeoPDF with Search & Rescue markers. App
+  previews (iOS) live in `docs/store/ios/previews/`.
