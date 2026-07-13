@@ -83,7 +83,7 @@ struct HamburgerMenu: View {
                         divider
                         row("Unit Sync…", systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
                         row("App Lock…", systemImage: "lock.shield")               { close(onAppLock) }
-                        row("Privacy & OPSEC…", systemImage: "hand.raised.shield")  { close(onOpsec) }
+                        row("Privacy & OPSEC…", systemImage: "eye.slash.fill")      { close(onOpsec) }
                         row("About & Credits", systemImage: "info.circle")         { close(onAbout) }
                     }
                 }
