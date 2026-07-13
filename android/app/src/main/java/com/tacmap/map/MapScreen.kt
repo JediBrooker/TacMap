@@ -47,12 +47,12 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Button
@@ -868,7 +868,7 @@ fun MapScreen(
                                 setDialogVisible = { showOpsecSettings = it },
                             )
                         },
-                        leadingIcon = { Icon(Icons.Default.Tune, contentDescription = null) }
+                        leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("About & Credits") },

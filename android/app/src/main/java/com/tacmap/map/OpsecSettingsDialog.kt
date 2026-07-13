@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,8 +27,7 @@ import com.tacmap.settings.OpsecSettings
 import com.tacmap.util.DataKey
 
 /** Privacy / operational-security settings: screen-capture blocking, opt-in
- *  online lookups and basemaps, at-rest key binding, and the (self-hostable)
- *  sync relay URL. */
+ *  online lookups and basemaps, and at-rest key binding. */
 @Composable
 fun OpsecSettingsDialog(
     opsec: OpsecSettings,
@@ -40,9 +38,6 @@ fun OpsecSettingsDialog(
     val blockCapture by opsec.blockScreenCapture.collectAsState()
     val online by opsec.onlineLookups.collectAsState()
     val onlineBasemaps by opsec.onlineBasemaps.collectAsState()
-    val relay by opsec.relayUrl.collectAsState()
-    var relayField by remember(relay) { mutableStateOf(relay) }
-
     var authBound by remember { mutableStateOf(DataKey.isAuthBound) }
     var keyError by remember { mutableStateOf<String?>(null) }
     val authController = remember {
@@ -92,7 +87,7 @@ fun OpsecSettingsDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = { opsec.setRelayUrl(relayField); onDismiss() }) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text("Done") }
         },
         title = { Text(PRIVACY_OPSEC_LABEL) },
         text = {
@@ -125,13 +120,6 @@ fun OpsecSettingsDialog(
                         "the key is destroyed and mission data becomes unrecoverable."
                 )
                 keyError?.let { Caption("Could not change key protection: $it", Color(0xFFB00020)) }
-
-                OutlinedTextField(
-                    value = relayField,
-                    onValueChange = { relayField = it },
-                    label = { Text("Sync relay URL (self-host)") },
-                    singleLine = true
-                )
             }
         }
     )

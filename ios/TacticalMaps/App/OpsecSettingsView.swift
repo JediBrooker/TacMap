@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Privacy / OPSEC settings: privacy screen, opt-in online lookups and
-/// basemaps, at-rest key binding, and the self-hostable sync relay URL.
+/// basemaps, and at-rest key binding.
 struct OpsecSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var opsec = OpsecSettings.shared
@@ -48,12 +48,6 @@ struct OpsecSettingsView: View {
 
                     On: the secure hardware refuses the key without Face ID, Touch ID or your passcode. A jailbreak alone gets nothing. In exchange, after the app is killed nothing can read or write mission data until you unlock, and that includes background track recording.
                     """)
-                }
-
-                Section("Sync relay") {
-                    TextField("Relay URL", text: $opsec.relayURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
                 }
             }
             .navigationTitle("Privacy & OPSEC")
