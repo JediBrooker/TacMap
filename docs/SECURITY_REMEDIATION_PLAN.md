@@ -367,7 +367,7 @@ Implement ADR-003. The preferred dark-by-default result is:
 
 Update behavior and wording together in:
 
-- [THREAT_MODEL.md](../THREAT_MODEL.md);
+- [THREAT_MODEL.md](THREAT_MODEL.md);
 - [README.md](../README.md);
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md);
 - [docs/PRIVACY_POLICY.md](PRIVACY_POLICY.md);
