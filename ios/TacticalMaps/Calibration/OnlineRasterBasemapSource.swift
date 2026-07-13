@@ -41,7 +41,10 @@ enum BasemapStyle: String, CaseIterable {
         case .esriTopo:
             return "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/outdoor/static/tile/{z}/{y}/{x}"
         case .osmTopo:
-            return "https://a.tile.opentopomap.org/{z}/{x}/{y}.png"
+            // {s} is deterministically replaced with a/b/c by the custom tile
+            // loader, spreading normal interactive traffic across OTM's
+            // documented raster hosts without duplicate requests.
+            return "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
         case .osmStreet:
             return "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/open/osm-style/static/tile/{z}/{y}/{x}"
         }

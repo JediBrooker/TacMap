@@ -1,4 +1,23 @@
 import UIKit
+import Combine
+
+/// Coordinate-free provider health for user feedback. No URL, tile address, or
+/// map position is retained or logged.
+@MainActor final class OnlineTileHealth: ObservableObject {
+    static let shared = OnlineTileHealth()
+    @Published private(set) var temporarilyUnavailable = false
+    private var consecutiveFailures = 0
+
+    func succeeded() {
+        consecutiveFailures = 0
+        temporarilyUnavailable = false
+    }
+
+    func failed() {
+        consecutiveFailures += 1
+        if consecutiveFailures >= 8 { temporarilyUnavailable = true }
+    }
+}
 
 /// Supplies tile images to the custom `TileMapView`. Each concrete source knows
 /// how to turn a `TileIndex` into a `UIImage` (online fetch, MBTiles read, or a
@@ -34,6 +53,21 @@ final class OnlineRasterTileSource: RasterTileSource {
         self.style = style
     }
 
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        // Coordinates in tile URLs are operationally sensitive. Keep useful
+        // caching in RAM only; never leave an AO trail in the disk URL cache.
+        config.urlCache = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 0)
+        config.requestCachePolicy = .useProtocolCachePolicy
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.urlCredentialStorage = nil
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 20
+        config.httpMaximumConnectionsPerHost = 2
+        return URLSession(configuration: config)
+    }()
+
     private final class Request: RasterTileRequest {
         let task: Task<Void, Never>
         init(_ task: Task<Void, Never>) { self.task = task }
@@ -43,14 +77,11 @@ final class OnlineRasterTileSource: RasterTileSource {
     func loadTile(_ tile: TileIndex, completion: @escaping (UIImage?) -> Void) -> RasterTileRequest? {
         guard let url = url(for: tile) else { completion(nil); return nil }
         var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.cachePolicy = .useProtocolCachePolicy
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         let task = Task {
             let image: UIImage?
-            do {
-                let (data, response) = try await NetworkSession.data(for: request, maximumBytes: 4 * 1024 * 1024)
-                let acceptable = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
-                image = acceptable ? UIImage(data: data) : nil
-            } catch { image = nil }
+            image = await Self.fetch(request)
             if !Task.isCancelled { await MainActor.run { completion(image) } }
         }
         return Request(task)
@@ -60,11 +91,65 @@ final class OnlineRasterTileSource: RasterTileSource {
     private func url(for tile: TileIndex) -> URL? {
         if style.requiresEsriKey && !EsriKey.isAvailable { return nil }
         var s = style.urlTemplate
+            .replacingOccurrences(of: "{s}", with: Self.openTopoHost(for: tile))
             .replacingOccurrences(of: "{z}", with: String(tile.z))
             .replacingOccurrences(of: "{x}", with: String(tile.x))
             .replacingOccurrences(of: "{y}", with: String(tile.y))
         if style.requiresEsriKey { s += "?token=\(EsriKey.token)" }
         return URL(string: s)
+    }
+
+
+    private static var userAgent: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        return "TacMap/\(version) (iOS; https://tacticalmaps.app)"
+    }
+
+    /// Stable sharding: the same tile always uses the same documented host,
+    /// preserving cache locality while distributing a viewport across a/b/c.
+    static func openTopoHost(for tile: TileIndex) -> String {
+        ["a", "b", "c"][abs(tile.x &+ tile.y &+ tile.z) % 3]
+    }
+
+    private static func fetch(_ request: URLRequest) async -> UIImage? {
+        for attempt in 0..<3 {
+            if Task.isCancelled { return nil }
+            do {
+                let (data, response) = try await boundedData(for: request, maximumBytes: 4 * 1024 * 1024)
+                guard data.count <= 4 * 1024 * 1024,
+                      let http = response as? HTTPURLResponse else { return nil }
+                if (200...299).contains(http.statusCode), let image = UIImage(data: data) {
+                    await OnlineTileHealth.shared.succeeded()
+                    return image
+                }
+                guard http.statusCode == 429 || http.statusCode == 503 else {
+                    NSLog("TacMap basemap request failed (HTTP %d)", http.statusCode)
+                    await OnlineTileHealth.shared.failed()
+                    return nil
+                }
+                NSLog("TacMap basemap provider temporarily unavailable (HTTP %d)", http.statusCode)
+            } catch is CancellationError { return nil }
+            catch {
+                NSLog("TacMap basemap request failed (%@)", String(describing: type(of: error)))
+            }
+            if attempt < 2 {
+                try? await Task.sleep(nanoseconds: UInt64(350 * (1 << attempt)) * 1_000_000)
+            }
+        }
+        await OnlineTileHealth.shared.failed()
+        return nil
+    }
+
+    private static func boundedData(for request: URLRequest, maximumBytes: Int) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        if response.expectedContentLength > Int64(maximumBytes) { throw NetworkSession.LimitError.responseTooLarge }
+        var data = Data()
+        data.reserveCapacity(min(maximumBytes, max(0, Int(response.expectedContentLength))))
+        for try await byte in bytes {
+            if data.count >= maximumBytes { throw NetworkSession.LimitError.responseTooLarge }
+            data.append(byte)
+        }
+        return (data, response)
     }
 }
 

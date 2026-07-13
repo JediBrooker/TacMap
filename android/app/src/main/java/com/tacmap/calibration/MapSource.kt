@@ -63,7 +63,7 @@ enum class BasemapStyle(
     ),
     OSM_TOPO(
         "Topographic (OpenTopoMap)",
-        "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
         256, 17, false,
         "© OpenTopoMap (CC-BY-SA), © OpenStreetMap contributors"
     ),

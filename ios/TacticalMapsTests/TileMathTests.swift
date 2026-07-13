@@ -4,6 +4,14 @@ import CoreGraphics
 @testable import TacticalMaps
 
 final class TileMathTests: XCTestCase {
+    func testOpenTopoMapShardingIsStableAndUsesAllDocumentedHosts() {
+        let tiles = (0..<9).map { TileIndex(z: 4, x: $0, y: 2) }
+        XCTAssertEqual(Set(tiles.map(OnlineRasterTileSource.openTopoHost)), Set(["a", "b", "c"]))
+        let tile = TileIndex(z: 8, x: 17, y: 23)
+        XCTAssertEqual(OnlineRasterTileSource.openTopoHost(for: tile),
+                       OnlineRasterTileSource.openTopoHost(for: tile))
+    }
+
 
     private func camera(lat: Double = 0, lon: Double = 0, zoom: Double,
                         heading: Double = 0, size: CGSize = CGSize(width: 400, height: 600)) -> MapCamera {

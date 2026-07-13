@@ -151,6 +151,7 @@ struct ContentView: View {
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
 
     @ObservedObject private var opsec = OpsecSettings.shared
+    @ObservedObject private var onlineTileHealth = OnlineTileHealth.shared
 
     /// Is anything on screen actually pulling tiles off the internet right now?
     /// Apple's basemap counts: an imported PDF draws in a subview above it, so
@@ -215,6 +216,19 @@ struct ContentView: View {
                 .ignoresSafeArea()
                 .overlay {
                     if basemapBlank { NoBasemapNotice() }
+                }
+
+                if onlineTilesActive && onlineTileHealth.temporarilyUnavailable {
+                    VStack {
+                        Text("Online basemap temporarily unavailable")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(.black.opacity(0.82), in: Capsule())
+                            .padding(.top, 118)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
                 }
 
                 // SwiftUI overlay for tactical control measures. Sits

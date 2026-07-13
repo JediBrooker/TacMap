@@ -95,6 +95,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tacmap.map.render.OnlineTileHealth
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -140,6 +141,7 @@ fun MapScreen(
     val scope = rememberCoroutineScope()
 
     val onlineBasemapsEnabled by vm.opsec.onlineBasemaps.collectAsState()
+    val onlineTilesUnavailable by OnlineTileHealth.temporarilyUnavailable.collectAsState()
     val isBrowsing by vm.isBrowsing.collectAsState()
     val pendingTarget by vm.pendingCameraTarget.collectAsState()
     val cameraLat by vm.cameraLat.collectAsState()
@@ -692,6 +694,20 @@ fun MapScreen(
         // The online-tiles warning used to sit here under the header, but that's
         // where the live-tracking record badge goes - they collided. It's paired
         // with the Centre pill at the bottom now.
+        }
+
+        if (onlineTilesActive && onlineTilesUnavailable) {
+            Text(
+                "Online basemap temporarily unavailable",
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 82.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.82f))
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+            )
         }
 
         // live track-recording badge, only while recording. Tap to stop.
