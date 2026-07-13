@@ -83,6 +83,23 @@ jobs:
           ./gradlew --no-daemon --dependency-verification strict assembleRelease \
             -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
 
+      - name: Run end-to-end PDF import smoke test
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chmod 666 /dev/kvm
+          sdkmanager "emulator" "system-images;android-35;google_apis;x86_64"
+          echo no | avdmanager create avd --force \
+            --name tacmap_ci \
+            --package "system-images;android-35;google_apis;x86_64"
+          nohup emulator -avd tacmap_ci -no-window -no-audio -no-boot-anim \
+            -gpu swiftshader_indirect >/tmp/tacmap-emulator.log 2>&1 &
+          adb wait-for-device
+          timeout 300 bash -c \
+            'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = "1" ]; do sleep 2; done'
+          ./gradlew --no-daemon --dependency-verification strict connectedDebugAndroidTest
+
       - name: Upload APK artefact
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

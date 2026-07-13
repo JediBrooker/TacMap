@@ -47,7 +47,9 @@ class MainActivity : ComponentActivity() {
     private val missionKeyError = mutableStateOf<String?>(null)
     private lateinit var credentialLauncher: ActivityResultLauncher<Intent>
     private lateinit var authBoundChangeLauncher: ActivityResultLauncher<Intent>
+    private lateinit var pdfImportLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var geoJsonImportLauncher: ActivityResultLauncher<Array<String>>
+    private val pendingPdfImportUri = mutableStateOf<Uri?>(null)
     private val pendingGeoJsonImportUri = mutableStateOf<Uri?>(null)
     private val authBoundChangeController by lazy {
         AuthBoundChangeController(object : AuthBoundChangeController.KeyProtection {
@@ -83,8 +85,11 @@ class MainActivity : ComponentActivity() {
                 missionKeyReady.value = true
             }
         }
-        // Activity-owned so the result survives the intentional MapScreen
-        // teardown/DataKey lock while the system document picker is foreground.
+        // These launchers belong to the Activity because the document picker
+        // pauses the app and MapScreen is removed while the mission key locks.
+        pdfImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            pendingPdfImportUri.value = uri
+        }
         geoJsonImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             pendingGeoJsonImportUri.value = uri
         }
@@ -142,6 +147,11 @@ class MainActivity : ComponentActivity() {
                         MapScreen(
                             isPurchased = purchased,
                             trialDaysRemaining = trial.daysRemaining(now),
+                            pendingPdfImportUri = pendingPdfImportUri.value,
+                            onRequestPdfImport = pdfImportLauncher::launch,
+                            onPdfImportConsumed = { uri ->
+                                if (pendingPdfImportUri.value == uri) pendingPdfImportUri.value = null
+                            },
                             pendingGeoJsonImportUri = pendingGeoJsonImportUri.value,
                             onRequestGeoJsonImport = geoJsonImportLauncher::launch,
                             onGeoJsonImportConsumed = { uri ->

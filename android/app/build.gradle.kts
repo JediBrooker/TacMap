@@ -50,6 +50,7 @@ android {
         targetSdk = 35
         versionCode = injectedVersionCode ?: 57
         versionName = "1.2.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables { useSupportLibrary = true }
 
@@ -180,4 +181,9 @@ dependencies {
     // formatting, and GeoJSON export live in src/test.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }

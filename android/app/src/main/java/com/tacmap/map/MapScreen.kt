@@ -131,6 +131,9 @@ fun MapScreen(
     vm: MapViewModel = viewModel(),
     isPurchased: Boolean = true,
     trialDaysRemaining: Int = 0,
+    pendingPdfImportUri: Uri?,
+    onRequestPdfImport: (Array<String>) -> Unit,
+    onPdfImportConsumed: (Uri) -> Unit,
     pendingGeoJsonImportUri: Uri? = null,
     onRequestGeoJsonImport: ((Array<String>) -> Unit)? = null,
     onGeoJsonImportConsumed: (Uri) -> Unit = {},
@@ -257,28 +260,34 @@ fun MapScreen(
         }
     }
 
-    val pdfImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            val source = runCatching {
-                withContext(Dispatchers.IO) {
-                    importPdfMapSource(
-                        context = context,
-                        sourceUri = uri,
-                        cameraLat = cameraLat,
-                        cameraLng = cameraLng
-                    )
-                }
-            }.onFailure {
-                Toast.makeText(context, "Unable to import PDF map.", Toast.LENGTH_SHORT).show()
-            }.getOrNull()
-
-            source?.let {
-                vm.setMapSource(it)
-                Toast.makeText(context, "Imported ${it.displayName}", Toast.LENGTH_SHORT).show()
+    suspend fun importSelectedPdf(uri: Uri) {
+        val source = runCatching {
+            withContext(Dispatchers.IO) {
+                importPdfMapSource(
+                    context = context,
+                    sourceUri = uri,
+                    cameraLat = cameraLat,
+                    cameraLng = cameraLng
+                )
             }
+        }.onFailure {
+            Toast.makeText(context, "Unable to import PDF map.", Toast.LENGTH_SHORT).show()
+        }.getOrNull()
+
+        source?.let {
+            vm.setMapSource(it)
+            Toast.makeText(context, "Imported ${it.displayName}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // MainActivity keeps the picker result while the app locks and rebuilds
+    // this screen. Consume the URI once the mission key is available again.
+    LaunchedEffect(pendingPdfImportUri) {
+        val uri = pendingPdfImportUri ?: return@LaunchedEffect
+        try {
+            importSelectedPdf(uri)
+        } finally {
+            onPdfImportConsumed(uri)
         }
     }
 
@@ -1245,7 +1254,8 @@ fun MapScreen(
         ImportExportSheet(
             onImportPdf = {
                 showImportExportSheet = false
-                pdfImportLauncher.launch(arrayOf("application/pdf"))
+                val mimeTypes = arrayOf("application/pdf")
+                onRequestPdfImport(mimeTypes)
             },
             onImportTiles = {
                 showImportExportSheet = false
