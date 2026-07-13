@@ -15,12 +15,12 @@ diverge:
 
 Both test suites load these same files and assert against them:
 
-- iOS — [`ios/TacticalMapsTests/SharedVectorsTests.swift`](../ios/TacticalMapsTests/SharedVectorsTests.swift) (walks up from `#filePath`)
-- Android — [`android/app/src/test/java/com/tacticalmaps/SharedVectorsTest.kt`](../android/app/src/test/java/com/tacticalmaps/SharedVectorsTest.kt) (walks up from `user.dir`)
-- Relay — [`sync/test/relay.test.ts`](../sync/test/relay.test.ts) imports the v3
+- iOS - [`ios/TacticalMapsTests/SharedVectorsTests.swift`](../ios/TacticalMapsTests/SharedVectorsTests.swift) (walks up from `#filePath`)
+- Android - [`android/app/src/test/java/com/tacticalmaps/SharedVectorsTest.kt`](../android/app/src/test/java/com/tacticalmaps/SharedVectorsTest.kt) (walks up from `user.dir`)
+- Relay - [`sync/test/relay.test.ts`](../sync/test/relay.test.ts) imports the v3
   fixture directly; copied relay-only constants are not authoritative.
 
 If you change an algorithm on one platform and a shared test fails, the two
-platforms have drifted — fix the implementation, don't just edit the vector.
+platforms have drifted - fix the implementation, don't just edit the vector.
 The MGRS strings were generated from the verified NGA-backed formatters; the
 affine fiduciary coordinates are computed directly from each case's `transform`.
