@@ -62,6 +62,16 @@ class RasterTileSourceTest {
         assertEquals(256, BasemapStyle.OSM_TOPO.tileSize)
     }
 
+    @Test fun osmTopoDeterministicallyDistributesAcrossDocumentedHosts() {
+        val hosts = (0..8).map { x ->
+            requireNotNull(url(BasemapStyle.OSM_TOPO, 4, x, 2))
+                .substringAfter("https://").substringBefore(".")
+        }.toSet()
+        assertEquals(setOf("a", "b", "c"), hosts)
+        assertEquals(url(BasemapStyle.OSM_TOPO, 4, 3, 2),
+            url(BasemapStyle.OSM_TOPO, 4, 3, 2))
+    }
+
     @Test fun keyedStylesRefuseToBuildWithoutAKey() {
         assumeTrue("only meaningful when NO key is configured", !EsriKey.isAvailable)
         // With no key we must refuse, not fall back to an unauthenticated URL.

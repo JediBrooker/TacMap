@@ -41,6 +41,7 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
     val room by manager.room.collectAsState()
     var code by remember { mutableStateOf(room ?: "") }
     var codeError by remember { mutableStateOf<String?>(null) }
+    var legacyConfirmed by remember { mutableStateOf(false) }
 
     // Local copies of the presence config fields, initialised from the manager.
     var callsign by remember { mutableStateOf(manager.presenceConfig.callsign) }
@@ -77,6 +78,7 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val (label, colour) = when (status) {
                     SyncManager.Status.CONNECTED -> "Connected" to Color(0xFF2E7D32)
+                    SyncManager.Status.SNAPSHOTTING -> "Verifying room snapshot…" to Color(0xFFEF6C00)
                     SyncManager.Status.CONNECTING -> "Connecting…" to Color(0xFFEF6C00)
                     SyncManager.Status.OFFLINE -> "Offline" to Color(0xFF9E9E9E)
                 }
@@ -84,6 +86,9 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
 
                 if (room != null) {
                     Text("Room code: ${room}", fontWeight = FontWeight.SemiBold)
+                    if (room!!.startsWith("2:")) {
+                        Text("LEGACY ROOM: weaker replay, identity, and metadata protections.", color = Color.Red, fontWeight = FontWeight.Bold)
+                    }
                     OutlinedButton(
                         onClick = { manager.leave() },
                         modifier = Modifier.fillMaxWidth()
@@ -91,7 +96,7 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
                 } else {
                     OutlinedTextField(
                         value = code,
-                        onValueChange = { code = it; codeError = null },
+                        onValueChange = { code = it; codeError = null; legacyConfirmed = false },
                         label = { Text("Unit join code") },
                         isError = codeError != null,
                         supportingText = {
@@ -106,13 +111,18 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { code = SyncCrypto.generateJoinCode(); codeError = null },
+                            onClick = { code = SyncCrypto.generateJoinCode(); codeError = null; legacyConfirmed = false },
                             modifier = Modifier.weight(1f)
                         ) { Text("Generate") }
                         Button(
                             enabled = code.isNotBlank(),
                             onClick = {
-                                if (SyncCrypto.isJoinCodeTooWeak(code)) {
+                                if (!code.trim().startsWith("3:") && !code.trim().startsWith("2:")) {
+                                    codeError = "Codes must start with 3:. Enter 2: only for an intentional legacy room."
+                                } else if (code.trim().startsWith("2:") && !legacyConfirmed) {
+                                    legacyConfirmed = true
+                                    codeError = "Legacy v2 has weaker rollback and identity protection. Tap again to confirm legacy join."
+                                } else if (SyncCrypto.isJoinCodeTooWeak(code)) {
                                     codeError = "Too short to be safe. Use at least " +
                                         "${SyncCrypto.MIN_JOIN_CODE_LEN} characters, or tap Generate."
                                 } else {
@@ -122,16 +132,25 @@ fun SyncDialog(manager: SyncManager, onDismiss: () -> Unit) {
                             modifier = Modifier.weight(1f)
                         ) { Text("Join / create") }
                     }
+                    if (code.trim().startsWith("2:")) {
+                        Text("LEGACY ROOM: weaker replay, identity, and metadata protections.", color = Color.Red, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                Text(
+                    "Replay protection only rejects signed sessions at or below epochs this device has already stored. Detecting an obsolete but previously unseen higher session requires external verification.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
 
                 // ----- Your Identity -----
                 Text("Your Identity", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
 
                 OutlinedTextField(
                     value = callsign,
-                    onValueChange = { callsign = it; commitConfig() },
+                    onValueChange = { callsign = manager.boundCallsign(it); commitConfig() },
                     label = { Text("Callsign") },
                     placeholder = { Text("Alpha 1-1") },
                     singleLine = true,

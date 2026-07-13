@@ -1,0 +1,39 @@
+{
+  "features" : [
+    {
+      "geometry" : {
+        "coordinates" : [
+          151.20930000000001,
+          -33.8688
+        ],
+        "type" : "Point"
+      },
+      "id" : "71d0f3d2-7d33-4af4-a593-d4cb70fb808d",
+      "properties" : {
+        "created_at" : "2023-11-14T22:13:20Z",
+        "description" : "actual production exporter fixture",
+        "elevation_m" : 42,
+        "kind" : "generic",
+        "kind_display" : "Waypoint",
+        "layer_id" : "00000000-0000-0000-0000-000000000001",
+        "layer_name" : "Friendly",
+        "marker-color" : "#FFD700",
+        "marker-symbol" : "marker",
+        "name" : "iOS Alpha",
+        "notes" : "actual production exporter fixture",
+        "source" : "symbol",
+        "tacticalmaps:category" : "generic",
+        "tacticalmaps:created_at" : "2023-11-14T22:13:20Z",
+        "tacticalmaps:elevation_m" : 42,
+        "tacticalmaps:kind" : "generic",
+        "tacticalmaps:layer" : "Friendly",
+        "tacticalmaps:layer_color" : "#4DA6FF",
+        "tacticalmaps:layer_id" : "00000000-0000-0000-0000-000000000001",
+        "tacticalmaps:task_color" : "black"
+      },
+      "type" : "Feature"
+    }
+  ],
+  "generator" : "TacMap",
+  "type" : "FeatureCollection"
+}

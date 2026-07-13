@@ -143,7 +143,7 @@ request until you opt in.
 |---|---|---|---|---|---|
 | `ibasemaps-api.arcgis.com` (Esri World Imagery) | Satellite basemap tiles (the default style) | Viewing the map with online basemaps enabled | Your IP + the tile coordinates/zoom you view = your area of interest, over time | **Off** (online basemaps gate) | Leave the gate off; use offline packs, see §6 |
 | `static-map-tiles-api.arcgis.com` (Esri) | Topographic + OSM-street basemap tiles (licensed) | Selecting those styles with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Leave the gate off; use offline packs |
-| `a.tile.opentopomap.org` | OpenTopoMap community topo tiles (the one keyless style) | Selecting the OSM-Topo style with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Leave the gate off; use offline packs |
+| `a.tile.opentopomap.org`, `b.tile.opentopomap.org`, `c.tile.opentopomap.org` | OpenTopoMap community topo tiles (the one keyless style) | Selecting the OSM-Topo style with online basemaps enabled | Your IP + requested tile coordinates = your AO | **Off** (online basemaps gate) | Leave the gate off; use offline packs |
 | `api.open-meteo.com/v1/forecast` | Weather lookup | Opening the weather dialog | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
 | `api.open-meteo.com/v1/elevation` | Elevation + terrain heatmap | Elevation/terrain features | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
 | Place-name search — iOS `MKLocalSearch` (Apple), Android `Geocoder` (Google/OEM on GMS devices) | Turning a typed place name into a coordinate | Typing 2+ characters in Search | Your IP + the search string, which can itself reveal your AO (searching a FOB/village name) | **Off** (online lookups gate) | Leave online lookups off; navigate by MGRS/grid instead |
@@ -284,18 +284,20 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
 - **A coerced relay can suppress or roll back, not just observe.** AEAD stops the
   relay forging a blob, replaying it under a different id, or moving it between
   rooms (§4), and **every mutation is now signed** on top: presence carries a
-  per-device signature over a monotonic timestamp, and object writes/deletes carry
+  per-device signature over a session-bound monotonic counter, and object writes/deletes carry
   a per-device signature bound to the object id + version (a delete is a *sealed,
   signed proof*, so a relay with no room key can't forge one at all). So a relay
-  can't roll back a peer's live position, forge a deletion, or replay an older
-  object version to a client that already tracks that object. What can't be
-  prevented is *omission and join-time rollback*: the relay can silently drop an
-  update (you never see the new enemy contact), or serve a freshly joining /
-  reinstalled client an older-but-genuinely-signed object snapshot, because that
-  client holds no prior version to detect the rollback against. Treat the shared
-  picture as advisory and confirm critical changes out-of-band. A signed monotonic
-  room sequence, so late joiners can detect a truncated/rolled-back snapshot, is
-  the remaining hardening.
+  can't forge a deletion or replay an older object version to a client that
+  already tracks that object. A persisted accepted-hello epoch only rejects
+  session replay at or below that client's high-water. A malicious relay can
+  still present an obsolete but genuinely signed higher epoch that the client
+  has never seen, then replay presence from that session; a fresh/reinstalled
+  client has no high-water at all. Omission and join-time rollback also remain:
+  the relay can silently drop an update (you never see the new enemy contact) or
+  serve an older genuinely signed snapshot. Treat the shared picture as advisory
+  and confirm critical changes out-of-band. Detecting these cases requires an
+  external transparency log or out-of-band trust anchor; a relay-controlled
+  monotonic sequence alone is not sufficient.
 - **Area-of-interest leakage via online basemaps/lookups.** See §6. If you turn
   the online-basemaps or online-lookups gate on, the tile/query coordinates go to
   the provider (Esri/OpenTopoMap/Open-Meteo) from your IP. That is inherent to

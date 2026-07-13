@@ -9,8 +9,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.net.HttpURLConnection
-import java.net.URL
+import java.util.Locale
 
 /**
  * Auto terrain heatmap for a WGS84 region. Samples a grid of elevations
@@ -37,7 +36,10 @@ class TerrainHeatmapService {
         val north = bounds.northeast.latitude
         val west = bounds.southwest.longitude
         val east = bounds.northeast.longitude
-        if (grid < 2) return@withContext null
+        if (grid !in 2..32 || !south.isFinite() || !north.isFinite() ||
+            !west.isFinite() || !east.isFinite() || south !in -90.0..90.0 ||
+            north !in -90.0..90.0 || west !in -180.0..180.0 || east !in -180.0..180.0
+        ) return@withContext null
 
         // Row-major grid; row 0 = north edge, col 0 = west edge (GroundOverlay's
         // image origin is the NW corner).
@@ -59,8 +61,10 @@ class TerrainHeatmapService {
             // instead of finishing every batch.
             ensureActive()
             val end = minOf(i + 100, elev.size)   // Open-Meteo: <=100 points/request
-            val latStr = (i until end).joinToString(",") { lat[it].toString() }
-            val lonStr = (i until end).joinToString(",") { lon[it].toString() }
+            // Coarsen to ~11 m before egress: more precision is useless for
+            // this 24x24 visualisation and needlessly fingerprints the AO.
+            val latStr = (i until end).joinToString(",") { String.format(Locale.US, "%.4f", lat[it]) }
+            val lonStr = (i until end).joinToString(",") { String.format(Locale.US, "%.4f", lon[it]) }
             val body = fetch(
                 "https://api.open-meteo.com/v1/elevation?latitude=$latStr&longitude=$lonStr"
             ) ?: return@withContext null
@@ -97,15 +101,7 @@ class TerrainHeatmapService {
         return (0x73 shl 24) or rgb   // 0x73 ≈ 45% alpha
     }
 
-    private fun fetch(url: String): String? = runCatching {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 8_000; readTimeout = 8_000
-        }
-        try {
-            if (conn.responseCode != 200) return null
-            conn.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
-    }.getOrNull()
+    private suspend fun fetch(url: String): String? = boundedHttpsGet(url, MAX_RESPONSE_BYTES)
+
+    private companion object { const val MAX_RESPONSE_BYTES = 1024 * 1024 }
 }

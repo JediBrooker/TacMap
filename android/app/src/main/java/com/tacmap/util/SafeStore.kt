@@ -3,6 +3,8 @@ package com.tacmap.util
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Durable + encrypted JSON persistence shared by every on-device store.
@@ -44,6 +46,17 @@ object SafeStore {
     @Volatile
     var keyProvider: KeyProvider = KeyProvider { DataKey.key() }
 
+    interface MigrationPolicy {
+        fun isSealedOnly(label: String): Boolean
+        fun markSealedOnly(label: String)
+    }
+
+    @Volatile
+    internal var migrationPolicy: MigrationPolicy = object : MigrationPolicy {
+        override fun isSealedOnly(label: String) = DataKey.isStoreSealedOnly(label)
+        override fun markSealedOnly(label: String) = DataKey.markStoreSealedOnly(label)
+    }
+
     sealed class LoadResult<out T> {
         /** file doesn't exist, genuine fresh install */
         object Empty : LoadResult<Nothing>()
@@ -57,7 +70,10 @@ object SafeStore {
 
     /** Seal [text] under [label] and atomically replace [file]. */
     fun writeAtomically(file: File, label: String, text: String) {
-        writeSealedBytes(file, SealedEnvelope.sealFile(keyProvider.key(), text.toByteArray(Charsets.UTF_8), label))
+        val key = keyProvider.key()
+        markSealedOnlyAuthenticated(label)
+        writeSealedBytes(file, SealedEnvelope.sealFile(key, text.toByteArray(Charsets.UTF_8), label))
+        markSealedOnly(file)
     }
 
     fun <T> readOrQuarantine(file: File, label: String, decode: (String) -> T): LoadResult<T> {
@@ -76,7 +92,16 @@ object SafeStore {
 
         return try {
             val raw = file.readBytes()
-            val plain = if (SealedEnvelope.isSealedFile(raw)) {
+            val sealed = SealedEnvelope.isSealedFile(raw)
+            val sealedOnly = try {
+                isSealedOnlyAuthenticated(label)
+            } catch (e: Throwable) {
+                return LoadResult.Locked(e)
+            }
+            if (!sealed && sealedOnly) {
+                throw IOException("plaintext rejected after sealed-only migration")
+            }
+            val plain = if (sealed) {
                 SealedEnvelope.openFile(key, raw, label)
                     ?: throw IOException("sealed store failed authentication (tampered, or wrong store)")
             } else {
@@ -84,9 +109,19 @@ object SafeStore {
                 raw
             }
             val value = decode(plain.toString(Charsets.UTF_8))
-            if (!SealedEnvelope.isSealedFile(raw)) {
+            try {
+                // Ledger first: interruption preserves the source bytes but
+                // they can no longer be accepted as plaintext on next launch.
+                markSealedOnlyAuthenticated(label)
+            } catch (e: Throwable) {
+                // Policy/keystore failure is not file corruption. Leave the
+                // only copy at its primary path and surface a locked result.
+                return LoadResult.Locked(e)
+            }
+            if (!sealed) {
                 writeSealedBytes(file, SealedEnvelope.sealFile(key, plain, label))
             }
+            markSealedOnly(file)
             LoadResult.Loaded(value)
         } catch (e: Throwable) {
             val quarantine = File(file.parentFile, "${file.name}.corrupt-${System.currentTimeMillis()}")
@@ -108,12 +143,41 @@ object SafeStore {
             fos.flush()
             fos.fd.sync() // fsync before rename so we don't lose data on crash
         }
-        if (!tmp.renameTo(file)) {
-            // some filesystems won't rename over existing, so delete + rename as fallback
-            if (!file.delete() || !tmp.renameTo(file)) {
+        val moved = runCatching {
+            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        }.isSuccess
+        if (!moved) {
+            tmp.delete()
+            throw IOException("Atomic replace failed for ${file.absolutePath}")
+        }
+    }
+
+    private fun sealedOnlyMarker(file: File) = File(file.parentFile, ".${file.name}.sealed-only-v1")
+
+    internal fun isSealedOnlyAuthenticated(label: String): Boolean = migrationPolicy.isSealedOnly(label)
+
+    internal fun markSealedOnlyAuthenticated(label: String) = migrationPolicy.markSealedOnly(label)
+
+    private fun markSealedOnly(file: File) {
+        val marker = sealedOnlyMarker(file)
+        if (marker.exists()) return
+        writeMarkerAtomically(marker)
+    }
+
+    private fun writeMarkerAtomically(marker: File) {
+        marker.parentFile?.mkdirs()
+        val tmp = File(marker.parentFile, marker.name + ".tmp")
+        FileOutputStream(tmp).use { fos ->
+            fos.write(byteArrayOf(1))
+            fos.flush()
+            fos.fd.sync()
+        }
+        if (!tmp.renameTo(marker)) {
+            if (!marker.exists()) {
                 tmp.delete()
-                throw IOException("Atomic rename failed for ${file.absolutePath}")
+                throw IOException("Could not persist sealed-only migration marker")
             }
+            tmp.delete()
         }
     }
 }

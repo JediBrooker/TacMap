@@ -56,8 +56,8 @@ class PdfSessionStore(private val context: Context) {
             coverage = coverage
         )
         runCatching { sealPref(LABEL_PDF, json.encodeToString(dto)) }
-            .onSuccess { prefs.edit().putString(KEY_PDF, it).apply() }
-            .onFailure { Log.w(TAG, "Couldn't encode PDF for persistence: ${it.message}") }
+            .onSuccess { prefs.edit().putString(KEY_PDF, it).putBoolean(KEY_PDF_SEALED_ONLY, true).commit() }
+            .onFailure { Log.w(TAG, "Couldn't encode PDF session for persistence") }
         // Also stash in the per-PDF library so switching PDFs and back
         // restores this one's calibration. Keyed by file CONTENT hash,
         // not display name - two different sheets that share a filename
@@ -71,15 +71,15 @@ class PdfSessionStore(private val context: Context) {
         val stored = prefs.getString(KEY_PDF, null) ?: return null
         val raw = openPref(LABEL_PDF, stored) ?: return null
         val dto = runCatching { json.decodeFromString<PersistedPdfSource>(raw) }
-            .onFailure { Log.w(TAG, "Couldn't decode persisted PDF: ${it.message}") }
+            .onFailure { Log.w(TAG, "Couldn't decode persisted PDF session") }
             .getOrNull() ?: return null
         // Written by a pre-encryption build, seal it in place.
         if (isLegacyPlaintext(stored)) runCatching { sealPref(LABEL_PDF, raw) }
-            .onSuccess { prefs.edit().putString(KEY_PDF, it).apply() }
+            .onSuccess { prefs.edit().putString(KEY_PDF, it).putBoolean(KEY_PDF_SEALED_ONLY, true).commit() }
         val pdfDir = File(context.filesDir, "pdf_maps")
         val file = File(pdfDir, dto.fileName)
         if (!file.exists()) {
-            Log.w(TAG, "Persisted PDF file no longer exists: ${file.absolutePath}")
+            Log.w(TAG, "Persisted PDF file no longer exists")
             clear()
             return null
         }
@@ -117,15 +117,21 @@ class PdfSessionStore(private val context: Context) {
         val lib = loadLibrary().toMutableMap()
         lib[key] = PersistedCalibration(cal.fids, cal.transform)
         runCatching { sealPref(LABEL_LIBRARY, json.encodeToString(lib)) }
-            .onSuccess { prefs.edit().putString(KEY_LIBRARY, it).apply() }
-            .onFailure { Log.w(TAG, "Couldn't encode PDF calibration library: ${it.message}") }
+            .onSuccess { prefs.edit().putString(KEY_LIBRARY, it).putBoolean(KEY_LIBRARY_SEALED_ONLY, true).commit() }
+            .onFailure { Log.w(TAG, "Couldn't encode PDF calibration library") }
     }
 
     private fun loadLibrary(): Map<String, PersistedCalibration> {
         val stored = prefs.getString(KEY_LIBRARY, null) ?: return emptyMap()
         val raw = openPref(LABEL_LIBRARY, stored) ?: return emptyMap()
-        return runCatching { json.decodeFromString<Map<String, PersistedCalibration>>(raw) }
+        val decoded = runCatching { json.decodeFromString<Map<String, PersistedCalibration>>(raw) }
             .getOrDefault(emptyMap())
+        if (isLegacyPlaintext(stored)) {
+            runCatching { sealPref(LABEL_LIBRARY, raw) }.onSuccess {
+                prefs.edit().putString(KEY_LIBRARY, it).putBoolean(KEY_LIBRARY_SEALED_ONLY, true).commit()
+            }
+        }
+        return decoded
     }
 
     // MARK: at-rest sealing
@@ -136,18 +142,32 @@ class PdfSessionStore(private val context: Context) {
     // base64'd; SharedPreferences only ever sees ciphertext.
 
     private fun sealPref(label: String, plaintext: String): String =
-        Base64.encodeToString(
-            SealedEnvelope.sealFile(SafeStore.keyProvider.key(), plaintext.toByteArray(Charsets.UTF_8), label),
-            Base64.NO_WRAP
-        )
+        SafeStore.keyProvider.key().let { key ->
+            SafeStore.markSealedOnlyAuthenticated(label)
+            Base64.encodeToString(
+                SealedEnvelope.sealFile(key, plaintext.toByteArray(Charsets.UTF_8), label),
+                Base64.NO_WRAP
+            )
+        }
 
     /** Returns plaintext, or null when locked / tampered. Legacy values pass through. */
     private fun openPref(label: String, stored: String): String? {
-        if (isLegacyPlaintext(stored)) return stored
+        if (isLegacyPlaintext(stored)) {
+            val sealedOnly = runCatching { SafeStore.isSealedOnlyAuthenticated(label) }
+                .onFailure { Log.w(TAG, "Couldn't authenticate PDF migration ledger") }
+                .getOrElse { return null }
+            if (sealedOnly) {
+                Log.w(TAG, "Rejected plaintext PDF preference after sealed-only migration")
+                return null
+            }
+            return stored
+        }
         return runCatching {
             val blob = Base64.decode(stored, Base64.NO_WRAP)
-            SealedEnvelope.openFile(SafeStore.keyProvider.key(), blob, label)?.toString(Charsets.UTF_8)
-        }.onFailure { Log.w(TAG, "Couldn't open sealed pref $label: ${it.message}") }.getOrNull()
+            SealedEnvelope.openFile(SafeStore.keyProvider.key(), blob, label)?.also {
+                SafeStore.markSealedOnlyAuthenticated(label)
+            }?.toString(Charsets.UTF_8)
+        }.onFailure { Log.w(TAG, "Couldn't open sealed PDF preference") }.getOrNull()
     }
 
     /** Pre-encryption builds stored bare JSON. Base64 of the seal never starts with '{'. */
@@ -171,6 +191,8 @@ class PdfSessionStore(private val context: Context) {
         const val PREFS_NAME = "pdf_session"
         const val KEY_PDF = "active_pdf"
         const val KEY_LIBRARY = "pdf_calibrations"
+        const val KEY_PDF_SEALED_ONLY = "active_pdf_sealed_only_v1"
+        const val KEY_LIBRARY_SEALED_ONLY = "pdf_calibrations_sealed_only_v1"
         const val TAG = "PdfSessionStore"
         /** AEAD associated data, keeps one pref's blob from opening as the other. */
         const val LABEL_PDF = "pdf_session/active_pdf"

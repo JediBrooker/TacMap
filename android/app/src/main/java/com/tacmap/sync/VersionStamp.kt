@@ -24,11 +24,13 @@ data class VersionStamp(val counter: Long, val actorId: String) : Comparable<Ver
         const val MAX_COUNTER = 0x7FFFFFFFFFFFFFFFL  // 2^63 - 1
 
         fun parse(vs: String): VersionStamp? {
+            if (vs.length != 60) return null
             val colon = vs.indexOf(':')
             if (colon != 16) return null
             val hexPart = vs.substring(0, 16)
             val actor = vs.substring(17)
-            if (actor.isEmpty()) return null
+            if (!hexPart.matches(Regex("^[0-7][0-9a-f]{15}$"))) return null
+            if (!actor.matches(Regex("^[A-Za-z0-9_-]{43}$"))) return null
             val counter = try {
                 java.lang.Long.parseUnsignedLong(hexPart, 16)
             } catch (_: NumberFormatException) {

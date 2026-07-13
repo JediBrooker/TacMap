@@ -27,8 +27,6 @@ enum TileMath {
     /// so panning across +/-180 doesn't tear.
     static func visibleTiles(camera: MapCamera, tileZoom: Int) -> [TileIndex] {
         let n = 1 << tileZoom
-        let size = WebMercator.mapSize(zoom: Double(tileZoom))
-
         let corners = [
             CGPoint(x: 0, y: 0),
             CGPoint(x: camera.viewportSize.width, y: 0),

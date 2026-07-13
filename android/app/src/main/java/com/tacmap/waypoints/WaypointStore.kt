@@ -2,6 +2,11 @@ package com.tacmap.waypoints
 
 import android.content.Context
 import com.tacmap.util.SafeStore
+import com.tacmap.models.ModelMutationEvent
+import com.tacmap.models.ModelMutationOrigin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,13 +18,16 @@ import java.io.File
  * In-memory waypoint store with disk persistence to filesDir/waypoints.json.
  * Fresh installs start empty, no demo seed (matches iOS).
  */
-class WaypointStore(context: Context) {
+class WaypointStore private constructor(private val file: File) {
 
-    private val file = File(context.filesDir, "waypoints.json")
+    constructor(context: Context) : this(File(context.filesDir, "waypoints.json"))
+
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
     private val _waypoints = MutableStateFlow<List<Waypoint>>(emptyList())
     val waypoints: StateFlow<List<Waypoint>> = _waypoints.asStateFlow()
+    private val mutationChannel = Channel<ModelMutationEvent>(Channel.UNLIMITED)
+    val mutations: Flow<ModelMutationEvent> = mutationChannel.receiveAsFlow()
 
     /** Non-null when on-disk waypoints file was unreadable and got quarantined,
      *  so UI can tell user their waypoints were preserved instead of just
@@ -40,37 +48,57 @@ class WaypointStore(context: Context) {
 
     init { load() }
 
-    fun add(wp: Waypoint) { pushUndo(); _waypoints.value = _waypoints.value + wp; persist() }
-    fun remove(wp: Waypoint) { pushUndo(); _waypoints.value = _waypoints.value.filterNot { it.id == wp.id }; persist() }
-    fun update(wp: Waypoint) {
+    fun add(wp: Waypoint, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
+        pushUndo(); _waypoints.value = _waypoints.value + wp; persist(); emit(setOf(wp.id), origin)
+    }
+    fun addAll(waypoints: List<Waypoint>, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
+        if (waypoints.isEmpty()) return
+        pushUndo()
+        _waypoints.value = _waypoints.value + waypoints
+        persist()
+        emit(waypoints.mapTo(HashSet()) { it.id }, origin)
+    }
+    fun remove(wp: Waypoint, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
+        if (_waypoints.value.none { it.id == wp.id }) return
+        pushUndo(); _waypoints.value = _waypoints.value.filterNot { it.id == wp.id }; persist(); emit(setOf(wp.id), origin)
+    }
+    fun update(wp: Waypoint, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
+        if (_waypoints.value.none { it.id == wp.id } || _waypoints.value.first { it.id == wp.id } == wp) return
         pushUndo()
         _waypoints.value = _waypoints.value.map { if (it.id == wp.id) wp else it }
         persist()
+        emit(setOf(wp.id), origin)
     }
 
     /** Update waypoint for visual feedback during a gesture (e.g. slider drag)
      *  without pushing to undo stack. Call [update] when gesture ends. */
-    fun updateNoUndo(wp: Waypoint) {
+    fun updateNoUndo(wp: Waypoint, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
+        if (_waypoints.value.none { it.id == wp.id } || _waypoints.value.first { it.id == wp.id } == wp) return
         _waypoints.value = _waypoints.value.map { if (it.id == wp.id) wp else it }
         persist()
+        emit(setOf(wp.id), origin)
     }
 
     fun undo() {
         val snapshot = undoStack.removeLastOrNull() ?: return
+        val changed = changedIds(_waypoints.value, snapshot)
         redoStack.addLast(_waypoints.value)
         _waypoints.value = snapshot
         persist()
         _canUndo.value = undoStack.isNotEmpty()
         _canRedo.value = true
+        emit(changed, ModelMutationOrigin.LOCAL)
     }
 
     fun redo() {
         val snapshot = redoStack.removeLastOrNull() ?: return
+        val changed = changedIds(_waypoints.value, snapshot)
         undoStack.addLast(_waypoints.value)
         _waypoints.value = snapshot
         persist()
         _canUndo.value = true
         _canRedo.value = redoStack.isNotEmpty()
+        emit(changed, ModelMutationOrigin.LOCAL)
     }
 
     private fun pushUndo() {
@@ -109,5 +137,17 @@ class WaypointStore(context: Context) {
             .onFailure { _loadError.value = "Could not save waypoints to disk: ${it.message}" }
     }
 
-    private companion object { const val LABEL = "waypoints.json" }
+    private fun emit(ids: Set<String>, origin: ModelMutationOrigin) {
+        if (ids.isNotEmpty()) check(mutationChannel.trySend(ModelMutationEvent(ids, origin)).isSuccess)
+    }
+
+    private fun changedIds(before: List<Waypoint>, after: List<Waypoint>): Set<String> {
+        val a = before.associateBy { it.id }; val b = after.associateBy { it.id }
+        return (a.keys + b.keys).filterTo(HashSet()) { a[it] != b[it] }
+    }
+
+    internal companion object {
+        private const val LABEL = "waypoints.json"
+        fun forTests(filesDir: File) = WaypointStore(File(filesDir, LABEL))
+    }
 }

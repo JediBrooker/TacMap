@@ -6,6 +6,7 @@ struct SyncSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
     @State private var codeError: String?
+    @State private var legacyConfirmed = false
 
     var body: some View {
         NavigationStack {
@@ -20,6 +21,10 @@ struct SyncSheet: View {
                 if let room = manager.room {
                     Section("Room") {
                         Text(room).font(.system(.body, design: .monospaced))
+                        if room.hasPrefix("2:") {
+                            Text("LEGACY ROOM: weaker replay, identity, and metadata protections.")
+                                .font(.caption.bold()).foregroundStyle(.red)
+                        }
                         Button(role: .destructive) {
                             manager.leave()
                         } label: {
@@ -29,7 +34,10 @@ struct SyncSheet: View {
 
                     // Identity section, only visible while connected to a room.
                     Section("Your Identity") {
-                        TextField("Callsign", text: $manager.presenceConfig.callsign)
+                        TextField("Callsign", text: Binding(
+                            get: { manager.presenceConfig.callsign },
+                            set: { manager.presenceConfig.callsign = manager.boundedCallsign($0) }
+                        ))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.characters)
 
@@ -103,15 +111,22 @@ struct SyncSheet: View {
                         TextField("Unit join code", text: $code)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
-                            .onChange(of: code) { _ in codeError = nil }
+                            .onChange(of: code) { _ in codeError = nil; legacyConfirmed = false }
                         Button {
                             code = SyncCrypto.generateJoinCode()
                             codeError = nil
+                            legacyConfirmed = false
                         } label: {
                             Label("Generate strong code", systemImage: "wand.and.stars")
                         }
                         Button {
-                            if SyncCrypto.isJoinCodeTooWeak(code) {
+                            let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.hasPrefix("3:") && !trimmed.hasPrefix("2:") {
+                                codeError = "Codes must start with 3:. Enter 2: only for an intentional legacy room."
+                            } else if trimmed.hasPrefix("2:") && !legacyConfirmed {
+                                legacyConfirmed = true
+                                codeError = "Legacy v2 has weaker rollback and identity protection. Tap again to confirm."
+                            } else if SyncCrypto.isJoinCodeTooWeak(code) {
                                 codeError = "Too short to be safe. Use at least \(SyncCrypto.minJoinCodeLength) characters, or tap Generate."
                             } else {
                                 manager.join(code)
@@ -123,11 +138,21 @@ struct SyncSheet: View {
                         if let codeError {
                             Text(codeError).font(.caption).foregroundStyle(.red)
                         }
+                        if code.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("2:") {
+                            Text("LEGACY ROOM: weaker replay, identity, and metadata protections.")
+                                .font(.caption.bold()).foregroundStyle(.red)
+                        }
+                        if let error = manager.lastError {
+                            Text(error).font(.caption).foregroundStyle(.red)
+                        }
                     }
                 }
 
                 Section {
                     Text("Everyone who enters the same code shares a live, end-to-end-encrypted map. The relay only ever sees ciphertext.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Replay protection only rejects signed sessions at or below epochs this device has already stored. Detecting an obsolete but previously unseen higher session requires external verification.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -141,6 +166,7 @@ struct SyncSheet: View {
     private var statusText: String {
         switch manager.status {
         case .connected:  return "Connected"
+        case .snapshotting: return "Authenticating snapshot..."
         case .connecting: return "Connecting..."
         case .offline:    return "Offline"
         }
@@ -149,6 +175,7 @@ struct SyncSheet: View {
     private var statusColor: Color {
         switch manager.status {
         case .connected:  return .green
+        case .snapshotting: return .orange
         case .connecting: return .orange
         case .offline:    return .gray
         }

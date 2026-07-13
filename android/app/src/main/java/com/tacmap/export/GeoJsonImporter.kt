@@ -26,6 +26,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
+import java.io.InputStream
 import kotlin.math.roundToInt
 
 /**
@@ -36,6 +37,12 @@ import kotlin.math.roundToInt
  * GeoJSON just lands as generic shapes on [fallbackLayerId].
  */
 object GeoJsonImporter {
+
+    private const val MAX_INPUT_BYTES = 8 * 1024 * 1024
+    private const val MAX_FEATURES = 10_000
+    private const val MAX_COORDINATES = 100_000
+    private const val MAX_DEPTH = 64
+    private const val DEADLINE_NANOS = 5_000_000_000L
 
     data class Result(
         val waypoints: List<Waypoint>,
@@ -69,12 +76,33 @@ object GeoJsonImporter {
 
     class ImportException(msg: String) : Exception(msg)
 
+    fun parseStream(
+        input: InputStream,
+        existingLayers: List<DrawingLayer>,
+        fallbackLayerId: String,
+        density: Float = 1f
+    ): Result {
+        val out = java.io.ByteArrayOutputStream(64 * 1024)
+        val buffer = ByteArray(32 * 1024)
+        var total = 0
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            total += n
+            if (total > MAX_INPUT_BYTES) throw ImportException("GeoJSON exceeds 8 MiB")
+            out.write(buffer, 0, n)
+        }
+        return parse(out.toString(Charsets.UTF_8.name()), existingLayers, fallbackLayerId, density)
+    }
+
     fun parse(
         json: String,
         existingLayers: List<DrawingLayer>,
         fallbackLayerId: String,
         density: Float = 1f
     ): Result {
+        preflight(json)
+        val deadline = System.nanoTime() + DEADLINE_NANOS
         val root = try {
             Json.parseToJsonElement(json).jsonObject
         } catch (e: Exception) {
@@ -84,16 +112,23 @@ object GeoJsonImporter {
             throw ImportException("Not a GeoJSON FeatureCollection")
         }
         val features = root["features"]?.jsonArray ?: JsonArray(emptyList())
+        if (features.size > MAX_FEATURES) throw ImportException("GeoJSON contains too many features")
 
         val layersById = existingLayers.associateBy { it.id }.toMutableMap()
         val newLayers = mutableListOf<DrawingLayer>()
         val waypoints = mutableListOf<Waypoint>()
         val drawings  = mutableListOf<DrawingFeature>()
         var invalidSkipped = 0
+        var coordinateCount = 0
 
         for (raw in features) {
+            if (System.nanoTime() > deadline) throw ImportException("GeoJSON import exceeded time limit")
             val feat = (raw as? JsonObject) ?: continue
             val geometry = feat["geometry"] as? JsonObject ?: continue
+            coordinateCount += countCoordinatePairs(geometry["coordinates"])
+            if (coordinateCount > MAX_COORDINATES) {
+                throw ImportException("GeoJSON contains too many coordinates")
+            }
             val geomType = geometry["type"]?.jsonPrimitive?.contentOrNull ?: continue
             // reject non-finite / out-of-range coords so a corrupt file
             // can't drop a feature at NaN or off the globe
@@ -122,6 +157,39 @@ object GeoJsonImporter {
         }
         return Result(waypoints = waypoints, drawings = drawings, newLayers = newLayers,
             invalidSkipped = invalidSkipped)
+    }
+
+    private fun preflight(input: String) {
+        if (input.toByteArray(Charsets.UTF_8).size > MAX_INPUT_BYTES) {
+            throw ImportException("GeoJSON exceeds 8 MiB")
+        }
+        var depth = 0
+        var inString = false
+        var escaped = false
+        input.forEach { c ->
+            if (inString) {
+                if (escaped) escaped = false
+                else if (c == '\\') escaped = true
+                else if (c == '"') inString = false
+            } else when (c) {
+                '"' -> inString = true
+                '{', '[' -> if (++depth > MAX_DEPTH) throw ImportException("GeoJSON nesting is too deep")
+                '}', ']' -> if (--depth < 0) throw ImportException("GeoJSON structure is invalid")
+            }
+        }
+        if (inString || depth != 0) throw ImportException("GeoJSON structure is invalid")
+    }
+
+    private fun countCoordinatePairs(element: JsonElement?, depth: Int = 0): Int {
+        if (depth > MAX_DEPTH) throw ImportException("GeoJSON coordinate nesting is too deep")
+        val array = element as? JsonArray ?: return 0
+        if (array.size >= 2 && array[0] is JsonPrimitive && array[1] is JsonPrimitive) return 1
+        var total = 0
+        for (child in array) {
+            total += countCoordinatePairs(child, depth + 1)
+            if (total > MAX_COORDINATES) return total
+        }
+        return total
     }
 
     private fun resolveCategory(props: JsonObject): String? {

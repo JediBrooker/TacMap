@@ -3,6 +3,11 @@ package com.tacmap.map
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ClipDescription
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,7 +73,20 @@ fun MgrsHeader(
             .combinedClickable(
                 onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    cm?.setPrimaryClip(ClipData.newPlainText("MGRS", mgrs))
+                    val clip = ClipData.newPlainText("MGRS", mgrs).apply {
+                        description.extras = PersistableBundle().apply {
+                            putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                            putBoolean("android.content.extra.IS_SENSITIVE", true)
+                        }
+                    }
+                    cm?.setPrimaryClip(clip)
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        val current = cm?.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+                        if (current == mgrs) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) cm.clearPrimaryClip()
+                            else cm.setPrimaryClip(ClipData.newPlainText("", ""))
+                        }
+                    }, 60_000L)
                     Toast.makeText(context, "MGRS copied", Toast.LENGTH_SHORT).show()
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 },

@@ -21,14 +21,20 @@ enum PDFSessionStore {
 
     private static func seal(_ data: Data, _ label: String) -> Data? {
         guard let key = try? SafeStore.keyProvider() else { return nil }
-        return try? SealedEnvelope.sealFile(key: key, plaintext: data, label: label)
+        guard let sealed = try? SealedEnvelope.sealFile(key: key, plaintext: data, label: label),
+              (try? SealedMigrationPolicy.markSealed("defaults:\(label)", key: key)) != nil else { return nil }
+        return sealed
     }
 
     /// Returns plaintext, or nil when locked / tampered. Pre-encryption builds
     /// stored bare JSON, which has no magic, so it passes straight through.
     private static func unseal(_ stored: Data, _ label: String) -> Data? {
-        guard SealedEnvelope.isSealedFile(stored) else { return stored }
         guard let key = try? SafeStore.keyProvider() else { return nil }
+        if !SealedEnvelope.isSealedFile(stored) {
+            guard (try? SealedMigrationPolicy.requiresSealed("defaults:\(label)", key: key)) == false else { return nil }
+            return stored
+        }
+        try? SealedMigrationPolicy.markSealed("defaults:\(label)", key: key)
         return SealedEnvelope.openFile(key: key, blob: stored, label: label)
     }
 
@@ -76,7 +82,7 @@ enum PDFSessionStore {
         } catch {
             /// Don't silently drop the write. A stale entry would then
             /// get restored on next launch with no clue why.
-            NSLog("[PDFSessionStore] failed to encode active PDF: \(error)")
+            NSLog("[PDFSessionStore] failed to encode active PDF")
         }
     }
 
@@ -89,12 +95,13 @@ enum PDFSessionStore {
             UserDefaults.standard.removeObject(forKey: key)
             return nil
         }
+        guard valid(dto) else { return nil }
         // Written by a pre-encryption build, seal it in place.
         if !SealedEnvelope.isSealedFile(stored), let sealed = seal(data, Self.labelActive) {
             UserDefaults.standard.set(sealed, forKey: key)
         }
         guard let url = resolveImportedMap(named: dto.fileName) else {
-            NSLog("[PDFSessionStore] file vanished, clearing: \(dto.fileName)")
+            NSLog("[PDFSessionStore] active PDF file vanished; clearing session")
             UserDefaults.standard.removeObject(forKey: key)
             return nil
         }
@@ -126,6 +133,8 @@ enum PDFSessionStore {
     /// (private); legacy Documents copy gets migrated there on first access
     /// so existing sessions aren't lost.
     private static func resolveImportedMap(named fileName: String) -> URL? {
+        guard !fileName.isEmpty, fileName == URL(fileURLWithPath: fileName).lastPathComponent,
+              !fileName.contains("/"), !fileName.contains("\\") else { return nil }
         let fm = FileManager.default
         if let dir = try? ImportedMapFileCopier.importedMapsDirectory() {
             let url = dir.appendingPathComponent(fileName)
@@ -142,6 +151,17 @@ enum PDFSessionStore {
             }
         }
         return nil
+    }
+
+    private static func valid(_ dto: PersistedPDF) -> Bool {
+        let numbers = [dto.swLat, dto.swLng, dto.neLat, dto.neLng,
+                       dto.cropX, dto.cropY, dto.cropW, dto.cropH]
+        return numbers.allSatisfy(\.isFinite)
+            && abs(dto.swLat) <= 90 && abs(dto.neLat) <= 90
+            && abs(dto.swLng) <= 180 && abs(dto.neLng) <= 180
+            && dto.swLat <= dto.neLat && dto.cropW > 0 && dto.cropH > 0
+            && !dto.fileName.isEmpty
+            && dto.fileName == URL(fileURLWithPath: dto.fileName).lastPathComponent
     }
 
     // MARK: - Per-PDF calibration library

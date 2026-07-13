@@ -59,17 +59,25 @@ class MBTilesStore private constructor(private val db: SQLiteDatabase) {
     fun tileData(z: Int, x: Int, y: Int): ByteArray? {
         if (z < 0 || z >= 32) return null
         val tmsRow = (1 shl z) - 1 - y
-        db.rawQuery(
+        val args = arrayOf(z.toString(), x.toString(), tmsRow.toString())
+        val length = db.rawQuery(
+            "SELECT length(tile_data) FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+            args
+        ).use { c -> if (c.moveToFirst()) c.getLong(0) else return null }
+        if (length <= 0L || length > MAX_TILE_BYTES) return null
+        // Query the blob only after the length-only CursorWindow proves it is
+        // bounded; selecting both columns could materialize an attacker-sized
+        // blob before getLong() had a chance to reject it.
+        return db.rawQuery(
             "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
-            arrayOf(z.toString(), x.toString(), tmsRow.toString())
-        ).use { c ->
-            return if (c.moveToFirst()) c.getBlob(0) else null
-        }
+            args
+        ).use { c -> if (c.moveToFirst()) c.getBlob(0)?.takeIf { it.size <= MAX_TILE_BYTES } else null }
     }
 
     fun close() = db.close()
 
     companion object {
+        private const val MAX_TILE_BYTES = 4 * 1024 * 1024
         fun open(path: String): MBTilesStore? = try {
             MBTilesStore(SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY))
         } catch (_: Throwable) {

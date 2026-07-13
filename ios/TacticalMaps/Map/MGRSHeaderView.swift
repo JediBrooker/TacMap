@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreLocation
 import UIKit
+import UniformTypeIdentifiers
 
 /// MGRS header - shows grid reference for user's position or map centre,
 /// plus WGS84, elevation, and accuracy.
@@ -133,7 +134,13 @@ struct MGRSHeaderView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            UIPasteboard.general.string = mgrs
+            UIPasteboard.general.setItems(
+                [[UTType.plainText.identifier: mgrs]],
+                options: [
+                    .expirationDate: Date().addingTimeInterval(120),
+                    .localOnly: true
+                ]
+            )
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation { showCopiedToast = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {

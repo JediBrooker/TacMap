@@ -224,7 +224,6 @@ struct LayersSheet: View {
         }
     }
 
-    @ViewBuilder
     private func basemapIcon(_ style: BasemapStyle) -> String {
         switch style {
         case .esriSatellite: return "globe.americas.fill"

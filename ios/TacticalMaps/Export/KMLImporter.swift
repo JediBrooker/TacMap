@@ -14,14 +14,22 @@ import Compression
 /// default amber styling, same as foreign GeoJSON.
 enum KMLImporter {
 
+    static let maxInputBytes = 16 * 1024 * 1024
+    fileprivate static let maxFeatures = 10_000
+    fileprivate static let maxCoordinates = 100_000
+
     enum ImportError: Error, LocalizedError {
         case notKML
         case kmzHadNoKML
+        case limitExceeded(String)
+        case cancelled
 
         var errorDescription: String? {
             switch self {
             case .notKML:      return "This file isn't valid KML."
             case .kmzHadNoKML: return "No .kml entry was found inside this KMZ."
+            case .limitExceeded(let reason): return "Import safety limit exceeded: \(reason)."
+            case .cancelled: return "Import cancelled."
             }
         }
     }
@@ -30,9 +38,10 @@ enum KMLImporter {
     static func parse(_ data: Data,
                       existingLayers: [DrawingLayer],
                       fallbackLayerID: UUID) throws -> GeoJSONImporter.Result {
+        guard data.count <= maxInputBytes else { throw ImportError.limitExceeded("file is over 16 MB") }
         let kmlData: Data
         if data.count >= 2, data[data.startIndex] == 0x50, data[data.startIndex + 1] == 0x4B {
-            guard let extracted = MiniZip.extractFirstKML(from: data) else {
+            guard let extracted = try MiniZip.extractFirstKML(from: data) else {
                 throw ImportError.kmzHadNoKML
             }
             kmlData = extracted
@@ -41,12 +50,17 @@ enum KMLImporter {
         }
 
         let delegate = KMLParserDelegate(existingLayers: existingLayers,
-                                         fallbackLayerID: fallbackLayerID)
+                                         fallbackLayerID: fallbackLayerID,
+                                         deadline: Date().addingTimeInterval(4))
         let parser = XMLParser(data: kmlData)
         parser.delegate = delegate
+        parser.shouldResolveExternalEntities = false
+        parser.externalEntityResolvingPolicy = .never
         guard parser.parse(), delegate.sawKMLContent else {
+            if let failure = delegate.failure { throw failure }
             throw ImportError.notKML
         }
+        if let failure = delegate.failure { throw failure }
         return delegate.result
     }
 }
@@ -77,12 +91,17 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     private var firstAltitude: Double?
     /// Polygon outer ring only: ignore coordinates after the first set.
     private var capturedCoords = false
+    private var featureCount = 0
+    private var coordinateCount = 0
+    private let deadline: Date
+    private(set) var failure: Error?
 
-    init(existingLayers: [DrawingLayer], fallbackLayerID: UUID) {
+    init(existingLayers: [DrawingLayer], fallbackLayerID: UUID, deadline: Date) {
         self.layersByName = Dictionary(existingLayers.map { ($0.name, $0) },
                                        uniquingKeysWith: { a, _ in a })
         self.fallbackLayerID = fallbackLayerID
         self.layerStack = [fallbackLayerID]
+        self.deadline = deadline
     }
 
     private var currentLayerID: UUID { layerStack.last ?? fallbackLayerID }
@@ -95,8 +114,13 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, didStartElement elementName: String,
                 namespaceURI: String?, qualifiedName qName: String?,
                 attributes attributeDict: [String: String]) {
+        guard checkBudget(parser) else { return }
         let name = localName(elementName)
         elementPath.append(name)
+        if elementPath.count > 64 {
+            fail(.limitExceeded("XML nesting is too deep"), parser)
+            return
+        }
         charBuffer = ""
 
         switch name {
@@ -111,6 +135,11 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
             // Inherit the enclosing layer until a <name> refines it.
             layerStack.append(currentLayerID)
         case "Placemark":
+            featureCount += 1
+            if featureCount > KMLImporter.maxFeatures {
+                fail(.limitExceeded("more than 10,000 placemarks"), parser)
+                return
+            }
             inPlacemark = true
             placemarkName = nil
             placemarkNotes = nil
@@ -127,11 +156,17 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard checkBudget(parser) else { return }
+        guard charBuffer.utf8.count + string.utf8.count <= 4 * 1024 * 1024 else {
+            fail(.limitExceeded("an XML text field is over 4 MB"), parser)
+            return
+        }
         charBuffer += string
     }
 
     func parser(_ parser: XMLParser, didEndElement elementName: String,
                 namespaceURI: String?, qualifiedName qName: String?) {
+        guard checkBudget(parser) else { return }
         let name = localName(elementName)
         let text = charBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
         // Parent is the element just below this one on the path.
@@ -149,7 +184,14 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
             if inPlacemark { placemarkNotes = text }
         case "coordinates":
             if inPlacemark, !capturedCoords {
-                coords = Self.parseCoordinates(text)
+                let remaining = max(0, KMLImporter.maxCoordinates - coordinateCount)
+                let parsed = Self.parseCoordinates(text, limit: remaining)
+                guard !parsed.exceeded else {
+                    fail(.limitExceeded("more than 100,000 coordinates"), parser)
+                    return
+                }
+                coords = parsed.coordinates
+                coordinateCount += coords.count
                 firstAltitude = Self.firstAltitude(text)
                 capturedCoords = true
             }
@@ -225,14 +267,19 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     // MARK: coordinate parsing
 
     /// KML coordinates: whitespace-separated `lon,lat[,alt]` tuples.
-    static func parseCoordinates(_ text: String) -> [Coordinate2D] {
-        text.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" })
-            .compactMap { tuple in
-                let parts = tuple.split(separator: ",", omittingEmptySubsequences: false)
-                guard parts.count >= 2,
-                      let lon = Double(parts[0]), let lat = Double(parts[1]) else { return nil }
-                return Coordinate2D(latitude: lat, longitude: lon)
-            }
+    static func parseCoordinates(_ text: String, limit: Int = KMLImporter.maxCoordinates)
+        -> (coordinates: [Coordinate2D], exceeded: Bool) {
+        var result: [Coordinate2D] = []
+        for tuple in text.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" }) {
+            if result.count >= limit { return (result, true) }
+            let parts = tuple.split(separator: ",", omittingEmptySubsequences: false)
+            guard parts.count >= 2,
+                  let lon = Double(parts[0]), let lat = Double(parts[1]),
+                  lon.isFinite, lat.isFinite,
+                  abs(lat) <= 90, abs(lon) <= 180 else { continue }
+            result.append(Coordinate2D(latitude: lat, longitude: lon))
+        }
+        return (result, false)
     }
 
     static func firstAltitude(_ text: String) -> Double? {
@@ -241,7 +288,26 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
         }).first else { return nil }
         let parts = first.split(separator: ",", omittingEmptySubsequences: false)
         guard parts.count >= 3 else { return nil }
-        return Double(parts[2])
+        guard let altitude = Double(parts[2]), altitude.isFinite else { return nil }
+        return altitude
+    }
+
+    private func checkBudget(_ parser: XMLParser) -> Bool {
+        if failure != nil { return false }
+        if Date() > deadline {
+            fail(.limitExceeded("parsing took too long"), parser)
+            return false
+        }
+        if withUnsafeCurrentTask(body: { $0?.isCancelled ?? false }) {
+            fail(.cancelled, parser)
+            return false
+        }
+        return true
+    }
+
+    private func fail(_ error: KMLImporter.ImportError, _ parser: XMLParser) {
+        failure = error
+        parser.abortParsing()
     }
 }
 
@@ -253,7 +319,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
 /// is what ZIP uses). No zip64 or encryption, but thats fine for KMZ.
 private enum MiniZip {
 
-    static func extractFirstKML(from data: Data) -> Data? {
+    static func extractFirstKML(from data: Data) throws -> Data? {
         let b = [UInt8](data)
         let n = b.count
         guard n > 22 else { return nil }
@@ -270,6 +336,8 @@ private enum MiniZip {
 
         let cdCount = readU16(b, eocd + 10)
         let cdOffset = Int(readU32(b, eocd + 16))
+        guard cdCount <= 256 else { throw KMLImporter.ImportError.limitExceeded("KMZ has too many entries") }
+        guard cdOffset >= 0, cdOffset <= n else { return nil }
 
         var p = cdOffset
         var best: (offset: Int, comp: Int, uncomp: Int, method: Int, isDoc: Bool)?
@@ -277,6 +345,7 @@ private enum MiniZip {
         while entry < cdCount, p + 46 <= n,
               b[p] == 0x50, b[p+1] == 0x4B, b[p+2] == 0x01, b[p+3] == 0x02 {
             let method = readU16(b, p + 10)
+            let flags = readU16(b, p + 8)
             let comp = Int(readU32(b, p + 20))
             let uncomp = Int(readU32(b, p + 24))
             let nameLen = readU16(b, p + 28)
@@ -288,6 +357,12 @@ private enum MiniZip {
             let name = String(bytes: b[nameStart..<nameEnd], encoding: .utf8) ?? ""
             let lower = name.lowercased()
             if lower.hasSuffix(".kml") {
+                guard flags & 0x1 == 0 else { return nil }
+                guard uncomp <= KMLImporter.maxInputBytes,
+                      comp <= KMLImporter.maxInputBytes,
+                      uncomp <= max(1, comp) * 100 else {
+                    throw KMLImporter.ImportError.limitExceeded("KMZ expansion is too large")
+                }
                 let isDoc = lower == "doc.kml" || lower.hasSuffix("/doc.kml")
                 if best == nil || isDoc {
                     best = (localOffset, comp, uncomp, method, isDoc)
@@ -306,15 +381,16 @@ private enum MiniZip {
         let lhNameLen = readU16(b, lh + 26)
         let lhExtraLen = readU16(b, lh + 28)
         let dataStart = lh + 30 + lhNameLen + lhExtraLen
-        guard dataStart + e.comp <= n else { return nil }
+        guard dataStart <= n, e.comp <= n - dataStart else { return nil }
         let compressed = Data(b[dataStart..<dataStart + e.comp])
 
-        if e.method == 0 { return compressed }                  // stored
+        if e.method == 0 { return e.comp == e.uncomp ? compressed : nil } // stored
+        guard e.method == 8 else { return nil }
         return inflate(compressed, expected: e.uncomp)          // deflate
     }
 
     private static func inflate(_ data: Data, expected: Int) -> Data? {
-        guard expected > 0 else { return nil }
+        guard expected > 0, expected <= KMLImporter.maxInputBytes else { return nil }
         var dst = Data(count: expected)
         let written = dst.withUnsafeMutableBytes { (dstRaw: UnsafeMutableRawBufferPointer) -> Int in
             data.withUnsafeBytes { (srcRaw: UnsafeRawBufferPointer) -> Int in
@@ -323,8 +399,8 @@ private enum MiniZip {
                 return compression_decode_buffer(dstPtr, expected, srcPtr, data.count, nil, COMPRESSION_ZLIB)
             }
         }
-        guard written > 0 else { return nil }
-        return dst.prefix(written)
+        guard written == expected else { return nil }
+        return dst
     }
 
     private static func readU16(_ b: [UInt8], _ o: Int) -> Int {

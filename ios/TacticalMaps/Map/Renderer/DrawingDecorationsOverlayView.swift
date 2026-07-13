@@ -124,7 +124,6 @@ final class DrawingDecorationsOverlayView: UIView {
             let path = UIBezierPath()
             let tip = CGPoint(x: size.width / 2, y: size.height - 1)
             let leftTangent = CGPoint(x: headC.x - headR, y: headC.y + headR * 0.5)
-            let rightTangent = CGPoint(x: headC.x + headR, y: headC.y + headR * 0.5)
             path.move(to: tip)
             path.addQuadCurve(to: leftTangent, controlPoint: CGPoint(x: headC.x - headR, y: size.height * 0.55))
             path.addArc(withCenter: headC, radius: headR,

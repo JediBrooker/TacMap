@@ -41,9 +41,9 @@ enum GPXExporter {
                              name: String = "TacMap Track",
                              timestamp: Int) throws -> URL {
         let gpx = export(points: points, name: name)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("TacMap-track-\(timestamp).gpx")
-        try gpx.data(using: .utf8)!.write(to: url)
+        let url = try ExportFileSecurity.freshURL(fileName: "TacMap-track-\(timestamp).gpx")
+        try gpx.data(using: .utf8)!.write(to: url, options: [.atomic, .completeFileProtection])
+        try ExportFileSecurity.protect(url)
         return url
     }
 

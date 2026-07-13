@@ -126,8 +126,11 @@ actor ElevationService {
             request.timeoutInterval = 6
 
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
+                request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                let (data, response) = try await NetworkSession.data(for: request, maximumBytes: 64 * 1024)
                 if Task.isCancelled { return nil }
+                guard let http = response as? HTTPURLResponse,
+                      (200...299).contains(http.statusCode) else { return nil }
                 let decoded = try JSONDecoder().decode(Response.self, from: data)
                 return decoded.elevation.first
             } catch {

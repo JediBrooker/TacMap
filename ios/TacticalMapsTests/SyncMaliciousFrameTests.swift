@@ -34,19 +34,7 @@ final class SyncMaliciousFrameTests: XCTestCase {
         return []
     }
 
-    // replicate the strict version check from SyncManager so we can test it
-    // in isolation without needing the full @MainActor manager
     private static let maxVersion: Int64 = 1_000_000_000_000
-
-    private func strictVersion(_ any: Any?) -> Int64? {
-        guard let n = any as? NSNumber, !(any is Bool) else { return nil }
-        let d = n.doubleValue
-        guard d.isFinite, d == d.rounded(.towardZero), d >= 0,
-              d <= Double(Self.maxVersion) else { return nil }
-        let v = n.int64Value
-        guard v >= 0, v <= Self.maxVersion else { return nil }
-        return v
-    }
 
     func testNoFrameThrowsOnJsonParse() throws {
         let corpus = try loadCorpus()
@@ -65,8 +53,19 @@ final class SyncMaliciousFrameTests: XCTestCase {
         for c in versionCases {
             guard let obj = try? JSONSerialization.jsonObject(
                 with: Data(c.frame.utf8)) as? [String: Any] else { continue }
-            let v = strictVersion(obj["v"])
+            let v = SyncManager.strictJSONInteger(obj["v"], minimum: 0, maximum: Self.maxVersion)
             XCTAssertNil(v, "\(c.name): malicious version should be rejected, got \(String(describing: v))")
+        }
+    }
+
+    func testProductionParserRejectsIntegralFloatingPointEncodings() throws {
+        for frame in [
+            #"{"t":"put","v":1.0}"#,
+            #"{"t":"put","v":999999999999.000001}"#
+        ] {
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(frame.utf8)) as? [String: Any])
+            XCTAssertNil(SyncManager.strictJSONInteger(
+                object["v"], minimum: 0, maximum: Self.maxVersion), frame)
         }
     }
 

@@ -42,7 +42,9 @@ struct PaywallView: View {
 
                 switch store.loadState {
                 case .failed, .unavailable:
-                    Text("Couldn't load purchase options. Check your connection and try again.")
+                    Text(store.loadState == .failed
+                         ? "Couldn't load purchase options. Check your connection and try again."
+                         : "Purchase options are offline until you ask to connect to the App Store.")
                         .font(.subheadline)
                         .foregroundStyle(orange)
                         .multilineTextAlignment(.center)
@@ -52,7 +54,7 @@ struct PaywallView: View {
                     Button {
                         Task { await store.loadProduct() }
                     } label: {
-                        Text("Try Again")
+                        Text(store.loadState == .failed ? "Try Again" : "Load purchase options")
                             .font(.system(size: 16, weight: .bold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
@@ -140,13 +142,6 @@ struct PaywallView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task {
-            // Re-attempt the fetch whenever the paywall surfaces, so a load
-            // that failed/timed out at launch recovers without restarting.
-            if store.loadState != .loaded {
-                await store.loadProduct()
-            }
-        }
         .alert("Restore Purchase",
                isPresented: Binding(get: { store.restoreOutcome != nil },
                                     set: { if !$0 { store.restoreOutcome = nil } }),

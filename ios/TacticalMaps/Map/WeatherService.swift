@@ -104,7 +104,11 @@ actor WeatherService {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            let (data, response) = try await NetworkSession.data(for: request, maximumBytes: 256 * 1024)
+            guard OpsecSettings.shared.onlineLookups, !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else { return nil }
             let decoded = try JSONDecoder().decode(Response.self, from: data)
             guard let c = decoded.current else { return nil }
             return WeatherReading(

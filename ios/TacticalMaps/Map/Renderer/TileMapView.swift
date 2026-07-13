@@ -19,6 +19,7 @@ final class TileMapView: UIView {
     /// The basemap tile source. Swapping it clears the cache and redraws.
     var source: RasterTileSource? {
         didSet {
+            sourceGeneration &+= 1
             cache.removeAllObjects()
             cancelAllLoads()
             setNeedsDisplay()
@@ -36,6 +37,7 @@ final class TileMapView: UIView {
 
     private let cache = NSCache<NSString, UIImage>()
     private var inFlight: [String: RasterTileRequest] = [:]
+    private var sourceGeneration: UInt64 = 0
 
     private func key(_ t: TileIndex) -> String { "\(t.z)/\(t.x)/\(t.y)" }
 
@@ -93,8 +95,10 @@ final class TileMapView: UIView {
         guard let source else { return }
         let k = key(tile)
         guard inFlight[k] == nil else { return }
+        let generation = sourceGeneration
         let req = source.loadTile(tile) { [weak self] image in
             guard let self else { return }
+            guard generation == self.sourceGeneration else { return }
             self.inFlight[k] = nil
             guard let image else { return }
             self.cache.setObject(image, forKey: k as NSString)

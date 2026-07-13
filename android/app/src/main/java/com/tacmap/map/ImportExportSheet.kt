@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.SelectAll
@@ -53,6 +54,9 @@ fun ImportExportSheet(
     onExportGeoJson: () -> Unit,
     onExportGpx: () -> Unit,
     onExportAllData: () -> Unit,
+    hasSavedTrack: Boolean,
+    isRecordingTrack: Boolean,
+    onDiscardTrack: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -72,6 +76,15 @@ fun ImportExportSheet(
             sheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson)
             sheetRow(Icons.Default.Timeline, "GPX Track", onExportGpx)
             sheetRow(Icons.Default.SelectAll, "Export All Data", onExportAllData)
+            if (hasSavedTrack) {
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                sectionLabel("SAVED TRACK")
+                sheetRow(
+                    Icons.Default.DeleteForever,
+                    if (isRecordingTrack) "Stop & Discard Current Track" else "Discard Saved Track",
+                    onDiscardTrack,
+                )
+            }
         }
     }
 }

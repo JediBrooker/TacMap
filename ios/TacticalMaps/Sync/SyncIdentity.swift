@@ -8,6 +8,7 @@ enum SyncIdentity {
     static let domainPut: UInt8 = 0x01
     static let domainDelete: UInt8 = 0x02
     static let domainPresence: UInt8 = 0x03
+    static let domainHello: UInt8 = 0x04
     static let protocolVersion: UInt8 = 0x03
 
     /// Room-scoped actor ID: SHA-256("tacmap-actor-v3\0" || roomIdRaw || pubkeyRaw)
@@ -106,6 +107,64 @@ enum SyncIdentity {
         let remainder = base64.count % 4
         if remainder > 0 { base64 += String(repeating: "=", count: 4 - remainder) }
         return Data(base64Encoded: base64)
+    }
+
+    /// Strict canonical decoding for the 32-byte base64url values used by v3.
+    /// Foundation's decoder is intentionally permissive, which is useful for
+    /// general data but inappropriate for self-certifying wire identities.
+    static func decodeCanonical32(_ value: String) -> Data? {
+        guard value.count == 43,
+              value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }),
+              let raw = urlB64Decode(value), raw.count == 32,
+              urlB64Encode(raw) == value else { return nil }
+        return raw
+    }
+
+    static func actorBindingIsValid(actorId: String, publicKey: String, roomIdRaw: Data) -> Bool {
+        guard let pubRaw = decodeCanonical32(publicKey),
+              decodeCanonical32(actorId) != nil else { return false }
+        return self.actorId(roomIdRaw: roomIdRaw, pubkeyRaw: pubRaw) == actorId
+    }
+
+    /// Verify the authenticated per-WebSocket actor announcement from ADR-001.
+    /// This exact helper is used by the manager and by production-path tests.
+    static func verifyHello(
+        actorId: String,
+        publicKey: String,
+        sessionDomain: String,
+        versionStamp: String,
+        signature: String,
+        roomIdRaw: Data
+    ) -> Bool {
+        guard actorBindingIsValid(actorId: actorId, publicKey: publicKey, roomIdRaw: roomIdRaw),
+              let pubRaw = decodeCanonical32(publicKey),
+              let sdRaw = decodeCanonical32(sessionDomain),
+              versionStamp.count == 60,
+              versionStamp.dropFirst(16) == ":\(actorId)",
+              let epoch = parseHelloEpoch(String(versionStamp.prefix(16))) else { return false }
+        let preimage = buildPreimage(
+            domain: domainHello,
+            roomIdRaw: roomIdRaw,
+            actorId: actorId,
+            sessionDomain: sdRaw,
+            counterHex16: epoch,
+            objectId: "",
+            kind: "hello",
+            payloadHash: sha256(pubRaw)
+        )
+        return SyncSigning.verify(publicKey, preimage, signature)
+    }
+
+    static func parseHelloEpoch(_ value: String) -> String? {
+        guard value.count == 16, value != "0000000000000000",
+              value.range(of: "^[0-9a-f]{16}$", options: .regularExpression) != nil,
+              UInt64(value, radix: 16) != nil else { return nil }
+        return value
+    }
+
+    static func helloAckMatches(actorId: String, sessionDomain: Data, expectedVersion: String,
+                                frameActorId: String, frameSessionDomain: String, frameVersion: String) -> Bool {
+        frameActorId == actorId && frameSessionDomain == urlB64Encode(sessionDomain) && frameVersion == expectedVersion
     }
 }
 

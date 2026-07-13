@@ -48,8 +48,8 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = injectedVersionCode ?: 48
-        versionName = "1.2.0"
+        versionCode = injectedVersionCode ?: 56
+        versionName = "1.2.1"
 
         vectorDrawables { useSupportLibrary = true }
 
@@ -179,4 +179,5 @@ dependencies {
     // no emulator). The pure-logic suites for the affine solve, MGRS
     // formatting, and GeoJSON export live in src/test.
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

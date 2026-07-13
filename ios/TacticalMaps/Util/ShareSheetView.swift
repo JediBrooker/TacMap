@@ -8,8 +8,13 @@ struct ShareSheetView: UIViewControllerRepresentable {
     var applicationActivities: [UIActivity]? = nil
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems,
-                                 applicationActivities: applicationActivities)
+        let controller = UIActivityViewController(activityItems: activityItems,
+                                                  applicationActivities: applicationActivities)
+        let urls = activityItems.compactMap { $0 as? URL }.filter(\.isFileURL)
+        controller.completionWithItemsHandler = { _, _, _, _ in
+            urls.forEach { ExportFileSecurity.remove($0) }
+        }
+        return controller
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}

@@ -14,6 +14,7 @@ import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointStore
 import com.tacmap.drawings.DrawingStore
 import com.tacmap.settings.OpsecSettings
+import com.tacmap.models.ModelMutationOrigin
 import com.tacmap.util.SafeStore
 import com.tacmap.util.SealedEnvelope
 import kotlinx.coroutines.CoroutineScope
@@ -25,8 +26,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -59,12 +62,19 @@ import java.util.concurrent.TimeUnit
  */
 @OptIn(FlowPreview::class)
 class SyncManager(
-    private val waypointStore: WaypointStore,
-    private val drawingStore: DrawingStore,
-    private val scope: CoroutineScope,
+    waypointStore: WaypointStore,
+    drawingStore: DrawingStore,
+    parentScope: CoroutineScope,
     context: Context,
 ) {
-    enum class Status { OFFLINE, CONNECTING, CONNECTED }
+    enum class Status { OFFLINE, CONNECTING, SNAPSHOTTING, CONNECTED }
+
+    private var waypointStoreRef: WaypointStore? = waypointStore
+    private var drawingStoreRef: DrawingStore? = drawingStore
+    private val waypointStore: WaypointStore get() = checkNotNull(waypointStoreRef) { "sync disposed" }
+    private val drawingStore: DrawingStore get() = checkNotNull(drawingStoreRef) { "sync disposed" }
+    private val managerJob = SupervisorJob(parentScope.coroutineContext[Job])
+    private val scope = CoroutineScope(parentScope.coroutineContext + managerJob)
 
     private val _status = MutableStateFlow(Status.OFFLINE)
     val status: StateFlow<Status> = _status.asStateFlow()
@@ -104,17 +114,30 @@ class SyncManager(
     // actually used; falls back to ours. Kept for the reconnect path.
     private var relayBase: String = RELAY_BASE
     private var wantConnected = false
+    private val lifecycleGate = SyncLifecycleGate()
+    private var reconnectJob: Job? = null
     private var observeJob: Job? = null
+    private var revisionJob: Job? = null
+    private val modelRevisionJournal = LocalModelRevisionJournal(appFilesDir)
+    private val revisionEventProcessor = LocalRevisionEventProcessor(modelRevisionJournal) {
+        revisionJournalAvailable = false
+        _remoteUpdates.tryEmit("Local revision history could not be saved; sync is paused.")
+        persistenceFailure()
+    }
+    private var revisionJournalAvailable = false
 
     // Per-device Ed25519 signing identity. Seed is sealed at rest; the public
     // key rides every presence AND every object write so peers pin it (TOFU) and
     // reject a room member impersonating an established device. One identity per
     // clientId, shared by presence + object writes. Room state cleared on leave.
-    private val deviceSeed: ByteArray by lazy { loadOrCreateDeviceSeed() }
-    private val myPublicKey: String by lazy { SyncSigning.publicKey(deviceSeed) }
-    private val myPublicKeyRaw: ByteArray by lazy {
+    private val deviceSeedDelegate = lazy { loadOrCreateDeviceSeed() }
+    private val deviceSeed: ByteArray by deviceSeedDelegate
+    private val myPublicKeyDelegate = lazy { SyncSigning.publicKey(deviceSeed) }
+    private val myPublicKey: String by myPublicKeyDelegate
+    private val myPublicKeyRawDelegate = lazy {
         SyncIdentity.urlB64Decode(myPublicKey)
     }
+    private val myPublicKeyRaw: ByteArray by myPublicKeyRawDelegate
     private val peerKeys = HashMap<String, String>()   // clientId -> pinned pubkey
     private val peerTs = HashMap<String, Long>()        // clientId -> last accepted presence ts
 
@@ -129,45 +152,98 @@ class SyncManager(
     private var myActorId: String? = null
     private var replayState: SyncReplayState? = null
     private var sessionDomain: ByteArray? = null
+    private var presenceCounter: Long = 0L
+    private val activeSessions = HashMap<String, Pair<String, String>>() // actor -> (pub, sd)
+    private val presenceHighWater = HashMap<String, Long>() // actor + NUL + sd -> counter
+    private var snapshotSeq: Long? = null
+    private var snapshotSawFinalPage = false
+    private var snapshotItemCount = 0
+    private var snapshotInvalid = false
+    private var awaitingHelloAck = false
+    private var localHelloVersion: String? = null
+    private var snapshotAggregateBytes = 0L
+    private val snapshotWireIds = HashSet<String>()
+    private val pendingSnapshot = ArrayList<ValidatedV3>()
+    private val forcedLocalDiff = HashSet<String>()
+    private var resolvingPendingModel = false
+
+    private sealed interface ValidatedV3 {
+        val mutation: SyncReplayState.AuthenticatedMutation
+
+        data class Put(
+            override val mutation: SyncReplayState.AuthenticatedMutation,
+            val parsed: GeoJsonImporter.Result,
+            val localId: String,
+            val expectedModelHash: String,
+        ) : ValidatedV3
+
+        data class Delete(
+            override val mutation: SyncReplayState.AuthenticatedMutation,
+            val localId: String?,
+        ) : ValidatedV3
+    }
 
     private var presenceJob: Job? = null
     private var stalenessSweepJob: Job? = null
 
     init {
         loadPresenceConfig()
+        revisionJournalAvailable = modelRevisionJournal.load()
+        startModelRevisionObservation()
     }
 
     // ----- Public API -----
 
     fun join(joinCode: String) {
+        if (lifecycleGate.isDisposed) return
         val code = joinCode.trim()
         if (code.isEmpty()) return
+        if (!code.startsWith("3:") && !code.startsWith("2:")) {
+            _remoteUpdates.tryEmit("Join code must start with 3:. Legacy rooms require an explicit 2: prefix.")
+            return
+        }
+        if (SyncCrypto.isJoinCodeTooWeak(code)) {
+            _remoteUpdates.tryEmit("Join code is too short to be safe")
+            return
+        }
         leave()
-        wantConnected = true
-        relayBase = OpsecSettings.shared?.relayUrl?.value?.takeIf { it.isNotBlank() } ?: RELAY_BASE
+        if (runCatching { deviceSeed; myPublicKey }.isFailure) {
+            _remoteUpdates.tryEmit("Sync signing identity is locked or damaged")
+            return
+        }
+        relayBase = normalizeRelayBase(OpsecSettings.shared?.relayUrl?.value?.takeIf { it.isNotBlank() } ?: RELAY_BASE)
 
         if (code.startsWith("3:")) {
-            // v3 protocol: strip prefix, derive v3 keys, setup identity
+            val setup = runCatching {
+                // Resolving the signing identity can fail while the at-rest key
+                // is locked or if the sealed seed is corrupt. Never rotate it.
+                val pubRaw = myPublicKeyRaw
+                val keys = SyncCrypto.deriveRoomV3(code.removePrefix("3:"))
+                val replay = SyncReplayState(keys.roomId, appFilesDir)
+                check(replay.load()) { "replay state unavailable" }
+                Triple(keys, replay, SyncIdentity.actorId(keys.roomIdRaw, pubRaw))
+            }.getOrElse {
+                _status.value = Status.OFFLINE
+                _remoteUpdates.tryEmit("Sync identity or rollback state is locked or damaged")
+                return
+            }
             protocolVersion = 3
-            val rawCode = code.removePrefix("3:")
-            val keys = SyncCrypto.deriveRoomV3(rawCode)
-            v3Keys = keys
-            roomKey = keys.roomKey
-            authToken = keys.authToken
-            myActorId = SyncIdentity.actorId(keys.roomIdRaw, myPublicKeyRaw)
-            sessionDomain = SyncIdentity.generateSessionDomain()
-            val replay = SyncReplayState(keys.roomId, appFilesDir)
-            replay.load()
-            replayState = replay
+            v3Keys = setup.first
+            roomKey = setup.first.roomKey
+            authToken = setup.first.authToken
+            replayState = setup.second
+            myActorId = setup.third
             _room.value = code
-            connect(keys.roomId)
+            wantConnected = true
+            connect(setup.first.roomId)
         } else {
             // v2 protocol: unchanged
             protocolVersion = 2
-            val keys = SyncCrypto.deriveRoom(code)
+            val keys = SyncCrypto.deriveRoom(code.removePrefix("2:"))
             roomKey = keys.roomKey
             authToken = keys.authToken
             _room.value = code
+            wantConnected = true
             connect(keys.roomId)
         }
         startObserving()
@@ -177,33 +253,110 @@ class SyncManager(
 
     fun leave() {
         wantConnected = false
+        reconnectJob?.cancel(); reconnectJob = null
         observeJob?.cancel(); observeJob = null
         presenceJob?.cancel(); presenceJob = null
         stalenessSweepJob?.cancel(); stalenessSweepJob = null
-        ws?.close(1000, "leave"); ws = null
-        // v3: persist replay state before clearing transport (survives leave/restart)
-        replayState?.save()
-        roomKey = null
+        ws?.close(1000, "leave"); ws?.cancel(); ws = null
+        clearRoomSecrets()
         authToken = null
         _room.value = null
         _status.value = Status.OFFLINE
         _peers.value = emptyMap()
         versions.clear(); lastContent.clear(); kindById.clear()
+        forcedLocalDiff.clear(); resolvingPendingModel = false
         peerKeys.clear(); peerTs.clear()
         // v3 state: clear transport-session fields but NOT replayState (durable)
-        v3Keys = null
         myActorId = null
-        sessionDomain = null
+        presenceCounter = 0L
+        activeSessions.clear(); presenceHighWater.clear()
+        awaitingHelloAck = false
+        localHelloVersion = null
+        resetSnapshot()
         replayState = null
+        protocolVersion = 2
+    }
+
+    /** Terminal teardown for the composition/key lifetime. Idempotent and
+     * synchronous: after this returns no socket, observer, reconnect or
+     * presence work can run, and in-memory room/signing secrets are zeroed. */
+    fun dispose() {
+        val secretBuffers = buildList<ByteArray?> {
+            add(roomKey)
+            add(sessionDomain)
+            v3Keys?.let { add(it.roomIdRaw); add(it.roomKey); add(it.metadataKey) }
+            if (deviceSeedDelegate.isInitialized()) add(deviceSeed)
+            if (myPublicKeyRawDelegate.isInitialized()) add(myPublicKeyRaw)
+        }
+        lifecycleGate.dispose(secretBuffers) {
+            wantConnected = false
+            managerJob.cancel()
+            reconnectJob?.cancel(); reconnectJob = null
+            observeJob?.cancel(); observeJob = null
+            revisionJob?.cancel(); revisionJob = null
+            presenceJob?.cancel(); presenceJob = null
+            stalenessSweepJob?.cancel(); stalenessSweepJob = null
+            ws?.close(1000, "dispose")
+            ws?.cancel()
+            ws = null
+            http.dispatcher.cancelAll()
+            http.connectionPool.evictAll()
+            clearRoomStateAfterDispose()
+        }
+    }
+
+    private fun clearRoomSecrets() {
+        roomKey?.fill(0)
+        sessionDomain?.fill(0)
+        v3Keys?.let {
+            it.roomIdRaw.fill(0)
+            it.roomKey.fill(0)
+            it.metadataKey.fill(0)
+        }
+        roomKey = null
+        sessionDomain = null
+        v3Keys = null
+    }
+
+    private fun clearRoomStateAfterDispose() {
+        clearRoomSecrets()
+        authToken = null
+        relayBase = RELAY_BASE
+        locationProvider = null
+        _room.value = null
+        _status.value = Status.OFFLINE
+        _peers.value = emptyMap()
+        versions.clear(); lastContent.clear(); kindById.clear()
+        forcedLocalDiff.clear(); resolvingPendingModel = false
+        peerKeys.clear(); peerTs.clear()
+        myActorId = null
+        replayState = null
+        presenceCounter = 0L
+        activeSessions.clear(); presenceHighWater.clear()
+        awaitingHelloAck = false
+        localHelloVersion = null
+        resetSnapshot()
+        revisionJournalAvailable = false
+        waypointStoreRef = null
+        drawingStoreRef = null
         protocolVersion = 2
     }
 
     // ----- Connection -----
 
     private fun connect(roomId: String) {
+        if (lifecycleGate.isDisposed) return
         _status.value = Status.CONNECTING
+        if (protocolVersion == 3) {
+            sessionDomain = SyncIdentity.generateSessionDomain()
+            presenceCounter = 0L
+            activeSessions.clear(); presenceHighWater.clear()
+            awaitingHelloAck = false
+            localHelloVersion = null
+            resetSnapshot()
+        }
         val path = if (protocolVersion == 3) "v3/room/" else "room/"
-        val base = if (relayBase.endsWith("/")) relayBase.dropLast(1) else relayBase
+        val base = normalizeRelayBase(relayBase)
         val url = "$base/$path$roomId"
         val builder = Request.Builder().url(url)
         authToken?.let { builder.header("Authorization", "Bearer $it") }
@@ -211,27 +364,56 @@ class SyncManager(
             builder.header("X-Protocol", "3")
             builder.header("X-Room-Id", roomId)
         }
+        lifecycleGate.runIfActive {
         ws = http.newWebSocket(builder.build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                _status.value = Status.CONNECTED
+                lifecycleGate.runIfActive callback@{
+                    if (ws !== webSocket) return@callback
+                    // v3 is not allowed to publish until a complete authenticated
+                    // snapshot fence has been applied.
+                    if (protocolVersion == 2) _status.value = Status.CONNECTED
+                }
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
-                scope.launch { handleMessage(text) }
+                lifecycleGate.runIfActive callback@{
+                    if (ws !== webSocket) return@callback
+                    scope.launch { handleMessage(text) }
+                }
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                _status.value = Status.OFFLINE
+                lifecycleGate.runIfActive callback@{
+                    if (ws !== webSocket) return@callback
+                    ws = null
+                    _status.value = Status.OFFLINE
+                    if (wantConnected) {
+                        reconnectJob?.cancel()
+                        reconnectJob = scope.launch {
+                            kotlinx.coroutines.delay(3000)
+                            if (wantConnected && !lifecycleGate.isDisposed) connect(roomId)
+                        }
+                    }
+                }
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                _status.value = Status.OFFLINE
-                if (wantConnected) {
-                    scope.launch {
-                        kotlinx.coroutines.delay(3000)
-                        if (wantConnected) connect(roomId)
+                lifecycleGate.runIfActive callback@{
+                    if (ws !== webSocket) return@callback
+                    ws = null
+                    _status.value = Status.OFFLINE
+                    if (wantConnected) {
+                        reconnectJob?.cancel()
+                        reconnectJob = scope.launch {
+                            kotlinx.coroutines.delay(3000)
+                            if (wantConnected && !lifecycleGate.isDisposed) connect(roomId)
+                        }
                     }
                 }
             }
         })
+        }
     }
+
+    private fun sendFrame(frame: String): Boolean =
+        lifecycleGate.sendIfActive { ws?.send(frame) == true }
 
     // ----- Outbound: observe local stores, diff, send -----
 
@@ -243,16 +425,29 @@ class SyncManager(
         }
     }
 
-    private fun syncLocalState(wps: List<Waypoint>, doc: DrawingDocument) {
-        if (_status.value != Status.CONNECTED) return
-        val current = HashMap<String, Pair<String, String>>() // id -> (kind, content)
-        for (wp in wps) current[wp.id] = "waypoint" to GeoJsonExporter.export(listOf(wp), emptyList(), doc.layers)
-        for (f in doc.features) current[f.id] = "drawing" to GeoJsonExporter.export(emptyList(), listOf(f), doc.layers)
+    /** Lifetime observer: revisions continue across disconnect and Leave. */
+    private fun startModelRevisionObservation() {
+        revisionJob = scope.launch {
+            merge(waypointStore.mutations, drawingStore.mutations)
+                .collect { event ->
+                    if (!revisionJournalAvailable) { persistenceFailure(); return@collect }
+                    if (!revisionEventProcessor.process(event)) return@collect
+                }
+        }
+    }
 
-        if (protocolVersion == 3) {
-            syncLocalStateV3(current)
-        } else {
-            syncLocalStateV2(current)
+    private fun syncLocalState(wps: List<Waypoint>, doc: DrawingDocument) {
+        lifecycleGate.runIfActive {
+            if (_status.value != Status.CONNECTED) return@runIfActive
+            val current = HashMap<String, Pair<String, String>>() // id -> (kind, content)
+            for (wp in wps) current[wp.id] = "waypoint" to GeoJsonExporter.export(listOf(wp), emptyList(), doc.layers)
+            for (f in doc.features) current[f.id] = "drawing" to GeoJsonExporter.export(emptyList(), listOf(f), doc.layers)
+
+            if (protocolVersion == 3) {
+                syncLocalStateV3(current)
+            } else {
+                syncLocalStateV2(current)
+            }
         }
     }
 
@@ -278,26 +473,35 @@ class SyncManager(
         val keys = v3Keys ?: return
         val actor = myActorId ?: return
         val replay = replayState ?: return
+        if (!revisionJournalAvailable || resolvingPendingModel || replay.hasPendingModelApplications()) return
 
         for ((id, kc) in current) {
             val (kind, content) = kc
-            if (lastContent[id] == content) continue
-            val wireId = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
-            val counter = replay.nextCounter()
-            val vs = VersionStamp(counter, actor)
-            replay.save()
-            lastContent[id] = content
-            kindById[id] = kind
-            sendPutV3(wireId, vs, kind, content)
+            val contentHash = SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
+            val wireId = runCatching {
+                SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
+            }.getOrNull() ?: continue
+            if (lastContent[id] == content && id !in forcedLocalDiff) continue
+            val vs = replay.recoverableLocalPut(wireId, actor, myPublicKey, contentHash)
+                ?: replay.reserveLocalPut(wireId, actor, myPublicKey, contentHash)
+                ?: return persistenceFailure()
+            if (sendPutV3(wireId, vs, kind, content)) {
+                lastContent[id] = content
+                kindById[id] = kind
+                forcedLocalDiff.remove(id)
+            }
         }
-        val gone = lastContent.keys.filter { it !in current }
+        val gone = (lastContent.keys + forcedLocalDiff).filter { it !in current }.distinct()
         for (id in gone) {
-            val wireId = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
-            val counter = replay.nextCounter()
-            val vs = VersionStamp(counter, actor)
-            replay.save()
-            sendDelV3(wireId, vs)
-            lastContent.remove(id); kindById.remove(id)
+            val wireId = runCatching {
+                SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
+            }.getOrNull() ?: continue
+            val vs = replay.reserveLocalDelete(wireId, actor, myPublicKey)
+                ?: return persistenceFailure()
+            if (sendDelV3(wireId, vs)) {
+                lastContent.remove(id); kindById.remove(id)
+                forcedLocalDiff.remove(id)
+            }
         }
     }
 
@@ -311,7 +515,7 @@ class SyncManager(
         val inner = JSONObject().apply { put("c", content); put("pub", myPublicKey); put("sig", sig) }
         val aad = SyncCrypto.aad(id, v, kind)
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
-        ws?.send(JSONObject().apply {
+        sendFrame(JSONObject().apply {
             put("t", "put"); put("id", id); put("v", v); put("by", clientId); put("kind", kind); put("ct", ct)
         }.toString())
     }
@@ -322,29 +526,40 @@ class SyncManager(
         val inner = JSONObject().apply { put("pub", myPublicKey); put("sig", sig) }
         val aad = SyncCrypto.aad(id, v, "del")
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
-        ws?.send(JSONObject().apply {
+        sendFrame(JSONObject().apply {
             put("t", "del"); put("id", id); put("v", v); put("by", clientId); put("ct", ct)
         }.toString())
     }
 
     // -- v3 outbound --
 
-    private fun sendHelloV3() {
-        val actor = myActorId ?: return
-        val sd = sessionDomain ?: return
-        ws?.send(JSONObject().apply {
+    private fun sendHelloV3(): Boolean {
+        val keys = v3Keys ?: return false
+        val actor = myActorId ?: return false
+        val sd = sessionDomain ?: return false
+        val epoch = replayState?.reserveHelloEpoch(actor) ?: return false
+        val vs = "$epoch:$actor"
+        localHelloVersion = vs
+        val preimage = SyncIdentity.buildPreimage(
+            SyncIdentity.DOMAIN_HELLO, keys.roomIdRaw, actor, sd,
+            epoch, "", "hello", SyncIdentity.sha256(myPublicKeyRaw)
+        )
+        val sig = SyncSigning.sign(deviceSeed, preimage)
+        return sendFrame(JSONObject().apply {
             put("t", "hello")
             put("by", actor)
             put("pub", myPublicKey)
             put("sd", SyncIdentity.urlB64(sd))
+            put("vs", vs)
+            put("sig", sig)
         }.toString())
     }
 
-    private fun sendPutV3(wireId: String, vs: VersionStamp, kind: String, content: String) {
-        val key = roomKey ?: return
-        val keys = v3Keys ?: return
-        val actor = myActorId ?: return
-        val sd = sessionDomain ?: return
+    private fun sendPutV3(wireId: String, vs: VersionStamp, kind: String, content: String): Boolean {
+        val key = roomKey ?: return false
+        val keys = v3Keys ?: return false
+        val actor = myActorId ?: return false
+        val sd = sessionDomain ?: return false
         val payloadHash = SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8))
         val preimage = SyncIdentity.buildPreimage(
             SyncIdentity.DOMAIN_PUT, keys.roomIdRaw, actor, sd,
@@ -353,17 +568,18 @@ class SyncManager(
         val inner = JSONObject().apply { put("c", content); put("sig", sig) }
         val aad = SyncCrypto.aadV3(wireId, vs.encode(), kind)
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
-        ws?.send(JSONObject().apply {
+        return sendFrame(JSONObject().apply {
             put("t", "put"); put("id", wireId); put("vs", vs.encode())
             put("by", actor); put("kind", kind); put("ct", ct); put("pub", myPublicKey)
+            put("sd", SyncIdentity.urlB64(sd))
         }.toString())
     }
 
-    private fun sendDelV3(wireId: String, vs: VersionStamp) {
-        val key = roomKey ?: return
-        val keys = v3Keys ?: return
-        val actor = myActorId ?: return
-        val sd = sessionDomain ?: return
+    private fun sendDelV3(wireId: String, vs: VersionStamp): Boolean {
+        val key = roomKey ?: return false
+        val keys = v3Keys ?: return false
+        val actor = myActorId ?: return false
+        val sd = sessionDomain ?: return false
         val payloadHash = SyncIdentity.sha256(ByteArray(0))
         val preimage = SyncIdentity.buildPreimage(
             SyncIdentity.DOMAIN_DELETE, keys.roomIdRaw, actor, sd,
@@ -372,9 +588,10 @@ class SyncManager(
         val inner = JSONObject().apply { put("sig", sig) }
         val aad = SyncCrypto.aadV3(wireId, vs.encode(), "del")
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
-        ws?.send(JSONObject().apply {
+        return sendFrame(JSONObject().apply {
             put("t", "del"); put("id", wireId); put("vs", vs.encode())
             put("by", actor); put("kind", "del"); put("ct", ct); put("pub", myPublicKey)
+            put("sd", SyncIdentity.urlB64(sd))
         }.toString())
     }
 
@@ -383,6 +600,12 @@ class SyncManager(
     companion object {
         /** Default E2E-blind relay base URL (path added per-protocol-version). */
         const val RELAY_BASE = "wss://tacmap-sync.christianbrooker.workers.dev"
+        internal fun normalizeRelayBase(value: String): String {
+            var base = value.trim().trimEnd('/')
+            if (base.endsWith("/v3/room")) base = base.removeSuffix("/v3/room")
+            if (base.endsWith("/room")) base = base.removeSuffix("/room")
+            return base.trimEnd('/')
+        }
         /** SharedPreferences key holding the sealed presence-config blob. */
         private const val KEY_PRESENCE = "config_sealed"
         /** AEAD label binding that blob so it can't be opened as another pref. */
@@ -394,20 +617,23 @@ class SyncManager(
         private const val MAX_FRAME_BYTES = 1_048_576        // 1 MiB text
         private const val MAX_BASE64_BYTES = 1_048_576        // 1 MiB encoded ct
         private const val MAX_SNAPSHOT_ITEMS = 10_000
+        private const val MAX_SNAPSHOT_AGGREGATE_BYTES = 54_525_952L
         private const val MAX_VERSION = 1_000_000_000_000L   // matches relay MAX_V
     }
 
     private fun handleMessage(text: String) {
-        if (text.length > MAX_FRAME_BYTES) return
-        try {
-            val msg = JSONObject(text)
-            if (protocolVersion == 3) {
-                handleMessageV3(msg)
-            } else {
-                handleMessageV2(msg)
+        lifecycleGate.runIfActive {
+            if (text.length > MAX_FRAME_BYTES) return@runIfActive
+            try {
+                val msg = JSONObject(text)
+                if (protocolVersion == 3) {
+                    handleMessageV3(msg, text.toByteArray(Charsets.UTF_8).size)
+                } else {
+                    handleMessageV2(msg)
+                }
+            } catch (_: Throwable) {
+                // Silently drop -- don't log frame content (SEC-019).
             }
-        } catch (_: Throwable) {
-            // silently drop -- don't log frame content (SEC-019)
         }
     }
 
@@ -435,32 +661,91 @@ class SyncManager(
         }
     }
 
-    private fun handleMessageV3(msg: JSONObject) {
+    private fun handleMessageV3(msg: JSONObject, frameBytes: Int) {
         when (msg.optString("t")) {
             "snapshot-begin" -> {
-                val seq = msg.optLong("seq", -1L)
-                val replay = replayState ?: return
+                if (_status.value != Status.CONNECTING || snapshotSeq != null) return failSnapshot()
+                val seq = strictNonNegativeLong(msg, "seq") ?: return failSnapshot()
+                snapshotSeq = seq
+                snapshotSawFinalPage = false
+                snapshotItemCount = 0
+                snapshotInvalid = false
+                snapshotAggregateBytes = frameBytes.toLong()
+                snapshotWireIds.clear()
+                pendingSnapshot.clear()
+                _status.value = Status.SNAPSHOTTING
+                val replay = replayState ?: return failSnapshot()
                 if (replay.lastSnapshotSeq >= 0 && seq < replay.lastSnapshotSeq) {
-                    // relay is serving stale state -- log warning but still apply
-                    android.util.Log.w("SyncManager", "Snapshot gap: relay seq=$seq < last=${replay.lastSnapshotSeq}")
+                    android.util.Log.w("SyncManager", "Sync relay supplied an older snapshot fence")
+                    _remoteUpdates.tryEmit("Sync rollback warning: relay snapshot is older than previously seen state")
                 }
             }
             "snapshot" -> {
+                snapshotAggregateBytes += frameBytes
+                if (snapshotAggregateBytes > MAX_SNAPSHOT_AGGREGATE_BYTES) return failSnapshot()
+                if (_status.value != Status.SNAPSHOTTING || snapshotSeq == null || snapshotSawFinalPage) {
+                    return failSnapshot()
+                }
                 val items = msg.optJSONArray("items") ?: JSONArray()
-                if (items.length() > MAX_SNAPSHOT_ITEMS) return
-                for (i in 0 until items.length()) applyRecordV3(items.getJSONObject(i))
+                snapshotItemCount += items.length()
+                if (snapshotItemCount > MAX_SNAPSHOT_ITEMS) return failSnapshot()
+                for (i in 0 until items.length()) {
+                    val rec = items.optJSONObject(i)
+                    if (rec == null) {
+                        snapshotInvalid = true
+                        continue
+                    }
+                    val validated = validateRecordV3(rec)
+                    if (validated == null || !snapshotWireIds.add(validated.mutation.wireObjectId)) {
+                        snapshotInvalid = true
+                    } else pendingSnapshot += validated
+                }
+                val more = msg.opt("more") as? Boolean ?: return failSnapshot()
+                if (!more) snapshotSawFinalPage = true
             }
             "snapshot-end" -> {
-                val seq = msg.optLong("seq", -1L)
-                if (seq >= 0) replayState?.updateSnapshotSeq(seq)
-                replayState?.save()
-                // send hello after snapshot to register our identity
-                sendHelloV3()
+                snapshotAggregateBytes += frameBytes
+                if (snapshotAggregateBytes > MAX_SNAPSHOT_AGGREGATE_BYTES) return failSnapshot()
+                val expected = snapshotSeq ?: return failSnapshot()
+                val seq = strictNonNegativeLong(msg, "seq") ?: return failSnapshot()
+                if (_status.value != Status.SNAPSHOTTING || seq != expected || !snapshotSawFinalPage || snapshotInvalid) {
+                    return failSnapshot()
+                }
+                val replay = replayState ?: return failSnapshot()
+                val remoteMutations = pendingSnapshot.map { validated ->
+                    SyncReplayState.RemoteMutation(
+                        validated.mutation, modelContentHash(validated.localModelId()), validated.localModelId(),
+                        modelRevisionJournal.generation(validated.localModelId()), validated.expectedModelHash())
+                }
+                if (!replay.commitRemoteSnapshot(remoteMutations, seq)) {
+                    return persistenceFailure()
+                }
+                resolvingPendingModel = true
+                try {
+                    for ((index, validated) in pendingSnapshot.withIndex()) {
+                        if (!resolvePendingModelApplication(validated, remoteMutations[index].priorModelHash)) {
+                            return persistenceFailure()
+                        }
+                    }
+                    if (!resolveUnmatchedPendingModelApplications()) return persistenceFailure()
+                } finally {
+                    resolvingPendingModel = false
+                }
+                resetSnapshot()
+                awaitingHelloAck = true
+                if (!sendHelloV3()) {
+                    awaitingHelloAck = false
+                    return failConnection()
+                }
             }
-            "hello" -> applyHelloV3(msg)
-            "put" -> applyRecordV3(msg)
-            "del" -> applyDeleteV3(msg)
-            "loc" -> applyPresenceV3(msg)
+            "hello-ack" -> applyHelloAckV3(msg)
+            // Active peer hello/presence frames follow snapshot-end. Accept
+            // authenticated inbound traffic while our own hello ack is pending,
+            // but keep local observers/presence outbound gated until CONNECTED.
+            "hello" -> if (acceptsLiveInboundV3()) applyHelloV3(msg)
+            "put" -> if (acceptsLiveInboundV3()) applyLiveRecordV3(msg)
+            "del" -> if (acceptsLiveInboundV3()) applyLiveRecordV3(msg)
+            "loc" -> if (acceptsLiveInboundV3()) applyPresenceV3(msg)
             "leave" -> {
                 val peerId = msg.optString("by").ifEmpty { return }
                 _peers.value = _peers.value - peerId
@@ -504,7 +789,7 @@ class SyncManager(
         }.getOrNull() ?: return
 
         parsed.newLayers.forEach { layer ->
-            if (doc.layers.none { it.id == layer.id }) drawingStore.addLayerVerbatim(layer)
+            if (doc.layers.none { it.id == layer.id }) drawingStore.addLayerVerbatim(layer, ModelMutationOrigin.REMOTE_SYNC)
         }
         parsed.waypoints.forEach { upsertWaypoint(it) }
         parsed.drawings.forEach { upsertDrawing(it) }
@@ -545,11 +830,13 @@ class SyncManager(
             else -> "Object"
         }
         when (kindById[id]) {
-            "drawing" -> drawingStore.removeFeature(id)
-            "waypoint" -> waypointStore.waypoints.value.firstOrNull { it.id == id }?.let { waypointStore.remove(it) }
+            "drawing" -> drawingStore.removeFeature(id, ModelMutationOrigin.REMOTE_SYNC)
+            "waypoint" -> waypointStore.waypoints.value.firstOrNull { it.id == id }
+                ?.let { waypointStore.remove(it, ModelMutationOrigin.REMOTE_SYNC) }
             else -> {
-                drawingStore.removeFeature(id)
-                waypointStore.waypoints.value.firstOrNull { it.id == id }?.let { waypointStore.remove(it) }
+                drawingStore.removeFeature(id, ModelMutationOrigin.REMOTE_SYNC)
+                waypointStore.waypoints.value.firstOrNull { it.id == id }
+                    ?.let { waypointStore.remove(it, ModelMutationOrigin.REMOTE_SYNC) }
             }
         }
         versions[id] = v
@@ -559,120 +846,309 @@ class SyncManager(
 
     // -- v3 inbound handlers --
 
+    private fun acceptsLiveInboundV3(): Boolean =
+        _status.value == Status.CONNECTED ||
+            (_status.value == Status.SNAPSHOTTING && awaitingHelloAck && snapshotSeq == null)
+
+    private fun applyHelloAckV3(msg: JSONObject) {
+        if (_status.value != Status.SNAPSHOTTING || !awaitingHelloAck || snapshotSeq != null) return
+        val actor = myActorId ?: return
+        val sd = sessionDomain ?: return
+        val expectedVs = localHelloVersion ?: return
+        if (!SyncIdentity.helloAckMatches(
+                actor, sd, expectedVs, msg.optString("by"), msg.optString("sd"), msg.optString("vs"))) return
+        awaitingHelloAck = false
+        _status.value = Status.CONNECTED
+        replayState?.recoverableLocalDeletes(actor, myPublicKey)?.forEach { (wireId, stamp) -> sendDelV3(wireId, stamp) }
+        syncLocalState(waypointStore.waypoints.value, drawingStore.document.value)
+    }
+
     private fun applyHelloV3(msg: JSONObject) {
         val by = msg.optString("by").ifEmpty { return }
         val pub = msg.optString("pub").ifEmpty { return }
         val sd = msg.optString("sd").ifEmpty { return }
+        val vs = msg.optString("vs").ifEmpty { return }
+        val sig = msg.optString("sig").ifEmpty { return }
         if (by == myActorId) return
-        val replay = replayState ?: return
-        if (!replay.registerActor(by, pub)) return  // key swap -> reject
-        replay.updateSessionDomain(by, sd)
-        replay.save()
-    }
-
-    private fun applyRecordV3(rec: JSONObject) {
-        if (rec.optBoolean("deleted", false)) { applyDeleteV3(rec); return }
-        val wireId = rec.optString("id").ifEmpty { return }
-        val vsStr = rec.optString("vs").ifEmpty { return }
-        val vs = VersionStamp.parse(vsStr) ?: return
-        val by = rec.optString("by").ifEmpty { return }
-        val pub = rec.optString("pub").ifEmpty { return }
-        if (by == myActorId) return  // echo
-        val key = roomKey ?: return
         val keys = v3Keys ?: return
         val replay = replayState ?: return
-        val kind = rec.optString("kind", "unknown")
-        val ctB64 = rec.optString("ct")
-        if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return
-        // actor registration check
-        if (!replay.registerActor(by, pub)) return
-        // replay protection: stamp must be newer than anything we've seen
-        if (!replay.advance(wireId, vs)) return
-        // AEAD open
-        val aad = SyncCrypto.aadV3(wireId, vsStr, kind)
-        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
-        val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
-        val content = inner.optString("c")
-        val sig = inner.optString("sig").ifEmpty { return }
-        // verify Ed25519 signature over the binary preimage
-        val payloadHash = SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8))
-        val peerSd = SyncIdentity.urlB64Decode(replay.getSessionDomain(by) ?: return)
-        val preimage = SyncIdentity.buildPreimage(
-            SyncIdentity.DOMAIN_PUT, keys.roomIdRaw, by, peerSd,
-            VersionStamp.counterHex16(vs.counter), wireId, kind, payloadHash)
-        if (!SyncSigning.verify(pub, preimage, sig)) return
-        replay.save()
+        SyncIdentity.urlB64Decode32(pub) ?: return
+        SyncIdentity.urlB64Decode32(sd) ?: return
+        if (replay.getPinnedPubkey(by)?.let { it != pub } == true) return
+        if (!SyncIdentity.verifyHello(by, pub, sd, vs, sig, keys.roomIdRaw)) return
+        val epoch = vs.substringBefore(':')
+        if (!replay.commitActorHello(by, pub, epoch)) return
+        activeSessions[by] = pub to sd
+        presenceHighWater.keys.removeAll { it.startsWith("$by|") }
+    }
 
+    private data class OuterV3(
+        val wireId: String,
+        val stamp: VersionStamp,
+        val stampText: String,
+        val actorId: String,
+        val pub: String,
+        val pubRaw: ByteArray,
+        val sessionDomain: ByteArray,
+        val kind: String,
+        val ciphertext: ByteArray,
+        val deleted: Boolean,
+    )
+
+    private fun parseOuterV3(rec: JSONObject): OuterV3? {
+        val wireId = rec.optString("id").ifEmpty { return null }
+        if (SyncIdentity.urlB64Decode32(wireId) == null) return null
+        val vsStr = rec.optString("vs").ifEmpty { return null }
+        val vs = VersionStamp.parse(vsStr) ?: return null
+        val by = rec.optString("by").ifEmpty { return null }
+        val pub = rec.optString("pub").ifEmpty { return null }
+        val sdText = rec.optString("sd").ifEmpty { return null }
+        val keys = v3Keys ?: return null
+        val replay = replayState ?: return null
+        val pubRaw = SyncIdentity.urlB64Decode32(pub) ?: return null
+        val sd = SyncIdentity.urlB64Decode32(sdText) ?: return null
+        if (vs.actorId != by || SyncIdentity.actorId(keys.roomIdRaw, pubRaw) != by) return null
+        if (replay.getPinnedPubkey(by)?.let { it != pub } == true) return null
+        val type = rec.optString("t")
+        if (type.isNotEmpty() && type != "put" && type != "del") return null
+        val deletedField = rec.opt("deleted")
+        if (deletedField != null && deletedField !is Boolean) return null
+        val storedDeleted = deletedField as? Boolean ?: false
+        if ((type == "put" && storedDeleted) || (type == "del" && deletedField == false)) return null
+        val deleted = type == "del" || storedDeleted
+        val kind = rec.optString("kind").ifEmpty { return null }
+        if (!kind.matches(Regex("^[A-Za-z0-9_-]{1,32}$"))) return null
+        if ((deleted && kind != "del") || (!deleted && kind !in setOf("waypoint", "drawing"))) return null
+        val ctB64 = rec.optString("ct")
+        if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return null
+        val ct = runCatching { SyncCrypto.decodeBase64(ctB64) }.getOrNull() ?: return null
+        if (ct.size < 28 || SyncCrypto.encodeBase64(ct) != ctB64) return null
+        return OuterV3(wireId, vs, vsStr, by, pub, pubRaw, sd, kind, ct, deleted)
+    }
+
+    private fun validateRecordV3(rec: JSONObject): ValidatedV3? {
+        val outer = parseOuterV3(rec) ?: return null
+        val key = roomKey ?: return null
+        val keys = v3Keys ?: return null
+        val aad = SyncCrypto.aadV3(outer.wireId, outer.stampText, outer.kind)
+        val plain = SyncCrypto.open(key, outer.ciphertext, aad) ?: return null
+        val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return null
+        val sig = inner.optString("sig").ifEmpty { return null }
+        if (outer.deleted) {
+            val hash = SyncIdentity.sha256(ByteArray(0))
+            val preimage = SyncIdentity.buildPreimage(
+                SyncIdentity.DOMAIN_DELETE, keys.roomIdRaw, outer.actorId, outer.sessionDomain,
+                VersionStamp.counterHex16(outer.stamp.counter), outer.wireId, "del", hash
+            )
+            if (!SyncSigning.verify(outer.pub, preimage, sig)) return null
+            return ValidatedV3.Delete(
+                SyncReplayState.AuthenticatedMutation(
+                    outer.wireId, outer.stamp, outer.pub, null, deleted = true
+                ),
+                findLocalIdForWireId(outer.wireId)
+            )
+        }
+        val content = inner.optString("c").ifEmpty { return null }
+        val contentBytes = content.toByteArray(Charsets.UTF_8)
+        val payloadHash = SyncIdentity.sha256(contentBytes)
+        val preimage = SyncIdentity.buildPreimage(
+            SyncIdentity.DOMAIN_PUT, keys.roomIdRaw, outer.actorId, outer.sessionDomain,
+            VersionStamp.counterHex16(outer.stamp.counter), outer.wireId, outer.kind, payloadHash
+        )
+        if (!SyncSigning.verify(outer.pub, preimage, sig)) return null
         val doc = drawingStore.document.value
         val fallback = doc.layers.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID
         val parsed = runCatching {
             GeoJsonImporter.parse(content, existingLayers = doc.layers, fallbackLayerId = fallback)
-        }.getOrNull() ?: return
-
-        parsed.newLayers.forEach { layer ->
-            if (doc.layers.none { it.id == layer.id }) drawingStore.addLayerVerbatim(layer)
-        }
-        parsed.waypoints.forEach { upsertWaypoint(it) }
-        parsed.drawings.forEach { upsertDrawing(it) }
-
-        // echo guard: track the last content we received so local diff doesn't bounce it
-        val sourceId = findLocalIdForWireId(wireId)
-        if (sourceId != null) {
-            kindById[sourceId] = if (parsed.waypoints.isNotEmpty()) "waypoint" else "drawing"
-            lastContent[sourceId] = reexport(sourceId)
-        }
-
-        val objectName = parsed.waypoints.firstOrNull()?.name
-            ?: parsed.drawings.firstOrNull()?.name ?: "Object"
-        val kindLabel = if (parsed.waypoints.isNotEmpty()) "Waypoint" else "Drawing"
-        _remoteUpdates.tryEmit("$kindLabel '$objectName' updated by another device")
+        }.getOrNull() ?: return null
+        if (parsed.invalidSkipped != 0) return null
+        val localId = when (outer.kind) {
+            "waypoint" -> parsed.waypoints.singleOrNull()?.id?.takeIf { parsed.drawings.isEmpty() }
+            "drawing" -> parsed.drawings.singleOrNull()?.id?.takeIf { parsed.waypoints.isEmpty() }
+            else -> null
+        } ?: return null
+        val expectedWireId = runCatching {
+            SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(localId))
+        }.getOrNull() ?: return null
+        if (expectedWireId != outer.wireId) return null
+        return ValidatedV3.Put(
+            SyncReplayState.AuthenticatedMutation(
+                outer.wireId, outer.stamp, outer.pub, SyncIdentity.bytesToHex(payloadHash), deleted = false
+            ),
+            parsed,
+            localId,
+            expectedModelHash(parsed, localId, doc.layers) ?: return null
+        )
     }
 
-    private fun applyDeleteV3(rec: JSONObject) {
-        val wireId = rec.optString("id").ifEmpty { return }
-        val vsStr = rec.optString("vs").ifEmpty { return }
-        val vs = VersionStamp.parse(vsStr) ?: return
-        val by = rec.optString("by").ifEmpty { return }
-        val pub = rec.optString("pub").ifEmpty { return }
-        if (by == myActorId) return
-        val key = roomKey ?: return
-        val keys = v3Keys ?: return
+    private fun applyLiveRecordV3(rec: JSONObject) {
+        val validated = validateRecordV3(rec) ?: return
         val replay = replayState ?: return
-        val ctB64 = rec.optString("ct")
-        if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return
-        if (!replay.registerActor(by, pub)) return
-        if (!replay.tombstone(wireId, vs)) return
-        val aad = SyncCrypto.aadV3(wireId, vsStr, "del")
-        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
-        val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
-        val sig = inner.optString("sig").ifEmpty { return }
-        val payloadHash = SyncIdentity.sha256(ByteArray(0))
-        val peerSd = SyncIdentity.urlB64Decode(replay.getSessionDomain(by) ?: return)
-        val preimage = SyncIdentity.buildPreimage(
-            SyncIdentity.DOMAIN_DELETE, keys.roomIdRaw, by, peerSd,
-            VersionStamp.counterHex16(vs.counter), wireId, "del", payloadHash)
-        if (!SyncSigning.verify(pub, preimage, sig)) return
-        replay.save()
+        if (!replay.canAcceptLive(validated.mutation.wireObjectId, validated.mutation.stamp)) return
+        val priorHash = modelContentHash(validated.localModelId())
+        if (!replay.commitRemoteAuthenticated(
+                SyncReplayState.RemoteMutation(
+                    validated.mutation, priorHash, validated.localModelId(),
+                    modelRevisionJournal.generation(validated.localModelId()), validated.expectedModelHash()))) {
+            return persistenceFailure()
+        }
+        resolvingPendingModel = true
+        try {
+            if (!resolvePendingModelApplication(validated, priorHash)) return persistenceFailure()
+        } finally {
+            resolvingPendingModel = false
+        }
+    }
 
-        val sourceId = findLocalIdForWireId(wireId)
-        if (sourceId != null) {
-            val kindLabel = when (kindById[sourceId]) {
+    private fun ValidatedV3.localModelId(): String? = when (this) {
+        is ValidatedV3.Put -> localId
+        is ValidatedV3.Delete -> localId
+    }
+
+    private fun ValidatedV3.expectedModelHash(): String? = when (this) {
+        is ValidatedV3.Put -> expectedModelHash
+        is ValidatedV3.Delete -> null
+    }
+
+    /** Receiver-local fixed-point hash; the authenticated payload hash remains sender bytes. */
+    private fun expectedModelHash(
+        parsed: GeoJsonImporter.Result,
+        localId: String,
+        existingLayers: List<com.tacmap.drawings.DrawingLayer>,
+    ): String? {
+        val layers = (existingLayers + parsed.newLayers).distinctBy { it.id }
+        val content = parsed.waypoints.singleOrNull { it.id == localId }?.let {
+            GeoJsonExporter.export(listOf(it), emptyList(), layers)
+        } ?: parsed.drawings.singleOrNull { it.id == localId }?.let {
+            GeoJsonExporter.export(emptyList(), listOf(it), layers)
+        } ?: return null
+        return SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
+    }
+
+    private fun modelContentHash(localId: String?): String? {
+        localId ?: return null
+        val content = reexport(localId)
+        if (content.isEmpty()) return null
+        return SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
+    }
+
+    /** Resolve durable model work without overwriting a divergent offline edit. */
+    private fun resolvePendingModelApplication(validated: ValidatedV3, currentHash: String?): Boolean {
+        val replay = replayState ?: return false
+        val mutation = validated.mutation
+        return when (replay.pendingModelDecision(
+            mutation, currentHash, modelRevisionJournal.generation(validated.localModelId()))) {
+            SyncReplayState.PendingModelDecision.APPLY_INCOMING -> {
+                applyValidatedV3(validated)
+                val expected = validated.expectedModelHash()
+                if (modelContentHash(validated.localModelId()) != expected) false
+                else replay.clearPendingModelApplication(mutation)
+            }
+            SyncReplayState.PendingModelDecision.ALREADY_APPLIED -> {
+                markModelBaseline(validated)
+                replay.clearPendingModelApplication(mutation)
+            }
+            SyncReplayState.PendingModelDecision.LOCAL_DIVERGED -> {
+                validated.localModelId()?.let { forcedLocalDiff += it }
+                replay.clearPendingModelApplication(mutation)
+            }
+            SyncReplayState.PendingModelDecision.NONE -> {
+                // An exact resolved record may establish the echo baseline, but
+                // must never overwrite a model that has since diverged.
+                if (replay.isExactPersistedMutation(mutation)) {
+                    val expected = validated.expectedModelHash()
+                    if (currentHash == expected) markModelBaseline(validated)
+                    else validated.localModelId()?.let { forcedLocalDiff += it }
+                }
+                true
+            }
+        }
+    }
+
+    private fun markModelBaseline(validated: ValidatedV3) {
+        when (validated) {
+            is ValidatedV3.Put -> {
+                val content = reexport(validated.localId)
+                if (content.isNotEmpty()) {
+                    lastContent[validated.localId] = content
+                    kindById[validated.localId] = if (validated.parsed.waypoints.isNotEmpty()) "waypoint" else "drawing"
+                }
+                forcedLocalDiff.remove(validated.localId)
+            }
+            is ValidatedV3.Delete -> validated.localId?.let {
+                lastContent.remove(it); kindById.remove(it); forcedLocalDiff.remove(it)
+            }
+        }
+    }
+
+    /** Pending records omitted or contradicted by the snapshot cannot be
+     * repaired safely. Preserve the model and force it to win at a new stamp. */
+    private fun resolveUnmatchedPendingModelApplications(): Boolean {
+        val replay = replayState ?: return false
+        for (remote in replay.pendingRemoteMutations()) {
+            val localId = remote.localModelId
+            val current = modelContentHash(localId)
+            val incoming = remote.expectedModelHash
+            if (current == incoming) {
+                markCurrentModelBaseline(localId)
+            } else {
+                localId?.let { forcedLocalDiff += it }
+            }
+            if (!replay.clearPendingModelApplication(remote.mutation)) return false
+        }
+        return true
+    }
+
+    private fun markCurrentModelBaseline(localId: String?) {
+        localId ?: return
+        val content = reexport(localId)
+        if (content.isEmpty()) {
+            lastContent.remove(localId); kindById.remove(localId)
+        } else {
+            lastContent[localId] = content
+            kindById[localId] = if (waypointStore.waypoints.value.any { it.id == localId }) "waypoint" else "drawing"
+        }
+        forcedLocalDiff.remove(localId)
+    }
+
+    private fun applyValidatedV3(validated: ValidatedV3) {
+        when (validated) {
+            is ValidatedV3.Put -> {
+                val doc = drawingStore.document.value
+                validated.parsed.newLayers.forEach { layer ->
+                    if (doc.layers.none { it.id == layer.id }) {
+                        drawingStore.addLayerVerbatim(layer, ModelMutationOrigin.REMOTE_SYNC)
+                    }
+                }
+                validated.parsed.waypoints.forEach { upsertWaypoint(it) }
+                validated.parsed.drawings.forEach { upsertDrawing(it) }
+                val kind = if (validated.parsed.waypoints.isNotEmpty()) "waypoint" else "drawing"
+                kindById[validated.localId] = kind
+                lastContent[validated.localId] = reexport(validated.localId)
+                val objectName = validated.parsed.waypoints.firstOrNull()?.name
+                    ?: validated.parsed.drawings.firstOrNull()?.name ?: "Object"
+                val label = if (kind == "waypoint") "Waypoint" else "Drawing"
+                _remoteUpdates.tryEmit("$label '$objectName' updated by another device")
+            }
+            is ValidatedV3.Delete -> validated.localId?.let { sourceId ->
+                val kindLabel = when (kindById[sourceId]) {
                 "drawing" -> "Drawing"
                 "waypoint" -> "Waypoint"
                 else -> "Object"
-            }
-            when (kindById[sourceId]) {
-                "drawing" -> drawingStore.removeFeature(sourceId)
-                "waypoint" -> waypointStore.waypoints.value.firstOrNull { it.id == sourceId }
-                    ?.let { waypointStore.remove(it) }
-                else -> {
-                    drawingStore.removeFeature(sourceId)
-                    waypointStore.waypoints.value.firstOrNull { it.id == sourceId }
-                        ?.let { waypointStore.remove(it) }
                 }
+                when (kindById[sourceId]) {
+                    "drawing" -> drawingStore.removeFeature(sourceId, ModelMutationOrigin.REMOTE_SYNC)
+                    "waypoint" -> waypointStore.waypoints.value.firstOrNull { it.id == sourceId }
+                        ?.let { waypointStore.remove(it, ModelMutationOrigin.REMOTE_SYNC) }
+                    else -> {
+                        drawingStore.removeFeature(sourceId, ModelMutationOrigin.REMOTE_SYNC)
+                        waypointStore.waypoints.value.firstOrNull { it.id == sourceId }
+                            ?.let { waypointStore.remove(it, ModelMutationOrigin.REMOTE_SYNC) }
+                    }
+                }
+                lastContent.remove(sourceId); kindById.remove(sourceId)
+                _remoteUpdates.tryEmit("$kindLabel deleted by another device")
             }
-            lastContent.remove(sourceId); kindById.remove(sourceId)
-            _remoteUpdates.tryEmit("$kindLabel deleted by another device")
         }
     }
 
@@ -685,22 +1161,30 @@ class SyncManager(
         val key = roomKey ?: return
         val keys = v3Keys ?: return
         val replay = replayState ?: return
+        val sdText = msg.optString("sd").ifEmpty { return }
         val ctB64 = msg.optString("ct").ifEmpty { return }
         if (ctB64.length > MAX_BASE64_BYTES) return
-        if (!replay.registerActor(by, pub)) return
-        if (!replay.advancePresence(by, vs.counter)) return
+        val pubRaw = SyncIdentity.urlB64Decode32(pub) ?: return
+        val sd = SyncIdentity.urlB64Decode32(sdText) ?: return
+        if (vs.actorId != by || SyncIdentity.actorId(keys.roomIdRaw, pubRaw) != by) return
+        if (activeSessions[by] != (pub to sdText)) return
+        if (replay.getPinnedPubkey(by) != pub) return
+        val presenceKey = "$by|$sdText"
+        val previous = presenceHighWater[presenceKey] ?: 0L
+        if (vs.counter <= previous || vs.counter - previous > SyncReplayState.ADVANCE_WINDOW) return
         val aad = SyncCrypto.aadPresenceV3(by, vsStr)
-        val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
+        val ct = runCatching { SyncCrypto.decodeBase64(ctB64) }.getOrNull() ?: return
+        if (ct.size < 28 || SyncCrypto.encodeBase64(ct) != ctB64) return
+        val plain = SyncCrypto.open(key, ct, aad) ?: return
         val obj = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
         val sig = obj.optString("sig").ifEmpty { return }
+        if (obj.optString("pub") != pub) return
         val payloadBytes = buildPresencePayloadBytes(obj)
         val payloadHash = SyncIdentity.sha256(payloadBytes)
-        val peerSd = SyncIdentity.urlB64Decode(replay.getSessionDomain(by) ?: return)
         val preimage = SyncIdentity.buildPreimage(
-            SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, by, peerSd,
+            SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, by, sd,
             VersionStamp.counterHex16(vs.counter), "", "loc", payloadHash)
         if (!SyncSigning.verify(pub, preimage, sig)) return
-        replay.save()
 
         val callsign = obj.optString("callsign", "")
         val affiliation = obj.optString("affiliation", "UNKNOWN")
@@ -711,6 +1195,9 @@ class SyncManager(
         val lon = obj.optDouble("lon", 0.0)
         val heading = obj.optDouble("heading", 0.0)
         val speed = obj.optDouble("speed", 0.0)
+        if (callsign.codePointCount(0, callsign.length) > 64 || !lat.isFinite() || lat !in -90.0..90.0 ||
+            !lon.isFinite() || lon !in -180.0..180.0 || !heading.isFinite() || !speed.isFinite()) return
+        presenceHighWater[presenceKey] = vs.counter
         val peer = PresencePeer(
             clientId = by,
             callsign = callsign,
@@ -775,13 +1262,15 @@ class SyncManager(
     }
 
     private fun upsertWaypoint(wp: Waypoint) {
-        if (waypointStore.waypoints.value.any { it.id == wp.id }) waypointStore.updateNoUndo(wp)
-        else waypointStore.add(wp)
+        if (waypointStore.waypoints.value.any { it.id == wp.id }) {
+            waypointStore.updateNoUndo(wp, ModelMutationOrigin.REMOTE_SYNC)
+        } else waypointStore.add(wp, ModelMutationOrigin.REMOTE_SYNC)
     }
 
     private fun upsertDrawing(f: DrawingFeature) {
-        if (drawingStore.document.value.features.any { it.id == f.id }) drawingStore.updateFeatureNoUndo(f)
-        else drawingStore.addFeature(f)
+        if (drawingStore.document.value.features.any { it.id == f.id }) {
+            drawingStore.updateFeatureNoUndo(f, ModelMutationOrigin.REMOTE_SYNC)
+        } else drawingStore.addFeature(f, ModelMutationOrigin.REMOTE_SYNC)
     }
 
     /** Re-serialise now-local object so next diff doesn't see a spurious change. */
@@ -812,7 +1301,8 @@ class SyncManager(
         val loc = locationProvider?.invoke() ?: return
         val key = roomKey ?: return
         val cfg = presenceConfig
-        if (cfg.callsign.isBlank()) return
+        val callsign = boundCallsign(cfg.callsign)
+        if (callsign.isBlank()) return
         val ts = System.currentTimeMillis()
         val lat = loc.latitude
         val lon = loc.longitude
@@ -820,9 +1310,9 @@ class SyncManager(
         val speed = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0
         val sig = SyncSigning.sign(deviceSeed, SyncSigning.presenceMessage(
             clientId, ts, lat, lon, heading, speed,
-            cfg.callsign, cfg.affiliation.name, cfg.echelon.name, cfg.function.name, cfg.isHQ))
+            callsign, cfg.affiliation.name, cfg.echelon.name, cfg.function.name, cfg.isHQ))
         val payload = JSONObject().apply {
-            put("callsign", cfg.callsign)
+            put("callsign", callsign)
             put("affiliation", cfg.affiliation.name)
             put("echelon", cfg.echelon.name)
             put("function", cfg.function.name)
@@ -837,7 +1327,7 @@ class SyncManager(
         }
         val aad = "loc|$clientId".toByteArray(Charsets.UTF_8)
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, payload.toString().toByteArray(Charsets.UTF_8), aad))
-        ws?.send(JSONObject().apply {
+        sendFrame(JSONObject().apply {
             put("t", "loc")
             put("clientId", clientId)
             put("ct", ct)
@@ -845,26 +1335,27 @@ class SyncManager(
     }
 
     private fun sendPresenceV3() {
+        if (_status.value != Status.CONNECTED) return
         val loc = locationProvider?.invoke() ?: return
         val key = roomKey ?: return
         val keys = v3Keys ?: return
         val actor = myActorId ?: return
         val sd = sessionDomain ?: return
-        val replay = replayState ?: return
         val cfg = presenceConfig
-        if (cfg.callsign.isBlank()) return
+        val callsign = boundCallsign(cfg.callsign)
+        if (callsign.isBlank()) return
         val lat = loc.latitude
         val lon = loc.longitude
         val heading = if (loc.hasBearing()) loc.bearing.toDouble() else 0.0
         val speed = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0
-        val counter = replay.nextCounter()
+        if (presenceCounter >= VersionStamp.MAX_COUNTER) return failConnection()
+        val counter = ++presenceCounter
         val vs = VersionStamp(counter, actor)
-        replay.save()
         // canonical presence payload -- keys MUST be alphabetical so the hash
         // matches iOS's JSONSerialization(.sortedKeys) byte-for-byte
         val payload = JSONObject()
         payload.put("affiliation", cfg.affiliation.name)
-        payload.put("callsign", cfg.callsign)
+        payload.put("callsign", callsign)
         payload.put("echelon", cfg.echelon.name)
         payload.put("function", cfg.function.name)
         payload.put("heading", heading)
@@ -877,12 +1368,13 @@ class SyncManager(
             SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, actor, sd,
             VersionStamp.counterHex16(vs.counter), "", "loc", payloadHash)
         val sig = SyncSigning.sign(deviceSeed, preimage)
+        payload.put("pub", myPublicKey)
         payload.put("sig", sig)
         val aad = SyncCrypto.aadPresenceV3(actor, vs.encode())
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, payload.toString().toByteArray(Charsets.UTF_8), aad))
-        ws?.send(JSONObject().apply {
+        sendFrame(JSONObject().apply {
             put("t", "loc"); put("by", actor); put("ct", ct)
-            put("pub", myPublicKey); put("vs", vs.encode())
+            put("pub", myPublicKey); put("sd", SyncIdentity.urlB64(sd)); put("vs", vs.encode())
         }.toString())
     }
 
@@ -908,6 +1400,7 @@ class SyncManager(
         val heading = obj.optDouble("heading", 0.0)
         val speed = obj.optDouble("speed", 0.0)
         val ts = obj.optLong("ts", 0L)
+        if (callsign.codePointCount(0, callsign.length) > 64) return
 
         // Per-device auth: pin the peer's key on first sight (TOFU), then require
         // every later presence to be signed by that same key. A room member
@@ -1030,24 +1523,75 @@ class SyncManager(
         isHQ = prefs.getBoolean("isHQ", false)
     )
 
-    /** The device's Ed25519 signing seed, sealed at rest. Generated once and
-     *  reused so this device keeps a stable identity across sessions (peers pin
-     *  it). If the seal can't be persisted (locked auth-bound key), a fresh seed
-     *  is used for this session only. */
+    /** Stable Ed25519 seed. Locked/corrupt storage fails closed; never rotate. */
     private fun loadOrCreateDeviceSeed(): ByteArray {
         prefs.getString(KEY_DEVICE_SEED, null)?.let { stored ->
-            runCatching {
+            val seed = try {
                 SealedEnvelope.openFile(
                     SafeStore.keyProvider.key(), Base64.decode(stored, Base64.NO_WRAP), DEVICE_SEED_LABEL)
-            }.getOrNull()?.takeIf { it.size == 32 }?.let { return it }
+            } catch (t: Throwable) {
+                throw IllegalStateException("sync signing seed unavailable", t)
+            }
+            if (seed == null || seed.size != 32) throw IllegalStateException("sync signing seed corrupt")
+            return seed
         }
         val seed = SyncSigning.generateSeed()
-        runCatching {
+        try {
             val sealed = Base64.encodeToString(
                 SealedEnvelope.sealFile(SafeStore.keyProvider.key(), seed, DEVICE_SEED_LABEL), Base64.NO_WRAP)
-            prefs.edit().putString(KEY_DEVICE_SEED, sealed).apply()
+            if (!prefs.edit().putString(KEY_DEVICE_SEED, sealed).commit()) {
+                throw IllegalStateException("could not persist sync signing seed")
+            }
+        } catch (t: Throwable) {
+            throw IllegalStateException("sync signing seed unavailable", t)
         }
         return seed
+    }
+
+    private fun resetSnapshot() {
+        snapshotSeq = null
+        snapshotSawFinalPage = false
+        snapshotItemCount = 0
+        snapshotInvalid = false
+        pendingSnapshot.clear()
+        snapshotAggregateBytes = 0L
+        snapshotWireIds.clear()
+    }
+
+    internal fun boundCallsign(value: String): String {
+        val count = value.codePointCount(0, value.length)
+        return if (count <= 64) value else value.substring(0, value.offsetByCodePoints(0, 64))
+    }
+
+    private fun failSnapshot() {
+        awaitingHelloAck = false
+        resetSnapshot()
+        _remoteUpdates.tryEmit("Sync snapshot authentication failed")
+        failConnection()
+    }
+
+    private fun failConnection() {
+        awaitingHelloAck = false
+        _status.value = Status.OFFLINE
+        ws?.cancel()
+    }
+
+    private fun persistenceFailure() {
+        awaitingHelloAck = false
+        wantConnected = false
+        _status.value = Status.OFFLINE
+        _remoteUpdates.tryEmit("Sync stopped because rollback state could not be secured")
+        ws?.close(4014, "secure state unavailable")
+    }
+
+    private fun strictNonNegativeLong(obj: JSONObject, key: String): Long? {
+        val raw = obj.opt(key) ?: return null
+        val value = when (raw) {
+            is Int -> raw.toLong()
+            is Long -> raw
+            else -> return null
+        }
+        return value.takeIf { it >= 0 }
     }
 
     /** Strict version parsing — rejects NaN, infinity, fractional, negative, and

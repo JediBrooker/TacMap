@@ -2,13 +2,23 @@ package com.tacmap.map.render
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.tacmap.BuildConfig
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.EsriKey
 import com.tacmap.calibration.MBTilesStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
+import okhttp3.Dispatcher
 import okhttp3.Request
+import okhttp3.Response
+import java.io.IOException
+import kotlin.coroutines.resume
 
 /**
  * Where the tile view gets its raster bytes. The custom renderer's answer to the
@@ -24,6 +34,44 @@ interface TileSource {
     /** Native pixel size of one source tile (256 for XYZ/MBTiles, 512 for Esri static). */
     val tileSizePx: Int
     suspend fun loadTile(tile: TileIndex): Bitmap?
+}
+
+/** Coordinate-free provider health. Never retains a URL or tile address. */
+object OnlineTileHealth {
+    private val failures = java.util.concurrent.atomic.AtomicInteger(0)
+    private val _temporarilyUnavailable = MutableStateFlow(false)
+    val temporarilyUnavailable = _temporarilyUnavailable.asStateFlow()
+
+    fun succeeded() {
+        failures.set(0)
+        _temporarilyUnavailable.value = false
+    }
+
+    fun failed() {
+        if (failures.incrementAndGet() >= 8) _temporarilyUnavailable.value = true
+    }
+}
+
+private const val MAX_ENCODED_TILE_BYTES = 4 * 1024 * 1024
+private const val MAX_TILE_DIMENSION = 2048
+private const val MAX_TILE_PIXELS = 4_194_304L
+private const val MAX_DECODED_TILE_BYTES = 16 * 1024 * 1024
+
+/** Reject decompression bombs before BitmapFactory allocates their pixel buffer. */
+private fun decodeBoundedTile(bytes: ByteArray): Bitmap? {
+    if (bytes.isEmpty() || bytes.size > MAX_ENCODED_TILE_BYTES) return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    val width = bounds.outWidth
+    val height = bounds.outHeight
+    if (width <= 0 || height <= 0 || width > MAX_TILE_DIMENSION || height > MAX_TILE_DIMENSION ||
+        width.toLong() * height.toLong() > MAX_TILE_PIXELS) return null
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+    if (bitmap.allocationByteCount > MAX_DECODED_TILE_BYTES) {
+        bitmap.recycle()
+        return null
+    }
+    return bitmap
 }
 
 /**
@@ -48,6 +96,7 @@ class OnlineRasterTileSource(private val style: BasemapStyle) : TileSource {
         if (tile.z > style.maxZoom) return null
         if (style.requiresEsriKey && !EsriKey.isAvailable) return null
         var url = style.urlTemplate
+            .replace("{s}", openTopoHost(tile))
             .replace("{z}", tile.z.toString())
             .replace("{x}", tile.x.toString())
             .replace("{y}", tile.y.toString())
@@ -55,22 +104,75 @@ class OnlineRasterTileSource(private val style: BasemapStyle) : TileSource {
         return url
     }
 
-    override suspend fun loadTile(tile: TileIndex): Bitmap? = withContext(Dispatchers.IO) {
-        val url = tileUrl(tile) ?: return@withContext null
-        try {
-            client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext null
-                val bytes = resp.body?.bytes() ?: return@withContext null
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }
-        } catch (_: Throwable) {
-            null
+    override suspend fun loadTile(tile: TileIndex): Bitmap? {
+        val url = tileUrl(tile) ?: return null
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(Request.Builder().url(url)
+                .header("User-Agent", "TacMap/${BuildConfig.VERSION_NAME} (Android; https://tacticalmaps.app)")
+                .build())
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    android.util.Log.w("TacMapTiles", "Basemap request failed (${e.javaClass.simpleName})")
+                    OnlineTileHealth.failed()
+                    if (continuation.isActive) continuation.resume(null)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    val bitmap = response.use { resp ->
+                        if (!resp.isSuccessful) {
+                            android.util.Log.w("TacMapTiles", "Basemap request failed (HTTP ${resp.code})")
+                            OnlineTileHealth.failed()
+                            return@use null
+                        }
+                        val body = resp.body ?: return@use null
+                        if (body.contentLength() > MAX_ENCODED_TILE_BYTES) return@use null
+                        val input = body.byteStream()
+                        val out = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(16 * 1024)
+                        var total = 0
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            total += n
+                            if (total > MAX_ENCODED_TILE_BYTES) return@use null
+                            out.write(buffer, 0, n)
+                        }
+                        val bytes = out.toByteArray()
+                        decodeBoundedTile(bytes)?.also { OnlineTileHealth.succeeded() }
+                    }
+                    if (continuation.isActive) continuation.resume(bitmap)
+                }
+            })
         }
     }
 
     companion object {
-        // Shared pool: tile bursts reuse connections instead of a socket per tile.
-        private val client = OkHttpClient()
+        private val dispatcher = Dispatcher().apply {
+            maxRequests = 6
+            maxRequestsPerHost = 2
+        }
+        // Shared bounded pool: tile bursts reuse connections without flooding a
+        // volunteer provider. OkHttp honours server cache headers in memory at
+        // the decoded-tile layer; no disk cache records the viewed AO.
+        private val client = OkHttpClient.Builder()
+            .dispatcher(dispatcher)
+            .retryOnConnectionFailure(true)
+            .addInterceptor { chain ->
+                var response = chain.proceed(chain.request())
+                var retry = 0
+                while (retry < 2 && (response.code == 429 || response.code == 503)) {
+                    response.close()
+                    Thread.sleep(350L shl retry)
+                    retry++
+                    response = chain.proceed(chain.request())
+                }
+                response
+            }
+            .build()
+
+        fun openTopoHost(tile: TileIndex): String =
+            listOf("a", "b", "c")[Math.floorMod(tile.x + tile.y + tile.z, 3)]
     }
 }
 
@@ -84,6 +186,6 @@ class OfflineRasterTileSource(
 
     override suspend fun loadTile(tile: TileIndex): Bitmap? = withContext(Dispatchers.IO) {
         val data = store.tileData(tile.z, tile.x, tile.y) ?: return@withContext null
-        BitmapFactory.decodeByteArray(data, 0, data.size)
+        decodeBoundedTile(data)
     }
 }

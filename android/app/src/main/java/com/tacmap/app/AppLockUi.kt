@@ -93,6 +93,28 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
     }
 }
 
+/** Full-screen platform-credential gate for an auth-bound mission DEK. */
+@Composable
+fun MissionKeyUnlockScreen(error: String?, onUnlock: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Default.Lock, contentDescription = null,
+                tint = Color(0xFF8CF28C), modifier = Modifier.size(52.dp))
+            Text("Mission data locked", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(
+                error ?: "Authenticate with your device credential to decrypt mission data.",
+                color = if (error == null) Color.LightGray else Color(0xFFEF5350),
+                fontSize = 13.sp
+            )
+            TextButton(onClick = onUnlock) { Text("Authenticate") }
+        }
+    }
+}
+
 /** Setup dialog for App Lock PIN. Changing or disabling an existing
  *  PIN requires the current one. */
 @Composable

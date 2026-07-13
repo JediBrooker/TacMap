@@ -39,8 +39,9 @@ final class SyncCryptoTests: XCTestCase {
 
     func testGeneratedJoinCodeIsStrongAndPassesTheGuard() {
         let code = SyncCrypto.generateJoinCode()
-        XCTAssertEqual(code.count, 16)
-        XCTAssertTrue(code.allSatisfy { "23456789ABCDEFGHJKMNPQRSTVWXYZ".contains($0) })
+        XCTAssertTrue(code.hasPrefix("3:"))
+        XCTAssertEqual(code.count, 18)
+        XCTAssertTrue(code.dropFirst(2).allSatisfy { "23456789ABCDEFGHJKMNPQRSTVWXYZ".contains($0) })
         XCTAssertFalse(SyncCrypto.isJoinCodeTooWeak(code))
         XCTAssertTrue(SyncCrypto.isJoinCodeTooWeak("bravo-tonight"))  // 13 chars
     }

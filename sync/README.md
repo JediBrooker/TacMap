@@ -5,22 +5,28 @@ Object** that relays **end-to-end-encrypted** overlay changes between devices in
 unit. The server is **E2E-blind**: it stores and forwards opaque ciphertext and
 never holds the keys.
 
-This is the backend increment of the full-parity sync feature. Client increments
-(iOS/Android networking + crypto) build on the wire protocol below.
+The hosted v2 protocol remains the active compatibility path. Dormant v3 relay
+support lives at `/v3/room/<roomId>` and MUST NOT be activated by generated join
+codes until both mobile clients pass the cross-platform release gate in
+[`ADR-001`](../docs/security/ADR-001-sync-protocol-v3.md).
 
 ## Architecture
 
 - **Worker** (`src/index.ts`, default export) routes `wss://…/room/<roomId>`
-  WebSocket upgrades to a Durable Object instance keyed by `roomId`.
+  (v2) and `wss://…/v3/room/<roomId>` (dormant v3) WebSocket upgrades to
+  protocol-separated Durable Objects. V2 uses the raw room ID; v3 uses the
+  internal name `v3:<roomId>` so a v2 object cannot preclaim v3 metadata.
 - **`SyncRoom`** Durable Object: one per unit room. Holds the connected sockets
   (hibernatable WebSockets) and the latest blob per object id in DO storage.
-  - **Store-and-forward**: on connect a client receives a `snapshot` of every
-    current record, so a device that was offline catches up.
+  - **Store-and-forward**: on connect a client receives a sequence-fenced,
+    byte-bounded snapshot of every current record, so a device that was offline
+    catches up without any frame exceeding the client ceiling.
   - **Last-write-wins merge**: an incoming change is kept only if it's newer than
     the stored one — `v` first, then client-id (`by`) as a deterministic
     tie-break. Accepted changes are broadcast to the other sockets.
-  - **Tombstones**: deletes are stored (`deleted: true`) so they also reach late
-    joiners.
+  - **Tombstones**: deletes are retained (`deleted: true`) for room lifetime and
+    count toward record and byte quotas, so they reach late joiners without
+    enabling unbounded storage.
 
 ## Wire protocol (JSON over WebSocket)
 
@@ -46,6 +52,39 @@ Server → client:
 - `kind` — coarse routing hint (`waypoint` | `drawing` | `layer`); everything
   meaningful is inside `ct`.
 - `ct` — base64 of the AEAD-encrypted object JSON. **Server never decrypts.**
+
+Every snapshot is framed by `snapshot-begin {seq}` and matching
+`snapshot-end {seq}`. Mutations accepted after that fence carry a larger `seq`.
+Snapshot pages are capped at 900,000 encoded UTF-8 bytes as well as a
+100-record storage read page.
+
+### Dormant v3 additions
+
+V3 uses string `VersionStamp`s, room-scoped self-certifying actor IDs, and
+room-scoped wire object IDs. Before a socket can send put/delete/presence it
+must submit a signed proof-of-possession announcement:
+
+```json
+{"t":"hello","by":"<actorId>","pub":"<32-byte base64url>",
+ "sd":"<32-byte base64url>","vs":"<positive-u64-epoch-hex>:<actorId>",
+ "sig":"<64-byte Ed25519 base64url>"}
+```
+
+The relay recomputes `actorId` from the room and public key, verifies this
+signature, and transactionally requires the signed session epoch to be newer
+than the actor's durable epoch. The acknowledgement echoes `by`, `sd`, and `vs`.
+The actor record shares the same total record/byte quota as objects and
+tombstones. Durable put/delete records carry both `pub` and `sd`,
+so a late joiner has all context needed to authenticate the encrypted inner
+signature. Presence counters are session-local and cannot advance the durable
+room high-water. The exact preimages and state-machine rules are normative in
+ADR-001 and `testdata/sync_protocol_v3.json`.
+
+After the pin and per-socket binding are complete, the relay replies on the
+announcing socket with
+`{"t":"hello-ack","by":"<actorId>","sd":"<sessionDomain>","vs":"<helloEpoch>:<actorId>"}`.
+Clients remain snapshot-gated and send no put/delete/presence until that frame
+matches their current actor, connection session domain, and signed epoch.
 
 ## End-to-end encryption (client responsibility)
 
@@ -111,7 +150,8 @@ store-and-forward (a late joiner receives current state in its snapshot).
 
 ```bash
 cd sync
-npm install
+npm ci
+npm test          # required Workers/Vitest protocol suite
 npm run check     # wrangler deploy --dry-run — validate config + bundle (no deploy)
 npm run dev       # local: ws://127.0.0.1:8787/room/<roomId>
 npm run deploy    # deploy to the configured Cloudflare account

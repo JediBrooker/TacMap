@@ -24,6 +24,13 @@ final class DrawingStore: ObservableObject {
     /// Blocks persist() so an empty doc never lands on readable-but-locked data.
     @Published private(set) var locked = false
 
+    func reloadAfterUnlock() {
+        guard locked else { return }
+        locked = false
+        loadError = nil
+        load()
+    }
+
     /// Schema version. Bump when on-disk format changes so old files
     /// migrate instead of looking like corruption.
     private static let currentSchema = 1
@@ -203,6 +210,7 @@ final class DrawingStore: ObservableObject {
     private func load() {
         switch SafeStore.read(url, label: Self.label, decode: { try Self.decodeAny($0) }) {
         case .loaded(let (payload, migrated)):
+            locked = false
             layers = payload.layers
             shapes = payload.shapes
             activeLayerID = payload.activeLayerID ?? layers.first?.id
@@ -262,7 +270,7 @@ final class DrawingStore: ObservableObject {
             if loadError?.hasPrefix("Could not save") == true { loadError = nil }
         } catch {
             // don't swallow this, user is editing but nothing is hitting disk
-            print("[DrawingStore] persist failed: \(error)")
+            print("[DrawingStore] persist failed")
             loadError = "Could not save drawings to disk: \(error.localizedDescription)"
         }
     }

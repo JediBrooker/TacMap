@@ -1,12 +1,8 @@
 package com.tacmap.map
 
 import com.tacmap.settings.OpsecSettings
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.math.cos
 
 /**
@@ -126,21 +122,13 @@ class ElevationService(
         return null
     }
 
-    private suspend fun fetch(lat: Double, lng: Double): Double? = withContext(Dispatchers.IO) {
-        runCatching {
-            val url = URL("https://api.open-meteo.com/v1/elevation?latitude=$lat&longitude=$lng")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 6_000
-                readTimeout = 6_000
-            }
-            val body = try {
-                if (conn.responseCode != 200) return@runCatching null
-                conn.inputStream.bufferedReader().use { it.readText() }
-            } finally {
-                conn.disconnect()
-            }
+    private suspend fun fetch(lat: Double, lng: Double): Double? = runCatching {
+            val body = boundedHttpsGet(
+                "https://api.open-meteo.com/v1/elevation?latitude=$lat&longitude=$lng",
+                MAX_RESPONSE_BYTES
+            ) ?: return@runCatching null
             json.decodeFromString<ElevationResponse>(body).elevation.firstOrNull()
         }.getOrNull()
-    }
+
+    private companion object { const val MAX_RESPONSE_BYTES = 256 * 1024 }
 }

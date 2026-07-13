@@ -7,6 +7,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import java.io.File
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** One recorded fix on a GPX track. */
 @Serializable
@@ -27,9 +31,20 @@ data class TrackPoint(
  * that died mid-recording. Background recording kept alive by
  * TrackRecordingService.
  */
-class TrackRecorder(context: Context) {
+class TrackRecorder private constructor(
+    private val logFile: File,
+    private val stopRecordingService: () -> Unit,
+) {
 
-    private val logFile = File(context.applicationContext.filesDir, "tracks/recording.ndjson")
+    constructor(context: Context) : this(
+        logFile = File(context.applicationContext.filesDir, "tracks/recording.ndjson"),
+        stopRecordingService = { TrackRecordingService.stop(context.applicationContext) },
+    )
+
+    /** File-backed constructor used by host-side regression tests. It exercises
+     *  the same recovery/start/stop/discard state machine without an Android
+     *  service or a device filesystem. */
+    internal constructor(logFile: File) : this(logFile, {})
 
     private val _isRecording = MutableStateFlow(false)
     val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
@@ -53,7 +68,15 @@ class TrackRecorder(context: Context) {
     /** Min spacing between fixes (m). Drops GPS jitter. */
     private val minSpacingMetres = 2.0
 
-    init {
+    init { recoverAfterUnlock() }
+
+    /** Retry recovery after the platform credential has unwrapped the DEK. */
+    fun reloadAfterUnlock() {
+        if (_isRecording.value) return
+        recoverAfterUnlock()
+    }
+
+    private fun recoverAfterUnlock() {
         // A locked at-rest key means we can't read the log yet. Leave it alone,
         // don't report an empty track as if the recording was lost.
         runCatching { TrackLog.read(logFile) }
@@ -71,11 +94,26 @@ class TrackRecorder(context: Context) {
             .onFailure { _persistError.value = "Could not read the saved track: ${it.message}" }
     }
 
-    fun start() {
-        _points.value = emptyList()
-        _recovered.value = false
-        TrackLog.truncate(logFile)
-        _isRecording.value = true
+    fun start(): Boolean {
+        _persistError.value = null
+        if (_recovered.value || _points.value.isNotEmpty()) {
+            _persistError.value = "Export or discard the saved track before starting a new recording."
+            return false
+        }
+        return runCatching { TrackLog.truncate(logFile) }
+            .fold(
+                onSuccess = {
+                    _points.value = emptyList()
+                    _recovered.value = false
+                    _isRecording.value = true
+                    true
+                },
+                onFailure = {
+                    _isRecording.value = false
+                    _persistError.value = "Could not start recording safely: ${it.message}"
+                    false
+                }
+            )
     }
 
     fun stop() {
@@ -84,35 +122,83 @@ class TrackRecorder(context: Context) {
         // until user exports or discards it.
     }
 
-    /** Clear the current (recorded or recovered) track and remove its file. */
-    fun discard() {
-        _points.value = emptyList()
-        _recovered.value = false
-        _isRecording.value = false
-        TrackLog.delete(logFile)
+    /** Clear a stopped (recorded or recovered) track and remove its file.
+     *
+     * Active recordings must first go through the explicit stop/confirmation
+     * flow in the UI. Refusing here as well prevents a future caller from
+     * silently deleting a live patrol track. State is only cleared after the
+     * encrypted log has actually been removed. */
+    fun discard(): Boolean {
+        if (_isRecording.value) {
+            _persistError.value = "Stop recording before discarding the saved track."
+            return false
+        }
+        return runCatching { TrackLog.delete(logFile) }
+            .fold(
+                onSuccess = {
+                    _points.value = emptyList()
+                    _recovered.value = false
+                    _persistError.value = null
+                    true
+                },
+                onFailure = {
+                    _persistError.value = "Could not discard the saved track: ${it.message}"
+                    false
+                }
+            )
     }
 
     fun onLocation(loc: Location) {
+        recordPoint(
+            TrackPoint(
+                latitude = loc.latitude,
+                longitude = loc.longitude,
+                elevationMetres = if (loc.hasAltitude()) loc.altitude else null,
+                timeEpochMs = if (loc.time > 0) loc.time else System.currentTimeMillis()
+            )
+        )
+    }
+
+    /** Shared persistence path for device fixes and host-side state-machine
+     * tests. The point is not published until its encrypted append is durable. */
+    internal fun recordPoint(point: TrackPoint) {
         if (!_isRecording.value) return
+        if (!point.latitude.isFinite() || !point.longitude.isFinite() ||
+            point.latitude !in -90.0..90.0 || point.longitude !in -180.0..180.0
+        ) return
         val last = _points.value.lastOrNull()
         if (last != null &&
-            distanceMetres(last.latitude, last.longitude, loc.latitude, loc.longitude) < minSpacingMetres
+            distanceMetres(last.latitude, last.longitude, point.latitude, point.longitude) < minSpacingMetres
         ) return
-        val point = TrackPoint(
-            latitude = loc.latitude,
-            longitude = loc.longitude,
-            elevationMetres = if (loc.hasAltitude()) loc.altitude else null,
-            timeEpochMs = if (loc.time > 0) loc.time else System.currentTimeMillis()
-        )
-        _points.value = _points.value + point
-        // Persist before returning so the fix is durable the moment its shown.
+        // Persist before publishing the fix. If durability fails, recording
+        // stops instead of presenting an in-memory-only track as live.
         runCatching { TrackLog.append(logFile, point) }
-            .onFailure { _persistError.value = "Track fix not saved to disk: ${it.message}" }
+            .onSuccess { _points.value = _points.value + point }
+            .onFailure { failRecording("Track fix not saved; recording stopped: ${it.message}") }
+    }
+
+    fun failRecording(message: String) {
+        _isRecording.value = false
+        _persistError.value = message
+        stopRecordingService()
+    }
+
+    /** Until recording has its own scoped wrapped key, crossing a DEK lock
+     * boundary stops safely instead of letting the service reacquire/retain the
+     * all-mission key in the background. The durable log is left untouched. */
+    fun onMissionKeyLock() {
+        if (_isRecording.value) {
+            failRecording("Recording stopped when mission data was locked; the saved track is intact.")
+        }
     }
 
     private fun distanceMetres(aLat: Double, aLng: Double, bLat: Double, bLng: Double): Double {
-        val results = FloatArray(1)
-        Location.distanceBetween(aLat, aLng, bLat, bLng, results)
-        return results[0].toDouble()
+        val lat1 = Math.toRadians(aLat)
+        val lat2 = Math.toRadians(bLat)
+        val dLat = lat2 - lat1
+        val dLng = Math.toRadians(bLng - aLng)
+        val h = sin(dLat / 2) * sin(dLat / 2) +
+            cos(lat1) * cos(lat2) * sin(dLng / 2) * sin(dLng / 2)
+        return 2 * 6_371_000.0 * asin(sqrt(h.coerceIn(0.0, 1.0)))
     }
 }

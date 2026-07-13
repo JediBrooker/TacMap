@@ -313,12 +313,29 @@ final class ScreenshotTests: XCTestCase {
     // its tiles so the terrain step waits ages for them to stream in.
     func testCaptureBasemaps() {
         sleep(2)
-        // No Apple/MapKit basemap any more - the map is a custom raster renderer.
-        // Three visually distinct offline-capable basemaps for the fan.
+        // Custom raster renderer (no MapKit). Centre on the device location once
+        // and zoom out a couple steps so all three basemaps frame the SAME wide
+        // regional view. Fewer tiles at that zoom means the frame fills reliably,
+        // and the relief reads well on satellite, topo and terrain alike. The old
+        // version left the camera at a default world view and panned during the
+        // terrain step, which is what left big black gaps in the snaps.
+        _ = tapContaining("My Location")
+        sleep(3)
+        // Zoom OUT to a regional view. OTM rate-limits hard, so the fewer tiles
+        // it has to serve, the more reliably terrain fills - a wide frame needs a
+        // handful of tiles instead of a screenful. The Blue Mountains relief also
+        // reads better wide than at street level.
+        app.pinch(withScale: 0.38, velocity: -2.0); sleep(2)
+        app.pinch(withScale: 0.42, velocity: -2.0); sleep(2)
+        app.pinch(withScale: 0.5,  velocity: -1.5); sleep(2)
+
+        // Three visually distinct basemaps for the fan, all served by Esri's CDN
+        // so they fill reliably. (OpenTopoMap was dropped - its own tile servers
+        // rate-limit the simulator to a black map; Street/OSM via Esri renders.)
         let maps: [(String, String, UInt32)] = [
-            ("Satellite (Esri)", "bm-satellite", 10),
-            ("Topographic (Esri)", "bm-esri", 12),
-            ("Topographic (OpenTopoMap)", "bm-terrain", 95)
+            ("Satellite (Esri)", "bm-satellite", 16),
+            ("Topographic (Esri)", "bm-esri", 30),
+            ("Street (OpenStreetMap)", "bm-street", 30)
         ]
         for (label, name, wait) in maps {
             openMenu()
@@ -331,18 +348,56 @@ final class ScreenshotTests: XCTestCase {
             if row.exists { row.tap() } else { _ = tapContaining(label) }
             sleep(1)
             dismissSheet()
-            if name == "bm-terrain" {
-                // OpenTopoMap rate-limits; nudge the map repeatedly so MapKit
-                // keeps re-requesting tiles until they fill in (~3.5 min).
-                for _ in 0..<12 {
-                    panMap(dx: 0.06, dy: 0.05); sleep(8)
-                    panMap(dx: -0.06, dy: -0.05); sleep(8)
-                }
-            } else {
-                sleep(wait)
-            }
+            // All three come from Esri's CDN now, so they fill fast - just hold
+            // dead still while the tiles stream in (no panning at snap time).
+            sleep(wait)
             snap(name)
         }
+    }
+
+    // Place a Search & Rescue marker at the crosshair. Menu > Symbology > Add
+    // at Crosshair > Markers segment > Set: Search & Rescue > [Symbol] > Save.
+    // The Type segment defaults to Military and the Set to Airsoft, so both get
+    // switched every call. `symbol` is best-effort (Set snaps to Point Last Seen).
+    // Only taps a matching button if it actually exists AND is hittable, so a
+    // covered/off-screen control degrades gracefully instead of failing the run.
+    @discardableResult
+    private func softTap(containing text: String, timeout: TimeInterval = 3) -> Bool {
+        let b = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
+        guard b.waitForExistence(timeout: timeout), b.isHittable else { return false }
+        b.tap(); return true
+    }
+
+    private func addSARMarker(symbol: String? = nil) {
+        openMenu()
+        guard tap("Symbology") else { return }
+        guard tap("Add at Crosshair") else { return }
+        sleep(1)
+        _ = tap("Markers")                       // Type segment
+        sleep(1)
+        // The Set row shows its current value "Airsoft / Milsim"; open it + pick SAR.
+        if softTap(containing: "Airsoft", timeout: 4) {
+            sleep(1); _ = softTap(containing: "Search & Rescue"); sleep(1)
+        }
+        // Optional specific symbol (Set defaults to Point Last Seen). The Symbol
+        // row is a navigationLink picker - tap it (its label BEGINS WITH the
+        // title "Symbol", which avoids matching the name field that also shows
+        // the symbol name), pick from the pushed list, else back out. All guarded
+        // so a fiddly picker degrades to the default instead of failing/sticking.
+        if let symbol = symbol {
+            let symRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Symbol")).firstMatch
+            if symRow.waitForExistence(timeout: 3), symRow.isHittable {
+                symRow.tap(); sleep(1)
+                if !softTap(containing: symbol, timeout: 4) {
+                    // Not found/hittable in the list - back out so we don't stick.
+                    let back = app.navigationBars.buttons.firstMatch
+                    if back.exists, back.isHittable { back.tap() }
+                }
+                sleep(1)
+            }
+        }
+        _ = tap("Save"); sleep(1)
+        _ = tap("Done"); sleep(1)
     }
 
     // Capture the GeoPDF-import hero: import a US Topo GeoPDF (pre-copied
@@ -393,10 +448,136 @@ final class ScreenshotTests: XCTestCase {
         dismissSheet()
         // Centre on device location (= PDF centre). With an offline map loaded the
         // single button splits into "My Location" / "Map", so match either.
-        // No sync join here - the slide's message is the georeferenced imported
-        // sheet aligned to the MGRS grid, matching the Android PDF slide.
         _ = tapContaining("My Location")
-        sleep(5)
+        sleep(4)
+        // Zoom out so more of the imported sheet is in frame (was street-level
+        // before). Pinch keeps the PDF centred; don't recentre after or it snaps
+        // the zoom back.
+        app.pinch(withScale: 0.5, velocity: -1.5); sleep(2)
+        app.pinch(withScale: 0.6, velocity: -1.2); sleep(2)
+        // Drop a small search-and-rescue picture on the imported sheet: an ICP,
+        // point last seen, a helispot and a casualty - panning between each so
+        // they don't stack. Shows marking up a brought-your-own map for the SAR
+        // crowd, aligned to the live MGRS grid.
+        addSARMarker(symbol: "Last Known Position")
+        panMap(dx: 0.15, dy: -0.11); addSARMarker()                              // Point Last Seen (default)
+        panMap(dx: -0.22, dy: 0.05); addSARMarker(symbol: "Initial Planning Point")
+        panMap(dx: 0.12, dy: 0.16);  addSARMarker(symbol: "Search Segment")
+        panMap(dx: -0.03, dy: -0.05); sleep(2)
         snap("pdf-hero")
+    }
+
+    // Capture the measure tool for the range/area/bearing slide. Menu > Measure,
+    // then single-tap the map to drop vertices - the toolbar shows running
+    // distance, last-leg bearing in NATO mils, and enclosed area (3+ points).
+    func testCaptureMeasure() {
+        sleep(2)
+        _ = tapContaining("My Location")
+        sleep(3)
+        app.pinch(withScale: 0.55, velocity: -1.2); sleep(2)   // wide enough for real legs
+        openMenu()
+        _ = tap("Measure")
+        sleep(1)
+        // Single taps add a vertex at the tapped point. Four points give a
+        // distance + last-leg bearing + enclosed area. Kept clear of the top
+        // HUD and the bottom measure toolbar.
+        let pts: [(CGFloat, CGFloat)] = [(0.34, 0.36), (0.58, 0.43), (0.67, 0.60), (0.42, 0.66)]
+        for (dx, dy) in pts {
+            app.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: dy)).tap()
+            sleep(1)
+        }
+        sleep(2)
+        snap("measure")
+    }
+
+    // ============================================================
+    // App preview drivers - screen-recorded via `simctl io recordVideo`
+    // while these run, then trimmed/encoded to App Store Connect specs.
+    // Paced deliberately (sleeps) so the ~20-25s of footage is watchable.
+    // ============================================================
+
+    // Preview 1 - build the tactical picture, then share it live over Unit Sync.
+    func testPreview1TacticalSync() {
+        sleep(1)
+        // Sync-first: join the room and a full company situation streams in over
+        // the E2E-encrypted channel. That IS the story - no slow manual symbol
+        // placement, just join and the shared picture appears, then linger on it.
+        openMenu()
+        _ = tapContaining("Unit Sync")
+        sleep(2)
+        let f = app.textFields.firstMatch
+        if f.waitForExistence(timeout: 6) {
+            f.tap(); sleep(1)
+            f.typeText("WOLFPACKSHOOT26")
+            sleep(1)
+            _ = tapContaining("Join")
+            sleep(13)                                                   // connect + snapshot + render
+        }
+        dismissSheet()
+        sleep(2)
+        // Labels on so the shared units/tasks read, then explore the picture.
+        openMenu()
+        _ = tap("Layers and Labels")
+        sleep(2)
+        for l in ["Unit Labels", "Task Labels"] {
+            let s = app.switches[l]
+            if s.waitForExistence(timeout: 2), (s.value as? String) == "0" { s.tap(); sleep(1) }
+        }
+        dismissSheet()
+        sleep(3)
+        panMap(dx: 0.08, dy: 0.05); sleep(2)
+        panMap(dx: -0.10, dy: -0.03); sleep(3)
+    }
+
+    // Preview 2 - bring your own map: import a GeoPDF and watch it georeference.
+    // Name contains "GeoPdf" so setUp uses the offline basemap (the imported sheet).
+    func testPreview2GeoPdf() {
+        sleep(2)
+        openMenu()
+        _ = tapContaining("Import / Export")
+        sleep(2)
+        _ = tapContaining("PDF Map")
+        sleep(3)
+        func find(_ text: String) -> XCUIElement {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
+        }
+        if !find("USGS_SF_North").waitForExistence(timeout: 4) {
+            let browse = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Browse")).firstMatch
+            if browse.waitForExistence(timeout: 4), browse.isHittable { browse.tap(); sleep(1) }
+            let loc = find("On My i"); if loc.waitForExistence(timeout: 5) { loc.tap(); sleep(1) }
+            let folder = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label MATCHES[c] %@", "TacMap")).firstMatch
+            if folder.waitForExistence(timeout: 5), folder.isHittable { folder.tap(); sleep(1) }
+        }
+        let file = find("USGS_SF_North")
+        if file.waitForExistence(timeout: 8) { file.tap() }
+        sleep(9)                                                        // import + georeference + fly to sheet
+        dismissSheet()
+        _ = tapContaining("My Location")
+        sleep(3)
+        // Slowly explore the georeferenced sheet, aligned to the MGRS grid.
+        app.pinch(withScale: 0.55, velocity: -1.2); sleep(2)
+        panMap(dx: 0.10, dy: 0.07); sleep(2)
+        panMap(dx: -0.16, dy: -0.05); sleep(2)
+        panMap(dx: 0.06, dy: -0.02); sleep(3)
+    }
+
+    // Preview 3 - field tools: measure a leg, then drop Search & Rescue markers.
+    func testPreview3Navigation() {
+        sleep(1)
+        _ = tapContaining("My Location"); sleep(1)
+        app.pinch(withScale: 0.6, velocity: -1.2); sleep(1)
+        // Measure - the fast, visual beat: tap a path and the readout shows live
+        // distance, last-leg bearing in NATO mils, and enclosed area.
+        openMenu()
+        _ = tap("Measure"); sleep(1)
+        let pts: [(CGFloat, CGFloat)] = [(0.35, 0.36), (0.58, 0.44), (0.63, 0.62), (0.40, 0.66)]
+        for (dx, dy) in pts { app.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: dy)).tap(); sleep(1) }
+        sleep(4)                                                       // hold on the readout
+        _ = tapContaining("Done"); sleep(2)
+        // Then a Search & Rescue marker to close the "field tools" story.
+        addSARMarker(symbol: "Last Known Position")
+        sleep(3)
     }
 }

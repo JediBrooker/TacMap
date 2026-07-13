@@ -69,11 +69,22 @@ private struct RootGate: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 now = Date()
-                Task { await store.refreshEntitlement() }
             }
-            if phase == .background && AppLock.isEnabled {
-                locked = true
+            if phase != .active && DataKey.isAuthBound {
+                // TrackRecorder owns a deliberately scoped copy only while an
+                // explicitly started recording is active. Mission stores must
+                // re-authenticate after every background/app-switcher trip.
+                DataKey.lockKey()
             }
+            if phase == .background {
+                if AppLock.isEnabled { locked = true }
+            }
+        }
+        .onAppear {
+            if locked && DataKey.isAuthBound { DataKey.lockKey() }
+        }
+        .onChange(of: locked) { isLocked in
+            if isLocked && DataKey.isAuthBound { DataKey.lockKey() }
         }
     }
 }

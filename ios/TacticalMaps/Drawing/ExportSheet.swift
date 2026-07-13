@@ -45,7 +45,6 @@ struct ExportSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                        .textSelection(.enabled)
                         .padding(.horizontal)
                 }
                 .padding(.top)
@@ -55,6 +54,7 @@ struct ExportSheet: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
             .task { await generate() }
+            .onDisappear { ExportFileSecurity.remove(generatedURL) }
         }
     }
 
@@ -114,12 +114,10 @@ struct ExportSheet: View {
                 drawings:  drawingStore.shapes,
                 layers:    drawingStore.layers
             )
-            let str = try String(contentsOf: url, encoding: .utf8)
+            let bytes = try Data(contentsOf: url, options: [.mappedIfSafe])
+            let str = String(decoding: bytes.prefix(4_000), as: UTF8.self)
             generatedURL = url
-            // just show a snippet, full file can be hundreds of KB
-            preview = str.count > 4000
-                ? String(str.prefix(4000)) + "\n… (truncated, full file in Share)"
-                : str
+            preview = bytes.count > 4_000 ? str + "\n… (truncated, full file in Share)" : str
         } catch {
             self.error = "Export failed: \(error.localizedDescription)"
         }

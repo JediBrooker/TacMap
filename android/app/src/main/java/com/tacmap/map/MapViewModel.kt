@@ -206,14 +206,23 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     /** Start GPX recording + foreground service so track keeps logging
      *  while app is backgrounded or screen locked. */
     fun startTrackRecording() {
-        trackRecorder.start()
-        TrackRecordingService.start(getApplication<android.app.Application>())
+        if (!trackRecorder.start()) return
+        runCatching { TrackRecordingService.start(getApplication<android.app.Application>()) }
+            .onFailure { trackRecorder.failRecording("Could not start background recording: ${it.message}") }
     }
 
     /** Stop recording, tear down the foreground service. */
     fun stopTrackRecording() {
         trackRecorder.stop()
         TrackRecordingService.stop(getApplication<android.app.Application>())
+    }
+
+    /** Permanently remove a saved track after the UI has obtained destructive
+     *  confirmation. Stopping the service first makes this safe even when the
+     *  confirmation was opened while recording was active. */
+    fun discardTrackRecording(): Boolean {
+        stopTrackRecording()
+        return trackRecorder.discard()
     }
 
     private fun onUserLocation(loc: Location) {

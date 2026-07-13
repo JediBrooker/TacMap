@@ -11,10 +11,12 @@ final class SafeStoreTests: XCTestCase {
         // Real key lives in the Keychain, which needs entitlements the test host
         // doesn't always have. Swap in a fixed one; the envelope code is the same.
         SafeStore.keyProvider = { [testKey] in testKey }
+        SealedMigrationPolicy.resetForTests(key: testKey)
     }
 
     override func tearDown() {
         SafeStore.keyProvider = { try DataKey.key() }
+        SealedMigrationPolicy.resetForTests(key: testKey)
         super.tearDown()
     }
 
@@ -98,6 +100,22 @@ final class SafeStoreTests: XCTestCase {
         let again = SafeStore.read(url, label: label) { String(decoding: $0, as: UTF8.self) }
         guard case .loaded(let s2) = again else { return XCTFail("expected loaded") }
         XCTAssertEqual(s2, #"{"legacy":true}"#)
+    }
+
+    func testMigratedPathNeverAcceptsPlaintextAgain() throws {
+        let url = tempDir().appendingPathComponent("d.json")
+        try Data(#"{"legacy":true}"#.utf8).write(to: url)
+        guard case .loaded = SafeStore.read(url, label: label, decode: { $0 }) else {
+            return XCTFail("legacy migration should succeed once")
+        }
+
+        // Simulate a downgrade/tamper after migration. The durable marker must
+        // prevent the old plaintext compatibility path from reopening.
+        try Data(#"{"attacker":"plaintext"}"#.utf8).write(to: url, options: .atomic)
+        let result = SafeStore.read(url, label: label, decode: { $0 })
+        guard case .corrupt = result else {
+            return XCTFail("sealed-only path must reject later plaintext")
+        }
     }
 
     func testLockedKeyLeavesTheFileAloneAndDoesNotQuarantine() throws {

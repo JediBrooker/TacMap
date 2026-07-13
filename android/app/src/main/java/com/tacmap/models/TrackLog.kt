@@ -5,6 +5,8 @@ import com.tacmap.util.SealedEnvelope
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Append-only log of track points. Pure file I/O with no Android deps so its
@@ -36,6 +38,7 @@ object TrackLog {
 
     /** Append one point and force it to stable storage before returning. */
     fun append(file: File, point: TrackPoint) {
+        SafeStore.markSealedOnlyAuthenticated(LABEL)
         val line = SealedEnvelope.sealLine(
             SafeStore.keyProvider.key(),
             json.encodeToString(TrackPoint.serializer(), point).toByteArray(Charsets.UTF_8),
@@ -47,6 +50,7 @@ object TrackLog {
             fos.flush()
             fos.fd.sync()
         }
+        markSealedOnly(file)
     }
 
     /**
@@ -59,7 +63,12 @@ object TrackLog {
         if (!file.exists()) return Recovered(emptyList(), false)
         val key = SafeStore.keyProvider.key()
         var legacy = false
-        val points = file.readLines().mapNotNull { line ->
+        val lines = file.readLines()
+        val sealedOnly = SafeStore.isSealedOnlyAuthenticated(LABEL)
+        if (sealedOnly && lines.any { it.isNotBlank() && !SealedEnvelope.isSealedLine(it) }) {
+            throw java.io.IOException("plaintext track data rejected after sealed-only migration")
+        }
+        val points = lines.mapNotNull { line ->
             if (line.isBlank()) return@mapNotNull null
             if (SealedEnvelope.isSealedLine(line)) {
                 val plain = SealedEnvelope.openLine(key, line, LABEL) ?: return@mapNotNull null
@@ -80,6 +89,7 @@ object TrackLog {
      */
     fun reseal(file: File, points: List<TrackPoint>) {
         val key = SafeStore.keyProvider.key()
+        SafeStore.markSealedOnlyAuthenticated(LABEL)
         file.parentFile?.mkdirs()
         val tmp = File(file.parentFile, file.name + ".tmp")
         FileOutputStream(tmp).use { fos ->
@@ -94,25 +104,63 @@ object TrackLog {
             fos.flush()
             fos.fd.sync()
         }
-        if (!tmp.renameTo(file)) {
-            if (!file.delete() || !tmp.renameTo(file)) {
-                tmp.delete()
-                throw java.io.IOException("Atomic rename failed for ${file.absolutePath}")
-            }
+        val moved = runCatching {
+            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        }.isSuccess
+        if (!moved) {
+            tmp.delete()
+            throw java.io.IOException("Atomic track reseal failed for ${file.absolutePath}")
         }
+        markSealedOnly(file)
     }
 
     /** Nuke the log and start fresh. Atomic enough that a crash can't
      *  merge old track with a new one. */
     fun truncate(file: File) {
+        SafeStore.markSealedOnlyAuthenticated(LABEL)
         file.parentFile?.mkdirs()
-        FileOutputStream(file, /* append = */ false).use { fos ->
+        val tmp = File(file.parentFile, file.name + ".empty.tmp")
+        FileOutputStream(tmp, /* append = */ false).use { fos ->
             fos.flush()
             fos.fd.sync()
         }
+        val moved = runCatching {
+            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        }.isSuccess
+        if (!moved) {
+            // Do not delete the old log as a rename fallback: that would turn
+            // a recoverable filesystem failure into irreversible track loss.
+            tmp.delete()
+            throw java.io.IOException("Atomic track reset failed for ${file.absolutePath}")
+        }
+        markSealedOnly(file)
     }
 
     fun delete(file: File) {
-        runCatching { file.delete() }
+        if (file.exists() && !file.delete()) {
+            throw java.io.IOException("Could not remove encrypted track log")
+        }
+        // Intentionally retain the marker. Once this install has migrated to
+        // encrypted track logs, a later plaintext file at the same path is
+        // never accepted as a legacy downgrade.
+    }
+
+    private fun marker(file: File) = File(file.parentFile, ".${file.name}.sealed-only-v1")
+
+    private fun markSealedOnly(file: File) {
+        val marker = marker(file)
+        if (marker.exists()) return
+        marker.parentFile?.mkdirs()
+        val tmp = File(marker.parentFile, marker.name + ".tmp")
+        FileOutputStream(tmp).use { fos ->
+            fos.write(byteArrayOf(1)); fos.flush(); fos.fd.sync()
+        }
+        if (!tmp.renameTo(marker)) {
+            if (!marker.exists()) {
+                tmp.delete()
+                throw java.io.IOException("Could not persist track migration marker")
+            }
+            tmp.delete()
+        }
     }
 }
