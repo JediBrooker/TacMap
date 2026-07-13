@@ -1,4 +1,4 @@
-// Renders THREAT_MODEL.md into site/public/threat-model.html.
+// Renders docs/THREAT_MODEL.md into site/public/threat-model.html.
 // Deploy is a plain static asset push, so we generate the html here and commit
 // it rather than doing anything clever at request time.
 //
@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { marked } from "marked";
 
-const SRC = "THREAT_MODEL.md";
+const SRC = "docs/THREAT_MODEL.md";
 const OUT = "site/public/threat-model.html";
 
 // keep these in sync with the :root block in site/public/index.html
@@ -141,7 +141,7 @@ ${body}
 <footer>
   <div class="foot-in">
     <span>TACMAP · THREAT MODEL</span>
-    <span><a href="https://github.com/JediBrooker/TacMap">Source on GitHub</a></span>
+    <span><a href="https://github.com/JediBrooker/TacMap/blob/main/docs/THREAT_MODEL.md">Source on GitHub</a></span>
   </div>
 </footer>
 </body>

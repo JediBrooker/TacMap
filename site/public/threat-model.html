@@ -206,7 +206,7 @@ learns, and its default state. If a row is off by default, TacMap makes no such
 request until you opt in.</p>
 <div class="tablewrap"><table><thead><tr><th>Endpoint</th><th>Purpose</th><th>Triggered by</th><th>What the provider learns</th><th>Default</th><th>Mitigation</th></tr></thead><tbody><tr><td><code>ibasemaps-api.arcgis.com</code> (Esri World Imagery)</td><td>Satellite basemap tiles (the default style)</td><td>Viewing the map with online basemaps enabled</td><td>Your IP + the tile coordinates/zoom you view = your area of interest, over time</td><td><strong>Off</strong> (online basemaps gate)</td><td>Leave the gate off; use offline packs, see §6</td></tr>
 <tr><td><code>static-map-tiles-api.arcgis.com</code> (Esri)</td><td>Topographic + OSM-street basemap tiles (licensed)</td><td>Selecting those styles with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> (online basemaps gate)</td><td>Leave the gate off; use offline packs</td></tr>
-<tr><td><code>a.tile.opentopomap.org</code></td><td>OpenTopoMap community topo tiles (the one keyless style)</td><td>Selecting the OSM-Topo style with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> (online basemaps gate)</td><td>Leave the gate off; use offline packs</td></tr>
+<tr><td><code>a.tile.opentopomap.org</code>, <code>b.tile.opentopomap.org</code>, <code>c.tile.opentopomap.org</code></td><td>OpenTopoMap community topo tiles (the one keyless style)</td><td>Selecting the OSM-Topo style with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> (online basemaps gate)</td><td>Leave the gate off; use offline packs</td></tr>
 <tr><td><code>api.open-meteo.com/v1/forecast</code></td><td>Weather lookup</td><td>Opening the weather dialog</td><td>Your IP + the exact coordinates queried</td><td><strong>Off</strong> (online lookups gate)</td><td>Leave online lookups off</td></tr>
 <tr><td><code>api.open-meteo.com/v1/elevation</code></td><td>Elevation + terrain heatmap</td><td>Elevation/terrain features</td><td>Your IP + the exact coordinates queried</td><td><strong>Off</strong> (online lookups gate)</td><td>Leave online lookups off</td></tr>
 <tr><td>Place-name search — iOS <code>MKLocalSearch</code> (Apple), Android <code>Geocoder</code> (Google/OEM on GMS devices)</td><td>Turning a typed place name into a coordinate</td><td>Typing 2+ characters in Search</td><td>Your IP + the search string, which can itself reveal your AO (searching a FOB/village name)</td><td><strong>Off</strong> (online lookups gate)</td><td>Leave online lookups off; navigate by MGRS/grid instead</td></tr>
@@ -326,18 +326,20 @@ not remove it. A LAN/mesh transport removes the internet vector entirely
 <li><p><strong>A coerced relay can suppress or roll back, not just observe.</strong> AEAD stops the
 relay forging a blob, replaying it under a different id, or moving it between
 rooms (§4), and <strong>every mutation is now signed</strong> on top: presence carries a
-per-device signature over a monotonic timestamp, and object writes/deletes carry
+per-device signature over a session-bound monotonic counter, and object writes/deletes carry
 a per-device signature bound to the object id + version (a delete is a <em>sealed,
 signed proof</em>, so a relay with no room key can&#39;t forge one at all). So a relay
-can&#39;t roll back a peer&#39;s live position, forge a deletion, or replay an older
-object version to a client that already tracks that object. What can&#39;t be
-prevented is <em>omission and join-time rollback</em>: the relay can silently drop an
-update (you never see the new enemy contact), or serve a freshly joining /
-reinstalled client an older-but-genuinely-signed object snapshot, because that
-client holds no prior version to detect the rollback against. Treat the shared
-picture as advisory and confirm critical changes out-of-band. A signed monotonic
-room sequence, so late joiners can detect a truncated/rolled-back snapshot, is
-the remaining hardening.</p>
+can&#39;t forge a deletion or replay an older object version to a client that
+already tracks that object. A persisted accepted-hello epoch only rejects
+session replay at or below that client&#39;s high-water. A malicious relay can
+still present an obsolete but genuinely signed higher epoch that the client
+has never seen, then replay presence from that session; a fresh/reinstalled
+client has no high-water at all. Omission and join-time rollback also remain:
+the relay can silently drop an update (you never see the new enemy contact) or
+serve an older genuinely signed snapshot. Treat the shared picture as advisory
+and confirm critical changes out-of-band. Detecting these cases requires an
+external transparency log or out-of-band trust anchor; a relay-controlled
+monotonic sequence alone is not sufficient.</p>
 </li>
 <li><p><strong>Area-of-interest leakage via online basemaps/lookups.</strong> See §6. If you turn
 the online-basemaps or online-lookups gate on, the tile/query coordinates go to
@@ -499,7 +501,7 @@ code.</em></p>
 <footer>
   <div class="foot-in">
     <span>TACMAP · THREAT MODEL</span>
-    <span><a href="https://github.com/JediBrooker/TacMap">Source on GitHub</a></span>
+    <span><a href="https://github.com/JediBrooker/TacMap/blob/main/docs/THREAT_MODEL.md">Source on GitHub</a></span>
   </div>
 </footer>
 </body>
