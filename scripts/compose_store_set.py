@@ -31,9 +31,9 @@ SPEC = [
  ("03-symbols",       "single","symbols.png",       "03 · SYMBOLOGY","Mark the ground","Place NATO APP-6 symbols, then trace routes and areas point by point.","green"),
  ("04-recording",     "single","recording.png",     "04 · GPX TRACKS","Record your route","A live REC breadcrumb with point count — export as standard GPX.","amber"),
  ("05-weather",       "single","weather.png",       "05 · WEATHER + UAV","Go, caution, no-go","Map-centre wind and gusts drive the drone flight-safety call.","amber"),
- ("06-basemaps",      "fan",   None,                 "06 · BASEMAPS & TERRAIN","Satellite or terrain","Esri satellite imagery, Esri topographic, or OpenTopoMap terrain — switch basemap in a tap.","green"),
+ ("06-basemaps",      "fan",   None,                 "06 · BASEMAPS & TERRAIN","Satellite or terrain","Esri satellite imagery, Esri topographic terrain, or an OpenStreetMap street map — switch basemap in a tap.","green"),
  ("07-import-export", "single","import-export.png", "07 · IMPORT & EXPORT","In and out, anywhere","Import GeoPDF, KML and KMZ; export GeoJSON and GPX.","blue"),
- ("08-symbol-builder","single","symbol-builder.png","08 · APP-6 BUILDER","Build any symbol","Affiliation, echelon and function with a live preview.","blue"),
+ ("08-measure",       "single","measure.png",       "08 · MEASURE","Range, area, bearing","Tap out a path or a loop for live distance and area, with each leg's bearing in NATO mils.","blue"),
  ("09-search",        "single","search.png",        "09 · SEARCH","Jump to any grid","Search a place name, or a full / partial MGRS reference.","green"),
  ("10-pdfmap",        "single","pdf-hero.png",      "10 · OFFLINE MAPS","Bring your own map","Import a GeoPDF or defence map sheet — georeferenced on-device and aligned to your live MGRS grid.","amber"),
 ]
@@ -57,9 +57,9 @@ def main():
                 "eyebrow": eb, "headline": hl, "subcaption": sub, "accent": ac,
                 "angle": fan.get("angle", 13), "device_w": fan.get("device_w", 0.40),
                 "offx": fan.get("offx", 0.225),
-                "devices": [{"src": "bm-esri.png", "label": "Esri"},
-                            {"src": "bm-terrain.png", "label": "Terrain"},
-                            {"src": "bm-satellite.png", "label": "Satellite"}]})
+                "devices": [{"src": "bm-esri.png", "label": "Topographic"},
+                            {"src": "bm-satellite.png", "label": "Satellite"},
+                            {"src": "bm-street.png", "label": "Street"}]})
         print("wrote", op)
 
 if __name__ == "__main__":
