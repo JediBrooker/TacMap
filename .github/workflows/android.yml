@@ -59,18 +59,6 @@ jobs:
           ./gradlew --no-daemon --dependency-verification strict \
             lintRelease compileReleaseKotlin
 
-      - name: Assemble debug APK
-        working-directory: android
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Built WITHOUT a Maps key on purpose: the uploaded artefact is public
-          # (this is a public repo), so we never bake a real key into it — the map
-          # just renders blank in the CI APK. Monotonic version code from the run
-          # number (offset so it always exceeds the pinned default).
-          ./gradlew --no-daemon --dependency-verification strict assembleDebug \
-            -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
-
       - name: Assemble release APK (R8 / resource shrink verification)
         working-directory: android
         shell: bash
@@ -99,11 +87,3 @@ jobs:
           timeout 300 bash -c \
             'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = "1" ]; do sleep 2; done'
           ./gradlew --no-daemon --dependency-verification strict connectedDebugAndroidTest
-
-      - name: Upload APK artefact
-        if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: TacticalMaps-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 14
