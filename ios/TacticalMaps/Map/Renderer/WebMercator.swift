@@ -37,12 +37,22 @@ enum WebMercator {
         return CGPoint(x: min(max(x, 0), size), y: min(max(y, 0), size))
     }
 
-    /// World point at `zoom` -> coordinate. Inverse of `worldPoint`.
+    /// World point at `zoom` -> coordinate.
+    ///
+    /// Screen-space panning can ask for a point beyond the finite Mercator
+    /// square. Clamp that point before inversion so a camera centre, dragged
+    /// graphic, or crosshair placement can never escape valid Web Mercator
+    /// latitude or WGS84 longitude bounds.
     static func coordinate(fromWorld point: CGPoint, zoom: Double) -> CLLocationCoordinate2D {
         let size = mapSize(zoom: zoom)
-        let lon = Double(point.x) / size * 360 - 180
-        let n = Double.pi - 2 * Double.pi * Double(point.y) / size
-        let lat = 180 / Double.pi * atan(sinh(n))
+        guard size.isFinite, size > 0 else {
+            return CLLocationCoordinate2D(latitude: 0, longitude: 0)
+        }
+        let x = point.x.isNaN ? size / 2 : min(max(Double(point.x), 0), size)
+        let y = point.y.isNaN ? size / 2 : min(max(Double(point.y), 0), size)
+        let lon = min(max(x / size * 360 - 180, -180), 180)
+        let n = Double.pi - 2 * Double.pi * y / size
+        let lat = min(max(180 / Double.pi * atan(sinh(n)), -latLimit), latLimit)
         return CLLocationCoordinate2D(latitude: lat, longitude: lon)
     }
 

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.ImportExport
@@ -120,11 +121,19 @@ import com.tacmap.drawings.DrawingStore
 import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.export.GeoJsonExporter
 import com.tacmap.mgrs.MgrsFormatter
+import com.tacmap.waypoints.Waypoint
+import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.WaypointStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+
+private data class QuickAddTarget(
+    val latitude: Double,
+    val longitude: Double,
+    val layerId: String
+)
 
 @Composable
 fun MapScreen(
@@ -144,6 +153,7 @@ fun MapScreen(
     val scope = rememberCoroutineScope()
 
     val onlineBasemapsEnabled by vm.opsec.onlineBasemaps.collectAsState()
+    val primaryCoordinateType by vm.opsec.primaryCoordinateType.collectAsState()
     val onlineTilesUnavailable by OnlineTileHealth.temporarilyUnavailable.collectAsState()
     val isBrowsing by vm.isBrowsing.collectAsState()
     val pendingTarget by vm.pendingCameraTarget.collectAsState()
@@ -178,9 +188,25 @@ fun MapScreen(
     val drawingCanRedo by drawingStore.canRedo.collectAsState()
     val waypointCanUndo by waypointStore.canUndo.collectAsState()
     val waypointCanRedo by waypointStore.canRedo.collectAsState()
+    val waypointDataLocked by waypointStore.locked.collectAsState()
+    val drawingDataLocked by drawingStore.locked.collectAsState()
     val canUndo = drawingCanUndo || waypointCanUndo
     val canRedo = drawingCanRedo || waypointCanRedo
     val lastLocation by vm.locationService.lastLocation.collectAsState()
+    val distanceFromUserToCrosshair = lastLocation?.let { location ->
+        crosshairDistanceMetres(
+            userLat = location.latitude,
+            userLng = location.longitude,
+            crosshairLat = cameraLat,
+            crosshairLng = cameraLng
+        )
+    }
+    val primaryCoordinateDisplay = resolvePrimaryCoordinateDisplay(
+        preference = primaryCoordinateType,
+        mgrs = vm.headerMgrs,
+        wgs84 = vm.headerWgs84,
+        utm = vm.headerUtm,
+    )
     val selectedWaypointId by vm.selectedWaypointId.collectAsState()
     val mapBearingDegrees by vm.mapBearingDegrees.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -194,6 +220,9 @@ fun MapScreen(
     var showOpsecSettings by remember { mutableStateOf(false) }
     var showDiscardTrackConfirmation by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
+    var quickAddMenuOpen by remember { mutableStateOf(false) }
+    var quickAddTarget by remember { mutableStateOf<QuickAddTarget?>(null) }
+    var quickAddEditorMode by remember { mutableStateOf<SymbolEditorMode?>(null) }
     /// weather/UAV widget target = (lat, lng) of map centre, null when closed
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var showAppLockSetup by remember { mutableStateOf(false) }
@@ -430,6 +459,24 @@ fun MapScreen(
     val safeActiveLayerId = drawingDocument.layers.firstOrNull { it.id == activeDrawingLayerId }?.id
         ?: drawingDocument.layers.firstOrNull()?.id
         ?: DrawingDocument.DEFAULT_LAYER_ID
+    val quickAddLayerId = drawingDocument.layers
+        .firstOrNull { it.id == activeDrawingLayerId && it.isVisible }
+        ?.id
+        ?: drawingDocument.layers.firstOrNull { it.isVisible }?.id
+        ?: safeActiveLayerId
+    val quickAddAllowed = !isCalibratingPdf &&
+        !measureSession.isActive &&
+        activeDrawTool == null &&
+        !graphicsLocked &&
+        !waypointDataLocked &&
+        !drawingDataLocked
+    LaunchedEffect(quickAddAllowed) {
+        if (!quickAddAllowed) {
+            quickAddMenuOpen = false
+            quickAddEditorMode = null
+            quickAddTarget = null
+        }
+    }
     val draftDrawing = when {
         // measure tool takes precedence - render its polyline as draft
         // overlay so user can see the path they're laying down
@@ -668,30 +715,29 @@ fun MapScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
         MgrsHeader(
-            mgrs = vm.headerMgrs,
-            wgs84 = vm.headerWgs84,
+            primaryCoordinate = primaryCoordinateDisplay.text,
+            coordinateType = primaryCoordinateDisplay.type,
             elevation = centreElevation?.metres,
             elevationApprox = centreElevation?.isStale == true,
-            utm = vm.headerUtm,
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
             basemapLabel = basemapLabel,
             basemapColor = basemapColor,
             gridMagneticDegrees = gridMagneticDegrees(
                 vm.headerCoordinate.first, vm.headerCoordinate.second, centreElevation?.metres
             ),
+            distanceFromUserMetres = distanceFromUserToCrosshair,
             // align + statusBarsPadding moved to the wrapping Column.
             modifier = Modifier
                 .padding(top = 8.dp)
                 .fillMaxWidth(),
             onDropPin = {
                 val (lat, lng) = vm.headerCoordinate
-                val mgrs = vm.headerMgrs
                 val activeLayerId = drawingDocument.layers
                     .firstOrNull { it.isVisible }?.id
                     ?: com.tacmap.drawings.DrawingDocument.DEFAULT_LAYER_ID
                 waypointStore.add(
                     com.tacmap.waypoints.Waypoint(
-                        name = mgrs,
+                        name = primaryCoordinateDisplay.text,
                         latitude = lat,
                         longitude = lng,
                         kind = com.tacmap.waypoints.WaypointKind.Generic,
@@ -889,6 +935,53 @@ fun MapScreen(
                     )
                 }
             }
+            if (quickAddAllowed) {
+                Box {
+                    QuickAddSymbolButton {
+                        // Freeze the placement target now. The user can spend
+                        // time in the editor without a later camera update
+                        // silently changing where the symbol will land.
+                        selectedDrawingId = null
+                        drawingDocument.layers
+                            .firstOrNull { it.id == quickAddLayerId && !it.isVisible }
+                            ?.let { drawingStore.setLayerVisible(it.id, true) }
+                        quickAddTarget = QuickAddTarget(cameraLat, cameraLng, quickAddLayerId)
+                        quickAddMenuOpen = true
+                    }
+                    DropdownMenu(
+                        expanded = quickAddMenuOpen,
+                        onDismissRequest = {
+                            quickAddMenuOpen = false
+                            if (quickAddEditorMode == null) quickAddTarget = null
+                        }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Military Unit") },
+                            leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) },
+                            onClick = {
+                                quickAddMenuOpen = false
+                                quickAddEditorMode = SymbolEditorMode.MILITARY
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Tactical Task") },
+                            leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) },
+                            onClick = {
+                                quickAddMenuOpen = false
+                                quickAddEditorMode = SymbolEditorMode.TASK
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Marker") },
+                            leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) },
+                            onClick = {
+                                quickAddMenuOpen = false
+                                quickAddEditorMode = SymbolEditorMode.MARKER
+                            }
+                        )
+                    }
+                }
+            }
             UnitLabelsToggle(active = unitLabelsVisible) { unitLabelsVisible = !unitLabelsVisible }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -977,6 +1070,13 @@ fun MapScreen(
                 crosshairTargetLat = cameraLat,
                 crosshairTargetLng = cameraLng,
                 store = waypointStore,
+                onMovedToCrosshair = { moved ->
+                    // Keep the selected card bound to the moved model and give
+                    // explicit feedback: the symbol itself now sits under the
+                    // centre reticle and can otherwise be hard to see.
+                    vm.selectWaypoint(moved.id)
+                    Toast.makeText(context, "Moved ${moved.name} to crosshair", Toast.LENGTH_SHORT).show()
+                },
                 onDismiss = { vm.selectWaypoint(null) },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1015,6 +1115,51 @@ fun MapScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 80.dp)
+        )
+    }
+
+    val quickMode = quickAddEditorMode
+    val capturedQuickTarget = quickAddTarget
+    if (quickMode != null && capturedQuickTarget != null) {
+        val initialKind = when (quickMode) {
+            SymbolEditorMode.MILITARY -> WaypointKind.Military()
+            SymbolEditorMode.TASK -> WaypointKind.ControlMeasure()
+            SymbolEditorMode.MARKER -> WaypointKind.Marker()
+        }
+        SymbolEditorDialog(
+            mode = quickMode,
+            initialKind = initialKind,
+            initialName = "",
+            crosshairLat = capturedQuickTarget.latitude,
+            crosshairLng = capturedQuickTarget.longitude,
+            title = when (quickMode) {
+                SymbolEditorMode.MILITARY -> "New Military Unit"
+                SymbolEditorMode.TASK -> "New Tactical Task"
+                SymbolEditorMode.MARKER -> "New Marker"
+            },
+            actionLabel = "Place",
+            onDismiss = {
+                quickAddEditorMode = null
+                quickAddTarget = null
+            },
+            onConfirm = { name, kind ->
+                selectedDrawingId = null
+                drawingDocument.layers
+                    .firstOrNull { it.id == capturedQuickTarget.layerId && !it.isVisible }
+                    ?.let { drawingStore.setLayerVisible(it.id, true) }
+                val added = Waypoint(
+                    name = name,
+                    latitude = capturedQuickTarget.latitude,
+                    longitude = capturedQuickTarget.longitude,
+                    kind = kind,
+                    layerId = capturedQuickTarget.layerId
+                )
+                waypointStore.add(added)
+                vm.selectWaypoint(added.id)
+                Toast.makeText(context, "Added $name at crosshair", Toast.LENGTH_SHORT).show()
+                quickAddEditorMode = null
+                quickAddTarget = null
+            }
         )
     }
 

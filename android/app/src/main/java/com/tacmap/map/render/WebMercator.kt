@@ -45,12 +45,22 @@ object WebMercator {
         return Vec2(min(max(x, 0.0), size), min(max(y, 0.0), size))
     }
 
-    /** World point at [zoom] -> coordinate (latitude, longitude). Inverse of [worldPoint]. */
+    /**
+     * World point at [zoom] -> coordinate (latitude, longitude).
+     *
+     * Screen-space panning can ask for a point beyond the finite Mercator
+     * square. Clamp that point before inversion so a camera centre, dragged
+     * graphic, or crosshair placement can never escape valid Web Mercator
+     * latitude or WGS84 longitude bounds.
+     */
     fun coordinate(point: Vec2, zoom: Double): Pair<Double, Double> {
         val size = mapSize(zoom)
-        val lon = point.x / size * 360 - 180
-        val n = PI - 2 * PI * point.y / size
-        val lat = 180 / PI * atan(sinh(n))
+        if (!size.isFinite() || size <= 0.0) return 0.0 to 0.0
+        val x = if (point.x.isNaN()) size / 2.0 else point.x.coerceIn(0.0, size)
+        val y = if (point.y.isNaN()) size / 2.0 else point.y.coerceIn(0.0, size)
+        val lon = (x / size * 360 - 180).coerceIn(-180.0, 180.0)
+        val n = PI - 2 * PI * y / size
+        val lat = (180 / PI * atan(sinh(n))).coerceIn(-LAT_LIMIT, LAT_LIMIT)
         return lat to lon
     }
 

@@ -137,7 +137,7 @@ fun SearchDialog(
                         item(key = "places-unavailable") {
                             Text(
                                 if (placesGated)
-                                    "Place-name search is off. Enable online lookups in Privacy & OPSEC. MGRS, grid and lat/lon still work."
+                                    "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work."
                                 else
                                     "Place search unavailable offline — MGRS, grid and lat/lon search still work.",
                                 modifier = Modifier.padding(vertical = 8.dp),

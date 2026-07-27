@@ -167,7 +167,7 @@ struct SearchSheet: View {
                 places = []
                 isSearching = false
                 if inferredCoordinates.isEmpty {
-                    statusMessage = "Place-name search is off. Enable online lookups in Privacy & OPSEC. MGRS, grid and lat/lon still work."
+                    statusMessage = "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work."
                 }
             }
             return

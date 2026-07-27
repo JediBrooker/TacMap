@@ -15,7 +15,7 @@ class MainMenuActionsTest {
             setDialogVisible = { dialogVisible = it },
         )
 
-        assertEquals("Privacy & OPSEC", PRIVACY_OPSEC_LABEL)
+        assertEquals("Settings, Privacy & OPSEC", PRIVACY_OPSEC_LABEL)
         assertFalse(menuOpen)
         assertTrue(dialogVisible)
     }

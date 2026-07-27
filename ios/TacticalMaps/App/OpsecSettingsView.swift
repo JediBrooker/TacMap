@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Privacy / OPSEC settings: privacy screen, opt-in online lookups and
-/// basemaps, and at-rest key binding.
+/// General, privacy and OPSEC settings: map coordinate display, privacy screen,
+/// opt-in online lookups and basemaps, and at-rest key binding.
 struct OpsecSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var opsec = OpsecSettings.shared
@@ -12,6 +12,19 @@ struct OpsecSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("Primary map coordinate", selection: $opsec.coordinateDisplayFormat) {
+                        ForEach(CoordinateDisplayFormat.allCases) { format in
+                            Text(format.label).tag(format)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Coordinate display")
+                } footer: {
+                    Text("Chooses the coordinate shown in the large green map readout. MGRS is the default.")
+                }
+
                 Section {
                     Toggle("Privacy screen in app switcher", isOn: $opsec.privacyScreen)
                 } footer: {
@@ -50,7 +63,7 @@ struct OpsecSettingsView: View {
                     """)
                 }
             }
-            .navigationTitle("Privacy & OPSEC")
+            .navigationTitle("Settings, Privacy & OPSEC")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }

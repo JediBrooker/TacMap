@@ -76,7 +76,10 @@ final class MGRSGridOverlayView: UIView {
         for line in lines {
             let p1 = project(line.a)
             let p2 = project(line.b)
-            ctx.setLineWidth(MGRSGridRenderer.lineWidth(for: line.gridType))
+            ctx.setLineWidth(MGRSGridRenderer.appliedLineWidth(
+                for: line.gridType,
+                screenScale: contentScaleFactor
+            ))
             ctx.beginPath()
             ctx.move(to: p1)
             ctx.addLine(to: p2)

@@ -54,7 +54,7 @@ fun WeatherDialog(lat: Double, lng: Double, onDismiss: () -> Unit) {
                     reading == null -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             "Couldn't fetch conditions. If online lookups are off " +
-                                "(Privacy & OPSEC), enable them; otherwise check your connection."
+                                "(Settings, Privacy & OPSEC), enable them; otherwise check your connection."
                         )
                         TextButton(onClick = { attempt++ }) { Text("Retry") }
                     }

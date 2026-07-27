@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 /// Join / create a unit sync room and show connection status.
 struct SyncSheet: View {
@@ -7,6 +9,8 @@ struct SyncSheet: View {
     @State private var code = ""
     @State private var codeError: String?
     @State private var legacyConfirmed = false
+    @State private var roomCodeCopied = false
+    @State private var copyFeedbackToken = UUID()
 
     var body: some View {
         NavigationStack {
@@ -20,7 +24,27 @@ struct SyncSheet: View {
 
                 if let room = manager.room {
                     Section("Room") {
-                        Text(room).font(.system(.body, design: .monospaced))
+                        Button {
+                            copyRoomCode(room)
+                        } label: {
+                            HStack {
+                                Text(room)
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Label(
+                                    roomCodeCopied ? "Copied" : "Copy",
+                                    systemImage: roomCodeCopied ? "checkmark.circle.fill" : "doc.on.doc"
+                                )
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(roomCodeCopied ? .green : .secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Unit room code \(room)")
+                        .accessibilityHint("Copies the unit room code to the clipboard")
+                        .accessibilityValue(roomCodeCopied ? "Copied" : "")
                         if room.hasPrefix("2:") {
                             Text("LEGACY ROOM: weaker replay, identity, and metadata protections.")
                                 .font(.caption.bold()).foregroundStyle(.red)
@@ -178,6 +202,25 @@ struct SyncSheet: View {
         case .snapshotting: return .orange
         case .connecting: return .orange
         case .offline:    return .gray
+        }
+    }
+
+    private func copyRoomCode(_ room: String) {
+        UIPasteboard.general.setItems(
+            [[UTType.plainText.identifier: room]],
+            options: [
+                .expirationDate: Date().addingTimeInterval(120),
+                .localOnly: true
+            ]
+        )
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+        let token = UUID()
+        copyFeedbackToken = token
+        withAnimation { roomCodeCopied = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard copyFeedbackToken == token else { return }
+            withAnimation { roomCodeCopied = false }
         }
     }
 }

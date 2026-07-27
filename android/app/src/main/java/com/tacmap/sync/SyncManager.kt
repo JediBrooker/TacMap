@@ -154,7 +154,6 @@ class SyncManager(
     private var sessionDomain: ByteArray? = null
     private var presenceCounter: Long = 0L
     private val activeSessions = HashMap<String, Pair<String, String>>() // actor -> (pub, sd)
-    private val presenceHighWater = HashMap<String, Long>() // actor + NUL + sd -> counter
     private var snapshotSeq: Long? = null
     private var snapshotSawFinalPage = false
     private var snapshotItemCount = 0
@@ -269,7 +268,7 @@ class SyncManager(
         // v3 state: clear transport-session fields but NOT replayState (durable)
         myActorId = null
         presenceCounter = 0L
-        activeSessions.clear(); presenceHighWater.clear()
+        activeSessions.clear()
         awaitingHelloAck = false
         localHelloVersion = null
         resetSnapshot()
@@ -332,7 +331,7 @@ class SyncManager(
         myActorId = null
         replayState = null
         presenceCounter = 0L
-        activeSessions.clear(); presenceHighWater.clear()
+        activeSessions.clear()
         awaitingHelloAck = false
         localHelloVersion = null
         resetSnapshot()
@@ -350,7 +349,7 @@ class SyncManager(
         if (protocolVersion == 3) {
             sessionDomain = SyncIdentity.generateSessionDomain()
             presenceCounter = 0L
-            activeSessions.clear(); presenceHighWater.clear()
+            activeSessions.clear()
             awaitingHelloAck = false
             localHelloVersion = null
             resetSnapshot()
@@ -877,9 +876,8 @@ class SyncManager(
         if (replay.getPinnedPubkey(by)?.let { it != pub } == true) return
         if (!SyncIdentity.verifyHello(by, pub, sd, vs, sig, keys.roomIdRaw)) return
         val epoch = vs.substringBefore(':')
-        if (!replay.commitActorHello(by, pub, epoch)) return
+        if (!replay.commitActorHello(by, pub, sd, epoch)) return
         activeSessions[by] = pub to sd
-        presenceHighWater.keys.removeAll { it.startsWith("$by|") }
     }
 
     private data class OuterV3(
@@ -1169,9 +1167,7 @@ class SyncManager(
         if (vs.actorId != by || SyncIdentity.actorId(keys.roomIdRaw, pubRaw) != by) return
         if (activeSessions[by] != (pub to sdText)) return
         if (replay.getPinnedPubkey(by) != pub) return
-        val presenceKey = "$by|$sdText"
-        val previous = presenceHighWater[presenceKey] ?: 0L
-        if (vs.counter <= previous || vs.counter - previous > SyncReplayState.ADVANCE_WINDOW) return
+        if (!replay.canAcceptPresence(by, pub, sdText, vs.counter)) return
         val aad = SyncCrypto.aadPresenceV3(by, vsStr)
         val ct = runCatching { SyncCrypto.decodeBase64(ctB64) }.getOrNull() ?: return
         if (ct.size < 28 || SyncCrypto.encodeBase64(ct) != ctB64) return
@@ -1179,39 +1175,56 @@ class SyncManager(
         val obj = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
         val sig = obj.optString("sig").ifEmpty { return }
         if (obj.optString("pub") != pub) return
-        val payloadBytes = buildPresencePayloadBytes(obj)
+        val hasExactEnvelope = obj.has("pv") || obj.has("p")
+        val exact = if (hasExactEnvelope) {
+            val pv = obj.opt("pv")
+            val isVersionOne = (pv is Int && pv == PresencePayloadV3.ENVELOPE_VERSION) ||
+                (pv is Long && pv == PresencePayloadV3.ENVELOPE_VERSION.toLong())
+            if (!isVersionOne) return
+            val encoded = obj.opt("p") as? String ?: return
+            PresencePayloadV3.decodeCanonicalStandardBase64(encoded) ?: return
+        } else null
+        val payload = exact?.value ?: legacyPresencePayload(obj)
+        val payloadBytes = exact?.bytes ?: buildLegacyPresencePayloadBytes(obj)
         val payloadHash = SyncIdentity.sha256(payloadBytes)
         val preimage = SyncIdentity.buildPreimage(
             SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, by, sd,
             VersionStamp.counterHex16(vs.counter), "", "loc", payloadHash)
         if (!SyncSigning.verify(pub, preimage, sig)) return
 
-        val callsign = obj.optString("callsign", "")
-        val affiliation = obj.optString("affiliation", "UNKNOWN")
-        val echelon = obj.optString("echelon", "TEAM")
-        val function = obj.optString("function", "INFANTRY")
-        val isHQ = obj.optBoolean("isHQ", false)
-        val lat = obj.optDouble("lat", 0.0)
-        val lon = obj.optDouble("lon", 0.0)
-        val heading = obj.optDouble("heading", 0.0)
-        val speed = obj.optDouble("speed", 0.0)
-        if (callsign.codePointCount(0, callsign.length) > 64 || !lat.isFinite() || lat !in -90.0..90.0 ||
-            !lon.isFinite() || lon !in -180.0..180.0 || !heading.isFinite() || !speed.isFinite()) return
-        presenceHighWater[presenceKey] = vs.counter
+        if (!payload.isValid()) return
+        if (!replay.commitPresence(by, pub, sdText, vs.counter)) {
+            persistenceFailure()
+            return
+        }
         val peer = PresencePeer(
             clientId = by,
-            callsign = callsign,
-            affiliation = affiliation,
-            echelon = echelon,
-            function = function,
-            isHQ = isHQ,
-            lat = lat, lon = lon, heading = heading, speed = speed,
+            callsign = payload.callsign,
+            affiliation = payload.affiliation,
+            echelon = payload.echelon,
+            function = payload.function,
+            isHQ = payload.isHQ,
+            lat = payload.lat, lon = payload.lon,
+            heading = payload.heading, speed = payload.speed,
             ts = System.currentTimeMillis()
         )
         _peers.value = _peers.value + (by to peer)
     }
 
-    private fun buildPresencePayloadBytes(obj: JSONObject): ByteArray {
+    private fun legacyPresencePayload(obj: JSONObject): PresencePayloadV3 =
+        PresencePayloadV3(
+            callsign = obj.optString("callsign", ""),
+            affiliation = obj.optString("affiliation", "UNKNOWN"),
+            echelon = obj.optString("echelon", "TEAM"),
+            function = obj.optString("function", "INFANTRY"),
+            isHQ = obj.optBoolean("isHQ", false),
+            lat = obj.optDouble("lat", 0.0),
+            lon = obj.optDouble("lon", 0.0),
+            heading = obj.optDouble("heading", 0.0),
+            speed = obj.optDouble("speed", 0.0),
+        )
+
+    private fun buildLegacyPresencePayloadBytes(obj: JSONObject): ByteArray {
         // canonical JSON -- keys alphabetical to match iOS JSONSerialization(.sortedKeys)
         val canonical = JSONObject()
         canonical.put("affiliation", obj.optString("affiliation", "UNKNOWN"))
@@ -1302,7 +1315,6 @@ class SyncManager(
         val key = roomKey ?: return
         val cfg = presenceConfig
         val callsign = boundCallsign(cfg.callsign)
-        if (callsign.isBlank()) return
         val ts = System.currentTimeMillis()
         val lat = loc.latitude
         val lon = loc.longitude
@@ -1343,7 +1355,6 @@ class SyncManager(
         val sd = sessionDomain ?: return
         val cfg = presenceConfig
         val callsign = boundCallsign(cfg.callsign)
-        if (callsign.isBlank()) return
         val lat = loc.latitude
         val lon = loc.longitude
         val heading = if (loc.hasBearing()) loc.bearing.toDouble() else 0.0
@@ -1351,27 +1362,35 @@ class SyncManager(
         if (presenceCounter >= VersionStamp.MAX_COUNTER) return failConnection()
         val counter = ++presenceCounter
         val vs = VersionStamp(counter, actor)
-        // canonical presence payload -- keys MUST be alphabetical so the hash
-        // matches iOS's JSONSerialization(.sortedKeys) byte-for-byte
-        val payload = JSONObject()
-        payload.put("affiliation", cfg.affiliation.name)
-        payload.put("callsign", callsign)
-        payload.put("echelon", cfg.echelon.name)
-        payload.put("function", cfg.function.name)
-        payload.put("heading", heading)
-        payload.put("isHQ", cfg.isHQ)
-        payload.put("lat", lat)
-        payload.put("lon", lon)
-        payload.put("speed", speed)
-        val payloadHash = SyncIdentity.sha256(payload.toString().toByteArray(Charsets.UTF_8))
+        val payload = PresencePayloadV3(
+            callsign = callsign,
+            affiliation = cfg.affiliation.name,
+            echelon = cfg.echelon.name,
+            function = cfg.function.name,
+            isHQ = cfg.isHQ,
+            lat = lat,
+            lon = lon,
+            heading = heading,
+            speed = speed,
+        )
+        // Hash the exact bytes embedded below. Receivers never reserialize
+        // these values with a platform-specific JSON number formatter.
+        val exact = PresencePayloadV3.encode(payload)
+        val payloadHash = SyncIdentity.sha256(exact.bytes)
         val preimage = SyncIdentity.buildPreimage(
             SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, actor, sd,
             VersionStamp.counterHex16(vs.counter), "", "loc", payloadHash)
         val sig = SyncSigning.sign(deviceSeed, preimage)
-        payload.put("pub", myPublicKey)
-        payload.put("sig", sig)
+        val envelope = JSONObject()
+        payload.putFlatFields(envelope)
+        envelope.put("pv", PresencePayloadV3.ENVELOPE_VERSION)
+        envelope.put("p", exact.standardBase64)
+        envelope.put("pub", myPublicKey)
+        envelope.put("sig", sig)
         val aad = SyncCrypto.aadPresenceV3(actor, vs.encode())
-        val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, payload.toString().toByteArray(Charsets.UTF_8), aad))
+        val ct = SyncCrypto.encodeBase64(
+            SyncCrypto.seal(key, envelope.toString().toByteArray(Charsets.UTF_8), aad)
+        )
         sendFrame(JSONObject().apply {
             put("t", "loc"); put("by", actor); put("ct", ct)
             put("pub", myPublicKey); put("sd", SyncIdentity.urlB64(sd)); put("vs", vs.encode())

@@ -135,8 +135,8 @@ The app imports PDFs through Android's document picker and keeps imported PDF ma
 
 - Package: `com.tacmap`
 - Minimum SDK: 26
-- Target SDK: 35 (meets Play's current new-app requirement)
-- Version: `1.0.3` / code `15` (bump `versionCode` for every new upload)
+- Target SDK: 36 (meets Play's 31 August 2026 app-update requirement)
+- Version: `1.2.1` / code `59` (bump `versionCode` for every new upload)
 
 ## Play Console store-listing assets still needed
 

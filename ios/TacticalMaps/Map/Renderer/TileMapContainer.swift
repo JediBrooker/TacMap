@@ -109,7 +109,12 @@ struct TileMapContainer: UIViewRepresentable {
         /// Identity of the currently-installed source, so we only reassign (and
         /// clear the tile cache) when it actually changes. nil = never synced.
         private var currentSourceKey: String?
-        private var lastWaypointIDs: [UUID] = []
+        private struct WaypointProjectionKey: Equatable {
+            let id: UUID
+            let latitude: Double
+            let longitude: Double
+        }
+        private var lastWaypointProjectionKeys: [WaypointProjectionKey] = []
 
         /// Vector overlays drawn on top of the tiles, projected via the camera.
         private var drawingsView: DrawingsOverlayView?
@@ -147,7 +152,10 @@ struct TileMapContainer: UIViewRepresentable {
             self.mapVM = mapVM
             cameraSink = mapVM.cameraRequests.sink { [weak self] region in self?.flyTo(region) }
             resetNorthSink = mapVM.resetNorthRequests.sink { [weak view] _ in
-                view?.camera.headingDegrees = 0
+                guard let view else { return }
+                var next = view.camera
+                next.headingDegrees = 0
+                view.camera = next
             }
 
             // Host the vector renderers as subviews, projected via the live
@@ -439,13 +447,23 @@ struct TileMapContainer: UIViewRepresentable {
             }
         }
 
-        /// Republish projection only when the waypoint set changes (camera moves
-        /// already republish via onCameraChange), else we'd loop.
+        /// Republish projection when waypoint membership OR coordinates change
+        /// (camera moves already republish via onCameraChange), else we'd loop.
+        ///
+        /// The old ID-only comparison made "Move to Crosshair" persist the new
+        /// coordinate but leave the symbol drawn at its old screen position,
+        /// which looked exactly like the button did nothing until the next pan.
         func syncWaypoints(_ wps: [Waypoint], view: TileMapView) {
-            let ids = wps.map(\.id)
+            let keys = wps.map {
+                WaypointProjectionKey(
+                    id: $0.id,
+                    latitude: $0.latitude,
+                    longitude: $0.longitude
+                )
+            }
             waypoints = wps
-            if ids != lastWaypointIDs {
-                lastWaypointIDs = ids
+            if keys != lastWaypointProjectionKeys {
+                lastWaypointProjectionKeys = keys
                 publish(view.camera)
             }
         }
@@ -457,14 +475,14 @@ struct TileMapContainer: UIViewRepresentable {
             for wp in waypoints { positions[wp.id] = cam.screenPoint(for: wp.coordinate) }
             let mpp = cam.metresPerPoint
             let zsf = MapGeometry.zoomScaleFactor(metresPerPoint: mpp, reference: 1.0)
-            let heading = cam.headingDegrees
+            let heading = MapHeading.normalized(cam.headingDegrees)
             let centre = cam.center
             DispatchQueue.main.async { [weak self] in
                 mapVM.waypointScreenPositions = positions
                 mapVM.currentMetresPerPoint = mpp
                 mapVM.zoomScaleFactor = zsf
                 mapVM.cameraCentre = centre
-                mapVM.heading = heading
+                mapVM.mapCameraDidChange(heading: heading)
                 if mapVM.screenToCoordinate == nil {
                     mapVM.screenToCoordinate = { [weak self] pt in
                         self?.view?.camera.coordinate(for: pt)

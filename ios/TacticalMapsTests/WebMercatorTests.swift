@@ -65,6 +65,23 @@ final class WebMercatorTests: XCTestCase {
         XCTAssertLessThanOrEqual(p.y, size)
     }
 
+    func testInverseClampsPointsBeyondEveryWorldEdge() {
+        let size = WebMercator.mapSize(zoom: 5)
+        let northWest = WebMercator.coordinate(
+            fromWorld: CGPoint(x: -2 * size, y: -3 * size),
+            zoom: 5
+        )
+        XCTAssertEqual(northWest.latitude, WebMercator.latLimit, accuracy: eps)
+        XCTAssertEqual(northWest.longitude, -180, accuracy: eps)
+
+        let southEast = WebMercator.coordinate(
+            fromWorld: CGPoint(x: 3 * size, y: 4 * size),
+            zoom: 5
+        )
+        XCTAssertEqual(southEast.latitude, -WebMercator.latLimit, accuracy: eps)
+        XCTAssertEqual(southEast.longitude, 180, accuracy: eps)
+    }
+
     func testNorthIsSmallerY() {
         // y increases southward. A northern point has a smaller world y.
         let north = WebMercator.worldPoint(CLLocationCoordinate2D(latitude: 10, longitude: 0), zoom: 5)

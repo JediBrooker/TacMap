@@ -41,7 +41,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
 
       - name: Run unit tests (debug + release)
         working-directory: android
@@ -99,7 +99,7 @@ jobs:
       - name: Run end-to-end PDF import smoke test
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
-          api-level: 35
+          api-level: 36
           target: google_apis
           arch: x86_64
           emulator-boot-timeout: 300

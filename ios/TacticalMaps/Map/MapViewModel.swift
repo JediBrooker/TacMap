@@ -19,7 +19,10 @@ final class MapViewModel: ObservableObject {
     /// that needs none (OpenTopoMap) so a keyless dev build still shows a map.
     /// The native Apple basemap is no longer a selectable source.
     @Published var mapSource: MapSource = OnlineRasterBasemapSource.makeDefault() {
-        didSet { NSLog("[MapVM] map source changed -> kind=\(mapSource.kind)") }
+        didSet {
+            NSLog("[MapVM] map source changed -> kind=\(mapSource.kind)")
+            ActiveMapSelectionStore.save(mapSource)
+        }
     }
 
     /// Latest terrain-elevation reading for cameraCentre (metres + staleness).
@@ -189,8 +192,9 @@ final class MapViewModel: ObservableObject {
     }
 
     func mapCameraDidChange(heading: CLLocationDirection) {
-        if abs(self.heading - heading) > 0.05 {
-            self.heading = heading
+        let normalized = MapHeading.normalized(heading)
+        if abs(self.heading - normalized) > 0.05 {
+            self.heading = normalized
         }
     }
 

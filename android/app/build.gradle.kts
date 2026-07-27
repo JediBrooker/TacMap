@@ -42,13 +42,13 @@ val hasReleaseSigning = releaseStoreFilePath.isPresent &&
 
 android {
     namespace = "com.tacmap"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.tacmap"
         minSdk = 26
-        targetSdk = 35
-        versionCode = injectedVersionCode ?: 58
+        targetSdk = 36
+        versionCode = injectedVersionCode ?: 59
         versionName = "1.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -3,16 +3,18 @@ import CoreLocation
 import UIKit
 import UniformTypeIdentifiers
 
-/// MGRS header - shows grid reference for user's position or map centre,
-/// plus WGS84, elevation, and accuracy.
+/// Coordinate header for the user's position or map centre. The primary
+/// representation is user-selectable; supporting status remains below it.
 ///
-/// Tap to copy MGRS to clipboard. Long-press to drop a waypoint here
+/// Tap to copy the displayed coordinate. Long-press to drop a waypoint here
 /// (caller provides closure, nil disables it).
 struct MGRSHeaderView: View {
     let mgrs: String
     let wgs84: String
-    /// User-facing UTM readout (e.g. "33N 450000mE 6700000mN"). nil hides the row.
+    /// User-facing UTM readout (e.g. "33N 450000mE 6700000mN").
+    /// nil or an unavailable marker falls back to WGS84 when UTM is selected.
     var utm: String? = nil
+    var coordinateDisplayFormat: CoordinateDisplayFormat = .mgrs
     /// True while connected to a Unit Sync room. Shows a blue indicator.
     var syncConnected: Bool = false
     /// Basemap status shown where the old Live Location/Map Centre label was.
@@ -23,6 +25,9 @@ struct MGRSHeaderView: View {
     /// Grid-magnetic angle for compass work, raw degrees (+E / -W). Shown
     /// bottom-right in mils by default; tap it to flip to degrees. nil hides it.
     var gridMagneticDegrees: Double? = nil
+    /// Straight-line distance from the latest user fix to the map crosshair.
+    /// nil hides the readout while no location fix is available.
+    var distanceFromUser: CLLocationDistance? = nil
     let elevation: CLLocationDistance?
     /// True when elevation is approximate (offline cache). Shown with
     /// leading "~". Defaults false (fresh/live reading).
@@ -39,39 +44,32 @@ struct MGRSHeaderView: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            // The "MGRS (Map Centre)/(Your Location)" title used to sit here;
-            // dropped as redundant (the big readout is obviously the grid ref).
-            Text(mgrs)
+            Text(resolvedCoordinate.text)
                 // Text-style not fixed 26pt so it scales with Dynamic Type.
                 // Still shrinks to fit.
                 .font(.system(.title, design: .monospaced).weight(.bold))
                 .foregroundStyle(Color(red: 0.55, green: 0.95, blue: 0.55))
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
+                .accessibilityLabel(
+                    "\(resolvedCoordinate.format.label) coordinate \(resolvedCoordinate.text)"
+                )
 
             HStack(spacing: 8) {
-                Text("WGS84")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.6))
-                Text(wgs84)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.85))
+                if let distanceFromUser {
+                    Text("FROM ME \(MeasureFormat.distance(distanceFromUser))")
+                        .font(.caption2.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
                 Spacer(minLength: 4)
                 Text(elevationText)
                     .font(.caption2.weight(.semibold).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.85))
-            }
-
-            if let utm {
-                HStack(spacing: 8) {
-                    Text("UTM")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.6))
-                    Text(utm)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.85))
-                    Spacer(minLength: 4)
-                }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .layoutPriority(1)
             }
 
             HStack(spacing: 6) {
@@ -82,6 +80,8 @@ struct MGRSHeaderView: View {
                     Text(basemapLabel)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(basemapColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
                 Spacer()
                 if syncConnected {
@@ -90,6 +90,8 @@ struct MGRSHeaderView: View {
                             .font(.caption2)
                         Text("Unit Sync")
                             .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                     }
                     .foregroundStyle(Color(red: 0.31, green: 0.66, blue: 1.0))
                     Spacer()
@@ -101,8 +103,10 @@ struct MGRSHeaderView: View {
                     Text(GridMagnetic.label(degrees: gridMagneticDegrees, mils: gridMagneticMils))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         // Enlarge the tap target a little, and use a high-priority
-                        // gesture so this wins over the card's tap-to-copy-MGRS.
+                        // gesture so this wins over the card's copy-coordinate tap.
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
                         .highPriorityGesture(TapGesture().onEnded { gridMagneticMils.toggle() })
@@ -122,7 +126,7 @@ struct MGRSHeaderView: View {
         )
         .overlay(alignment: .top) {
             if showCopiedToast {
-                Text("MGRS copied")
+                Text("\(resolvedCoordinate.format.label) copied")
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -135,7 +139,7 @@ struct MGRSHeaderView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             UIPasteboard.general.setItems(
-                [[UTType.plainText.identifier: mgrs]],
+                [[UTType.plainText.identifier: resolvedCoordinate.text]],
                 options: [
                     .expirationDate: Date().addingTimeInterval(120),
                     .localOnly: true
@@ -150,9 +154,16 @@ struct MGRSHeaderView: View {
         .onLongPressGesture(minimumDuration: 0.4) {
             guard let coord = coordinate, let drop = onDropPin else { return }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            drop(coord, mgrs)
+            drop(coord, resolvedCoordinate.text)
         }
-        .accessibilityHint("Tap to copy MGRS. Long-press to drop a pin here.")
+        .accessibilityHint(
+            "Tap to copy the displayed \(resolvedCoordinate.format.label) coordinate. "
+                + "Long-press to drop a pin here."
+        )
+    }
+
+    private var resolvedCoordinate: CoordinateDisplayFormat.Resolved {
+        coordinateDisplayFormat.resolve(mgrs: mgrs, wgs84: wgs84, utm: utm)
     }
 
     private var elevationText: String {
@@ -166,7 +177,9 @@ struct MGRSHeaderView: View {
     MGRSHeaderView(
         mgrs: "10SEG 51117 80976",
         wgs84: "37.77470° N, 122.41956° W",
+        utm: "10N 551117mE 4180976mN",
         gridMagneticDegrees: 13.4,
+        distanceFromUser: 1_275,
         elevation: 1856
     )
     .padding()

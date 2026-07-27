@@ -75,6 +75,25 @@ final class SyncManager: ObservableObject {
         let expectedModelHash: String?
     }
 
+    struct PresencePayload: Equatable {
+        let lat: Double
+        let lon: Double
+        let heading: Double
+        let speed: Double
+        let callsign: String
+        let affiliation: String
+        let echelon: String
+        let function: String
+        let isHQ: Bool
+    }
+
+    struct PresenceEnvelope {
+        let payload: PresencePayload
+        let signedPayload: Data
+        let publicKey: String
+        let signature: String
+    }
+
     // Per-device Ed25519 signing identity. Seed sealed at rest; the public key
     // rides every presence AND every object write so peers pin it (TOFU) and
     // reject a room member impersonating an established device. One identity per
@@ -686,11 +705,14 @@ final class SyncManager: ObservableObject {
         let counterHex = VersionStamp.counterHex16(counter)
         let vs = VersionStamp(counter: counter, actorId: actorId).encode()
 
-        // canonical payload WITHOUT pub (matches Android's buildPresencePayloadBytes)
-        let payload = buildPresencePayloadBytes(
+        // Serialize the nine signed fields exactly once. The byte string itself
+        // rides inside the sealed envelope, so another platform verifies these
+        // exact bytes instead of rebuilding JSON with a different number writer.
+        let presence = PresencePayload(
             lat: lat, lon: lon, heading: heading, speed: speed,
             callsign: callsign, affiliation: cfg.affiliation,
             echelon: cfg.echelon, function: cfg.function, isHQ: cfg.isHQ)
+        let payload = Self.buildPresencePayloadBytes(presence)
         guard let payload else { return }
         let payloadHash = SyncIdentity.sha256(payload)
         let preimage = SyncIdentity.buildPreimage(
@@ -698,13 +720,11 @@ final class SyncManager: ObservableObject {
             actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
             objectId: "", kind: "loc", payloadHash: payloadHash)
         guard let sig = SyncSigning.sign(seed, preimage) else { return }
-        // sealed payload includes all fields + sig + pub
-        let sealedDict: [String: Any] = [
-            "lat": lat, "lon": lon, "heading": heading, "speed": speed,
-            "callsign": callsign, "affiliation": cfg.affiliation,
-            "echelon": cfg.echelon, "function": cfg.function, "isHQ": cfg.isHQ,
-            "pub": myPublicKey, "sig": sig
-        ]
+        // Keep the flat fields so pre-envelope iOS clients can still consume an
+        // iOS sender. New clients verify the exact standard-base64 `p` bytes.
+        let sealedDict = Self.makePresenceEnvelope(
+            payload: presence, signedPayload: payload,
+            publicKey: myPublicKey, signature: sig)
         guard let sealedData = try? JSONSerialization.data(withJSONObject: sealedDict),
               let sealed = SyncCrypto.seal(key, sealedData, aad: SyncCrypto.aadPresenceV3(actorId: actorId, vs: vs)) else { return }
         send(["t": "loc", "by": actorId, "ct": sealed.base64EncodedString(),
@@ -723,20 +743,108 @@ final class SyncManager: ObservableObject {
         String(value.unicodeScalars.prefix(64))
     }
 
-    /// Canonical presence payload bytes for hashing (matches Android's buildPresencePayloadBytes).
-    /// Key order: lat, lon, heading, speed, callsign, affiliation, echelon, function, isHQ.
-    /// NO pub field — pub rides outside in the wire message.
-    private func buildPresencePayloadBytes(
-        lat: Double, lon: Double, heading: Double, speed: Double,
-        callsign: String, affiliation: String, echelon: String,
-        function: String, isHQ: Bool
-    ) -> Data? {
+    /// The sender's exact nine-field JSON payload. It is signed and embedded in
+    /// the v1 envelope; receivers must hash these bytes rather than reserialize.
+    nonisolated static func buildPresencePayloadBytes(_ payload: PresencePayload) -> Data? {
         let canonical: [String: Any] = [
-            "lat": lat, "lon": lon, "heading": heading, "speed": speed,
-            "callsign": callsign, "affiliation": affiliation,
-            "echelon": echelon, "function": function, "isHQ": isHQ
+            "lat": payload.lat, "lon": payload.lon,
+            "heading": payload.heading, "speed": payload.speed,
+            "callsign": payload.callsign, "affiliation": payload.affiliation,
+            "echelon": payload.echelon, "function": payload.function,
+            "isHQ": payload.isHQ
         ]
         return try? JSONSerialization.data(withJSONObject: canonical, options: .sortedKeys)
+    }
+
+    nonisolated static func makePresenceEnvelope(
+        payload: PresencePayload,
+        signedPayload: Data,
+        publicKey: String,
+        signature: String
+    ) -> [String: Any] {
+        [
+            "lat": payload.lat, "lon": payload.lon,
+            "heading": payload.heading, "speed": payload.speed,
+            "callsign": payload.callsign, "affiliation": payload.affiliation,
+            "echelon": payload.echelon, "function": payload.function,
+            "isHQ": payload.isHQ,
+            "pv": 1,
+            "p": signedPayload.base64EncodedString(),
+            "pub": publicKey,
+            "sig": signature
+        ]
+    }
+
+    /// Decode the authenticated payload envelope. `pv=1` uses the exact embedded
+    /// bytes. An envelope with no version fields takes the legacy same-platform
+    /// reconstruction path; malformed/unknown version fields never downgrade.
+    nonisolated static func decodePresenceEnvelope(_ inner: [String: Any]) -> PresenceEnvelope? {
+        guard let publicKey = inner["pub"] as? String, !publicKey.isEmpty,
+              let signature = inner["sig"] as? String, !signature.isEmpty else { return nil }
+
+        if inner["pv"] != nil || inner["p"] != nil {
+            guard strictJSONInteger(inner["pv"], minimum: 1, maximum: 1) == 1,
+                  let encoded = inner["p"] as? String,
+                  let signedPayload = Data(base64Encoded: encoded),
+                  signedPayload.base64EncodedString() == encoded,
+                  let payload = decodePresencePayloadBytes(signedPayload) else { return nil }
+            return PresenceEnvelope(
+                payload: payload, signedPayload: signedPayload,
+                publicKey: publicKey, signature: signature)
+        }
+
+        guard let payload = decodeLegacyPresenceFields(inner),
+              let signedPayload = buildPresencePayloadBytes(payload) else { return nil }
+        return PresenceEnvelope(
+            payload: payload, signedPayload: signedPayload,
+            publicKey: publicKey, signature: signature)
+    }
+
+    nonisolated static func decodePresencePayloadBytes(_ data: Data) -> PresencePayload? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == Set([
+                "lat", "lon", "heading", "speed", "callsign",
+                "affiliation", "echelon", "function", "isHQ"
+              ]),
+              let callsign = object["callsign"] as? String,
+              callsign.unicodeScalars.count <= 64,
+              let affiliation = object["affiliation"] as? String,
+              let echelon = object["echelon"] as? String,
+              let function = object["function"] as? String,
+              let isHQNumber = object["isHQ"] as? NSNumber,
+              CFGetTypeID(isHQNumber) == CFBooleanGetTypeID(),
+              let lat = strictPresenceDouble(object["lat"]), abs(lat) <= 90,
+              let lon = strictPresenceDouble(object["lon"]), abs(lon) <= 180,
+              let heading = strictPresenceDouble(object["heading"]),
+              let speed = strictPresenceDouble(object["speed"]) else { return nil }
+        return PresencePayload(
+            lat: lat, lon: lon, heading: heading, speed: speed,
+            callsign: callsign, affiliation: affiliation,
+            echelon: echelon, function: function,
+            isHQ: isHQNumber.boolValue)
+    }
+
+    private nonisolated static func decodeLegacyPresenceFields(_ object: [String: Any]) -> PresencePayload? {
+        let callsign = object["callsign"] as? String ?? ""
+        guard callsign.unicodeScalars.count <= 64,
+              let lat = strictPresenceDouble(object["lat"]), abs(lat) <= 90,
+              let lon = strictPresenceDouble(object["lon"]), abs(lon) <= 180 else { return nil }
+        return PresencePayload(
+            lat: lat, lon: lon,
+            heading: strictPresenceDouble(object["heading"]) ?? 0,
+            speed: strictPresenceDouble(object["speed"]) ?? 0,
+            callsign: callsign,
+            affiliation: object["affiliation"] as? String ?? "unknown",
+            echelon: object["echelon"] as? String ?? "team",
+            function: object["function"] as? String ?? "infantry",
+            isHQ: object["isHQ"] as? Bool ?? false)
+    }
+
+    private nonisolated static func strictPresenceDouble(_ value: Any?) -> Double? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let result = number.doubleValue
+        return result.isFinite ? result : nil
     }
 
     // MARK: - Presence broadcasting
@@ -1473,45 +1581,34 @@ final class SyncManager: ObservableObject {
               let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aadPresenceV3(actorId: actorId, vs: vsStr)),
               let p = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
 
-        guard let sig = p["sig"] as? String,
-              p["pub"] as? String == pub else { return }
-
-        let callsign = p["callsign"] as? String ?? ""
-        guard callsign.unicodeScalars.count <= 64 else { return }
-        let affiliation = p["affiliation"] as? String ?? "unknown"
-        let echelon = p["echelon"] as? String ?? "team"
-        let function = p["function"] as? String ?? "infantry"
-        let isHQ = p["isHQ"] as? Bool ?? false
-        guard let lat = strictDouble(p["lat"]),
-              let lon = strictDouble(p["lon"]), abs(lat) <= 90, abs(lon) <= 180 else { return }
-        let heading = strictDouble(p["heading"]) ?? 0
-        let speed = strictDouble(p["speed"]) ?? 0
-
-        // rebuild canonical payload (without pub/sig) for hash
-        let payloadBytes = buildPresencePayloadBytes(
-            lat: lat, lon: lon, heading: heading, speed: speed,
-            callsign: callsign, affiliation: affiliation,
-            echelon: echelon, function: function, isHQ: isHQ)
-        guard let payloadBytes else { return }
-        let payloadHash = SyncIdentity.sha256(payloadBytes)
+        guard let envelope = Self.decodePresenceEnvelope(p),
+              envelope.publicKey == pub else { return }
+        let presence = envelope.payload
+        let payloadHash = SyncIdentity.sha256(envelope.signedPayload)
         let preimage = SyncIdentity.buildPreimage(
             domain: SyncIdentity.domainPresence, roomIdRaw: keys.roomIdRaw,
             actorId: actorId, sessionDomain: sd, counterHex16: VersionStamp.counterHex16(stamp.counter),
             objectId: "", kind: "loc", payloadHash: payloadHash)
-        guard SyncSigning.verify(pub, preimage, sig) else { return }
-        guard rs.acceptPresence(actorId: actorId, sessionDomain: sdString, counter: stamp.counter) else { return }
+        guard SyncSigning.verify(pub, preimage, envelope.signature) else { return }
+        do {
+            guard try rs.acceptPresence(
+                actorId: actorId, sessionDomain: sdString, counter: stamp.counter) else { return }
+        } catch {
+            failClosedV3("Presence replay state could not be saved.")
+            return
+        }
 
         peers[actorId] = PresencePeer(
             clientId: actorId,
-            callsign: callsign,
-            affiliation: affiliation,
-            echelon: echelon,
-            function: function,
-            isHQ: isHQ,
-            lat: lat,
-            lon: lon,
-            heading: heading,
-            speed: speed,
+            callsign: presence.callsign,
+            affiliation: presence.affiliation,
+            echelon: presence.echelon,
+            function: presence.function,
+            isHQ: presence.isHQ,
+            lat: presence.lat,
+            lon: presence.lon,
+            heading: presence.heading,
+            speed: presence.speed,
             ts: Date().timeIntervalSince1970 * 1000,
             receivedAt: Date()
         )

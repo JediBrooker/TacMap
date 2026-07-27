@@ -54,6 +54,19 @@ final class MapCameraTests: XCTestCase {
         }
     }
 
+    func testScreenCoordinateCannotEscapeWorldBounds() {
+        var cam = camera()
+        cam.zoom = 0
+        let targets = [
+            cam.coordinate(for: CGPoint(x: -10_000, y: -10_000)),
+            cam.coordinate(for: CGPoint(x: 10_000, y: 10_000))
+        ]
+        for target in targets {
+            XCTAssertTrue((-WebMercator.latLimit...WebMercator.latLimit).contains(target.latitude))
+            XCTAssertTrue((-180.0...180.0).contains(target.longitude))
+        }
+    }
+
     func testMetresPerPointMatchesGroundResolution() {
         let cam = camera()
         XCTAssertEqual(cam.metresPerPoint,

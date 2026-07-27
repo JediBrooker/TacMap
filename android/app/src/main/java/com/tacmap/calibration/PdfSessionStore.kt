@@ -22,49 +22,67 @@ import java.io.File
  * affine + the fiduciaries we fit it from) so we can reconstruct a
  * [PdfMapSource] with full GeoPDF accuracy on startup.
  *
- * Only [PdfMapSource] instances with [Calibration.Fiduciaries] are
- * saved - don't bother persisting uncalibrated sources since they have
- * no real geographic position, just a useless rough fallback box.
+ * Calibrated, parsed, and uncalibrated PDF sources are all saved. Even a PDF
+ * using its rough fallback box is still the user's active basemap and must not
+ * disappear merely because the process was closed.
  */
 class PdfSessionStore(private val context: Context) {
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun save(source: PdfMapSource) {
-        val calibration = source.calibration as? Calibration.Fiduciaries ?: run {
-            // uncalibrated PDF, don't bother persisting - fallback
-            // bounds aren't worth restoring
-            return
+    fun save(source: PdfMapSource): Boolean {
+        val pageInfo = source.pageInfo ?: return false
+        val coverage = source.coverage ?: return false
+        val persistedCalibration = when (val calibration = source.calibration) {
+            is Calibration.Fiduciaries -> PersistedCalibration(
+                fids = calibration.fids,
+                transform = calibration.transform
+            )
+            is Calibration.Parsed -> PersistedCalibration(
+                fids = emptyList(),
+                transform = calibration.transform
+            )
+            null -> null
         }
-        val pageInfo = source.pageInfo ?: return
-        val coverage = source.coverage ?: return
+        val calibrationKind = when (source.calibration) {
+            is Calibration.Fiduciaries -> CALIBRATION_FIDUCIARIES
+            is Calibration.Parsed -> CALIBRATION_PARSED
+            null -> CALIBRATION_NONE
+        }
+        val calibrationCrs = (source.calibration as? Calibration.Parsed)?.crs
         // Strip URI to just the basename inside our private `pdf_maps/`
         // dir. The full URI from import time is stable across the app's
         // lifetime but storing just the basename lets us recover if the
         // sandbox path ever shifts.
-        val fileName = File(source.uri.path ?: return).name
+        val fileName = File(source.uri.path ?: return false).name
         val dto = PersistedPdfSource(
             fileName = fileName,
             displayName = source.displayName,
             pageWidth = pageInfo.pageWidth,
             pageHeight = pageInfo.pageHeight,
-            calibration = PersistedCalibration(
-                fids = calibration.fids,
-                transform = calibration.transform
-            ),
+            sourceKind = source.kind.name,
+            calibrationKind = calibrationKind,
+            calibrationCrs = calibrationCrs,
+            calibration = persistedCalibration,
             coverage = coverage
         )
-        runCatching { sealPref(LABEL_PDF, json.encodeToString(dto)) }
-            .onSuccess { prefs.edit().putString(KEY_PDF, it).putBoolean(KEY_PDF_SEALED_ONLY, true).commit() }
+        val persisted = runCatching { sealPref(LABEL_PDF, json.encodeToString(dto)) }
+            .map { prefs.edit().putString(KEY_PDF, it).putBoolean(KEY_PDF_SEALED_ONLY, true).commit() }
             .onFailure { Log.w(TAG, "Couldn't encode PDF session for persistence") }
+            .getOrDefault(false)
         // Also stash in the per-PDF library so switching PDFs and back
         // restores this one's calibration. Keyed by file CONTENT hash,
         // not display name - two different sheets that share a filename
         // must NOT inherit each other's affine.
-        val key = runCatching { contentKeyFor(File(source.uri.path ?: return)) }.getOrNull()
-            ?: source.displayName // fall back to name only if the file is unreadable
-        saveToLibrary(key, calibration)
+        (source.calibration as? Calibration.Fiduciaries)?.let { calibration ->
+            val sourcePath = source.uri.path
+            val key = sourcePath
+                ?.let { runCatching { contentKeyFor(File(it)) }.getOrNull() }
+                ?: source.displayName // fall back to name only if the file is unreadable
+            saveToLibrary(key, calibration)
+        }
+        return persisted
     }
 
     fun load(): PdfMapSource? {
@@ -83,15 +101,25 @@ class PdfSessionStore(private val context: Context) {
             clear()
             return null
         }
+        val calibration = when (dto.calibrationKind) {
+            CALIBRATION_NONE -> null
+            CALIBRATION_PARSED -> dto.calibration?.let {
+                Calibration.Parsed(dto.calibrationCrs.orEmpty(), it.transform)
+            }
+            else -> dto.calibration?.let {
+                Calibration.Fiduciaries(fids = it.fids, transform = it.transform)
+            }
+        }
+        val sourceKind = dto.sourceKind
+            ?.let { saved -> MapSourceKind.entries.firstOrNull { it.name == saved } }
+            ?: if (calibration is Calibration.Parsed) MapSourceKind.GEO_PDF
+            else MapSourceKind.CALIBRATED_PDF
         return PdfMapSource(
             uri = Uri.fromFile(file),
             displayName = dto.displayName,
-            kind = MapSourceKind.CALIBRATED_PDF,
+            kind = sourceKind,
             coverage = dto.coverage,
-            calibration = Calibration.Fiduciaries(
-                fids = dto.calibration.fids,
-                transform = dto.calibration.transform
-            ),
+            calibration = calibration,
             pageInfo = PdfPageInfo(dto.pageWidth, dto.pageHeight)
         )
     }
@@ -194,6 +222,9 @@ class PdfSessionStore(private val context: Context) {
         const val KEY_PDF_SEALED_ONLY = "active_pdf_sealed_only_v1"
         const val KEY_LIBRARY_SEALED_ONLY = "pdf_calibrations_sealed_only_v1"
         const val TAG = "PdfSessionStore"
+        const val CALIBRATION_NONE = "none"
+        const val CALIBRATION_PARSED = "parsed"
+        const val CALIBRATION_FIDUCIARIES = "fiduciaries"
         /** AEAD associated data, keeps one pref's blob from opening as the other. */
         const val LABEL_PDF = "pdf_session/active_pdf"
         const val LABEL_LIBRARY = "pdf_session/pdf_calibrations"
@@ -206,7 +237,10 @@ private data class PersistedPdfSource(
     val displayName: String,
     val pageWidth: Int,
     val pageHeight: Int,
-    val calibration: PersistedCalibration,
+    val sourceKind: String? = null,
+    val calibrationKind: String = "fiduciaries",
+    val calibrationCrs: String? = null,
+    val calibration: PersistedCalibration? = null,
     val coverage: Wgs84Bounds
 )
 

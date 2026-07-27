@@ -60,6 +60,7 @@ fun SymbolControlsCard(
     crosshairTargetLat: Double,
     crosshairTargetLng: Double,
     store: WaypointStore,
+    onMovedToCrosshair: (Waypoint) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -110,6 +111,7 @@ fun SymbolControlsCard(
             crosshairTargetLat = crosshairTargetLat,
             crosshairTargetLng = crosshairTargetLng,
             store = store,
+            onMovedToCrosshair = onMovedToCrosshair,
             onDelete = { showDeleteConfirm = true }
         )
     }
@@ -300,6 +302,7 @@ private fun ActionRow(
     crosshairTargetLat: Double,
     crosshairTargetLng: Double,
     store: WaypointStore,
+    onMovedToCrosshair: (Waypoint) -> Unit,
     onDelete: () -> Unit
 ) {
     Row(
@@ -308,10 +311,13 @@ private fun ActionRow(
     ) {
         Button(
             onClick = {
-                store.update(waypoint.copy(
-                    latitude = crosshairTargetLat,
-                    longitude = crosshairTargetLng
-                ))
+                val moved = moveWaypointToCrosshair(
+                    waypoint = waypoint,
+                    crosshairLat = crosshairTargetLat,
+                    crosshairLng = crosshairTargetLng
+                )
+                store.update(moved)
+                onMovedToCrosshair(moved)
             },
             modifier = Modifier.weight(1f).height(36.dp),
             colors = ButtonDefaults.buttonColors(

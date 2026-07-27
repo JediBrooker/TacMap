@@ -110,7 +110,11 @@ For **object put**: domain=0x01, kind=UTF-8("put") or the object's kind string (
 
 For **object delete**: domain=0x02, kind=UTF-8("del"), payloadHash=SHA-256("") = `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 
-For **presence**: domain=0x03, objectIdLen=0, objectIdBytes=empty, kind=UTF-8("loc"), payloadHash=SHA-256(canonical presence JSON bytes).
+For **presence**: domain=0x03, objectIdLen=0, objectIdBytes=empty,
+kind=UTF-8("loc"), and payloadHash=SHA-256 of the exact payload bytes carried
+by `p` in the encrypted presence envelope defined below. Receivers hash those
+decoded bytes directly; parsing and reserializing them before verification is
+forbidden.
 
 For **hello**: domain=0x04, `counterHex` is the actor's positive monotonic
 session epoch, objectIdLen=0, objectIdBytes=empty, kind=UTF-8("hello"), and
@@ -119,7 +123,18 @@ separate unsigned 64-bit value encoded as exactly 16 lowercase hexadecimal
 digits (`0000000000000001` through `ffffffffffffffff`). It is not an object
 `VersionStamp` counter and therefore is not limited to signed-63-bit range.
 
-The `sessionDomain` is generated once per WebSocket connection: `SHA-256(random_32_bytes)`. It is authenticated by the signed `hello`. Together with a client's persisted accepted-hello epoch high-water, it rejects presence from a session at or below that high-water. It does not prove that an unseen, higher signed epoch is the actor's newest epoch: a malicious relay can present an obsolete but genuinely signed higher session unless the client has an external transparency log or out-of-band trust anchor. Durable put/delete records also carry their `sd` outside the ciphertext because a late joiner must have the exact session domain used by the inner signature; omitting it makes an otherwise valid snapshot unverifiable. The inner Ed25519 signature authenticates the outer `sd`.
+The `sessionDomain` is generated once per WebSocket connection:
+`SHA-256(random_32_bytes)` and authenticated by the signed `hello`. Clients
+persist the accepted remote epoch, session domain, and presence counter. A
+higher valid hello changes session and resets that counter; an equal hello may
+only reactivate the identical persisted session, without resetting it. This
+does not prove that an unseen, higher signed epoch is the actor's newest epoch:
+a malicious relay can present an obsolete but genuinely signed higher session
+unless the client has an external transparency log or out-of-band trust anchor.
+Durable put/delete records also carry their `sd` outside the ciphertext because
+a late joiner must have the exact session domain used by the inner signature;
+omitting it makes an otherwise valid snapshot unverifiable. The inner Ed25519
+signature authenticates the outer `sd`.
 
 ### 6. Wire format changes (v3 rooms)
 
@@ -144,6 +159,27 @@ Messages from client to relay:
 {"t":"ping"}
 ```
 
+For `loc`, opening `ct` with the presence AAD produces this inner envelope:
+
+```json
+{
+  "pv": 1,
+  "p": "<standard-base64 exact UTF-8 presence-payload JSON bytes>",
+  "lat": 0.0, "lon": 0.0, "heading": 0.0, "speed": 0.0,
+  "callsign": "", "affiliation": "UNKNOWN", "echelon": "TEAM",
+  "function": "INFANTRY", "isHQ": false,
+  "pub": "<base64url pubkey>", "sig": "<base64url Ed25519 signature>"
+}
+```
+
+`pv` MUST be `1`. `p` MUST use canonical standard Base64 with padding. Its
+decoded bytes are the authoritative payload and MUST be hashed without
+transformation for the presence signed preimage. After signature verification,
+the receiver parses those same bytes for the displayed presence. The flat
+presence fields are duplicates retained for legacy-v3 compatibility; senders
+include them during migration. `pub` and `sig` remain encrypted. The inner
+`pub` MUST equal the outer `pub`, which is independently bound to `by`.
+
 The `"hello"` message is sent immediately after validating `snapshot-end`. The
 client increments and persists its per-actor hello epoch before signing or
 sending; a crash can waste an epoch. The relay recomputes `actorId`, verifies
@@ -161,7 +197,9 @@ acknowledgement exactly matches its current actor and per-connection session
 domain. This prevents the first queued mutation from racing the relay's
 asynchronous proof verification and actor-pin write.
 
-The `"pub"` field rides OUTSIDE the AEAD ciphertext in v3 (unlike v2 where it was inside). This allows the relay to pin actorId->pubkey without opening the seal. The pubkey is still verified by peers via actorId recomputation.
+The `"pub"` field also rides outside the AEAD ciphertext in v3. This allows the
+relay to pin actorId->pubkey without opening the seal. Peers still recompute
+actorId and require the encrypted inner `pub` to match the outer value.
 
 Messages from relay to client (additions to Phase 2 format):
 
@@ -219,7 +257,12 @@ Each client persists per-room state, sealed at rest via SafeStore (label `"sync/
       "generation": "<16-char local-model generation>"
     }
   },
-  "presenceSeq": {}
+  "presenceSeq": {
+    "<remoteActorId>": {
+      "sd": "<base64url sessionDomain>",
+      "counter": "0000000000000001"
+    }
+  }
 }
 ```
 
@@ -253,11 +296,25 @@ Each client persists per-room state, sealed at rest via SafeStore (label `"sync/
   establish an echo baseline but never overwrite the current model. Persistence
   failure at acceptance or marker clearing fails closed.
 - Once a durable mutation is authenticated, set `localCounter = max(localCounter, acceptedCounter)` and persist it. After a completed snapshot, the first local mutation therefore reserves a counter strictly above the authenticated snapshot high-water.
-- Presence uses a separate, in-memory per-WebSocket counter starting at 1. It never advances the durable object counter or relay room high-water. A new signed session domain resets presence high-water.
+- Local outbound presence uses a separate, in-memory per-WebSocket counter
+  starting at 1. It never advances the durable object counter or relay room
+  high-water.
 - The local actor's hello epoch is incremented and durably reserved before each
-  new WebSocket hello. For remote actors, accept and persist a signed hello only
-  when its epoch is greater than the stored value. Reject its presence before
-  this check and never lower a stored epoch.
+  new WebSocket hello.
+- For a remote actor, a valid hello with a higher epoch atomically persists the
+  new epoch and
+  `presenceSeq[actorId] = { sd, counter: "0000000000000000" }`. A valid hello
+  whose epoch equals the persisted epoch may reactivate that session after a
+  local reconnect only when its `pub` and `sd` exactly match the persisted actor
+  and session; it MUST NOT reset the counter. Lower epochs and equal epochs
+  with different session context are rejected.
+- Remote presence is accepted only after that hello, when its `by`, `pub`, and
+  `sd` match the active persisted session and its counter is strictly greater
+  than the persisted presence counter (and within the advance window). Persist
+  the new counter before exposing the peer in UI. `leave()` and process restart
+  may clear the UI but MUST NOT clear this replay state. Consequently, the
+  relay's cached equal-counter `loc` after reconnect is ignored; the sender's
+  next higher periodic `loc` safely repopulates the UI.
 
 ### 9. Counter advance window
 
@@ -354,8 +411,9 @@ A join-code holder CANNOT:
 - Impersonate an established actorId (pubkey pinned at relay + peers verify).
 - Roll back a version stamp that a peer has already persisted in replay state.
 - Forge a signature under another device's Ed25519 key.
-- Replay a hello or presence session whose epoch is at or below the returning
-  client's durably retained accepted-hello high-water.
+- Activate an older hello session or substitute different context at the
+  accepted epoch. Replaying the exact current hello is idempotent; its presence
+  still requires a counter strictly above the client's durable high-water.
 
 The relay CANNOT:
 - Read plaintext (no room key).

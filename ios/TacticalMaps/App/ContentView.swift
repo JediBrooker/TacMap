@@ -149,6 +149,7 @@ struct ContentView: View {
     @State private var showSearchSheet     = false
     @State private var showAboutSheet      = false
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
+    @State private var quickSymbolDraft: QuickSymbolDraft? = nil
 
     @ObservedObject private var opsec = OpsecSettings.shared
     @ObservedObject private var onlineTileHealth = OnlineTileHealth.shared
@@ -192,13 +193,28 @@ struct ContentView: View {
         mapVM.isBrowsing ? mapVM.cameraCentre : locationService.lastLocation?.coordinate
     }
 
+    /// Straight-line range from the latest device fix to the fixed map
+    /// crosshair. CLLocation uses the geodesic distance between coordinates.
+    private var distanceFromUserToCrosshair: CLLocationDistance? {
+        guard let user = locationService.lastLocation,
+              mapVM.cameraCentre.latitude.isFinite,
+              mapVM.cameraCentre.longitude.isFinite,
+              abs(mapVM.cameraCentre.latitude) <= 90,
+              abs(mapVM.cameraCentre.longitude) <= 180 else { return nil }
+        let crosshair = CLLocation(
+            latitude: mapVM.cameraCentre.latitude,
+            longitude: mapVM.cameraCentre.longitude
+        )
+        return user.distance(from: crosshair)
+    }
+
     private var missionDataLocked: Bool {
         _ = dataKeyEpoch
         return (DataKey.isAuthBound && !DataKey.isUnlocked)
             || waypointStore.locked || drawingStore.locked || trackRecorder.requiresUnlock
     }
 
-    var body: some View {
+    private var baseMapContent: some View {
         GeometryReader { geo in
             ZStack {
                 TileMapContainer(
@@ -282,6 +298,10 @@ struct ContentView: View {
                 syncToastOverlay
             }
         }
+    }
+
+    private var lifecycleContent: some View {
+        baseMapContent
         .overlay {
             if missionDataLocked {
                 MissionDataUnlockView(
@@ -323,29 +343,27 @@ struct ContentView: View {
         .onAppear {
             locationService.requestAuthorisation()
             locationService.start()
-            /// Rehydrate last-imported PDF (if any) so user doesn't
-            /// have to re-import after closing the app. PDF file
-            /// lives in Documents, calibration is in UserDefaults -
-            /// see PDFSessionStore.
-            if let restored = PDFSessionStore.load() {
-                NSLog("[Import] restored persisted PDF")
-                mapVM.mapSource = restored
-                /// Frame restored map same way an import does so a PDF
-                /// whose coverage doesn't contain user doesn't open
-                /// off-screen. No fix yet at launch so it frames the
-                /// whole page; first fix won't yank away if user is off-map.
-                mapVM.frameCamera(
-                    for: restored,
-                    userLocation: locationService.lastLocation?.coordinate
-                )
-            }
+            restoreActiveBasemap()
         }
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
             mapVM.userLocationDidUpdate(loc)
         }
+    }
+
+    private var sheetContent: some View {
+        lifecycleContent
         .sheet(isPresented: $showWaypointSheet) {
             WaypointListSheet(waypointStore: waypointStore, mapVM: mapVM)
                 .padSheetSizing()
+        }
+        .sheet(item: $quickSymbolDraft) { draft in
+            WaypointEditSheet(
+                waypointStore: waypointStore,
+                original: nil,
+                defaultCoordinate: draft.coordinate,
+                defaultScale: draft.scale,
+                defaultLayerID: draft.layerID
+            )
         }
         .sheet(isPresented: $showDrawingsSheet) {
             DrawingsSheet(drawingStore: drawingStore, session: drawingSession)
@@ -393,6 +411,10 @@ struct ContentView: View {
             SyncSheet(manager: syncManager)
                 .padSheetSizing()
         }
+    }
+
+    private var syncAndRecordingContent: some View {
+        sheetContent
         .task {
             syncManager.configure(waypointStore: waypointStore,
                                   drawingStore: drawingStore,
@@ -430,6 +452,10 @@ struct ContentView: View {
                 onClose: { showPaywallSheet = false }
             )
         }
+    }
+
+    private var importerContent: some View {
+        syncAndRecordingContent
         /// SwiftUI has a long-standing bug where two .fileImporter
         /// modifiers on the same view silently shadow each other -
         /// only the last one ever presents. Thats why "Import PDF
@@ -485,6 +511,10 @@ struct ContentView: View {
                     handleKMLImport(result)
                 }
         )
+    }
+
+    var body: some View {
+        importerContent
         .alert("Import",
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),
@@ -539,21 +569,23 @@ struct ContentView: View {
                 mgrs: mapVM.headerMGRS,
                 wgs84: mapVM.headerWGS84,
                 utm: mapVM.headerUTM,
+                coordinateDisplayFormat: opsec.coordinateDisplayFormat,
                 syncConnected: syncManager.status == .connected,
                 basemapLabel: basemapLabel,
                 basemapColor: basemapColor,
                 gridMagneticDegrees: GridMagnetic.angle(
                     latitude: headerCoordinate?.latitude,
                     longitude: headerCoordinate?.longitude),
+                distanceFromUser: distanceFromUserToCrosshair,
                 elevation: mapVM.centreElevation ?? locationService.lastAltitude,
                 elevationIsApproximate: mapVM.centreElevationIsApproximate,
                 coordinate: headerCoordinate,
-                onDropPin: { coord, mgrs in
+                onDropPin: { coord, displayedCoordinate in
                     let layerID = drawingStore.activeLayerID
                         ?? drawingStore.layers.first?.id
                         ?? DrawingLayer.legacyFallbackID
                     let wp = Waypoint(
-                        name: mgrs,
+                        name: displayedCoordinate,
                         coordinate: coord,
                         kind: .generic,
                         layerID: layerID
@@ -663,6 +695,14 @@ struct ContentView: View {
                             showAboutSheet = true
                         }
                     )
+
+                    if !drawingSession.isDrawing,
+                       !measureSession.isActive,
+                       !calibration.isCalibrating,
+                       !graphicsLocked,
+                       !missionDataLocked {
+                        QuickAddSymbolButton(action: beginQuickSymbolCreation)
+                    }
 
                     UnitLabelsToggle(active: visibility.unitLabelsVisible) {
                         visibility.unitLabelsVisible.toggle()
@@ -812,6 +852,50 @@ struct ContentView: View {
         canRedo = undoManager?.canRedo ?? false
     }
 
+    /// Open the fast symbol builder on a layer whose contents are visible.
+    /// Preserve an already-visible active layer; if it is hidden, prefer another
+    /// visible layer without changing the user's active-layer selection.
+    private func beginQuickSymbolCreation() {
+        drawingsPanelOpen = false
+        mapVM.selectedWaypointID = nil
+        mapVM.selectedDrawingID = nil
+        visibility.waypointsVisible = true
+        quickSymbolDraft = QuickSymbolDraft(
+            coordinate: mapVM.cameraCentre,
+            layerID: visibleLayerIDForQuickSymbol(),
+            scale: mapVM.defaultControlMeasureScale
+        )
+    }
+
+    private func visibleLayerIDForQuickSymbol() -> UUID {
+        if let activeID = drawingStore.activeLayerID,
+           let active = drawingStore.layer(id: activeID),
+           active.visible {
+            return active.id
+        }
+        if let visible = drawingStore.layers.first(where: \.visible) {
+            return visible.id
+        }
+        if let activeID = drawingStore.activeLayerID,
+           let active = drawingStore.layer(id: activeID) {
+            drawingStore.setLayerVisible(active, true)
+            return active.id
+        }
+        if let first = drawingStore.layers.first {
+            if drawingStore.activeLayerID == nil {
+                drawingStore.activeLayerID = first.id
+            }
+            drawingStore.setLayerVisible(first, true)
+            return first.id
+        }
+
+        // DrawingStore normally guarantees seed layers. Recover defensively if
+        // a sync/import transition presents a transient empty collection.
+        let fallback = DrawingLayer.seedDefaults[0]
+        drawingStore.addLayerVerbatim(fallback)
+        return fallback.id
+    }
+
     private func unlockMissionData() {
         missionUnlockError = nil
         do {
@@ -821,13 +905,33 @@ struct ContentView: View {
             drawingStore.reloadAfterUnlock()
             trackRecorder.retryRecoveryAfterUnlock()
             guard !missionDataLocked else { throw DataKey.LockedError() }
-            if !(mapVM.mapSource is PDFMapSource), let restored = PDFSessionStore.load() {
-                mapVM.mapSource = restored
-                mapVM.frameCamera(for: restored, userLocation: locationService.lastLocation?.coordinate)
-            }
+            restoreActiveBasemap()
         } catch {
             missionUnlockError = error.localizedDescription
         }
+    }
+
+    /// Restore the map that was actually selected, independently of the
+    /// imported-PDF library. On an upgrade with no active-choice descriptor we
+    /// keep the usable online default; the saved PDF remains available from
+    /// Layers, but is no longer incorrectly assumed to have been active.
+    private func restoreActiveBasemap() {
+        let source: MapSource?
+        switch ActiveMapSelectionStore.restore() {
+        case .restored(let restored):
+            source = restored
+        case .noSelection:
+            source = nil
+        case .unavailable:
+            source = nil
+        }
+        guard let source else { return }
+        NSLog("[MapVM] restored active basemap -> kind=\(source.kind)")
+        mapVM.mapSource = source
+        mapVM.frameCamera(
+            for: source,
+            userLocation: locationService.lastLocation?.coordinate
+        )
     }
 
     /// Export all waypoints + drawings + layers to GeoJSON and show
@@ -928,13 +1032,17 @@ struct ContentView: View {
             fiduciaries: calibration.fiduciaries
         )
         let bounds = newSource.bounds
-        calibration.cancel()
-        mapVM.mapSource = newSource
         /// Persist the freshly-calibrated source so fiduciary fit
         /// survives app restart. Without this next launch would
         /// restore pre-calibration import and silently clobber the
         /// user's calibration work.
-        PDFSessionStore.save(newSource)
+        guard PDFSessionStore.save(newSource) else {
+            importMessage = "Calibration was calculated but couldn't be saved securely. "
+                + "Check device storage, then try again."
+            return
+        }
+        calibration.cancel()
+        mapVM.mapSource = newSource
         if let b = bounds {
             let span = MKCoordinateSpan(
                 latitudeDelta:  abs(b.northEast.latitude  - b.southWest.latitude)  * 1.2,
@@ -984,8 +1092,12 @@ struct ContentView: View {
                 // If PDF was calibrated in a previous session, restore
                 // fiduciaries + affine so it re-imports already aligned.
                 PDFSessionStore.applyCalibrationIfKnown(to: source)
+                guard PDFSessionStore.save(source) else {
+                    importMessage = "Couldn't save this PDF map securely. "
+                        + "Check device storage, then try again."
+                    return
+                }
                 mapVM.mapSource = source
-                PDFSessionStore.save(source)
 
                 /// Frame camera - snap to user if they're inside PDF
                 /// coverage, otherwise frame the whole page. Shared
@@ -1063,7 +1175,7 @@ private struct NoBasemapNotice: View {
         VStack(spacing: 6) {
             Text("No basemap").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
             Text("Online basemaps are off. Import an offline map pack, or enable "
-                 + "online basemap tiles in Privacy & OPSEC.")
+                 + "online basemap tiles in Settings, Privacy & OPSEC.")
                 .font(.system(size: 11))
                 .foregroundStyle(Color(white: 0.73))
                 .multilineTextAlignment(.center)
@@ -1073,6 +1185,13 @@ private struct NoBasemapNotice: View {
         .padding(24)
         .allowsHitTesting(false)
     }
+}
+
+private struct QuickSymbolDraft: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let layerID: UUID
+    let scale: Double
 }
 
 #Preview {

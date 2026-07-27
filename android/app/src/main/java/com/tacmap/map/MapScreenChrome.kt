@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.calibration.Datum
+import kotlin.math.roundToInt
 
 // HUD chrome (round buttons, mils compass) + PDF-calibration UI.
 // Extracted from MapScreen.kt. Behaviour unchanged.
@@ -70,13 +72,34 @@ internal fun CircleHudButton(
     }
 }
 
+/** One-tap entry to the symbol builder at the current map crosshair. */
+@Composable
+internal fun QuickAddSymbolButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color(0xFFE99020))
+            .clickable(onClickLabel = "Add symbol at crosshair", onClick = onClick)
+            .semantics { contentDescription = "Add symbol at crosshair" },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Icons.Default.Add,
+            contentDescription = null,
+            tint = Color.Black,
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
 @Composable
 internal fun CompassChip(mapOrientationDegrees: Double, onTap: () -> Unit = {}) {
     /// mapOrientationDegrees = camera bearing (0 = north up, 90 = east up).
     /// Mils reading matches that bearing, needle rotates counter to it
     /// so it keeps pointing at true north as map turns.
     val screenUpBearingDegrees = normalizedDegrees(mapOrientationDegrees)
-    val mils = ((screenUpBearingDegrees * (6400.0 / 360.0)).toInt()) % 6400
+    val mils = mapHeadingMils(screenUpBearingDegrees)
     Box(
         modifier = Modifier
             .size(56.dp)
@@ -137,6 +160,12 @@ internal fun CompassChip(mapOrientationDegrees: Double, onTap: () -> Unit = {}) 
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp)
         )
     }
+}
+
+/** NATO mils for a clockwise map bearing, rounded to the nearest mil. */
+internal fun mapHeadingMils(degrees: Double): Int {
+    if (!degrees.isFinite()) return 0
+    return (normalizedDegrees(degrees) * (6400.0 / 360.0)).roundToInt() % 6400
 }
 
 /** Undo/redo buttons, below the compass chip. */

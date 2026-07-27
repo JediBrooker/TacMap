@@ -48,6 +48,8 @@ fun TileMapView(
     onCameraChange: (MapCamera) -> Unit,
     source: TileSource?,
     modifier: Modifier = Modifier,
+    /** False when an ancestor/sibling owns the complete map interaction stream. */
+    gesturesEnabled: Boolean = true,
     onGestureStart: () -> Unit = {},
     /// Fires on a tap that reached the basemap (no overlay claimed it) - the app
     /// uses it to dismiss a selection, like the old onMapClick did.
@@ -103,16 +105,8 @@ fun TileMapView(
         }
     }
 
-    Canvas(
-        modifier = modifier
-            .onSizeChanged { sz ->
-                val wDp = sz.width / density.toDouble()
-                val hDp = sz.height / density.toDouble()
-                val cam = cameraState.value
-                if (cam.viewportWidth != wDp || cam.viewportHeight != hDp) {
-                    onChange.value(cam.copy(viewportWidth = wDp, viewportHeight = hDp))
-                }
-            }
+    val inputModifier = if (gesturesEnabled) {
+        Modifier
             .pointerInput(source) {
                 detectTransformGestures(panZoomLock = false) { centroidPx, panPx, zoom, rotation ->
                     onStart.value()
@@ -160,6 +154,21 @@ fun TileMapView(
                 // the current selection, replacing the old GoogleMap onMapClick.
                 detectTapGestures { onTapState.value() }
             }
+    } else {
+        Modifier
+    }
+
+    Canvas(
+        modifier = modifier
+            .onSizeChanged { sz ->
+                val wDp = sz.width / density.toDouble()
+                val hDp = sz.height / density.toDouble()
+                val cam = cameraState.value
+                if (cam.viewportWidth != wDp || cam.viewportHeight != hDp) {
+                    onChange.value(cam.copy(viewportWidth = wDp, viewportHeight = hDp))
+                }
+            }
+            .then(inputModifier)
     ) {
         version // read so newly-loaded tiles trigger a redraw
         drawRect(BACKGROUND, size = Size(size.width, size.height))
