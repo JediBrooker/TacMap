@@ -2,7 +2,7 @@ name: TacticalMaps
 options:
   bundleIdPrefix: com.tacticalmaps
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.3"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
@@ -35,7 +35,7 @@ targets:
       properties:
         CFBundleDisplayName: TacMap
         CFBundleShortVersionString: "1.2.2"
-        CFBundleVersion: "59"
+        CFBundleVersion: "60"
         # Esri Location Platform key + expiry. The $(ESRI_API_KEY) reference is
         # substituted from Secrets.xcconfig during Xcode's plist processing at
         # build time (xcodegen writes it here verbatim). Not a secret - it ships

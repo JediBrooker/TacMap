@@ -33,9 +33,13 @@ final class StoreManager: ObservableObject {
     @Published private(set) var product: Product?
     @Published private(set) var purchasing = false
     @Published private(set) var restoring = false
+    @Published private(set) var redeeming = false
     /// Set after a Restore attempt so the paywall can show the outcome; the UI
     /// clears it once shown.
     @Published var restoreOutcome: String?
+    /// Set only when redemption needs follow-up. Successful redemption changes
+    /// `isPurchased` immediately, which dismisses the paywall.
+    @Published var redemptionOutcome: String?
     @Published private(set) var loadState: ProductLoadState = .unavailable
 
     /// True for TestFlight / Sandbox builds (receipt is `sandboxReceipt`), where
@@ -51,6 +55,7 @@ final class StoreManager: ObservableObject {
     private static let cachedEntitlementAccount = "store.entitlement.cached.v1"
     private let entitlementQuery: () async throws -> Bool
     private let writeCachedEntitlement: (Bool) -> Void
+    private let presentOfferCodeRedemption: () async throws -> Void
 
     convenience init() {
         self.init(
@@ -64,19 +69,22 @@ final class StoreManager: ObservableObject {
                 } else {
                     _ = KeychainStore.removeData(for: Self.cachedEntitlementAccount)
                 }
-            }
+            },
+            presentOfferCodeRedemption: Self.presentSystemOfferCodeRedemption
         )
     }
 
     init(
         entitlementQuery: @escaping () async throws -> Bool,
         readCachedEntitlement: () -> Bool,
-        writeCachedEntitlement: @escaping (Bool) -> Void
+        writeCachedEntitlement: @escaping (Bool) -> Void,
+        presentOfferCodeRedemption: @escaping () async throws -> Void
     ) {
-        // Keychain cache is local-only and permits a verified owner to launch
-        // offline. StoreKit is not touched until a visible user action.
+        // The Keychain cache permits a verified owner to launch offline. `start`
+        // then listens for outside-app transactions and refreshes StoreKit state.
         self.entitlementQuery = entitlementQuery
         self.writeCachedEntitlement = writeCachedEntitlement
+        self.presentOfferCodeRedemption = presentOfferCodeRedemption
         isPurchased = readCachedEntitlement()
     }
 
@@ -84,6 +92,13 @@ final class StoreManager: ObservableObject {
 
     /// Localized price string for the unlock, e.g. "$5.00". nil while loading.
     var priceText: String? { product?.displayPrice }
+
+    /// Starts the transaction listener when purchase UI appears so offer codes
+    /// and purchases completed outside TacMap unlock immediately.
+    func start() async {
+        activateStoreAccess()
+        await refreshEntitlement()
+    }
 
     func loadProduct() async {
         activateStoreAccess()
@@ -158,18 +173,34 @@ final class StoreManager: ObservableObject {
             : "No previous purchase found on this Apple ID."
     }
 
-    /// Opens the App Store's "Redeem Gift Card or Code" screen.
-    ///
-    /// Promo codes for a non-consumable IAP can only be redeemed in the App
-    /// Store app itself. Apple's `presentCodeRedemptionSheet()` is for
-    /// subscription offer codes only (which we dont have) so it would just
-    /// dead-end. We deep-link to the store's redeem screen instead (kinda the
-    /// iOS equivalent of Android's `play.google.com/redeem`). User pastes the
-    /// code there and it produces a normal transaction that
-    /// `listenForTransactions` / restore picks up.
-    func presentRedeemSheet() {
-        guard let url = URL(string: "https://apps.apple.com/redeem") else { return }
-        UIApplication.shared.open(url)
+    /// Presents Apple's in-app offer-code sheet. iOS 16.3 added offer-code
+    /// redemption for non-consumables such as TacMap's permanent unlock.
+    func redeemOfferCode() async {
+        activateStoreAccess()
+        redemptionOutcome = nil
+        redeeming = true
+        defer { redeeming = false }
+
+        do {
+            try await presentOfferCodeRedemption()
+        } catch {
+            redemptionOutcome = "Couldn't open Apple's code redemption sheet. Try again."
+            return
+        }
+
+        let refresh = await refreshEntitlement()
+        if case .unavailable = refresh {
+            redemptionOutcome = "Your code may have been redeemed, but TacMap couldn't verify the unlock. Check your connection, then tap Restore purchase."
+        }
+    }
+
+    private static func presentSystemOfferCodeRedemption() async throws {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else {
+            throw RedemptionPresentationError.noActiveWindow
+        }
+        try await AppStore.presentOfferCodeRedeemSheet(in: scene)
     }
 
     /// Apply a completed entitlement query authoritatively. A thrown query is
@@ -231,6 +262,10 @@ final class StoreManager: ObservableObject {
 }
 
 private struct TimeoutError: Error {}
+
+private enum RedemptionPresentationError: Error {
+    case noActiveWindow
+}
 
 private final class TimeoutRace<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()

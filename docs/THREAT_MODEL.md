@@ -148,7 +148,7 @@ request until you opt in.
 | `api.open-meteo.com/v1/elevation` | Elevation + terrain heatmap | Elevation/terrain features | Your IP + the exact coordinates queried | **Off** (online lookups gate) | Leave online lookups off |
 | Place-name search — iOS `MKLocalSearch` (Apple), Android `Geocoder` (Google/OEM on GMS devices) | Turning a typed place name into a coordinate | Typing 2+ characters in Search | Your IP + the search string, which can itself reveal your AO (searching a FOB/village name) | **Off** (online lookups gate) | Leave online lookups off; navigate by MGRS/grid instead |
 | Sync relay (default: `tacmap-sync.<...>.workers.dev`) | Encrypted unit sync transport | Joining a sync room | Ciphertext + routing ID + your IP + traffic timing (see §4) | Off until you join a room | Self-host the relay; see §8 |
-| `play.google.com/redeem` / `apps.apple.com/redeem` | Voucher / licence redemption | You tapping "redeem" | Standard store request; no map or unit data | User-initiated only | n/a |
+| Apple App Store (StoreKit offer-code redemption) / `play.google.com/redeem` | Offer-code / licence redemption | Viewing purchase options or tapping "redeem" | Your store account, code, and standard purchase metadata; no map or unit data | Purchase UI only | n/a |
 
 The three basemap rows apply to **both platforms** — iOS and Android draw the
 same Esri/OSM raster tiles, gated off by default. There is **no Apple-Maps row

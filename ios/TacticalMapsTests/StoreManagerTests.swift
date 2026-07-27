@@ -10,7 +10,8 @@ final class StoreManagerTests: XCTestCase {
         let manager = StoreManager(
             entitlementQuery: { false },
             readCachedEntitlement: { true },
-            writeCachedEntitlement: { cacheWrites.append($0) }
+            writeCachedEntitlement: { cacheWrites.append($0) },
+            presentOfferCodeRedemption: {}
         )
 
         XCTAssertTrue(manager.isPurchased)
@@ -26,7 +27,8 @@ final class StoreManagerTests: XCTestCase {
         let manager = StoreManager(
             entitlementQuery: { throw QueryUnavailable() },
             readCachedEntitlement: { true },
-            writeCachedEntitlement: { cacheWrites.append($0) }
+            writeCachedEntitlement: { cacheWrites.append($0) },
+            presentOfferCodeRedemption: {}
         )
 
         let result = await manager.refreshEntitlement()
@@ -41,7 +43,8 @@ final class StoreManagerTests: XCTestCase {
         let manager = StoreManager(
             entitlementQuery: { true },
             readCachedEntitlement: { false },
-            writeCachedEntitlement: { cacheWrites.append($0) }
+            writeCachedEntitlement: { cacheWrites.append($0) },
+            presentOfferCodeRedemption: {}
         )
 
         let result = await manager.refreshEntitlement()
@@ -49,5 +52,54 @@ final class StoreManagerTests: XCTestCase {
         XCTAssertEqual(result, .authoritative(true))
         XCTAssertTrue(manager.isPurchased)
         XCTAssertEqual(cacheWrites, [true])
+    }
+
+    func testStartingPurchaseUIRefreshesOutsideAppEntitlement() async {
+        var cacheWrites: [Bool] = []
+        let manager = StoreManager(
+            entitlementQuery: { true },
+            readCachedEntitlement: { false },
+            writeCachedEntitlement: { cacheWrites.append($0) },
+            presentOfferCodeRedemption: {}
+        )
+
+        await manager.start()
+
+        XCTAssertTrue(manager.isPurchased)
+        XCTAssertEqual(cacheWrites, [true])
+    }
+
+    func testSuccessfulOfferCodeRedemptionRefreshesUnlock() async {
+        var sheetPresented = false
+        var cacheWrites: [Bool] = []
+        let manager = StoreManager(
+            entitlementQuery: { true },
+            readCachedEntitlement: { false },
+            writeCachedEntitlement: { cacheWrites.append($0) },
+            presentOfferCodeRedemption: { sheetPresented = true }
+        )
+
+        await manager.redeemOfferCode()
+
+        XCTAssertTrue(sheetPresented)
+        XCTAssertTrue(manager.isPurchased)
+        XCTAssertEqual(cacheWrites, [true])
+        XCTAssertNil(manager.redemptionOutcome)
+        XCTAssertFalse(manager.redeeming)
+    }
+
+    func testOfferCodePresentationFailureShowsFeedback() async {
+        let manager = StoreManager(
+            entitlementQuery: { false },
+            readCachedEntitlement: { false },
+            writeCachedEntitlement: { _ in },
+            presentOfferCodeRedemption: { throw QueryUnavailable() }
+        )
+
+        await manager.redeemOfferCode()
+
+        XCTAssertFalse(manager.isPurchased)
+        XCTAssertNotNil(manager.redemptionOutcome)
+        XCTAssertFalse(manager.redeeming)
     }
 }
