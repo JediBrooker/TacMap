@@ -48,7 +48,14 @@ Trial length is `TrialManager.trialDays = 3` on both platforms — keep them in 
 1. **Features → In-App Purchases → +**, type **Non-Consumable**.
 2. Product ID **`com.tacticalmaps.app.unlock`**, set price (Tier ~5 / A$7.99 or
    US$4.99), add a display name + description, submit it **with** the app build.
-3. Privacy: still **no data collected** — IAP purchase data is handled by Apple.
+3. To distribute unlock codes, create a free **Offer Code** on that IAP. TacMap
+   presents Apple's native redemption sheet and supports this from iOS 16.3.
+   Sandbox codes can be created during development; production one-time-use or
+   custom codes require the app to be **Ready for Distribution** and the IAP to
+   be **Approved**. Use one-time-use codes for individual giveaways or a custom
+   code for a campaign, and choose the intended customer eligibility in App
+   Store Connect.
+4. Privacy: still **no data collected** — IAP purchase data is handled by Apple.
 
 ### Google — Play Console
 1. **Monetise → Products → In-app products → Create product**.
@@ -66,6 +73,10 @@ Trial length is `TrialManager.trialDays = 3` on both platforms — keep them in 
   price shows "Loading price…". To see the paywall, either tap **Menu → Unlock
   Full Version** during the trial, or expire the trial (delete the app, or set
   `trialFirstLaunch` to an old date in the container plist).
+- **iOS offer codes:** create a sandbox offer code for
+  `com.tacticalmaps.app.unlock` in App Store Connect and redeem it on a physical
+  device signed into a Sandbox Apple Account. Confirm the native sheet dismisses
+  and TacMap unlocks without requiring **Restore purchase**.
 - **Android:** upload to **Internal testing**, install as a license tester, and
   the BillingClient resolves `unlock_full` and a test purchase.
 

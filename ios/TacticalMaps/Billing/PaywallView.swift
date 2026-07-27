@@ -100,12 +100,17 @@ struct PaywallView: View {
                 .padding(.top, 10)
 
                 Button {
-                    store.presentRedeemSheet()
+                    Task { await store.redeemOfferCode() }
                 } label: {
-                    Text("Redeem code on the App Store")
-                        .font(.subheadline)
-                        .foregroundStyle(orange)
+                    if store.redeeming {
+                        ProgressView().tint(orange)
+                    } else {
+                        Text("Redeem TacMap offer code")
+                            .font(.subheadline)
+                            .foregroundStyle(orange)
+                    }
                 }
+                .disabled(store.redeeming)
                 .padding(.top, 6)
 
                 Text("One-time purchase. No subscription.")
@@ -142,11 +147,20 @@ struct PaywallView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .task {
+            await store.start()
+        }
         .alert("Restore Purchase",
                isPresented: Binding(get: { store.restoreOutcome != nil },
                                     set: { if !$0 { store.restoreOutcome = nil } }),
                presenting: store.restoreOutcome) { _ in
             Button("OK", role: .cancel) { store.restoreOutcome = nil }
+        } message: { Text($0) }
+        .alert("Redeem Offer Code",
+               isPresented: Binding(get: { store.redemptionOutcome != nil },
+                                    set: { if !$0 { store.redemptionOutcome = nil } }),
+               presenting: store.redemptionOutcome) { _ in
+            Button("OK", role: .cancel) { store.redemptionOutcome = nil }
         } message: { Text($0) }
     }
 
