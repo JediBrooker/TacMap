@@ -214,7 +214,7 @@ struct ContentView: View {
             || waypointStore.locked || drawingStore.locked || trackRecorder.requiresUnlock
     }
 
-    var body: some View {
+    private var baseMapContent: some View {
         GeometryReader { geo in
             ZStack {
                 TileMapContainer(
@@ -298,6 +298,10 @@ struct ContentView: View {
                 syncToastOverlay
             }
         }
+    }
+
+    private var lifecycleContent: some View {
+        baseMapContent
         .overlay {
             if missionDataLocked {
                 MissionDataUnlockView(
@@ -344,6 +348,10 @@ struct ContentView: View {
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
             mapVM.userLocationDidUpdate(loc)
         }
+    }
+
+    private var sheetContent: some View {
+        lifecycleContent
         .sheet(isPresented: $showWaypointSheet) {
             WaypointListSheet(waypointStore: waypointStore, mapVM: mapVM)
                 .padSheetSizing()
@@ -403,6 +411,10 @@ struct ContentView: View {
             SyncSheet(manager: syncManager)
                 .padSheetSizing()
         }
+    }
+
+    private var syncAndRecordingContent: some View {
+        sheetContent
         .task {
             syncManager.configure(waypointStore: waypointStore,
                                   drawingStore: drawingStore,
@@ -440,6 +452,10 @@ struct ContentView: View {
                 onClose: { showPaywallSheet = false }
             )
         }
+    }
+
+    private var importerContent: some View {
+        syncAndRecordingContent
         /// SwiftUI has a long-standing bug where two .fileImporter
         /// modifiers on the same view silently shadow each other -
         /// only the last one ever presents. Thats why "Import PDF
@@ -495,6 +511,10 @@ struct ContentView: View {
                     handleKMLImport(result)
                 }
         )
+    }
+
+    var body: some View {
+        importerContent
         .alert("Import",
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),
