@@ -61,6 +61,23 @@ class RenderMathTest {
         assertEquals(0.0, p.y, 1e-6)
     }
 
+    @Test fun inverseClampsPointsBeyondEveryWorldEdge() {
+        val size = WebMercator.mapSize(5.0)
+        val (north, west) = WebMercator.coordinate(
+            Vec2(x = -2.0 * size, y = -3.0 * size),
+            zoom = 5.0
+        )
+        assertEquals(WebMercator.LAT_LIMIT, north, eps)
+        assertEquals(-180.0, west, eps)
+
+        val (south, east) = WebMercator.coordinate(
+            Vec2(x = 3.0 * size, y = 4.0 * size),
+            zoom = 5.0
+        )
+        assertEquals(-WebMercator.LAT_LIMIT, south, eps)
+        assertEquals(180.0, east, eps)
+    }
+
     // MARK: MapCamera
 
     private fun camera(heading: Double = 0.0) =
@@ -97,6 +114,18 @@ class RenderMathTest {
                 assertEquals("x h=$h", sx, back.x, 1e-4)
                 assertEquals("y h=$h", sy, back.y, 1e-4)
             }
+        }
+    }
+
+    @Test fun screenCoordinateCannotEscapeWorldBounds() {
+        val cam = camera().copy(zoom = 0.0)
+        val targets = listOf(
+            cam.coordinate(-10_000.0, -10_000.0),
+            cam.coordinate(10_000.0, 10_000.0)
+        )
+        targets.forEach { (lat, lon) ->
+            assertTrue("latitude out of range: $lat", lat in -WebMercator.LAT_LIMIT..WebMercator.LAT_LIMIT)
+            assertTrue("longitude out of range: $lon", lon in -180.0..180.0)
         }
     }
 

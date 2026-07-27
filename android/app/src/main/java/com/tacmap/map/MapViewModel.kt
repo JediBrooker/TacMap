@@ -4,8 +4,14 @@ import android.app.Application
 import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tacmap.calibration.ActiveMapKind
+import com.tacmap.calibration.ActiveMapSelection
+import com.tacmap.calibration.ActiveMapSelectionFailure
+import com.tacmap.calibration.ActiveMapSelectionLoadState
+import com.tacmap.calibration.ActiveMapSelectionStore
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.MapSource
+import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfSessionStore
@@ -66,6 +72,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private val elevationService = ElevationService()
 
     private val pdfSessionStore = PdfSessionStore(app)
+    private val activeMapSelectionStore = ActiveMapSelectionStore(app)
+    private val savedMapSelectionState: ActiveMapSelectionLoadState =
+        activeMapSelectionStore.loadState()
+    private val savedMapSelection: ActiveMapSelection? =
+        (savedMapSelectionState as? ActiveMapSelectionLoadState.Loaded)?.selection
 
     /** Default basemap: Esri Satellite when we have a key, else the one style
      *  that needs none (OpenTopoMap) so a keyless dev build still shows a map. */
@@ -77,15 +88,23 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
 
     /** Which online basemap to return to when an imported map is unloaded. */
-    private var preferredBaseMap: BasemapStyle = defaultStyle
+    private var preferredBaseMap: BasemapStyle =
+        savedMapSelection?.preferredOnlineStyle
+            ?.let { saved -> BasemapStyle.entries.firstOrNull { it.name == saved } }
+            ?.takeIf { !it.requiresEsriKey || com.tacmap.calibration.EsriKey.isAvailable }
+            ?: defaultStyle
     private fun baseMapSource(style: BasemapStyle): MapSource = OnlineRasterMapSourceAndroid(style)
     private fun onlineBasemap(): MapSource = baseMapSource(preferredBaseMap)
 
-    /** Switch online basemap. Clears any imported PDF so the basemap shows. */
+    /**
+     * Switch online basemap. The PDF session remains in the private map
+     * library; the active-source descriptor is the authority on what reopens.
+     * Only an explicit "Unload PDF Map" deletes that restorable session.
+     */
     fun selectBaseMap(style: BasemapStyle) {
         preferredBaseMap = style
         _mapSource.value = baseMapSource(style)
-        pdfSessionStore.clear()
+        activeMapSelectionStore.saveOnline(style)
     }
 
     /** The style currently selected (for menu highlight). */
@@ -94,13 +113,26 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     /** Return to the preferred online basemap (e.g. after unloading offline tiles). */
     fun restoreOnlineBasemap() {
         _mapSource.value = onlineBasemap()
+        activeMapSelectionStore.saveOnline(preferredBaseMap)
     }
 
     /** Set active map source + fly camera to a sensible starting position if
      *  it has coverage. Calibrated PDFs get persisted to pdfSessionStore. */
     fun setMapSource(source: MapSource) {
         _mapSource.value = source
-        if (source is PdfMapSource) pdfSessionStore.save(source)
+        when (source) {
+            is PdfMapSource -> {
+                if (pdfSessionStore.save(source)) {
+                    activeMapSelectionStore.savePdf(preferredBaseMap)
+                }
+            }
+            is OfflineTileMapSourceAndroid ->
+                activeMapSelectionStore.saveOffline(source.path, preferredBaseMap)
+            is OnlineRasterMapSourceAndroid -> {
+                preferredBaseMap = source.style
+                activeMapSelectionStore.saveOnline(source.style)
+            }
+        }
         frameCameraFor(source)
     }
 
@@ -122,6 +154,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     fun unloadPdfMap() {
         _mapSource.value = onlineBasemap()
         pdfSessionStore.clear()
+        activeMapSelectionStore.saveOnline(preferredBaseMap)
     }
 
     /** Programmatic camera target = (lat, lng, zoom). null when nothing
@@ -139,18 +172,69 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private var hasInitialFix = false
 
     init {
-        /// Restore last PDF on startup so user doesn't re-import after
-        /// closing the app. Has to be here (not earlier init) b/c
-        /// frameCameraFor -> flyTo needs _pendingCameraTarget initialised.
-        /// No fix yet at launch so this frames the whole page.
-        pdfSessionStore.load()?.let { restored ->
-            _mapSource.value = restored
-            frameCameraFor(restored)
-        }
+        restoreActiveMapSource()
         viewModelScope.launch {
             locationService.lastLocation.collect { loc -> loc?.let(::onUserLocation) }
         }
         observeElevation()
+    }
+
+    /**
+     * Restore exactly the source that was active at shutdown. A genuinely
+     * absent selector gets one legacy migration matching the old app's
+     * behaviour: restore its persisted PDF session if one exists. Corrupt and
+     * locked selectors never enter that migration path.
+     *
+     * This runs after [_pendingCameraTarget] is initialised because restoring a
+     * bounded source frames its coverage immediately.
+     */
+    private fun restoreActiveMapSource() {
+        when (val state = savedMapSelectionState) {
+            is ActiveMapSelectionLoadState.Loaded -> {
+                val restored = restoreSelection(state.selection) ?: onlineBasemap()
+                activateAndPersist(restored)
+            }
+            ActiveMapSelectionLoadState.Missing -> {
+                val legacyPdf = if (activeMapSelectionStore.legacyPdfMigrationPending()) {
+                    pdfSessionStore.load()
+                } else {
+                    null
+                }
+                activateAndPersist(legacyPdf ?: onlineBasemap())
+            }
+            is ActiveMapSelectionLoadState.Unavailable -> {
+                // Never reinterpret a locked/corrupt descriptor as an absent
+                // legacy selector. A corrupt descriptor has already been
+                // quarantined by SafeStore, so establish a clean online choice;
+                // locked data must remain untouched until authentication.
+                _mapSource.value = onlineBasemap()
+                if (state.reason == ActiveMapSelectionFailure.CORRUPT) {
+                    activeMapSelectionStore.saveOnline(preferredBaseMap)
+                }
+            }
+        }
+    }
+
+    private fun restoreSelection(selection: ActiveMapSelection): MapSource? =
+        when (selection.kind) {
+            ActiveMapKind.ONLINE -> onlineBasemap()
+            ActiveMapKind.PDF -> pdfSessionStore.load()
+            ActiveMapKind.OFFLINE_TILES -> activeMapSelectionStore
+                .offlineFile(selection)
+                ?.path
+                ?.let(OfflineTileMapSourceAndroid::open)
+        }
+
+    private fun activateAndPersist(source: MapSource) {
+        _mapSource.value = source
+        frameCameraFor(source)
+        when (source) {
+            is PdfMapSource -> activeMapSelectionStore.savePdf(preferredBaseMap)
+            is OfflineTileMapSourceAndroid ->
+                activeMapSelectionStore.saveOffline(source.path, preferredBaseMap)
+            is OnlineRasterMapSourceAndroid ->
+                activeMapSelectionStore.saveOnline(source.style)
+        }
     }
 
     /** Debounced 400ms, de-duped to ~11m so jitter doesn't spam the network.

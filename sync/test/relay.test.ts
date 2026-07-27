@@ -424,6 +424,34 @@ describe("v3 authenticated actors and convergence metadata", () => {
     a.close(); late.close()
   })
 
+  it("sends a live peer hello then its current location after a reconnect snapshot fence", async () => {
+    const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("reconnect-live-presence"))
+    const live = await openV3Socket(stub); await drainSnapshot(live)
+
+    const ack = collectUntil(live, frame => frame.t === "hello-ack")
+    live.send(JSON.stringify(hello()))
+    expect(await ack).toEqual({ t: "hello-ack", by: A.actor_id, sd: SD, vs: stamp(1) })
+
+    const location = {
+      t: "loc", by: A.actor_id, pub: A.pubkey_base64url, sd: SD,
+      vs: stamp(1), ct: sealed(),
+    }
+    const processed = collectUntil(live, frame => frame.t === "pong")
+    live.send(JSON.stringify(location))
+    live.send(JSON.stringify({ t: "ping" }))
+    expect(await processed).toEqual({ t: "pong" })
+
+    const reconnecting = await openV3Socket(stub)
+    const frames = await collectMessages(reconnecting, 5)
+    expect(frames.map(frame => frame.t)).toEqual([
+      "snapshot-begin", "snapshot", "snapshot-end", "hello", "loc",
+    ])
+    expect(frames[3]).toEqual(hello())
+    expect(frames[4]).toEqual(location)
+
+    live.close(); reconnecting.close()
+  })
+
   it("keeps presence counters session-local so they cannot pin object progress", async () => {
     const stub = env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName("presence-counter"))
     const a = await openV3Socket(stub); await drainSnapshot(a)

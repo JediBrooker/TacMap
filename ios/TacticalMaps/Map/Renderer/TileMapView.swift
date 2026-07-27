@@ -168,10 +168,40 @@ final class TileMapView: UIView {
     }
 
     @objc private func handleRotate(_ gr: UIRotationGestureRecognizer) {
-        let d = gr.rotation
+        switch gr.state {
+        case .began:
+            // Rotation is a browse gesture too. The old custom-MKMapView path
+            // marked this explicitly, but the TileMapView migration only did so
+            // for pan/pinch.
+            onGestureBegan?()
+            consumeRotationGestureDelta(gr)
+        case .changed, .ended:
+            // `.ended` can carry the last movement since the previous changed
+            // callback. Consuming it also preserves very short began→ended
+            // rotations that never emit a changed state.
+            consumeRotationGestureDelta(gr)
+        default:
+            break
+        }
+    }
+
+    /// Consume the recognizer's incremental value exactly once. Internal so
+    /// focused tests can verify the reset contract without synthesising touches.
+    func consumeRotationGestureDelta(_ gr: UIRotationGestureRecognizer) {
+        let delta = gr.rotation
         gr.rotation = 0
-        // UIRotation is CCW-positive; map heading is CW-positive.
-        camera.headingDegrees += d * 180 / .pi
+        applyRotationGestureDelta(delta)
+    }
+
+    /// Apply one incremental rotation and assign the whole camera value so its
+    /// observer always fires. Kept internal for focused regression coverage.
+    func applyRotationGestureDelta(_ radians: CGFloat) {
+        guard radians.isFinite, radians != 0 else { return }
+        var next = camera
+        next.headingDegrees = MapHeading.addingGestureRotation(
+            radians, to: next.headingDegrees
+        )
+        camera = next
     }
 }
 

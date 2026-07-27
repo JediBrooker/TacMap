@@ -83,7 +83,7 @@ struct HamburgerMenu: View {
                         divider
                         row("Unit Sync…", systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
                         row("App Lock…", systemImage: "lock.shield")               { close(onAppLock) }
-                        row("Privacy & OPSEC…", systemImage: "eye.slash.fill")      { close(onOpsec) }
+                        row("Settings, Privacy & OPSEC", systemImage: "eye.slash.fill") { close(onOpsec) }
                         row("About & Credits", systemImage: "info.circle")         { close(onAbout) }
                     }
                 }
@@ -310,6 +310,28 @@ struct UnitLabelsToggle: View {
     }
 }
 
+/// One-tap entry to the symbol builder at the current map crosshair. Lives in
+/// the top-left HUD rail so adding a symbol no longer requires opening the
+/// hamburger menu and then the full symbology list first.
+struct QuickAddSymbolButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 19, weight: .bold))
+                .frame(width: 44, height: 44)
+                .background(Color.orange.opacity(0.90), in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
+                .foregroundStyle(.black)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add symbol at crosshair")
+        .accessibilityHint("Opens the symbol builder at the centre of the map")
+    }
+}
+
 /// Top-right compass chip. N marker rotates live with map heading,
 /// lower half shows NATO mils (6400/circle). Tap to reset to north.
 struct CompassChip: View {
@@ -323,11 +345,7 @@ struct CompassChip: View {
     /// NATO mils, 6400 per circle. N=0000 E=1600 S=3200 W=4800.
     /// Wraps via modulo so 6400 displays as 0000.
     private var milsString: String {
-        let positive = ((heading.truncatingRemainder(dividingBy: 360.0)) + 360.0)
-            .truncatingRemainder(dividingBy: 360.0)
-        let mils = positive * (6400.0 / 360.0)
-        let rounded = Int(round(mils)) % 6400
-        return String(format: "%04d", rounded)
+        MapHeading.milsString(for: heading)
     }
 
     var body: some View {
@@ -349,7 +367,6 @@ struct CompassChip: View {
                 }
                 .frame(width: size, height: size)
                 .rotationEffect(.degrees(-heading))
-                .animation(.linear(duration: 0.05), value: heading)
 
                 // Letter N below the triangle, also rotates.
                 VStack(spacing: 0) {
@@ -361,7 +378,6 @@ struct CompassChip: View {
                 }
                 .frame(width: size, height: size)
                 .rotationEffect(.degrees(-heading))
-                .animation(.linear(duration: 0.05), value: heading)
 
                 // ----- Static mils readout (always upright, easy to read) -----
                 VStack(spacing: 0) {

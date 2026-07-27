@@ -61,8 +61,10 @@ final class SyncReplayState {
     private var helloEpochs: [String: String] = [:]
     private var pendingModelApplications: [String: RemoteMutation] = [:]
 
-    // Per-WebSocket state: intentionally never serialized. A signed hello with
-    // a new session domain resets that actor's presence high-water.
+    // The last authenticated live-session tuple for each remote actor. These
+    // values are durable so reconnecting this client can safely reactivate the
+    // relay's current (equal-epoch) hello without accepting a different session
+    // at that epoch, and so a replayed presence counter stays rejected.
     private var presenceSeq: [String: Int64] = [:]
     private var sessionDomains: [String: String] = [:]
 
@@ -150,14 +152,18 @@ final class SyncReplayState {
     func acceptHello(actorId: String, pubkey: String, sessionDomain: String, epochHex: String) throws -> Bool {
         guard actorKeyIsAcceptable(actorId, pubkey: pubkey) else { throw ReplayError.actorKeyMismatch }
         guard SyncIdentity.parseHelloEpoch(epochHex) != nil else { throw ReplayError.invalidState }
-        if let oldEpoch = helloEpochs[actorId], epochHex <= oldEpoch { return false }
+        if let oldEpoch = helloEpochs[actorId] {
+            if epochHex < oldEpoch { return false }
+            if epochHex == oldEpoch {
+                return actors[actorId] == pubkey && sessionDomains[actorId] == sessionDomain
+            }
+        }
         let old = snapshot()
         actors[actorId] = pubkey
         helloEpochs[actorId] = epochHex
-        do { try persist() } catch { restore(old); throw error }
-        if sessionDomains[actorId] != sessionDomain { presenceSeq[actorId] = 0 }
+        if sessionDomains[actorId] != sessionDomain { presenceSeq.removeValue(forKey: actorId) }
         sessionDomains[actorId] = sessionDomain
-        return true
+        do { try persist(); return true } catch { restore(old); throw error }
     }
 
     func reserveHelloEpoch(actorId: String) throws -> String {
@@ -173,13 +179,15 @@ final class SyncReplayState {
 
     func activeSessionDomain(_ actorId: String) -> String? { sessionDomains[actorId] }
 
-    /// Called only after actor binding, AEAD, signature and model validation.
-    func acceptPresence(actorId: String, sessionDomain: String, counter: Int64) -> Bool {
+    /// Called only after actor binding, AEAD, signature and payload validation.
+    /// The counter is persisted before the caller may expose the peer on the map.
+    func acceptPresence(actorId: String, sessionDomain: String, counter: Int64) throws -> Bool {
         guard sessionDomains[actorId] == sessionDomain, counter > 0 else { return false }
         let existing = presenceSeq[actorId] ?? 0
         guard counter > existing, counter <= existing + Self.advanceWindow else { return false }
+        let old = snapshot()
         presenceSeq[actorId] = counter
-        return true
+        do { try persist(); return true } catch { restore(old); throw error }
     }
 
     /// Reserve and persist a durable counter before constructing/sending a
@@ -341,13 +349,16 @@ final class SyncReplayState {
         let actors: [String: String]
         let helloEpochs: [String: String]
         let pendingModelApplications: [String: RemoteMutation]
+        let presenceSeq: [String: Int64]
+        let sessionDomains: [String: String]
     }
 
     private func snapshot() -> StateSnapshot {
         StateSnapshot(localCounter: localCounter, lastSnapshotSeq: lastSnapshotSeq,
                       stamps: stamps, tombstones: tombstones,
                       contentHashes: contentHashes, actors: actors, helloEpochs: helloEpochs,
-                      pendingModelApplications: pendingModelApplications)
+                      pendingModelApplications: pendingModelApplications,
+                      presenceSeq: presenceSeq, sessionDomains: sessionDomains)
     }
 
     private func restore(_ old: StateSnapshot) {
@@ -359,6 +370,8 @@ final class SyncReplayState {
         actors = old.actors
         helloEpochs = old.helloEpochs
         pendingModelApplications = old.pendingModelApplications
+        presenceSeq = old.presenceSeq
+        sessionDomains = old.sessionDomains
     }
 
     private func apply(_ mutation: DurableMutation) {
@@ -449,7 +462,8 @@ final class SyncReplayState {
             "actors": actorRecords,
             "helloEpochs": helloEpochs,
             "pendingModelApplications": pendingModelApplications.mapValues(encodeRemote),
-            "presenceSeq": [String: String]()
+            "presenceSeq": presenceSeq.mapValues(VersionStamp.counterHex16),
+            "sessionDomains": sessionDomains
         ]
         return try JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
     }
@@ -509,6 +523,15 @@ final class SyncReplayState {
         } else { return false }
 
         let decodedEpochs = dict["helloEpochs"] as? [String: String] ?? [:]
+        let decodedSessions = dict["sessionDomains"] as? [String: String] ?? [:]
+        let presenceValues = dict["presenceSeq"] as? [String: String] ?? [:]
+        var decodedPresence: [String: Int64] = [:]
+        for (actor, encoded) in presenceValues {
+            guard encoded.range(of: "^[0-7][0-9a-f]{15}$", options: .regularExpression) != nil,
+                  let value = UInt64(encoded, radix: 16),
+                  value > 0, value <= UInt64(VersionStamp.maxCounter) else { return false }
+            decodedPresence[actor] = Int64(value)
+        }
         let pendingValues = dict["pendingModelApplications"] as? [String: [String: Any]] ?? [:]
         var decodedPending: [String: RemoteMutation] = [:]
         for (id, value) in pendingValues {
@@ -548,6 +571,13 @@ final class SyncReplayState {
                 acceptedGeneration: Int64(generationRaw), expectedModelHash: expected)
         }
         guard decodedEpochs.allSatisfy({ decodedActors[$0.key] != nil && SyncIdentity.parseHelloEpoch($0.value) != nil }),
+              decodedSessions.allSatisfy({
+                  decodedActors[$0.key] != nil && decodedEpochs[$0.key] != nil &&
+                      SyncIdentity.decodeCanonical32($0.value) != nil
+              }),
+              decodedPresence.allSatisfy({
+                  decodedSessions[$0.key] != nil && decodedActors[$0.key] != nil
+              }),
               decodedStamps.allSatisfy({ decodedActors[$0.value.actorId] != nil }),
               decodedTombstones.allSatisfy({ decodedStamps[$0.key] == $0.value }),
               hashValues.allSatisfy({ decodedStamps[$0.key] != nil && decodedTombstones[$0.key] == nil && $0.value.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil }),
@@ -571,7 +601,8 @@ final class SyncReplayState {
         actors = decodedActors
         helloEpochs = decodedEpochs
         pendingModelApplications = decodedPending
-        presenceSeq.removeAll(); sessionDomains.removeAll()
+        presenceSeq = decodedPresence
+        sessionDomains = decodedSessions
         return true
     }
 }

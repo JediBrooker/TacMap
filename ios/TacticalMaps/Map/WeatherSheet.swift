@@ -38,7 +38,7 @@ struct WeatherSheet: View {
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("Couldn't fetch conditions. If online lookups are off (Privacy & OPSEC), enable them; otherwise check your connection.",
+                        Label("Couldn't fetch conditions. If online lookups are off (Settings, Privacy & OPSEC), enable them; otherwise check your connection.",
                               systemImage: "wifi.slash")
                             .foregroundStyle(.secondary)
                         Button { reloadToken += 1 } label: {

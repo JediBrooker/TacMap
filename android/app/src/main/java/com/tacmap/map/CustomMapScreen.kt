@@ -121,9 +121,13 @@ fun CustomMapScreen(
     LaunchedEffect(resetNorthRequests) {
         resetNorthRequests?.collect { camera = camera.copy(headingDegrees = 0.0) }
     }
-    LaunchedEffect(camera.centerLat, camera.centerLon, camera.zoom) {
-        delay(200)
+    LaunchedEffect(camera.centerLat, camera.centerLon, camera.zoom, camera.headingDegrees) {
+        // Publish the live crosshair immediately. Move-to-crosshair and quick
+        // add previously read a centre delayed by 200 ms, so a fast action
+        // after panning could reuse the old coordinate and look like a no-op.
+        // Heading participates too so a rotate-only gesture settles browsing.
         onCameraIdle(camera.centerLat, camera.centerLon, browsing)
+        delay(200)
         browsing = false
     }
     LaunchedEffect(camera.headingDegrees) { onBearingChanged(camera.headingDegrees) }
@@ -164,8 +168,10 @@ fun CustomMapScreen(
             camera = camera,
             onCameraChange = { camera = it },
             source = source,
-            onGestureStart = { browsing = true },
-            onTap = { if (!drawingInputEnabled && !calibrationInputEnabled && !freeDrawActive) onMapTap() },
+            // The full-screen interaction overlay below owns the entire pointer
+            // stream so a transform can take over even when finger one started
+            // on a waypoint/drawing.
+            gesturesEnabled = false,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -231,6 +237,10 @@ fun CustomMapScreen(
                 onWaypointMoved = onWaypointMoved,
                 onDrawingTap = onDrawingFeatureTap,
                 onDrawingMoved = onShapeMoved,
+                minZoom = source?.minZoom?.toDouble() ?: 2.0,
+                maxZoom = source?.maxZoom?.toDouble() ?: 22.0,
+                onCameraChange = { camera = it },
+                onMapGestureStart = { browsing = true },
                 onEmptyTap = onMapTap
             )
             VertexHandlesOverlayCustom(
@@ -267,7 +277,7 @@ private fun NoBasemapNoticeCustom(modifier: Modifier = Modifier) {
         )
         androidx.compose.material3.Text(
             "Online basemaps are off. Import an offline map pack, or enable " +
-                "online basemap tiles in Privacy & OPSEC.",
+                "online basemap tiles in Settings, Privacy & OPSEC.",
             color = androidx.compose.ui.graphics.Color(0xFFBBBBBB),
             fontSize = 11.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

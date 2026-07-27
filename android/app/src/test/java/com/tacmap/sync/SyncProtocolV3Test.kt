@@ -323,6 +323,79 @@ class SyncProtocolV3Test {
     }
 
     @Test
+    fun equalLiveHelloReconnectRetainsPersistedPresenceHighWater() {
+        val publicKey = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val firstSession = SyncIdentity.urlB64(
+            SyncIdentity.hexToBytes(
+                fixture["signed_preimage"]!!.jsonObject.str("session_domain_hex")
+            )
+        )
+        val secondSession = SyncIdentity.urlB64(ByteArray(32) { 0x42 })
+        val dir = Files.createTempDirectory("sync-presence-reconnect").toFile()
+
+        val first = SyncReplayState("presence-reconnect", dir)
+        assertTrue(first.load())
+        assertTrue(first.commitActorHello(
+            actorA, publicKey, firstSession, "0000000000000001"
+        ))
+        assertTrue(first.commitPresence(actorA, publicKey, firstSession, 7))
+        val stateFile = File(dir, "sync_replay/presence-reconnect.json")
+        val stored = JSONObject(String(
+            requireNotNull(SealedEnvelope.openFile(
+                testStoreKey, stateFile.readBytes(), "sync/room/presence-reconnect"
+            )),
+            Charsets.UTF_8,
+        ))
+        assertTrue(stored.has("presenceSeq"))
+        assertFalse(stored.has("presenceSessions"))
+
+        val reloaded = SyncReplayState("presence-reconnect", dir)
+        assertTrue(reloaded.load())
+        assertEquals(firstSession, reloaded.getPresenceSessionDomain(actorA))
+        assertEquals(7L, reloaded.getPresenceCounter(actorA))
+
+        // The relay may return the exact still-live signed hello after this
+        // client reconnects. Reactivate it, but never reset its replay counter.
+        assertTrue(reloaded.commitActorHello(
+            actorA, publicKey, firstSession, "0000000000000001"
+        ))
+        assertFalse(reloaded.canAcceptPresence(actorA, publicKey, firstSession, 7))
+        assertFalse(reloaded.commitPresence(actorA, publicKey, firstSession, 6))
+        assertTrue(reloaded.commitPresence(actorA, publicKey, firstSession, 8))
+
+        // Equal epoch with a different session is a replay/substitution.
+        assertFalse(reloaded.commitActorHello(
+            actorA, publicKey, secondSession, "0000000000000001"
+        ))
+
+        // A genuinely newer signed hello establishes a fresh counter domain.
+        assertTrue(reloaded.commitActorHello(
+            actorA, publicKey, secondSession, "0000000000000002"
+        ))
+        assertEquals(0L, reloaded.getPresenceCounter(actorA))
+        assertTrue(reloaded.commitPresence(actorA, publicKey, secondSession, 1))
+    }
+
+    @Test
+    fun presenceIsNotExposedWhenReplayStateCannotPersistCounter() {
+        val publicKey = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val session = SyncIdentity.urlB64(ByteArray(32) { 0x24 })
+        var persistenceAvailable = true
+        val state = SyncReplayState(
+            "presence-persist-failure",
+            persistOverride = { persistenceAvailable },
+        )
+        assertTrue(state.commitActorHello(
+            actorA, publicKey, session, "0000000000000001"
+        ))
+        persistenceAvailable = false
+        assertFalse(state.commitPresence(actorA, publicKey, session, 1))
+        assertEquals(0L, state.getPresenceCounter(actorA))
+    }
+
+    @Test
     fun signedHelloUsesDedicatedDomainAndFixtureProof() {
         val kd = fixture["key_derivation"]!!.jsonObject
         val identity = fixture["identity"]!!.jsonObject

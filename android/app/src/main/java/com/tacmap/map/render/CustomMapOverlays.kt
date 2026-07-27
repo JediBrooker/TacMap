@@ -264,7 +264,7 @@ fun MgrsGridCanvas(camera: MapCamera, density: Float, modifier: Modifier = Modif
         segments.forEach { seg ->
             val a = proj.toScreen(seg.start.latitude, seg.start.longitude)
             val b = proj.toScreen(seg.end.latitude, seg.end.longitude)
-            drawLine(ink, a, b, strokeWidth = MgrsGridRenderer.lineWidthDp(seg.type) * density,
+            drawLine(ink, a, b, strokeWidth = MgrsGridRenderer.lineWidthPx(seg.type, density),
                 cap = StrokeCap.Round)
         }
 

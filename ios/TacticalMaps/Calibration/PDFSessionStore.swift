@@ -1,8 +1,8 @@
 import Foundation
 import CoreLocation
 
-/// Persists the currently-active calibrated PDF map source across app
-/// launches. The PDF file is already copied to Documents on import so it
+/// Persists the currently-active PDF map source across app launches. The PDF
+/// file is already copied to protected app storage on import so it
 /// survives a relaunch. What we add here is a small JSON sidecar in
 /// UserDefaults that captures the non-bitmap state: file name, GeoPDF
 /// bounds (sw/ne lat/lng), PDF crop rect, plus (when calibrated) the
@@ -10,6 +10,13 @@ import CoreLocation
 /// on startup without re-parsing or asking user to re-import.
 enum PDFSessionStore {
     private static let key = "active_pdf_v1"
+
+    /// Mutable providers keep persistence tests isolated from the developer's
+    /// simulator data. Production always uses the defaults below.
+    static var defaultsProvider: () -> UserDefaults = { .standard }
+    static var importedMapsDirectoryProvider: () throws -> URL = {
+        try ImportedMapFileCopier.importedMapsDirectory()
+    }
 
     // The affine, fiduciaries and bounds in here pin down exactly which sheet is
     // loaded and what ground it covers, so this is area-of-interest data and
@@ -38,16 +45,19 @@ enum PDFSessionStore {
         return SealedEnvelope.openFile(key: key, blob: stored, label: label)
     }
 
-    static func save(_ source: PDFMapSource) {
+    /// Persist the source before callers mark it as the active basemap. Returning
+    /// false lets them keep the previous active descriptor rather than creating
+    /// a `.pdf` selection that points at stale or missing session data.
+    @discardableResult
+    static func save(_ source: PDFMapSource) -> Bool {
         guard let bounds = source.bounds else {
             /// No bounds at all, nothing to anchor page to.
-            return
+            return false
         }
-        /// Only persist genuinely georeferenced sources: GeoPDF with
-        /// embedded tags, or one the user fitted with fiduciaries. A plain
-        /// PDF with only the rough camera-centred fallback box isn't worth
-        /// saving - it'd just reappear at some arbitrary location next launch.
-        guard source.kind == .geoPDF || source.calibration != nil else { return }
+        /// Plain PDFs use the camera-centred fallback bounds resolved at import.
+        /// Persist those bounds too: they are the exact placement the user saw,
+        /// and active-map restoration must not silently discard that map just
+        /// because it has not been fiduciary-calibrated yet.
         let cropRect = source.pdfRenderRect
         let cal: PersistedCalibration?
         if case .fiduciaries(let fids, let transform) = source.calibration {
@@ -76,33 +86,41 @@ enum PDFSessionStore {
             let data = try JSONEncoder().encode(dto)
             guard let sealed = seal(data, Self.labelActive) else {
                 NSLog("[PDFSessionStore] could not seal active PDF, not persisting")
-                return
+                return false
             }
-            UserDefaults.standard.set(sealed, forKey: key)
+            let defaults = defaultsProvider()
+            defaults.set(sealed, forKey: key)
+            guard defaults.data(forKey: key) == sealed else {
+                NSLog("[PDFSessionStore] active PDF write could not be verified")
+                return false
+            }
+            return true
         } catch {
             /// Don't silently drop the write. A stale entry would then
             /// get restored on next launch with no clue why.
             NSLog("[PDFSessionStore] failed to encode active PDF")
+            return false
         }
     }
 
     static func load() -> PDFMapSource? {
-        guard let stored = UserDefaults.standard.data(forKey: key) else { return nil }
+        let defaults = defaultsProvider()
+        guard let stored = defaults.data(forKey: key) else { return nil }
         // Locked key returns nil. Do NOT clear the entry: the user would lose
         // their calibrated sheet just for opening the app before authenticating.
         guard let data = unseal(stored, Self.labelActive) else { return nil }
         guard let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else {
-            UserDefaults.standard.removeObject(forKey: key)
+            defaults.removeObject(forKey: key)
             return nil
         }
         guard valid(dto) else { return nil }
         // Written by a pre-encryption build, seal it in place.
         if !SealedEnvelope.isSealedFile(stored), let sealed = seal(data, Self.labelActive) {
-            UserDefaults.standard.set(sealed, forKey: key)
+            defaults.set(sealed, forKey: key)
         }
         guard let url = resolveImportedMap(named: dto.fileName) else {
             NSLog("[PDFSessionStore] active PDF file vanished; clearing session")
-            UserDefaults.standard.removeObject(forKey: key)
+            defaults.removeObject(forKey: key)
             return nil
         }
         let bounds = GeoPDFReader.Bounds(
@@ -126,7 +144,7 @@ enum PDFSessionStore {
     }
 
     static func clear() {
-        UserDefaults.standard.removeObject(forKey: key)
+        defaultsProvider().removeObject(forKey: key)
     }
 
     /// Resolve an imported map by file name. New location is App Support
@@ -136,7 +154,7 @@ enum PDFSessionStore {
         guard !fileName.isEmpty, fileName == URL(fileURLWithPath: fileName).lastPathComponent,
               !fileName.contains("/"), !fileName.contains("\\") else { return nil }
         let fm = FileManager.default
-        if let dir = try? ImportedMapFileCopier.importedMapsDirectory() {
+        if let dir = try? importedMapsDirectoryProvider() {
             let url = dir.appendingPathComponent(fileName)
             if fm.fileExists(atPath: url.path) { return url }
             // Migrate a legacy Documents copy into the private directory.
@@ -184,12 +202,12 @@ enum PDFSessionStore {
         lib[fileName] = cal
         if let data = try? JSONEncoder().encode(lib),
            let sealed = seal(data, Self.labelLibrary) {
-            UserDefaults.standard.set(sealed, forKey: libraryKey)
+            defaultsProvider().set(sealed, forKey: libraryKey)
         }
     }
 
     private static func loadLibrary() -> [String: PersistedCalibration] {
-        guard let stored = UserDefaults.standard.data(forKey: libraryKey),
+        guard let stored = defaultsProvider().data(forKey: libraryKey),
               let data = unseal(stored, Self.labelLibrary),
               let lib = try? JSONDecoder().decode([String: PersistedCalibration].self, from: data)
         else { return [:] }

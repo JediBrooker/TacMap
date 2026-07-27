@@ -9,6 +9,7 @@ struct WaypointEditSheet: View {
     /// nil = creating a new waypoint at defaultCoordinate.
     let original: Waypoint?
     let defaultCoordinate: CLLocationCoordinate2D
+    let defaultLayerID: UUID
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
@@ -34,10 +35,12 @@ struct WaypointEditSheet: View {
     init(waypointStore: WaypointStore,
          original: Waypoint? = nil,
          defaultCoordinate: CLLocationCoordinate2D = .init(latitude: 0, longitude: 0),
-         defaultScale: Double = 1.0) {
+         defaultScale: Double = 1.0,
+         defaultLayerID: UUID = DrawingLayer.legacyFallbackID) {
         self.waypointStore = waypointStore
         self.original = original
         self.defaultCoordinate = defaultCoordinate
+        self.defaultLayerID = defaultLayerID
         if let wp = original {
             _name          = State(initialValue: wp.name)
             _notes         = State(initialValue: wp.notes ?? "")
@@ -409,7 +412,8 @@ struct WaypointEditSheet: View {
                 kind:      currentKind,
                 rotation:  persistedRotation,
                 scaleX:    persistedScaleX,
-                scaleY:    persistedScaleY
+                scaleY:    persistedScaleY,
+                layerID:   defaultLayerID
             )
             waypointStore.add(new)
         }

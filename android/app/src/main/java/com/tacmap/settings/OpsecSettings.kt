@@ -5,8 +5,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/** Coordinate format used for the map header's primary readout. The persisted
+ *  enum name is intentionally stable; unknown or absent values use MGRS so
+ *  existing installs keep the app's historical default. */
+enum class CoordinateDisplayType(val displayName: String) {
+    MGRS("MGRS"),
+    WGS84("WGS84"),
+    UTM("UTM");
+
+    companion object {
+        fun fromPersisted(value: String?): CoordinateDisplayType =
+            entries.firstOrNull { it.name == value } ?: MGRS
+    }
+}
+
 /**
- * App-scoped OPSEC / privacy settings. Backed by app-private prefs,
+ * App-scoped general / OPSEC / privacy settings. Backed by app-private prefs,
  * exposed as StateFlows so UI, Activity window, and networking layer
  * all see the same source of truth.
  *
@@ -37,6 +51,12 @@ class OpsecSettings(context: Context) {
     private val _onlineBasemaps = MutableStateFlow(prefs.getBoolean(KEY_BASEMAPS, false))
     val onlineBasemaps: StateFlow<Boolean> = _onlineBasemaps.asStateFlow()
 
+    private val _primaryCoordinateType = MutableStateFlow(
+        CoordinateDisplayType.fromPersisted(prefs.getString(KEY_COORDINATE_TYPE, null))
+    )
+    val primaryCoordinateType: StateFlow<CoordinateDisplayType> =
+        _primaryCoordinateType.asStateFlow()
+
     private val _relayUrl = MutableStateFlow(prefs.getString(KEY_RELAY, DEFAULT_RELAY) ?: DEFAULT_RELAY)
     val relayUrl: StateFlow<String> = _relayUrl.asStateFlow()
 
@@ -53,6 +73,11 @@ class OpsecSettings(context: Context) {
     fun setOnlineBasemaps(value: Boolean) {
         prefs.edit().putBoolean(KEY_BASEMAPS, value).apply()
         _onlineBasemaps.value = value
+    }
+
+    fun setPrimaryCoordinateType(value: CoordinateDisplayType) {
+        prefs.edit().putString(KEY_COORDINATE_TYPE, value.name).apply()
+        _primaryCoordinateType.value = value
     }
 
     fun setRelayUrl(value: String) {
@@ -73,6 +98,7 @@ class OpsecSettings(context: Context) {
         private const val KEY_SCREEN = "block_screen_capture"
         private const val KEY_ONLINE = "online_lookups"
         private const val KEY_BASEMAPS = "online_basemaps"
+        private const val KEY_COORDINATE_TYPE = "primary_coordinate_type"
         private const val KEY_RELAY = "relay_url"
     }
 }

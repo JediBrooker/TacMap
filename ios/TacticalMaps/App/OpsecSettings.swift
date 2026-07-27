@@ -1,6 +1,64 @@
 import Foundation
 import Combine
 
+/// Coordinate representation used for the map header's primary readout.
+/// Raw values are stable because they are persisted in UserDefaults.
+enum CoordinateDisplayFormat: String, CaseIterable, Identifiable {
+    case mgrs
+    case wgs84
+    case utm
+
+    struct Resolved: Equatable {
+        let format: CoordinateDisplayFormat
+        let text: String
+    }
+
+    static let defaultsKey = "map.coordinateDisplayFormat"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .mgrs: "MGRS"
+        case .wgs84: "WGS84"
+        case .utm: "UTM"
+        }
+    }
+
+    static func stored(in defaults: UserDefaults = .standard) -> Self {
+        guard let rawValue = defaults.string(forKey: defaultsKey),
+              let stored = Self(rawValue: rawValue) else {
+            // Preserve the header users already know when upgrading.
+            return .mgrs
+        }
+        return stored
+    }
+
+    func persist(in defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: Self.defaultsKey)
+    }
+
+    /// Resolves the selected format to visible text. UTM is unavailable in the
+    /// polar caps; falling back to WGS84 keeps the primary readout useful there.
+    func resolve(mgrs: String, wgs84: String, utm: String?) -> Resolved {
+        switch self {
+        case .mgrs:
+            return Resolved(format: .mgrs, text: mgrs)
+        case .wgs84:
+            return Resolved(format: .wgs84, text: wgs84)
+        case .utm:
+            guard let utm else {
+                return Resolved(format: .wgs84, text: wgs84)
+            }
+            let trimmed = utm.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("N/A") else {
+                return Resolved(format: .wgs84, text: wgs84)
+            }
+            return Resolved(format: .utm, text: trimmed)
+        }
+    }
+}
+
 /// App-wide OPSEC / privacy settings. Persisted in UserDefaults, observable
 /// by SwiftUI. Defaults are OPSEC-first for a field tool:
 /// privacyScreen ON - opaque cover redacts map (with live position)
@@ -16,6 +74,9 @@ final class OpsecSettings: ObservableObject {
     /// provider, so a fresh install fetches nothing until you say so.
     @Published var onlineBasemaps: Bool { didSet { defaults.set(onlineBasemaps, forKey: Keys.basemaps) } }
     @Published var relayURL: String { didSet { defaults.set(relayURL, forKey: Keys.relay) } }
+    @Published var coordinateDisplayFormat: CoordinateDisplayFormat {
+        didSet { coordinateDisplayFormat.persist(in: defaults) }
+    }
 
     // Host only, no "/room/" - SyncManager appends the full "/room/<id>" path
     // itself. (Matches SyncManager.relayBase; a trailing "/room/" here would
@@ -29,6 +90,7 @@ final class OpsecSettings: ObservableObject {
         onlineLookups = defaults.object(forKey: Keys.online) as? Bool ?? false
         onlineBasemaps = defaults.object(forKey: Keys.basemaps) as? Bool ?? false
         relayURL = defaults.string(forKey: Keys.relay) ?? Self.defaultRelay
+        coordinateDisplayFormat = CoordinateDisplayFormat.stored(in: defaults)
         // Marketing-screenshot mode: the store XCUITest sets this env var so the
         // shots show real online tiles/lookups instead of the OPSEC-default dark
         // basemap. Never set in production (env vars can't be injected into a

@@ -5,15 +5,16 @@ Object** that relays **end-to-end-encrypted** overlay changes between devices in
 unit. The server is **E2E-blind**: it stores and forwards opaque ciphertext and
 never holds the keys.
 
-The hosted v2 protocol remains the active compatibility path. Dormant v3 relay
-support lives at `/v3/room/<roomId>` and MUST NOT be activated by generated join
-codes until both mobile clients pass the cross-platform release gate in
+Newly generated join codes use protocol v3 (the `3:` code prefix) and connect
+through `/v3/room/<roomId>`. The `/room/<roomId>` v2 route remains available
+only for compatibility with existing `2:` rooms. The v3 design and
+cross-platform requirements are specified in
 [`ADR-001`](../docs/security/ADR-001-sync-protocol-v3.md).
 
 ## Architecture
 
 - **Worker** (`src/index.ts`, default export) routes `wss://…/room/<roomId>`
-  (v2) and `wss://…/v3/room/<roomId>` (dormant v3) WebSocket upgrades to
+  (legacy v2) and `wss://…/v3/room/<roomId>` (current v3) WebSocket upgrades to
   protocol-separated Durable Objects. V2 uses the raw room ID; v3 uses the
   internal name `v3:<roomId>` so a v2 object cannot preclaim v3 metadata.
 - **`SyncRoom`** Durable Object: one per unit room. Holds the connected sockets
@@ -28,7 +29,7 @@ codes until both mobile clients pass the cross-platform release gate in
     count toward record and byte quotas, so they reach late joiners without
     enabling unbounded storage.
 
-## Wire protocol (JSON over WebSocket)
+## Legacy v2 wire protocol (JSON over WebSocket)
 
 Client → server:
 
@@ -58,7 +59,7 @@ Every snapshot is framed by `snapshot-begin {seq}` and matching
 Snapshot pages are capped at 900,000 encoded UTF-8 bytes as well as a
 100-record storage read page.
 
-### Dormant v3 additions
+### Active v3 protocol
 
 V3 uses string `VersionStamp`s, room-scoped self-certifying actor IDs, and
 room-scoped wire object IDs. Before a socket can send put/delete/presence it
@@ -86,7 +87,53 @@ announcing socket with
 Clients remain snapshot-gated and send no put/delete/presence until that frame
 matches their current actor, connection session domain, and signed epoch.
 
-## End-to-end encryption (client responsibility)
+V3 presence uses this outer relay-visible frame:
+
+```json
+{"t":"loc","by":"<actorId>","pub":"<32-byte base64url>",
+ "sd":"<32-byte base64url>","vs":"<presenceStamp>","ct":"<base64>"}
+```
+
+Decrypting `ct` with the v3 presence AAD yields an inner envelope shaped as
+follows:
+
+```json
+{
+  "pv": 1,
+  "p": "<standard base64 of the exact presence-payload bytes>",
+  "lat": 0.0,
+  "lon": 0.0,
+  "heading": 0.0,
+  "speed": 0.0,
+  "callsign": "",
+  "affiliation": "UNKNOWN",
+  "echelon": "TEAM",
+  "function": "INFANTRY",
+  "isHQ": false,
+  "pub": "<32-byte base64url>",
+  "sig": "<64-byte Ed25519 base64url>"
+}
+```
+
+`pv: 1` selects the exact-payload encoding. `p` is canonical standard Base64
+(including padding) and decodes to the exact UTF-8 JSON bytes created by the
+sender for the presence payload. The signed preimage's `payloadHash` is
+`SHA-256(decodeBase64(p))`; a receiver MUST hash those bytes directly and MUST
+NOT parse and reserialize them before verification. After verification, current
+clients parse those authenticated bytes as the authoritative presence value.
+
+The flat `lat` through `isHQ` fields duplicate the payload for compatibility
+with legacy v3 clients. `pub` and `sig` remain in the encrypted inner envelope;
+the outer `pub` supplies relay/session verification context, while the inner
+copy is bound to the encrypted message. Senders include both the exact `p`
+encoding and the flat compatibility fields during the migration.
+
+Active-session metadata is not durable. A newly connected or reconnecting v3
+observer first receives its durable `snapshot-begin` / `snapshot` /
+`snapshot-end` fence, then each currently connected peer's latest signed
+`hello`, immediately followed by that peer's current `loc` when one exists.
+
+## Legacy v2 end-to-end encryption (client responsibility)
 
 The unit shares a **join code** (a high-entropy secret, ~80 bits, generated
 on-device). On each device the key hierarchy is derived in a single PBKDF2 pass
@@ -139,6 +186,8 @@ Documented so the trade-offs are explicit rather than surprising:
 ## Deployed instance
 
 Live relay: **`wss://tacmap-sync.christianbrooker.workers.dev/room/<roomId>`**
+for legacy v2 and
+**`wss://tacmap-sync.christianbrooker.workers.dev/v3/room/<roomId>`** for v3
 (health: `https://tacmap-sync.christianbrooker.workers.dev/health` → `ok`).
 
 Verified end-to-end against the deployed Durable Object (two-client WebSocket

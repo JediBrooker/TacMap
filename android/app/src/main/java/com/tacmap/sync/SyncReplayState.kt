@@ -58,8 +58,14 @@ class SyncReplayState(
     private val contentHashes = HashMap<String, String>()
     private val actors = HashMap<String, String>()
     private val helloEpochs = HashMap<String, String>()
+    private val presenceSessions = HashMap<String, PresenceSession>()
     private val pendingModelApplications = HashMap<String, RemoteMutation>()
     private val transientPresenceSeq = HashMap<String, Long>()
+
+    private data class PresenceSession(
+        val sessionDomain: String,
+        val counter: Long,
+    )
 
     private data class MemorySnapshot(
         val localCounter: Long,
@@ -69,12 +75,14 @@ class SyncReplayState(
         val hashes: HashMap<String, String>,
         val actors: HashMap<String, String>,
         val helloEpochs: HashMap<String, String>,
+        val presenceSessions: HashMap<String, PresenceSession>,
         val pendingModelApplications: HashMap<String, RemoteMutation>,
     )
 
     private fun memorySnapshot() = MemorySnapshot(
         localCounter, lastSnapshotSeq, HashMap(stamps), HashMap(tombstones),
-        HashMap(contentHashes), HashMap(actors), HashMap(helloEpochs), HashMap(pendingModelApplications)
+        HashMap(contentHashes), HashMap(actors), HashMap(helloEpochs),
+        HashMap(presenceSessions), HashMap(pendingModelApplications)
     )
 
     private fun restore(snapshot: MemorySnapshot) {
@@ -85,6 +93,7 @@ class SyncReplayState(
         contentHashes.clear(); contentHashes.putAll(snapshot.hashes)
         actors.clear(); actors.putAll(snapshot.actors)
         helloEpochs.clear(); helloEpochs.putAll(snapshot.helloEpochs)
+        presenceSessions.clear(); presenceSessions.putAll(snapshot.presenceSessions)
         pendingModelApplications.clear(); pendingModelApplications.putAll(snapshot.pendingModelApplications)
     }
 
@@ -217,17 +226,71 @@ class SyncReplayState(
         return hex.takeIf { persistTransaction { helloEpochs[actorId] = hex } }
     }
 
-    /** Persist a verified remote actor pin/epoch; equal or older is replay. */
-    fun commitActorHello(actorId: String, pubkey: String, epochHex: String): Boolean {
-        if (SyncIdentity.parseHelloEpoch(epochHex) == null) return false
+    /**
+     * Persist a verified remote actor pin, epoch, and live session domain.
+     *
+     * A reconnect may receive the exact same still-live hello that was accepted
+     * before this app disconnected. Equality is safe only when both the pinned
+     * key and signed session domain match the persisted values; its persisted
+     * presence counter is retained so old locations still cannot be replayed.
+     */
+    fun commitActorHello(
+        actorId: String,
+        pubkey: String,
+        sessionDomain: String,
+        epochHex: String,
+    ): Boolean {
+        if (SyncIdentity.parseHelloEpoch(epochHex) == null ||
+            SyncIdentity.urlB64Decode32(sessionDomain) == null) return false
         val pinned = actors[actorId]
         if (pinned != null && pinned != pubkey) return false
         val old = helloEpochs[actorId]
-        if (old != null && epochHex <= old) return false
-        return persistTransaction { actors[actorId] = pubkey; helloEpochs[actorId] = epochHex }
+        if (old != null && epochHex < old) return false
+        if (old == epochHex) {
+            return pinned == pubkey && presenceSessions[actorId]?.sessionDomain == sessionDomain
+        }
+        return persistTransaction {
+            actors[actorId] = pubkey
+            helloEpochs[actorId] = epochHex
+            presenceSessions[actorId] = PresenceSession(sessionDomain, 0L)
+        }
     }
 
     fun getHelloEpoch(actorId: String): String? = helloEpochs[actorId]
+
+    fun canAcceptPresence(
+        actorId: String,
+        pubkey: String,
+        sessionDomain: String,
+        counter: Long,
+    ): Boolean {
+        if (actors[actorId] != pubkey || counter <= 0L) return false
+        val session = presenceSessions[actorId] ?: return false
+        if (session.sessionDomain != sessionDomain || counter <= session.counter) return false
+        return counter - session.counter <= ADVANCE_WINDOW
+    }
+
+    /**
+     * Persist the authenticated presence counter before exposing the peer to
+     * the map. A failed secure write rejects the update and rolls memory back.
+     */
+    fun commitPresence(
+        actorId: String,
+        pubkey: String,
+        sessionDomain: String,
+        counter: Long,
+    ): Boolean {
+        if (!canAcceptPresence(actorId, pubkey, sessionDomain, counter)) return false
+        return persistTransaction {
+            presenceSessions[actorId] = PresenceSession(sessionDomain, counter)
+        }
+    }
+
+    fun getPresenceSessionDomain(actorId: String): String? =
+        presenceSessions[actorId]?.sessionDomain
+
+    fun getPresenceCounter(actorId: String): Long? =
+        presenceSessions[actorId]?.counter
 
     /** Reserve and persist an outbound put stamp/hash before transmission. */
     fun reserveLocalPut(wireObjectId: String, actorId: String, pubkey: String, contentHash: String): VersionStamp? {
@@ -410,6 +473,14 @@ class SyncReplayState(
         put("contentHashes", JSONObject().also { out -> for ((k, v) in contentHashes) out.put(k, v) })
         put("actors", JSONObject().also { out -> for ((k, v) in actors) out.put(k, v) })
         put("helloEpochs", JSONObject().also { out -> for ((k, v) in helloEpochs) out.put(k, v) })
+        put("presenceSeq", JSONObject().also { out ->
+            for ((actor, session) in presenceSessions) {
+                out.put(actor, JSONObject().apply {
+                    put("sd", session.sessionDomain)
+                    put("counter", VersionStamp.counterHex16(session.counter))
+                })
+            }
+        })
         put("pendingModelApplications", JSONObject().also { out ->
             for ((id, remote) in pendingModelApplications) out.put(id, encodeRemote(remote))
         })
@@ -436,6 +507,7 @@ class SyncReplayState(
         val hashes = decodeStrings(json.getJSONObject("contentHashes"))
         val actorPins = decodeStrings(json.getJSONObject("actors"))
         val epochs = decodeStrings(json.optJSONObject("helloEpochs") ?: JSONObject())
+        val sessions = decodePresenceSessions(json.optJSONObject("presenceSeq") ?: JSONObject())
         val pending = decodePending(json.optJSONObject("pendingModelApplications") ?: JSONObject())
         require(actorPins.all { (actor, pub) ->
             SyncIdentity.urlB64Decode32(actor) != null && SyncIdentity.urlB64Decode32(pub) != null
@@ -447,6 +519,11 @@ class SyncReplayState(
         require(hashes.all { (id, hash) -> id in decodedStamps && id !in decodedTombs && hash.matches(Regex("^[0-9a-f]{64}$")) })
         require(decodedStamps.keys.all { (it in decodedTombs) xor (it in hashes) })
         require(epochs.all { (actor, epoch) -> actor in actorPins && SyncIdentity.parseHelloEpoch(epoch) != null })
+        require(sessions.all { (actor, session) ->
+            actor in actorPins && actor in epochs &&
+                SyncIdentity.urlB64Decode32(session.sessionDomain) != null &&
+                session.counter in 0..VersionStamp.MAX_COUNTER
+        })
         require(pending.all { (id, remote) ->
             id == remote.mutation.wireObjectId && validRemote(remote) &&
                 actorPins[remote.mutation.stamp.actorId] == remote.mutation.pubkey &&
@@ -454,7 +531,22 @@ class SyncReplayState(
         })
         val authenticatedMax = decodedStamps.values.maxOfOrNull { it.counter } ?: 0L
         require(local >= authenticatedMax)
-        return MemorySnapshot(local, seq, decodedStamps, decodedTombs, hashes, actorPins, epochs, pending)
+        return MemorySnapshot(
+            local, seq, decodedStamps, decodedTombs, hashes, actorPins, epochs,
+            sessions, pending
+        )
+    }
+
+    private fun decodePresenceSessions(obj: JSONObject): HashMap<String, PresenceSession> {
+        val out = HashMap<String, PresenceSession>()
+        for (actor in obj.keys()) {
+            val value = obj.getJSONObject(actor)
+            out[actor] = PresenceSession(
+                sessionDomain = value.getString("sd"),
+                counter = parseCounter(value.getString("counter")),
+            )
+        }
+        return out
     }
 
     private fun decodePending(obj: JSONObject): HashMap<String, RemoteMutation> {
@@ -510,7 +602,7 @@ class SyncReplayState(
         localCounter = 0L
         lastSnapshotSeq = -1L
         stamps.clear(); tombstones.clear(); contentHashes.clear(); actors.clear(); helloEpochs.clear()
-        pendingModelApplications.clear(); transientPresenceSeq.clear()
+        presenceSessions.clear(); pendingModelApplications.clear(); transientPresenceSeq.clear()
         try { stateFile()?.delete() } catch (_: Throwable) { /* explicit forget is best effort */ }
     }
 }

@@ -147,6 +147,13 @@ enum MGRSGridRenderer {
         }
     }
 
+    /// Applied grid width: one physical display pixel thicker than the base
+    /// cartographic weight. On Retina screens a pixel is `1 / scale` points,
+    /// so this avoids accidentally adding two or three pixels.
+    static func appliedLineWidth(for type: GridType, screenScale: CGFloat) -> CGFloat {
+        lineWidth(for: type) + 1 / max(screenScale, 1)
+    }
+
     /// Label font size. 100km labels are readable at any zoom, finer
     /// grids get smaller text so they don't clutter when zoomed way in.
     static func labelFontSize(for type: GridType) -> CGFloat {

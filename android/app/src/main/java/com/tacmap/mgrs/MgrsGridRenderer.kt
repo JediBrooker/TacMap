@@ -47,6 +47,10 @@ object MgrsGridRenderer {
         else                       -> 0.6f
     }
 
+    /** Existing density-scaled width plus exactly one physical display pixel. */
+    fun lineWidthPx(type: GridType, density: Float): Float =
+        lineWidthDp(type) * density + 1f
+
     fun labelTextSp(type: GridType): Float = when (type) {
         GridType.HUNDRED_KILOMETER -> 14f
         GridType.TEN_KILOMETER     -> 12f

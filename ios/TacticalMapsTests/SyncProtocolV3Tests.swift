@@ -306,14 +306,133 @@ final class SyncProtocolV3Tests: XCTestCase {
     func testPresenceCounterIsBoundToSignedSession() throws {
         let state = SyncReplayState(roomId: "test-room")
         XCTAssertTrue(try state.acceptHello(actorId: actorA, pubkey: pubA, sessionDomain: sessionDomain, epochHex: "0000000000000001"))
-        XCTAssertTrue(state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 1))
-        XCTAssertTrue(state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 5))
-        XCTAssertFalse(state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 3))
-        XCTAssertFalse(state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 5))
+        XCTAssertTrue(try state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 1))
+        XCTAssertTrue(try state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 5))
+        XCTAssertFalse(try state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 3))
+        XCTAssertFalse(try state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 5))
         let otherSession = Data(repeating: 7, count: 32).base64URLEncodedStringNoPad()
         XCTAssertTrue(try state.acceptHello(actorId: actorA, pubkey: pubA, sessionDomain: otherSession, epochHex: "0000000000000002"))
-        XCTAssertTrue(state.acceptPresence(actorId: actorA, sessionDomain: otherSession, counter: 1))
-        XCTAssertFalse(state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 6))
+        XCTAssertTrue(try state.acceptPresence(actorId: actorA, sessionDomain: otherSession, counter: 1))
+        XCTAssertFalse(try state.acceptPresence(actorId: actorA, sessionDomain: sessionDomain, counter: 6))
+    }
+
+    func testPresenceEnvelopeCarriesExactAwkwardPayloadBytes() throws {
+        let payload = SyncManager.PresencePayload(
+            lat: -35.281982, lon: 149.131032,
+            heading: 12.3456789012345, speed: 0.0000004,
+            callsign: "A/1 🛰️", affiliation: "friend",
+            echelon: "team", function: "infantry", isHQ: true)
+        let signed = try XCTUnwrap(SyncManager.buildPresencePayloadBytes(payload))
+        var inner = SyncManager.makePresenceEnvelope(
+            payload: payload, signedPayload: signed,
+            publicKey: pubA, signature: "test-signature")
+
+        XCTAssertEqual(inner["pv"] as? Int, 1)
+        XCTAssertEqual(inner["p"] as? String, signed.base64EncodedString())
+
+        // Simulate the actual sealed-JSON round trip. Even if compatibility
+        // fields are independently changed, a v1 receiver must parse the exact
+        // authenticated `p` bytes, not reconstruct numbers from those fields.
+        inner["lat"] = 0.0
+        let wire = try JSONSerialization.data(withJSONObject: inner)
+        let decodedObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: wire) as? [String: Any])
+        let decoded = try XCTUnwrap(SyncManager.decodePresenceEnvelope(decodedObject))
+        XCTAssertEqual(decoded.signedPayload, signed)
+        XCTAssertEqual(decoded.payload, payload)
+
+        var unknownVersion = decodedObject
+        unknownVersion["pv"] = 2
+        XCTAssertNil(SyncManager.decodePresenceEnvelope(unknownVersion))
+        var nonCanonicalBase64 = decodedObject
+        nonCanonicalBase64["p"] = signed.base64EncodedString() + "\n"
+        XCTAssertNil(SyncManager.decodePresenceEnvelope(nonCanonicalBase64))
+    }
+
+    func testExactPresenceEnvelopeVerifiesSharedFixtureWithoutReserializing() throws {
+        let signedPreimage = fixture["signed_preimage"] as! [String: Any]
+        let value = try XCTUnwrap(
+            (signedPreimage["cases"] as! [[String: Any]])
+                .first { $0["name"] as? String == "presence_update" })
+        let identity = fixture["identity"] as! [String: Any]
+        let device = identity["device_a"] as! [String: Any]
+        let publicKey = device["pubkey_base64url"] as! String
+        let plaintext = Data((value["plaintext"] as! String).utf8)
+        let inner: [String: Any] = [
+            "pv": 1,
+            "p": plaintext.base64EncodedString(),
+            "pub": publicKey,
+            "sig": value["signature_base64url"] as! String
+        ]
+        let decoded = try XCTUnwrap(SyncManager.decodePresenceEnvelope(inner))
+        XCTAssertEqual(decoded.signedPayload, plaintext)
+        XCTAssertEqual(hex(SyncIdentity.sha256(decoded.signedPayload)),
+                       value["payload_hash_hex"] as? String)
+        XCTAssertNotEqual(SyncManager.buildPresencePayloadBytes(decoded.payload), plaintext,
+                          "verification must use embedded bytes, not Foundation reserialization")
+
+        let keys = fixture["key_derivation"] as! [String: Any]
+        let roomIdRaw = SyncIdentity.hexToBytes(keys["room_id_raw_hex"] as! String)
+        let session = SyncIdentity.hexToBytes(signedPreimage["session_domain_hex"] as! String)
+        let actor = value["actor_id"] as! String
+        let counter = (value["counter"] as! NSNumber).int64Value
+        let preimage = SyncIdentity.buildPreimage(
+            domain: SyncIdentity.domainPresence, roomIdRaw: roomIdRaw,
+            actorId: actor, sessionDomain: session,
+            counterHex16: VersionStamp.counterHex16(counter),
+            objectId: "", kind: "loc",
+            payloadHash: SyncIdentity.sha256(decoded.signedPayload))
+        XCTAssertEqual(hex(preimage), value["preimage_hex"] as? String)
+        XCTAssertTrue(SyncSigning.verify(
+            publicKey, preimage, decoded.signature))
+    }
+
+    func testEqualHelloReconnectRestoresSessionAndRejectsPresenceReplay() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sync-presence-reconnect-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let previousKeyProvider = SafeStore.keyProvider
+        let key = Data(repeating: 0x75, count: 32)
+        SafeStore.keyProvider = { key }
+        SealedMigrationPolicy.resetForTests(key: key)
+        defer {
+            SafeStore.keyProvider = previousKeyProvider
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let room = "presence-reconnect"
+        let first = SyncReplayState(roomId: room, containerURL: directory)
+        XCTAssertTrue(first.load())
+        XCTAssertTrue(try first.acceptHello(
+            actorId: actorA, pubkey: pubA, sessionDomain: sessionDomain,
+            epochHex: "0000000000000001"))
+        XCTAssertTrue(try first.acceptPresence(
+            actorId: actorA, sessionDomain: sessionDomain, counter: 5))
+
+        let restarted = SyncReplayState(roomId: room, containerURL: directory)
+        XCTAssertTrue(restarted.load())
+        XCTAssertEqual(restarted.activeSessionDomain(actorA), sessionDomain)
+        XCTAssertTrue(try restarted.acceptHello(
+            actorId: actorA, pubkey: pubA, sessionDomain: sessionDomain,
+            epochHex: "0000000000000001"),
+            "the relay may replay the current signed hello after this client reconnects")
+        XCTAssertFalse(try restarted.acceptPresence(
+            actorId: actorA, sessionDomain: sessionDomain, counter: 5))
+        XCTAssertTrue(try restarted.acceptPresence(
+            actorId: actorA, sessionDomain: sessionDomain, counter: 6))
+
+        let differentSession = Data(repeating: 0x33, count: 32).base64URLEncodedStringNoPad()
+        XCTAssertFalse(try restarted.acceptHello(
+            actorId: actorA, pubkey: pubA, sessionDomain: differentSession,
+            epochHex: "0000000000000001"),
+            "an equal epoch must never activate a different session domain")
+
+        let restartedAgain = SyncReplayState(roomId: room, containerURL: directory)
+        XCTAssertTrue(restartedAgain.load())
+        XCTAssertFalse(try restartedAgain.acceptPresence(
+            actorId: actorA, sessionDomain: sessionDomain, counter: 6))
+        XCTAssertTrue(try restartedAgain.acceptPresence(
+            actorId: actorA, sessionDomain: sessionDomain, counter: 7))
     }
 
     func testSignedHelloProductionVerifierMatchesFixtureAndRejectsTampering() {

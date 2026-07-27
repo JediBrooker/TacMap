@@ -3,6 +3,10 @@ package com.tacmap.map
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -10,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,7 +24,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -32,6 +34,7 @@ import com.tacmap.map.render.MapCamera
 import com.tacmap.map.render.MapProjection
 import com.tacmap.waypoints.Waypoint
 import kotlin.math.hypot
+import kotlin.math.log2
 import kotlin.math.roundToInt
 
 data class MapItemDrag(
@@ -95,7 +98,6 @@ internal fun VertexHandlesOverlayCustom(
     }
 }
 
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 internal fun MapItemTouchOverlayCustom(
     waypoints: List<Waypoint>,
@@ -110,6 +112,10 @@ internal fun MapItemTouchOverlayCustom(
     onWaypointMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit,
     onDrawingTap: (String) -> Unit,
     onDrawingMoved: (featureId: String, deltaLat: Double, deltaLng: Double) -> Unit,
+    minZoom: Double,
+    maxZoom: Double,
+    onCameraChange: (MapCamera) -> Unit,
+    onMapGestureStart: () -> Unit,
     onEmptyTap: () -> Unit
 ) {
     if (drawingInputEnabled || calibrationInputEnabled) return
@@ -147,95 +153,250 @@ internal fun MapItemTouchOverlayCustom(
     val cOnDrMoved = rememberUpdatedState(onDrawingMoved)
     val cOnEmpty = rememberUpdatedState(onEmptyTap)
     val cOnDrag = rememberUpdatedState(onDragStateChange)
-    val g = remember { CTouchState() }
+    val cCamera = rememberUpdatedState(camera)
+    val cMinZoom = rememberUpdatedState(minZoom)
+    val cMaxZoom = rememberUpdatedState(maxZoom)
+    val cOnCameraChange = rememberUpdatedState(onCameraChange)
+    val cOnMapGestureStart = rememberUpdatedState(onMapGestureStart)
+    val cLocked = rememberUpdatedState(locked)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInteropFilter { event ->
-                when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        val pos = Offset(event.x, event.y)
-                        val wpHit = if (!locked) hitWaypoints(pos, cWps.value, hitExpandPx) else null
-                        val shapeHit = if (wpHit == null && !locked)
-                            hitShapes(pos, cShapes.value, drawingTolerancePx) else null
-                        g.startX = event.x; g.startY = event.y
-                        g.committed = false; g.lastDx = 0f; g.lastDy = 0f; g.tracking = true
-                        when {
-                            wpHit != null -> { g.kind = MapItemDrag.Kind.WAYPOINT; g.itemId = wpHit.ref.id }
-                            shapeHit != null -> { g.kind = MapItemDrag.Kind.DRAWING; g.itemId = shapeHit }
-                            else -> { g.kind = null; g.itemId = null }
-                        }
-                        g.itemId != null
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val start = down.position
+                    val wpHit = if (!cLocked.value) {
+                        hitWaypoints(start, cWps.value, hitExpandPx)
+                    } else {
+                        null
                     }
-                    android.view.MotionEvent.ACTION_POINTER_DOWN -> true
-                    android.view.MotionEvent.ACTION_MOVE -> {
-                        if (!g.tracking) return@pointerInteropFilter false
-                        val itemId = g.itemId ?: return@pointerInteropFilter false
-                        val dx = event.x - g.startX
-                        val dy = event.y - g.startY
-                        if (g.committed) {
-                            g.lastDx = dx; g.lastDy = dy
-                            cOnDrag.value(MapItemDrag(g.kind!!, itemId, g.startX, g.startY, dx, dy, true))
-                            return@pointerInteropFilter true
-                        }
-                        if (!locked && hypot(dx, dy) > tapSlopPx && event.pointerCount == 1) {
-                            g.committed = true; g.lastDx = dx; g.lastDy = dy
-                            cOnDrag.value(MapItemDrag(g.kind!!, itemId, g.startX, g.startY, dx, dy, true))
-                            return@pointerInteropFilter true
-                        }
-                        false
+                    val shapeHit = if (wpHit == null && !cLocked.value) {
+                        hitShapes(start, cShapes.value, drawingTolerancePx)
+                    } else {
+                        null
                     }
-                    android.view.MotionEvent.ACTION_UP -> {
-                        if (!g.tracking) { g.reset(); return@pointerInteropFilter false }
-                        val itemId = g.itemId; val kind = g.kind; val committed = g.committed
-                        val dx = event.x - g.startX; val dy = event.y - g.startY
-                        val lastDx = g.lastDx; val lastDy = g.lastDy
-                        val startX = g.startX; val startY = g.startY
-                        g.reset(); cOnDrag.value(null)
-                        if (committed && itemId != null && kind != null) {
-                            val p = cProj.value
-                            when (kind) {
-                                MapItemDrag.Kind.WAYPOINT -> {
-                                    val wp = cWps.value.firstOrNull { it.ref.id == itemId }
-                                    if (wp != null) {
-                                        val (lat, lng) = p.fromScreen(wp.screenX + lastDx, wp.screenY + lastDy)
-                                        cOnWpMoved.value(wp.ref, lat, lng)
+                    val itemKind = when {
+                        wpHit != null -> MapItemDrag.Kind.WAYPOINT
+                        shapeHit != null -> MapItemDrag.Kind.DRAWING
+                        else -> null
+                    }
+                    val itemId = wpHit?.ref?.id ?: shapeHit
+                    val arbitrator = CustomMapGestureArbitrator(startedOnItem = itemId != null)
+
+                    var gestureCamera = cCamera.value
+                    var lastDelta = Offset.Zero
+                    var mapGestureStarted = false
+                    var cancelled = false
+
+                    do {
+                        val event = awaitPointerEvent()
+                        if (event.changes.any { it.isConsumed }) {
+                            cancelled = true
+                            break
+                        }
+
+                        event.changes.firstOrNull { it.id == down.id }?.let { primary ->
+                            lastDelta = primary.position - start
+                        }
+                        val activePointerCount = maxOf(
+                            event.changes.count { it.pressed },
+                            event.changes.count { it.previousPressed }
+                        )
+                        val movedBeyondSlop = hypot(
+                            lastDelta.x.toDouble(),
+                            lastDelta.y.toDouble()
+                        ) > tapSlopPx
+                        val mode = arbitrator.update(
+                            pointerCount = activePointerCount,
+                            movedBeyondSlop = movedBeyondSlop
+                        )
+
+                        when (mode) {
+                            CustomMapGestureMode.ITEM_DRAG -> {
+                                if (itemKind != null && itemId != null) {
+                                    cOnDrag.value(
+                                        MapItemDrag(
+                                            kind = itemKind,
+                                            itemId = itemId,
+                                            startX = start.x,
+                                            startY = start.y,
+                                            offsetX = lastDelta.x,
+                                            offsetY = lastDelta.y,
+                                            didDrag = true
+                                        )
+                                    )
+                                }
+                                event.changes.forEach { change ->
+                                    if (change.position != change.previousPosition) change.consume()
+                                }
+                            }
+
+                            CustomMapGestureMode.MAP_TRANSFORM -> {
+                                cOnDrag.value(null)
+                                if (event.changes.any { it.pressed }) {
+                                    val centroid = event.calculateCentroid(useCurrent = false)
+                                    if (centroid.x.isFinite() && centroid.y.isFinite()) {
+                                        val next = applyCustomMapTransform(
+                                            camera = gestureCamera,
+                                            centroidPx = centroid,
+                                            panPx = event.calculatePan(),
+                                            zoomChange = event.calculateZoom(),
+                                            rotationDegrees = event.calculateRotation(),
+                                            density = density,
+                                            minZoom = cMinZoom.value,
+                                            maxZoom = cMaxZoom.value
+                                        )
+                                        if (next != gestureCamera) {
+                                            if (!mapGestureStarted) {
+                                                mapGestureStarted = true
+                                                cOnMapGestureStart.value()
+                                            }
+                                            gestureCamera = next
+                                            cOnCameraChange.value(next)
+                                        }
                                     }
                                 }
-                                MapItemDrag.Kind.DRAWING -> {
-                                    val (blat, blng) = p.fromScreen(startX, startY)
-                                    val (alat, alng) = p.fromScreen(startX + lastDx, startY + lastDy)
-                                    cOnDrMoved.value(itemId, alat - blat, alng - blng)
+                                event.changes.forEach { change ->
+                                    if (change.position != change.previousPosition) change.consume()
                                 }
                             }
-                            return@pointerInteropFilter true
+
+                            CustomMapGestureMode.ITEM_PENDING,
+                            CustomMapGestureMode.MAP_PENDING -> Unit
                         }
-                        if (hypot(dx, dy) < tapSlopPx) {
-                            when {
-                                itemId != null && kind == MapItemDrag.Kind.WAYPOINT -> {
-                                    cWps.value.firstOrNull { it.ref.id == itemId }?.ref?.let { cOnWpTap.value(it) }
-                                }
-                                itemId != null && kind == MapItemDrag.Kind.DRAWING -> cOnDrTap.value(itemId)
-                                else -> cOnEmpty.value()
+                    } while (event.changes.any { it.pressed })
+
+                    cOnDrag.value(null)
+                    if (!cancelled) {
+                        when (arbitrator.mode) {
+                            CustomMapGestureMode.ITEM_PENDING -> when (itemKind) {
+                                MapItemDrag.Kind.WAYPOINT ->
+                                    cWps.value.firstOrNull { it.ref.id == itemId }
+                                        ?.ref
+                                        ?.let { cOnWpTap.value(it) }
+                                MapItemDrag.Kind.DRAWING -> itemId?.let { cOnDrTap.value(it) }
+                                null -> Unit
                             }
-                            return@pointerInteropFilter true
+
+                            CustomMapGestureMode.ITEM_DRAG -> {
+                                val p = cProj.value
+                                when (itemKind) {
+                                    MapItemDrag.Kind.WAYPOINT -> {
+                                        val wp = cWps.value.firstOrNull { it.ref.id == itemId }
+                                        if (wp != null) {
+                                            val (lat, lng) = p.fromScreen(
+                                                wp.screenX + lastDelta.x,
+                                                wp.screenY + lastDelta.y
+                                            )
+                                            cOnWpMoved.value(wp.ref, lat, lng)
+                                        }
+                                    }
+                                    MapItemDrag.Kind.DRAWING -> if (itemId != null) {
+                                        val (beforeLat, beforeLng) = p.fromScreen(start.x, start.y)
+                                        val (afterLat, afterLng) = p.fromScreen(
+                                            start.x + lastDelta.x,
+                                            start.y + lastDelta.y
+                                        )
+                                        cOnDrMoved.value(
+                                            itemId,
+                                            afterLat - beforeLat,
+                                            afterLng - beforeLng
+                                        )
+                                    }
+                                    null -> Unit
+                                }
+                            }
+
+                            CustomMapGestureMode.MAP_PENDING -> cOnEmpty.value()
+                            CustomMapGestureMode.MAP_TRANSFORM -> Unit
                         }
-                        false
                     }
-                    android.view.MotionEvent.ACTION_CANCEL -> { g.reset(); cOnDrag.value(null); false }
-                    else -> false
                 }
             }
     )
 }
 
-private class CTouchState {
-    var kind: MapItemDrag.Kind? = null
-    var itemId: String? = null
-    var startX = 0f; var startY = 0f
-    var committed = false; var lastDx = 0f; var lastDy = 0f; var tracking = false
-    fun reset() { kind = null; itemId = null; startX = 0f; startY = 0f; committed = false; lastDx = 0f; lastDy = 0f; tracking = false }
+internal enum class CustomMapGestureMode {
+    ITEM_PENDING,
+    ITEM_DRAG,
+    MAP_PENDING,
+    MAP_TRANSFORM
+}
+
+/**
+ * Resolves one pointer stream exactly once. An item owns a one-finger
+ * tap/drag, but a second pointer always promotes the same stream to a map
+ * transform. Keeping both behaviours in one full-screen pointer handler means
+ * the map never has to recover an ACTION_DOWN already consumed by a sibling.
+ */
+internal class CustomMapGestureArbitrator(startedOnItem: Boolean) {
+    var mode: CustomMapGestureMode = if (startedOnItem) {
+        CustomMapGestureMode.ITEM_PENDING
+    } else {
+        CustomMapGestureMode.MAP_PENDING
+    }
+        private set
+
+    fun update(pointerCount: Int, movedBeyondSlop: Boolean): CustomMapGestureMode {
+        if (pointerCount >= 2) {
+            mode = CustomMapGestureMode.MAP_TRANSFORM
+            return mode
+        }
+        mode = when (mode) {
+            CustomMapGestureMode.ITEM_PENDING ->
+                if (movedBeyondSlop) CustomMapGestureMode.ITEM_DRAG else mode
+            CustomMapGestureMode.MAP_PENDING ->
+                if (movedBeyondSlop) CustomMapGestureMode.MAP_TRANSFORM else mode
+            CustomMapGestureMode.ITEM_DRAG,
+            CustomMapGestureMode.MAP_TRANSFORM -> mode
+        }
+        return mode
+    }
+}
+
+/** Apply the incremental pan/zoom/rotation reported by a Compose pointer event. */
+internal fun applyCustomMapTransform(
+    camera: MapCamera,
+    centroidPx: Offset,
+    panPx: Offset,
+    zoomChange: Float,
+    rotationDegrees: Float,
+    density: Float,
+    minZoom: Double,
+    maxZoom: Double
+): MapCamera {
+    if (density <= 0f || !density.isFinite()) return camera
+    var next = camera
+    val centreX = next.viewportWidth / 2
+    val centreY = next.viewportHeight / 2
+    val panX = panPx.x / density.toDouble()
+    val panY = panPx.y / density.toDouble()
+    val focalX = centroidPx.x / density.toDouble()
+    val focalY = centroidPx.y / density.toDouble()
+
+    val (panLat, panLon) = next.coordinate(centreX - panX, centreY - panY)
+    next = next.copy(centerLat = panLat, centerLon = panLon)
+
+    if (zoomChange.isFinite() && zoomChange > 0f && zoomChange != 1f) {
+        val (anchorLat, anchorLon) = next.coordinate(focalX, focalY)
+        val zoom = (next.zoom + log2(zoomChange.toDouble())).coerceIn(minZoom, maxZoom)
+        next = next.copy(zoom = zoom)
+        val landed = next.screenPoint(anchorLat, anchorLon)
+        val (lat, lon) = next.coordinate(
+            centreX + (landed.x - focalX),
+            centreY + (landed.y - focalY)
+        )
+        next = next.copy(centerLat = lat, centerLon = lon)
+    }
+
+    if (rotationDegrees.isFinite() && rotationDegrees != 0f) {
+        var heading = (next.headingDegrees - rotationDegrees) % 360
+        if (heading < 0) heading += 360
+        next = next.copy(headingDegrees = heading)
+    }
+    return next
 }
 
 private data class CProjWaypoint(
