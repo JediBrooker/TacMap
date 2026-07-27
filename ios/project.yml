@@ -34,7 +34,7 @@ targets:
       path: TacticalMaps/Resources/Info.plist
       properties:
         CFBundleDisplayName: TacMap
-        CFBundleShortVersionString: "1.2.1"
+        CFBundleShortVersionString: "1.2.2"
         CFBundleVersion: "59"
         # Esri Location Platform key + expiry. The $(ESRI_API_KEY) reference is
         # substituted from Secrets.xcconfig during Xcode's plist processing at
