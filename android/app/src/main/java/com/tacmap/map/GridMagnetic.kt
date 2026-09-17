@@ -47,7 +47,7 @@ fun formatGridMagnetic(degrees: Double, mils: Boolean): String {
     val dir = if (degrees >= 0) "E" else "W"
     return if (mils) {
         val m = (abs(degrees) * 6400.0 / 360.0).roundToInt()
-        "G-M $m mils $dir"
+        com.tacmap.localization.L10n.text("G-M %1\$s mils %2\$s", m, dir)
     } else {
         "G-M %.1f°%s".format(abs(degrees), dir)
     }

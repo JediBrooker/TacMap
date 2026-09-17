@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -62,13 +64,13 @@ fun WaypointListSheet(
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             // Title
             Text(
-                "Symbology",
+                L10n.text("Symbology"),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
             )
             Text(
-                "Symbology (${waypoints.size})",
+                L10n.text("Symbology (%1\$s)", waypoints.size),
                 fontSize = 12.sp,
                 color = Color.Gray,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
@@ -77,7 +79,7 @@ fun WaypointListSheet(
             // List
             if (waypoints.isEmpty()) {
                 Text(
-                    "No symbols yet. Pan the crosshair to a feature and add a marker, unit, or task below.",
+                    L10n.text("No symbols yet. Pan the crosshair to a feature and add a marker, unit, or task below."),
                     fontSize = 12.sp,
                     color = Color.Gray,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
@@ -96,27 +98,27 @@ fun WaypointListSheet(
             Spacer(Modifier.size(12.dp))
 
             AddSymbolButton(
-                label = "Military Unit",
+                label = L10n.text("Military Unit"),
                 icon = Icons.Default.Security,
                 modifier = Modifier.padding(horizontal = 20.dp),
                 onClick = { creationError = null; pendingEditor = SymbolEditorMode.MILITARY }
             )
             Spacer(Modifier.size(8.dp))
             AddSymbolButton(
-                label = "Tactical Task",
+                label = L10n.text("Tactical Task"),
                 icon = Icons.Default.Flag,
                 modifier = Modifier.padding(horizontal = 20.dp),
                 onClick = { creationError = null; pendingEditor = SymbolEditorMode.TASK }
             )
             Spacer(Modifier.size(8.dp))
             AddSymbolButton(
-                label = "Marker (Airsoft / SAR / POI)",
+                label = L10n.text("Marker (Airsoft / SAR / POI)"),
                 icon = Icons.Default.Place,
                 modifier = Modifier.padding(horizontal = 20.dp),
                 onClick = { creationError = null; pendingEditor = SymbolEditorMode.MARKER }
             )
             Text(
-                "New symbols are placed at the current map centre.",
+                L10n.text("New symbols are placed at the current map centre."),
                 fontSize = 11.sp,
                 color = Color.Gray,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
@@ -137,11 +139,11 @@ fun WaypointListSheet(
             crosshairLat = crosshairLat,
             crosshairLng = crosshairLng,
             title = when (mode) {
-                SymbolEditorMode.MILITARY -> "New Military Unit"
-                SymbolEditorMode.TASK -> "New Tactical Task"
-                SymbolEditorMode.MARKER -> "New Marker"
+                SymbolEditorMode.MILITARY -> L10n.text("New Military Unit")
+                SymbolEditorMode.TASK -> L10n.text("New Tactical Task")
+                SymbolEditorMode.MARKER -> L10n.text("New Marker")
             },
-            actionLabel = "Place",
+            actionLabel = L10n.text("Place"),
             submissionError = creationError,
             onDismiss = { creationError = null; pendingEditor = null },
             onConfirm = { name, kind, higherFormation, uniqueIdentifier, reinforcementStatus ->
@@ -187,7 +189,7 @@ private fun AddSymbolButton(
     ) {
         Icon(icon, contentDescription = null, tint = Color.White)
         Spacer(Modifier.size(8.dp))
-        Text("Add $label", color = Color.White, fontWeight = FontWeight.SemiBold)
+        Text(L10n.text("Add %1\$s", label), color = Color.White, fontWeight = FontWeight.SemiBold)
     }
 }
 

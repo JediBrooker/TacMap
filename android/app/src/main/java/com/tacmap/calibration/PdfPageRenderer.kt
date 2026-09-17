@@ -1,5 +1,7 @@
 package com.tacmap.calibration
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -106,7 +108,7 @@ object PdfPageRenderer {
             PdfRenderer(descriptor).use { renderer ->
                 renderer.openPage(0).use { page ->
                     require(pageRect.width() > 0f && pageRect.height() > 0f) {
-                        "PDF render region must have positive size."
+                        L10n.text("PDF render region must have positive size.")
                     }
                     requireBoundedOutput(outputWidth, outputHeight)
                     val bitmap = Bitmap.createBitmap(
@@ -216,7 +218,7 @@ object PdfPageRenderer {
         return requireNotNull(
             context.contentResolver.openFileDescriptor(uri, "r")
         ) {
-            "Unable to open PDF URI: $uri"
+            L10n.text("Unable to open PDF URI: %1\$s", uri)
         }
     }
 }

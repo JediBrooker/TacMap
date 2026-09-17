@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.L10n
+
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -223,8 +225,8 @@ class UnitSyncRuntime(
         if (!persisted) {
             backgroundStopSuppressed = true
             manager?.reportBackgroundLocationIssue(
-                "Background Unit Sync stopped, but its OFF setting could not be saved. " +
-                    "Check available storage and turn it off again in Privacy & OPSEC."
+                L10n.text("Background Unit Sync stopped, but its OFF setting could not be saved. ") +
+                    L10n.text("Check available storage and turn it off again in Privacy & OPSEC.")
             )
         }
         invalidateAndStopService(revokeSession = true)
@@ -254,9 +256,9 @@ class UnitSyncRuntime(
         val prerequisiteIssue = when {
             !wantsBackgroundLocation -> null
             !hasPreciseLocation() ->
-                "Background Unit Sync needs Precise location permission before it can run with the screen off."
+                L10n.text("Background Unit Sync needs Precise location permission before it can run with the screen off.")
             !gpsEnabled() ->
-                "Background Unit Sync needs GPS turned on before it can run with the screen off."
+                L10n.text("Background Unit Sync needs GPS turned on before it can run with the screen off.")
             else -> null
         }
         if (activityForeground && prerequisiteIssue != null &&
@@ -279,7 +281,7 @@ class UnitSyncRuntime(
                     authorizedServiceGeneration = null
                     manager?.revokeBackgroundLocationEligibility(reconnectIfForeground = true)
                     manager?.reportBackgroundLocationIssue(
-                        "Background Unit Sync could not start: " +
+                        L10n.text("Background Unit Sync could not start: ") +
                             (failure.message ?: failure.javaClass.simpleName)
                     )
                 }

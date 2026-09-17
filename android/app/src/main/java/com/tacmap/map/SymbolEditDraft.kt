@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.waypoints.ReinforcementStatus
@@ -8,9 +10,9 @@ import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.normalizedUnitAmplifiersForKind
 
-internal const val ELEVATION_VALIDATION_ERROR = "Enter a valid elevation in metres."
-internal const val MGRS_MOVE_VALIDATION_ERROR =
-    "Enter a 4, 6, 8, or 10-figure grid, or full MGRS at one of those precisions."
+internal val ELEVATION_VALIDATION_ERROR = L10n.text("Enter a valid elevation in metres.")
+internal val MGRS_MOVE_VALIDATION_ERROR =
+    L10n.text("Enter a 4, 6, 8, or 10-figure grid, or full MGRS at one of those precisions.")
 
 internal sealed interface SymbolDraftResult {
     data class Valid(val waypoint: Waypoint) : SymbolDraftResult

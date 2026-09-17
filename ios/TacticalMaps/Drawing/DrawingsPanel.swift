@@ -13,7 +13,7 @@ struct DrawingsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("DRAW")
+                Text(L10n.text("DRAW"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.white.opacity(0.6))
                 Spacer()
@@ -34,14 +34,14 @@ struct DrawingsPanel: View {
 
             layerPicker
 
-            row(.freedraw, label: "Free Draw", subtitle: "Draw freely with your finger")
-            row(.polyline, label: "Line Tool", subtitle: "Tap points to trace a route")
-            row(.polygon,  subtitle: "Mark out a boundary")
-            row(.point,    subtitle: "Drop a single marker")
+            row(.freedraw, label: L10n.text("Free Draw"), subtitle: L10n.text("Draw freely with your finger"))
+            row(.polyline, label: L10n.text("Line Tool"), subtitle: L10n.text("Tap points to trace a route"))
+            row(.polygon,  subtitle: L10n.text("Mark out a boundary"))
+            row(.point,    subtitle: L10n.text("Drop a single marker"))
 
             if !drawingStore.shapes.isEmpty {
                 Divider().background(.white.opacity(0.12)).padding(.vertical, 2)
-                Text("SAVED")
+                Text(L10n.text("SAVED"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.white.opacity(0.55))
                     .padding(.leading, 4)
@@ -59,7 +59,7 @@ struct DrawingsPanel: View {
                             Image(systemName: "list.bullet")
                                 .foregroundStyle(.white.opacity(0.75))
                                 .frame(width: 24)
-                            Text("All Drawings (\(drawingStore.shapes.count))")
+                            Text(L10n.text("All Drawings (%1$@)", drawingStore.shapes.count))
                                 .foregroundStyle(.white)
                                 .font(.caption)
                             Spacer()
@@ -79,13 +79,13 @@ struct DrawingsPanel: View {
         .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.12)))
         .frame(width: 250)
-        .alert("Drawing Not Deleted", isPresented: Binding(
+        .alert(L10n.text("Drawing Not Deleted"), isPresented: Binding(
             get: { mutationError != nil },
             set: { if !$0 { mutationError = nil } }
         )) {
             Button("OK", role: .cancel) { mutationError = nil }
         } message: {
-            Text(mutationError ?? "The drawing could not be deleted. Check available storage, then try again.")
+            Text(mutationError ?? L10n.text("The drawing could not be deleted. Check available storage, then try again."))
         }
     }
 
@@ -100,7 +100,7 @@ struct DrawingsPanel: View {
                 Text(shape.name ?? shape.kind.displayName)
                     .font(.caption)
                     .foregroundStyle(.white)
-                Text("\(shape.coordinates.count) pt\(shape.coordinates.count == 1 ? "" : "s")")
+                Text(L10n.quantity("point", shape.coordinates.count))
                     .font(.system(size: 9))
                     .foregroundStyle(.white.opacity(0.55))
             }
@@ -109,7 +109,7 @@ struct DrawingsPanel: View {
                 do {
                     _ = try drawingStore.deleteDurably(shape)
                 } catch {
-                    mutationError = "\(error.localizedDescription) Check available storage, then try again."
+                    mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
                 }
             } label: {
                 Image(systemName: "trash")
@@ -120,7 +120,7 @@ struct DrawingsPanel: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Delete \(shape.name ?? shape.kind.displayName)")
+            .accessibilityLabel(L10n.text("Delete %1$@", shape.name ?? shape.kind.displayName))
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
@@ -151,7 +151,7 @@ struct DrawingsPanel: View {
                     .frame(width: 14, height: 14)
                     .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("LAYER")
+                    Text(L10n.text("LAYER"))
                         .font(.system(size: 9).weight(.bold))
                         .foregroundStyle(.white.opacity(0.5))
                     Text(active?.name ?? "—")
@@ -192,7 +192,7 @@ struct DrawingsPanel: View {
                     .foregroundStyle(Color(red: 1, green: 0.65, blue: 0.18))
                     .frame(width: 28)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(label ?? "New \(kind.displayName)")
+                    Text(label ?? L10n.text("New %1$@", kind.displayName))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                     Text(subtitle)

@@ -1,5 +1,7 @@
 package com.tacmap.calibration
 
+import com.tacmap.localization.L10n
+
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
@@ -42,12 +44,12 @@ enum class MapSourceKind { SATELLITE, ONLINE_RASTER, GEO_PDF, CALIBRATED_PDF, OF
  * static tiles are 512px), so the provider is built per-style.
  */
 enum class BasemapStyle(
-    val displayName: String,
+    private val displayNameKey: String,
     val urlTemplate: String,
     val tileSize: Int,
     val maxZoom: Int,
     val requiresEsriKey: Boolean,
-    val attribution: String
+    private val attributionKey: String
 ) {
     ESRI_SATELLITE(
         "Satellite (Esri)",
@@ -72,7 +74,10 @@ enum class BasemapStyle(
         "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/open/osm-style/static/tile/{z}/{y}/{x}",
         512, 20, true,
         "© OpenStreetMap contributors, served by Esri"
-    )
+    );
+
+    val displayName: String get() = L10n.text(displayNameKey)
+    val attribution: String get() = L10n.text(attributionKey)
 }
 
 @Serializable
@@ -121,7 +126,7 @@ sealed interface Calibration {
  *  XYZ tile overlay. Keyed styles carry the ArcGIS token, see RasterTileProvider. */
 class OnlineRasterMapSourceAndroid(val style: BasemapStyle) : MapSource {
     override val id: String = UUID.randomUUID().toString()
-    override val displayName = style.displayName
+    override val displayName get() = style.displayName
     override val kind = MapSourceKind.ONLINE_RASTER
     override val coverage: Wgs84Bounds? = null
     override val calibration: Calibration? = null

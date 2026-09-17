@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.L10n
+
 data class PresencePeer(
     val clientId: String,
     val callsign: String,
@@ -42,7 +44,7 @@ internal fun presenceMarkerPresentation(
     peer: PresencePeer,
     nowUptimeMs: Long,
 ): PresenceMarkerPresentation {
-    val unitName = peer.callsign.ifBlank { "Unit" }
+    val unitName = peer.callsign.ifBlank { L10n.text("Unit") }
     if (!peer.isStale) return PresenceMarkerPresentation(peer.callsign, unitName)
     val ageMs = (nowUptimeMs - peer.receivedAtUptimeMs).coerceAtLeast(0L)
     val shortAge: String
@@ -50,27 +52,27 @@ internal fun presenceMarkerPresentation(
     when {
         ageMs < 60_000L -> {
             shortAge = "<1m"
-            spokenAge = "less than 1 minute ago"
+            spokenAge = L10n.text("less than 1 minute ago")
         }
         ageMs < 60L * 60L * 1_000L -> {
             val minutes = ageMs / 60_000L
             shortAge = "${minutes}m"
-            spokenAge = "$minutes minute${if (minutes == 1L) "" else "s"} ago"
+            spokenAge = L10n.quantity("minute_ago", minutes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         }
         else -> {
             val hours = ageMs / (60L * 60L * 1_000L)
             shortAge = "${hours}h"
-            spokenAge = "$hours hour${if (hours == 1L) "" else "s"} ago"
+            spokenAge = L10n.quantity("hour_ago", hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         }
     }
     val visible = if (peer.callsign.isBlank()) {
-        "Last known · $shortAge"
+        L10n.text("Last known · %1\$s", shortAge)
     } else {
-        "${peer.callsign} · Last known $shortAge"
+        L10n.text("%1\$s · Last known %2\$s", peer.callsign, shortAge)
     }
     return PresenceMarkerPresentation(
         visibleLabel = visible,
-        accessibilityLabel = "$unitName. Last known $spokenAge.",
+        accessibilityLabel = L10n.text("%1\$s. Last known %2\$s.", unitName, spokenAge),
     )
 }
 

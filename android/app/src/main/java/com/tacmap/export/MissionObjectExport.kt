@@ -1,5 +1,7 @@
 package com.tacmap.export
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.waypoints.Waypoint
@@ -20,8 +22,8 @@ import java.time.format.DateTimeFormatter
  * it is a full application backup.
  */
 object MissionObjectExport {
-    const val ACTION_TITLE = "Export All Mission Objects"
-    const val SHARE_TITLE = ACTION_TITLE
+    val ACTION_TITLE get() = L10n.text("Export All Mission Objects")
+    val SHARE_TITLE get() = ACTION_TITLE
     const val FILE_NAME = "TacMap-MissionObjects.geojson"
 
     /** The production share path must retain a mission's empty layer catalog. */

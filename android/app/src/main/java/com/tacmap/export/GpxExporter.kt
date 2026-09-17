@@ -1,5 +1,7 @@
 package com.tacmap.export
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.models.TrackPoint
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -11,7 +13,7 @@ import java.time.format.DateTimeFormatter
  */
 object GpxExporter {
 
-    fun export(points: List<TrackPoint>, name: String = "TacMap Track"): String {
+    fun export(points: List<TrackPoint>, name: String = L10n.text("TacMap Track")): String {
         val iso = DateTimeFormatter.ISO_INSTANT
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")

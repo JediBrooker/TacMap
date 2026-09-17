@@ -1,5 +1,7 @@
 package com.tacmap.billing
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,7 +85,7 @@ fun PaywallScreen(
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            if (expired) "Your free trial has ended" else "Unlock the full version",
+            if (expired) L10n.text("Your free trial has ended") else L10n.text("Unlock the full version"),
             color = Color.White,
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
@@ -92,13 +94,12 @@ fun PaywallScreen(
         Spacer(Modifier.height(14.dp))
         Text(
             if (expired)
-                "Your ${TrialManager.TRIAL_DAYS}-day free trial is over. " +
-                    "Make a one-time purchase to keep using TacMap — " +
-                    "live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export."
+                L10n.text("Your %1\$s-day free trial is over. ", TrialManager.TRIAL_DAYS) +
+                    L10n.text("Make a one-time purchase to keep using TacMap — ") +
+                    L10n.text("live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.")
             else
-                "You're on the free trial ($trialDaysRemaining " +
-                    "${if (trialDaysRemaining == 1) "day" else "days"} left). " +
-                    "Unlock now for permanent access.",
+                L10n.text("You're on the free trial (%1\$s left). ", L10n.quantity("day", trialDaysRemaining)) +
+                    L10n.text("Unlock now for permanent access."),
             color = Color(0xFFB8C4BC),
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
@@ -119,14 +120,14 @@ fun PaywallScreen(
         ) {
             Text(
                 when (billingState.phase) {
-                    BillingPhase.Connecting -> "Connecting to Google Play…"
-                    BillingPhase.LoadingProduct, BillingPhase.Idle -> "Loading price…"
-                    BillingPhase.Restoring -> "Restoring purchase…"
-                    BillingPhase.Purchasing -> "Opening Google Play…"
-                    BillingPhase.Pending -> "Payment pending"
+                    BillingPhase.Connecting -> L10n.text("Connecting to Google Play…")
+                    BillingPhase.LoadingProduct, BillingPhase.Idle -> L10n.text("Loading price…")
+                    BillingPhase.Restoring -> L10n.text("Restoring purchase…")
+                    BillingPhase.Purchasing -> L10n.text("Opening Google Play…")
+                    BillingPhase.Pending -> L10n.text("Payment pending")
                     BillingPhase.Ready, BillingPhase.Error -> billingState.priceText
-                        ?.let { "Unlock Full Version  ·  $it" }
-                        ?: "Unlock unavailable"
+                        ?.let { L10n.text("Unlock Full Version  ·  %1\$s", it) }
+                        ?: L10n.text("Unlock unavailable")
                 },
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
@@ -147,26 +148,26 @@ fun PaywallScreen(
         }
         if (billingState.retryable) {
             TextButton(onClick = onRetry) {
-                Text("Retry Google Play", color = HudGreen, fontSize = 14.sp)
+                Text(L10n.text("Retry Google Play"), color = HudGreen, fontSize = 14.sp)
             }
         }
         TextButton(onClick = onRestore, enabled = !busy) {
             Text(
-                if (billingState.phase == BillingPhase.Restoring) "Restoring…" else "Restore purchase",
+                if (billingState.phase == BillingPhase.Restoring) L10n.text("Restoring…") else L10n.text("Restore purchase"),
                 color = if (busy) Color(0xFF7A867E) else HudOrange,
                 fontSize = 14.sp,
             )
         }
         TextButton(onClick = onRedeem, enabled = !busy) {
             Text(
-                "Redeem code on Google Play",
+                L10n.text("Redeem code on Google Play"),
                 color = if (busy) Color(0xFF7A867E) else HudOrange,
                 fontSize = 14.sp,
             )
         }
         Spacer(Modifier.height(20.dp))
         Text(
-            "One-time purchase. No subscription.",
+            L10n.text("One-time purchase. No subscription."),
             color = Color(0xFF7A867E),
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
@@ -180,7 +181,7 @@ fun PaywallScreen(
                     .statusBarsPadding()
                     .padding(8.dp)
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF9AA69E))
+                Icon(Icons.Default.Close, contentDescription = L10n.text("Close"), tint = Color(0xFF9AA69E))
             }
         }
     }

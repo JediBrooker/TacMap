@@ -26,10 +26,10 @@ enum KMLImporter {
 
         var errorDescription: String? {
             switch self {
-            case .notKML:      return "This file isn't valid KML."
-            case .kmzHadNoKML: return "No .kml entry was found inside this KMZ."
-            case .limitExceeded(let reason): return "Import safety limit exceeded: \(reason)."
-            case .cancelled: return "Import cancelled."
+            case .notKML:      return L10n.text("This file isn't valid KML.")
+            case .kmzHadNoKML: return L10n.text("No .kml entry was found inside this KMZ.")
+            case .limitExceeded(let reason): return L10n.text("Import safety limit exceeded: %1$@.", reason)
+            case .cancelled: return L10n.text("Import cancelled.")
             }
         }
     }
@@ -79,7 +79,7 @@ enum KMLImporter {
         fallbackLayerID: UUID,
         resolveExternalID: ((String?, ExternalImportIdentityResolver.ObjectKind, Int) -> UUID)?
     ) throws -> GeoJSONImporter.Result {
-        guard data.count <= maxInputBytes else { throw ImportError.limitExceeded("file is over 16 MB") }
+        guard data.count <= maxInputBytes else { throw ImportError.limitExceeded(L10n.text("file is over 16 MB")) }
         let kmlData: Data
         if data.count >= 2, data[data.startIndex] == 0x50, data[data.startIndex + 1] == 0x4B {
             guard let extracted = try MiniZip.extractFirstKML(from: data) else {
@@ -167,7 +167,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
         let name = localName(elementName)
         elementPath.append(name)
         if elementPath.count > 64 {
-            fail(.limitExceeded("XML nesting is too deep"), parser)
+            fail(.limitExceeded(L10n.text("XML nesting is too deep")), parser)
             return
         }
         charBuffer = ""
@@ -187,7 +187,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
             placemarkIndex = featureCount
             featureCount += 1
             if featureCount > KMLImporter.maxFeatures {
-                fail(.limitExceeded("more than 10,000 placemarks"), parser)
+                fail(.limitExceeded(L10n.text("more than 10,000 placemarks")), parser)
                 return
             }
             inPlacemark = true
@@ -209,7 +209,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         guard checkBudget(parser) else { return }
         guard charBuffer.utf8.count + string.utf8.count <= 4 * 1024 * 1024 else {
-            fail(.limitExceeded("an XML text field is over 4 MB"), parser)
+            fail(.limitExceeded(L10n.text("an XML text field is over 4 MB")), parser)
             return
         }
         charBuffer += string
@@ -238,7 +238,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
                 let remaining = max(0, KMLImporter.maxCoordinates - coordinateCount)
                 let parsed = Self.parseCoordinates(text, limit: remaining)
                 guard !parsed.exceeded else {
-                    fail(.limitExceeded("more than 100,000 coordinates"), parser)
+                    fail(.limitExceeded(L10n.text("more than 100,000 coordinates")), parser)
                     return
                 }
                 coords = parsed.coordinates
@@ -278,7 +278,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
             let id = resolvedObjectID(kind: .waypoint)
             let wp = Waypoint(
                 id: id,
-                name: (placemarkName?.isEmpty == false ? placemarkName! : "Imported"),
+                name: (placemarkName?.isEmpty == false ? placemarkName! : L10n.text("Imported")),
                 notes: placemarkNotes,
                 coordinate: CLLocationCoordinate2D(latitude: first.latitude,
                                                    longitude: first.longitude),
@@ -362,7 +362,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     private func checkBudget(_ parser: XMLParser) -> Bool {
         if failure != nil { return false }
         if Date() > deadline {
-            fail(.limitExceeded("parsing took too long"), parser)
+            fail(.limitExceeded(L10n.text("parsing took too long")), parser)
             return false
         }
         if withUnsafeCurrentTask(body: { $0?.isCancelled ?? false }) {
@@ -403,7 +403,7 @@ private enum MiniZip {
 
         let cdCount = readU16(b, eocd + 10)
         let cdOffset = Int(readU32(b, eocd + 16))
-        guard cdCount <= 256 else { throw KMLImporter.ImportError.limitExceeded("KMZ has too many entries") }
+        guard cdCount <= 256 else { throw KMLImporter.ImportError.limitExceeded(L10n.text("KMZ has too many entries")) }
         guard cdOffset >= 0, cdOffset <= n else { return nil }
 
         var p = cdOffset
@@ -428,7 +428,7 @@ private enum MiniZip {
                 guard uncomp <= KMLImporter.maxInputBytes,
                       comp <= KMLImporter.maxInputBytes,
                       uncomp <= max(1, comp) * 100 else {
-                    throw KMLImporter.ImportError.limitExceeded("KMZ expansion is too large")
+                    throw KMLImporter.ImportError.limitExceeded(L10n.text("KMZ expansion is too large"))
                 }
                 let isDoc = lower == "doc.kml" || lower.hasSuffix("/doc.kml")
                 if best == nil || isDoc {

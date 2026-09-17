@@ -20,7 +20,7 @@ struct MeasureToolbar: View {
                         .foregroundStyle(.white)
                     HStack(spacing: 6) {
                         if let mils = session.lastBearingMils {
-                            Text("\(String(format: "%04d", mils)) mils")
+                            Text(L10n.text("%1$@ mils", String(format: "%04d", mils)))
                                 .font(.caption2.monospacedDigit())
                                 .foregroundStyle(.white.opacity(0.8))
                         }
@@ -48,7 +48,7 @@ struct MeasureToolbar: View {
                 .disabled(session.points.isEmpty)
                 .opacity(session.points.isEmpty ? 0.4 : 1)
 
-                Button("Done") { session.cancel() }
+                Button(L10n.text("Done")) { session.cancel() }
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)

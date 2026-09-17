@@ -15,13 +15,13 @@ struct UndoRedoButtons: View {
             chip(
                 symbol: "arrow.uturn.backward",
                 enabled: canUndo,
-                accessibilityLabel: "Undo",
+                accessibilityLabel: L10n.text("Undo"),
                 action: onUndo
             )
             chip(
                 symbol: "arrow.uturn.forward",
                 enabled: canRedo,
-                accessibilityLabel: "Redo",
+                accessibilityLabel: L10n.text("Redo"),
                 action: onRedo
             )
         }

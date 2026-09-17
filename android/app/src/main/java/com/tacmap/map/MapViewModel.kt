@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import android.app.Application
 import android.location.Location
 import androidx.lifecycle.AndroidViewModel
@@ -236,7 +238,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         if (succeeded && clearRetained && !pdfSessionStore.clear()) {
             reportMapSelectionIssue(
                 transition = PendingMapSelectionTransition.ClearPdfSession,
-                message = "The PDF map was unloaded, but its private session metadata could not be removed. Retry cleanup.",
+                message = L10n.text("The PDF map was unloaded, but its private session metadata could not be removed. Retry cleanup."),
             )
         }
         return succeeded
@@ -334,10 +336,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                             onlineBasemap(),
                             preferredBaseMap,
                         ),
-                        message = "The saved basemap details could not be authenticated. " +
-                            "A recovery copy and all imported maps were preserved. " +
-                            "Tap Retry to reset the saved choice to the online map, " +
-                            "or import/select a replacement map.",
+                        message = L10n.text("The saved basemap details could not be authenticated. ") +
+                            L10n.text("A recovery copy and all imported maps were preserved. ") +
+                            L10n.text("Tap Retry to reset the saved choice to the online map, ") +
+                            L10n.text("or import/select a replacement map."),
                     )
                 }
             }
@@ -409,7 +411,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 reportMapSelectionIssue(
                     transition,
-                    "PDF session cleanup still could not be saved. Check device storage and retry.",
+                    L10n.text("PDF session cleanup still could not be saved. Check device storage and retry."),
                 )
                 false
             }
@@ -457,11 +459,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             is MapSelectionCommitResult.Failed -> {
                 val message = when (outcome.reason) {
                     MapSelectionCommitFailure.PDF_SESSION ->
-                        "The PDF map could not be saved for relaunch. The previous map remains active. Check device storage and retry."
+                        L10n.text("The PDF map could not be saved for relaunch. The previous map remains active. Check device storage and retry.")
                     MapSelectionCommitFailure.SELECTOR ->
-                        "The basemap choice could not be saved. The previous map remains active. Check device storage and retry."
+                        L10n.text("The basemap choice could not be saved. The previous map remains active. Check device storage and retry.")
                     MapSelectionCommitFailure.PDF_SESSION_ROLLBACK ->
-                        "Map storage recovery did not complete. Keep the app open and retry before closing it."
+                        L10n.text("Map storage recovery did not complete. Keep the app open and retry before closing it.")
                 }
                 reportMapSelectionIssue(transition, message)
                 false

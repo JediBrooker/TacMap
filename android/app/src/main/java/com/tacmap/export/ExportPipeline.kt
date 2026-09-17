@@ -1,5 +1,7 @@
 package com.tacmap.export
 
+import com.tacmap.localization.L10n
+
 import java.io.File
 import java.nio.file.Files
 import java.security.SecureRandom
@@ -236,7 +238,7 @@ internal suspend fun <ShareToken> executeExportPipeline(
         atStage(ExportStage.SHARE_LAUNCH) {
             withContext(launchDispatcher) { driver.launchShare(prepared, shareToken) }
         }
-        ExportPipelineResult(true, "$exportLabel is ready to share")
+        ExportPipelineResult(true, L10n.text("%1\$s is ready to share", exportLabel))
     } catch (wrapped: ExportPipelineFailure) {
         val stage = wrapped.stage
         val failure = wrapped.cause ?: wrapped
@@ -249,18 +251,18 @@ internal suspend fun <ShareToken> executeExportPipeline(
         val detail = failure.message?.takeIf { it.isNotBlank() }
         val base = when (stage) {
             ExportStage.CLEANUP ->
-                "Could not clear temporary export files. Restart TacMap and try again."
+                L10n.text("Could not clear temporary export files. Restart TacMap and try again.")
             ExportStage.GENERATION ->
-                "Could not generate $exportLabel. Check the mission data and try again."
+                L10n.text("Could not generate %1\$s. Check the mission data and try again.", exportLabel)
             ExportStage.CACHE_PREPARATION, ExportStage.WRITE ->
-                "Could not write $exportLabel to temporary storage. Free some space and try again."
+                L10n.text("Could not write %1\$s to temporary storage. Free some space and try again.", exportLabel)
             ExportStage.SHARE_URI ->
-                "Could not create a secure share link for $exportLabel. Restart TacMap and try again."
+                L10n.text("Could not create a secure share link for %1\$s. Restart TacMap and try again.", exportLabel)
             ExportStage.SHARE_LAUNCH ->
-                "No compatible app could share $exportLabel. Install or enable a file-sharing app and try again."
+                L10n.text("No compatible app could share %1\$s. Install or enable a file-sharing app and try again.", exportLabel)
         }
         val cleanupNote = if (cleanupFailure != null) {
-            " Temporary-file cleanup also failed; restarting TacMap will retry cleanup."
+            L10n.text(" Temporary-file cleanup also failed; restarting TacMap will retry cleanup.")
         } else {
             ""
         }

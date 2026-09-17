@@ -76,9 +76,9 @@ struct OnlinePlaceLookupOutcome {
 /// the same orchestration path the SwiftUI sheet uses rather than fixture data.
 enum OnlinePlaceLookup {
     static let disabledStatus =
-        "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work."
+        L10n.text("Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work.")
     static let unavailableStatus =
-        "Place search unavailable offline — MGRS, grid and lat/lon still work."
+        L10n.text("Place search unavailable offline — MGRS, grid and lat/lon still work.")
 
     static func decision(rawQuery: String,
                          offlineOutput: OfflineSearchOutput,
@@ -108,7 +108,7 @@ enum OnlinePlaceLookup {
                 let results = try await provider()
                 let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                 let status = results.isEmpty && offlineOutput.results.isEmpty
-                    ? "No matches for “\(trimmed)”."
+                    ? L10n.text("No matches for “%1$@”.", trimmed)
                     : nil
                 return OnlinePlaceLookupOutcome(results: results, statusMessage: status)
             } catch is CancellationError {
@@ -124,7 +124,7 @@ enum OnlinePlaceLookup {
 /// deliberately absent from this type and are appended by SearchSheet.
 enum OfflineSearchEngine {
     static let coordinateRangeMessage =
-        "Latitude must be between -90 and 90, and longitude between -180 and 180."
+        L10n.text("Latitude must be between -90 and 90, and longitude between -180 and 180.")
 
     static func records(waypoints: [Waypoint],
                         drawings: [DrawingShape],
@@ -204,7 +204,7 @@ enum OfflineSearchEngine {
             case .valid(let coordinate):
                 let result = SearchResult(
                     id: "coordinate:lat-lon",
-                    title: "Latitude / Longitude",
+                    title: L10n.text("Latitude / Longitude"),
                     subtitle: String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude),
                     coordinate: coordinate,
                     kind: .latitudeLongitude,
@@ -252,7 +252,7 @@ enum OfflineSearchEngine {
             return SearchResult(
                 id: record.id,
                 title: record.name,
-                subtitle: record.typeTerms.first ?? "Waypoint",
+                subtitle: record.typeTerms.first ?? L10n.text("Waypoint"),
                 coordinate: record.coordinate,
                 kind: .waypoint,
                 target: .waypoint(id)
@@ -261,7 +261,7 @@ enum OfflineSearchEngine {
             return SearchResult(
                 id: record.id,
                 title: record.name,
-                subtitle: record.typeTerms.first ?? "Drawing",
+                subtitle: record.typeTerms.first ?? L10n.text("Drawing"),
                 coordinate: record.coordinate,
                 kind: .drawing,
                 target: .drawing(id)
@@ -330,7 +330,7 @@ enum OfflineSearchEngine {
         return SearchResult(
             id: "coordinate:partial-mgrs",
             title: resolved.formattedReference,
-            subtitle: "Centre of \(size) grid square (relative to local grid)",
+            subtitle: L10n.text("Centre of %1$@ grid square (relative to local grid)", size),
             coordinate: resolved.coordinate,
             kind: .partialMGRS,
             target: .coordinate
@@ -428,7 +428,7 @@ struct SearchSheet: View {
                     .padding(.horizontal)
                     .padding(.top, 6)
                     .padding(.bottom, 4)
-                Text("Mission objects, MGRS, grid, lat/lon, or place name")
+                Text(L10n.text("Mission objects, MGRS, grid, lat/lon, or place name"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -436,10 +436,10 @@ struct SearchSheet: View {
                     .padding(.bottom, 6)
                 resultsList
             }
-            .navigationTitle("Search")
+            .navigationTitle(L10n.text("Search"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } }
             }
             .task(id: SearchTaskKey(query: query, onlinePlaces: opsec.onlineLookups)) {
                 await updatePlaces(for: query)
@@ -450,7 +450,7 @@ struct SearchSheet: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search", text: $query)
+            TextField(L10n.text("Search"), text: $query)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             if !query.isEmpty {
@@ -462,7 +462,7 @@ struct SearchSheet: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
+                .accessibilityLabel(L10n.text("Clear search"))
             }
         }
         .padding(8)
@@ -473,16 +473,16 @@ struct SearchSheet: View {
     private var resultsList: some View {
         List {
             if !offlineOutput.results.isEmpty {
-                Section("Mission & Coordinates") {
+                Section(L10n.text("Mission & Coordinates")) {
                     ForEach(offlineOutput.results) { row($0) }
                 }
             }
             if isSearching {
-                Section("Places") {
-                    HStack { ProgressView(); Text("Searching…").foregroundStyle(.secondary) }
+                Section(L10n.text("Places")) {
+                    HStack { ProgressView(); Text(L10n.text("Searching…")).foregroundStyle(.secondary) }
                 }
             } else if !places.isEmpty {
-                Section("Places") { ForEach(places) { row($0) } }
+                Section(L10n.text("Places")) { ForEach(places) { row($0) } }
             }
             if let message = offlineOutput.statusMessage ?? placeStatus,
                !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -584,7 +584,7 @@ struct SearchSheet: View {
         return response.mapItems.prefix(20).enumerated().map { index, item in
             SearchResult(
                 id: "place:\(index):\(item.placemark.coordinate.latitude),\(item.placemark.coordinate.longitude)",
-                title: item.name ?? "Unknown",
+                title: item.name ?? L10n.text("Unknown"),
                 subtitle: addressLine(item),
                 coordinate: item.placemark.coordinate,
                 kind: .place,

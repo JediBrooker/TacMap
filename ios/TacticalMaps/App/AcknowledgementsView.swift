@@ -11,108 +11,108 @@ struct AcknowledgementsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Map data") {
+                Section(L10n.text("Map data")) {
                     LinkRow(
-                        title: "Esri World Imagery (Satellite basemap)",
-                        subtitle: "Esri, Maxar, Earthstar Geographics, and the GIS User Community.",
+                        title: L10n.text("Esri World Imagery (Satellite basemap)"),
+                        subtitle: L10n.text("Esri, Maxar, Earthstar Geographics, and the GIS User Community."),
                         url: URL(string: "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9")
                     )
                     LinkRow(
-                        title: "Esri Basemap Styles (Topographic + Street)",
-                        subtitle: "Esri, TomTom, Garmin, FAO, NOAA, USGS · map data © OpenStreetMap contributors.",
+                        title: L10n.text("Esri Basemap Styles (Topographic + Street)"),
+                        subtitle: L10n.text("Esri, TomTom, Garmin, FAO, NOAA, USGS · map data © OpenStreetMap contributors."),
                         url: URL(string: "https://developers.arcgis.com/documentation/mapping-and-location-services/mapping/basemap-styles-service/")
                     )
                     LinkRow(
-                        title: "OpenTopoMap (Topographic basemap)",
-                        subtitle: "© OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors (ODbL).",
+                        title: L10n.text("OpenTopoMap (Topographic basemap)"),
+                        subtitle: L10n.text("© OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors (ODbL)."),
                         url: URL(string: "https://opentopomap.org/about")
                     )
                     LinkRow(
                         title: "OpenStreetMap",
-                        subtitle: "Map data © OpenStreetMap contributors, ODbL.",
+                        subtitle: L10n.text("Map data © OpenStreetMap contributors, ODbL."),
                         url: URL(string: "https://www.openstreetmap.org/copyright")
                     )
                     LinkRow(
-                        title: "Open-Meteo Elevation API",
-                        subtitle: "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.",
+                        title: L10n.text("Open-Meteo Elevation API"),
+                        subtitle: L10n.text("Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0."),
                         url: URL(string: "https://open-meteo.com/en/license")
                     )
                 }
 
-                Section("Open source libraries") {
+                Section(L10n.text("Open source libraries")) {
                     LinkRow(
-                        title: "NGA mgrs-ios (vendored, MIT)",
-                        subtitle: "MGRS ↔ lat/lon conversions. Includes a Snyder UTM patch to compile under Xcode 26.",
+                        title: L10n.text("NGA mgrs-ios (vendored, MIT)"),
+                        subtitle: L10n.text("MGRS ↔ lat/lon conversions. Includes a Snyder UTM patch to compile under Xcode 26."),
                         url: URL(string: "https://github.com/ngageoint/mgrs-ios")
                     )
                     LinkRow(
                         title: "NGA grid-ios (MIT)",
-                        subtitle: "Grid primitives used by mgrs-ios.",
+                        subtitle: L10n.text("Grid primitives used by mgrs-ios."),
                         url: URL(string: "https://github.com/ngageoint/grid-ios")
                     )
                     LinkRow(
                         title: "NGA simple-features-ios (MIT)",
-                        subtitle: "Geometric primitives.",
+                        subtitle: L10n.text("Geometric primitives."),
                         url: URL(string: "https://github.com/ngageoint/simple-features-ios")
                     )
                     LinkRow(
                         title: "NGA color-ios (MIT)",
-                        subtitle: "Colour utilities.",
+                        subtitle: L10n.text("Colour utilities."),
                         url: URL(string: "https://github.com/ngageoint/color-ios")
                     )
                 }
 
-                Section("Standards & specifications") {
+                Section(L10n.text("Standards & specifications")) {
                     LinkRow(
                         title: "OGC GeoPDF Encoding Best Practice",
-                        subtitle: "OGC 08-139r3. Used for reading LGIDict georeferencing.",
+                        subtitle: L10n.text("OGC 08-139r3. Used for reading LGIDict georeferencing."),
                         url: URL(string: "https://www.ogc.org/standards/geopdf")
                     )
                     LinkRow(
                         title: "GeoJSON (RFC 7946)",
-                        subtitle: "Export format for waypoints + drawings.",
+                        subtitle: L10n.text("Export format for waypoints + drawings."),
                         url: URL(string: "https://datatracker.ietf.org/doc/html/rfc7946")
                     )
                     LinkRow(
                         title: "Mapbox simplestyle-spec",
-                        subtitle: "GeoJSON styling keys (stroke, fill, marker-color, marker-symbol).",
+                        subtitle: L10n.text("GeoJSON styling keys (stroke, fill, marker-color, marker-symbol)."),
                         url: URL(string: "https://github.com/mapbox/simplestyle-spec")
                     )
                     LinkRow(
                         title: "Mapbox Maki Icon Set",
-                        subtitle: "Marker icon names referenced in GeoJSON output (campsite, drinking-water, etc.).",
+                        subtitle: L10n.text("Marker icon names referenced in GeoJSON output (campsite, drinking-water, etc.)."),
                         url: URL(string: "https://github.com/mapbox/maki")
                     )
                 }
 
                 Section {
-                    Text("TacMap adds no analytics or remote crash telemetry. Optional online basemaps and lookups are off on a fresh install; if you enable them, the provider receives your IP plus the requested tile area, place query, or lookup coordinate. Unit Sync payload content is end-to-end encrypted, while its relay still sees routing and traffic metadata.")
+                    Text(L10n.text("TacMap adds no analytics or remote crash telemetry. Optional online basemaps and lookups are off on a fresh install; if you enable them, the provider receives your IP plus the requested tile area, place query, or lookup coordinate. Unit Sync payload content is end-to-end encrypted, while its relay still sees routing and traffic metadata."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 if let crashURL {
-                    Section("Diagnostics") {
+                    Section(L10n.text("Diagnostics")) {
                         ShareLink(item: crashURL) {
-                            Label("Export last crash log", systemImage: "ladybug")
+                            Label(L10n.text("Export last crash log"), systemImage: "ladybug")
                         }
                         Button(role: .destructive) {
                             CrashReporter.clear()
                             ExportFileSecurity.remove(crashURL)
                             self.crashURL = nil
                         } label: {
-                            Label("Clear crash log", systemImage: "trash")
+                            Label(L10n.text("Clear crash log"), systemImage: "trash")
                         }
-                        Text("A crash was recorded on a previous run. Nothing is sent anywhere — you choose whether to share this file.")
+                        Text(L10n.text("A crash was recorded on a previous run. Nothing is sent anywhere — you choose whether to share this file."))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            .navigationTitle("About & Credits")
+            .navigationTitle(L10n.text("About & Credits"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } }
             }
         }
         .onDisappear { ExportFileSecurity.remove(crashURL) }

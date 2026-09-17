@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,8 +48,8 @@ fun WeatherDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        title = { Text("Weather & UAV Safety") },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(L10n.text("Done")) } },
+        title = { Text(L10n.text("Weather & UAV Safety")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when {
@@ -55,24 +57,24 @@ fun WeatherDialog(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         CircularProgressIndicator()
-                        Text("Fetching conditions…")
+                        Text(L10n.text("Fetching conditions…"))
                     }
                     reading == null -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            "Couldn't fetch conditions. If online lookups are off " +
-                                "(Settings, Privacy & OPSEC), enable them; otherwise check your connection."
+                            L10n.text("Couldn't fetch conditions. If online lookups are off ") +
+                                L10n.text("(Settings, Privacy & OPSEC), enable them; otherwise check your connection.")
                         )
-                        TextButton(onClick = { attempt++ }) { Text("Retry") }
+                        TextButton(onClick = { attempt++ }) { Text(L10n.text("Retry")) }
                     }
                     else -> {
                         val r = reading!!
                         RiskBanner(UAVAssessment.risk(r))
-                        Metric("Wind", r.windSpeedMs, "m/s")
-                        Metric("Gusts", r.windGustsMs, "m/s")
-                        Metric("Visibility", r.visibilityM?.let { it / 1000 }, "km")
-                        Metric("Temp", r.temperatureC, "°C")
+                        Metric(L10n.text("Wind"), r.windSpeedMs, "m/s")
+                        Metric(L10n.text("Gusts"), r.windGustsMs, "m/s")
+                        Metric(L10n.text("Visibility"), r.visibilityM?.let { it / 1000 }, "km")
+                        Metric(L10n.text("Temp"), r.temperatureC, "°C")
                         Text(
-                            "Source: Open-Meteo. UAV thresholds are defaults for small drones — advisory only, not a clearance.",
+                            L10n.text("Source: Open-Meteo. UAV thresholds are defaults for small drones — advisory only, not a clearance."),
                             fontSize = 11.sp,
                             color = Color.Gray
                         )

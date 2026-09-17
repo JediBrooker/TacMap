@@ -19,29 +19,29 @@ struct CalibrationInputSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Tapped point") {
+                Section(L10n.text("Tapped point")) {
                     if let p = session.pendingTap?.pdfPoint {
-                        Text("PDF coord: (\(Int(p.x)), \(Int(p.y)))")
+                        Text(L10n.text("PDF coord: (%1$@, %2$@)", Int(p.x), Int(p.y)))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                     }
-                    Text("Look at the PDF's printed grid labels or local knowledge to find the MGRS of this feature.")
+                    Text(L10n.text("Look at the PDF's printed grid labels or local knowledge to find the MGRS of this feature."))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                Section("Map datum") {
-                    Picker("Datum", selection: $session.datum) {
+                Section(L10n.text("Map datum")) {
+                    Picker(L10n.text("Datum"), selection: $session.datum) {
                         ForEach(Datum.allCases, id: \.self) { d in
                             Text(d.displayName).tag(d)
                         }
                     }
                     if session.datum != .wgs84 {
-                        Text("MGRS you enter is read as \(session.datum.displayName) and shifted to WGS84 (~1–2 m) so overlays line up.")
+                        Text(L10n.text("MGRS you enter is read as %1$@ and shifted to WGS84 (~1–2 m) so overlays line up.", session.datum.displayName))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
-                Section("MGRS grid reference") {
+                Section(L10n.text("MGRS grid reference")) {
                     TextField("56HLH 12345 67890", text: $mgrs)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
@@ -49,30 +49,30 @@ struct CalibrationInputSheet: View {
                         Button {
                             mgrs = MGRSFormatter.string(from: loc)
                         } label: {
-                            Label("Use my current location (\(MGRSFormatter.string(from: loc)))",
+                            Label(L10n.text("Use my current location (%1$@)", MGRSFormatter.string(from: loc)),
                                   systemImage: "location.fill")
                                 .font(.callout)
                         }
                     }
                 }
-                Section("Optional label") {
-                    TextField("e.g. “Church spire”, “Grid intersection NE”", text: $label)
+                Section(L10n.text("Optional label")) {
+                    TextField(L10n.text("e.g. “Church spire”, “Grid intersection NE”"), text: $label)
                 }
                 if let error = errorMessage {
                     Section { Text(error).foregroundStyle(.red).font(.caption) }
                 }
             }
-            .navigationTitle("Add fiduciary #\(session.fiduciaries.count + 1)")
+            .navigationTitle(L10n.text("Add fiduciary #%1$@", session.fiduciaries.count + 1))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
+                    Button(L10n.text("Cancel")) {
                         onCancel()
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") { save() }
+                    Button(L10n.text("Save")) { save() }
                         .bold()
                         .disabled(mgrs.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -88,7 +88,7 @@ struct CalibrationInputSheet: View {
         if session.confirmFiduciary(mgrs: cleaned, label: labelOrNil) {
             dismiss()
         } else {
-            errorMessage = "Couldn't parse MGRS. Format: <zone><band><square> <easting> <northing>, e.g. 56HLH 12345 67890"
+            errorMessage = L10n.text("Couldn't parse MGRS. Format: <zone><band><square> <easting> <northing>, e.g. 56HLH 12345 67890")
         }
     }
 }

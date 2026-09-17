@@ -112,11 +112,11 @@ private struct RootGate: View {
                                     set: { if !$0 { store.storeIssue = nil } }),
                presenting: store.storeIssue) { issue in
             if issue.retryable {
-                Button("Check Again") {
+                Button(L10n.text("Check Again")) {
                     Task { await store.checkEntitlementAgain() }
                 }
             }
-            Button("Dismiss", role: .cancel) { store.storeIssue = nil }
+            Button(L10n.text("Dismiss"), role: .cancel) { store.storeIssue = nil }
         } message: { Text($0.message) }
     }
 }

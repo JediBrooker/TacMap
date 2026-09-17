@@ -24,18 +24,18 @@ enum DrawingPalette {
 
     /// Swatches in grid order (4 cols x 3 rows in the palette menu).
     static let swatches: [Swatch] = [
-        .init("Orange",  "#FFA500"),
-        .init("Red",     "#E03434"),
-        .init("Crimson", "#B30000"),
-        .init("Yellow",  "#FFD500"),
-        .init("Green",   "#2ECC40"),
-        .init("Teal",    "#00C7BE"),
-        .init("Cyan",    "#5AC8FA"),
-        .init("Blue",    "#1F75FE"),
-        .init("Purple",  "#AF52DE"),
-        .init("Magenta", "#FF2D92"),
-        .init("White",   "#FFFFFF"),
-        .init("Black",   "#1A1A1A"),
+        .init(L10n.text("Orange"),  "#FFA500"),
+        .init(L10n.text("Red"),     "#E03434"),
+        .init(L10n.text("Crimson"), "#B30000"),
+        .init(L10n.text("Yellow"),  "#FFD500"),
+        .init(L10n.text("Green"),   "#2ECC40"),
+        .init(L10n.text("Teal"),    "#00C7BE"),
+        .init(L10n.text("Cyan"),    "#5AC8FA"),
+        .init(L10n.text("Blue"),    "#1F75FE"),
+        .init(L10n.text("Purple"),  "#AF52DE"),
+        .init(L10n.text("Magenta"), "#FF2D92"),
+        .init(L10n.text("White"),   "#FFFFFF"),
+        .init(L10n.text("Black"),   "#1A1A1A"),
     ]
 
     /// Look up swatch by hex (case-insensitive) to get its display name.

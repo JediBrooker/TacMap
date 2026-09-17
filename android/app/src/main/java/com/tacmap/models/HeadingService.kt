@@ -1,5 +1,7 @@
 package com.tacmap.models
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import android.hardware.GeomagneticField
 import android.hardware.Sensor
@@ -21,8 +23,8 @@ enum class HeadingNorthReference(
     val displaySuffix: String,
     val accessibilityLabel: String,
 ) {
-    TRUE_NORTH("T", "true north"),
-    MAGNETIC_NORTH("M", "magnetic north"),
+    TRUE_NORTH("T", L10n.text("true north")),
+    MAGNETIC_NORTH("M", L10n.text("magnetic north")),
 }
 
 /** Foreground-only phone-compass adapter for Heading Up map orientation. */

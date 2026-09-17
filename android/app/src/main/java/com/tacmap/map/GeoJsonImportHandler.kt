@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.export.GeoJsonImporter
 import java.io.InputStream
@@ -19,7 +21,7 @@ internal fun parseGeoJsonDocument(
     fallbackLayerId: String,
     density: Float = 1f,
 ): kotlin.Result<GeoJsonImporter.Result> = runCatching {
-    val readable = input ?: throw IllegalStateException("Couldn't read the selected file")
+    val readable = input ?: throw IllegalStateException(L10n.text("Couldn't read the selected file"))
     readable.use {
         GeoJsonImporter.parseStream(
             input = it,
@@ -38,31 +40,31 @@ internal fun applyGeoJsonImportResult(
         runCatching { apply(parsed) }.fold(
             onSuccess = {
                 val skipped = if (parsed.invalidSkipped > 0) {
-                    "; skipped ${parsed.invalidSkipped} invalid feature(s)"
+                    L10n.text("; skipped %1\$s invalid feature(s)", parsed.invalidSkipped)
                 } else {
                     ""
                 }
                 GeoJsonImportFeedback(
                     succeeded = true,
-                    message = "Imported ${parsed.waypoints.size} waypoint(s) and " +
-                        "${parsed.drawings.size} drawing(s)$skipped",
+                    message = L10n.text("Imported %1\$s waypoint(s) and ", parsed.waypoints.size) +
+                        L10n.text("%1\$s drawing(s)%2\$s", parsed.drawings.size, skipped),
                 )
             },
             onFailure = { failure ->
-                GeoJsonImportFeedback(false, "Import failed: ${failure.readableMessage()}")
+                GeoJsonImportFeedback(false, L10n.text("Import failed: %1\$s", failure.readableMessage()))
             },
         )
     },
     onFailure = { failure ->
-        GeoJsonImportFeedback(false, "Import failed: ${failure.readableMessage()}")
+        GeoJsonImportFeedback(false, L10n.text("Import failed: %1\$s", failure.readableMessage()))
     },
 )
 
 private fun Throwable.readableMessage(): String =
-    message?.takeIf { it.isNotBlank() } ?: "The selected file could not be imported"
+    message?.takeIf { it.isNotBlank() } ?: L10n.text("The selected file could not be imported")
 
 internal fun readBoundedExternalImport(input: InputStream?): ByteArray {
-    val readable = input ?: throw IllegalStateException("Couldn't read the selected file")
+    val readable = input ?: throw IllegalStateException(L10n.text("Couldn't read the selected file"))
     return readable.use { stream ->
         val output = ByteArrayOutputStream(64 * 1024)
         val buffer = ByteArray(32 * 1024)
@@ -71,7 +73,7 @@ internal fun readBoundedExternalImport(input: InputStream?): ByteArray {
             val count = stream.read(buffer)
             if (count < 0) break
             total += count
-            require(total <= MAX_EXTERNAL_IMPORT_BYTES) { "Import exceeds 8 MiB" }
+            require(total <= MAX_EXTERNAL_IMPORT_BYTES) { L10n.text("Import exceeds 8 MiB") }
             output.write(buffer, 0, count)
         }
         output.toByteArray()

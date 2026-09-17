@@ -28,13 +28,13 @@ enum MGRSFormatter {
         var errorDescription: String? {
             switch self {
             case .empty:
-                return "Enter an MGRS grid reference."
+                return L10n.text("Enter an MGRS grid reference.")
             case .unsupportedPrecision:
-                return "Use a 4, 6, 8, or 10-figure grid reference."
+                return L10n.text("Use a 4, 6, 8, or 10-figure grid reference.")
             case .invalidReference:
-                return "Enter a valid full MGRS reference or a local 4, 6, 8, or 10-figure grid."
+                return L10n.text("Enter a valid full MGRS reference or a local 4, 6, 8, or 10-figure grid.")
             case .unavailableLocalContext:
-                return "A local MGRS grid context is unavailable at this symbol's location. Enter a full MGRS reference."
+                return L10n.text("A local MGRS grid context is unavailable at this symbol's location. Enter a full MGRS reference.")
             }
         }
     }

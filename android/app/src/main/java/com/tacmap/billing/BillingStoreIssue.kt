@@ -1,5 +1,7 @@
 package com.tacmap.billing
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,14 +44,14 @@ internal object BillingRootPresentationPolicy {
 internal object BillingStoreIssues {
     fun purchaseAcknowledgement(): BillingStoreIssue = BillingStoreIssue(
         kind = BillingStoreIssueKind.PurchaseAcknowledgement,
-        title = "Google Play needs attention",
-        message = "TacMap saved your purchase, but Google Play has not confirmed its acknowledgement. Your access remains available. Retry soon to avoid Play automatically refunding an unacknowledged purchase.",
+        title = L10n.text("Google Play needs attention"),
+        message = L10n.text("TacMap saved your purchase, but Google Play has not confirmed its acknowledgement. Your access remains available. Retry soon to avoid Play automatically refunding an unacknowledged purchase."),
     )
 
     fun entitlementPersistence(): BillingStoreIssue = BillingStoreIssue(
         kind = BillingStoreIssueKind.EntitlementPersistence,
-        title = "Unlock status needs attention",
-        message = "TacMap checked Google Play but couldn't save the latest unlock status securely. Your existing access was kept. Free some device storage, then retry.",
+        title = L10n.text("Unlock status needs attention"),
+        message = L10n.text("TacMap checked Google Play but couldn't save the latest unlock status securely. Your existing access was kept. Free some device storage, then retry."),
     )
 }
 
@@ -64,10 +66,10 @@ fun BillingStoreIssueAlert(
         title = { Text(issue.title) },
         text = { Text(issue.message) },
         confirmButton = {
-            TextButton(onClick = onRetry) { Text("Retry Google Play") }
+            TextButton(onClick = onRetry) { Text(L10n.text("Retry Google Play")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Not now") }
+            TextButton(onClick = onDismiss) { Text(L10n.text("Not now")) }
         },
     )
 }

@@ -92,37 +92,37 @@ struct DrawingControlsCard: View {
                 .stroke(.white.opacity(0.15), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
-        .alert("Delete drawing?", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) {
+        .alert(L10n.text("Delete drawing?"), isPresented: $showDeleteConfirm) {
+            Button(L10n.text("Delete"), role: .destructive) {
                 do {
                     _ = try drawingStore.deleteDurably(shape)
                     onDismiss()
                 } catch {
-                    mutationError = "\(error.localizedDescription) Check available storage, then try again."
+                    mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
                 }
             }
-            Button("Cancel", role: .cancel) { }
+            Button(L10n.text("Cancel"), role: .cancel) { }
         } message: {
-            Text("This will permanently remove “\(shape.name ?? shape.kind.displayName)”.")
+            Text(L10n.text("This will permanently remove “%1$@”.", shape.name ?? shape.kind.displayName))
         }
-        .alert("Drawing name", isPresented: $showNameAlert) {
-            TextField("Name", text: $draftName)
+        .alert(L10n.text("Drawing name"), isPresented: $showNameAlert) {
+            TextField(L10n.text("Name"), text: $draftName)
                 .autocorrectionDisabled()
-            Button("Save") {
+            Button(L10n.text("Save")) {
                 var updated = shape
                 let trimmed = draftName.trimmingCharacters(in: .whitespaces)
                 updated.name = trimmed.isEmpty ? nil : trimmed
-                commit(updated, actionName: "Rename Drawing")
+                commit(updated, actionName: L10n.text("Rename Drawing"))
             }
-            Button("Cancel", role: .cancel) { }
+            Button(L10n.text("Cancel"), role: .cancel) { }
         }
-        .alert("Drawing Not Saved", isPresented: Binding(
+        .alert(L10n.text("Drawing Not Saved"), isPresented: Binding(
             get: { mutationError != nil },
             set: { if !$0 { mutationError = nil } }
         )) {
             Button("OK", role: .cancel) { mutationError = nil }
         } message: {
-            Text(mutationError ?? "The drawing change could not be saved. Check available storage, then try again.")
+            Text(mutationError ?? L10n.text("The drawing change could not be saved. Check available storage, then try again."))
         }
     }
 
@@ -131,24 +131,24 @@ struct DrawingControlsCard: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) { showEditor.toggle() }
             } label: {
-                Label("Edit Drawing", systemImage: "slider.horizontal.3")
+                Label(L10n.text("Edit Drawing"), systemImage: "slider.horizontal.3")
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.borderedProminent)
-            .accessibilityValue(showEditor ? "Expanded" : "Collapsed")
+            .accessibilityValue(showEditor ? L10n.text("Expanded") : L10n.text("Collapsed"))
 
             Button {
-                commit(shape.moved(to: crosshairCoordinate), actionName: "Move Drawing to Crosshair")
+                commit(shape.moved(to: crosshairCoordinate), actionName: L10n.text("Move Drawing to Crosshair"))
             } label: {
-                Label("Move to Crosshair", systemImage: "scope")
+                Label(L10n.text("Move to Crosshair"), systemImage: "scope")
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.bordered)
-            .accessibilityLabel("Move drawing to crosshair")
+            .accessibilityLabel(L10n.text("Move drawing to crosshair"))
         }
     }
 
@@ -163,7 +163,7 @@ struct DrawingControlsCard: View {
                 Button {
                     var updated = shape
                     updated.style.lineGraphic = (g == .plain) ? nil : g
-                    commit(updated, actionName: "Change Line Graphic")
+                    commit(updated, actionName: L10n.text("Change Line Graphic"))
                 } label: {
                     Label(g.displayName, systemImage: g.symbolName)
                 }
@@ -224,7 +224,7 @@ struct DrawingControlsCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityHint("Rename drawing")
+            .accessibilityHint(L10n.text("Rename drawing"))
 
             Spacer(minLength: 4)
             Button(action: dismissControls) {
@@ -234,7 +234,7 @@ struct DrawingControlsCard: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close drawing controls")
+            .accessibilityLabel(L10n.text("Close drawing controls"))
         }
     }
 
@@ -247,7 +247,7 @@ struct DrawingControlsCard: View {
                 Button {
                     var updated = shape
                     updated.style.setStrokeHue(swatch.hex)
-                    commit(updated, actionName: "Change Drawing Colour")
+                    commit(updated, actionName: L10n.text("Change Drawing Colour"))
                 } label: {
                     // .tint() on each row colours the Label's icon, without it
                     // Menu items ignore foregroundStyle() and the dots are
@@ -266,7 +266,7 @@ struct DrawingControlsCard: View {
                 .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Stroke colour")
+        .accessibilityLabel(L10n.text("Stroke colour"))
         .accessibilityValue(DrawingPalette.swatch(forHex: shape.style.strokeColorHex)?.name
                             ?? shape.style.strokeColorHex)
     }
@@ -276,12 +276,12 @@ struct DrawingControlsCard: View {
     private func fillStyleButton(for shape: DrawingShape) -> some View {
         let fillHex = shape.style.fillColorHex ?? DrawingPalette.default.hex
         return Menu {
-            Section("Fill colour") {
+            Section(L10n.text("Fill colour")) {
                 ForEach(DrawingPalette.swatches) { swatch in
                     Button {
                         var updated = shape
                         updated.style.setFillHue(swatch.hex)
-                        commit(updated, actionName: "Change Fill Colour")
+                        commit(updated, actionName: L10n.text("Change Fill Colour"))
                     } label: {
                         Label(swatch.name,
                               systemImage: fillHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
@@ -291,12 +291,12 @@ struct DrawingControlsCard: View {
                     .tint(swatch.color)
                 }
             }
-            Section("Fill opacity") {
+            Section(L10n.text("Fill opacity")) {
                 ForEach([0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0], id: \.self) { opacity in
                     Button {
                         var updated = shape
                         updated.style.setFillOpacity(opacity)
-                        commit(updated, actionName: "Change Fill Opacity")
+                        commit(updated, actionName: L10n.text("Change Fill Opacity"))
                     } label: {
                         Label("\(Int(opacity * 100))%",
                               systemImage: abs(shape.style.fillOpacity - opacity) < 0.001
@@ -317,8 +317,8 @@ struct DrawingControlsCard: View {
             .frame(width: 30, height: 30)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Fill style")
-        .accessibilityValue("\(DrawingPalette.swatch(forHex: fillHex)?.name ?? fillHex), \(Int(shape.style.fillOpacity * 100)) percent")
+        .accessibilityLabel(L10n.text("Fill style"))
+        .accessibilityValue(L10n.text("%1$@, %2$@ percent", DrawingPalette.swatch(forHex: fillHex)?.name ?? fillHex, Int(shape.style.fillOpacity * 100)))
     }
 
     /// Solid vs dashed toggle. Same look as the DrawToolbar version.
@@ -326,7 +326,7 @@ struct DrawingControlsCard: View {
         Button {
             var updated = shape
             updated.style.dashPattern = (shape.style.dashPattern == nil) ? [8, 6] : nil
-            commit(updated, actionName: "Change Stroke Style")
+            commit(updated, actionName: L10n.text("Change Stroke Style"))
         } label: {
             ZStack {
                 Circle().fill(.white.opacity(shape.style.dashPattern != nil ? 0.22 : 0.10))
@@ -344,8 +344,8 @@ struct DrawingControlsCard: View {
             .overlay(Circle().stroke(.white.opacity(shape.style.dashPattern != nil ? 0.5 : 0), lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Stroke style")
-        .accessibilityValue(shape.style.dashPattern == nil ? "Solid" : "Dashed")
+        .accessibilityLabel(L10n.text("Stroke style"))
+        .accessibilityValue(shape.style.dashPattern == nil ? L10n.text("Solid") : L10n.text("Dashed"))
     }
 
     /// Layer pill - colour swatch + name + count, opens menu to reassign.
@@ -359,7 +359,7 @@ struct DrawingControlsCard: View {
                 Button {
                     var updated = shape
                     updated.layerID = layer.id
-                    commit(updated, actionName: "Move Drawing to Layer")
+                    commit(updated, actionName: L10n.text("Move Drawing to Layer"))
                 } label: {
                     Label("\(layer.name) (\(count))",
                           systemImage: layer.id == current?.id
@@ -385,7 +385,7 @@ struct DrawingControlsCard: View {
             .background(.white.opacity(0.10), in: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Layer")
+        .accessibilityLabel(L10n.text("Layer"))
         .accessibilityValue(current?.name ?? "")
     }
 
@@ -398,7 +398,7 @@ struct DrawingControlsCard: View {
     private func strokeWidthRow(for shape: DrawingShape) -> some View {
         sliderRow(
             icon: "scribble.variable",
-            title: "Stroke width",
+            title: L10n.text("Stroke width"),
             valueLabel: String(format: "%.1f pt", shape.style.strokeWidth),
             value: shape.style.strokeWidth,
             range: 0.5...16,
@@ -406,9 +406,9 @@ struct DrawingControlsCard: View {
             onPreview: { value in
                 previewChange(from: shape) { $0.style.strokeWidth = value }
             },
-            onCommit: { finishSliderTransaction(actionName: "Change Stroke Width") },
+            onCommit: { finishSliderTransaction(actionName: L10n.text("Change Stroke Width")) },
             onReset: {
-                commitReset(actionName: "Reset Stroke Width") {
+                commitReset(actionName: L10n.text("Reset Stroke Width")) {
                     $0.style.strokeWidth = DrawingStyle.default.strokeWidth
                 }
             }
@@ -418,7 +418,7 @@ struct DrawingControlsCard: View {
     private func fillOpacityRow(for shape: DrawingShape) -> some View {
         sliderRow(
             icon: "circle.lefthalf.filled",
-            title: "Fill opacity",
+            title: L10n.text("Fill opacity"),
             valueLabel: "\(Int((shape.style.fillOpacity * 100).rounded()))%",
             value: shape.style.fillOpacity,
             range: 0...1,
@@ -426,9 +426,9 @@ struct DrawingControlsCard: View {
             onPreview: { value in
                 previewChange(from: shape) { $0.style.setFillOpacity(value) }
             },
-            onCommit: { finishSliderTransaction(actionName: "Change Fill Opacity") },
+            onCommit: { finishSliderTransaction(actionName: L10n.text("Change Fill Opacity")) },
             onReset: {
-                commitReset(actionName: "Reset Fill Opacity") {
+                commitReset(actionName: L10n.text("Reset Fill Opacity")) {
                     $0.style.setFillOpacity(DrawingStyle.default.fillOpacity)
                 }
             }
@@ -438,7 +438,7 @@ struct DrawingControlsCard: View {
     private func rotationRow(for shape: DrawingShape) -> some View {
         sliderRow(
             icon: "arrow.clockwise.circle",
-            title: "Rotation",
+            title: L10n.text("Rotation"),
             valueLabel: "\(Int(shape.rotation.rounded()))°",
             value: shape.rotation,
             range: 0...360,
@@ -446,15 +446,15 @@ struct DrawingControlsCard: View {
             onPreview: { value in
                 previewChange(from: shape) { $0.rotation = value }
             },
-            onCommit: { finishSliderTransaction(actionName: "Rotate Drawing") },
-            onReset: { commitReset(actionName: "Reset Drawing Rotation") { $0.rotation = 0 } }
+            onCommit: { finishSliderTransaction(actionName: L10n.text("Rotate Drawing")) },
+            onReset: { commitReset(actionName: L10n.text("Reset Drawing Rotation")) { $0.rotation = 0 } }
         )
     }
 
     private func widthRow(for shape: DrawingShape) -> some View {
         sliderRow(
             icon: "arrow.left.and.right.circle",
-            title: "Width",
+            title: L10n.text("Width"),
             valueLabel: String(format: "%.2f×", shape.scaleX),
             value: shape.scaleX,
             range: 0.1...10.0,
@@ -462,15 +462,15 @@ struct DrawingControlsCard: View {
             onPreview: { value in
                 previewChange(from: shape) { $0.scaleX = value }
             },
-            onCommit: { finishSliderTransaction(actionName: "Resize Drawing Width") },
-            onReset: { commitReset(actionName: "Reset Drawing Width") { $0.scaleX = 1 } }
+            onCommit: { finishSliderTransaction(actionName: L10n.text("Resize Drawing Width")) },
+            onReset: { commitReset(actionName: L10n.text("Reset Drawing Width")) { $0.scaleX = 1 } }
         )
     }
 
     private func heightRow(for shape: DrawingShape) -> some View {
         sliderRow(
             icon: "arrow.up.and.down.circle",
-            title: "Height",
+            title: L10n.text("Height"),
             valueLabel: String(format: "%.2f×", shape.scaleY),
             value: shape.scaleY,
             range: 0.1...10.0,
@@ -478,8 +478,8 @@ struct DrawingControlsCard: View {
             onPreview: { value in
                 previewChange(from: shape) { $0.scaleY = value }
             },
-            onCommit: { finishSliderTransaction(actionName: "Resize Drawing Height") },
-            onReset: { commitReset(actionName: "Reset Drawing Height") { $0.scaleY = 1 } }
+            onCommit: { finishSliderTransaction(actionName: L10n.text("Resize Drawing Height")) },
+            onReset: { commitReset(actionName: L10n.text("Reset Drawing Height")) { $0.scaleY = 1 } }
         )
     }
 
@@ -515,7 +515,7 @@ struct DrawingControlsCard: View {
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Reset \(title)")
+            .accessibilityLabel(L10n.text("Reset %1$@", title))
         }
     }
 
@@ -537,7 +537,7 @@ struct DrawingControlsCard: View {
                 showDeleteConfirm = true
             } label: {
                 Label {
-                    Text("Delete")
+                    Text(L10n.text("Delete"))
                         .font(.footnote.weight(.semibold))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
@@ -574,8 +574,8 @@ struct DrawingControlsCard: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Transform controls")
-        .accessibilityValue(showTransforms ? "Expanded" : "Collapsed")
+        .accessibilityLabel(L10n.text("Transform controls"))
+        .accessibilityValue(showTransforms ? L10n.text("Expanded") : L10n.text("Collapsed"))
     }
 
     private func previewChange(from shape: DrawingShape,
@@ -594,7 +594,7 @@ struct DrawingControlsCard: View {
             // commitEdit is durable-before-publish, so clearing the transient
             // candidate immediately restores the last known-good store shape.
             onPreview(nil)
-            mutationError = "\(error.localizedDescription) The previous drawing is still active. Check available storage, then try again."
+            mutationError = L10n.text("%1$@ The previous drawing is still active. Check available storage, then try again.", error.localizedDescription)
         }
     }
 
@@ -602,7 +602,7 @@ struct DrawingControlsCard: View {
                              mutation: (inout DrawingShape) -> Void) {
         cancelSliderTransaction()
         guard var durable = drawingStore.shapes.first(where: { $0.id == drawingID }) else {
-            mutationError = "That drawing no longer exists. Close its controls and try again."
+            mutationError = L10n.text("That drawing no longer exists. Close its controls and try again.")
             return
         }
         mutation(&durable)
@@ -624,7 +624,7 @@ struct DrawingControlsCard: View {
         do {
             _ = try drawingStore.commitEdit(shape, actionName: actionName)
         } catch {
-            mutationError = "\(error.localizedDescription) Check available storage, then try again."
+            mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
         }
     }
 }

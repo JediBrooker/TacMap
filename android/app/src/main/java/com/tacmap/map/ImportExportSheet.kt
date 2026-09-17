@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -63,26 +65,26 @@ fun ImportExportSheet(
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(
-                "Import / Export",
+                L10n.text("Import / Export"),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
             )
-            SectionLabel("IMPORT")
-            SheetRow(Icons.Default.PictureAsPdf, "PDF Map", onImportPdf)
-            SheetRow(Icons.Default.Map, "Offline Tiles", onImportTiles)
+            SectionLabel(L10n.text("IMPORT"))
+            SheetRow(Icons.Default.PictureAsPdf, L10n.text("PDF Map"), onImportPdf)
+            SheetRow(Icons.Default.Map, L10n.text("Offline Tiles"), onImportTiles)
             SheetRow(Icons.Default.FileDownload, "GeoJSON", onImportGeoJson)
             SheetRow(Icons.Default.FileDownload, "KML / KMZ", onImportKml)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            SectionLabel("EXPORT")
+            SectionLabel(L10n.text("EXPORT"))
             SheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson)
-            SheetRow(Icons.Default.Timeline, "GPX Track", onExportGpx)
+            SheetRow(Icons.Default.Timeline, L10n.text("GPX Track"), onExportGpx)
             SheetRow(Icons.Default.SelectAll, MissionObjectExport.ACTION_TITLE, onExportAllData)
             if (hasSavedTrack) {
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                SectionLabel("SAVED TRACK")
+                SectionLabel(L10n.text("SAVED TRACK"))
                 SheetRow(
                     Icons.Default.DeleteForever,
-                    if (isRecordingTrack) "Stop & Discard Current Track" else "Discard Saved Track",
+                    if (isRecordingTrack) L10n.text("Stop & Discard Current Track") else L10n.text("Discard Saved Track"),
                     onDiscardTrack,
                 )
             }
@@ -147,7 +149,7 @@ fun RecordingIndicator(
                 .background(Color.White.copy(alpha = dotAlpha))
         )
         Text(
-            "REC",
+            L10n.text("REC"),
             color = Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,

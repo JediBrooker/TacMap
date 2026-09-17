@@ -1,6 +1,7 @@
 package com.tacmap.app
 
 import android.app.Application
+import com.tacmap.localization.L10n
 import com.tacmap.models.TrackRecorder
 import com.tacmap.settings.OpsecSettings
 import com.tacmap.sync.UnitSyncRuntime
@@ -30,6 +31,7 @@ class TacticalApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        L10n.install(this)
         // Has to come before any store is constructed - they all seal through it.
         DataKey.install(this)
         appLock = AppLock(this)

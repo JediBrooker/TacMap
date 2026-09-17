@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 /** Small state machine separating user authentication from key rotation. The
  * downgrade to device-bound storage can only reach [KeyProtection.setAuthBound]
  * after a fresh platform credential result has been accepted. */
@@ -24,7 +26,7 @@ class AuthBoundChangeController(
     fun request(target: Boolean, deviceSecure: Boolean): Request {
         if (target == keyProtection.isAuthBound) return Request.NoChange
         if (!deviceSecure) {
-            return Request.Error("Set a device PIN, pattern or password first, then try again.")
+            return Request.Error(L10n.text("Set a device PIN, pattern or password first, then try again."))
         }
         pendingTarget = target
         return Request.PromptCredential
@@ -41,7 +43,7 @@ class AuthBoundChangeController(
         if (!approved || target == null) return Completion(keyProtection.isAuthBound)
         return runCatching { keyProtection.setAuthBound(target) }.fold(
             onSuccess = { Completion(keyProtection.isAuthBound) },
-            onFailure = { Completion(keyProtection.isAuthBound, it.message ?: "Key protection could not be changed") },
+            onFailure = { Completion(keyProtection.isAuthBound, it.message ?: L10n.text("Key protection could not be changed")) },
         )
     }
 }

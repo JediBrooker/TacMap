@@ -1,5 +1,7 @@
 package com.tacmap.models
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.util.SafeStore
 import com.tacmap.util.SealedEnvelope
 import kotlinx.serialization.json.Json
@@ -141,7 +143,7 @@ object TrackLog {
 
     fun delete(file: File) {
         if (file.exists() && !file.delete()) {
-            throw java.io.IOException("Could not remove encrypted track log")
+            throw java.io.IOException(L10n.text("Could not remove encrypted track log"))
         }
         // Intentionally retain the marker. Once this install has migrated to
         // encrypted track logs, a later plaintext file at the same path is
@@ -161,7 +163,7 @@ object TrackLog {
         if (!tmp.renameTo(marker)) {
             if (!marker.exists()) {
                 tmp.delete()
-                throw java.io.IOException("Could not persist track migration marker")
+                throw java.io.IOException(L10n.text("Could not persist track migration marker"))
             }
             tmp.delete()
         }

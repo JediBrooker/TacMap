@@ -1,5 +1,7 @@
 package com.tacmap.models
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import android.location.Location
 import android.os.Handler
@@ -121,7 +123,7 @@ class TrackRecorder internal constructor(
                         .onSuccess { recoveryReady = true }
                         .onFailure {
                             recoveryReady = false
-                            _persistError.value = "Could not encrypt the recovered track: ${it.message}"
+                            _persistError.value = L10n.text("Could not encrypt the recovered track: %1\$s", it.message)
                         }
                 } else {
                     recoveryReady = true
@@ -129,7 +131,7 @@ class TrackRecorder internal constructor(
             }
             .onFailure {
                 recoveryReady = false
-                _persistError.value = "Could not read the saved track: ${it.message}"
+                _persistError.value = L10n.text("Could not read the saved track: %1\$s", it.message)
             }
     }
 
@@ -160,13 +162,13 @@ class TrackRecorder internal constructor(
         if (hasRetainedRecordingKey()) return false
         if (!recoveryReady) {
             failRecording(
-                _persistError.value ?: "Could not verify the saved track before recording."
+                _persistError.value ?: L10n.text("Could not verify the saved track before recording.")
             )
             return false
         }
         _persistError.value = null
         if (_recovered.value || _points.value.isNotEmpty()) {
-            failRecording("Export or discard the saved track before starting a new recording.")
+            failRecording(L10n.text("Export or discard the saved track before starting a new recording."))
             return false
         }
         var preparedGeneration: Long? = null
@@ -198,7 +200,7 @@ class TrackRecorder internal constructor(
                     true
                 },
                 onFailure = {
-                    failRecording("Could not start recording safely: ${it.message}")
+                    failRecording(L10n.text("Could not start recording safely: %1\$s", it.message))
                     false
                 }
             )
@@ -235,7 +237,7 @@ class TrackRecorder internal constructor(
             !isServiceSessionAuthorized(generation)
         ) return
         interruptRecording(
-            "Background recording did not activate in time. Try starting it again.",
+            L10n.text("Background recording did not activate in time. Try starting it again."),
             requestServiceStop = true,
         )
     }
@@ -244,7 +246,7 @@ class TrackRecorder internal constructor(
     internal fun onServiceDestroyed(generation: Long) {
         if (!isServiceSessionAuthorized(generation)) return
         interruptRecording(
-            "Background recording stopped unexpectedly. Your saved track was preserved.",
+            L10n.text("Background recording stopped unexpectedly. Your saved track was preserved."),
             requestServiceStop = false,
         )
     }
@@ -274,7 +276,7 @@ class TrackRecorder internal constructor(
      * encrypted log has actually been removed. */
     fun discard(): Boolean {
         if (_isRecording.value) {
-            _persistError.value = "Stop recording before discarding the saved track."
+            _persistError.value = L10n.text("Stop recording before discarding the saved track.")
             return false
         }
         clearRecordingKey()
@@ -287,7 +289,7 @@ class TrackRecorder internal constructor(
                     true
                 },
                 onFailure = {
-                    _persistError.value = "Could not discard the saved track: ${it.message}"
+                    _persistError.value = L10n.text("Could not discard the saved track: %1\$s", it.message)
                     false
                 }
             )
@@ -325,7 +327,7 @@ class TrackRecorder internal constructor(
         if (failure == null) {
             _points.value = _points.value + point
         } else {
-            failRecording("Track fix not saved; recording stopped: ${failure.message}")
+            failRecording(L10n.text("Track fix not saved; recording stopped: %1\$s", failure.message))
         }
     }
 
@@ -357,7 +359,7 @@ class TrackRecorder internal constructor(
         if (authorized) return
         clearRecordingKey()
         if (_uiState.value.isAuthorizedSession) {
-            failRecording("Recording stopped because its session key was unavailable.")
+            failRecording(L10n.text("Recording stopped because its session key was unavailable."))
         }
     }
 

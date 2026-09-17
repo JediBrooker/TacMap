@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -73,7 +75,7 @@ internal fun LayerSelectorButton(
             )
             Icon(
                 Icons.Default.ExpandMore,
-                contentDescription = "Change layer",
+                contentDescription = L10n.text("Change layer"),
                 tint = Color.White.copy(alpha = 0.62f),
                 modifier = Modifier.size(16.dp)
             )

@@ -125,20 +125,20 @@ enum DataKey {
 
     /// Auth-bound and the user hasn't authenticated. Recoverable: prompt, retry.
     struct LockedError: LocalizedError {
-        var errorDescription: String? { "Mission data key is locked. Authenticate to continue." }
+        var errorDescription: String? { L10n.text("Mission data key is locked. Authenticate to continue.") }
     }
 
     /// The Keychain item is gone or undecryptable. Data is unreadable.
     struct UnrecoverableError: LocalizedError {
         let status: OSStatus
         var errorDescription: String? {
-            "Mission data key was invalidated by a device security change (\(status))."
+            L10n.text("Mission data key was invalidated by a device security change (%1$@).", status)
         }
     }
 
     struct RotationCleanupError: LocalizedError {
         var errorDescription: String? {
-            "Mission-data access control was not changed because the previous key slot could not be removed securely. Try again."
+            L10n.text("Mission-data access control was not changed because the previous key slot could not be removed securely. Try again.")
         }
     }
 
@@ -520,7 +520,7 @@ enum DataKey {
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         if authBound {
             let authContext = LAContext()
-            authContext.localizedReason = "Unlock mission data"
+            authContext.localizedReason = L10n.text("Unlock mission data")
             query[kSecUseAuthenticationContext as String] = authContext
         }
         var out: CFTypeRef?

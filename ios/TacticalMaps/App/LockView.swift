@@ -19,7 +19,7 @@ struct LockView: View {
             Image(systemName: "lock.shield.fill")
                 .font(.system(size: 52))
                 .foregroundStyle(Color(red: 0.55, green: 0.95, blue: 0.55))
-            Text("TacMap Locked").font(.title2.bold()).foregroundStyle(.white)
+            Text(L10n.text("TacMap Locked")).font(.title2.bold()).foregroundStyle(.white)
 
             SecureField("PIN", text: $pin)
                 .keyboardType(.numberPad)
@@ -39,18 +39,18 @@ struct LockView: View {
                 }
 
             if isLockedOut {
-                Text("Too many attempts. Try again in \(Int(lockoutRemaining.rounded(.up)))s")
+                Text(L10n.text("Too many attempts. Try again in %1$@s", Int(lockoutRemaining.rounded(.up))))
                     .font(.caption).foregroundStyle(.orange)
                     .multilineTextAlignment(.center)
             } else if showError {
-                Text("Incorrect PIN").font(.caption).foregroundStyle(.red)
+                Text(L10n.text("Incorrect PIN")).font(.caption).foregroundStyle(.red)
             }
 
             if AppLock.biometryAvailable {
                 Button {
                     tryBiometric()
                 } label: {
-                    Label("Use Face ID / Touch ID", systemImage: "faceid")
+                    Label(L10n.text("Use Face ID / Touch ID"), systemImage: "faceid")
                 }
                 .foregroundStyle(.white.opacity(0.85))
                 .disabled(isLockedOut)
@@ -75,7 +75,7 @@ struct LockView: View {
 
     private func tryBiometric() {
         guard !isLockedOut else { return }
-        AppLock.authenticateBiometric(reason: "Unlock TacMap") { ok in
+        AppLock.authenticateBiometric(reason: L10n.text("Unlock TacMap")) { ok in
             if ok { onUnlocked() }
         }
     }
@@ -97,32 +97,32 @@ struct AppLockSetupView: View {
             Form {
                 if isEnabled {
                     Section {
-                        SecureField("Current PIN", text: $currentPIN).keyboardType(.numberPad)
+                        SecureField(L10n.text("Current PIN"), text: $currentPIN).keyboardType(.numberPad)
                     } header: {
-                        Text("App Lock is on")
+                        Text(L10n.text("App Lock is on"))
                     } footer: {
-                        Text("Enter your current PIN to change or turn off the lock.")
+                        Text(L10n.text("Enter your current PIN to change or turn off the lock."))
                     }
-                    Section("Change PIN") {
-                        SecureField("New PIN", text: $newPIN).keyboardType(.numberPad)
-                        SecureField("Confirm new PIN", text: $confirmPIN).keyboardType(.numberPad)
-                        Button("Change PIN") { changePIN() }
+                    Section(L10n.text("Change PIN")) {
+                        SecureField(L10n.text("New PIN"), text: $newPIN).keyboardType(.numberPad)
+                        SecureField(L10n.text("Confirm new PIN"), text: $confirmPIN).keyboardType(.numberPad)
+                        Button(L10n.text("Change PIN")) { changePIN() }
                             .disabled(currentPIN.count != 4 || newPIN.count != 4 || confirmPIN.count != 4)
                     }
                     Section {
-                        Button("Turn Off App Lock", role: .destructive) { disable() }
+                        Button(L10n.text("Turn Off App Lock"), role: .destructive) { disable() }
                             .disabled(currentPIN.count != 4)
                     }
                 } else {
                     Section {
-                        SecureField("New PIN", text: $newPIN).keyboardType(.numberPad)
-                        SecureField("Confirm PIN", text: $confirmPIN).keyboardType(.numberPad)
-                        Button("Enable App Lock") { enable() }
+                        SecureField(L10n.text("New PIN"), text: $newPIN).keyboardType(.numberPad)
+                        SecureField(L10n.text("Confirm PIN"), text: $confirmPIN).keyboardType(.numberPad)
+                        Button(L10n.text("Enable App Lock")) { enable() }
                             .disabled(newPIN.count != 4 || confirmPIN.count != 4)
                     } header: {
-                        Text("Set a 4-digit PIN")
+                        Text(L10n.text("Set a 4-digit PIN"))
                     } footer: {
-                        Text("A deterrent if your device is lost or borrowed. Not a substitute for full device encryption.")
+                        Text(L10n.text("A deterrent if your device is lost or borrowed. Not a substitute for full device encryption."))
                     }
                 }
 
@@ -130,22 +130,22 @@ struct AppLockSetupView: View {
                     Section { Text(message).font(.caption).foregroundStyle(.secondary) }
                 }
             }
-            .navigationTitle("App Lock")
+            .navigationTitle(L10n.text("App Lock"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } } }
         }
     }
 
     private func enable() {
         guard newPIN == confirmPIN, newPIN.count == 4, newPIN.allSatisfy(\.isNumber) else {
-            message = "PINs must match and be 4 digits."
+            message = L10n.text("PINs must match and be 4 digits.")
             return
         }
         do {
             try AppLock.setPIN(newPIN)
             resetFields()
             isEnabled = true
-            message = "App Lock enabled. TacMap will lock when backgrounded."
+            message = L10n.text("App Lock enabled. TacMap will lock when backgrounded.")
         } catch {
             message = error.localizedDescription
         }
@@ -154,18 +154,18 @@ struct AppLockSetupView: View {
     private func changePIN() {
         guard AppLock.verify(currentPIN) else {
             message = AppLock.lockoutRemaining > 0
-                ? "Too many attempts. Try again shortly."
-                : "Current PIN is incorrect."
+                ? L10n.text("Too many attempts. Try again shortly.")
+                : L10n.text("Current PIN is incorrect.")
             return
         }
         guard newPIN == confirmPIN, newPIN.count == 4, newPIN.allSatisfy(\.isNumber) else {
-            message = "New PINs must match and be 4 digits."
+            message = L10n.text("New PINs must match and be 4 digits.")
             return
         }
         do {
             try AppLock.setPIN(newPIN)
             resetFields()
-            message = "PIN changed."
+            message = L10n.text("PIN changed.")
         } catch {
             message = error.localizedDescription
         }
@@ -176,11 +176,11 @@ struct AppLockSetupView: View {
             if try AppLock.disable(currentPIN: currentPIN) {
                 resetFields()
                 isEnabled = false
-                message = "App Lock disabled."
+                message = L10n.text("App Lock disabled.")
             } else {
                 message = AppLock.lockoutRemaining > 0
-                    ? "Too many attempts. Try again shortly."
-                    : "Current PIN is incorrect."
+                    ? L10n.text("Too many attempts. Try again shortly.")
+                    : L10n.text("Current PIN is incorrect.")
             }
         } catch {
             message = error.localizedDescription

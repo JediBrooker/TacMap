@@ -9,12 +9,16 @@ on:
     paths:
       - 'android/**'
       - 'testdata/**'
+      - 'localization/**'
+      - 'scripts/*localizations.py'
       - '.github/workflows/android.yml'
   pull_request:
     branches: [main]
     paths:
       - 'android/**'
       - 'testdata/**'
+      - 'localization/**'
+      - 'scripts/*localizations.py'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
@@ -27,6 +31,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate English and German localizations
+        run: python3 scripts/check_localizations.py
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3

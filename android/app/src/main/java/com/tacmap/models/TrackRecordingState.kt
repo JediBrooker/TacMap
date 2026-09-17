@@ -1,5 +1,7 @@
 package com.tacmap.models
 
+import com.tacmap.localization.L10n
+
 /** The location grant states Android can return when fine and coarse are requested together. */
 enum class LocationAccess {
     Precise,
@@ -59,28 +61,28 @@ object LiveMapLocationPermissionPolicy {
 
     fun controlFor(state: LiveMapLocationState): LiveMapLocationControl = when (state) {
         LiveMapLocationState.NotRequested -> LiveMapLocationControl(
-            title = "Enable Live Location",
-            guidance = "TacMap requests Location access on first launch. Tap to request it again if needed.",
+            title = L10n.text("Enable Live Location"),
+            guidance = L10n.text("TacMap requests Location access on first launch. Tap to request it again if needed."),
             action = LiveMapLocationAction.RequestPermission,
         )
         LiveMapLocationState.Precise -> LiveMapLocationControl(
-            title = "Centre on My Location",
-            guidance = "Centres the map on your latest precise location.",
+            title = L10n.text("Centre on My Location"),
+            guidance = L10n.text("Centres the map on your latest precise location."),
             action = LiveMapLocationAction.CentreOnLocation,
         )
         LiveMapLocationState.ApproximateOnly -> LiveMapLocationControl(
-            title = "Enable Precise Location",
-            guidance = "Approximate location is on. Open Settings to allow Precise location.",
+            title = L10n.text("Enable Precise Location"),
+            guidance = L10n.text("Approximate location is on. Open Settings to allow Precise location."),
             action = LiveMapLocationAction.OpenSettings,
         )
         LiveMapLocationState.Denied -> LiveMapLocationControl(
-            title = "Open Location Settings",
-            guidance = "Location access is off. Opens Settings so you can enable it.",
+            title = L10n.text("Open Location Settings"),
+            guidance = L10n.text("Location access is off. Opens Settings so you can enable it."),
             action = LiveMapLocationAction.OpenSettings,
         )
         LiveMapLocationState.Restricted -> LiveMapLocationControl(
-            title = "Location Restricted",
-            guidance = "Location access is restricted by this device. Review Location settings.",
+            title = L10n.text("Location Restricted"),
+            guidance = L10n.text("Location access is restricted by this device. Review Location settings."),
             action = LiveMapLocationAction.OpenSettings,
         )
     }
@@ -88,12 +90,12 @@ object LiveMapLocationPermissionPolicy {
     fun guidanceFor(access: LocationAccess): LiveMapLocationGuidance? = when (access) {
         LocationAccess.Precise -> null
         LocationAccess.ApproximateOnly -> LiveMapLocationGuidance(
-            message = "Approximate location cannot provide TacMap's on-device GPS position. " +
-                "Allow Precise location, then try again.",
+            message = L10n.text("Approximate location cannot provide TacMap's on-device GPS position. ") +
+                L10n.text("Allow Precise location, then try again."),
             settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
         )
         LocationAccess.Denied -> LiveMapLocationGuidance(
-            message = "Allow Precise location to show your live position on the map.",
+            message = L10n.text("Allow Precise location to show your live position on the map."),
             settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
         )
     }
@@ -182,20 +184,20 @@ object TrackRecordingReducer {
 
             event.locationAccess == LocationAccess.ApproximateOnly -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.AwaitingPermission,
-                message = "Approximate location cannot provide the precise GPS track TacMap records. " +
-                    "Allow Precise location, then retry.",
+                message = L10n.text("Approximate location cannot provide the precise GPS track TacMap records. ") +
+                    L10n.text("Allow Precise location, then retry."),
                 settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
             )
 
             event.locationAccess == LocationAccess.Denied -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.AwaitingPermission,
-                message = "Precise location permission is required to record a GPS track.",
+                message = L10n.text("Precise location permission is required to record a GPS track."),
                 settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
             )
 
             !event.gpsEnabled -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.Interrupted,
-                message = "GPS is turned off. Turn on device location services, then retry.",
+                message = L10n.text("GPS is turned off. Turn on device location services, then retry."),
                 settingsTarget = TrackRecordingSettingsTarget.LocationServices,
             )
 
@@ -220,14 +222,14 @@ object TrackRecordingReducer {
             !state.isAuthorizedSession -> state
             event.locationAccess == LocationAccess.ApproximateOnly -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.Interrupted,
-                message = "Precise location was removed; recording stopped. " +
-                    "Approximate location is not accurate enough for a GPS track.",
+                message = L10n.text("Precise location was removed; recording stopped. ") +
+                    L10n.text("Approximate location is not accurate enough for a GPS track."),
                 settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
             )
 
             else -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.Interrupted,
-                message = "Location permission was removed; recording stopped.",
+                message = L10n.text("Location permission was removed; recording stopped."),
                 settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
             )
         }

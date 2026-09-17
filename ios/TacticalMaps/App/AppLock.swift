@@ -18,13 +18,13 @@ enum AppLockPersistenceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .keychain:
-            return "The App Lock credential could not be saved securely. Your previous setting was kept."
+            return L10n.text("The App Lock credential could not be saved securely. Your previous setting was kept.")
         case .invalidCredential:
-            return "The saved App Lock credential is invalid. Your previous setting was kept."
+            return L10n.text("The saved App Lock credential is invalid. Your previous setting was kept.")
         case .readBackFailed:
-            return "The App Lock credential could not be verified after saving. Your previous setting was kept."
+            return L10n.text("The App Lock credential could not be verified after saving. Your previous setting was kept.")
         case .randomGeneration:
-            return "A secure App Lock credential could not be generated. Your previous setting was kept."
+            return L10n.text("A secure App Lock credential could not be generated. Your previous setting was kept.")
         }
     }
 }

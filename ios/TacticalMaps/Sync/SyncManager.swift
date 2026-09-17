@@ -153,7 +153,7 @@ final class V2SnapshotGate {
         guard isCurrent(socketIdentity, generation: generation) else { return .ignored }
         guard phase != .idle, phase != .complete, phase != .failed else { return .ignored }
         guard frameBytes >= 0, aggregateBytes <= maxAggregateBytes - frameBytes else {
-            return reject("The relay snapshot exceeded the safe size limit.")
+            return reject(L10n.text("The relay snapshot exceeded the safe size limit."))
         }
         aggregateBytes += frameBytes
 
@@ -161,7 +161,7 @@ final class V2SnapshotGate {
         case "snapshot-begin": return acceptBegin(message)
         case "snapshot": return acceptPage(message)
         case "snapshot-end": return acceptEnd(message)
-        default: return reject("The relay sent live data before completing its snapshot fence.")
+        default: return reject(L10n.text("The relay sent live data before completing its snapshot fence."))
         }
     }
 
@@ -169,7 +169,7 @@ final class V2SnapshotGate {
         guard isCurrent(socketIdentity, generation: generation) else { return .ignored }
         switch phase {
         case .awaitingBegin, .receiving, .finalPage:
-            return reject("The relay did not complete its initial snapshot in time.")
+            return reject(L10n.text("The relay did not complete its initial snapshot in time."))
         default:
             return .ignored
         }
@@ -177,11 +177,11 @@ final class V2SnapshotGate {
 
     private func acceptBegin(_ message: [String: Any]) -> V2SnapshotGateEvent {
         guard phase == .awaitingBegin else {
-            return reject("The relay snapshot began out of order.")
+            return reject(L10n.text("The relay snapshot began out of order."))
         }
         guard let value = SyncManager.strictJSONInteger(
             message["seq"], minimum: 0, maximum: Int64.max
-        ) else { return reject("The relay snapshot fence was malformed.") }
+        ) else { return reject(L10n.text("The relay snapshot fence was malformed.")) }
         sequence = value
         phase = .receiving
         return .began
@@ -189,19 +189,19 @@ final class V2SnapshotGate {
 
     private func acceptPage(_ message: [String: Any]) -> V2SnapshotGateEvent {
         guard phase == .receiving else {
-            return reject("The relay snapshot page arrived out of order.")
+            return reject(L10n.text("The relay snapshot page arrived out of order."))
         }
         guard let items = message["items"] as? [[String: Any]],
               let more = strictJSONBoolean(message["more"]),
               items.count <= maxItems - records.count else {
-            return reject("The relay snapshot page was malformed or contained too many records.")
+            return reject(L10n.text("The relay snapshot page was malformed or contained too many records."))
         }
         records.append(contentsOf: items)
 
         if message.keys.contains("members") {
             guard let pageMembers = message["members"] as? [[String: Any]],
                   pageMembers.count <= maxItems - members.count else {
-                return reject("The relay snapshot member list was malformed or too large.")
+                return reject(L10n.text("The relay snapshot member list was malformed or too large."))
             }
             members.append(contentsOf: pageMembers)
         }
@@ -211,14 +211,14 @@ final class V2SnapshotGate {
 
     private func acceptEnd(_ message: [String: Any]) -> V2SnapshotGateEvent {
         guard phase == .finalPage else {
-            return reject("The relay snapshot ended before its final page.")
+            return reject(L10n.text("The relay snapshot ended before its final page."))
         }
         guard let expected = sequence,
               let actual = SyncManager.strictJSONInteger(
                 message["seq"], minimum: 0, maximum: Int64.max
-              ) else { return reject("The relay snapshot end fence was malformed.") }
+              ) else { return reject(L10n.text("The relay snapshot end fence was malformed.")) }
         guard actual == expected else {
-            return reject("The relay snapshot fence changed before completion.")
+            return reject(L10n.text("The relay snapshot fence changed before completion."))
         }
         phase = .complete
         return .completed(V2SnapshotBatch(
@@ -448,11 +448,11 @@ enum SyncRemoteModelMutationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidPayload:
-            return "The authenticated sync record did not contain exactly one valid mission object."
+            return L10n.text("The authenticated sync record did not contain exactly one valid mission object.")
         case .identityCollision(let id):
-            return "The authenticated sync record conflicts with another object type using ID \(id.uuidString)."
+            return L10n.text("The authenticated sync record conflicts with another object type using ID %1$@.", id.uuidString)
         case .persistence(let error):
-            return "The authenticated sync update could not be saved: \(error.localizedDescription)"
+            return L10n.text("The authenticated sync update could not be saved: %1$@", error.localizedDescription)
         }
     }
 }
@@ -486,13 +486,13 @@ enum SyncRemoteModelApplier {
             _ = try drawingStore.addLayersVerbatimDurably(parsed.newLayers)
             if let waypoint = parsed.waypoints.first {
                 if waypointStore.waypoints.contains(where: { $0.id == waypoint.id }) {
-                    _ = try waypointStore.commitEdit(waypoint, actionName: "Apply Synced Waypoint")
+                    _ = try waypointStore.commitEdit(waypoint, actionName: L10n.text("Apply Synced Waypoint"))
                 } else {
                     _ = try waypointStore.addDurably(waypoint)
                 }
             } else if let shape = parsed.drawings.first {
                 if drawingStore.shapes.contains(where: { $0.id == shape.id }) {
-                    _ = try drawingStore.commitEdit(shape, actionName: "Apply Synced Drawing")
+                    _ = try drawingStore.commitEdit(shape, actionName: L10n.text("Apply Synced Drawing"))
                 } else {
                     _ = try drawingStore.addDurably(shape)
                 }
@@ -1020,7 +1020,7 @@ final class SyncManager: ObservableObject {
         if value == presenceConfig, presenceConfigDurable { return true }
         guard persistPresenceConfig(value) else {
             reportPresencePersistenceIssue(
-                "Could not save Unit Sync identity/location sharing. The previous setting remains active; check available storage and try again."
+                L10n.text("Could not save Unit Sync identity/location sharing. The previous setting remains active; check available storage and try again.")
             )
             return false
         }
@@ -1066,7 +1066,7 @@ final class SyncManager: ObservableObject {
                     label: Self.presenceLabel
                 ), let config = try? JSONDecoder().decode(PresenceConfig.self, from: plain) else {
                     reportPresencePersistenceIssue(
-                        "Saved Unit Sync identity/location sharing is locked or damaged. Location sharing remains off."
+                        L10n.text("Saved Unit Sync identity/location sharing is locked or damaged. Location sharing remains off.")
                     )
                     return
                 }
@@ -1081,7 +1081,7 @@ final class SyncManager: ObservableObject {
             guard !requiresSealed,
                   let config = try? JSONDecoder().decode(PresenceConfig.self, from: stored) else {
                 reportPresencePersistenceIssue(
-                    "Saved Unit Sync identity/location sharing failed its sealed-storage policy. Location sharing remains off."
+                    L10n.text("Saved Unit Sync identity/location sharing failed its sealed-storage policy. Location sharing remains off.")
                 )
                 return
             }
@@ -1089,7 +1089,7 @@ final class SyncManager: ObservableObject {
             // migration to authenticated ciphertext succeeds.
             guard persistPresenceConfig(config) else {
                 reportPresencePersistenceIssue(
-                    "Could not migrate Unit Sync identity/location sharing to encrypted storage. Location sharing remains off."
+                    L10n.text("Could not migrate Unit Sync identity/location sharing to encrypted storage. Location sharing remains off.")
                 )
                 return
             }
@@ -1097,7 +1097,7 @@ final class SyncManager: ObservableObject {
             presenceConfigDurable = true
         } catch {
             reportPresencePersistenceIssue(
-                "Saved Unit Sync identity/location sharing is locked or damaged. Location sharing remains off."
+                L10n.text("Saved Unit Sync identity/location sharing is locked or damaged. Location sharing remains off.")
             )
         }
     }
@@ -1145,13 +1145,13 @@ final class SyncManager: ObservableObject {
         let code = joinCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else { return }
         guard code.hasPrefix("3:") || code.hasPrefix("2:") else {
-            lastError = "Join code must start with 3:. Legacy rooms require an explicit 2: prefix."
+            lastError = L10n.text("Join code must start with 3:. Legacy rooms require an explicit 2: prefix.")
             return
         }
         guard let configuredRelay = Self.validatedRelayBaseForRuntime(
             OpsecSettings.shared.relayURL
         ) else {
-            lastError = "The configured Unit Sync relay is unsafe or invalid. Correct it in Settings, Privacy & OPSEC."
+            lastError = L10n.text("The configured Unit Sync relay is unsafe or invalid. Correct it in Settings, Privacy & OPSEC.")
             return
         }
         leave(clearLastError: false)
@@ -1163,7 +1163,7 @@ final class SyncManager: ObservableObject {
             myPublicKey = publicKey
             myPublicKeyRaw = publicRaw
         } catch {
-            lastError = "Signing identity is locked or unavailable. Unlock the device and try again."
+            lastError = L10n.text("Signing identity is locked or unavailable. Unlock the device and try again.")
             return
         }
         wantConnected = true
@@ -1181,7 +1181,7 @@ final class SyncManager: ObservableObject {
             roomId = keys.roomId
             authToken = keys.authToken
             guard let pubRaw = myPublicKeyRaw else {
-                lastError = "Signing identity is unavailable."
+                lastError = L10n.text("Signing identity is unavailable.")
                 wantConnected = false
                 return
             }
@@ -1190,7 +1190,7 @@ final class SyncManager: ObservableObject {
             let containerURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             let rs = SyncReplayState(roomId: keys.roomId, containerURL: containerURL)
             guard rs.load(localActorId: localActorId, publicKey: myPublicKey) else {
-                lastError = "Saved rollback-protection state is locked or damaged. Sync was not started."
+                lastError = L10n.text("Saved rollback-protection state is locked or damaged. Sync was not started.")
                 wantConnected = false
                 roomKey = nil; authToken = nil; roomId = nil; v3Keys = nil; myActorId = nil
                 return
@@ -1212,7 +1212,7 @@ final class SyncManager: ObservableObject {
             roomId = keys.roomId
             authToken = keys.authToken
             chatStore.close()
-            chatSessionIssue = "TacMap Chat requires a secure v3 room."
+            chatSessionIssue = L10n.text("TacMap Chat requires a secure v3 room.")
         }
 
         if let activeRoomId = roomId {
@@ -1325,7 +1325,7 @@ final class SyncManager: ObservableObject {
             lastError = issueLifecycle.clearPersistentSecurity()?.message
         } catch {
             lastError = issueLifecycle.reportPersistentSecurity(
-                "Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again.",
+                L10n.text("Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again."),
                 generation: activeConnectionGeneration
             )?.message
         }
@@ -1342,24 +1342,24 @@ final class SyncManager: ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .secureRoomRequired: return "TacMap Chat requires a secure v3 Unit Sync room."
-            case .historyUnavailable: return "Encrypted chat history is locked or unavailable."
-            case .sessionUnavailable: return "Encrypted chat is still establishing a relay session."
-            case .recipientRequired: return "Select a unit before sending this message."
-            case .recipientChanged: return "That unit's secure session changed. Select it again; nothing was broadcast."
-            case .counterExhausted: return "This chat session reached its message limit. Reconnect Unit Sync."
-            case .transportUnavailable: return "The message could not be routed to the relay."
+            case .secureRoomRequired: return L10n.text("TacMap Chat requires a secure v3 Unit Sync room.")
+            case .historyUnavailable: return L10n.text("Encrypted chat history is locked or unavailable.")
+            case .sessionUnavailable: return L10n.text("Encrypted chat is still establishing a relay session.")
+            case .recipientRequired: return L10n.text("Select a unit before sending this message.")
+            case .recipientChanged: return L10n.text("That unit's secure session changed. Select it again; nothing was broadcast.")
+            case .counterExhausted: return L10n.text("This chat session reached its message limit. Reconnect Unit Sync.")
+            case .transportUnavailable: return L10n.text("The message could not be routed to the relay.")
             }
         }
     }
 
     var chatAvailabilityMessage: String? {
-        if room == nil { return "Join a secure Unit Sync room to use chat." }
-        if protocolVersion != 3 { return "TacMap Chat requires a secure v3 room." }
+        if room == nil { return L10n.text("Join a secure Unit Sync room to use chat.") }
+        if protocolVersion != 3 { return L10n.text("TacMap Chat requires a secure v3 room.") }
         if let chatSessionIssue { return chatSessionIssue }
-        if chatStore.activeRoomId != roomId { return "Encrypted chat history is unavailable." }
-        if status != .connected { return "Unit Sync must be connected for live chat." }
-        if !chatSessionReady { return "Establishing an encrypted chat session…" }
+        if chatStore.activeRoomId != roomId { return L10n.text("Encrypted chat history is unavailable.") }
+        if status != .connected { return L10n.text("Unit Sync must be connected for live chat.") }
+        if !chatSessionReady { return L10n.text("Establishing an encrypted chat session…") }
         return nil
     }
 
@@ -1368,7 +1368,7 @@ final class SyncManager: ObservableObject {
     func lockChatForMissionData() {
         clearChatSessionSecrets()
         chatStore.lock()
-        chatSessionIssue = "Unlock mission data to use TacMap Chat."
+        chatSessionIssue = L10n.text("Unlock mission data to use TacMap Chat.")
     }
 
     func restoreChatAfterMissionUnlock() {
@@ -1478,7 +1478,7 @@ final class SyncManager: ObservableObject {
               !chatStore.isLocked,
               let keys = v3Keys, let actorId = myActorId,
               let sessionDomain, let seed = deviceSeed else {
-            chatSessionIssue = chatStore.issue ?? "Encrypted chat history is unavailable."
+            chatSessionIssue = chatStore.issue ?? L10n.text("Encrypted chat history is unavailable.")
             return
         }
         clearChatSessionSecrets()
@@ -1494,7 +1494,7 @@ final class SyncManager: ObservableObject {
             sendChatKeyAdvertisement()
         } catch {
             clearChatSessionSecrets()
-            chatSessionIssue = "Encrypted chat could not establish a session."
+            chatSessionIssue = L10n.text("Encrypted chat could not establish a session.")
         }
     }
 
@@ -1504,11 +1504,11 @@ final class SyncManager: ObservableObject {
         chatKeyAdvertAttempts += 1
         _ = send(session.advertisement) { [weak self] succeeded in
             guard let self, !succeeded else { return }
-            self.chatSessionIssue = "The chat-key advertisement could not reach the relay."
+            self.chatSessionIssue = L10n.text("The chat-key advertisement could not reach the relay.")
         }
         chatKeyRetryItem?.cancel()
         guard chatKeyAdvertAttempts < 4 else {
-            let issue = "The relay did not acknowledge encrypted chat capability."
+            let issue = L10n.text("The relay did not acknowledge encrypted chat capability.")
             clearChatSessionSecrets()
             chatSessionIssue = issue
             return
@@ -1544,7 +1544,7 @@ final class SyncManager: ObservableObject {
             guard activeSessions[actorId]?.sessionDomain == key.sessionDomain else { continue }
             let displayName = onlineMembers[actorId]?.displayName
                 ?? peers[actorId]?.callsign
-                ?? "Unit \(String(actorId.suffix(6)).uppercased())"
+                ?? L10n.text("Unit %1$@", String(actorId.suffix(6)).uppercased())
             next[actorId] = TacMapChatRecipient(
                 actorId: actorId,
                 displayName: displayName,
@@ -1562,7 +1562,7 @@ final class SyncManager: ObservableObject {
         guard let base = Self.validatedRelayBaseForRuntime(relayEndpoint) else {
             wantConnected = false
             status = .offline
-            lastError = "The configured Unit Sync relay is unsafe or invalid. Correct it in Settings, Privacy & OPSEC."
+            lastError = L10n.text("The configured Unit Sync relay is unsafe or invalid. Correct it in Settings, Privacy & OPSEC.")
             return
         }
         relayEndpoint = base
@@ -1592,7 +1592,7 @@ final class SyncManager: ObservableObject {
                 sessionDomain = generated
             } catch {
                 failClosedV3(
-                    "Secure session randomness is unavailable. Unit Sync was not started."
+                    L10n.text("Secure session randomness is unavailable. Unit Sync was not started.")
                 )
                 return
             }
@@ -1763,7 +1763,7 @@ final class SyncManager: ObservableObject {
         clearOutboundDeliveries(markForReconciliation: true)
         if v2SnapshotFailureGeneration != activeConnectionGeneration {
             lastError = issueLifecycle.report(
-                "Unit Sync disconnected. Check the relay or network; reconnecting automatically.",
+                L10n.text("Unit Sync disconnected. Check the relay or network; reconnecting automatically."),
                 kind: .connection,
                 generation: activeConnectionGeneration
             )?.message
@@ -1843,7 +1843,7 @@ final class SyncManager: ObservableObject {
                   ) else { return }
             self.v3HandshakeTimeoutItem = nil
             self.lastError = self.issueLifecycle.report(
-                "Unit Sync handshake timed out. Reconnecting automatically.",
+                L10n.text("Unit Sync handshake timed out. Reconnecting automatically."),
                 kind: .connection,
                 generation: generation
             )?.message
@@ -1957,7 +1957,7 @@ final class SyncManager: ObservableObject {
         v2SnapshotFailureGeneration = generation
         status = .offline
         lastError = issueLifecycle.report(
-            "Unit Sync snapshot failed: \(reason) Verify the relay or network; reconnecting automatically.",
+            L10n.text("Unit Sync snapshot failed: %1$@ Verify the relay or network; reconnecting automatically.", reason),
             kind: .connection,
             generation: generation
         )?.message
@@ -2023,7 +2023,7 @@ final class SyncManager: ObservableObject {
                 self.observedModelHashes = current
             } catch {
                 self.revisionJournalAvailable = false
-                self.lastError = "Local revision history could not be saved; sync is paused."
+                self.lastError = L10n.text("Local revision history could not be saved; sync is paused.")
                 self.failClosedV3(self.lastError!)
             }
         }
@@ -2206,7 +2206,7 @@ final class SyncManager: ObservableObject {
                 ) else {
                     if self.outboundDeliveries.pending(localId: delivery.localId)?.requestId == delivery.requestId {
                         self.lastError = self.issueLifecycle.report(
-                            "A Unit Sync change is still unconfirmed after bounded retries. Reconnecting to reconcile it; the local edit remains saved.",
+                            L10n.text("A Unit Sync change is still unconfirmed after bounded retries. Reconnecting to reconcile it; the local edit remains saved."),
                             kind: .security,
                             generation: delivery.connectionGeneration
                         )?.message
@@ -2297,7 +2297,7 @@ final class SyncManager: ObservableObject {
         if let recoveryStamp, recoveryStamp.actorId == actorId { counter = recoveryStamp.counter }
         else {
             do { counter = try rs.reserveNextCounter() }
-            catch { failClosedV3("Rollback-protection state could not be saved."); return false }
+            catch { failClosedV3(L10n.text("Rollback-protection state could not be saved.")); return false }
         }
         let counterHex = VersionStamp.counterHex16(counter)
         let vs = VersionStamp(counter: counter, actorId: actorId).encode()
@@ -2316,7 +2316,7 @@ final class SyncManager: ObservableObject {
             publicKey: myPublicKey, kind: .put(contentHash: SyncIdentity.bytesToHex(payloadHash)))
         if recoveryStamp == nil {
             do { guard try rs.commit(mutation) else { return false } }
-            catch { failClosedV3("Rollback-protection state could not be saved."); return false }
+            catch { failClosedV3(L10n.text("Rollback-protection state could not be saved.")); return false }
         }
         let ciphertext = sealed.base64EncodedString()
         let session = SyncIdentity.urlB64Encode(sd)
@@ -2344,7 +2344,7 @@ final class SyncManager: ObservableObject {
         if let recoveryStamp, recoveryStamp.actorId == actorId { counter = recoveryStamp.counter }
         else {
             do { counter = try rs.reserveNextCounter() }
-            catch { failClosedV3("Rollback-protection state could not be saved."); return false }
+            catch { failClosedV3(L10n.text("Rollback-protection state could not be saved.")); return false }
         }
         let counterHex = VersionStamp.counterHex16(counter)
         let vs = VersionStamp(counter: counter, actorId: actorId).encode()
@@ -2362,7 +2362,7 @@ final class SyncManager: ObservableObject {
             publicKey: myPublicKey, kind: .delete)
         if recoveryStamp == nil {
             do { guard try rs.commit(mutation) else { return false } }
-            catch { failClosedV3("Rollback-protection state could not be saved."); return false }
+            catch { failClosedV3(L10n.text("Rollback-protection state could not be saved.")); return false }
         }
         let ciphertext = sealed.base64EncodedString()
         let session = SyncIdentity.urlB64Encode(sd)
@@ -2385,11 +2385,11 @@ final class SyncManager: ObservableObject {
         guard let actorId = myActorId, let sd = sessionDomain,
               let keys = v3Keys, let pubRaw = myPublicKeyRaw,
               let seed = deviceSeed, let rs = replayState else {
-            failClosedV3("Could not construct authenticated hello."); return
+            failClosedV3(L10n.text("Could not construct authenticated hello.")); return
         }
         let epoch: String
         do { epoch = try rs.reserveHelloEpoch(actorId: actorId, pubkey: myPublicKey) }
-        catch { failClosedV3("Could not reserve authenticated session epoch."); return }
+        catch { failClosedV3(L10n.text("Could not reserve authenticated session epoch.")); return }
         let vs = "\(epoch):\(actorId)"
         localHelloVersion = vs
         let preimage = SyncIdentity.buildPreimage(
@@ -2398,7 +2398,7 @@ final class SyncManager: ObservableObject {
             counterHex16: epoch, objectId: "",
             kind: "hello", payloadHash: SyncIdentity.sha256(pubRaw))
         guard let sig = SyncSigning.sign(seed, preimage) else {
-            failClosedV3("Could not send authenticated hello."); return
+            failClosedV3(L10n.text("Could not send authenticated hello.")); return
         }
         let frame: [String: Any] = [
             "t": "hello", "by": actorId, "pub": myPublicKey,
@@ -2408,7 +2408,7 @@ final class SyncManager: ObservableObject {
         // path as every other frame. A delayed error from a replaced hello must
         // never fail-close the newer authenticated session.
         guard send(frame, completion: { _ in }) else {
-            failClosedV3("Could not send authenticated hello.")
+            failClosedV3(L10n.text("Could not send authenticated hello."))
             return
         }
     }
@@ -2550,20 +2550,20 @@ final class SyncManager: ObservableObject {
         let recovery: String
         switch error {
         case SyncRemoteModelMutationError.identityCollision:
-            recovery = "Resolve the duplicate waypoint/drawing identity locally, then rejoin Unit Sync."
+            recovery = L10n.text("Resolve the duplicate waypoint/drawing identity locally, then rejoin Unit Sync.")
         case SyncRemoteModelMutationError.invalidPayload:
-            recovery = "Ask the sender to update TacMap and send the mission object again before rejoining."
+            recovery = L10n.text("Ask the sender to update TacMap and send the mission object again before rejoining.")
         default:
             recovery = remainsPending
-                ? "The verified update remains pending. Unlock mission data or free device storage, then rejoin Unit Sync to retry it."
-                : "Unlock mission data or free device storage, then leave and rejoin Unit Sync so the relay can resend it."
+                ? L10n.text("The verified update remains pending. Unlock mission data or free device storage, then rejoin Unit Sync to retry it.")
+                : L10n.text("Unlock mission data or free device storage, then leave and rejoin Unit Sync so the relay can resend it.")
         }
         lastError = issueLifecycle.report(
             "\(error.localizedDescription) \(recovery)",
             kind: .security,
             generation: activeConnectionGeneration
         )?.message
-        remoteUpdateSubject.send("Sync update not saved. Open Unit Sync for recovery guidance.")
+        remoteUpdateSubject.send(L10n.text("Sync update not saved. Open Unit Sync for recovery guidance."))
     }
 
     func boundedCallsign(_ value: String) -> String {
@@ -3044,15 +3044,15 @@ final class SyncManager: ObservableObject {
         let message: String
         switch code {
         case "quota":
-            message = "The Unit Sync room is full, so this saved local change was not uploaded. Remove room content or use a new room, then reconnect."
+            message = L10n.text("The Unit Sync room is full, so this saved local change was not uploaded. Remove room content or use a new room, then reconnect.")
         case "storage":
-            message = "The Unit Sync relay could not durably save this change. It remains saved locally and will be retried."
+            message = L10n.text("The Unit Sync relay could not durably save this change. It remains saved locally and will be retried.")
         case "stale", "not-found", "counter-window":
-            message = "The Unit Sync relay rejected an out-of-date change. The local edit remains saved; reconnecting will reconcile it from a verified snapshot."
+            message = L10n.text("The Unit Sync relay rejected an out-of-date change. The local edit remains saved; reconnecting will reconcile it from a verified snapshot.")
         case "session-replaced", "session-mismatch", "hello-required":
-            message = "This Unit Sync session can no longer confirm changes. The local edit remains saved; reconnecting with a fresh authenticated session."
+            message = L10n.text("This Unit Sync session can no longer confirm changes. The local edit remains saved; reconnecting with a fresh authenticated session.")
         default:
-            message = "The Unit Sync relay rejected a change as invalid. The local edit remains saved; open Unit Sync for recovery guidance."
+            message = L10n.text("The Unit Sync relay rejected a change as invalid. The local edit remains saved; open Unit Sync for recovery guidance.")
         }
         lastError = issueLifecycle.report(
             message, kind: .security, generation: pending.connectionGeneration
@@ -3204,8 +3204,8 @@ final class SyncManager: ObservableObject {
         }
 
         // Let UI know a remote change landed.
-        let kind = parsed.waypoints.isEmpty ? "Drawing" : "Waypoint"
-        remoteUpdateSubject.send("\(kind) updated by another device")
+        let kind = parsed.waypoints.isEmpty ? L10n.text("Drawing") : L10n.text("Waypoint")
+        remoteUpdateSubject.send(L10n.text("%1$@ updated by another device", kind))
     }
 
     private func applyDelete(_ rec: [String: Any], snapshotGeneration: Int64? = nil) {
@@ -3261,7 +3261,7 @@ final class SyncManager: ObservableObject {
             return
         }
 
-        remoteUpdateSubject.send("Object removed by another device")
+        remoteUpdateSubject.send(L10n.text("Object removed by another device"))
     }
 
     private func finalizeLegacyDeleteSnapshotConfirmations(snapshotGeneration: Int64) {
@@ -3337,7 +3337,7 @@ final class SyncManager: ObservableObject {
         case "snapshot-begin":
             guard status == .connecting,
                   let seq = strictNonNegativeInt64(obj["seq"]) else {
-                failClosedV3("Invalid sync snapshot fence.")
+                failClosedV3(L10n.text("Invalid sync snapshot fence."))
                 return
             }
             snapshotSeq = seq
@@ -3433,7 +3433,7 @@ final class SyncManager: ObservableObject {
               !snapshotInvalid,
               snapshotSawFinalPage,
               let rs = replayState else {
-            failClosedV3("Sync snapshot authentication failed.")
+            failClosedV3(L10n.text("Sync snapshot authentication failed."))
             return
         }
 
@@ -3442,7 +3442,7 @@ final class SyncManager: ObservableObject {
         for record in snapshotRecords {
             let deleted = (record["deleted"] as? Bool) == true
             guard let value = validateRecordV3(record, deleted: deleted) else {
-                failClosedV3("Sync snapshot contained an unauthenticated record.")
+                failClosedV3(L10n.text("Sync snapshot contained an unauthenticated record."))
                 return
             }
             validated.append(value)
@@ -3469,20 +3469,20 @@ final class SyncManager: ObservableObject {
             defer { resolvingPendingModel = false }
             for (index, value) in validated.enumerated() {
                 guard try resolvePendingModelApplication(value, currentHash: remotes[index].priorModelHash) else {
-                    failClosedV3("Rollback-protection state could not be saved.")
+                    failClosedV3(L10n.text("Rollback-protection state could not be saved."))
                     return
                 }
             }
             guard try resolveUnmatchedPendingModelApplications() else {
-                failClosedV3("Rollback-protection state could not be saved.")
+                failClosedV3(L10n.text("Rollback-protection state could not be saved."))
                 return
             }
         } catch let error as SyncRemoteModelMutationError {
             reportRemoteModelPersistenceFailure(error, remainsPending: true)
-            failClosedV3(lastError ?? "A pending authenticated sync update could not be saved.")
+            failClosedV3(lastError ?? L10n.text("A pending authenticated sync update could not be saved."))
             return
         } catch {
-            failClosedV3("Rollback-protection state could not be saved.")
+            failClosedV3(L10n.text("Rollback-protection state could not be saved."))
             return
         }
 
@@ -3494,7 +3494,7 @@ final class SyncManager: ObservableObject {
         snapshotWireIds.removeAll()
         if wasStale {
             lastError = issueLifecycle.report(
-                "The relay served an older snapshot; newer authenticated local state was retained.",
+                L10n.text("The relay served an older snapshot; newer authenticated local state was retained."),
                 kind: .security,
                 generation: activeConnectionGeneration
             )?.message
@@ -3580,7 +3580,7 @@ final class SyncManager: ObservableObject {
                 clientId: by, sessionDomain: sd)
             refreshChatRecipients()
         } catch {
-            failClosedV3("Actor rollback-protection state could not be saved.")
+            failClosedV3(L10n.text("Actor rollback-protection state could not be saved."))
         }
     }
 
@@ -3632,7 +3632,7 @@ final class SyncManager: ObservableObject {
               let code = obj["code"] as? String,
               code.range(of: "^[a-z0-9_-]{1,64}$", options: .regularExpression) != nil else { return }
         clearChatSessionSecrets()
-        chatSessionIssue = "The relay rejected encrypted chat capability (\(code))."
+        chatSessionIssue = L10n.text("The relay rejected encrypted chat capability (%1$@).", code)
     }
 
     private func applyChatV3(_ obj: [String: Any]) {
@@ -3663,7 +3663,7 @@ final class SyncManager: ObservableObject {
             )
             let senderName = onlineMembers[outer.senderActorId]?.displayName
                 ?? peers[outer.senderActorId]?.callsign
-                ?? "Unit \(String(outer.senderActorId.suffix(6)).uppercased())"
+                ?? L10n.text("Unit %1$@", String(outer.senderActorId.suffix(6)).uppercased())
             let message = TacMapChatMessage(
                 id: outer.messageId,
                 roomId: keys.roomId,
@@ -3689,8 +3689,8 @@ final class SyncManager: ObservableObject {
                 fingerprint: opened.fingerprint
             ) {
             case .accepted:
-                let label = opened.payload.kind == .report ? "report" : "message"
-                remoteUpdateSubject.send("New TacMap Chat \(label) from \(senderName).")
+                let label = opened.payload.kind == .report ? L10n.text("report") : L10n.text("message")
+                remoteUpdateSubject.send(L10n.text("New TacMap Chat %1$@ from %2$@.", label, senderName))
             case .duplicate, .rejected:
                 break
             }
@@ -3728,7 +3728,7 @@ final class SyncManager: ObservableObject {
             try chatStore.updateDelivery(id: messageId, state: .routed)
         } catch {
             clearChatSessionSecrets()
-            chatSessionIssue = "The routed message status could not be saved securely."
+            chatSessionIssue = L10n.text("The routed message status could not be saved securely.")
         }
     }
 
@@ -3748,7 +3748,7 @@ final class SyncManager: ObservableObject {
             try chatStore.updateDelivery(id: messageId, state: .failed, failureCode: code)
         } catch {
             clearChatSessionSecrets()
-            chatSessionIssue = "The unrouted message status could not be saved securely."
+            chatSessionIssue = L10n.text("The unrouted message status could not be saved securely.")
         }
     }
 
@@ -3772,15 +3772,15 @@ final class SyncManager: ObservableObject {
             resolvingPendingModel = true
             defer { resolvingPendingModel = false }
             guard try resolvePendingModelApplication(validated, currentHash: priorHash) else {
-                failClosedV3("Rollback-protection state could not be saved.")
+                failClosedV3(L10n.text("Rollback-protection state could not be saved."))
                 return
             }
         } catch let error as SyncRemoteModelMutationError {
             reportRemoteModelPersistenceFailure(error, remainsPending: true)
-            failClosedV3(lastError ?? "A pending authenticated sync update could not be saved.")
+            failClosedV3(lastError ?? L10n.text("A pending authenticated sync update could not be saved."))
             return
         } catch {
-            failClosedV3("Rollback-protection state could not be saved.")
+            failClosedV3(L10n.text("Rollback-protection state could not be saved."))
             return
         }
     }
@@ -3966,7 +3966,7 @@ final class SyncManager: ObservableObject {
                 lastContent[localId] = nil
                 kindById[localId] = nil
             }
-            remoteUpdateSubject.send("Object removed by another device")
+            remoteUpdateSubject.send(L10n.text("Object removed by another device"))
             refreshObservedModelBaseline(localId: value.localId)
             return
         }
@@ -3980,12 +3980,12 @@ final class SyncManager: ObservableObject {
             let id = waypoint.id.uuidString
             kindById[id] = "waypoint"
             lastContent[id] = reexport(id: id)
-            remoteUpdateSubject.send("Waypoint updated by another device")
+            remoteUpdateSubject.send(L10n.text("Waypoint updated by another device"))
         } else if let shape = parsed.drawings.first {
             let id = shape.id.uuidString
             kindById[id] = "drawing"
             lastContent[id] = reexport(id: id)
-            remoteUpdateSubject.send("Drawing updated by another device")
+            remoteUpdateSubject.send(L10n.text("Drawing updated by another device"))
         }
         refreshObservedModelBaseline(localId: value.localId)
     }
@@ -4098,7 +4098,7 @@ final class SyncManager: ObservableObject {
             guard try rs.acceptPresence(
                 actorId: actorId, sessionDomain: sdString, counter: stamp.counter) else { return }
         } catch {
-            failClosedV3("Presence replay state could not be saved.")
+            failClosedV3(L10n.text("Presence replay state could not be saved."))
             return
         }
 

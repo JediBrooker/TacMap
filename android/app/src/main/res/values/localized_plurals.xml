@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated. Edit localization/plurals.json. -->
+<resources>
+    <plurals name="count_day">
+        <item quantity="one">"%d day"</item>
+        <item quantity="other">"%d days"</item>
+    </plurals>
+    <plurals name="count_point">
+        <item quantity="one">"%d point"</item>
+        <item quantity="other">"%d points"</item>
+    </plurals>
+    <plurals name="count_drawing">
+        <item quantity="one">"%d drawing"</item>
+        <item quantity="other">"%d drawings"</item>
+    </plurals>
+    <plurals name="count_waypoint">
+        <item quantity="one">"%d waypoint"</item>
+        <item quantity="other">"%d waypoints"</item>
+    </plurals>
+    <plurals name="count_unit">
+        <item quantity="one">"%d unit"</item>
+        <item quantity="other">"%d units"</item>
+    </plurals>
+    <plurals name="count_task">
+        <item quantity="one">"%d task"</item>
+        <item quantity="other">"%d tasks"</item>
+    </plurals>
+    <plurals name="count_marker">
+        <item quantity="one">"%d marker"</item>
+        <item quantity="other">"%d markers"</item>
+    </plurals>
+    <plurals name="count_line">
+        <item quantity="one">"%d line"</item>
+        <item quantity="other">"%d lines"</item>
+    </plurals>
+    <plurals name="count_free_draw">
+        <item quantity="one">"%d free-draw"</item>
+        <item quantity="other">"%d free-draws"</item>
+    </plurals>
+    <plurals name="count_area">
+        <item quantity="one">"%d area"</item>
+        <item quantity="other">"%d areas"</item>
+    </plurals>
+    <plurals name="count_track_recorded">
+        <item quantity="one">"%d track point recorded"</item>
+        <item quantity="other">"%d track points recorded"</item>
+    </plurals>
+    <plurals name="count_trial_remaining">
+        <item quantity="one">"Free trial — %d day left"</item>
+        <item quantity="other">"Free trial — %d days left"</item>
+    </plurals>
+    <plurals name="count_unread">
+        <item quantity="one">"%d unread message"</item>
+        <item quantity="other">"%d unread messages"</item>
+    </plurals>
+    <plurals name="count_send_units">
+        <item quantity="one">"Send to %d unit"</item>
+        <item quantity="other">"Send to %d units"</item>
+    </plurals>
+    <plurals name="count_minute_ago">
+        <item quantity="one">"%d minute ago"</item>
+        <item quantity="other">"%d minutes ago"</item>
+    </plurals>
+    <plurals name="count_hour_ago">
+        <item quantity="one">"%d hour ago"</item>
+        <item quantity="other">"%d hours ago"</item>
+    </plurals>
+    <plurals name="count_object">
+        <item quantity="one">"%d object"</item>
+        <item quantity="other">"%d objects"</item>
+    </plurals>
+    <plurals name="count_layer">
+        <item quantity="one">"%d layer"</item>
+        <item quantity="other">"%d layers"</item>
+    </plurals>
+    <plurals name="count_new_waypoint">
+        <item quantity="one">"%d new waypoint"</item>
+        <item quantity="other">"%d new waypoints"</item>
+    </plurals>
+    <plurals name="count_new_drawing">
+        <item quantity="one">"%d new drawing"</item>
+        <item quantity="other">"%d new drawings"</item>
+    </plurals>
+    <plurals name="count_new_layer">
+        <item quantity="one">"%d new layer"</item>
+        <item quantity="other">"%d new layers"</item>
+    </plurals>
+</resources>

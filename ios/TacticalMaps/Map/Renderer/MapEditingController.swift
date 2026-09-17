@@ -20,7 +20,7 @@ struct WaypointGesturePreview {
 
     @discardableResult
     func commit(to store: WaypointStore) throws -> Bool {
-        try store.commitEdit(candidate, actionName: "Move Waypoint")
+        try store.commitEdit(candidate, actionName: L10n.text("Move Waypoint"))
     }
 }
 
@@ -47,7 +47,7 @@ struct DrawingGesturePreview {
 
     @discardableResult
     func commit(to store: DrawingStore) throws -> Bool {
-        try store.commitEdit(candidate, actionName: "Move Drawing")
+        try store.commitEdit(candidate, actionName: L10n.text("Move Drawing"))
     }
 }
 
@@ -151,8 +151,8 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                     _ = try drawingStore.addDurably(shape)
                 } catch {
                     reportMutationFailure(
-                        "The drawing was not added.", error: error,
-                        recovery: "Check available storage, then draw it again."
+                        L10n.text("The drawing was not added."), error: error,
+                        recovery: L10n.text("Check available storage, then draw it again.")
                     )
                 }
             }
@@ -183,10 +183,10 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
             shape.insertEffectiveVertex(Coordinate2D(latitude: mid.lat, longitude: mid.lon),
                                         at: mid.vertexIndex)
             do {
-                _ = try drawingStore.commitEdit(shape, actionName: "Insert Drawing Vertex")
+                _ = try drawingStore.commitEdit(shape, actionName: L10n.text("Insert Drawing Vertex"))
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             } catch {
-                reportMutationFailure("The new drawing vertex was not saved.", error: error)
+                reportMutationFailure(L10n.text("The new drawing vertex was not saved."), error: error)
             }
             return
         }
@@ -301,10 +301,10 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                    var shape = drawingStore.shapes.first(where: { $0.id == h.shapeID }) {
                     if shape.removeEffectiveVertex(at: h.vertexIndex) {
                         do {
-                            _ = try drawingStore.commitEdit(shape, actionName: "Delete Drawing Vertex")
+                            _ = try drawingStore.commitEdit(shape, actionName: L10n.text("Delete Drawing Vertex"))
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         } catch {
-                            reportMutationFailure("The drawing vertex was not deleted.", error: error)
+                            reportMutationFailure(L10n.text("The drawing vertex was not deleted."), error: error)
                         }
                     } else {
                         UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -320,7 +320,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                         _ = try preview.commit(to: waypointStore)
                     } catch {
                         restoreWaypointPreview(preview)
-                        reportMutationFailure("The waypoint move was not saved.", error: error)
+                        reportMutationFailure(L10n.text("The waypoint move was not saved."), error: error)
                     }
                 } else {
                     restoreWaypointPreview(preview)
@@ -339,7 +339,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                         }
                     } catch {
                         restoreDrawingPreview()
-                        reportMutationFailure("The drawing move was not saved.", error: error)
+                        reportMutationFailure(L10n.text("The drawing move was not saved."), error: error)
                     }
                 } else {
                     restoreDrawingPreview()
@@ -391,11 +391,11 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                 shape.setEffectiveVertex(h.vertexIndex, to: newCoord)
             }
             do {
-                _ = try drawingStore.commitEdit(shape, actionName: "Move Drawing Vertex")
+                _ = try drawingStore.commitEdit(shape, actionName: L10n.text("Move Drawing Vertex"))
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             } catch {
                 handlesView?.update(handles: handles)
-                reportMutationFailure("The drawing vertex move was not saved.", error: error)
+                reportMutationFailure(L10n.text("The drawing vertex move was not saved."), error: error)
             }
         default:
             break
@@ -416,7 +416,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
 
     private func reportMutationFailure(_ summary: String,
                                        error: Error,
-                                       recovery: String = "Check available storage, then try again.") {
+                                       recovery: String = L10n.text("Check available storage, then try again.")) {
         UINotificationFeedbackGenerator().notificationOccurred(.error)
         onMutationError?("\(summary) \(error.localizedDescription) \(recovery)")
     }

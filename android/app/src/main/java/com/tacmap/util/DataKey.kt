@@ -1,5 +1,7 @@
 package com.tacmap.util
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
@@ -69,11 +71,11 @@ import javax.crypto.spec.GCMParameterSpec
 object DataKey {
 
     /** Auth-bound and the user hasn't authenticated recently enough. Recoverable: prompt, retry. */
-    class LockedException : Exception("Mission data key is locked. Authenticate to continue.")
+    class LockedException : Exception(L10n.text("Mission data key is locked. Authenticate to continue."))
 
     /** The Keystore KEK is gone (lockscreen removed / factory keystore reset). Data is unreadable. */
     class UnrecoverableException(cause: Throwable?) :
-        Exception("Mission data key was invalidated by a device security change.", cause)
+        Exception(L10n.text("Mission data key was invalidated by a device security change."), cause)
 
     private const val KEYSTORE = "AndroidKeyStore"
     private const val ALIAS_DEVICE = "tacmap.kek.device.v1"
@@ -184,7 +186,7 @@ object DataKey {
                         .putBoolean(KEY_SENTINEL_REQUIRED, true)
                 } && prefs().getString(wrappedKey(record.slot), null) == upgraded &&
                     prefs().getBoolean(KEY_SENTINEL_REQUIRED, false)) {
-                    "Could not upgrade mission-key payload"
+                    L10n.text("Could not upgrade mission-key payload")
                 }
             }
             if (record.mode == DataKeyProtectionMode.AUTH) {
@@ -416,7 +418,7 @@ object DataKey {
                 it.wrapped == wrapped && it.mode == DataKeyProtectionMode.DEVICE
             } == true && activePointersEqual(SLOT_A) &&
                 prefs().getBoolean(KEY_INITIALIZED, false)) {
-                "Could not persist mission-data key"
+                L10n.text("Could not persist mission-data key")
             }
             writeSentinel(dek)
             val wrappedV2 = Base64.encodeToString(
@@ -428,7 +430,7 @@ object DataKey {
                     .putBoolean(KEY_SENTINEL_REQUIRED, true)
             } && prefs().getString(wrappedKey(SLOT_A), null) == wrappedV2 &&
                 prefs().getBoolean(KEY_SENTINEL_REQUIRED, false)) {
-                "Could not persist mission-key sentinel state"
+                L10n.text("Could not persist mission-key sentinel state")
             }
             cached?.fill(0)
             cached = dek.copyOf()
@@ -493,7 +495,7 @@ object DataKey {
         } && slotRecord(SLOT_A)?.let {
             it.wrapped == wrapped && it.mode == mode
         } == true && activePointersEqual(SLOT_A)) {
-            "Could not migrate mission-data key record"
+            L10n.text("Could not migrate mission-data key record")
         }
     }
 
@@ -584,7 +586,7 @@ object DataKey {
         if (file.exists()) {
             val opened = SealedEnvelope.openFile(dek, file.readBytes(), SENTINEL_LABEL)
             if (opened == null || decodeSentinel(opened) == null) {
-                throw UnrecoverableException(IllegalStateException("Mission-key sentinel failed authentication"))
+                throw UnrecoverableException(IllegalStateException(L10n.text("Mission-key sentinel failed authentication")))
             }
             if (!prefs().getBoolean(KEY_SENTINEL_REQUIRED, false)) {
                 check(commitPreferenceMutation(setOf(KEY_SENTINEL_REQUIRED)) {
@@ -594,7 +596,7 @@ object DataKey {
             return
         }
         if (!allowCreate) {
-            throw UnrecoverableException(IllegalStateException("Mission-key sentinel is missing"))
+            throw UnrecoverableException(IllegalStateException(L10n.text("Mission-key sentinel is missing")))
         }
         // One-time upgrade for installs created before the sentinel existed.
         writeSentinel(dek)
@@ -605,9 +607,9 @@ object DataKey {
 
     private fun readSentinelLabels(dek: ByteArray): Set<String> {
         val opened = SealedEnvelope.openFile(dek, sentinelFile().readBytes(), SENTINEL_LABEL)
-            ?: throw UnrecoverableException(IllegalStateException("Mission-key sentinel failed authentication"))
+            ?: throw UnrecoverableException(IllegalStateException(L10n.text("Mission-key sentinel failed authentication")))
         return decodeSentinel(opened)
-            ?: throw UnrecoverableException(IllegalStateException("Mission-key sentinel is malformed"))
+            ?: throw UnrecoverableException(IllegalStateException(L10n.text("Mission-key sentinel is malformed")))
     }
 
     private fun decodeSentinel(plain: ByteArray): Set<String>? {
@@ -635,7 +637,7 @@ object DataKey {
         }.isSuccess
         if (!moved) {
             tmp.delete()
-            throw IllegalStateException("Could not atomically persist mission-key sentinel")
+            throw IllegalStateException(L10n.text("Could not atomically persist mission-key sentinel"))
         }
     }
 

@@ -50,17 +50,17 @@ struct SyncSheet: View {
                 }
 
                 if let error = manager.lastError {
-                    Section("Sync needs attention") {
+                    Section(L10n.text("Sync needs attention")) {
                         Text(error)
                             .font(.caption)
                             .foregroundStyle(.red)
-                        Button("Dismiss error") { manager.acknowledgeLastError() }
+                        Button(L10n.text("Dismiss error")) { manager.acknowledgeLastError() }
                     }
                 }
 
                 if let room = manager.room {
                     Section {
-                        TextField("Room name", text: Binding(
+                        TextField(L10n.text("Room name"), text: Binding(
                             get: { roomName },
                             set: {
                                 roomName = manager.boundedRoomName($0)
@@ -78,7 +78,7 @@ struct SyncSheet: View {
                                     .foregroundStyle(.primary)
                                 Spacer()
                                 Label(
-                                    roomCodeCopied ? "Copied" : "Copy",
+                                    roomCodeCopied ? L10n.text("Copied") : L10n.text("Copy"),
                                     systemImage: roomCodeCopied ? "checkmark.circle.fill" : "doc.on.doc"
                                 )
                                 .font(.caption.weight(.semibold))
@@ -87,28 +87,28 @@ struct SyncSheet: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Unit room code \(room)")
-                        .accessibilityHint("Copies the unit room code to the clipboard")
-                        .accessibilityValue(roomCodeCopied ? "Copied" : "")
+                        .accessibilityLabel(L10n.text("Unit room code %1$@", room))
+                        .accessibilityHint(L10n.text("Copies the unit room code to the clipboard"))
+                        .accessibilityValue(roomCodeCopied ? L10n.text("Copied") : "")
                         if room.hasPrefix("2:") {
-                            Text("LEGACY ROOM: weaker replay, identity, and metadata protections.")
+                            Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."))
                                 .font(.caption.bold()).foregroundStyle(.red)
                         }
                         Button(role: .destructive) {
                             manager.leave()
                         } label: {
-                            Label("Leave room", systemImage: "xmark.circle")
+                            Label(L10n.text("Leave room"), systemImage: "xmark.circle")
                         }
                     } header: {
-                        Text(manager.roomName ?? "Room")
+                        Text(manager.roomName ?? L10n.text("Room"))
                     } footer: {
-                        Text("The room name is encrypted on this device only. It is never sent to the relay or included in the join code.")
+                        Text(L10n.text("The room name is encrypted on this device only. It is never sent to the relay or included in the join code."))
                             .font(.caption2)
                     }
 
                     // Identity section, only visible while connected to a room.
-                    Section("Your Identity") {
-                        TextField("Callsign", text: Binding(
+                    Section(L10n.text("Your Identity")) {
+                        TextField(L10n.text("Callsign"), text: Binding(
                             get: { manager.presenceConfig.callsign },
                             set: {
                                 var updated = manager.presenceConfig
@@ -119,49 +119,49 @@ struct SyncSheet: View {
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.characters)
 
-                        Picker("Affiliation", selection: presenceBinding(\.affiliation)) {
-                            Text("Friendly").tag("friend")
-                            Text("Hostile").tag("hostile")
-                            Text("Neutral").tag("neutral")
-                            Text("Unknown").tag("unknown")
+                        Picker(L10n.text("Affiliation"), selection: presenceBinding(\.affiliation)) {
+                            Text(L10n.text("Friendly")).tag("friend")
+                            Text(L10n.text("Hostile")).tag("hostile")
+                            Text(L10n.text("Neutral")).tag("neutral")
+                            Text(L10n.text("Unknown")).tag("unknown")
                         }
                         .pickerStyle(.menu)
 
-                        Picker("Echelon", selection: presenceBinding(\.echelon)) {
-                            Text("Team / Crew").tag("team")
-                            Text("Section").tag("section")
-                            Text("Platoon").tag("platoon")
-                            Text("Company").tag("company")
-                            Text("Battalion / Regiment").tag("battalionRegiment")
-                            Text("Brigade").tag("brigade")
-                            Text("Division").tag("division")
+                        Picker(L10n.text("Echelon"), selection: presenceBinding(\.echelon)) {
+                            Text(L10n.text("Team / Crew")).tag("team")
+                            Text(L10n.text("Section")).tag("section")
+                            Text(L10n.text("Platoon")).tag("platoon")
+                            Text(L10n.text("Company")).tag("company")
+                            Text(L10n.text("Battalion / Regiment")).tag("battalionRegiment")
+                            Text(L10n.text("Brigade")).tag("brigade")
+                            Text(L10n.text("Division")).tag("division")
                         }
                         .pickerStyle(.menu)
 
-                        Picker("Function", selection: presenceBinding(\.function)) {
+                        Picker(L10n.text("Function"), selection: presenceBinding(\.function)) {
                             ForEach(PresenceConfig.functionChoices, id: \.self) { function in
                                 Text(function.displayName).tag(function.rawValue)
                             }
                         }
                         .pickerStyle(.menu)
 
-                        Toggle("Headquarters", isOn: presenceBinding(\.isHQ))
+                        Toggle(L10n.text("Headquarters"), isOn: presenceBinding(\.isHQ))
 
-                        Toggle("Share my location", isOn: presenceBinding(\.shareLocation))
-                        Text("Screen-off sharing is controlled separately in Settings, Privacy & OPSEC.")
+                        Toggle(L10n.text("Share my location"), isOn: presenceBinding(\.shareLocation))
+                        Text(L10n.text("Screen-off sharing is controlled separately in Settings, Privacy & OPSEC."))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
 
                 } else {
                     Section {
-                        TextField("Room name (this device)", text: Binding(
+                        TextField(L10n.text("Room name (this device)"), text: Binding(
                             get: { roomName },
                             set: { roomName = manager.boundedRoomName($0) }
                         ))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.words)
-                        TextField("Unit join code", text: $code)
+                        TextField(L10n.text("Unit join code"), text: $code)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .onChange(of: code) { _ in codeError = nil; legacyConfirmed = false }
@@ -170,41 +170,41 @@ struct SyncSheet: View {
                             codeError = nil
                             legacyConfirmed = false
                         } label: {
-                            Label("Generate strong code", systemImage: "wand.and.stars")
+                            Label(L10n.text("Generate strong code"), systemImage: "wand.and.stars")
                         }
                         Button {
                             attemptJoin()
                         } label: {
-                            Label("Join / create room", systemImage: "antenna.radiowaves.left.and.right")
+                            Label(L10n.text("Join / create room"), systemImage: "antenna.radiowaves.left.and.right")
                         }
                         .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty)
                         if let codeError {
                             Text(codeError).font(.caption).foregroundStyle(.red)
                         }
                         if code.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("2:") {
-                            Text("LEGACY ROOM: weaker replay, identity, and metadata protections.")
+                            Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."))
                                 .font(.caption.bold()).foregroundStyle(.red)
                         }
                     } header: {
-                        Text("Join or create a unit room")
+                        Text(L10n.text("Join or create a unit room"))
                     } footer: {
-                        Text("Room names are local, encrypted display labels. Other members can use their own name for the same code.")
+                        Text(L10n.text("Room names are local, encrypted display labels. Other members can use their own name for the same code."))
                             .font(.caption2)
                     }
                 }
 
                 if manager.room?.hasPrefix("2:") == true {
-                    Section("Legacy v2 room membership") {
-                        Text("Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions.")
+                    Section(L10n.text("Legacy v2 room membership")) {
+                        Text(L10n.text("Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Section("Relay-reported sessions (\(manager.onlineMembers.count))") {
+                    Section(L10n.text("Relay-reported sessions (%1$@)", manager.onlineMembers.count)) {
                         if manager.onlineMembers.isEmpty {
                             Text(manager.status == .connected
-                                 ? "No other sessions currently reported by the relay"
-                                 : "Join a v3 room to see relay-reported signed sessions")
+                                 ? L10n.text("No other sessions currently reported by the relay")
+                                 : L10n.text("Join a v3 room to see relay-reported signed sessions"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
@@ -217,23 +217,23 @@ struct SyncSheet: View {
                                 memberEntry(member)
                             }
                         }
-                        Text("Identity and session signatures are verified, but connection liveness is relay-attested; it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat below.")
+                        Text(L10n.text("Identity and session signatures are verified, but connection liveness is relay-attested; it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat below."))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                Section("Shared map locations (\(manager.peers.count))") {
+                Section(L10n.text("Shared map locations (%1$@)", manager.peers.count)) {
                     if manager.peers.isEmpty {
                         Text(manager.status == .connected
-                             ? "No map locations received"
-                             : "Map locations appear while connected")
+                             ? L10n.text("No map locations received")
+                             : L10n.text("Map locations appear while connected"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(manager.peers.values.sorted {
-                            let left = $0.callsign.isEmpty ? "Unnamed location" : $0.callsign
-                            let right = $1.callsign.isEmpty ? "Unnamed location" : $1.callsign
+                            let left = $0.callsign.isEmpty ? L10n.text("Unnamed location") : $0.callsign
+                            let right = $1.callsign.isEmpty ? L10n.text("Unnamed location") : $1.callsign
                             if left.localizedCaseInsensitiveCompare(right) != .orderedSame {
                                 return left.localizedCaseInsensitiveCompare(right) == .orderedAscending
                             }
@@ -245,17 +245,17 @@ struct SyncSheet: View {
                 }
 
                 Section {
-                    Text("Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.")
+                    Text(L10n.text("Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Replay protection only rejects signed sessions at or below epochs this device has already stored. Detecting an obsolete but previously unseen higher session requires external verification.")
+                    Text(L10n.text("Replay protection only rejects signed sessions at or below epochs this device has already stored. Detecting an obsolete but previously unseen higher session requires external verification."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Unit Sync")
+            .navigationTitle(L10n.text("Unit Sync"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } } }
             .onAppear {
                 if manager.room != nil { roomName = manager.roomName ?? "" }
             }
@@ -264,12 +264,12 @@ struct SyncSheet: View {
             }
             .alert(item: $pendingJoin) { pending in
                 Alert(
-                    title: Text("Enable location sharing?"),
+                    title: Text(L10n.text("Enable location sharing?")),
                     message: Text(joinConsentMessage),
-                    primaryButton: .default(Text("Enable & Join")) {
+                    primaryButton: .default(Text(L10n.text("Enable & Join"))) {
                         guard opsec.setBackgroundUnitSyncLocation(true) else {
                             codeError = opsec.persistenceIssue
-                                ?? "Could not save Background Unit Sync consent."
+                                ?? L10n.text("Could not save Background Unit Sync consent.")
                             pendingJoin = nil
                             return
                         }
@@ -278,7 +278,7 @@ struct SyncSheet: View {
                         guard manager.updatePresenceConfig(updated) else {
                             _ = opsec.setBackgroundUnitSyncLocation(false)
                             codeError = manager.lastError
-                                ?? "Could not save location-sharing consent."
+                                ?? L10n.text("Could not save location-sharing consent.")
                             pendingJoin = nil
                             return
                         }
@@ -296,12 +296,12 @@ struct SyncSheet: View {
     private func attemptJoin() {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.hasPrefix("3:") && !trimmed.hasPrefix("2:") {
-            codeError = "Codes must start with 3:. Enter 2: only for an intentional legacy room."
+            codeError = L10n.text("Codes must start with 3:. Enter 2: only for an intentional legacy room.")
         } else if trimmed.hasPrefix("2:") && !legacyConfirmed {
             legacyConfirmed = true
-            codeError = "Legacy v2 has weaker rollback and identity protection. Tap again to confirm."
+            codeError = L10n.text("Legacy v2 has weaker rollback and identity protection. Tap again to confirm.")
         } else if SyncCrypto.isJoinCodeTooWeak(code) {
-            codeError = "Too short to be safe. Use at least \(SyncCrypto.minJoinCodeLength) characters, or tap Generate."
+            codeError = L10n.text("Too short to be safe. Use at least %1$@ characters, or tap Generate.", SyncCrypto.minJoinCodeLength)
         } else if UnitSyncJoinGate.requiresConsent(
             roomCode: trimmed,
             shareLocation: manager.presenceConfig.shareLocation,
@@ -316,7 +316,7 @@ struct SyncSheet: View {
 
     private var joinConsentMessage: String {
         let cadence = opsec.backgroundUnitSyncInterval.label.lowercased()
-        return "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately \(cadence) while the screen is off."
+        return L10n.text("To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately %1$@ while the screen is off.", cadence)
     }
 
     private func presenceBinding<Value>(
@@ -334,10 +334,10 @@ struct SyncSheet: View {
 
     private var statusText: String {
         switch manager.status {
-        case .connected:  return "Connected"
-        case .snapshotting: return "Authenticating snapshot..."
-        case .connecting: return "Connecting..."
-        case .offline:    return "Offline"
+        case .connected:  return L10n.text("Connected")
+        case .snapshotting: return L10n.text("Authenticating snapshot...")
+        case .connecting: return L10n.text("Connecting...")
+        case .offline:    return L10n.text("Offline")
         }
     }
 
@@ -355,7 +355,7 @@ struct SyncSheet: View {
         let values = [member.affiliation?.capitalized, function, member.echelon?.capitalized]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
-        return values.isEmpty ? "Location sharing off" : values.joined(separator: " • ")
+        return values.isEmpty ? L10n.text("Location sharing off") : values.joined(separator: " • ")
     }
 
     private func peerDetail(_ peer: PresencePeer) -> String {
@@ -380,8 +380,8 @@ struct SyncSheet: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Message \(recipient.displayLabel)")
-            .accessibilityHint("Opens an end-to-end encrypted selected-unit chat")
+            .accessibilityLabel(L10n.text("Message %1$@", recipient.displayLabel))
+            .accessibilityHint(L10n.text("Opens an end-to-end encrypted selected-unit chat"))
         } else {
             memberLabel(member, fingerprint: String(member.clientId.suffix(6)).uppercased())
         }
@@ -389,7 +389,7 @@ struct SyncSheet: View {
 
     private func memberLabel(_ member: OnlineMember, fingerprint: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(member.displayName) · \(fingerprint)")
+            Text(L10n.text("%1$@ · %2$@", member.displayName, fingerprint))
                 .font(.body.weight(.semibold))
             Text(memberDetail(member))
                 .font(.caption)
@@ -412,8 +412,8 @@ struct SyncSheet: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Message \(recipient.displayLabel)")
-            .accessibilityHint("Opens an end-to-end encrypted selected-unit chat")
+            .accessibilityLabel(L10n.text("Message %1$@", recipient.displayLabel))
+            .accessibilityHint(L10n.text("Opens an end-to-end encrypted selected-unit chat"))
         } else {
             peerLabel(peer, fingerprint: String(peer.clientId.suffix(6)).uppercased())
         }
@@ -421,9 +421,9 @@ struct SyncSheet: View {
 
     private func peerLabel(_ peer: PresencePeer, fingerprint: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(peer.callsign.isEmpty ? "Unnamed location" : peer.callsign) · \(fingerprint)")
+            Text(L10n.text("%1$@ · %2$@", peer.callsign.isEmpty ? "Unnamed location" : peer.callsign, fingerprint))
                 .font(.body.weight(.semibold))
-            Text("Last map position • \(peerDetail(peer))")
+            Text(L10n.text("Last map position • %1$@", peerDetail(peer)))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

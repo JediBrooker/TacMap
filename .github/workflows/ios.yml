@@ -9,12 +9,16 @@ on:
     paths:
       - 'ios/**'
       - 'testdata/**'
+      - 'localization/**'
+      - 'scripts/*localizations.py'
       - '.github/workflows/ios.yml'
   pull_request:
     branches: [main]
     paths:
       - 'ios/**'
       - 'testdata/**'
+      - 'localization/**'
+      - 'scripts/*localizations.py'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
 
@@ -29,6 +33,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate English and German localizations
+        run: python3 scripts/check_localizations.py
 
       - name: Require Xcode 26
         shell: bash

@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -213,8 +215,8 @@ internal fun MapScreen(
         mapSource is com.tacmap.calibration.PdfMapSource
     /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
     val basemapLabel: String? = when {
-        importedMapLoaded -> "Offline basemap"
-        onlineTilesActive -> "Online basemap"
+        importedMapLoaded -> L10n.text("Offline basemap")
+        onlineTilesActive -> L10n.text("Online basemap")
         else -> null
     }
     val basemapColor = if (importedMapLoaded) Color(0xFF74E38A) else Color(0xFFFF5A5A)
@@ -334,7 +336,7 @@ internal fun MapScreen(
         val issue = mapSelectionPersistenceIssue ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
             message = issue.message,
-            actionLabel = "Retry",
+            actionLabel = L10n.text("Retry"),
             withDismissAction = true,
             duration = androidx.compose.material3.SnackbarDuration.Indefinite,
         )
@@ -428,7 +430,7 @@ internal fun MapScreen(
 
         source?.let {
             if (vm.setMapSource(it)) {
-                Toast.makeText(context, "Imported ${it.displayName}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, L10n.text("Imported %1\$s", it.displayName), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -511,7 +513,7 @@ internal fun MapScreen(
             },
         )
         val raceDetail = reconciled.identities.consumedRemintIds.size.takeIf { it > 0 }
-            ?.let { "; reconciled $it live ID collision(s)" }
+            ?.let { L10n.text("; reconciled %1\$s live ID collision(s)", it) }
             .orEmpty()
         Toast.makeText(
             context,
@@ -533,11 +535,11 @@ internal fun MapScreen(
                         documentCopyJournal,
                     )
                 }
-                    ?: throw IllegalArgumentException("The selected file is not a readable MBTiles database")
+                    ?: throw IllegalArgumentException(L10n.text("The selected file is not a readable MBTiles database"))
                 if (vm.setMapSource(source)) {
                     Toast.makeText(
                         context,
-                        "Loaded offline tiles: ${source.displayName}",
+                        L10n.text("Loaded offline tiles: %1\$s", source.displayName),
                         Toast.LENGTH_SHORT,
                     ).show()
                 }
@@ -563,8 +565,8 @@ internal fun MapScreen(
         } catch (failure: Throwable) {
             terminal = true
             val detail = failure.message?.takeIf { it.isNotBlank() }
-                ?: "The selected document could not be imported"
-            Toast.makeText(context, "Import failed: $detail", Toast.LENGTH_LONG).show()
+                ?: L10n.text("The selected document could not be imported")
+            Toast.makeText(context, L10n.text("Import failed: %1\$s", detail), Toast.LENGTH_LONG).show()
         } finally {
             if (terminal) onCompleteDocumentImport(pending.token)
         }
@@ -609,7 +611,7 @@ internal fun MapScreen(
                 vm.opsec.setMapOrientationMode(MapOrientationMode.NORTH_UP)
                 Toast.makeText(
                     context,
-                    "Compass heading unavailable; switched to North Up.",
+                    L10n.text("Compass heading unavailable; switched to North Up."),
                     Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -657,7 +659,7 @@ internal fun MapScreen(
                 vm.opsec.setMapOrientationMode(MapOrientationMode.NORTH_UP)
                 Toast.makeText(
                     context,
-                    "No reliable compass reading; switched to North Up.",
+                    L10n.text("No reliable compass reading; switched to North Up."),
                     Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -809,13 +811,13 @@ internal fun MapScreen(
         val source = pdfSource ?: return
         val result = runCatching { AffineFitter.fit(calibrationFiduciaries) }.getOrNull()
         if (result == null) {
-            Toast.makeText(context, "Calibration needs 3 non-colinear points.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, L10n.text("Calibration needs 3 non-colinear points."), Toast.LENGTH_SHORT).show()
             return
         }
         if (!vm.setMapSource(source.calibrated(result.transform, calibrationFiduciaries))) return
         isCalibratingPdf = false
         pendingCalibrationTap = null
-        Toast.makeText(context, "Calibration RMS ${result.rmsMetres.toInt()}m", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, L10n.text("Calibration RMS %1\$sm", result.rmsMetres.toInt()), Toast.LENGTH_SHORT).show()
     }
 
     fun cancelPdfCalibration() {
@@ -875,7 +877,7 @@ internal fun MapScreen(
                     if (!waypointStore.update(wp.copy(latitude = lat, longitude = lng))) {
                         scope.launch {
                             snackbarHostState.showSnackbar(
-                                "The symbol move could not be saved. Its previous position is still active."
+                                L10n.text("The symbol move could not be saved. Its previous position is still active.")
                             )
                         }
                     }
@@ -886,7 +888,7 @@ internal fun MapScreen(
                     if (tap != null) {
                         pendingCalibrationTap = tap
                     } else {
-                        Toast.makeText(context, "Tap inside the PDF map.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, L10n.text("Tap inside the PDF map."), Toast.LENGTH_SHORT).show()
                     }
                 },
                 onDrawingFeatureTap = { featureId ->
@@ -900,7 +902,7 @@ internal fun MapScreen(
                     } else {
                         scope.launch {
                             snackbarHostState.showSnackbar(
-                                "That unit is not currently available for secure chat"
+                                L10n.text("That unit is not currently available for secure chat")
                             )
                         }
                     }
@@ -1006,7 +1008,7 @@ internal fun MapScreen(
 
         if (onlineTilesActive && onlineTilesUnavailable) {
             Text(
-                "Online basemap temporarily unavailable",
+                L10n.text("Online basemap temporarily unavailable"),
                 color = Color.White,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -1044,7 +1046,7 @@ internal fun MapScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Box {
-                CircleHudButton(Icons.Default.Menu, "Menu") { hamburgerOpen = true }
+                CircleHudButton(Icons.Default.Menu, L10n.text("Menu")) { hamburgerOpen = true }
                 DropdownMenu(
                     expanded = hamburgerOpen,
                     onDismissRequest = { hamburgerOpen = false }
@@ -1055,15 +1057,15 @@ internal fun MapScreen(
                             text = {
                                 Text(
                                     if (trialDaysRemaining > 0)
-                                        "Free trial — $trialDaysRemaining ${if (trialDaysRemaining == 1) "day" else "days"} left"
-                                    else "Free trial ended"
+                                        L10n.quantity("trial_remaining", trialDaysRemaining)
+                                    else L10n.text("Free trial ended")
                                 )
                             },
                             onClick = {},
                             leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("Unlock Full Version") },
+                            text = { Text(L10n.text("Unlock Full Version")) },
                             onClick = {
                                 hamburgerOpen = false
                                 onUnlock()
@@ -1073,7 +1075,7 @@ internal fun MapScreen(
                         HorizontalDivider()
                     }
                     DropdownMenuItem(
-                        text = { Text("Search") },
+                        text = { Text(L10n.text("Search")) },
                         onClick = {
                             hamburgerOpen = false
                             showSearchDialog = true
@@ -1082,7 +1084,7 @@ internal fun MapScreen(
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("Symbology") },
+                        text = { Text(L10n.text("Symbology")) },
                         onClick = {
                             hamburgerOpen = false
                             showWaypointSheet = true
@@ -1090,7 +1092,7 @@ internal fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("Drawings") },
+                        text = { Text(L10n.text("Drawings")) },
                         onClick = {
                             hamburgerOpen = false
                             showDrawingSheet = true
@@ -1098,7 +1100,7 @@ internal fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Gesture, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("Layers and Labels") },
+                        text = { Text(L10n.text("Layers and Labels")) },
                         onClick = {
                             hamburgerOpen = false
                             showLayersSheet = true
@@ -1106,7 +1108,7 @@ internal fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Layers, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("Measure") },
+                        text = { Text(L10n.text("Measure")) },
                         onClick = {
                             hamburgerOpen = false
                             stopDrawing()
@@ -1115,7 +1117,7 @@ internal fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Straighten, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("Weather & UAV Safety") },
+                        text = { Text(L10n.text("Weather & UAV Safety")) },
                         onClick = {
                             hamburgerOpen = false
                             weatherTarget = vm.headerCoordinate
@@ -1125,7 +1127,7 @@ internal fun MapScreen(
                     HorizontalDivider()
                     // all import/export behind one item, keeps menu short
                     DropdownMenuItem(
-                        text = { Text("Import / Export") },
+                        text = { Text(L10n.text("Import / Export")) },
                         onClick = {
                             hamburgerOpen = false
                             showImportExportSheet = true
@@ -1138,11 +1140,11 @@ internal fun MapScreen(
                             Text(
                                 when (trackRecordingState.phase) {
                                     TrackRecordingPhase.Recording ->
-                                        "Stop Track Recording (${trackPoints.size} pts)"
-                                    TrackRecordingPhase.Starting -> "Starting Track Recording…"
-                                    TrackRecordingPhase.AwaitingPermission -> "Retry Track Recording"
+                                        L10n.text("Stop Track Recording (%1\$s pts)", trackPoints.size)
+                                    TrackRecordingPhase.Starting -> L10n.text("Starting Track Recording…")
+                                    TrackRecordingPhase.AwaitingPermission -> L10n.text("Retry Track Recording")
                                     TrackRecordingPhase.Interrupted,
-                                    TrackRecordingPhase.Idle -> "Start Track Recording"
+                                    TrackRecordingPhase.Idle -> L10n.text("Start Track Recording")
                                 }
                             )
                         },
@@ -1164,7 +1166,7 @@ internal fun MapScreen(
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("Unit Sync") },
+                        text = { Text(L10n.text("Unit Sync")) },
                         onClick = {
                             hamburgerOpen = false
                             showSyncDialog = true
@@ -1180,7 +1182,7 @@ internal fun MapScreen(
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("App Lock") },
+                        text = { Text(L10n.text("App Lock")) },
                         onClick = {
                             hamburgerOpen = false
                             showAppLockSetup = true
@@ -1198,7 +1200,7 @@ internal fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("About & Credits") },
+                        text = { Text(L10n.text("About & Credits")) },
                         onClick = {
                             hamburgerOpen = false
                             showAboutDialog = true
@@ -1230,7 +1232,7 @@ internal fun MapScreen(
                         }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Military Unit") },
+                            text = { Text(L10n.text("Military Unit")) },
                             leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) },
                             onClick = {
                                 quickAddMenuOpen = false
@@ -1239,7 +1241,7 @@ internal fun MapScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Tactical Task") },
+                            text = { Text(L10n.text("Tactical Task")) },
                             leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) },
                             onClick = {
                                 quickAddMenuOpen = false
@@ -1248,7 +1250,7 @@ internal fun MapScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Marker") },
+                            text = { Text(L10n.text("Marker")) },
                             leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) },
                             onClick = {
                                 quickAddMenuOpen = false
@@ -1268,7 +1270,7 @@ internal fun MapScreen(
                     onHeadingUnavailable = {
                         Toast.makeText(
                             context,
-                            "Heading Up is unavailable on this device.",
+                            L10n.text("Heading Up is unavailable on this device."),
                             Toast.LENGTH_SHORT,
                         ).show()
                     },
@@ -1399,7 +1401,7 @@ internal fun MapScreen(
                         }
                     },
                     label = if (hasPreciseLocation && importedMapLoaded) {
-                        "My Location"
+                        L10n.text("My Location")
                     } else {
                         liveLocationControl.title
                     },
@@ -1413,7 +1415,7 @@ internal fun MapScreen(
                 if (importedMapLoaded) {
                     CentrePill(
                         onClick = { vm.centreOnMap() },
-                        label = "Map",
+                        label = L10n.text("Map"),
                         icon = Icons.Default.Map
                     )
                 }
@@ -1444,11 +1446,11 @@ internal fun MapScreen(
             crosshairLat = capturedQuickTarget.latitude,
             crosshairLng = capturedQuickTarget.longitude,
             title = when (quickMode) {
-                SymbolEditorMode.MILITARY -> "New Military Unit"
-                SymbolEditorMode.TASK -> "New Tactical Task"
-                SymbolEditorMode.MARKER -> "New Marker"
+                SymbolEditorMode.MILITARY -> L10n.text("New Military Unit")
+                SymbolEditorMode.TASK -> L10n.text("New Tactical Task")
+                SymbolEditorMode.MARKER -> L10n.text("New Marker")
             },
-            actionLabel = "Place",
+            actionLabel = L10n.text("Place"),
             submissionError = quickAddCreationError,
             onDismiss = {
                 quickAddEditorMode = null
@@ -1478,7 +1480,7 @@ internal fun MapScreen(
                                 )
                             }
                         vm.selectWaypoint(result.waypoint.id)
-                        Toast.makeText(context, "Added $name at crosshair", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, L10n.text("Added %1\$s at crosshair", name), Toast.LENGTH_SHORT).show()
                         quickAddCreationError = null
                         quickAddEditorMode = null
                         quickAddTarget = null
@@ -1556,9 +1558,9 @@ internal fun MapScreen(
                         activeDrawingLayerId = outcome.fallbackLayerId
                             ?: DrawingDocument.DEFAULT_LAYER_ID
                     }
-                    Toast.makeText(context, "Layer deleted; contents moved to Friendly", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, L10n.text("Layer deleted; contents moved to Friendly"), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Layer could not be deleted", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, L10n.text("Layer could not be deleted"), Toast.LENGTH_SHORT).show()
                 }
                 outcome.succeeded
             },
@@ -1621,16 +1623,16 @@ internal fun MapScreen(
         AlertDialog(
             onDismissRequest = { showDiscardTrackConfirmation = false },
             title = {
-                Text(if (isRecordingTrack) "Stop and discard track?" else "Discard saved track?")
+                Text(if (isRecordingTrack) L10n.text("Stop and discard track?") else L10n.text("Discard saved track?"))
             },
             text = {
                 Text(
                     if (isRecordingTrack) {
-                        "Recording will stop and the encrypted track log, including all " +
-                            "${trackPoints.size} saved point(s), will be permanently deleted."
+                        L10n.text("Recording will stop and the encrypted track log, including all ") +
+                            L10n.text("%1\$s saved point(s), will be permanently deleted.", trackPoints.size)
                     } else {
-                        "The encrypted track log and all ${trackPoints.size} saved point(s) " +
-                            "will be permanently deleted. Export GPX first if you need a copy."
+                        L10n.text("The encrypted track log and all %1\$s saved point(s) ", trackPoints.size) +
+                            L10n.text("will be permanently deleted. Export GPX first if you need a copy.")
                     }
                 )
             },
@@ -1642,11 +1644,11 @@ internal fun MapScreen(
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF5A5A)),
                 ) {
-                    Text(if (isRecordingTrack) "Stop & Discard" else "Discard")
+                    Text(if (isRecordingTrack) L10n.text("Stop & Discard") else L10n.text("Discard"))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDiscardTrackConfirmation = false }) { Text("Cancel") }
+                TextButton(onClick = { showDiscardTrackConfirmation = false }) { Text(L10n.text("Cancel")) }
             },
         )
     }
@@ -1661,7 +1663,7 @@ internal fun MapScreen(
                 if (recordingStateMessage != null) vm.trackRecorder.dismissRecordingMessage()
                 else vm.trackRecorder.acknowledgePersistError()
             },
-            title = { Text("Track recording") },
+            title = { Text(L10n.text("Track recording")) },
             text = { Text(message) },
             confirmButton = {
                 TextButton(
@@ -1673,7 +1675,7 @@ internal fun MapScreen(
                             vm.trackRecorder.acknowledgePersistError()
                         }
                     }
-                ) { Text(if (recordingStateMessage != null) "Retry" else "OK") }
+                ) { Text(if (recordingStateMessage != null) L10n.text("Retry") else "OK") }
             },
             dismissButton = trackRecordingState.settingsTarget?.let { target ->
                 {
@@ -1682,7 +1684,7 @@ internal fun MapScreen(
                             vm.trackRecorder.dismissRecordingMessage()
                             onOpenTrackRecordingSettings?.invoke(target)
                         }
-                    ) { Text("Settings") }
+                    ) { Text(L10n.text("Settings")) }
                 }
             },
         )
@@ -1691,7 +1693,7 @@ internal fun MapScreen(
     pendingDrawingMutation?.let { pending ->
         AlertDialog(
             onDismissRequest = { pendingDrawingMutation = null },
-            title = { Text("Drawing change not saved") },
+            title = { Text(L10n.text("Drawing change not saved")) },
             text = { Text(pending.message) },
             confirmButton = {
                 TextButton(onClick = {
@@ -1704,10 +1706,10 @@ internal fun MapScreen(
                             message = (result as DrawingMutationUiResult.Failed).message
                         )
                     }
-                }) { Text("Retry") }
+                }) { Text(L10n.text("Retry")) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDrawingMutation = null }) { Text("Not now") }
+                TextButton(onClick = { pendingDrawingMutation = null }) { Text(L10n.text("Not now")) }
             },
         )
     }
@@ -1718,7 +1720,7 @@ internal fun MapScreen(
                 if (waypointStoreError != null) waypointStore.acknowledgeLoadError()
                 else drawingStore.acknowledgeLoadError()
             },
-            title = { Text("Mission data was not saved") },
+            title = { Text(L10n.text("Mission data was not saved")) },
             text = { Text(message) },
             confirmButton = {
                 TextButton(
@@ -1755,7 +1757,7 @@ internal fun MapScreen(
         AlertDialog(
             onDismissRequest = { /* non-cancelable while baking */ },
             confirmButton = {},
-            title = { Text("Generating offline tiles") },
+            title = { Text(L10n.text("Generating offline tiles")) },
             text = {
                 Column {
                     @Suppress("DEPRECATION")
@@ -1764,7 +1766,7 @@ internal fun MapScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        if (total > 0) "$done / $total tiles" else "Preparing…",
+                        if (total > 0) L10n.text("%1\$s / %2\$s tiles", done, total) else L10n.text("Preparing…"),
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
@@ -1817,7 +1819,7 @@ internal fun MapScreen(
                 val pdf = pdfSource
                 showLayersSheet = false
                 if (pdf == null) {
-                    Toast.makeText(context, "Load a PDF map first", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, L10n.text("Load a PDF map first"), Toast.LENGTH_SHORT).show()
                 } else {
                     scope.launch {
                         tilingProgress = 0 to 0
@@ -1830,12 +1832,12 @@ internal fun MapScreen(
                                 ?.let { vm.setMapSource(it) }
                                 ?: false
                             if (activated) {
-                                Toast.makeText(context, "Offline tiles ready", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, L10n.text("Offline tiles ready"), Toast.LENGTH_SHORT).show()
                             }
                         } else {
                             Toast.makeText(
                                 context,
-                                "Couldn't generate tiles — calibrate the PDF first (3+ fiduciaries).",
+                                L10n.text("Couldn't generate tiles — calibrate the PDF first (3+ fiduciaries)."),
                                 Toast.LENGTH_LONG
                             ).show()
                         }

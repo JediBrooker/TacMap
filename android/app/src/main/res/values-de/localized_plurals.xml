@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated. Edit localization/plurals.json. -->
+<resources>
+    <plurals name="count_day">
+        <item quantity="one">"%d Tag"</item>
+        <item quantity="other">"%d Tage"</item>
+    </plurals>
+    <plurals name="count_point">
+        <item quantity="one">"%d Punkt"</item>
+        <item quantity="other">"%d Punkte"</item>
+    </plurals>
+    <plurals name="count_drawing">
+        <item quantity="one">"%d Zeichnung"</item>
+        <item quantity="other">"%d Zeichnungen"</item>
+    </plurals>
+    <plurals name="count_waypoint">
+        <item quantity="one">"%d Wegpunkt"</item>
+        <item quantity="other">"%d Wegpunkte"</item>
+    </plurals>
+    <plurals name="count_unit">
+        <item quantity="one">"%d Einheit"</item>
+        <item quantity="other">"%d Einheiten"</item>
+    </plurals>
+    <plurals name="count_task">
+        <item quantity="one">"%d Auftrag"</item>
+        <item quantity="other">"%d Aufträge"</item>
+    </plurals>
+    <plurals name="count_marker">
+        <item quantity="one">"%d Marker"</item>
+        <item quantity="other">"%d Marker"</item>
+    </plurals>
+    <plurals name="count_line">
+        <item quantity="one">"%d Linie"</item>
+        <item quantity="other">"%d Linien"</item>
+    </plurals>
+    <plurals name="count_free_draw">
+        <item quantity="one">"%d Freihandzeichnung"</item>
+        <item quantity="other">"%d Freihandzeichnungen"</item>
+    </plurals>
+    <plurals name="count_area">
+        <item quantity="one">"%d Fläche"</item>
+        <item quantity="other">"%d Flächen"</item>
+    </plurals>
+    <plurals name="count_track_recorded">
+        <item quantity="one">"%d Trackpunkt aufgezeichnet"</item>
+        <item quantity="other">"%d Trackpunkte aufgezeichnet"</item>
+    </plurals>
+    <plurals name="count_trial_remaining">
+        <item quantity="one">"Kostenloser Test – noch %d Tag"</item>
+        <item quantity="other">"Kostenloser Test – noch %d Tage"</item>
+    </plurals>
+    <plurals name="count_unread">
+        <item quantity="one">"%d ungelesene Nachricht"</item>
+        <item quantity="other">"%d ungelesene Nachrichten"</item>
+    </plurals>
+    <plurals name="count_send_units">
+        <item quantity="one">"An %d Einheit senden"</item>
+        <item quantity="other">"An %d Einheiten senden"</item>
+    </plurals>
+    <plurals name="count_minute_ago">
+        <item quantity="one">"vor %d Minute"</item>
+        <item quantity="other">"vor %d Minuten"</item>
+    </plurals>
+    <plurals name="count_hour_ago">
+        <item quantity="one">"vor %d Stunde"</item>
+        <item quantity="other">"vor %d Stunden"</item>
+    </plurals>
+    <plurals name="count_object">
+        <item quantity="one">"%d Objekt"</item>
+        <item quantity="other">"%d Objekte"</item>
+    </plurals>
+    <plurals name="count_layer">
+        <item quantity="one">"%d Ebene"</item>
+        <item quantity="other">"%d Ebenen"</item>
+    </plurals>
+    <plurals name="count_new_waypoint">
+        <item quantity="one">"%d neuer Wegpunkt"</item>
+        <item quantity="other">"%d neue Wegpunkte"</item>
+    </plurals>
+    <plurals name="count_new_drawing">
+        <item quantity="one">"%d neue Zeichnung"</item>
+        <item quantity="other">"%d neue Zeichnungen"</item>
+    </plurals>
+    <plurals name="count_new_layer">
+        <item quantity="one">"%d neuer Ebene"</item>
+        <item quantity="other">"%d neuen Ebenen"</item>
+    </plurals>
+</resources>

@@ -29,37 +29,37 @@ enum LiveLocationPermissionPolicy {
         switch status {
         case .notDetermined:
             return Control(
-                title: "Enable Live Location",
+                title: L10n.text("Enable Live Location"),
                 systemImage: "location.circle",
-                guidance: "TacMap requests Location access on first launch. Tap to request it again if needed.",
+                guidance: L10n.text("TacMap requests Location access on first launch. Tap to request it again if needed."),
                 action: .requestPermission
             )
         case .authorizedAlways, .authorizedWhenInUse:
             return Control(
-                title: "Centre on My Location",
+                title: L10n.text("Centre on My Location"),
                 systemImage: "location.viewfinder",
-                guidance: "Centres the map on your latest location.",
+                guidance: L10n.text("Centres the map on your latest location."),
                 action: .centreOnLocation
             )
         case .denied:
             return Control(
-                title: "Open Location Settings",
+                title: L10n.text("Open Location Settings"),
                 systemImage: "gearshape",
-                guidance: "Location access is off. Opens Settings so you can enable it.",
+                guidance: L10n.text("Location access is off. Opens Settings so you can enable it."),
                 action: .openSettings
             )
         case .restricted:
             return Control(
-                title: "Location Restricted",
+                title: L10n.text("Location Restricted"),
                 systemImage: "location.slash",
-                guidance: "Location access is restricted. Review this device's Location settings.",
+                guidance: L10n.text("Location access is restricted. Review this device's Location settings."),
                 action: .openSettings
             )
         @unknown default:
             return Control(
-                title: "Location Settings",
+                title: L10n.text("Location Settings"),
                 systemImage: "gearshape",
-                guidance: "Review Location access in Settings.",
+                guidance: L10n.text("Review Location access in Settings."),
                 action: .openSettings
             )
         }
@@ -84,8 +84,8 @@ enum HeadingNorthReference: Equatable {
 
     var accessibilityLabel: String {
         switch self {
-        case .trueNorth: "true north"
-        case .magneticNorth: "magnetic north"
+        case .trueNorth: L10n.text("true north")
+        case .magneticNorth: L10n.text("magnetic north")
         }
     }
 }

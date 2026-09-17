@@ -24,35 +24,35 @@ struct WeatherSheet: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                 if loading {
-                    HStack { ProgressView(); Text("Fetching conditions…") }
+                    HStack { ProgressView(); Text(L10n.text("Fetching conditions…")) }
                         .foregroundStyle(.secondary)
                 } else if let r = reading {
                     riskBanner
                     Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
-                        metric("Wind", value: r.windSpeedMs, unit: "m/s", icon: "wind")
-                        metric("Gusts", value: r.windGustsMs, unit: "m/s", icon: "wind.circle")
-                        metric("Visibility", value: r.visibilityM.map { $0 / 1000 }, unit: "km", icon: "eye")
-                        metric("Temp", value: r.temperatureC, unit: "°C", icon: "thermometer.medium")
+                        metric(L10n.text("Wind"), value: r.windSpeedMs, unit: "m/s", icon: "wind")
+                        metric(L10n.text("Gusts"), value: r.windGustsMs, unit: "m/s", icon: "wind.circle")
+                        metric(L10n.text("Visibility"), value: r.visibilityM.map { $0 / 1000 }, unit: "km", icon: "eye")
+                        metric(L10n.text("Temp"), value: r.temperatureC, unit: "°C", icon: "thermometer.medium")
                     }
-                    Text("Source: Open-Meteo. UAV thresholds are defaults for small drones — treat as advisory, not a clearance.")
+                    Text(L10n.text("Source: Open-Meteo. UAV thresholds are defaults for small drones — treat as advisory, not a clearance."))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("Couldn't fetch conditions. If online lookups are off (Settings, Privacy & OPSEC), enable them; otherwise check your connection.",
+                        Label(L10n.text("Couldn't fetch conditions. If online lookups are off (Settings, Privacy & OPSEC), enable them; otherwise check your connection."),
                               systemImage: "wifi.slash")
                             .foregroundStyle(.secondary)
                         Button { reloadToken += 1 } label: {
-                            Label("Retry", systemImage: "arrow.clockwise")
+                            Label(L10n.text("Retry"), systemImage: "arrow.clockwise")
                         }
                     }
                 }
                 Spacer()
             }
             .padding()
-            .navigationTitle("Weather & UAV Safety")
+            .navigationTitle(L10n.text("Weather & UAV Safety"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } } }
             .task(id: WeatherTaskKey(reloadToken: reloadToken, onlineLookups: opsec.onlineLookups)) {
                 loading = true
                 reading = opsec.onlineLookups

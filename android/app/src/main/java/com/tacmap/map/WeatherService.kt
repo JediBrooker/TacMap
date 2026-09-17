@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.settings.OpsecSettings
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -16,10 +18,12 @@ data class WeatherReading(
 )
 
 /** UAV flight-safety risk, overall = worst of all components. */
-enum class UAVRisk(val label: String) {
+enum class UAVRisk(private val labelKey: String) {
     SAFE("Safe to fly"),
     CAUTION("Marginal — caution"),
-    DANGER("Do not fly")
+    DANGER("Do not fly");
+
+    val label: String get() = L10n.text(labelKey)
 }
 
 /** Default UAV thresholds, small/consumer drone oriented. Tunable later. */

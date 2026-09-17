@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import com.tacmap.util.SafeStore
 import kotlinx.serialization.Serializable
@@ -44,10 +46,10 @@ internal class DocumentImportCopyJournal private constructor(private val file: F
         is SafeStore.LoadResult.Loaded -> loaded.value
         SafeStore.LoadResult.Empty -> Document()
         is SafeStore.LoadResult.Corrupt -> Document().also {
-            unavailableReason = "The document-import journal could not be authenticated and was preserved."
+            unavailableReason = L10n.text("The document-import journal could not be authenticated and was preserved.")
         }
         is SafeStore.LoadResult.Locked -> Document().also {
-            unavailableReason = "The document-import journal is locked. Unlock mission data and retry."
+            unavailableReason = L10n.text("The document-import journal is locked. Unlock mission data and retry.")
         }
     }
 
@@ -88,7 +90,7 @@ internal class IdempotentDocumentCopy(
     fun execute(operationKey: String): File {
         require(operationKey.isNotBlank()) { "Document import operation key is required" }
         check(destinationDir.exists() || destinationDir.mkdirs()) {
-            "Could not create the private import directory"
+            L10n.text("Could not create the private import directory")
         }
         val stableName = MessageDigest.getInstance("SHA-256")
             .digest(operationKey.toByteArray(Charsets.UTF_8))
@@ -134,7 +136,7 @@ internal class IdempotentDocumentCopy(
                     StandardCopyOption.REPLACE_EXISTING,
                 )
             }
-            check(validate(finalFile)) { "The copied document is not valid" }
+            check(validate(finalFile)) { L10n.text("The copied document is not valid") }
             stateStore.persist(
                 DocumentImportCopyState(operationKey, DocumentImportCopyPhase.READY, finalFile.absolutePath)
             )
@@ -156,7 +158,7 @@ internal class IdempotentDocumentCopy(
             val count = read(buffer)
             if (count < 0) break
             total += count
-            require(total <= limit) { "Import exceeds the supported size limit" }
+            require(total <= limit) { L10n.text("Import exceeds the supported size limit") }
             output.write(buffer, 0, count)
         }
     }

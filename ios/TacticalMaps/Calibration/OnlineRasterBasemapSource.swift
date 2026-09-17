@@ -23,10 +23,10 @@ enum BasemapStyle: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .esriSatellite: return "Satellite (Esri)"
-        case .esriTopo:      return "Topographic (Esri)"
-        case .osmTopo:       return "Topographic (OpenTopoMap)"
-        case .osmStreet:     return "Street (OpenStreetMap)"
+        case .esriSatellite: return L10n.text("Satellite (Esri)")
+        case .esriTopo:      return L10n.text("Topographic (Esri)")
+        case .osmTopo:       return L10n.text("Topographic (OpenTopoMap)")
+        case .osmStreet:     return L10n.text("Street (OpenStreetMap)")
         }
     }
 
@@ -68,10 +68,10 @@ enum BasemapStyle: String, CaseIterable {
 
     var attribution: String {
         switch self {
-        case .esriSatellite: return "Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-        case .esriTopo:      return "Esri, TomTom, Garmin, FAO, NOAA, USGS, OpenStreetMap contributors"
-        case .osmTopo:       return "© OpenTopoMap (CC-BY-SA), © OpenStreetMap contributors"
-        case .osmStreet:     return "© OpenStreetMap contributors, served by Esri"
+        case .esriSatellite: return L10n.text("Esri, Maxar, Earthstar Geographics, and the GIS User Community")
+        case .esriTopo:      return L10n.text("Esri, TomTom, Garmin, FAO, NOAA, USGS, OpenStreetMap contributors")
+        case .osmTopo:       return L10n.text("© OpenTopoMap (CC-BY-SA), © OpenStreetMap contributors")
+        case .osmStreet:     return L10n.text("© OpenStreetMap contributors, served by Esri")
         }
     }
 }

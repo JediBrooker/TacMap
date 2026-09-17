@@ -10,7 +10,7 @@ enum GPXExporter {
         return f
     }()
 
-    static func export(points: [TrackPoint], name: String = "TacMap Track") -> String {
+    static func export(points: [TrackPoint], name: String = L10n.text("TacMap Track")) -> String {
         var xml = """
         <?xml version="1.0" encoding="UTF-8"?>
         <gpx version="1.1" creator="TacMap" xmlns="http://www.topografix.com/GPX/1/1">
@@ -38,7 +38,7 @@ enum GPXExporter {
 
     /// Write the GPX to a temp file for `ShareLink` / Files export.
     static func exportToFile(points: [TrackPoint],
-                             name: String = "TacMap Track",
+                             name: String = L10n.text("TacMap Track"),
                              timestamp: Int) throws -> URL {
         let gpx = export(points: points, name: name)
         let url = try ExportFileSecurity.freshURL(fileName: "TacMap-track-\(timestamp).gpx")

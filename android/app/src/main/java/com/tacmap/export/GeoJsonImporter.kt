@@ -1,5 +1,7 @@
 package com.tacmap.export
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
@@ -96,7 +98,7 @@ object GeoJsonImporter {
             val n = input.read(buffer)
             if (n < 0) break
             total += n
-            if (total > MAX_INPUT_BYTES) throw ImportException("GeoJSON exceeds 8 MiB")
+            if (total > MAX_INPUT_BYTES) throw ImportException(L10n.text("GeoJSON exceeds 8 MiB"))
             out.write(buffer, 0, n)
         }
         return parse(out.toString(Charsets.UTF_8.name()), existingLayers, fallbackLayerId, density)
@@ -113,13 +115,13 @@ object GeoJsonImporter {
         val root = try {
             Json.parseToJsonElement(json).jsonObject
         } catch (e: Exception) {
-            throw ImportException("Not valid JSON: ${e.message}")
+            throw ImportException(L10n.text("Not valid JSON: %1\$s", e.message))
         }
         if (root["type"]?.jsonPrimitive?.contentOrNull != "FeatureCollection") {
-            throw ImportException("Not a GeoJSON FeatureCollection")
+            throw ImportException(L10n.text("Not a GeoJSON FeatureCollection"))
         }
         val features = root["features"]?.jsonArray ?: JsonArray(emptyList())
-        if (features.size > MAX_FEATURES) throw ImportException("GeoJSON contains too many features")
+        if (features.size > MAX_FEATURES) throw ImportException(L10n.text("GeoJSON contains too many features"))
 
         val layersById = existingLayers.associateBy { it.id }.toMutableMap()
         val newLayers = mutableListOf<DrawingLayer>()
@@ -130,12 +132,12 @@ object GeoJsonImporter {
         var coordinateCount = 0
 
         for ((featureIndex, raw) in features.withIndex()) {
-            if (System.nanoTime() > deadline) throw ImportException("GeoJSON import exceeded time limit")
+            if (System.nanoTime() > deadline) throw ImportException(L10n.text("GeoJSON import exceeded time limit"))
             val feat = (raw as? JsonObject) ?: continue
             val geometry = feat["geometry"] as? JsonObject ?: continue
             coordinateCount += countCoordinatePairs(geometry["coordinates"])
             if (coordinateCount > MAX_COORDINATES) {
-                throw ImportException("GeoJSON contains too many coordinates")
+                throw ImportException(L10n.text("GeoJSON contains too many coordinates"))
             }
             val geomType = geometry["type"]?.jsonPrimitive?.contentOrNull ?: continue
             // reject non-finite / out-of-range coords so a corrupt file
@@ -192,7 +194,7 @@ object GeoJsonImporter {
 
     private fun preflight(input: String) {
         if (input.toByteArray(Charsets.UTF_8).size > MAX_INPUT_BYTES) {
-            throw ImportException("GeoJSON exceeds 8 MiB")
+            throw ImportException(L10n.text("GeoJSON exceeds 8 MiB"))
         }
         var depth = 0
         var inString = false
@@ -204,15 +206,15 @@ object GeoJsonImporter {
                 else if (c == '"') inString = false
             } else when (c) {
                 '"' -> inString = true
-                '{', '[' -> if (++depth > MAX_DEPTH) throw ImportException("GeoJSON nesting is too deep")
-                '}', ']' -> if (--depth < 0) throw ImportException("GeoJSON structure is invalid")
+                '{', '[' -> if (++depth > MAX_DEPTH) throw ImportException(L10n.text("GeoJSON nesting is too deep"))
+                '}', ']' -> if (--depth < 0) throw ImportException(L10n.text("GeoJSON structure is invalid"))
             }
         }
-        if (inString || depth != 0) throw ImportException("GeoJSON structure is invalid")
+        if (inString || depth != 0) throw ImportException(L10n.text("GeoJSON structure is invalid"))
     }
 
     private fun countCoordinatePairs(element: JsonElement?, depth: Int = 0): Int {
-        if (depth > MAX_DEPTH) throw ImportException("GeoJSON coordinate nesting is too deep")
+        if (depth > MAX_DEPTH) throw ImportException(L10n.text("GeoJSON coordinate nesting is too deep"))
         val array = element as? JsonArray ?: return 0
         if (array.size >= 2 && array[0] is JsonPrimitive && array[1] is JsonPrimitive) return 1
         var total = 0
@@ -267,7 +269,7 @@ object GeoJsonImporter {
             val color = (props["tacticalmaps:layer_color"]?.jsonPrimitive?.contentOrNull
                 ?: props["layer_color"]?.jsonPrimitive?.contentOrNull)
                 ?.let(::parseHexColor) ?: DrawingDocument.FRIENDLY_LAYER_COLOR
-            val layer = DrawingLayer(id = explicitId, name = name ?: "Imported", color = color)
+            val layer = DrawingLayer(id = explicitId, name = name ?: L10n.text("Imported"), color = color)
             layersById[explicitId] = layer
             newLayers += layer
             return explicitId
@@ -397,7 +399,7 @@ object GeoJsonImporter {
         val lon = coords.getOrNull(0)?.jsonPrimitive?.doubleOrNull ?: return null
         val lat = coords.getOrNull(1)?.jsonPrimitive?.doubleOrNull ?: return null
 
-        val name = props["name"]?.jsonPrimitive?.contentOrNull ?: "Imported"
+        val name = props["name"]?.jsonPrimitive?.contentOrNull ?: L10n.text("Imported")
         val notes = props["notes"]?.jsonPrimitive?.contentOrNull
             ?: props["description"]?.jsonPrimitive?.contentOrNull
         val elevation = (props["tacticalmaps:elevation_m"] ?: props["elevation_m"])

@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
@@ -60,9 +62,9 @@ internal object UnitSyncJoinGate {
 }
 
 internal fun unitSyncJoinConsentMessage(interval: BackgroundUnitSyncInterval): String =
-    "To join, TacMap will enable Share my location and Background Unit Sync location. " +
-        "When Location access is allowed, your encrypted position will be sent while the app " +
-        "is open and approximately ${interval.displayName.lowercase()} while the screen is off."
+    L10n.text("To join, TacMap will enable Share my location and Background Unit Sync location. ") +
+        L10n.text("When Location access is allowed, your encrypted position will be sent while the app ") +
+        L10n.text("is open and approximately %1\$s while the screen is off.", interval.displayName.lowercase())
 
 /** Join / create a unit sync room and show connection status. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,30 +128,30 @@ fun SyncDialog(
         confirmButton = {
             TextButton(onClick = {
                 if (commitConfig()) onDismiss()
-            }) { Text("Done") }
+            }) { Text(L10n.text("Done")) }
         },
-        title = { Text("Unit Sync") },
+        title = { Text(L10n.text("Unit Sync")) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 val (label, colour) = when (status) {
-                    SyncManager.Status.CONNECTED -> "Connected" to Color(0xFF2E7D32)
-                    SyncManager.Status.SNAPSHOTTING -> "Verifying room snapshot…" to Color(0xFFEF6C00)
-                    SyncManager.Status.CONNECTING -> "Connecting…" to Color(0xFFEF6C00)
-                    SyncManager.Status.OFFLINE -> "Offline" to Color(0xFF9E9E9E)
+                    SyncManager.Status.CONNECTED -> L10n.text("Connected") to Color(0xFF2E7D32)
+                    SyncManager.Status.SNAPSHOTTING -> L10n.text("Verifying room snapshot…") to Color(0xFFEF6C00)
+                    SyncManager.Status.CONNECTING -> L10n.text("Connecting…") to Color(0xFFEF6C00)
+                    SyncManager.Status.OFFLINE -> L10n.text("Offline") to Color(0xFF9E9E9E)
                 }
                 Text(label, color = colour, fontWeight = FontWeight.SemiBold)
 
                 OutlinedTextField(
                     value = roomName,
                     onValueChange = manager::setRoomName,
-                    label = { Text("Room name") },
-                    placeholder = { Text("1 Platoon Command") },
+                    label = { Text(L10n.text("Room name")) },
+                    placeholder = { Text(L10n.text("1 Platoon Command")) },
                     supportingText = {
                         Text(
-                            "Encrypted on this device only; not sent to the relay or other members. " +
+                            L10n.text("Encrypted on this device only; not sent to the relay or other members. ") +
                                 "${roomName.codePointCount(0, roomName.length)}/$MAX_ROOM_NAME_CODE_POINTS"
                         )
                     },
@@ -164,19 +166,19 @@ fun SyncDialog(
                             .padding(vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        Text("Sync needs attention", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
+                        Text(L10n.text("Sync needs attention"), color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
                         Text(error, color = Color(0xFFD32F2F), fontSize = 12.sp)
                         TextButton(
                             onClick = manager::acknowledgeLastError,
                             modifier = Modifier.heightIn(min = 48.dp),
-                        ) { Text("Dismiss error") }
+                        ) { Text(L10n.text("Dismiss error")) }
                     }
                 }
 
                 val joinedRoom = room
                 if (joinedRoom != null) {
                     Text(
-                        roomName.trim().ifBlank { "Unnamed room" },
+                        roomName.trim().ifBlank { L10n.text("Unnamed room") },
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                     )
@@ -190,7 +192,7 @@ fun SyncDialog(
                             verticalArrangement = Arrangement.spacedBy(1.dp),
                         ) {
                             Text(
-                                text = "Room code",
+                                text = L10n.text("Room code"),
                                 fontSize = 11.sp,
                                 lineHeight = 12.sp,
                             )
@@ -206,17 +208,17 @@ fun SyncDialog(
                         }
                         Icon(
                             imageVector = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy room code",
+                            contentDescription = L10n.text("Copy room code"),
                             modifier = Modifier.size(18.dp),
                         )
                     }
                     if (joinedRoom.startsWith("2:")) {
-                        Text("LEGACY ROOM: weaker replay, identity, and metadata protections.", color = Color.Red, fontWeight = FontWeight.Bold)
+                        Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."), color = Color.Red, fontWeight = FontWeight.Bold)
                     }
                     OutlinedButton(
                         onClick = { manager.leave() },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("Leave room") }
+                    ) { Text(L10n.text("Leave room")) }
                 } else {
                     OutlinedTextField(
                         value = code,
@@ -226,11 +228,11 @@ fun SyncDialog(
                             legacyConfirmed = false
                             pendingJoinCode = null
                         },
-                        label = { Text("Unit join code") },
+                        label = { Text(L10n.text("Unit join code")) },
                         isError = codeError != null,
                         supportingText = {
                             Text(codeError
-                                ?: "Share this with your unit. Tap Generate for a strong one.")
+                                ?: L10n.text("Share this with your unit. Tap Generate for a strong one."))
                         },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -242,19 +244,19 @@ fun SyncDialog(
                         OutlinedButton(
                             onClick = { code = SyncCrypto.generateJoinCode(); codeError = null; legacyConfirmed = false },
                             modifier = Modifier.weight(1f)
-                        ) { Text("Generate") }
+                        ) { Text(L10n.text("Generate")) }
                         Button(
                             enabled = code.isNotBlank(),
                             onClick = {
                                 val trimmedCode = code.trim()
                                 if (!trimmedCode.startsWith("3:") && !trimmedCode.startsWith("2:")) {
-                                    codeError = "Codes must start with 3:. Enter 2: only for an intentional legacy room."
+                                    codeError = L10n.text("Codes must start with 3:. Enter 2: only for an intentional legacy room.")
                                 } else if (trimmedCode.startsWith("2:") && !legacyConfirmed) {
                                     legacyConfirmed = true
-                                    codeError = "Legacy v2 has weaker rollback and identity protection. Tap again to confirm legacy join."
+                                    codeError = L10n.text("Legacy v2 has weaker rollback and identity protection. Tap again to confirm legacy join.")
                                 } else if (SyncCrypto.isJoinCodeTooWeak(code)) {
-                                    codeError = "Too short to be safe. Use at least " +
-                                        "${SyncCrypto.MIN_JOIN_CODE_LEN} characters, or tap Generate."
+                                    codeError = L10n.text("Too short to be safe. Use at least ") +
+                                        L10n.text("%1\$s characters, or tap Generate.", SyncCrypto.MIN_JOIN_CODE_LEN)
                                 } else if (UnitSyncJoinGate.requiresConsent(
                                         roomCode = trimmedCode,
                                         shareLocation = shareLocation,
@@ -264,34 +266,34 @@ fun SyncDialog(
                                     codeError = null
                                     pendingJoinCode = trimmedCode
                                 } else if (!commitConfig()) {
-                                    codeError = "Unit identity/location sharing could not be saved, so TacMap did not join. Check available storage and try again."
+                                    codeError = L10n.text("Unit identity/location sharing could not be saved, so TacMap did not join. Check available storage and try again.")
                                 } else {
                                     manager.join(trimmedCode)
                                 }
                             },
                             modifier = Modifier.weight(1f)
-                        ) { Text("Join / create") }
+                        ) { Text(L10n.text("Join / create")) }
                     }
                     if (code.trim().startsWith("2:")) {
-                        Text("LEGACY ROOM: weaker replay, identity, and metadata protections.", color = Color.Red, fontWeight = FontWeight.Bold)
+                        Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."), color = Color.Red, fontWeight = FontWeight.Bold)
                     }
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 Text(
-                    "Replay protection only rejects signed sessions at or below epochs this device has already stored. Detecting an obsolete but previously unseen higher session requires external verification.",
+                    L10n.text("Replay protection only rejects signed sessions at or below epochs this device has already stored. Detecting an obsolete but previously unseen higher session requires external verification."),
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
 
                 // ----- Your Identity -----
-                Text("Your Identity", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text(L10n.text("Your Identity"), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
 
                 OutlinedTextField(
                     value = callsign,
                     onValueChange = { callsign = manager.boundCallsign(it); commitConfig() },
-                    label = { Text("Callsign") },
+                    label = { Text(L10n.text("Callsign")) },
                     placeholder = { Text("Alpha 1-1") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -299,7 +301,7 @@ fun SyncDialog(
 
                 // Affiliation dropdown
                 PresenceDropdown(
-                    label = "Affiliation",
+                    label = L10n.text("Affiliation"),
                     selected = affiliation.displayName,
                     options = SymbolAffiliation.entries.map { it.displayName },
                     onSelect = { idx ->
@@ -310,7 +312,7 @@ fun SyncDialog(
 
                 // Echelon dropdown
                 PresenceDropdown(
-                    label = "Echelon",
+                    label = L10n.text("Echelon"),
                     selected = echelon.displayName,
                     options = SymbolEchelon.entries.map { it.displayName },
                     onSelect = { idx ->
@@ -323,7 +325,7 @@ fun SyncDialog(
                 // symbol editor and iOS Sync sheet.
                 val allFunctions = SymbolFunction.pickerEntries
                 PresenceDropdown(
-                    label = "Function",
+                    label = L10n.text("Function"),
                     selected = function.displayName,
                     options = allFunctions.map { it.displayName },
                     onSelect = { idx ->
@@ -338,11 +340,11 @@ fun SyncDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Headquarters", fontSize = 13.sp)
+                    Text(L10n.text("Headquarters"), fontSize = 13.sp)
                     Switch(
                         checked = isHQ,
                         onCheckedChange = { isHQ = it; commitConfig() },
-                        modifier = Modifier.semantics { contentDescription = "Headquarters" },
+                        modifier = Modifier.semantics { contentDescription = L10n.text("Headquarters") },
                     )
                 }
 
@@ -352,39 +354,39 @@ fun SyncDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Share my location", fontSize = 13.sp)
+                    Text(L10n.text("Share my location"), fontSize = 13.sp)
                     Switch(
                         checked = shareLocation,
                         onCheckedChange = { shareLocation = it; commitConfig() },
-                        modifier = Modifier.semantics { contentDescription = "Share my location" },
+                        modifier = Modifier.semantics { contentDescription = L10n.text("Share my location") },
                     )
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 if (room?.startsWith("2:") == true) {
                     Text(
-                        "Legacy v2 room membership",
+                        L10n.text("Legacy v2 room membership"),
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                     )
                     Text(
-                        "Authenticated online membership is unavailable in legacy v2 rooms. " +
-                            "Upgrade every device to a v3 room for relay-reported signed sessions.",
+                        L10n.text("Authenticated online membership is unavailable in legacy v2 rooms. ") +
+                            L10n.text("Upgrade every device to a v3 room for relay-reported signed sessions."),
                         fontSize = 12.sp,
                         color = Color.Gray,
                     )
                 } else {
                     Text(
-                        "Relay-reported sessions (${onlineMembers.size})",
+                        L10n.text("Relay-reported sessions (%1\$s)", onlineMembers.size),
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                     )
                     if (onlineMembers.isEmpty()) {
                         Text(
                             if (status == SyncManager.Status.CONNECTED) {
-                                "No other sessions currently reported by the relay"
+                                L10n.text("No other sessions currently reported by the relay")
                             } else {
-                                "Join a v3 room to see relay-reported signed sessions"
+                                L10n.text("Join a v3 room to see relay-reported signed sessions")
                             },
                             fontSize = 12.sp,
                             color = Color.Gray,
@@ -416,13 +418,13 @@ fun SyncDialog(
                                 if (detail.isNotBlank()) {
                                     Text(detail, color = Color.Gray, fontSize = 11.sp)
                                 } else {
-                                    Text("Location sharing off", color = Color.Gray, fontSize = 11.sp)
+                                    Text(L10n.text("Location sharing off"), color = Color.Gray, fontSize = 11.sp)
                                 }
                                 Text(
                                     if (chatTarget != null) {
-                                        "Tap to chat · ${member.clientId.takeLast(6).uppercase()}"
+                                        L10n.text("Tap to chat · %1\$s", member.clientId.takeLast(6).uppercase())
                                     } else {
-                                        "Secure chat not ready"
+                                        L10n.text("Secure chat not ready")
                                     },
                                     color = Color.Gray,
                                     fontSize = 10.sp,
@@ -431,8 +433,8 @@ fun SyncDialog(
                         }
                     }
                     Text(
-                        "Identity and session signatures are verified, but connection liveness is relay-attested; " +
-                            "it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat above.",
+                        L10n.text("Identity and session signatures are verified, but connection liveness is relay-attested; ") +
+                            L10n.text("it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat above."),
                         fontSize = 11.sp,
                         color = Color.Gray,
                     )
@@ -440,23 +442,23 @@ fun SyncDialog(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 Text(
-                    "Shared map locations (${peers.size})",
+                    L10n.text("Shared map locations (%1\$s)", peers.size),
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
                 )
                 if (peers.isEmpty()) {
                     Text(
                             if (status == SyncManager.Status.CONNECTED) {
-                                "No map locations received"
+                                L10n.text("No map locations received")
                             } else {
-                                "Map locations appear while connected"
+                                L10n.text("Map locations appear while connected")
                             },
                         fontSize = 12.sp,
                         color = Color.Gray,
                     )
                 } else {
                     peers.values.sortedWith(
-                        compareBy<PresencePeer> { it.callsign.ifBlank { "Unnamed location" }.lowercase() }
+                        compareBy<PresencePeer> { it.callsign.ifBlank { L10n.text("Unnamed location") }.lowercase() }
                             .thenBy { it.clientId }
                     ).forEach { peer ->
                         val chatTarget = manager.chatTargetFor(peer.clientId)
@@ -471,21 +473,21 @@ fun SyncDialog(
                                 .padding(vertical = 4.dp),
                         ) {
                             Text(
-                                peer.callsign.ifBlank { "Unnamed location" },
+                                peer.callsign.ifBlank { L10n.text("Unnamed location") },
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp,
                             )
                             Text(
-                                "Last map position • " + listOf(peer.affiliation, peer.function, peer.echelon)
+                                L10n.text("Last map position • ") + listOf(peer.affiliation, peer.function, peer.echelon)
                                     .filter { it.isNotBlank() }.joinToString(" • "),
                                 color = Color.Gray,
                                 fontSize = 11.sp,
                             )
                             Text(
                                 if (chatTarget != null) {
-                                    "Tap to chat · ${peer.clientId.takeLast(6).uppercase()}"
+                                    L10n.text("Tap to chat · %1\$s", peer.clientId.takeLast(6).uppercase())
                                 } else {
-                                    "Secure chat not ready"
+                                    L10n.text("Secure chat not ready")
                                 },
                                 color = Color.Gray,
                                 fontSize = 10.sp,
@@ -495,8 +497,8 @@ fun SyncDialog(
                 }
 
                 Text(
-                    "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, " +
-                        "session, timing, size, and traffic metadata.",
+                    L10n.text("Mission payload content is end-to-end encrypted. The relay still sees connection, routing, ") +
+                        L10n.text("session, timing, size, and traffic metadata."),
                     fontSize = 11.sp,
                     color = Color.Gray
                 )
@@ -507,13 +509,13 @@ fun SyncDialog(
     pendingJoinCode?.let { pendingCode ->
         AlertDialog(
             onDismissRequest = { pendingJoinCode = null },
-            title = { Text("Enable location sharing?") },
+            title = { Text(L10n.text("Enable location sharing?")) },
             text = { Text(unitSyncJoinConsentMessage(backgroundUnitSyncInterval)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         if (!opsec.setBackgroundUnitSyncLocation(true)) {
-                            codeError = "Background Unit Sync could not be saved. The previous setting remains active; check available storage and try again."
+                            codeError = L10n.text("Background Unit Sync could not be saved. The previous setting remains active; check available storage and try again.")
                             return@TextButton
                         }
                         val previousShareLocation = shareLocation
@@ -521,16 +523,16 @@ fun SyncDialog(
                         if (!commitConfig()) {
                             shareLocation = previousShareLocation
                             opsec.setBackgroundUnitSyncLocation(backgroundUnitSyncLocation)
-                            codeError = "Share my location could not be saved, so TacMap did not join. Check available storage and try again."
+                            codeError = L10n.text("Share my location could not be saved, so TacMap did not join. Check available storage and try again.")
                             return@TextButton
                         }
                         pendingJoinCode = null
                         manager.join(pendingCode)
                     },
-                ) { Text("Enable & Join") }
+                ) { Text(L10n.text("Enable & Join")) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingJoinCode = null }) { Text("Cancel") }
+                TextButton(onClick = { pendingJoinCode = null }) { Text(L10n.text("Cancel")) }
             },
         )
     }
@@ -538,11 +540,11 @@ fun SyncDialog(
 
 private fun copyRoomCode(context: Context, roomCode: String) {
     val appContext = context.applicationContext
-    if (!copySensitivePlainText(appContext, "Unit Sync room code", roomCode)) {
-        Toast.makeText(appContext, "Unable to copy unit code", Toast.LENGTH_SHORT).show()
+    if (!copySensitivePlainText(appContext, L10n.text("Unit Sync room code"), roomCode)) {
+        Toast.makeText(appContext, L10n.text("Unable to copy unit code"), Toast.LENGTH_SHORT).show()
         return
     }
-    Toast.makeText(appContext, "Unit code copied", Toast.LENGTH_SHORT).show()
+    Toast.makeText(appContext, L10n.text("Unit code copied"), Toast.LENGTH_SHORT).show()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

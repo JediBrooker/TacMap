@@ -1,5 +1,7 @@
 package com.tacmap.models
 
+import com.tacmap.localization.L10n
+
 import android.Manifest
 import android.content.ComponentName
 import android.content.Context
@@ -27,24 +29,24 @@ object TrackRecordingPreflightPolicy {
     fun evaluate(value: TrackRecordingPrerequisites): TrackRecordingPreflightResult = when {
         !value.activityVisible -> TrackRecordingPreflightResult(
             false,
-            "Track recording can only be started while TacMap is visible.",
+            L10n.text("Track recording can only be started while TacMap is visible."),
         )
 
         value.locationAccess == LocationAccess.ApproximateOnly -> TrackRecordingPreflightResult(
             false,
-            "Approximate location cannot provide the precise GPS track TacMap records.",
+            L10n.text("Approximate location cannot provide the precise GPS track TacMap records."),
             TrackRecordingSettingsTarget.AppPermissions,
         )
 
         value.locationAccess == LocationAccess.Denied -> TrackRecordingPreflightResult(
             false,
-            "Precise location permission is required to record a GPS track.",
+            L10n.text("Precise location permission is required to record a GPS track."),
             TrackRecordingSettingsTarget.AppPermissions,
         )
 
         !value.gpsEnabled -> TrackRecordingPreflightResult(
             false,
-            "GPS is turned off. Turn on device location services, then retry.",
+            L10n.text("GPS is turned off. Turn on device location services, then retry."),
             TrackRecordingSettingsTarget.LocationServices,
         )
 
@@ -53,7 +55,7 @@ object TrackRecordingPreflightPolicy {
                 !value.locationServicePermissionDeclared ||
                 !value.locationServiceTypeDeclared) -> TrackRecordingPreflightResult(
             false,
-            "This build is missing an Android foreground-location service prerequisite.",
+            L10n.text("This build is missing an Android foreground-location service prerequisite."),
         )
 
         else -> TrackRecordingPreflightResult(true)

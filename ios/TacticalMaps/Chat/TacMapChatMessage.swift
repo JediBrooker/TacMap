@@ -9,8 +9,8 @@ enum TacMapChatScope: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .room: return "Entire room"
-        case .direct: return "Selected unit"
+        case .room: return L10n.text("Entire room")
+        case .direct: return L10n.text("Selected unit")
         }
     }
 }
@@ -42,7 +42,7 @@ struct TacMapChatRecipient: Identifiable, Equatable, Hashable {
     var shortFingerprint: String { String(actorId.suffix(6)).uppercased() }
     var displayLabel: String {
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(name.isEmpty ? "Unknown unit" : name) · \(shortFingerprint)"
+        return L10n.text("%1$@ · %2$@", name.isEmpty ? "Unknown unit" : name, shortFingerprint)
     }
 
     /// Callsigns are cosmetic and may be renamed without changing the secure

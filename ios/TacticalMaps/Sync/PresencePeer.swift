@@ -60,7 +60,7 @@ func presenceMarkerPresentation(
     _ peer: PresencePeer,
     nowUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
 ) -> PresenceMarkerPresentation {
-    let unitName = peer.callsign.isEmpty ? "Unit" : peer.callsign
+    let unitName = peer.callsign.isEmpty ? L10n.text("Unit") : peer.callsign
     guard peer.isStale else {
         return PresenceMarkerPresentation(
             visibleLabel: peer.callsign,
@@ -72,21 +72,21 @@ func presenceMarkerPresentation(
     let spokenAge: String
     if age < 60 {
         shortAge = "<1m"
-        spokenAge = "less than 1 minute ago"
+        spokenAge = L10n.text("less than 1 minute ago")
     } else if age < 60 * 60 {
         let minutes = Int(age / 60)
         shortAge = "\(minutes)m"
-        spokenAge = "\(minutes) minute\(minutes == 1 ? "" : "s") ago"
+        spokenAge = L10n.quantity("minute_ago", minutes)
     } else {
         let hours = Int(age / (60 * 60))
         shortAge = "\(hours)h"
-        spokenAge = "\(hours) hour\(hours == 1 ? "" : "s") ago"
+        spokenAge = L10n.quantity("hour_ago", hours)
     }
     return PresenceMarkerPresentation(
         visibleLabel: peer.callsign.isEmpty
-            ? "Last known · \(shortAge)"
-            : "\(peer.callsign) · Last known \(shortAge)",
-        accessibilityLabel: "\(unitName). Last known \(spokenAge)."
+            ? L10n.text("Last known · %1$@", shortAge)
+            : L10n.text("%1$@ · Last known %2$@", peer.callsign, shortAge),
+        accessibilityLabel: L10n.text("%1$@. Last known %2$@.", unitName, spokenAge)
     )
 }
 
@@ -445,7 +445,7 @@ final class OnlineMemberTracker {
             CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_"
         }
         let suffix = String(String.UnicodeScalarView(safe).suffix(8))
-        return "Member \(suffix.isEmpty ? "unknown" : suffix)"
+        return L10n.text("Member %1$@", suffix.isEmpty ? "unknown" : suffix)
     }
 
     private static func safeDisplayText(_ value: String, limit: Int) -> String? {

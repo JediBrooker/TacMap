@@ -1,6 +1,8 @@
 package com.tacmap.map
 
-internal const val PRIVACY_OPSEC_LABEL = "Settings, Privacy & OPSEC"
+import com.tacmap.localization.L10n
+
+internal val PRIVACY_OPSEC_LABEL: String get() = L10n.text("Settings, Privacy & OPSEC")
 
 /** Production menu transition kept explicit and host-testable: selecting the
  * OPSEC row closes the popup before presenting its settings dialog. */

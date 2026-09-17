@@ -1,5 +1,7 @@
 package com.tacmap.util
 
+import com.tacmap.localization.L10n
+
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -100,11 +102,11 @@ object SafeStore {
                 return LoadResult.Locked(e)
             }
             if (!sealed && sealedOnly) {
-                throw IOException("plaintext rejected after sealed-only migration")
+                throw IOException(L10n.text("plaintext rejected after sealed-only migration"))
             }
             val plain = if (sealed) {
                 SealedEnvelope.openFile(key, raw, label)
-                    ?: throw IOException("sealed store failed authentication (tampered, or wrong store)")
+                    ?: throw IOException(L10n.text("sealed store failed authentication (tampered, or wrong store)"))
             } else {
                 // Pre-encryption build wrote this. Decode it, then seal it in place.
                 raw
@@ -176,7 +178,7 @@ object SafeStore {
         if (!tmp.renameTo(marker)) {
             if (!marker.exists()) {
                 tmp.delete()
-                throw IOException("Could not persist sealed-only migration marker")
+                throw IOException(L10n.text("Could not persist sealed-only migration marker"))
             }
             tmp.delete()
         }

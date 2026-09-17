@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -107,22 +109,22 @@ fun LayersSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Text("Layers and Labels", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(L10n.text("Layers and Labels"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
-            SectionHeader("Overlays")
-            ToggleRow("Symbology", symbologyVisible, onSymbologyVisibleChange)
-            ToggleRow("Drawings", drawingsVisible, onDrawingsVisibleChange)
-            ToggleRow("MGRS Grid", mgrsGridVisible, onMgrsGridChange)
-            ToggleRow("My Location", userLocationVisible, onUserLocationChange)
-            ToggleRow("Terrain Heat-map", terrainHeatmapVisible, onTerrainHeatmapChange)
+            SectionHeader(L10n.text("Overlays"))
+            ToggleRow(L10n.text("Symbology"), symbologyVisible, onSymbologyVisibleChange)
+            ToggleRow(L10n.text("Drawings"), drawingsVisible, onDrawingsVisibleChange)
+            ToggleRow(L10n.text("MGRS Grid"), mgrsGridVisible, onMgrsGridChange)
+            ToggleRow(L10n.text("My Location"), userLocationVisible, onUserLocationChange)
+            ToggleRow(L10n.text("Terrain Heat-map"), terrainHeatmapVisible, onTerrainHeatmapChange)
 
-            SectionHeader("Labels")
-            ToggleRow("Unit Labels", unitLabelsVisible, onUnitLabelsChange)
-            ToggleRow("Unit Amplifiers", unitAmplifiersVisible, onUnitAmplifiersChange)
-            ToggleRow("Task Labels", taskLabelsVisible, onTaskLabelsChange)
-            ToggleRow("Drawing Labels", drawingLabelsVisible, onDrawingLabelsChange)
+            SectionHeader(L10n.text("Labels"))
+            ToggleRow(L10n.text("Unit Labels"), unitLabelsVisible, onUnitLabelsChange)
+            ToggleRow(L10n.text("Unit Amplifiers"), unitAmplifiersVisible, onUnitAmplifiersChange)
+            ToggleRow(L10n.text("Task Labels"), taskLabelsVisible, onTaskLabelsChange)
+            ToggleRow(L10n.text("Drawing Labels"), drawingLabelsVisible, onDrawingLabelsChange)
 
-            SectionHeader("Drawing Layers")
+            SectionHeader(L10n.text("Drawing Layers"))
             drawingLayers.forEach { layer ->
                 DrawingLayerRow(
                     layer = layer,
@@ -133,7 +135,7 @@ fun LayersSheet(
                 )
             }
 
-            SectionHeader("Basemap")
+            SectionHeader(L10n.text("Basemap"))
             // Keyed styles (all but OSM Topo) need the ArcGIS key baked in at
             // build time. No key -> hide them, rather than offer a basemap that
             // would just render blank.
@@ -148,52 +150,52 @@ fun LayersSheet(
                 }
             retainedImportedMapName?.let { name ->
                 BasemapRow(
-                    label = "Imported: $name",
+                    label = L10n.text("Imported: %1\$s", name),
                     selected = importedMapActive,
                     onClick = onReturnToImportedMap,
                 )
             }
             if (importedMapActive) {
                 Text(
-                    "The imported map is active. Choose an online basemap above to switch away without removing it.",
+                    L10n.text("The imported map is active. Choose an online basemap above to switch away without removing it."),
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
             if (!importedMapActive && retainedImportedMapName != null) {
                 Text(
-                    "Your imported map is retained. Select its row to return to it.",
+                    L10n.text("Your imported map is retained. Select its row to return to it."),
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
 
             if (hasPdfMap || hasOfflineTiles) {
-                SectionHeader("Imported Map")
+                SectionHeader(L10n.text("Imported Map"))
                 if (hasPdfMap) {
                     OutlinedButton(
                         onClick = onCalibratePdf,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                    ) { Text("Calibrate PDF Map") }
+                    ) { Text(L10n.text("Calibrate PDF Map")) }
                     OutlinedButton(
                         onClick = onGenerateTiles,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) { Text("Generate Offline Tiles") }
+                    ) { Text(L10n.text("Generate Offline Tiles")) }
                     Text(
-                        "Bakes this calibrated map into an offline tile set on-device — no desktop tools needed.",
+                        L10n.text("Bakes this calibrated map into an offline tile set on-device — no desktop tools needed."),
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 2.dp)
                     )
                     OutlinedButton(
                         onClick = onUnloadPdf,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) { Text("Unload PDF Map") }
+                    ) { Text(L10n.text("Unload PDF Map")) }
                 }
                 if (hasOfflineTiles) {
                     OutlinedButton(
                         onClick = onUnloadOfflineTiles,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) { Text("Unload Offline Tiles") }
+                    ) { Text(L10n.text("Unload Offline Tiles")) }
                 }
             }
 
@@ -203,13 +205,13 @@ fun LayersSheet(
     pendingVisibility?.let { pending ->
         AlertDialog(
             onDismissRequest = { pendingVisibility = null },
-            title = { Text("Layer visibility not saved") },
+            title = { Text(L10n.text("Layer visibility not saved")) },
             text = { Text(pending.message) },
             confirmButton = {
-                TextButton(onClick = { attemptVisibility(pending.retry) }) { Text("Retry") }
+                TextButton(onClick = { attemptVisibility(pending.retry) }) { Text(L10n.text("Retry")) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingVisibility = null }) { Text("Not now") }
+                TextButton(onClick = { pendingVisibility = null }) { Text(L10n.text("Not now")) }
             },
         )
     }
@@ -271,7 +273,7 @@ private fun DrawingLayerRow(layer: DrawingLayer, count: Int, onVisibleChange: (B
             Column {
                 Text(layer.name, fontSize = 15.sp)
                 Text(
-                    "$count drawing${if (count == 1) "" else "s"}",
+                    L10n.text("%1\$s drawing%2\$s", count, if (count == 1) "" else "s"),
                     fontSize = 11.sp,
                     color = Color(0xFF8A938A)
                 )
@@ -281,7 +283,7 @@ private fun DrawingLayerRow(layer: DrawingLayer, count: Int, onVisibleChange: (B
             checked = layer.isVisible,
             onCheckedChange = onVisibleChange,
             modifier = Modifier.semantics {
-                contentDescription = "${layer.name} layer visibility"
+                contentDescription = L10n.text("%1\$s layer visibility", layer.name)
             },
         )
     }

@@ -108,7 +108,7 @@ final class RecordingCoordinator: ObservableObject {
     func recorderDidStopUnexpectedly(error: String?) {
         guard state == .recording else { return }
         setBackgroundUpdates(false)
-        let message = error ?? "Track recording was interrupted. The saved track was preserved."
+        let message = error ?? L10n.text("Track recording was interrupted. The saved track was preserved.")
         state = .interrupted(message)
     }
 
@@ -126,7 +126,7 @@ final class RecordingCoordinator: ObservableObject {
         guard initializeDurableRecording() else {
             setBackgroundUpdates(false)
             state = .interrupted(
-                recordingError() ?? "Track recording could not start. No recording is active."
+                recordingError() ?? L10n.text("Track recording could not start. No recording is active.")
             )
             return
         }
@@ -140,7 +140,7 @@ final class RecordingCoordinator: ObservableObject {
     private func interruptForPermissionLoss() {
         stopRecording()
         setBackgroundUpdates(false)
-        let message = "Location access changed, so track recording stopped. Your saved track was preserved. Re-enable Location access in Settings to record again."
+        let message = L10n.text("Location access changed, so track recording stopped. Your saved track was preserved. Re-enable Location access in Settings to record again.")
         state = .interrupted(message)
         guidance = Guidance(message: message, offersSettings: true)
     }
@@ -148,8 +148,8 @@ final class RecordingCoordinator: ObservableObject {
     private static func permissionGuidance(interrupted: Bool) -> Guidance {
         Guidance(
             message: interrupted
-                ? "Track recording stopped because Location access is unavailable. Your saved track was preserved. Re-enable it in Settings."
-                : "TacMap needs Location access to record a track. Allow access in Settings, then try again.",
+                ? L10n.text("Track recording stopped because Location access is unavailable. Your saved track was preserved. Re-enable it in Settings.")
+                : L10n.text("TacMap needs Location access to record a track. Allow access in Settings, then try again."),
             offersSettings: true
         )
     }
@@ -250,7 +250,7 @@ final class TrackRecorder: ObservableObject {
                     throw CocoaError(.fileReadUnknown)
                 }
                 guard size.int64Value == 0 else {
-                    persistError = "A saved track already exists. Export or discard it before starting a new recording."
+                    persistError = L10n.text("A saved track already exists. Export or discard it before starting a new recording.")
                     return false
                 }
             } catch {
@@ -277,7 +277,7 @@ final class TrackRecorder: ObservableObject {
         } catch {
             recordingKey = nil
             isRecording = false
-            persistError = "Recording did not start: \(error.localizedDescription)"
+            persistError = L10n.text("Recording did not start: %1$@", error.localizedDescription)
             return false
         }
     }
@@ -321,7 +321,7 @@ final class TrackRecorder: ObservableObject {
             points.append(point)
             persistError = nil
         } catch {
-            persistError = "Track recording stopped because a fix could not be saved."
+            persistError = L10n.text("Track recording stopped because a fix could not be saved.")
             isRecording = false
             recordingKey = nil
         }
@@ -383,7 +383,7 @@ final class TrackRecorder: ObservableObject {
             return
         }
         guard size.int64Value <= Int64(maxRecoveryBytes) else {
-            persistError = "Saved track is too large to recover safely."
+            persistError = L10n.text("Saved track is too large to recover safely.")
             return
         }
         let text: String
@@ -403,7 +403,7 @@ final class TrackRecorder: ObservableObject {
         } catch {
             // Locked. The log is intact, we just can't read it yet. Say nothing
             // about "no track" because we genuinely don't know.
-            persistError = "Saved track is encrypted and locked. \(error.localizedDescription)"
+            persistError = L10n.text("Saved track is encrypted and locked. %1$@", error.localizedDescription)
             requiresUnlock = true
             return
         }
@@ -429,7 +429,7 @@ final class TrackRecorder: ObservableObject {
         if sealedOnly && text.split(separator: "\n").contains(where: {
             !SealedEnvelope.isSealedLine(String($0))
         }) {
-            persistError = "Saved track failed its sealed-only integrity check."
+            persistError = L10n.text("Saved track failed its sealed-only integrity check.")
             return
         }
         var sawLegacyLine = false
@@ -445,7 +445,7 @@ final class TrackRecorder: ObservableObject {
             }
             guard let json, let sp = try? decoder.decode(StoredPoint.self, from: json) else {
                 if !SealedEnvelope.isSealedLine(line) { invalidLegacyLine = true }
-                else { persistError = "Saved track contains an authenticated line that could not be recovered." }
+                else { persistError = L10n.text("Saved track contains an authenticated line that could not be recovered.") }
                 return nil
             }
             guard sp.lat.isFinite, sp.lon.isFinite, sp.t.isFinite,
@@ -460,7 +460,7 @@ final class TrackRecorder: ObservableObject {
         }
         if sawLegacyLine {
             if invalidLegacyLine {
-                persistError = "Saved legacy track contains an invalid line and was preserved unchanged."
+                persistError = L10n.text("Saved legacy track contains an invalid line and was preserved unchanged.")
                 return
             } else {
                 guard reseal(restored, key: key) else { return }
@@ -511,7 +511,7 @@ final class TrackRecorder: ObservableObject {
             return true
         } catch {
             requiresUnlock = true
-            persistError = "Could not encrypt the recovered track: \(error.localizedDescription)"
+            persistError = L10n.text("Could not encrypt the recovered track: %1$@", error.localizedDescription)
             return false
         }
     }
@@ -524,7 +524,7 @@ final class TrackRecorder: ObservableObject {
 
     private func markRecoveryUnavailable(_ error: Error) {
         requiresUnlock = true
-        persistError = "Saved track is protected or unavailable and was left untouched. Retry after unlocking the device. \(error.localizedDescription)"
+        persistError = L10n.text("Saved track is protected or unavailable and was left untouched. Retry after unlocking the device. %1$@", error.localizedDescription)
     }
 
     private static func isNoSuchFile(_ error: Error) -> Bool {

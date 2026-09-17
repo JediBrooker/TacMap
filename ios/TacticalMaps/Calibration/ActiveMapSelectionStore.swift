@@ -43,15 +43,15 @@ enum ActiveMapSelectionStore {
         var errorDescription: String? {
             switch self {
             case .lockedOrUnreadable:
-                return "The saved map library is locked or unreadable. Unlock mission data, then try again."
+                return L10n.text("The saved map library is locked or unreadable. Unlock mission data, then try again.")
             case .active:
-                return "Switch to an online basemap before deleting the imported map."
+                return L10n.text("Switch to an online basemap before deleting the imported map.")
             case .unmanagedFile:
-                return "The imported map is outside app-managed storage, so it was not deleted."
+                return L10n.text("The imported map is outside app-managed storage, so it was not deleted.")
             case .persistenceFailed(let error):
-                return "The imported map library could not be updated: \(error.localizedDescription)"
+                return L10n.text("The imported map library could not be updated: %1$@", error.localizedDescription)
             case .rollbackFailed(let error):
-                return "The imported map could not be deleted and its saved entry could not be restored. Keep the app open and retry: \(error.localizedDescription)"
+                return L10n.text("The imported map could not be deleted and its saved entry could not be restored. Keep the app open and retry: %1$@", error.localizedDescription)
             }
         }
     }
@@ -209,16 +209,16 @@ enum ActiveMapSelectionStore {
             }
             return .noRetainedMap
         case .locked:
-            return .unavailable("Saved imported-map details are locked. Unlock mission data to restore them.")
+            return .unavailable(L10n.text("Saved imported-map details are locked. Unlock mission data to restore them."))
         case .corrupt:
-            return .unavailable("Saved imported-map details could not be authenticated. The recovery copy was preserved; reset the saved map selection or import the map again.")
+            return .unavailable(L10n.text("Saved imported-map details could not be authenticated. The recovery copy was preserved; reset the saved map selection or import the map again."))
         case .loaded(let decoded):
             guard let selection = decoded.state.retained else { return .noRetainedMap }
             guard let source = source(for: selection) else {
-                return .unavailable("The saved imported map is missing or unreadable. Remove its saved entry, then import the source file again.")
+                return .unavailable(L10n.text("The saved imported map is missing or unreadable. Remove its saved entry, then import the source file again."))
             }
             if decoded.migrated, !write(decoded.state) {
-                return .unavailable("The saved imported-map entry could not be upgraded securely. Unlock mission data or free storage, then try again.")
+                return .unavailable(L10n.text("The saved imported-map entry could not be upgraded securely. Unlock mission data or free storage, then try again."))
             }
             return .restored(source)
         }
@@ -355,7 +355,7 @@ enum ActiveMapSelectionStore {
         if case .corrupt = result {
             pendingUnavailableIssue = (
                 url.standardizedFileURL.path,
-                "Saved imported-map details could not be authenticated. The recovery copy was preserved; reset the saved map selection or import the map again."
+                L10n.text("Saved imported-map details could not be authenticated. The recovery copy was preserved; reset the saved map selection or import the map again.")
             )
         }
         return result

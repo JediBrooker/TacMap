@@ -212,10 +212,10 @@ enum DrawingKind: String, Codable, CaseIterable, Hashable {
 
     var displayName: String {
         switch self {
-        case .point:    return "Point"
-        case .polyline: return "Line"
-        case .polygon:  return "Area"
-        case .freedraw: return "Free Draw"
+        case .point:    return L10n.text("Point")
+        case .polyline: return L10n.text("Line")
+        case .polygon:  return L10n.text("Area")
+        case .freedraw: return L10n.text("Free Draw")
         }
     }
 
@@ -248,11 +248,11 @@ enum LineGraphic: String, Codable, Hashable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .plain:         return "Plain line"
-        case .phaseLine:     return "Phase line"
-        case .boundary:      return "Boundary"
-        case .forwardEdge:   return "Forward line (FLOT)"
-        case .axisOfAdvance: return "Axis of advance"
+        case .plain:         return L10n.text("Plain line")
+        case .phaseLine:     return L10n.text("Phase line")
+        case .boundary:      return L10n.text("Boundary")
+        case .forwardEdge:   return L10n.text("Forward line (FLOT)")
+        case .axisOfAdvance: return L10n.text("Axis of advance")
         }
     }
     var symbolName: String {

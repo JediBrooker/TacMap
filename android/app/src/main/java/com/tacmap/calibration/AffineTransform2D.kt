@@ -1,5 +1,7 @@
 package com.tacmap.calibration
 
+import com.tacmap.localization.L10n
+
 import kotlinx.serialization.Serializable
 import kotlin.math.PI
 import kotlin.math.abs
@@ -72,10 +74,10 @@ internal fun Wgs84Coordinate.isValidEarthCoordinate(): Boolean =
         latitude in -90.0..90.0 && longitude in -180.0..180.0
 
 sealed class AffineFitError(message: String) : Throwable(message) {
-    data object TooFewFiduciaries : AffineFitError("Need at least 3 fiduciaries")
-    data object InvalidInput       : AffineFitError("Fiduciaries contain invalid or unsafe coordinates")
-    data object Degenerate         : AffineFitError("Fiduciaries are colinear or coincident")
-    data object InvalidResult      : AffineFitError("Affine fit produced an invalid result")
+    data object TooFewFiduciaries : AffineFitError(L10n.text("Need at least 3 fiduciaries"))
+    data object InvalidInput       : AffineFitError(L10n.text("Fiduciaries contain invalid or unsafe coordinates"))
+    data object Degenerate         : AffineFitError(L10n.text("Fiduciaries are colinear or coincident"))
+    data object InvalidResult      : AffineFitError(L10n.text("Affine fit produced an invalid result"))
 }
 
 data class AffineFitResult(

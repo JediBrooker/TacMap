@@ -18,9 +18,9 @@ struct WaypointListSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Symbology (\(waypointStore.waypoints.count))") {
+                Section(L10n.text("Symbology (%1$@)", waypointStore.waypoints.count)) {
                     if waypointStore.waypoints.isEmpty {
-                        Text("No symbols yet. Pan the crosshair to a feature and tap “Add at Crosshair” below.")
+                        Text(L10n.text("No symbols yet. Pan the crosshair to a feature and tap “Add at Crosshair” below."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -34,7 +34,7 @@ struct WaypointListSheet: View {
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                 Button {
                                     flyTo(wp)
-                                } label: { Label("Fly to", systemImage: "location.viewfinder") }
+                                } label: { Label(L10n.text("Fly to"), systemImage: "location.viewfinder") }
                                     .tint(.blue)
                             }
                             // allowsFullSwipe: false - don't let a full swipe
@@ -43,7 +43,7 @@ struct WaypointListSheet: View {
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     pendingDelete = wp
-                                } label: { Label("Delete", systemImage: "trash") }
+                                } label: { Label(L10n.text("Delete"), systemImage: "trash") }
                             }
                         }
                     }
@@ -53,16 +53,16 @@ struct WaypointListSheet: View {
                     Button {
                         creatingAt = mapVM.cameraCentre
                     } label: {
-                        Label("Add at Crosshair", systemImage: "plus.circle.fill")
+                        Label(L10n.text("Add at Crosshair"), systemImage: "plus.circle.fill")
                     }
                 } footer: {
-                    Text("Swipe right on a symbol to fly to it; swipe left to delete.")
+                    Text(L10n.text("Swipe right on a symbol to fly to it; swipe left to delete."))
                         .font(.caption2)
                 }
             }
-            .navigationTitle("Symbology")
+            .navigationTitle(L10n.text("Symbology"))
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } }
             }
             .sheet(item: $editing) { wp in
                 SelectedSymbolEditSheet(
@@ -80,13 +80,13 @@ struct WaypointListSheet: View {
                 )
             }
             .confirmationDialog(
-                "Delete “\(pendingDelete?.name ?? "")”?",
+                L10n.text("Delete “%1$@”?", pendingDelete?.name ?? ""),
                 isPresented: Binding(get: { pendingDelete != nil },
                                      set: { if !$0 { pendingDelete = nil } }),
                 titleVisibility: .visible,
                 presenting: pendingDelete
             ) { wp in
-                Button("Delete", role: .destructive) {
+                Button(L10n.text("Delete"), role: .destructive) {
                     do {
                         _ = try waypointStore.deleteDurably(wp)
                         pendingDelete = nil
@@ -95,9 +95,9 @@ struct WaypointListSheet: View {
                         errorMessage = error.localizedDescription
                     }
                 }
-                Button("Cancel", role: .cancel) { pendingDelete = nil }
+                Button(L10n.text("Cancel"), role: .cancel) { pendingDelete = nil }
             }
-            .alert("Could Not Delete Symbol",
+            .alert(L10n.text("Could Not Delete Symbol"),
                    isPresented: Binding(get: { errorMessage != nil },
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in

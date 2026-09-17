@@ -22,10 +22,10 @@ enum SymbolAffiliation: String, Codable, Hashable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .friend:  return "Friendly"
-        case .hostile: return "Hostile"
-        case .neutral: return "Neutral"
-        case .unknown: return "Unknown"
+        case .friend:  return L10n.text("Friendly")
+        case .hostile: return L10n.text("Hostile")
+        case .neutral: return L10n.text("Neutral")
+        case .unknown: return L10n.text("Unknown")
         }
     }
 
@@ -59,13 +59,13 @@ enum SymbolEchelon: String, Codable, Hashable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .team:      return "Team / Crew"
-        case .section:   return "Section"
-        case .platoon:   return "Platoon"
-        case .company:   return "Company"
-        case .battalionRegiment: return "Battalion / Regiment"
-        case .brigade:   return "Brigade"
-        case .division:  return "Division"
+        case .team:      return L10n.text("Team / Crew")
+        case .section:   return L10n.text("Section")
+        case .platoon:   return L10n.text("Platoon")
+        case .company:   return L10n.text("Company")
+        case .battalionRegiment: return L10n.text("Battalion / Regiment")
+        case .brigade:   return L10n.text("Brigade")
+        case .division:  return L10n.text("Division")
         }
     }
 
@@ -119,35 +119,35 @@ enum SymbolFunction: String, Codable, Hashable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .airDefence:         return "Air Defence"
-        case .ammunition:         return "Ammunition"
-        case .antiTank:           return "Anti-Tank"
-        case .armour:             return "Armour"
-        case .artillery:          return "Artillery"
-        case .aviationFixed:      return "Aviation (Fixed-Wing)"
-        case .aviation:           return "Aviation (Rotary)"
-        case .bridging:           return "Bridging"
-        case .cavalry:            return "Cavalry"
-        case .cbrn:               return "CBRN Defence"
-        case .css:                return "Combat Service Support"
-        case .electronicWarfare:  return "Electronic Warfare"
-        case .engineer:           return "Engineer"
-        case .eod:                return "Explosive Ordnance Disposal"
-        case .infantry:           return "Infantry"
-        case .maintenance:        return "Maintenance"
-        case .mechInfantry:       return "Mechanised Infantry"
-        case .medical:            return "Medical"
-        case .militaryPolice:     return "Military Police"
-        case .mortar:             return "Mortar"
-        case .motorisedInfantry:  return "Motorised Infantry"
-        case .radar:              return "Radar"
-        case .recce:              return "Reconnaissance"
-        case .signal:             return "Signals"
-        case .specialForces:      return "Special Forces"
-        case .logistics:          return "Supply"
-        case .transportation:     return "Transportation"
-        case .uav:                return "Unmanned Air Vehicle"
-        case .unspecified:        return "— (no branch)"
+        case .airDefence:         return L10n.text("Air Defence")
+        case .ammunition:         return L10n.text("Ammunition")
+        case .antiTank:           return L10n.text("Anti-Tank")
+        case .armour:             return L10n.text("Armour")
+        case .artillery:          return L10n.text("Artillery")
+        case .aviationFixed:      return L10n.text("Aviation (Fixed-Wing)")
+        case .aviation:           return L10n.text("Aviation (Rotary)")
+        case .bridging:           return L10n.text("Bridging")
+        case .cavalry:            return L10n.text("Cavalry")
+        case .cbrn:               return L10n.text("CBRN Defence")
+        case .css:                return L10n.text("Combat Service Support")
+        case .electronicWarfare:  return L10n.text("Electronic Warfare")
+        case .engineer:           return L10n.text("Engineer")
+        case .eod:                return L10n.text("Explosive Ordnance Disposal")
+        case .infantry:           return L10n.text("Infantry")
+        case .maintenance:        return L10n.text("Maintenance")
+        case .mechInfantry:       return L10n.text("Mechanised Infantry")
+        case .medical:            return L10n.text("Medical")
+        case .militaryPolice:     return L10n.text("Military Police")
+        case .mortar:             return L10n.text("Mortar")
+        case .motorisedInfantry:  return L10n.text("Motorised Infantry")
+        case .radar:              return L10n.text("Radar")
+        case .recce:              return L10n.text("Reconnaissance")
+        case .signal:             return L10n.text("Signals")
+        case .specialForces:      return L10n.text("Special Forces")
+        case .logistics:          return L10n.text("Supply")
+        case .transportation:     return L10n.text("Transportation")
+        case .uav:                return L10n.text("Unmanned Air Vehicle")
+        case .unspecified:        return L10n.text("— (no branch)")
         }
     }
 }

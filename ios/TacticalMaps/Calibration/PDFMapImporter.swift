@@ -8,7 +8,7 @@ enum PDFMapImportError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidPDF:
-            return "Couldn't import this file as a valid PDF map."
+            return L10n.text("Couldn't import this file as a valid PDF map.")
         }
     }
 }

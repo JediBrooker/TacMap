@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
@@ -156,13 +158,13 @@ internal fun DrawingFeatureEditBar(
                     Spacer(Modifier.size(5.dp))
                     Icon(
                         Icons.Default.Edit,
-                        contentDescription = "Edit drawing name",
+                        contentDescription = L10n.text("Edit drawing name"),
                         tint = Color.White.copy(alpha = 0.42f),
                         modifier = Modifier.size(12.dp)
                     )
                 }
                 Text(
-                    "${feature.geometry.displayName} - Drawing",
+                    L10n.text("%1\$s - Drawing", feature.geometry.displayName),
                     color = Color.White.copy(alpha = 0.58f),
                     fontSize = 11.sp,
                     maxLines = 1,
@@ -181,7 +183,7 @@ internal fun DrawingFeatureEditBar(
                 ) {
                     Icon(
                         Icons.Default.Close,
-                        contentDescription = "Close drawing controls",
+                        contentDescription = L10n.text("Close drawing controls"),
                         tint = Color.White.copy(alpha = 0.58f),
                         modifier = Modifier.size(16.dp)
                     )
@@ -200,7 +202,7 @@ internal fun DrawingFeatureEditBar(
             ) {
                 Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("Edit drawing", maxLines = 1)
+                Text(L10n.text("Edit drawing"), maxLines = 1)
             }
             Button(
                 onClick = { attempt(retry = onMoveToCrosshair) },
@@ -208,7 +210,7 @@ internal fun DrawingFeatureEditBar(
             ) {
                 Icon(Icons.Default.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("Move to crosshair", maxLines = 1, fontSize = 12.sp)
+                Text(L10n.text("Move to crosshair"), maxLines = 1, fontSize = 12.sp)
             }
         }
 
@@ -216,7 +218,7 @@ internal fun DrawingFeatureEditBar(
             CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
                 DrawingTransformSliderRow(
                     icon = Icons.AutoMirrored.Filled.RotateRight,
-                    label = "Rotation",
+                    label = L10n.text("Rotation"),
                     value = normalizedDrawingDegrees(feature.rotationDegrees).toFloat(),
                     valueLabel = "${normalizedDrawingDegrees(feature.rotationDegrees).toInt()}°",
                     range = 0f..360f,
@@ -226,7 +228,7 @@ internal fun DrawingFeatureEditBar(
                 )
                 DrawingTransformSliderRow(
                     icon = Icons.Default.SwapHoriz,
-                    label = "Width scale",
+                    label = L10n.text("Width scale"),
                     value = feature.scaleX.toFloat().coerceIn(0.15f, 6f),
                     valueLabel = "%.2fx".format(feature.scaleX),
                     range = 0.15f..6f,
@@ -236,7 +238,7 @@ internal fun DrawingFeatureEditBar(
                 )
                 DrawingTransformSliderRow(
                     icon = Icons.Default.SwapVert,
-                    label = "Height scale",
+                    label = L10n.text("Height scale"),
                     value = feature.scaleY.toFloat().coerceIn(0.15f, 6f),
                     valueLabel = "%.2fx".format(feature.scaleY),
                     range = 0.15f..6f,
@@ -251,7 +253,7 @@ internal fun DrawingFeatureEditBar(
             Box {
                 DrawingColorSelectButton(
                     color = feature.strokeColor,
-                    contentDescription = "Stroke colour",
+                    contentDescription = L10n.text("Stroke colour"),
                     onClick = { colorMenuOpen = true }
                 )
                 DrawingColorMenu(
@@ -270,7 +272,7 @@ internal fun DrawingFeatureEditBar(
                 Box {
                     DrawingColorSelectButton(
                         color = feature.fillColor,
-                        contentDescription = "Fill colour",
+                        contentDescription = L10n.text("Fill colour"),
                         onClick = { fillColorMenuOpen = true },
                     )
                     DrawingColorMenu(
@@ -318,7 +320,7 @@ internal fun DrawingFeatureEditBar(
                     ) {
                         Icon(
                             Icons.Default.Timeline,
-                            contentDescription = "Tactical line graphic",
+                            contentDescription = L10n.text("Tactical line graphic"),
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
@@ -355,7 +357,7 @@ internal fun DrawingFeatureEditBar(
                 ) {
                     Icon(
                         Icons.Default.Tune,
-                        contentDescription = "Toggle transform sliders",
+                        contentDescription = L10n.text("Toggle transform sliders"),
                         tint = Color.White,
                         modifier = Modifier.size(18.dp)
                     )
@@ -381,7 +383,7 @@ internal fun DrawingFeatureEditBar(
             ) {
                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("Delete", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(L10n.text("Delete"), fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -401,17 +403,17 @@ internal fun DrawingFeatureEditBar(
     pendingMutation?.let { pending ->
         AlertDialog(
             onDismissRequest = { pendingMutation = null },
-            title = { Text("Drawing change not saved") },
+            title = { Text(L10n.text("Drawing change not saved")) },
             text = { Text(pending.message) },
             confirmButton = {
                 TextButton(onClick = {
                     attempt(onSaved = pending.onSaved, retry = pending.retry)
                 }) {
-                    Text("Retry")
+                    Text(L10n.text("Retry"))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingMutation = null }) { Text("Not now") }
+                TextButton(onClick = { pendingMutation = null }) { Text(L10n.text("Not now")) }
             },
         )
     }
@@ -483,7 +485,7 @@ private fun DrawingTransformSliderRow(
         ) {
             Icon(
                 Icons.Default.Refresh,
-                contentDescription = "Reset $label",
+                contentDescription = L10n.text("Reset %1\$s", label),
                 tint = Color.White,
                 modifier = Modifier.size(16.dp)
             )
@@ -562,7 +564,7 @@ internal fun DrawingDraftBar(
         ) {
             Icon(
                 Icons.Default.Close,
-                contentDescription = "Cancel drawing",
+                contentDescription = L10n.text("Cancel drawing"),
                 tint = Color.White,
                 modifier = Modifier.size(20.dp)
             )
@@ -581,7 +583,7 @@ internal fun DrawingDraftBar(
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
         ) {
             Text(
-                if (geometry == DrawingGeometry.POINT) "Done" else "Finish",
+                if (geometry == DrawingGeometry.POINT) L10n.text("Done") else L10n.text("Finish"),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -612,7 +614,7 @@ private fun DrawingNameButton(name: String, onClick: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            name.ifBlank { "Name" },
+            name.ifBlank { L10n.text("Name") },
             color = Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
@@ -631,7 +633,7 @@ private fun DrawingNameDialog(
     var editedName by remember(name) { mutableStateOf(name) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Drawing name") },
+        title = { Text(L10n.text("Drawing name")) },
         text = {
             OutlinedTextField(
                 value = editedName,
@@ -645,12 +647,12 @@ private fun DrawingNameDialog(
                     if (onNameChange(editedName)) onDismiss()
                 }
             ) {
-                Text("Done")
+                Text(L10n.text("Done"))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(L10n.text("Cancel"))
             }
         }
     )
@@ -697,7 +699,7 @@ private fun DrawingToolChip(geometry: DrawingGeometry) {
 @Composable
 private fun DrawingColorSelectButton(
     color: Int,
-    contentDescription: String = "Drawing colour",
+    contentDescription: String = L10n.text("Drawing colour"),
     onClick: () -> Unit,
 ) {
     Box(
@@ -730,8 +732,8 @@ private fun DrawingOpacityButton(alpha: Int, onAlphaSelected: (Int) -> Unit) {
             .clip(CircleShape)
             .background(Color(0xFF202020))
             .semantics {
-                contentDescription = "Fill opacity"
-                stateDescription = "$percent percent"
+                contentDescription = L10n.text("Fill opacity")
+                stateDescription = L10n.text("%1\$s percent", percent)
             }
             .clickable { onAlphaSelected(choices[(closestIndex + 1) % choices.size]) },
         contentAlignment = Alignment.Center,
@@ -839,7 +841,7 @@ private fun DrawingStrokeStyle.next(): DrawingStrokeStyle =
 internal fun CentrePill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    label: String = "Centre on My Location",
+    label: String = L10n.text("Centre on My Location"),
     icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.GpsFixed,
     guidance: String? = null,
 ) {

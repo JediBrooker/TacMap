@@ -26,7 +26,7 @@ struct PaywallView: View {
                         .font(.largeTitle.bold())
                         .foregroundStyle(green)
 
-                    Text(expired ? "Your free trial has ended" : "Unlock the full version")
+                    Text(expired ? L10n.text("Your free trial has ended") : L10n.text("Unlock the full version"))
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
@@ -43,8 +43,8 @@ struct PaywallView: View {
                     switch store.loadState {
                     case .failed, .unavailable:
                         Text(store.loadState == .failed
-                             ? "Couldn't load purchase options. Check your connection and try again."
-                             : "The App Store didn't return the TacMap unlock. Try again or restore an existing purchase.")
+                             ? L10n.text("Couldn't load purchase options. Check your connection and try again.")
+                             : L10n.text("The App Store didn't return the TacMap unlock. Try again or restore an existing purchase."))
                             .font(.subheadline)
                             .foregroundStyle(orange)
                             .multilineTextAlignment(.center)
@@ -54,7 +54,7 @@ struct PaywallView: View {
                         Button {
                             Task { await store.loadProduct() }
                         } label: {
-                            Text("Try Again")
+                            Text(L10n.text("Try Again"))
                                 .font(.headline)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 15)
@@ -91,7 +91,7 @@ struct PaywallView: View {
                         if store.restoring {
                             ProgressView().tint(orange)
                         } else {
-                            Text("Restore purchase")
+                            Text(L10n.text("Restore purchase"))
                                 .font(.subheadline)
                                 .foregroundStyle(orange)
                         }
@@ -105,7 +105,7 @@ struct PaywallView: View {
                         if store.redeeming {
                             ProgressView().tint(orange)
                         } else {
-                            Text("Redeem TacMap offer code")
+                            Text(L10n.text("Redeem TacMap offer code"))
                                 .font(.subheadline)
                                 .foregroundStyle(orange)
                         }
@@ -113,13 +113,13 @@ struct PaywallView: View {
                     .disabled(store.commerceOperationActive)
                     .padding(.top, 6)
 
-                    Text("One-time purchase. No subscription.")
+                    Text(L10n.text("One-time purchase. No subscription."))
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.48))
                         .padding(.top, 18)
 
                     if store.isSandbox {
-                        Text("Test build (Sandbox) — purchases are free; you won't be charged.")
+                        Text(L10n.text("Test build (Sandbox) — purchases are free; you won't be charged."))
                             .font(.caption2)
                             .foregroundStyle(green.opacity(0.9))
                             .multilineTextAlignment(.center)
@@ -146,7 +146,7 @@ struct PaywallView: View {
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(Color(white: 0.6))
                         }
-                        .accessibilityLabel("Close unlock screen")
+                        .accessibilityLabel(L10n.text("Close unlock screen"))
                         .padding()
                     }
                     Spacer()
@@ -160,13 +160,13 @@ struct PaywallView: View {
         .onDisappear {
             store.cancelProductLoad()
         }
-        .alert("Restore Purchase",
+        .alert(L10n.text("Restore Purchase"),
                isPresented: Binding(get: { store.restoreOutcome != nil },
                                     set: { if !$0 { store.restoreOutcome = nil } }),
                presenting: store.restoreOutcome) { _ in
             Button("OK", role: .cancel) { store.restoreOutcome = nil }
         } message: { Text($0) }
-        .alert("Redeem Offer Code",
+        .alert(L10n.text("Redeem Offer Code"),
                isPresented: Binding(get: { store.redemptionOutcome != nil },
                                     set: { if !$0 { store.redemptionOutcome = nil } }),
                presenting: store.redemptionOutcome) { _ in
@@ -175,9 +175,9 @@ struct PaywallView: View {
     }
 
     private var buttonTitle: String {
-        if store.purchasePending { return "Awaiting approval…" }
-        if let price = store.priceText { return "Unlock Full Version  ·  \(price)" }
-        return "Loading price…"
+        if store.purchasePending { return L10n.text("Awaiting approval…") }
+        if let price = store.priceText { return L10n.text("Unlock Full Version  ·  %1$@", price) }
+        return L10n.text("Loading price…")
     }
 
     private var purchaseEnabled: Bool {
@@ -186,12 +186,11 @@ struct PaywallView: View {
 
     private var bodyText: String {
         if expired {
-            return "Your \(TrialManager.trialDays)-day free trial is over. Make a one-time "
-                + "purchase to keep using TacMap — live MGRS, GeoPDF maps, "
-                + "NATO APP-6 symbology and GeoJSON export."
+            return L10n.text("Your %1$@-day free trial is over. Make a one-time ", TrialManager.trialDays)
+                + L10n.text("purchase to keep using TacMap — live MGRS, GeoPDF maps, ")
+                + L10n.text("NATO APP-6 symbology and GeoJSON export.")
         }
-        let unit = trialDaysRemaining == 1 ? "day" : "days"
-        return "You're on the free trial (\(trialDaysRemaining) \(unit) left). "
-            + "Unlock now for permanent access."
+        return L10n.text("You're on the free trial (%1$@ left). ", L10n.quantity("day", trialDaysRemaining))
+            + L10n.text("Unlock now for permanent access.")
     }
 }

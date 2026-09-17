@@ -1,5 +1,7 @@
 package com.tacmap.billing
 
+import com.tacmap.localization.L10n
+
 /** One paywall contract shared by the expired-trial and in-trial entry points. */
 data class BillingUiState(
     val phase: BillingPhase = BillingPhase.Idle,
@@ -48,7 +50,7 @@ internal object BillingUiReducer {
             state.copy(
                 phase = BillingPhase.Connecting,
                 priceText = null,
-                message = "Connecting to Google Play…",
+                message = L10n.text("Connecting to Google Play…"),
                 retryable = false,
                 purchaseEnabled = false,
             )
@@ -64,7 +66,7 @@ internal object BillingUiReducer {
             state.copy(
                 phase = BillingPhase.LoadingProduct,
                 priceText = null,
-                message = "Loading price from Google Play…",
+                message = L10n.text("Loading price from Google Play…"),
                 retryable = false,
                 purchaseEnabled = false,
             )
@@ -87,14 +89,14 @@ internal object BillingUiReducer {
 
         BillingUiEvent.Restoring -> state.copy(
             phase = BillingPhase.Restoring,
-            message = "Checking Google Play for your purchase…",
+            message = L10n.text("Checking Google Play for your purchase…"),
             retryable = false,
             purchaseEnabled = false,
         )
 
         BillingUiEvent.Purchasing -> state.copy(
             phase = BillingPhase.Purchasing,
-            message = "Opening Google Play…",
+            message = L10n.text("Opening Google Play…"),
             retryable = false,
             purchaseEnabled = false,
         )

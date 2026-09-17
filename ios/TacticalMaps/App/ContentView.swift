@@ -105,7 +105,7 @@ enum ImportedMapFileCopier {
                                           fileManager: FileManager) -> URL {
         let ext = preferredExtension ?? source.pathExtension
         let rawStem = source.deletingPathExtension().lastPathComponent
-        let stem = rawStem.isEmpty ? "Imported Map" : rawStem
+        let stem = rawStem.isEmpty ? L10n.text("Imported Map") : rawStem
 
         func candidate(_ suffix: Int?) -> URL {
             let name = suffix.map { "\(stem)-\($0)" } ?? stem
@@ -140,11 +140,11 @@ private enum BoundedImportReader {
             throw CocoaError(.fileReadUnsupportedScheme)
         }
         guard let size = values.fileSize, size >= 0, size <= maximumBytes else {
-            throw GeoJSONImporter.ImportError.limitExceeded("file is over \(maximumBytes / 1_048_576) MB")
+            throw GeoJSONImporter.ImportError.limitExceeded(L10n.text("file is over %1$@ MB", maximumBytes / 1_048_576))
         }
         let data = try Data(contentsOf: url, options: [.mappedIfSafe, .uncached])
         guard data.count <= maximumBytes else {
-            throw GeoJSONImporter.ImportError.limitExceeded("file changed while it was being read")
+            throw GeoJSONImporter.ImportError.limitExceeded(L10n.text("file changed while it was being read"))
         }
         return data
     }
@@ -393,7 +393,7 @@ enum ImportedMapWorker {
 
         var errorDescription: String? {
             switch self {
-            case .invalidMBTiles: return "Couldn't open this file as an MBTiles map."
+            case .invalidMBTiles: return L10n.text("Couldn't open this file as an MBTiles map.")
             }
         }
     }
@@ -573,8 +573,8 @@ struct ContentView: View {
 
     /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
     private var basemapLabel: String? {
-        if importedMapLoaded { return "Offline basemap" }
-        if onlineTilesActive { return "Online basemap" }
+        if importedMapLoaded { return L10n.text("Offline basemap") }
+        if onlineTilesActive { return L10n.text("Online basemap") }
         return nil
     }
     private var basemapColor: Color {
@@ -666,7 +666,7 @@ struct ContentView: View {
                   opsec.mapOrientationMode == .headingUp,
                   locationService.deviceHeading == nil else { return }
             _ = opsec.setMapOrientationMode(.northUp)
-            showTransientToast("No reliable compass reading; switched to North Up.")
+            showTransientToast(L10n.text("No reliable compass reading; switched to North Up."))
         }
     }
 
@@ -682,7 +682,7 @@ struct ContentView: View {
         guard scenePhase == .active,
               !missionDataLocked,
               !appLockOverlayActive else {
-            showTransientToast("Unlock TacMap before opening chat.")
+            showTransientToast(L10n.text("Unlock TacMap before opening chat."))
             return
         }
         chatRoute = route
@@ -690,7 +690,7 @@ struct ContentView: View {
 
     private func presentDirectChat(for actorId: String) {
         guard let recipient = syncManager.chatRecipients[actorId] else {
-            showTransientToast("That unit is not currently ready for encrypted chat.")
+            showTransientToast(L10n.text("That unit is not currently ready for encrypted chat."))
             return
         }
         presentChat(.direct(recipient))
@@ -723,7 +723,7 @@ struct ContentView: View {
         case .disableHeadingUp:
             _ = opsec.setMapOrientationMode(.northUp)
         case .headingUnavailable:
-            showTransientToast("Heading Up is unavailable on this device.")
+            showTransientToast(L10n.text("Heading Up is unavailable on this device."))
         }
     }
 
@@ -752,7 +752,7 @@ struct ContentView: View {
 
                 if onlineTilesActive && onlineTileHealth.temporarilyUnavailable {
                     VStack {
-                        Text("Online basemap temporarily unavailable")
+                        Text(L10n.text("Online basemap temporarily unavailable"))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -845,40 +845,40 @@ struct ContentView: View {
             }
             refreshUnitSyncLifecycle()
         }
-        .alert("Mission Object Not Saved", isPresented: Binding(
+        .alert(L10n.text("Mission Object Not Saved"), isPresented: Binding(
             get: { missionMutationMessage != nil },
             set: { if !$0 { missionMutationMessage = nil } }
         )) {
             Button("OK", role: .cancel) { missionMutationMessage = nil }
         } message: {
-            Text(missionMutationMessage ?? "The change could not be saved. Check available storage, then try again.")
+            Text(missionMutationMessage ?? L10n.text("The change could not be saved. Check available storage, then try again."))
         }
-        .alert("Track Recording", isPresented: Binding(
+        .alert(L10n.text("Track Recording"), isPresented: Binding(
             get: { trackRecorder.persistError != nil && !trackRecorder.requiresUnlock },
             set: { if !$0 { trackRecorder.persistError = nil } }
         )) {
             if !trackRecorder.points.isEmpty || trackRecorder.recovered {
-                Button("Discard Saved Track", role: .destructive) { trackRecorder.discard() }
+                Button(L10n.text("Discard Saved Track"), role: .destructive) { trackRecorder.discard() }
             }
             Button("OK", role: .cancel) { trackRecorder.persistError = nil }
         } message: {
-            Text(trackRecorder.persistError ?? "Track recording failed.")
+            Text(trackRecorder.persistError ?? L10n.text("Track recording failed."))
         }
-        .alert("Location Permission",
+        .alert(L10n.text("Location Permission"),
                isPresented: Binding(
                    get: { recordingCoordinator.guidance != nil },
                    set: { if !$0 { recordingCoordinator.guidance = nil } }
                ),
                presenting: recordingCoordinator.guidance) { guidance in
             if guidance.offersSettings {
-                Button("Open Settings") {
+                Button(L10n.text("Open Settings")) {
                     recordingCoordinator.guidance = nil
                     if let url = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(url)
                     }
                 }
             }
-            Button("Not Now", role: .cancel) { recordingCoordinator.guidance = nil }
+            Button(L10n.text("Not Now"), role: .cancel) { recordingCoordinator.guidance = nil }
         } message: { guidance in
             Text(guidance.message)
         }
@@ -1175,31 +1175,31 @@ struct ContentView: View {
         importerContent
         .background(
             EmptyView()
-                .alert("Map change not saved",
+                .alert(L10n.text("Map change not saved"),
                        isPresented: Binding(
                         get: { mapVM.mapSelectionPersistenceIssue != nil },
                         set: { if !$0 { mapVM.dismissMapSelectionPersistenceIssue() } }
                        ),
                        presenting: mapVM.mapSelectionPersistenceIssue) { _ in
-                    Button("Retry") {
+                    Button(L10n.text("Retry")) {
                         if mapVM.retryMapSelectionPersistence(), calibration.isCalibrating {
                             calibration.cancel()
                         }
                     }
-                    Button("Not Now", role: .cancel) {
+                    Button(L10n.text("Not Now"), role: .cancel) {
                         mapVM.dismissMapSelectionPersistenceIssue()
                     }
                 } message: { issue in
                     Text(issue.message)
                 }
         )
-        .alert("Import",
+        .alert(L10n.text("Import"),
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),
                presenting: importMessage) { _ in
             if pendingImportRetry != nil {
-                Button("Retry") { retryPendingExternalImport() }
-                Button("Cancel", role: .cancel) {
+                Button(L10n.text("Retry")) { retryPendingExternalImport() }
+                Button(L10n.text("Cancel"), role: .cancel) {
                     pendingImportRetry = nil
                     importMessage = nil
                 }
@@ -1289,7 +1289,7 @@ struct ContentView: View {
                             to: waypointStore
                         )
                     } catch {
-                        missionMutationMessage = "The dropped symbol was not added. \(error.localizedDescription) Check available storage, then try again."
+                        missionMutationMessage = L10n.text("The dropped symbol was not added. %1$@ Check available storage, then try again.", error.localizedDescription)
                     }
                 }
             )
@@ -1537,7 +1537,7 @@ struct ContentView: View {
                     )
                     CentreButton(
                         title: locationControl.action == .centreOnLocation && importedMapLoaded
-                            ? "My Location"
+                            ? L10n.text("My Location")
                             : locationControl.title,
                         systemImage: locationControl.systemImage
                     ) {
@@ -1545,7 +1545,7 @@ struct ContentView: View {
                     }
                     .accessibilityHint(locationControl.guidance)
                     if importedMapLoaded {
-                        CentreButton(title: "Map", systemImage: "map") {
+                        CentreButton(title: L10n.text("Map"), systemImage: "map") {
                             mapVM.centreOnMap()
                         }
                     }
@@ -1600,7 +1600,7 @@ struct ContentView: View {
         do {
             _ = try drawingStore.addDurably(shape)
         } catch {
-            missionMutationMessage = "The drawing was not added. \(error.localizedDescription) Check available storage, then draw it again."
+            missionMutationMessage = L10n.text("The drawing was not added. %1$@ Check available storage, then draw it again.", error.localizedDescription)
         }
     }
 
@@ -1635,7 +1635,7 @@ struct ContentView: View {
                 try drawingStore.setLayerVisible(active, true)
                 return active.id
             } catch {
-                missionMutationMessage = "The symbol layer could not be made visible. \(error.localizedDescription) Check available storage, then try again."
+                missionMutationMessage = L10n.text("The symbol layer could not be made visible. %1$@ Check available storage, then try again.", error.localizedDescription)
                 return nil
             }
         }
@@ -1647,7 +1647,7 @@ struct ContentView: View {
                 try drawingStore.setLayerVisible(first, true)
                 return first.id
             } catch {
-                missionMutationMessage = "The symbol layer could not be made visible. \(error.localizedDescription) Check available storage, then try again."
+                missionMutationMessage = L10n.text("The symbol layer could not be made visible. %1$@ Check available storage, then try again.", error.localizedDescription)
                 return nil
             }
         }
@@ -1659,7 +1659,7 @@ struct ContentView: View {
             _ = try drawingStore.addLayerVerbatim(fallback)
             return fallback.id
         } catch {
-            missionMutationMessage = "A symbol layer could not be restored. \(error.localizedDescription) Check available storage, then try again."
+            missionMutationMessage = L10n.text("A symbol layer could not be restored. %1$@ Check available storage, then try again.", error.localizedDescription)
             return nil
         }
     }
@@ -1700,14 +1700,14 @@ struct ContentView: View {
             )
             missionObjectExportURL = url
         } catch {
-            importMessage = "Export failed: \(error.localizedDescription)"
+            importMessage = L10n.text("Export failed: %1$@", error.localizedDescription)
         }
     }
 
     private func handleGeoJSONImport(_ result: Result<[URL], Error>) {
         switch result {
         case .failure(let err):
-            importMessage = "Import failed: \(err.localizedDescription)"
+            importMessage = L10n.text("Import failed: %1$@", err.localizedDescription)
         case .success(let urls):
             guard let url = urls.first else { return }
             beginExternalImport(url: url, kind: .geoJSON, formatName: "GeoJSON")
@@ -1717,7 +1717,7 @@ struct ContentView: View {
     private func handleKMLImport(_ result: Result<[URL], Error>) {
         switch result {
         case .failure(let err):
-            importMessage = "Import failed: \(err.localizedDescription)"
+            importMessage = L10n.text("Import failed: %1$@", err.localizedDescription)
         case .success(let urls):
             guard let url = urls.first else { return }
             beginExternalImport(url: url, kind: .kml, formatName: "KML")
@@ -1742,7 +1742,7 @@ struct ContentView: View {
         do {
             encodedContext = try JSONEncoder().encode(context)
         } catch {
-            importMessage = "Couldn't prepare this \(formatName) import: \(error.localizedDescription)"
+            importMessage = L10n.text("Couldn't prepare this %1$@ import: %2$@", formatName, error.localizedDescription)
             return
         }
         let batchKey = UUID().uuidString
@@ -1769,7 +1769,7 @@ struct ContentView: View {
                 // A replacement import or view teardown intentionally cancelled it.
             } catch {
                 pendingImportRetry = nil
-                importMessage = "Couldn't parse this file as \(formatName): \(error.localizedDescription)"
+                importMessage = L10n.text("Couldn't parse this file as %1$@: %2$@", formatName, error.localizedDescription)
             }
         }
     }
@@ -1833,7 +1833,7 @@ struct ContentView: View {
     private func handleImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure(let error) = result {
-                importMessage = "Import failed: \(error.localizedDescription)"
+                importMessage = L10n.text("Import failed: %1$@", error.localizedDescription)
             }
             return
         }
@@ -1869,7 +1869,7 @@ struct ContentView: View {
                 importMessage = error.localizedDescription
             } catch {
                 if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
-                importMessage = "Couldn't import this PDF map: \(error.localizedDescription)"
+                importMessage = L10n.text("Couldn't import this PDF map: %1$@", error.localizedDescription)
             }
         }
     }
@@ -1880,7 +1880,7 @@ struct ContentView: View {
     private func handleMBTilesImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure(let error) = result {
-                importMessage = "Import failed: \(error.localizedDescription)"
+                importMessage = L10n.text("Import failed: %1$@", error.localizedDescription)
             }
             return
         }
@@ -1903,12 +1903,12 @@ struct ContentView: View {
                     return
                 }
                 copiedURL = nil
-                importMessage = "Loaded offline tiles: \(source.displayName)."
+                importMessage = L10n.text("Loaded offline tiles: %1$@.", source.displayName)
             } catch is CancellationError {
                 if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
             } catch {
                 if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
-                importMessage = "Couldn't import this MBTiles map: \(error.localizedDescription)"
+                importMessage = L10n.text("Couldn't import this MBTiles map: %1$@", error.localizedDescription)
             }
         }
     }
@@ -1923,10 +1923,10 @@ private struct MissionDataUnlockView: View {
             Color.black.ignoresSafeArea()
             VStack(spacing: 16) {
                 Image(systemName: "lock.shield.fill").font(.system(size: 46)).foregroundStyle(.green)
-                Text("Mission data locked").font(.title2.bold()).foregroundStyle(.white)
-                Text(detail ?? "Authenticate to load and edit encrypted mission data.")
+                Text(L10n.text("Mission data locked")).font(.title2.bold()).foregroundStyle(.white)
+                Text(detail ?? L10n.text("Authenticate to load and edit encrypted mission data."))
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                Button("Unlock mission data", action: unlock)
+                Button(L10n.text("Unlock mission data"), action: unlock)
                     .buttonStyle(.borderedProminent)
             }
             .padding(28)
@@ -1940,9 +1940,9 @@ private struct MissionDataUnlockView: View {
 private struct NoBasemapNotice: View {
     var body: some View {
         VStack(spacing: 6) {
-            Text("No basemap").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-            Text("Online basemaps are off. Import an offline map pack, or enable "
-                 + "online basemap tiles in Settings, Privacy & OPSEC.")
+            Text(L10n.text("No basemap")).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+            Text(L10n.text("Online basemaps are off. Import an offline map pack, or enable ")
+                 + L10n.text("online basemap tiles in Settings, Privacy & OPSEC."))
                 .font(.system(size: 11))
                 .foregroundStyle(Color(white: 0.73))
                 .multilineTextAlignment(.center)

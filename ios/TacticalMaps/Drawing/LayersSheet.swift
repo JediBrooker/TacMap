@@ -28,19 +28,19 @@ struct LayersSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Overlays") {
-                    Toggle("Symbology",     isOn: $visibility.waypointsVisible)
-                    Toggle("Drawings",      isOn: $visibility.drawingsVisible)
-                    Toggle("User Location", isOn: $visibility.userLocationVisible)
-                    Toggle("MGRS Grid",     isOn: $visibility.mgrsGridVisible)
-                    Toggle("Terrain Heat-map", isOn: $visibility.terrainHeatmapVisible)
+                Section(L10n.text("Overlays")) {
+                    Toggle(L10n.text("Symbology"),     isOn: $visibility.waypointsVisible)
+                    Toggle(L10n.text("Drawings"),      isOn: $visibility.drawingsVisible)
+                    Toggle(L10n.text("User Location"), isOn: $visibility.userLocationVisible)
+                    Toggle(L10n.text("MGRS Grid"),     isOn: $visibility.mgrsGridVisible)
+                    Toggle(L10n.text("Terrain Heat-map"), isOn: $visibility.terrainHeatmapVisible)
                 }
 
-                Section("Labels") {
-                    Toggle("Unit Labels",    isOn: $visibility.unitLabelsVisible)
-                    Toggle("Unit Amplifiers", isOn: $visibility.unitAmplifiersVisible)
-                    Toggle("Task Labels",    isOn: $visibility.taskLabelsVisible)
-                    Toggle("Drawing Labels", isOn: $visibility.drawingLabelsVisible)
+                Section(L10n.text("Labels")) {
+                    Toggle(L10n.text("Unit Labels"),    isOn: $visibility.unitLabelsVisible)
+                    Toggle(L10n.text("Unit Amplifiers"), isOn: $visibility.unitAmplifiersVisible)
+                    Toggle(L10n.text("Task Labels"),    isOn: $visibility.taskLabelsVisible)
+                    Toggle(L10n.text("Drawing Labels"), isOn: $visibility.drawingLabelsVisible)
                 }
 
                 drawingLayersSection
@@ -54,10 +54,10 @@ struct LayersSheet: View {
                 // the current source.
                 refreshRetainedMap()
             }
-            .navigationTitle("Layers and Labels")
+            .navigationTitle(L10n.text("Layers and Labels"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button(L10n.text("Done")) { dismiss() }
                 }
             }
             .sheet(isPresented: $showingNewLayerSheet) {
@@ -74,11 +74,11 @@ struct LayersSheet: View {
                     )
                 }
             }
-            .alert("Delete layer?",
+            .alert(L10n.text("Delete layer?"),
                    isPresented: Binding(get: { pendingDeleteLayer != nil },
                                         set: { if !$0 { pendingDeleteLayer = nil } }),
                    presenting: pendingDeleteLayer) { layer in
-                Button("Delete", role: .destructive) {
+                Button(L10n.text("Delete"), role: .destructive) {
                     do {
                         _ = try drawingStore.removeLayer(
                             layer,
@@ -89,45 +89,45 @@ struct LayersSheet: View {
                     }
                     pendingDeleteLayer = nil
                 }
-                Button("Cancel", role: .cancel) { pendingDeleteLayer = nil }
+                Button(L10n.text("Cancel"), role: .cancel) { pendingDeleteLayer = nil }
             } message: { layer in
                 let drawings = drawingStore.shapes(in: layer.id).count
                 let waypoints = waypointStore.waypoints.filter { $0.layerID == layer.id }.count
-                Text("\(drawings) drawing\(drawings == 1 ? "" : "s") and \(waypoints) waypoint\(waypoints == 1 ? "" : "s") will move to Friendly before “\(layer.name)” is removed.")
+                Text(L10n.text("%1$@ and %2$@ will move to Friendly before “%3$@” is removed.", L10n.quantity("drawing", drawings), L10n.quantity("waypoint", waypoints), layer.name))
             }
-            .alert("Offline tiles",
+            .alert(L10n.text("Offline tiles"),
                    isPresented: Binding(get: { tilingError != nil },
                                         set: { if !$0 { tilingError = nil } }),
                    presenting: tilingError) { _ in
                 Button("OK", role: .cancel) { tilingError = nil }
             } message: { msg in Text(msg) }
-            .alert("Layer change not saved",
+            .alert(L10n.text("Layer change not saved"),
                    isPresented: Binding(get: { layerMutationError != nil },
                                         set: { if !$0 { layerMutationError = nil } }),
                    presenting: layerMutationError) { _ in
                 Button("OK", role: .cancel) { layerMutationError = nil }
             } message: { msg in Text(msg) }
-            .alert("Delete imported map from this device?",
+            .alert(L10n.text("Delete imported map from this device?"),
                    isPresented: $confirmingImportedMapDeletion) {
-                Button("Delete Map", role: .destructive) { deleteRetainedImportedMap() }
-                Button("Cancel", role: .cancel) {}
+                Button(L10n.text("Delete Map"), role: .destructive) { deleteRetainedImportedMap() }
+                Button(L10n.text("Cancel"), role: .cancel) {}
             } message: {
-                Text("This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.")
+                Text(L10n.text("This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone."))
             }
             .background(
                 EmptyView()
-                    .alert("Map change not saved",
+                    .alert(L10n.text("Map change not saved"),
                            isPresented: Binding(
                             get: { mapVM.mapSelectionPersistenceIssue != nil },
                             set: { if !$0 { mapVM.dismissMapSelectionPersistenceIssue() } }
                            ),
                            presenting: mapVM.mapSelectionPersistenceIssue) { _ in
-                        Button("Retry") {
+                        Button(L10n.text("Retry")) {
                             if mapVM.retryMapSelectionPersistence() {
                                 refreshRetainedMap()
                             }
                         }
-                        Button("Not Now", role: .cancel) {
+                        Button(L10n.text("Not Now"), role: .cancel) {
                             mapVM.dismissMapSelectionPersistenceIssue()
                         }
                     } message: { issue in
@@ -157,7 +157,7 @@ struct LayersSheet: View {
                     }
                 } else {
                     // don't fail silently, the bake didn't produce a usable set
-                    tilingError = "Couldn't generate offline tiles. Check that the device has free storage and try again."
+                    tilingError = L10n.text("Couldn't generate offline tiles. Check that the device has free storage and try again.")
                 }
             }
         }
@@ -167,16 +167,16 @@ struct LayersSheet: View {
     /// complexity limit.
     @ViewBuilder
     private var importedMapSection: some View {
-        Section("Imported Map") {
+        Section(L10n.text("Imported Map")) {
             if let pdfSource = mapVM.mapSource as? PDFMapSource {
                 Toggle(isOn: $visibility.pdfOverlayVisible) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(pdfSource.displayName).font(.callout)
                         Text(pdfSource.bounds == nil
-                             ? "No georeferencing — using map-centre fallback"
+                             ? L10n.text("No georeferencing — using map-centre fallback")
                              : (pdfSource.kind == .geoPDF
-                                ? "Georeferenced (GeoPDF LGIDict)"
-                                : "Manually placed bounds"))
+                                ? L10n.text("Georeferenced (GeoPDF LGIDict)")
+                                : L10n.text("Manually placed bounds")))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -185,10 +185,10 @@ struct LayersSheet: View {
                     dismiss()
                     onCalibrate()
                 } label: {
-                    Label("Calibrate with fiduciaries…", systemImage: "scope")
+                    Label(L10n.text("Calibrate with fiduciaries…"), systemImage: "scope")
                 }
                 if let fids = pdfSource.fiduciaries, !fids.isEmpty {
-                    Text("Currently calibrated with \(fids.count) fiduciaries")
+                    Text(L10n.text("Currently calibrated with %1$@ fiduciaries", fids.count))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -198,10 +198,10 @@ struct LayersSheet: View {
                         : 0
                     VStack(alignment: .leading, spacing: 6) {
                         ProgressView(value: progressValue)
-                        Text(p.total > 0 ? "Generating offline tiles — \(p.done)/\(p.total)" : "Preparing…")
+                        Text(p.total > 0 ? L10n.text("Generating offline tiles — %1$@/%2$@", p.done, p.total) : L10n.text("Preparing…"))
                             .font(.caption2).foregroundStyle(.secondary)
                         Button(role: .cancel) { tilingTask?.cancel() } label: {
-                            Label("Cancel", systemImage: "xmark.circle")
+                            Label(L10n.text("Cancel"), systemImage: "xmark.circle")
                         }
                         .font(.caption)
                     }
@@ -209,9 +209,9 @@ struct LayersSheet: View {
                     Button {
                         generateTiles(from: pdfSource)
                     } label: {
-                        Label("Generate Offline Tiles…", systemImage: "square.stack.3d.down.right")
+                        Label(L10n.text("Generate Offline Tiles…"), systemImage: "square.stack.3d.down.right")
                     }
-                    Text("Bakes this calibrated map into an offline tile set on-device — no desktop tools.")
+                    Text(L10n.text("Bakes this calibrated map into an offline tile set on-device — no desktop tools."))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Button {
@@ -219,17 +219,17 @@ struct LayersSheet: View {
                         refreshRetainedMap()
                     }
                 } label: {
-                    Label("Switch to Online Basemap", systemImage: "globe")
+                    Label(L10n.text("Switch to Online Basemap"), systemImage: "globe")
                 }
                 Button(role: .destructive) {
                     confirmingImportedMapDeletion = true
                 } label: {
-                    Label("Delete PDF Map…", systemImage: "trash")
+                    Label(L10n.text("Delete PDF Map…"), systemImage: "trash")
                 }
             } else if let tileSource = mapVM.mapSource as? OfflineTileMapSource {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(tileSource.displayName).font(.callout)
-                    Text("Offline MBTiles raster — no network needed")
+                    Text(L10n.text("Offline MBTiles raster — no network needed"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -238,29 +238,29 @@ struct LayersSheet: View {
                         refreshRetainedMap()
                     }
                 } label: {
-                    Label("Switch to Online Basemap", systemImage: "globe")
+                    Label(L10n.text("Switch to Online Basemap"), systemImage: "globe")
                 }
                 Button(role: .destructive) {
                     confirmingImportedMapDeletion = true
                 } label: {
-                    Label("Delete Offline Map…", systemImage: "trash")
+                    Label(L10n.text("Delete Offline Map…"), systemImage: "trash")
                 }
             } else if let stored = restorableImportedMap {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(stored.displayName).font(.callout)
-                    Text("Saved locally and available from the Basemap section below")
+                    Text(L10n.text("Saved locally and available from the Basemap section below"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 Button(role: .destructive) {
                     confirmingImportedMapDeletion = true
                 } label: {
-                    Label("Delete Saved Imported Map…", systemImage: "trash")
+                    Label(L10n.text("Delete Saved Imported Map…"), systemImage: "trash")
                 }
             } else {
-                Label("None loaded", systemImage: "doc")
+                Label(L10n.text("None loaded"), systemImage: "doc")
                     .foregroundStyle(.secondary)
-                Text("Import a PDF/GeoPDF via ☰ → Import PDF Map, or an MBTiles raster via ☰ → Import Offline Tiles.")
+                Text(L10n.text("Import a PDF/GeoPDF via ☰ → Import PDF Map, or an MBTiles raster via ☰ → Import Offline Tiles."))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -269,7 +269,7 @@ struct LayersSheet: View {
 
     @ViewBuilder
     private var basemapSection: some View {
-        Section("Basemap") {
+        Section(L10n.text("Basemap")) {
             let importedActive = mapVM.mapSource is PDFMapSource
                 || mapVM.mapSource is OfflineTileMapSource
             // Switching basemap just changes the shown layer, doesn't
@@ -289,26 +289,26 @@ struct LayersSheet: View {
                 }
             }
             if !importedActive, let stored = restorableImportedMap {
-                let title = "Imported map (" + stored.displayName + ")"
+                let title = L10n.text("Imported map (") + stored.displayName + ")"
                 let icon = stored is OfflineTileMapSource ? "square.stack.3d.up" : "doc.viewfinder"
                 basemapRow(title: title, systemImage: icon, isActive: false) {
                     if mapVM.restoreRetainedMap(stored) { refreshRetainedMap() }
                 }
             }
             if !importedActive, let retainedMapError {
-                Label("Saved imported map unavailable", systemImage: "exclamationmark.triangle")
+                Label(L10n.text("Saved imported map unavailable"), systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
                 Text(retainedMapError)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Button("Remove Saved Map Entry") {
+                Button(L10n.text("Remove Saved Map Entry")) {
                     if mapVM.removeUnavailableRetainedMapEntry() {
                         refreshRetainedMap()
                     }
                 }
             }
             if importedActive {
-                Text("An imported map is active — pick a basemap above to view it instead; the imported map stays available to switch back to.")
+                Text(L10n.text("An imported map is active — pick a basemap above to view it instead; the imported map stays available to switch back to."))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -387,15 +387,15 @@ struct LayersSheet: View {
             Button {
                 showingNewLayerSheet = true
             } label: {
-                Label("New Layer…", systemImage: "plus.circle")
+                Label(L10n.text("New Layer…"), systemImage: "plus.circle")
             }
         } header: {
-            Text("Drawing Layers")
+            Text(L10n.text("Drawing Layers"))
         } footer: {
-            Text("Toggle to hide a layer. Deleting a custom layer moves its waypoints and drawings to Friendly first. Default layers are always preserved.")
+            Text(L10n.text("Toggle to hide a layer. Deleting a custom layer moves its waypoints and drawings to Friendly first. Default layers are always preserved."))
                 .font(.caption2)
         }
-        .alert("Layer not deleted",
+        .alert(L10n.text("Layer not deleted"),
                isPresented: Binding(get: { layerDeleteError != nil },
                                     set: { if !$0 { layerDeleteError = nil } }),
                presenting: layerDeleteError) { _ in
@@ -413,11 +413,11 @@ struct LayersSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(layer.name)
                     .font(.callout)
-                Text("\(drawingStore.shapes(in: layer.id).count) drawing\(drawingStore.shapes(in: layer.id).count == 1 ? "" : "s")")
+                Text(L10n.quantity("drawing", drawingStore.shapes(in: layer.id).count))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 if drawingStore.needsLegacyProtectionReview(layer) {
-                    Text("Legacy layer — classify before editing or deleting")
+                    Text(L10n.text("Legacy layer — classify before editing or deleting"))
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }
@@ -434,8 +434,8 @@ struct LayersSheet: View {
                 }
             ))
             .labelsHidden()
-            .accessibilityLabel("\(layer.name) visibility")
-            .accessibilityValue(layer.visible ? "Visible" : "Hidden")
+            .accessibilityLabel(L10n.text("%1$@ visibility", layer.name))
+            .accessibilityValue(layer.visible ? L10n.text("Visible") : L10n.text("Hidden"))
         }
         .contentShape(Rectangle())
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -444,7 +444,7 @@ struct LayersSheet: View {
                 Button(role: .destructive) {
                     pendingDeleteLayer = layer
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label(L10n.text("Delete"), systemImage: "trash")
                 }
             }
             if !drawingStore.isProtectedDefaultLayer(layer),
@@ -452,7 +452,7 @@ struct LayersSheet: View {
                 Button {
                     editingLayer = layer
                 } label: {
-                    Label("Edit", systemImage: "pencil")
+                    Label(L10n.text("Edit"), systemImage: "pencil")
                 }
                 .tint(.indigo)
             }
@@ -469,7 +469,7 @@ struct LayersSheet: View {
                         layerMutationError = error.localizedDescription
                     }
                 } label: {
-                    Label("Confirm as Custom Layer", systemImage: "checkmark.shield")
+                    Label(L10n.text("Confirm as Custom Layer"), systemImage: "checkmark.shield")
                 }
                 Button {
                     do {
@@ -481,18 +481,18 @@ struct LayersSheet: View {
                         layerMutationError = error.localizedDescription
                     }
                 } label: {
-                    Label("Keep as Default Layer", systemImage: "lock.shield")
+                    Label(L10n.text("Keep as Default Layer"), systemImage: "lock.shield")
                 }
             } else if !drawingStore.isProtectedDefaultLayer(layer) {
                 Button {
                     editingLayer = layer
                 } label: {
-                    Label("Edit name and colour", systemImage: "pencil")
+                    Label(L10n.text("Edit name and colour"), systemImage: "pencil")
                 }
                 Button(role: .destructive) {
                     pendingDeleteLayer = layer
                 } label: {
-                    Label("Delete layer", systemImage: "trash")
+                    Label(L10n.text("Delete layer"), systemImage: "trash")
                 }
             }
         }
@@ -510,11 +510,11 @@ private struct NewLayerSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Name") {
-                    TextField("e.g. Friendly, Hostile, Civilian", text: $name)
+                Section(L10n.text("Name")) {
+                    TextField(L10n.text("e.g. Friendly, Hostile, Civilian"), text: $name)
                         .autocorrectionDisabled()
                 }
-                Section("Colour") {
+                Section(L10n.text("Colour")) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 6),
                               spacing: 12) {
                         ForEach(DrawingPalette.swatches) { swatch in
@@ -545,14 +545,14 @@ private struct NewLayerSheet: View {
                     .padding(.vertical, 4)
                 }
             }
-            .navigationTitle("New Layer")
+            .navigationTitle(L10n.text("New Layer"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.text("Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Create") {
+                    Button(L10n.text("Create")) {
                         let trimmed = name.trimmingCharacters(in: .whitespaces)
                         do {
                             try onCreate(trimmed, hex)
@@ -564,7 +564,7 @@ private struct NewLayerSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .alert("Layer not created",
+            .alert(L10n.text("Layer not created"),
                    isPresented: Binding(get: { saveError != nil },
                                         set: { if !$0 { saveError = nil } }),
                    presenting: saveError) { _ in
@@ -594,11 +594,11 @@ private struct EditLayerSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Name") {
-                    TextField("Layer name", text: $name)
+                Section(L10n.text("Name")) {
+                    TextField(L10n.text("Layer name"), text: $name)
                         .autocorrectionDisabled()
                 }
-                Section("Colour") {
+                Section(L10n.text("Colour")) {
                     LazyVGrid(
                         columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 6),
                         spacing: 12
@@ -628,14 +628,14 @@ private struct EditLayerSheet: View {
                     .padding(.vertical, 4)
                 }
             }
-            .navigationTitle("Edit Layer")
+            .navigationTitle(L10n.text("Edit Layer"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.text("Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
+                    Button(L10n.text("Save")) {
                         do {
                             try onSave(name, hex)
                             dismiss()
@@ -646,7 +646,7 @@ private struct EditLayerSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Layer not saved",
+            .alert(L10n.text("Layer not saved"),
                    isPresented: Binding(get: { saveError != nil },
                                         set: { if !$0 { saveError = nil } }),
                    presenting: saveError) { _ in

@@ -3,7 +3,7 @@ import Foundation
 /// Truthful boundary for the combined GeoJSON action. Recorded routes are not
 /// accepted here; they remain a separate GPX workflow.
 enum MissionObjectExport {
-    static let actionTitle = "Export All Mission Objects"
+    static let actionTitle = L10n.text("Export All Mission Objects")
     static let shareTitle = actionTitle
     static let fileNamePrefix = "TacMap-MissionObjects"
 

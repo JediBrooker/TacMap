@@ -51,7 +51,7 @@ struct HamburgerMenu: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Menu")
+        .accessibilityLabel(L10n.text("Menu"))
         /// Large detent only - medium sheet clips the bottom rows on
         /// shorter iPhones. ScrollView so everything's reachable.
         .sheet(isPresented: $isOpen, onDismiss: runPendingAction) {
@@ -60,38 +60,38 @@ struct HamburgerMenu: View {
                     VStack(alignment: .leading, spacing: 0) {
                         if !isPurchased {
                             trialBanner
-                            row("Unlock Full Version", systemImage: "cart") { close(onUnlock) }
+                            row(L10n.text("Unlock Full Version"), systemImage: "cart") { close(onUnlock) }
                             divider
                         }
-                        row("Search…",         systemImage: "magnifyingglass")     { close(onSearch) }
+                        row(L10n.text("Search…"),         systemImage: "magnifyingglass")     { close(onSearch) }
                         divider
-                        row("Symbology",       systemImage: "mappin.and.ellipse")  { close(onWaypoints) }
-                        row("Drawings",        systemImage: "scribble.variable")   { close(onDrawings) }
-                        row("Layers and Labels", systemImage: "square.3.stack.3d") { close(onLayers) }
-                        row("Measure",         systemImage: "ruler")               { close(onMeasure) }
-                        row("Weather & UAV Safety", systemImage: "wind")            { close(onWeather) }
+                        row(L10n.text("Symbology"),       systemImage: "mappin.and.ellipse")  { close(onWaypoints) }
+                        row(L10n.text("Drawings"),        systemImage: "scribble.variable")   { close(onDrawings) }
+                        row(L10n.text("Layers and Labels"), systemImage: "square.3.stack.3d") { close(onLayers) }
+                        row(L10n.text("Measure"),         systemImage: "ruler")               { close(onMeasure) }
+                        row(L10n.text("Weather & UAV Safety"), systemImage: "wind")            { close(onWeather) }
                         divider
                         // All file import/export lives behind one row so the
                         // main menu stays short. Pushes a sub-page within the
                         // sheet's NavigationStack (no sheet-over-sheet races).
-                        navRow("Import / Export…", systemImage: "square.and.arrow.up.on.square")
+                        navRow(L10n.text("Import / Export…"), systemImage: "square.and.arrow.up.on.square")
                         divider
                         row(recordingMenuTitle,
                             systemImage: recordingMenuIcon)
                             { close(onToggleTrackRecording) }
                         divider
-                        row("TacMap Chat…", systemImage: "bubble.left.and.bubble.right.fill") { close(onChat) }
-                        row("Unit Sync…", systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
-                        row("App Lock…", systemImage: "lock.shield")               { close(onAppLock) }
-                        row("Settings, Privacy & OPSEC", systemImage: "eye.slash.fill") { close(onOpsec) }
-                        row("About & Credits", systemImage: "info.circle")         { close(onAbout) }
+                        row(L10n.text("TacMap Chat…"), systemImage: "bubble.left.and.bubble.right.fill") { close(onChat) }
+                        row(L10n.text("Unit Sync…"), systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
+                        row(L10n.text("App Lock…"), systemImage: "lock.shield")               { close(onAppLock) }
+                        row(L10n.text("Settings, Privacy & OPSEC"), systemImage: "eye.slash.fill") { close(onOpsec) }
+                        row(L10n.text("About & Credits"), systemImage: "info.circle")         { close(onAbout) }
                     }
                 }
-                .navigationTitle("Menu")
+                .navigationTitle(L10n.text("Menu"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Close") { isOpen = false }
+                        Button(L10n.text("Close")) { isOpen = false }
                     }
                 }
             }
@@ -117,15 +117,15 @@ struct HamburgerMenu: View {
     private var recordingMenuTitle: String {
         switch recordingState {
         case .idle:
-            return "Start Track Recording"
+            return L10n.text("Start Track Recording")
         case .awaitingPermission:
-            return "Cancel Track Recording Start"
+            return L10n.text("Cancel Track Recording Start")
         case .starting:
-            return "Starting Track Recording…"
+            return L10n.text("Starting Track Recording…")
         case .recording:
-            return "Stop Track Recording (\(trackPointCount) pts)"
+            return L10n.text("Stop Track Recording (%1$@ pts)", trackPointCount)
         case .interrupted:
-            return "Retry Track Recording"
+            return L10n.text("Retry Track Recording")
         }
     }
 
@@ -200,20 +200,20 @@ struct HamburgerMenu: View {
     private var importExportPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                sectionHeader("Import")
-                row("PDF Map…", systemImage: "doc.badge.plus")               { close(onImport) }
-                row("Offline Tiles…", systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }
-                row("GeoJSON…", systemImage: "square.and.arrow.down")         { close(onImportGeoJSON) }
+                sectionHeader(L10n.text("Import"))
+                row(L10n.text("PDF Map…"), systemImage: "doc.badge.plus")               { close(onImport) }
+                row(L10n.text("Offline Tiles…"), systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }
+                row(L10n.text("GeoJSON…"), systemImage: "square.and.arrow.down")         { close(onImportGeoJSON) }
                 row("KML / KMZ…", systemImage: "globe.desk")                  { close(onImportKML) }
                 divider
-                sectionHeader("Export")
-                row("GeoJSON…", systemImage: "square.and.arrow.up")           { close(onExport) }
+                sectionHeader(L10n.text("Export"))
+                row(L10n.text("GeoJSON…"), systemImage: "square.and.arrow.up")           { close(onExport) }
                 row("\(MissionObjectExport.actionTitle)…", systemImage: "square.and.arrow.up.on.square") { close(onExportAll) }
-                row("GPX Track…", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                row(L10n.text("GPX Track…"), systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                     { close(onExportGPX) }
             }
         }
-        .navigationTitle("Import / Export")
+        .navigationTitle(L10n.text("Import / Export"))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -241,8 +241,8 @@ struct HamburgerMenu: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 28, alignment: .center)
             Text(trialDaysRemaining > 0
-                 ? "Free trial — \(trialDaysRemaining) day\(trialDaysRemaining == 1 ? "" : "s") left"
-                 : "Free trial ended")
+                 ? L10n.quantity("trial_remaining", trialDaysRemaining)
+                 : L10n.text("Free trial ended"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer()
@@ -271,7 +271,7 @@ struct RecordingIndicator: View {
                     .tracking(1)
                     .foregroundStyle(.white)
                 if isRecording {
-                    Text("· \(pointCount) pt\(pointCount == 1 ? "" : "s")")
+                    Text("· " + L10n.quantity("point", pointCount))
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.85))
                 }
@@ -306,9 +306,9 @@ struct RecordingIndicator: View {
 
     private var statusTitle: String {
         switch state {
-        case .awaitingPermission: return "AWAITING LOCATION"
+        case .awaitingPermission: return L10n.text("AWAITING LOCATION")
         case .starting: return "STARTING"
-        case .recording: return "REC"
+        case .recording: return L10n.text("REC")
         case .interrupted: return "INTERRUPTED"
         case .idle: return "IDLE"
         }
@@ -332,15 +332,15 @@ struct RecordingIndicator: View {
     private var accessibilityText: String {
         switch state {
         case .awaitingPermission:
-            return "Track recording awaiting Location permission. Tap to cancel."
+            return L10n.text("Track recording awaiting Location permission. Tap to cancel.")
         case .starting:
-            return "Track recording is starting."
+            return L10n.text("Track recording is starting.")
         case .recording:
-            return "Recording track — \(pointCount) points. Tap to stop."
+            return L10n.text("Recording track — %1$@ points. Tap to stop.", pointCount)
         case .interrupted:
-            return "Track recording interrupted. Tap to dismiss."
+            return L10n.text("Track recording interrupted. Tap to dismiss.")
         case .idle:
-            return "Track recording idle."
+            return L10n.text("Track recording idle.")
         }
     }
 }
@@ -366,8 +366,8 @@ struct LockButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(locked ? "Graphics locked — tap to unlock"
-                                   : "Lock graphics in place")
+        .accessibilityLabel(locked ? L10n.text("Graphics locked — tap to unlock")
+                                   : L10n.text("Lock graphics in place"))
     }
 }
 
@@ -389,7 +389,7 @@ struct UnitLabelsToggle: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(active ? "Hide unit labels" : "Show unit labels")
+        .accessibilityLabel(active ? L10n.text("Hide unit labels") : L10n.text("Show unit labels"))
     }
 }
 
@@ -432,14 +432,14 @@ struct TacMapChatShortcutButton: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("TacMap Chat")
         .accessibilityValue(unreadAccessibilityValue)
-        .accessibilityHint("Opens encrypted chat for this Unit Sync room")
+        .accessibilityHint(L10n.text("Opens encrypted chat for this Unit Sync room"))
         .animation(.easeInOut(duration: 0.16), value: store.unreadMessageCount)
     }
 
     private var unreadAccessibilityValue: String {
         let count = store.unreadMessageCount
-        guard count > 0 else { return "No unread messages" }
-        return "\(count) unread message\(count == 1 ? "" : "s")"
+        guard count > 0 else { return L10n.text("No unread messages") }
+        return L10n.quantity("unread", count)
     }
 }
 
@@ -460,8 +460,8 @@ struct QuickAddSymbolButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Add symbol at crosshair")
-        .accessibilityHint("Opens the symbol builder at the centre of the map")
+        .accessibilityLabel(L10n.text("Add symbol at crosshair"))
+        .accessibilityHint(L10n.text("Opens the symbol builder at the centre of the map"))
     }
 }
 
@@ -491,8 +491,8 @@ struct CompassChip: View {
     }
 
     private var referenceAccessibilityLabel: String {
-        guard orientationMode == .headingUp else { return "true north" }
-        return northReference?.accessibilityLabel ?? "north reference pending"
+        guard orientationMode == .headingUp else { return L10n.text("true north") }
+        return northReference?.accessibilityLabel ?? L10n.text("north reference pending")
     }
 
     private var activeStrokeColor: Color {
@@ -506,13 +506,13 @@ struct CompassChip: View {
             headingAvailable: headingAvailable
         ) {
         case .resetNorth:
-            return "Resets the map to north"
+            return L10n.text("Resets the map to north")
         case .enableHeadingUp:
-            return "Switches to Heading Up using the phone compass"
+            return L10n.text("Switches to Heading Up using the phone compass")
         case .disableHeadingUp:
-            return "Switches to North Up and resets the map to north"
+            return L10n.text("Switches to North Up and resets the map to north")
         case .headingUnavailable:
-            return "Heading Up is unavailable on this device"
+            return L10n.text("Heading Up is unavailable on this device")
         }
     }
 
@@ -576,7 +576,7 @@ struct CompassChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
-            "\(orientationMode.label), map heading \(milsString) mils, \(referenceAccessibilityLabel)"
+            L10n.text("%1$@, map heading %2$@ mils, %3$@", orientationMode.label, milsString, referenceAccessibilityLabel)
         )
         .accessibilityHint(tapHint)
     }

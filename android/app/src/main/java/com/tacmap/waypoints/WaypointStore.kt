@@ -1,5 +1,7 @@
 package com.tacmap.waypoints
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import com.tacmap.util.SafeStore
 import com.tacmap.util.MissionStorePersistence
@@ -233,11 +235,11 @@ class WaypointStore private constructor(
             }
             is SafeStore.LoadResult.Empty -> Unit
             is SafeStore.LoadResult.Corrupt ->
-                _loadError.value = "Saved waypoints could not be read and were set aside " +
-                    "(${r.quarantinedTo?.name ?: "recovery copy"}). Starting with no waypoints."
+                _loadError.value = L10n.text("Saved waypoints could not be read and were set aside ") +
+                    L10n.text("(%1\$s). Starting with no waypoints.", r.quarantinedTo?.name ?: "recovery copy")
             is SafeStore.LoadResult.Locked -> {
                 _locked.value = true
-                _loadError.value = "Waypoints are encrypted and locked. ${r.error.message}"
+                _loadError.value = L10n.text("Waypoints are encrypted and locked. %1\$s", r.error.message)
             }
         }
     }
@@ -246,14 +248,14 @@ class WaypointStore private constructor(
         // Refuse to write while locked. The file on disk is fine, we just
         // can't read it yet, and an empty list must never land on top of it.
         if (_locked.value) {
-            _loadError.value = "Waypoints are locked and the change was not saved."
+            _loadError.value = L10n.text("Waypoints are locked and the change was not saved.")
             return false
         }
         return runCatching { persistence.write(file, LABEL, json.encodeToString(candidate)) }
             .fold(
                 onSuccess = { true },
                 onFailure = {
-                    _loadError.value = "Could not save waypoints to disk; the change was reverted: ${it.message}"
+                    _loadError.value = L10n.text("Could not save waypoints to disk; the change was reverted: %1\$s", it.message)
                     false
                 },
             )

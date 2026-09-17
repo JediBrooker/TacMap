@@ -1,5 +1,7 @@
 package com.tacmap.waypoints
 
+import com.tacmap.localization.L10n
+
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -57,8 +59,8 @@ const val UNIQUE_IDENTIFIER_MAX_CODE_POINTS = 30
 @Serializable
 enum class ReinforcementStatus(val displayName: String, val amplifier: String) {
     @SerialName("none") NONE("None", ""),
-    @SerialName("reinforced") REINFORCED("Reinforced (+)", "(+)"),
-    @SerialName("reduced") REDUCED("Reduced (-)", "(-)")
+    @SerialName("reinforced") REINFORCED(L10n.text("Reinforced (+)"), "(+)"),
+    @SerialName("reduced") REDUCED(L10n.text("Reduced (-)"), "(-)")
 }
 
 internal fun boundUnitAmplifier(value: String, maxCodePoints: Int): String {
@@ -110,8 +112,8 @@ sealed interface WaypointKind {
 
     @Serializable
     data object Generic : WaypointKind {
-        override val displayName: String = "Waypoint"
-        override val categoryDisplayName: String = "Field Marker"
+        override val displayName: String get() = L10n.text("Waypoint")
+        override val categoryDisplayName: String get() = L10n.text("Field Marker")
     }
 
     @Serializable
@@ -126,7 +128,7 @@ sealed interface WaypointKind {
                 }
                 append(spec.echelon.displayName)
             }
-        override val categoryDisplayName: String = "Military Unit (APP-6C)"
+        override val categoryDisplayName: String get() = L10n.text("Military Unit (APP-6C)")
     }
 
     @Serializable
@@ -134,7 +136,7 @@ sealed interface WaypointKind {
         val measure: TacticalControlMeasure = TacticalControlMeasure.ASSEMBLY_AREA
     ) : WaypointKind {
         override val displayName: String get() = measure.displayName
-        override val categoryDisplayName: String = "Tactical Task"
+        override val categoryDisplayName: String get() = L10n.text("Tactical Task")
     }
 
     @Serializable
@@ -223,35 +225,41 @@ data class MilitarySymbolSpec(
  * Kept in sync with iOS TaskColor.
  */
 @Serializable
-enum class TaskColor(val displayName: String, val argb: Int) {
-    @SerialName("black") BLACK("Black", 0xFF000000.toInt()),
+enum class TaskColor(private val displayNameKey: String, val argb: Int) {
+    @SerialName("black") BLACK(L10n.text("Black"), 0xFF000000.toInt()),
     @SerialName("blue") BLUE("Blue (Friendly)", 0xFF0E5FD8.toInt()),
     @SerialName("red") RED("Red (Hostile)", 0xFFD8281F.toInt()),
     @SerialName("green") GREEN("Green (Neutral)", 0xFF1E8A34.toInt()),
-    @SerialName("yellow") YELLOW("Yellow (Unknown)", 0xFFE2A400.toInt())
+    @SerialName("yellow") YELLOW("Yellow (Unknown)", 0xFFE2A400.toInt());
+
+    val displayName: String get() = L10n.text(displayNameKey)
 }
 
 @Serializable
-enum class SymbolAffiliation(val displayName: String, val fillColor: Int) {
+enum class SymbolAffiliation(private val displayNameKey: String, val fillColor: Int) {
     @SerialName("friend") FRIEND("Friendly", 0xFF80E0FF.toInt()),
     @SerialName("hostile") HOSTILE("Hostile", 0xFFFF8080.toInt()),
     @SerialName("neutral") NEUTRAL("Neutral", 0xFFAAFFAA.toInt()),
-    @SerialName("unknown") UNKNOWN("Unknown", 0xFFFFFF80.toInt())
+    @SerialName("unknown") UNKNOWN("Unknown", 0xFFFFFF80.toInt());
+
+    val displayName: String get() = L10n.text(displayNameKey)
 }
 
 @Serializable
-enum class SymbolEchelon(val displayName: String, val glyph: String) {
+enum class SymbolEchelon(private val displayNameKey: String, val glyph: String) {
     @SerialName("team") TEAM("Team / Crew", "Ø"),
     @SerialName("section") SECTION("Section", "●"),
     @SerialName("platoon") PLATOON("Platoon", "●●●"),
     @SerialName("company") COMPANY("Company", "I"),
     @SerialName("battalionRegiment") BATTALION_REGIMENT("Battalion / Regiment", "II"),
     @SerialName("brigade") BRIGADE("Brigade", "X"),
-    @SerialName("division") DIVISION("Division", "XX")
+    @SerialName("division") DIVISION("Division", "XX");
+
+    val displayName: String get() = L10n.text(displayNameKey)
 }
 
 @Serializable
-enum class SymbolFunction(val assetName: String, val displayName: String) {
+enum class SymbolFunction(val assetName: String, private val displayNameKey: String) {
     @SerialName("airDefence") AIR_DEFENCE("airDefence", "Air Defence"),
     @SerialName("ammunition") AMMUNITION("ammunition", "Ammunition"),
     @SerialName("antiTank") ANTI_TANK("antiTank", "Anti-Tank"),
@@ -282,6 +290,9 @@ enum class SymbolFunction(val assetName: String, val displayName: String) {
     @SerialName("uav") UAV("uav", "Unmanned Air Vehicle"),
     @SerialName("unspecified") UNSPECIFIED("unspecified", "No Branch");
 
+    val displayName: String get() = L10n.text(displayNameKey)
+
+
     companion object {
         val pickerEntries: List<SymbolFunction>
             get() = entries
@@ -291,7 +302,7 @@ enum class SymbolFunction(val assetName: String, val displayName: String) {
 }
 
 @Serializable
-enum class TacticalControlMeasure(val assetName: String, val displayName: String) {
+enum class TacticalControlMeasure(val assetName: String, private val displayNameKey: String) {
     @SerialName("block") BLOCK("block", "Block"),
     @SerialName("breach") BREACH("breach", "Breach"),
     @SerialName("bypass") BYPASS("bypass", "Bypass"),
@@ -330,6 +341,9 @@ enum class TacticalControlMeasure(val assetName: String, val displayName: String
     @SerialName("turn") TURN("turn", "Turn"),
     @SerialName("assemblyArea") ASSEMBLY_AREA("assemblyArea", "Assembly Area"),
     @SerialName("formUpPoint") FORM_UP_POINT("formUpPoint", "Form-Up Point");
+
+    val displayName: String get() = L10n.text(displayNameKey)
+
 
     companion object {
         val pickerEntries: List<TacticalControlMeasure>

@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import android.location.Geocoder
 import androidx.compose.foundation.clickable
@@ -113,14 +115,14 @@ fun SearchDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Search") },
+        title = { Text(L10n.text("Search")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Place, MGRS, grid, or lat/lon") },
-                    placeholder = { Text("Holsworthy, 1885, or 56HLH 12345 67890") },
+                    label = { Text(L10n.text("Place, MGRS, grid, or lat/lon")) },
+                    placeholder = { Text(L10n.text("Holsworthy, 1885, or 56HLH 12345 67890")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -131,7 +133,7 @@ fun SearchDialog(
                     if (offline.results.isNotEmpty()) {
                         item(key = "offline-heading") {
                             Text(
-                                "Mission & coordinates",
+                                L10n.text("Mission & coordinates"),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color(0xFFBDBDBD),
@@ -163,7 +165,7 @@ fun SearchDialog(
                     if (placeResults.isNotEmpty()) {
                         item(key = "places-heading") {
                             Text(
-                                "Online places",
+                                L10n.text("Online places"),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color(0xFFBDBDBD),
@@ -185,7 +187,7 @@ fun SearchDialog(
                     if (isSearching) {
                         item(key = "searching") {
                             Text(
-                                "Searching places...",
+                                L10n.text("Searching places..."),
                                 modifier = Modifier.padding(vertical = 8.dp),
                                 fontSize = 12.sp,
                                 color = Color(0xFFBDBDBD)
@@ -206,7 +208,7 @@ fun SearchDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(L10n.text("Close"))
             }
         }
     )
@@ -314,10 +316,10 @@ internal suspend fun performOnlinePlaceLookup(
     }
 }
 
-internal const val PLACES_DISABLED_STATUS =
-    "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work."
-internal const val PLACES_OFFLINE_STATUS =
-    "Place search unavailable offline — MGRS, grid and lat/lon still work."
+internal val PLACES_DISABLED_STATUS =
+    L10n.text("Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work.")
+internal val PLACES_OFFLINE_STATUS =
+    L10n.text("Place search unavailable offline — MGRS, grid and lat/lon still work.")
 
 internal fun buildSearchResults(
     rawQuery: String,
@@ -369,7 +371,7 @@ internal fun searchOffline(
             results = listOf(SearchResult(
                 id = "coordinate:mgrs",
                 title = "MGRS",
-                subtitle = "${resolved.display} · Centre of ${resolved.squareSizeLabel} grid square",
+                subtitle = L10n.text("%1\$s · Centre of %2\$s grid square", resolved.display, resolved.squareSizeLabel),
                 latitude = resolved.latitude,
                 longitude = resolved.longitude,
                 isCoordinate = true,
@@ -404,7 +406,7 @@ internal fun searchOffline(
             results = listOf(
                 SearchResult(
                     id = "coordinate:lat-lon",
-                    title = "Latitude / Longitude",
+                    title = L10n.text("Latitude / Longitude"),
                     subtitle = "%.5f, %.5f".format(decimal.latitude, decimal.longitude),
                     latitude = decimal.latitude,
                     longitude = decimal.longitude,
@@ -491,7 +493,7 @@ private fun DrawingFeature.toSearchResult(): SearchResult? = centerCoordinate()?
     SearchResult(
         id = "drawing:$id",
         title = name,
-        subtitle = "${geometry.displayName} - ${points.size} pts",
+        subtitle = L10n.text("%1\$s - %2\$s pts", geometry.displayName, points.size),
         latitude = lat,
         longitude = lng,
         drawingId = id,
@@ -561,7 +563,7 @@ internal fun partialGridResult(raw: String, cameraLat: Double, cameraLng: Double
     return SearchResult(
         id = "partial-mgrs:${resolved.display.replace(" ", "")}:$digits",
         title = resolved.display,
-        subtitle = "Centre of ${resolved.squareSizeLabel} grid square",
+        subtitle = L10n.text("Centre of %1\$s grid square", resolved.squareSizeLabel),
         latitude = resolved.latitude,
         longitude = resolved.longitude,
         isCoordinate = true
@@ -629,5 +631,5 @@ internal fun looksCoordinateShaped(raw: String): Boolean {
     return firstCommaComponent.firstOrNull()?.let { it.isDigit() || it in "+-." } == true
 }
 
-internal const val INVALID_COORDINATE_STATUS =
-    "Latitude must be between -90 and 90, and longitude between -180 and 180."
+internal val INVALID_COORDINATE_STATUS =
+    L10n.text("Latitude must be between -90 and 90, and longitude between -180 and 180.")

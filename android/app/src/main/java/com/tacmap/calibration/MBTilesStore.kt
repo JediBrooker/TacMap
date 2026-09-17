@@ -1,5 +1,7 @@
 package com.tacmap.calibration
 
+import com.tacmap.localization.L10n
+
 import android.database.sqlite.SQLiteDatabase
 import java.io.Closeable
 import java.util.Locale
@@ -37,7 +39,7 @@ class MBTilesStore private constructor(private val db: SQLiteDatabase) : Closeab
             }
         }
         val tileZoomRange = db.rawQuery("SELECT MIN(zoom_level), MAX(zoom_level) FROM tiles", null).use { c ->
-            require(c.moveToFirst() && !c.isNull(0) && !c.isNull(1)) { "MBTiles has no raster tiles." }
+            require(c.moveToFirst() && !c.isNull(0) && !c.isNull(1)) { L10n.text("MBTiles has no raster tiles.") }
             strictZoom(c.getString(0)) to strictZoom(c.getString(1))
         }
         return validatedMBTilesMetadata(rows, tileZoomRange)
@@ -96,11 +98,11 @@ class MBTilesStore private constructor(private val db: SQLiteDatabase) : Closeab
 }
 
 private fun strictZoom(value: String): Int {
-    require(value.length <= 16) { "Invalid MBTiles zoom metadata." }
+    require(value.length <= 16) { L10n.text("Invalid MBTiles zoom metadata.") }
     val trimmed = value.trim()
-    require(trimmed.matches(Regex("(?:0|[1-9][0-9]?)"))) { "Invalid MBTiles zoom metadata." }
+    require(trimmed.matches(Regex("(?:0|[1-9][0-9]?)"))) { L10n.text("Invalid MBTiles zoom metadata.") }
     return trimmed.toInt().also {
-        require(it in 0..MBTilesStore.MAX_ZOOM) { "MBTiles zoom is outside the supported range." }
+        require(it in 0..MBTilesStore.MAX_ZOOM) { L10n.text("MBTiles zoom is outside the supported range.") }
     }
 }
 
@@ -111,26 +113,26 @@ internal fun validatedMBTilesMetadata(
     val tileMin = tileZoomRange.first
     val tileMax = tileZoomRange.second
     require(tileMin in 0..MBTilesStore.MAX_ZOOM && tileMax in tileMin..MBTilesStore.MAX_ZOOM) {
-        "Invalid MBTiles tile zoom range."
+        L10n.text("Invalid MBTiles tile zoom range.")
     }
     val minZoom = rows["minzoom"]?.let(::strictZoom) ?: tileMin
     val maxZoom = rows["maxzoom"]?.let(::strictZoom) ?: tileMax
-    require(minZoom <= maxZoom) { "MBTiles minzoom must not exceed maxzoom." }
+    require(minZoom <= maxZoom) { L10n.text("MBTiles minzoom must not exceed maxzoom.") }
 
     val bounds = rows["bounds"]?.let { encoded ->
-        require(encoded.length <= 256) { "Invalid MBTiles bounds metadata." }
+        require(encoded.length <= 256) { L10n.text("Invalid MBTiles bounds metadata.") }
         val values = encoded.split(',')
-        require(values.size == 4) { "Invalid MBTiles bounds metadata." }
+        require(values.size == 4) { L10n.text("Invalid MBTiles bounds metadata.") }
         val parsed = values.map { component ->
             component.trim().toDoubleOrNull()
                 ?.takeIf(Double::isFinite)
-                ?: throw IllegalArgumentException("Invalid MBTiles bounds metadata.")
+                ?: throw IllegalArgumentException(L10n.text("Invalid MBTiles bounds metadata."))
         }
         val (minLon, minLat, maxLon, maxLat) = parsed
         require(minLon in -180.0..180.0 && maxLon in -180.0..180.0 &&
             minLat in -90.0..90.0 && maxLat in -90.0..90.0 &&
             minLon < maxLon && minLat < maxLat
-        ) { "MBTiles bounds are non-finite, out of range, or out of order." }
+        ) { L10n.text("MBTiles bounds are non-finite, out of range, or out of order.") }
         Wgs84Bounds(
             southwest = Wgs84Coordinate(minLat, minLon),
             northeast = Wgs84Coordinate(maxLat, maxLon),

@@ -15,7 +15,7 @@ struct OpsecSettingsView: View {
         NavigationStack {
             Form {
                 if let issue = opsec.persistenceIssue {
-                    Section("Settings need attention") {
+                    Section(L10n.text("Settings need attention")) {
                         Text(issue)
                             .font(.caption)
                             .foregroundStyle(.red)
@@ -24,7 +24,7 @@ struct OpsecSettingsView: View {
 
                 Section {
                     Picker(
-                        "Primary map coordinate",
+                        L10n.text("Primary map coordinate"),
                         selection: settingBinding(
                             \.coordinateDisplayFormat,
                             set: opsec.setCoordinateDisplayFormat
@@ -36,9 +36,9 @@ struct OpsecSettingsView: View {
                     }
                     .pickerStyle(.segmented)
                 } header: {
-                    Text("Coordinate display")
+                    Text(L10n.text("Coordinate display"))
                 } footer: {
-                    Text("Chooses the coordinate shown in the large green map readout. MGRS is the default.")
+                    Text(L10n.text("Chooses the coordinate shown in the large green map readout. MGRS is the default."))
                 }
 
                 Section {
@@ -61,38 +61,38 @@ struct OpsecSettingsView: View {
                         }
                         .disabled(mode == .headingUp && !CLLocationManager.headingAvailable())
                         .accessibilityLabel(mode.label)
-                        .accessibilityValue(opsec.mapOrientationMode == mode ? "Selected" : "Not selected")
+                        .accessibilityValue(opsec.mapOrientationMode == mode ? L10n.text("Selected") : L10n.text("Not selected"))
                         .accessibilityAddTraits(opsec.mapOrientationMode == mode ? .isSelected : [])
                     }
                 } header: {
-                    Text("Map orientation")
+                    Text(L10n.text("Map orientation"))
                 } footer: {
                     if CLLocationManager.headingAvailable() {
-                        Text("North Up starts north-facing and keeps two-finger rotation available. Heading Up uses the phone compass to keep the direction you are pointing at the top of the map. The compass marks bearings T for true north, M when it falls back to magnetic north, and ? while waiting for a valid reading.")
+                        Text(L10n.text("North Up starts north-facing and keeps two-finger rotation available. Heading Up uses the phone compass to keep the direction you are pointing at the top of the map. The compass marks bearings T for true north, M when it falls back to magnetic north, and ? while waiting for a valid reading."))
                     } else {
-                        Text("Heading Up is unavailable because this device does not report compass headings.")
+                        Text(L10n.text("Heading Up is unavailable because this device does not report compass headings."))
                     }
                 }
 
                 Section {
                     Toggle(
-                        "Privacy screen in app switcher",
+                        L10n.text("Privacy screen in app switcher"),
                         isOn: settingBinding(\.privacyScreen, set: opsec.setPrivacyScreen)
                     )
                 } footer: {
-                    Text("Covers the map (with your position) whenever the app isn't active, so it isn't captured in the app-switcher thumbnail.")
+                    Text(L10n.text("Covers the map (with your position) whenever the app isn't active, so it isn't captured in the app-switcher thumbnail."))
                 }
 
                 Section {
                     Toggle(
-                        "Background Unit Sync location",
+                        L10n.text("Background Unit Sync location"),
                         isOn: settingBinding(
                             \.backgroundUnitSyncLocation,
                             set: opsec.setBackgroundUnitSyncLocation
                         )
                     )
                     Picker(
-                        "Screen-off update interval",
+                        L10n.text("Screen-off update interval"),
                         selection: settingBinding(
                             \.backgroundUnitSyncInterval,
                             set: opsec.setBackgroundUnitSyncInterval
@@ -104,7 +104,7 @@ struct OpsecSettingsView: View {
                     }
                     .disabled(!opsec.backgroundUnitSyncLocation)
 
-                    TextField("Unit Sync relay", text: $relayDraft)
+                    TextField(L10n.text("Unit Sync relay"), text: $relayDraft)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -114,10 +114,10 @@ struct OpsecSettingsView: View {
                             opsec.clearRelayValidationIssue()
                         }
                     HStack {
-                        Button("Save relay", action: saveRelay)
+                        Button(L10n.text("Save relay"), action: saveRelay)
                             .disabled(relayDraft == opsec.relayURL)
                         Spacer()
-                        Button("Use default", action: resetRelay)
+                        Button(L10n.text("Use default"), action: resetRelay)
                             .disabled(opsec.relayURL == OpsecSettings.defaultRelay &&
                                       relayDraft == OpsecSettings.defaultRelay)
                     }
@@ -127,37 +127,31 @@ struct OpsecSettingsView: View {
                             .foregroundStyle(.red)
                     }
                 } header: {
-                    Text("Unit Sync")
+                    Text(L10n.text("Unit Sync"))
                 } footer: {
-                    Text("Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, iOS shows its background-location indicator, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately. Custom relays must use secure wss://. Debug builds also permit ws:// only on this device's loopback address.")
+                    Text(L10n.text("Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, iOS shows its background-location indicator, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately. Custom relays must use secure wss://. Debug builds also permit ws:// only on this device's loopback address."))
                 }
 
                 Section {
                     Toggle(
-                        "Online place, terrain & weather lookups",
+                        L10n.text("Online place, terrain & weather lookups"),
                         isOn: settingBinding(\.onlineLookups, set: opsec.setOnlineLookups)
                     )
                 } footer: {
-                    Text("Off by default. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Place-name search uses Apple's MKLocalSearch and may send the typed place-name or address query and camera region to Apple. Leave this off for a fully offline/OPSEC posture.")
+                    Text(L10n.text("Off by default. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Place-name search uses Apple's MKLocalSearch and may send the typed place-name or address query and camera region to Apple. Leave this off for a fully offline/OPSEC posture."))
                 }
 
                 Section {
                     Toggle(
-                        "Online basemap tiles",
+                        L10n.text("Online basemap tiles"),
                         isOn: settingBinding(\.onlineBasemaps, set: opsec.setOnlineBasemaps)
                     )
                 } footer: {
-                    Text("""
-                    Off by default. While off, no Esri or OpenTopoMap tile is requested.
-
-                    TacMap renders basemap imagery without Apple Maps or MKMapView network tiles.
-
-                    When this is on, the tile coordinates you view go to Esri / OpenTopoMap from your IP, which reveals your area of interest — the red banner shows while that's happening. For a fully dark posture, turn this off and use an imported offline pack, or fly with the radio off.
-                    """)
+                    Text(L10n.text("Off by default. While off, no Esri or OpenTopoMap tile is requested.\n\nTacMap renders basemap imagery without Apple Maps or MKMapView network tiles.\n\nWhen this is on, the tile coordinates you view go to Esri / OpenTopoMap from your IP, which reveals your area of interest — the red banner shows while that's happening. For a fully dark posture, turn this off and use an imported offline pack, or fly with the radio off."))
                 }
 
                 Section {
-                    Toggle("Require unlock to decrypt mission data", isOn: Binding(
+                    Toggle(L10n.text("Require unlock to decrypt mission data"), isOn: Binding(
                         get: { authBound },
                         set: { setAuthBound($0) }
                     ))
@@ -165,16 +159,12 @@ struct OpsecSettingsView: View {
                         Text(keyError).font(.caption).foregroundStyle(.red)
                     }
                 } footer: {
-                    Text("""
-                    Off: waypoints, drawings and tracks are encrypted with a key the Keychain releases to this app automatically after the first device unlock. The key does not migrate to another device, but a protected backup can restore it to the same device. Code running as this app on a compromised device may still ask the Keychain to decrypt.
-
-                    On: the Keychain requires Face ID, Touch ID or your passcode before key use. This raises the bar after process death, but a fully compromised device remains outside the guarantee. After the app is killed nothing can read or write mission data until you unlock, including background track recording.
-                    """)
+                    Text(L10n.text("Off: waypoints, drawings and tracks are encrypted with a key the Keychain releases to this app automatically after the first device unlock. The key does not migrate to another device, but a protected backup can restore it to the same device. Code running as this app on a compromised device may still ask the Keychain to decrypt.\n\nOn: the Keychain requires Face ID, Touch ID or your passcode before key use. This raises the bar after process death, but a fully compromised device remains outside the guarantee. After the app is killed nothing can read or write mission data until you unlock, including background track recording."))
                 }
             }
-            .navigationTitle("Settings, Privacy & OPSEC")
+            .navigationTitle(L10n.text("Settings, Privacy & OPSEC"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } } }
         }
     }
 

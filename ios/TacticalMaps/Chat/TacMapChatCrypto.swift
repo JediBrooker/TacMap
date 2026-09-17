@@ -18,13 +18,13 @@ enum TacMapChatCrypto {
 
         var errorDescription: String? {
             switch self {
-            case .invalidContext: return "The secure chat session changed. Select the recipient again."
-            case .invalidPayload: return "The chat text is invalid or too large."
-            case .invalidFrame: return "The encrypted chat frame is malformed."
-            case .invalidSignature: return "The chat frame failed sender authentication."
-            case .keyAgreementFailed: return "A private channel could not be established with that unit."
-            case .encryptionFailed: return "The message could not be encrypted."
-            case .decryptionFailed: return "The message could not be decrypted."
+            case .invalidContext: return L10n.text("The secure chat session changed. Select the recipient again.")
+            case .invalidPayload: return L10n.text("The chat text is invalid or too large.")
+            case .invalidFrame: return L10n.text("The encrypted chat frame is malformed.")
+            case .invalidSignature: return L10n.text("The chat frame failed sender authentication.")
+            case .keyAgreementFailed: return L10n.text("A private channel could not be established with that unit.")
+            case .encryptionFailed: return L10n.text("The message could not be encrypted.")
+            case .decryptionFailed: return L10n.text("The message could not be decrypted.")
             }
         }
     }

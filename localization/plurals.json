@@ -1,0 +1,212 @@
+{
+  "day": {
+    "en": [
+      "%d day",
+      "%d days"
+    ],
+    "de": [
+      "%d Tag",
+      "%d Tage"
+    ]
+  },
+  "point": {
+    "en": [
+      "%d point",
+      "%d points"
+    ],
+    "de": [
+      "%d Punkt",
+      "%d Punkte"
+    ]
+  },
+  "drawing": {
+    "en": [
+      "%d drawing",
+      "%d drawings"
+    ],
+    "de": [
+      "%d Zeichnung",
+      "%d Zeichnungen"
+    ]
+  },
+  "waypoint": {
+    "en": [
+      "%d waypoint",
+      "%d waypoints"
+    ],
+    "de": [
+      "%d Wegpunkt",
+      "%d Wegpunkte"
+    ]
+  },
+  "unit": {
+    "en": [
+      "%d unit",
+      "%d units"
+    ],
+    "de": [
+      "%d Einheit",
+      "%d Einheiten"
+    ]
+  },
+  "task": {
+    "en": [
+      "%d task",
+      "%d tasks"
+    ],
+    "de": [
+      "%d Auftrag",
+      "%d Aufträge"
+    ]
+  },
+  "marker": {
+    "en": [
+      "%d marker",
+      "%d markers"
+    ],
+    "de": [
+      "%d Marker",
+      "%d Marker"
+    ]
+  },
+  "line": {
+    "en": [
+      "%d line",
+      "%d lines"
+    ],
+    "de": [
+      "%d Linie",
+      "%d Linien"
+    ]
+  },
+  "free-draw": {
+    "en": [
+      "%d free-draw",
+      "%d free-draws"
+    ],
+    "de": [
+      "%d Freihandzeichnung",
+      "%d Freihandzeichnungen"
+    ]
+  },
+  "area": {
+    "en": [
+      "%d area",
+      "%d areas"
+    ],
+    "de": [
+      "%d Fläche",
+      "%d Flächen"
+    ]
+  },
+  "track_recorded": {
+    "en": [
+      "%d track point recorded",
+      "%d track points recorded"
+    ],
+    "de": [
+      "%d Trackpunkt aufgezeichnet",
+      "%d Trackpunkte aufgezeichnet"
+    ]
+  },
+  "trial_remaining": {
+    "en": [
+      "Free trial — %d day left",
+      "Free trial — %d days left"
+    ],
+    "de": [
+      "Kostenloser Test – noch %d Tag",
+      "Kostenloser Test – noch %d Tage"
+    ]
+  },
+  "unread": {
+    "en": [
+      "%d unread message",
+      "%d unread messages"
+    ],
+    "de": [
+      "%d ungelesene Nachricht",
+      "%d ungelesene Nachrichten"
+    ]
+  },
+  "send_units": {
+    "en": [
+      "Send to %d unit",
+      "Send to %d units"
+    ],
+    "de": [
+      "An %d Einheit senden",
+      "An %d Einheiten senden"
+    ]
+  },
+  "minute_ago": {
+    "en": [
+      "%d minute ago",
+      "%d minutes ago"
+    ],
+    "de": [
+      "vor %d Minute",
+      "vor %d Minuten"
+    ]
+  },
+  "hour_ago": {
+    "en": [
+      "%d hour ago",
+      "%d hours ago"
+    ],
+    "de": [
+      "vor %d Stunde",
+      "vor %d Stunden"
+    ]
+  },
+  "object": {
+    "en": [
+      "%d object",
+      "%d objects"
+    ],
+    "de": [
+      "%d Objekt",
+      "%d Objekte"
+    ]
+  },
+  "layer": {
+    "en": [
+      "%d layer",
+      "%d layers"
+    ],
+    "de": [
+      "%d Ebene",
+      "%d Ebenen"
+    ]
+  },
+  "new_waypoint": {
+    "en": [
+      "%d new waypoint",
+      "%d new waypoints"
+    ],
+    "de": [
+      "%d neuer Wegpunkt",
+      "%d neue Wegpunkte"
+    ]
+  },
+  "new_drawing": {
+    "en": [
+      "%d new drawing",
+      "%d new drawings"
+    ],
+    "de": [
+      "%d neue Zeichnung",
+      "%d neue Zeichnungen"
+    ]
+  },
+  "new_layer": {
+    "en": [
+      "%d new layer",
+      "%d new layers"
+    ],
+    "de": [
+      "%d neuer Ebene",
+      "%d neuen Ebenen"
+    ]
+  }
+}

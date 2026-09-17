@@ -32,7 +32,7 @@ enum GridMagnetic {
         let dir = degrees >= 0 ? "E" : "W"
         if mils {
             let m = Int((abs(degrees) * 6400.0 / 360.0).rounded())
-            return "G-M \(m) mils \(dir)"
+            return L10n.text("G-M %1$@ mils %2$@", m, dir)
         } else {
             return String(format: "G-M %.1f°%@", abs(degrees), dir)
         }

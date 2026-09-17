@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -355,14 +357,14 @@ private fun NoBasemapNoticeCustom(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         androidx.compose.material3.Text(
-            "No basemap",
+            L10n.text("No basemap"),
             color = androidx.compose.ui.graphics.Color.White,
             fontSize = 14.sp,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
         )
         androidx.compose.material3.Text(
-            "Online basemaps are off. Import an offline map pack, or enable " +
-                "online basemap tiles in Settings, Privacy & OPSEC.",
+            L10n.text("Online basemaps are off. Import an offline map pack, or enable ") +
+                L10n.text("online basemap tiles in Settings, Privacy & OPSEC."),
             color = androidx.compose.ui.graphics.Color(0xFFBBBBBB),
             fontSize = 11.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

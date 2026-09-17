@@ -22,9 +22,9 @@ struct ExportSheet: View {
                     if let url = generatedURL {
                         ShareLink(
                             item: url,
-                            preview: SharePreview("TacMap export", image: Image(systemName: "map"))
+                            preview: SharePreview(L10n.text("TacMap export"), image: Image(systemName: "map"))
                         ) {
-                            Label("Share GeoJSON file", systemImage: "square.and.arrow.up")
+                            Label(L10n.text("Share GeoJSON file"), systemImage: "square.and.arrow.up")
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
                                 .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 12))
@@ -37,7 +37,7 @@ struct ExportSheet: View {
                         Text(error).foregroundStyle(.red).padding(.horizontal)
                     }
 
-                    Text("Preview")
+                    Text(L10n.text("Preview"))
                         .font(.headline)
                         .padding(.horizontal)
                     Text(preview.isEmpty ? "—" : preview)
@@ -49,9 +49,9 @@ struct ExportSheet: View {
                 }
                 .padding(.top)
             }
-            .navigationTitle("Export")
+            .navigationTitle(L10n.text("Export"))
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } }
             }
             .task { await generate() }
             .onDisappear { ExportFileSecurity.remove(generatedURL) }
@@ -76,7 +76,7 @@ struct ExportSheet: View {
 
         var items: [(String, String)] = []
         func add(_ n: Int, _ noun: String, _ icon: String) {
-            if n > 0 { items.append(("\(n) \(noun)\(n == 1 ? "" : "s")", icon)) }
+            if n > 0 { items.append((L10n.quantity(noun, n), icon)) }
         }
         add(units,    "unit",      "shield.lefthalf.filled")
         add(tasks,    "task",      "scope")
@@ -92,14 +92,14 @@ struct ExportSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             let items = summaryItems
             if items.isEmpty {
-                Label("Nothing to export", systemImage: "tray")
+                Label(L10n.text("Nothing to export"), systemImage: "tray")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(items.indices, id: \.self) { i in
                     Label(items[i].text, systemImage: items[i].icon)
                 }
             }
-            Text("Format: GeoJSON FeatureCollection (RFC 7946) with simplestyle-spec styling. Opens in geojson.io, GitHub, Mapbox, Felt, QGIS, ArcGIS, Google Earth (via the GeoJSON-to-KML converter).")
+            Text(L10n.text("Format: GeoJSON FeatureCollection (RFC 7946) with simplestyle-spec styling. Opens in geojson.io, GitHub, Mapbox, Felt, QGIS, ArcGIS, Google Earth (via the GeoJSON-to-KML converter)."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.top, 2)
@@ -117,9 +117,9 @@ struct ExportSheet: View {
             let bytes = try Data(contentsOf: url, options: [.mappedIfSafe])
             let str = String(decoding: bytes.prefix(4_000), as: UTF8.self)
             generatedURL = url
-            preview = bytes.count > 4_000 ? str + "\n… (truncated, full file in Share)" : str
+            preview = bytes.count > 4_000 ? str + L10n.text("\n… (truncated, full file in Share)") : str
         } catch {
-            self.error = "Export failed: \(error.localizedDescription)"
+            self.error = L10n.text("Export failed: %1$@", error.localizedDescription)
         }
     }
 }

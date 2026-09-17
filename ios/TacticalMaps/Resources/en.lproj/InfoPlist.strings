@@ -1,0 +1,2 @@
+"NSFaceIDUsageDescription" = "Face ID unlocks TacMap's locally encrypted mission data and optional app lock.";
+"NSLocationWhenInUseUsageDescription" = "TacMap shows your live position and MGRS grid, records user-started GPX tracks in the background, and shares your encrypted position with joined Sync peers while the screen is off only when you enable Share my location and Background Unit Sync in OPSEC.";

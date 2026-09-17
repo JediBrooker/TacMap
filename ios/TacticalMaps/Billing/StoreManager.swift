@@ -278,7 +278,7 @@ final class StoreManager: ObservableObject {
         guard let productOffer else {
             setStoreIssue(
                 kind: .purchaseFailed,
-                message: "Purchase options aren't loaded. Return to the unlock screen and tap Try Again.",
+                message: L10n.text("Purchase options aren't loaded. Return to the unlock screen and tap Try Again."),
                 retryable: false
             )
             return
@@ -306,7 +306,7 @@ final class StoreManager: ObservableObject {
             case .unverified:
                 setStoreIssue(
                     kind: .verification,
-                    message: "Apple returned a purchase TacMap couldn't verify. Your existing unlock was kept. Tap Check Again, then Restore purchase if needed.",
+                    message: L10n.text("Apple returned a purchase TacMap couldn't verify. Your existing unlock was kept. Tap Check Again, then Restore purchase if needed."),
                     retryable: true
                 )
                 completePurchaseOperation(operationID)
@@ -314,7 +314,7 @@ final class StoreManager: ObservableObject {
             case .userCancelled:
                 setStoreIssue(
                     kind: .purchaseCancelled,
-                    message: "Purchase cancelled. You have not been charged.",
+                    message: L10n.text("Purchase cancelled. You have not been charged."),
                     retryable: false
                 )
                 completePurchaseOperation(operationID)
@@ -322,14 +322,14 @@ final class StoreManager: ObservableObject {
                 purchaseOperation = .pending(operationID)
                 setStoreIssue(
                     kind: .purchasePending,
-                    message: "Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval.",
+                    message: L10n.text("Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval."),
                     retryable: true,
                     purchaseOperationID: operationID
                 )
             case .unknown:
                 setStoreIssue(
                     kind: .purchaseFailed,
-                    message: "The App Store returned an unknown purchase result. Tap Check Again before trying the purchase again.",
+                    message: L10n.text("The App Store returned an unknown purchase result. Tap Check Again before trying the purchase again."),
                     retryable: true
                 )
                 completePurchaseOperation(operationID)
@@ -338,7 +338,7 @@ final class StoreManager: ObservableObject {
         } catch {
             setStoreIssue(
                 kind: .purchaseFailed,
-                message: "The purchase couldn't be completed. Check your connection, tap Check Again, and try once more.",
+                message: L10n.text("The purchase couldn't be completed. Check your connection, tap Check Again, and try once more."),
                 retryable: true
             )
             completePurchaseOperation(operationID)
@@ -393,7 +393,7 @@ final class StoreManager: ObservableObject {
             // An offline/failed sync says nothing about ownership. Preserve the
             // last verified state instead of treating transport failure as a
             // completed, authoritative "not entitled" answer.
-            restoreOutcome = "Couldn't contact the App Store. Your existing unlock state was kept; try again when online."
+            restoreOutcome = L10n.text("Couldn't contact the App Store. Your existing unlock state was kept; try again when online.")
             return
         }
         // A query which began before AppStore.sync cannot observe the state the
@@ -404,16 +404,16 @@ final class StoreManager: ObservableObject {
             // lifecycle checks. Restore already has its own outcome alert, so
             // keep this explicit action to one useful message.
             storeIssue = nil
-            restoreOutcome = "TacMap found the latest purchase status but couldn't save it securely. Restart the device, then tap Restore purchase again."
+            restoreOutcome = L10n.text("TacMap found the latest purchase status but couldn't save it securely. Restart the device, then tap Restore purchase again.")
             return
         }
         guard case .authoritative = refresh else {
-            restoreOutcome = "Couldn't verify purchases right now. Your existing unlock state was kept; try again when online."
+            restoreOutcome = L10n.text("Couldn't verify purchases right now. Your existing unlock state was kept; try again when online.")
             return
         }
         restoreOutcome = isPurchased
-            ? (wasPurchased ? "Already unlocked." : "Purchase restored.")
-            : "No previous purchase found on this Apple ID."
+            ? (wasPurchased ? L10n.text("Already unlocked.") : L10n.text("Purchase restored."))
+            : L10n.text("No previous purchase found on this Apple ID.")
     }
 
     /// Presents Apple's in-app offer-code sheet. iOS 16.3 added offer-code
@@ -428,7 +428,7 @@ final class StoreManager: ObservableObject {
         do {
             try await presentOfferCodeRedemption()
         } catch {
-            redemptionOutcome = "Couldn't open Apple's code redemption sheet. Try again."
+            redemptionOutcome = L10n.text("Couldn't open Apple's code redemption sheet. Try again.")
             return
         }
 
@@ -438,9 +438,9 @@ final class StoreManager: ObservableObject {
         switch refresh {
         case .persistenceFailed:
             storeIssue = nil
-            redemptionOutcome = "Your code may have been redeemed, but TacMap couldn't save the unlock securely. Restart the device, then tap Restore purchase."
+            redemptionOutcome = L10n.text("Your code may have been redeemed, but TacMap couldn't save the unlock securely. Restart the device, then tap Restore purchase.")
         case .unavailable:
-            redemptionOutcome = "Your code may have been redeemed, but TacMap couldn't verify the unlock. Check your connection, then tap Restore purchase."
+            redemptionOutcome = L10n.text("Your code may have been redeemed, but TacMap couldn't verify the unlock. Check your connection, then tap Restore purchase.")
         case .authoritative:
             break
         }
@@ -471,7 +471,7 @@ final class StoreManager: ObservableObject {
         if case .unavailable = result {
             setStoreIssue(
                 kind: .entitlementUnavailable,
-                message: "TacMap still couldn't verify your App Store status. Your existing unlock was kept. Check your connection and try Check Again, or use Restore purchase from the unlock screen.",
+                message: L10n.text("TacMap still couldn't verify your App Store status. Your existing unlock was kept. Check your connection and try Check Again, or use Restore purchase from the unlock screen."),
                 retryable: true
             )
         }
@@ -561,7 +561,7 @@ final class StoreManager: ObservableObject {
         } catch {
             setStoreIssue(
                 kind: .entitlementPersistence,
-                message: "TacMap verified your App Store status but couldn't save it securely. Your existing unlock was kept. Restart the device, then tap Check Again.",
+                message: L10n.text("TacMap verified your App Store status but couldn't save it securely. Your existing unlock was kept. Restart the device, then tap Check Again."),
                 retryable: true
             )
             return .persistenceFailed
@@ -595,7 +595,7 @@ final class StoreManager: ObservableObject {
         } catch {
             setStoreIssue(
                 kind: .entitlementPersistence,
-                message: "Apple verified your purchase, but TacMap couldn't save the unlock securely. The purchase remains pending in TacMap; restart the device and tap Check Again.",
+                message: L10n.text("Apple verified your purchase, but TacMap couldn't save the unlock securely. The purchase remains pending in TacMap; restart the device and tap Check Again."),
                 retryable: true
             )
             return false
@@ -621,7 +621,7 @@ final class StoreManager: ObservableObject {
         case .unavailable:
             setStoreIssue(
                 kind: .entitlementUnavailable,
-                message: "Apple reported an unlock-status change, but TacMap couldn't verify your current aggregate entitlement. Your existing state was kept; tap Check Again.",
+                message: L10n.text("Apple reported an unlock-status change, but TacMap couldn't verify your current aggregate entitlement. Your existing state was kept; tap Check Again."),
                 retryable: true
             )
             return false
@@ -685,7 +685,7 @@ final class StoreManager: ObservableObject {
     private func reportUnverifiedTransaction() {
         setStoreIssue(
             kind: .verification,
-            message: "The App Store sent an unlock update TacMap couldn't verify. Your existing unlock was kept. Tap Check Again; use Restore purchase if the problem continues.",
+            message: L10n.text("The App Store sent an unlock update TacMap couldn't verify. Your existing unlock was kept. Tap Check Again; use Restore purchase if the problem continues."),
             retryable: true
         )
     }

@@ -69,9 +69,9 @@ struct DrawToolbar: View {
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
-                .accessibilityLabel("Cancel")
+                .accessibilityLabel(L10n.text("Cancel"))
 
-                Button("Finish", action: onFinish)
+                Button(L10n.text("Finish"), action: onFinish)
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -92,21 +92,21 @@ struct DrawToolbar: View {
             .padding(.vertical, 7)
             .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))
-            .alert("Name this drawing", isPresented: $showingNameAlert) {
-                TextField("e.g. Patrol route, Engagement area", text: $draftName)
+            .alert(L10n.text("Name this drawing"), isPresented: $showingNameAlert) {
+                TextField(L10n.text("e.g. Patrol route, Engagement area"), text: $draftName)
                     .autocorrectionDisabled()
-                Button("Save") {
+                Button(L10n.text("Save")) {
                     session.shapeName = draftName.trimmingCharacters(in: .whitespaces)
                 }
-                Button("Cancel", role: .cancel) { }
+                Button(L10n.text("Cancel"), role: .cancel) { }
             } message: {
-                Text("Leave blank to keep the default name (\(session.activeKind?.displayName ?? "")).")
+                Text(L10n.text("Leave blank to keep the default name (%1$@).", session.activeKind?.displayName ?? ""))
             }
-            .alert("Discard drawing?", isPresented: $showCancelConfirm) {
-                Button("Discard", role: .destructive) { session.cancel() }
-                Button("Keep drawing", role: .cancel) { }
+            .alert(L10n.text("Discard drawing?"), isPresented: $showCancelConfirm) {
+                Button(L10n.text("Discard"), role: .destructive) { session.cancel() }
+                Button(L10n.text("Keep drawing"), role: .cancel) { }
             } message: {
-                Text("This will discard the \(session.inProgressCoordinates.count) point(s) you've placed.")
+                Text(L10n.text("This will discard the %1$@ point(s) you've placed.", session.inProgressCoordinates.count))
             }
         }
     }
@@ -138,8 +138,8 @@ struct DrawToolbar: View {
                         in: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Drawing name")
-        .accessibilityValue(session.shapeName.isEmpty ? "Unset" : session.shapeName)
+        .accessibilityLabel(L10n.text("Drawing name"))
+        .accessibilityValue(session.shapeName.isEmpty ? L10n.text("Unset") : session.shapeName)
     }
 
     /// Solid vs dashed stroke toggle. Only affects the committed shape,
@@ -169,8 +169,8 @@ struct DrawToolbar: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Stroke style")
-        .accessibilityValue(session.isDashed ? "Dashed" : "Solid")
+        .accessibilityLabel(L10n.text("Stroke style"))
+        .accessibilityValue(session.isDashed ? L10n.text("Dashed") : L10n.text("Solid"))
     }
 
     /// Colour swatch circle, opens the 12-colour palette menu on tap.
@@ -196,7 +196,7 @@ struct DrawToolbar: View {
                     .stroke(.white.opacity(0.85), lineWidth: 1.5)
                     .frame(width: 22, height: 22)
             }
-            .accessibilityLabel("Stroke colour")
+            .accessibilityLabel(L10n.text("Stroke colour"))
             .accessibilityValue(DrawingPalette.swatch(forHex: session.strokeColorHex)?.name ?? session.strokeColorHex)
         }
         .buttonStyle(.plain)
@@ -206,7 +206,7 @@ struct DrawToolbar: View {
     /// menu avoids widening the drawing HUD while still exposing both controls.
     private var fillStyleMenu: some View {
         Menu {
-            Section("Fill colour") {
+            Section(L10n.text("Fill colour")) {
                 ForEach(DrawingPalette.swatches) { swatch in
                     Button {
                         session.fillColorHex = swatch.hex
@@ -219,7 +219,7 @@ struct DrawToolbar: View {
                     .tint(swatch.color)
                 }
             }
-            Section("Fill opacity") {
+            Section(L10n.text("Fill opacity")) {
                 ForEach([0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0], id: \.self) { opacity in
                     Button {
                         session.fillOpacity = opacity
@@ -242,8 +242,8 @@ struct DrawToolbar: View {
                     .shadow(radius: 1)
             }
             .frame(width: 34, height: 34)
-            .accessibilityLabel("Fill style")
-            .accessibilityValue("\(DrawingPalette.swatch(forHex: session.fillColorHex)?.name ?? session.fillColorHex), \(Int(session.fillOpacity * 100)) percent")
+            .accessibilityLabel(L10n.text("Fill style"))
+            .accessibilityValue(L10n.text("%1$@, %2$@ percent", DrawingPalette.swatch(forHex: session.fillColorHex)?.name ?? session.fillColorHex, Int(session.fillOpacity * 100)))
         }
         .buttonStyle(.plain)
     }

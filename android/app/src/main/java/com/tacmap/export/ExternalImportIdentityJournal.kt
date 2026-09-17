@@ -1,5 +1,7 @@
 package com.tacmap.export
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import com.tacmap.util.SafeStore
 import kotlinx.serialization.Serializable
@@ -48,11 +50,11 @@ internal class ExternalImportIdentityJournal private constructor(
             is SafeStore.LoadResult.Loaded -> loaded.value
             SafeStore.LoadResult.Empty -> Document()
             is SafeStore.LoadResult.Corrupt -> {
-                unavailableReason = "The import retry journal could not be authenticated and was preserved for recovery."
+                unavailableReason = L10n.text("The import retry journal could not be authenticated and was preserved for recovery.")
                 Document()
             }
             is SafeStore.LoadResult.Locked -> {
-                unavailableReason = "The import retry journal is locked. Unlock mission data and retry."
+                unavailableReason = L10n.text("The import retry journal is locked. Unlock mission data and retry.")
                 Document()
             }
         }

@@ -20,9 +20,9 @@ enum UAVRisk: Int, Comparable {
 
     var label: String {
         switch self {
-        case .safe:    return "Safe to fly"
-        case .caution: return "Marginal — caution"
-        case .danger:  return "Do not fly"
+        case .safe:    return L10n.text("Safe to fly")
+        case .caution: return L10n.text("Marginal — caution")
+        case .danger:  return L10n.text("Do not fly")
         }
     }
 }

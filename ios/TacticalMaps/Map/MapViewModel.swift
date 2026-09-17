@@ -265,7 +265,7 @@ final class MapViewModel: ObservableObject {
         case .unavailable:
             reportMapSelectionIssue(
                 transition: .restoreActive,
-                message: "The saved basemap is locked or unreadable. Unlock mission data, then tap Retry. The current map remains active."
+                message: L10n.text("The saved basemap is locked or unreadable. Unlock mission data, then tap Retry. The current map remains active.")
             )
             return nil
         }
@@ -343,7 +343,7 @@ final class MapViewModel: ObservableObject {
             } catch {
                 reportMapSelectionIssue(
                     transition: transition,
-                    message: "The imported map could not be deleted securely. The online map remains active and the saved entry was preserved where possible. Unlock mission data or free storage, then tap Retry. \(error.localizedDescription)"
+                    message: L10n.text("The imported map could not be deleted securely. The online map remains active and the saved entry was preserved where possible. Unlock mission data or free storage, then tap Retry. %1$@", error.localizedDescription)
                 )
                 return false
             }
@@ -358,7 +358,7 @@ final class MapViewModel: ObservableObject {
             } catch {
                 reportMapSelectionIssue(
                     transition: transition,
-                    message: "The unavailable saved-map entry could not be removed. Unlock mission data or free storage, then tap Retry. \(error.localizedDescription)"
+                    message: L10n.text("The unavailable saved-map entry could not be removed. Unlock mission data or free storage, then tap Retry. %1$@", error.localizedDescription)
                 )
                 return false
             }
@@ -380,11 +380,11 @@ final class MapViewModel: ObservableObject {
         let message: String
         switch reason {
         case .pdfSession:
-            message = "The PDF map could not be saved for relaunch. The previous map remains active. Unlock mission data or free storage, then tap Retry."
+            message = L10n.text("The PDF map could not be saved for relaunch. The previous map remains active. Unlock mission data or free storage, then tap Retry.")
         case .selector:
-            message = "The basemap choice could not be saved. The previous map remains active. Unlock mission data or free storage, then tap Retry."
+            message = L10n.text("The basemap choice could not be saved. The previous map remains active. Unlock mission data or free storage, then tap Retry.")
         case .pdfSessionRollback:
-            message = "Map storage recovery did not complete. Keep the app open, unlock mission data or free storage, then tap Retry before closing the app."
+            message = L10n.text("Map storage recovery did not complete. Keep the app open, unlock mission data or free storage, then tap Retry before closing the app.")
         }
         reportMapSelectionIssue(transition: transition, message: message)
     }

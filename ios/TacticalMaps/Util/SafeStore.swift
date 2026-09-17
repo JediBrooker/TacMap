@@ -129,7 +129,7 @@ enum SafeStore {
     }
 
     struct SealError: LocalizedError {
-        var errorDescription: String? { "Sealed store failed authentication (tampered, or wrong store)." }
+        var errorDescription: String? { L10n.text("Sealed store failed authentication (tampered, or wrong store).") }
     }
 
     /// Seal `data` under `label` and atomically replace the file at `url`.

@@ -14,13 +14,13 @@ final class TacMapChatStore: ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .inactive: return "TacMap Chat is not attached to a secure room."
-            case .locked: return "Unlock mission data to use TacMap Chat."
-            case .corrupt: return "Encrypted chat history could not be authenticated."
-            case .unsealed: return "Unencrypted chat history was rejected."
-            case .invalidRecord: return "Chat history contains an invalid record."
-            case .historyTooLarge: return "Chat history reached its protected storage limit."
-            case .persistenceFailed: return "Encrypted chat history could not be updated."
+            case .inactive: return L10n.text("TacMap Chat is not attached to a secure room.")
+            case .locked: return L10n.text("Unlock mission data to use TacMap Chat.")
+            case .corrupt: return L10n.text("Encrypted chat history could not be authenticated.")
+            case .unsealed: return L10n.text("Unencrypted chat history was rejected.")
+            case .invalidRecord: return L10n.text("Chat history contains an invalid record.")
+            case .historyTooLarge: return L10n.text("Chat history reached its protected storage limit.")
+            case .persistenceFailed: return L10n.text("Encrypted chat history could not be updated.")
             }
         }
     }

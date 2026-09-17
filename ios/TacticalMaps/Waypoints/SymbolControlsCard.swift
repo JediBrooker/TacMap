@@ -21,24 +21,24 @@ struct SymbolControlsCard: View {
                     Button {
                         showingEdit = true
                     } label: {
-                        Label("Edit Symbol", systemImage: "slider.horizontal.3")
+                        Label(L10n.text("Edit Symbol"), systemImage: "slider.horizontal.3")
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
-                    .accessibilityHint("Opens all symbol fields and actions.")
+                    .accessibilityHint(L10n.text("Opens all symbol fields and actions."))
 
                     Button {
                         moveToCrosshair(waypoint)
                     } label: {
-                        Label("Move to Crosshair", systemImage: "scope")
+                        Label(L10n.text("Move to Crosshair"), systemImage: "scope")
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.bordered)
-                    .accessibilityLabel("Move symbol to crosshair")
+                    .accessibilityLabel(L10n.text("Move symbol to crosshair"))
                 }
             }
             .padding(.horizontal, 12)
@@ -60,12 +60,12 @@ struct SymbolControlsCard: View {
                     )
                 }
             }
-            .alert("Symbol Not Moved",
+            .alert(L10n.text("Symbol Not Moved"),
                    isPresented: Binding(get: { mutationError != nil },
                                         set: { if !$0 { mutationError = nil } })) {
                 Button("OK", role: .cancel) { mutationError = nil }
             } message: {
-                Text(mutationError ?? "The symbol is still at its previous position.")
+                Text(mutationError ?? L10n.text("The symbol is still at its previous position."))
             }
         }
     }
@@ -75,9 +75,9 @@ struct SymbolControlsCard: View {
         updated.latitude = mapVM.cameraCentre.latitude
         updated.longitude = mapVM.cameraCentre.longitude
         do {
-            _ = try waypointStore.commitEdit(updated, actionName: "Move Symbol to Crosshair")
+            _ = try waypointStore.commitEdit(updated, actionName: L10n.text("Move Symbol to Crosshair"))
         } catch {
-            mutationError = "\(error.localizedDescription) The symbol is still at its previous position."
+            mutationError = L10n.text("%1$@ The symbol is still at its previous position.", error.localizedDescription)
         }
     }
 
@@ -123,8 +123,8 @@ struct SymbolControlsCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Edit \(waypoint.name)")
-            .accessibilityHint("Opens all symbol fields and actions.")
+            .accessibilityLabel(L10n.text("Edit %1$@", waypoint.name))
+            .accessibilityHint(L10n.text("Opens all symbol fields and actions."))
 
             Spacer(minLength: 4)
             Button(action: onDismiss) {
@@ -135,7 +135,7 @@ struct SymbolControlsCard: View {
             }
             .buttonStyle(.plain)
             .frame(width: 44, height: 44)
-            .accessibilityLabel("Close symbol editor")
+            .accessibilityLabel(L10n.text("Close symbol editor"))
         }
     }
 }

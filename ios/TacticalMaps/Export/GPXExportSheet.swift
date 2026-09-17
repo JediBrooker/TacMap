@@ -12,23 +12,23 @@ struct GPXExportSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Label("\(points.count) track point\(points.count == 1 ? "" : "s") recorded",
+                Label(L10n.quantity("track_recorded", points.count),
                       systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                     .font(.headline)
 
                 if let url = generatedURL {
                     ShareLink(
                         item: url,
-                        preview: SharePreview("TacMap GPX track", image: Image(systemName: "map"))
+                        preview: SharePreview(L10n.text("TacMap GPX track"), image: Image(systemName: "map"))
                     ) {
-                        Label("Share GPX file", systemImage: "square.and.arrow.up")
+                        Label(L10n.text("Share GPX file"), systemImage: "square.and.arrow.up")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                             .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 12))
                             .foregroundStyle(.white)
                     }
                 } else if points.isEmpty {
-                    Text("No track recorded yet. Start recording from the menu, move, then export.")
+                    Text(L10n.text("No track recorded yet. Start recording from the menu, move, then export."))
                         .foregroundStyle(.secondary)
                 }
 
@@ -36,16 +36,16 @@ struct GPXExportSheet: View {
                     Text(error).foregroundStyle(.red)
                 }
 
-                Text("Format: GPX 1.1 - opens in Garmin, Strava, Gaia GPS, QGIS, Google Earth, and most GPS tools.")
+                Text(L10n.text("Format: GPX 1.1 - opens in Garmin, Strava, Gaia GPS, QGIS, Google Earth, and most GPS tools."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 Spacer()
             }
             .padding()
-            .navigationTitle("Export GPX")
+            .navigationTitle(L10n.text("Export GPX"))
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } }
             }
             .task { generate() }
             .onDisappear { ExportFileSecurity.remove(generatedURL) }
@@ -60,7 +60,7 @@ struct GPXExportSheet: View {
                 timestamp: Int(Date().timeIntervalSince1970)
             )
         } catch {
-            self.error = "Export failed: \(error.localizedDescription)"
+            self.error = L10n.text("Export failed: %1$@", error.localizedDescription)
         }
     }
 }

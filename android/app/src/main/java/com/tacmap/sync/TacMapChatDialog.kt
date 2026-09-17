@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -110,7 +112,7 @@ fun TacMapChatDialog(
         }
     }
     val blockReason = if (!roomScope && selectedSnapshot == null) {
-        "Choose a unit"
+        L10n.text("Choose a unit")
     } else {
         manager.chatSendBlockReason(currentTarget)
     }
@@ -156,7 +158,7 @@ fun TacMapChatDialog(
                     ) {
                         Text("TacMap Chat", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = onDismiss) { Text("Done") }
+                        TextButton(onClick = onDismiss) { Text(L10n.text("Done")) }
                     }
 
                     Column(
@@ -170,26 +172,26 @@ fun TacMapChatDialog(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (roomScope) {
                                 Button(onClick = { roomScope = true }, modifier = Modifier.weight(1f)) {
-                                    Text("Entire room${unreadSuffix(roomUnread)}")
+                                    Text(L10n.text("Entire room%1\$s", unreadSuffix(roomUnread)))
                                 }
                             } else {
                                 OutlinedButton(onClick = { roomScope = true }, modifier = Modifier.weight(1f)) {
-                                    Text("Entire room${unreadSuffix(roomUnread)}")
+                                    Text(L10n.text("Entire room%1\$s", unreadSuffix(roomUnread)))
                                 }
                             }
                             if (!roomScope) {
                                 Button(onClick = { roomScope = false }, modifier = Modifier.weight(1f)) {
-                                    Text("Selected unit${unreadSuffix(directUnread)}")
+                                    Text(L10n.text("Selected unit%1\$s", unreadSuffix(directUnread)))
                                 }
                             } else {
                                 OutlinedButton(onClick = { roomScope = false }, modifier = Modifier.weight(1f)) {
-                                    Text("Selected unit${unreadSuffix(directUnread)}")
+                                    Text(L10n.text("Selected unit%1\$s", unreadSuffix(directUnread)))
                                 }
                             }
                         }
                         if (roomScope) {
                             Text(
-                                "Broadcast to every chat-ready unit",
+                                L10n.text("Broadcast to every chat-ready unit"),
                                 color = Color(0xFFEF6C00),
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp,
@@ -200,7 +202,7 @@ fun TacMapChatDialog(
                                     onClick = { recipientMenuOpen = true },
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    Text(selectedSnapshot?.displayLabel() ?: "Choose a unit")
+                                    Text(selectedSnapshot?.displayLabel() ?: L10n.text("Choose a unit"))
                                 }
                                 DropdownMenu(
                                     expanded = recipientMenuOpen,
@@ -217,9 +219,9 @@ fun TacMapChatDialog(
                                                         Text(
                                                             listOfNotNull(
                                                                 unread.takeIf { it > 0 }?.let {
-                                                                    "$it unread"
+                                                                    L10n.text("%1\$s unread", it)
                                                                 },
-                                                                "Offline".takeUnless { isLive },
+                                                                L10n.text("Offline").takeUnless { isLive },
                                                             ).joinToString(" · "),
                                                             color = Color.Gray,
                                                             fontSize = 11.sp,
@@ -255,11 +257,11 @@ fun TacMapChatDialog(
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Text(
-                                    if (roomScope) "No room messages yet" else "No messages with this unit yet",
+                                    if (roomScope) L10n.text("No room messages yet") else L10n.text("No messages with this unit yet"),
                                     fontWeight = FontWeight.SemiBold,
                                 )
                                 Text(
-                                    "Chat is live-only. Messages missed while a unit is offline are not recovered by the relay.",
+                                    L10n.text("Chat is live-only. Messages missed while a unit is offline are not recovered by the relay."),
                                     color = Color.Gray,
                                     fontSize = 11.sp,
                                     modifier = Modifier.padding(top = 6.dp),
@@ -285,14 +287,14 @@ fun TacMapChatDialog(
                         OutlinedTextField(
                             value = body,
                             onValueChange = { body = TacMapChatPayload.boundedBody(it) },
-                            label = { Text("Message") },
+                            label = { Text(L10n.text("Message")) },
                             minLines = 1,
                             maxLines = 5,
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "Plain text only",
+                                L10n.text("Plain text only"),
                                 color = Color.Gray,
                                 fontSize = 10.sp,
                             )
@@ -302,10 +304,10 @@ fun TacMapChatDialog(
                                 onClick = {
                                     if (roomScope) confirmRoomSend = true else performSend()
                                 },
-                            ) { Text("Send") }
+                            ) { Text(L10n.text("Send")) }
                         }
                         Text(
-                            "Routed means accepted by the relay, not delivered or read.",
+                            L10n.text("Routed means accepted by the relay, not delivered or read."),
                             color = Color.Gray,
                             fontSize = 10.sp,
                         )
@@ -318,16 +320,16 @@ fun TacMapChatDialog(
     if (confirmRoomSend) {
         AlertDialog(
             onDismissRequest = { confirmRoomSend = false },
-            title = { Text("Send to the entire room?") },
-            text = { Text("This routes the message to every currently chat-ready unit.") },
+            title = { Text(L10n.text("Send to the entire room?")) },
+            text = { Text(L10n.text("This routes the message to every currently chat-ready unit.")) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmRoomSend = false
                     performSend()
-                }) { Text("Send to ${recipients.size} unit${if (recipients.size == 1) "" else "s"}") }
+                }) { Text(L10n.text("Send to %1\$s unit%2\$s", recipients.size, if (recipients.size == 1) "" else "s")) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmRoomSend = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmRoomSend = false }) { Text(L10n.text("Cancel")) }
             },
         )
     }
@@ -397,24 +399,24 @@ private fun TacMapChatMessageRow(message: TacMapChatMessage) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${message.senderName.ifBlank { "Unknown unit" }} · ${message.senderActorId.takeLast(6).uppercase()}",
+                    L10n.text("%1\$s · %2\$s", message.senderName.ifBlank { "Unknown unit" }, message.senderActorId.takeLast(6).uppercase()),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (message.kind == TacMapChatContentKind.REPORT) {
-                    Text("  REPORT", color = Color(0xFFEF6C00), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(L10n.text("  REPORT"), color = Color(0xFFEF6C00), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Text(message.body, modifier = Modifier.padding(vertical = 4.dp))
             val delivery = when (message.deliveryState) {
-                TacMapChatDeliveryState.SENT -> "Sending…"
+                TacMapChatDeliveryState.SENT -> L10n.text("Sending…")
                 TacMapChatDeliveryState.ROUTED -> if (message.scope == TacMapChatScope.ROOM) {
-                    "Sent to room"
+                    L10n.text("Sent to room")
                 } else {
-                    "Routed"
+                    L10n.text("Routed")
                 }
-                TacMapChatDeliveryState.RECEIVED -> "Received"
-                TacMapChatDeliveryState.FAILED -> "Not routed"
+                TacMapChatDeliveryState.RECEIVED -> L10n.text("Received")
+                TacMapChatDeliveryState.FAILED -> L10n.text("Not routed")
             }
             Text(
                 "${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.sentAtMilliseconds))}" +

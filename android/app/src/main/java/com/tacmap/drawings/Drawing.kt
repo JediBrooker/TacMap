@@ -1,5 +1,7 @@
 package com.tacmap.drawings
 
+import com.tacmap.localization.L10n
+
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlinx.serialization.SerialName
@@ -13,28 +15,35 @@ data class DrawingPoint(
 )
 
 @Serializable
-enum class DrawingGeometry(val displayName: String) {
+enum class DrawingGeometry(private val displayNameKey: String) {
     @SerialName("point") POINT("Point"),
     @SerialName("line") LINE("Line"),
-    @SerialName("polygon") POLYGON("Polygon")
+    @SerialName("polygon") POLYGON("Polygon");
+
+    val displayName: String get() = L10n.text(displayNameKey)
 }
 
 @Serializable
-enum class DrawingStrokeStyle(val displayName: String) {
+enum class DrawingStrokeStyle(private val displayNameKey: String) {
     @SerialName("solid") SOLID("Solid"),
-    @SerialName("dashed") DASHED("Dashed")
+    @SerialName("dashed") DASHED("Dashed");
+
+    val displayName: String get() = L10n.text(displayNameKey)
 }
 
 // NATO tactical line-graphic style for a line feature. `wire` matches the
 // iOS rawValue so it round-trips through GeoJSON (tacticalmaps:line_graphic)
 // and Unit Sync. PLAIN (or null) = ordinary stroked line.
 @Serializable
-enum class LineGraphic(val wire: String, val displayName: String) {
+enum class LineGraphic(val wire: String, private val displayNameKey: String) {
     @SerialName("plain")         PLAIN("plain", "Plain line"),
     @SerialName("phaseLine")     PHASE_LINE("phaseLine", "Phase line"),
     @SerialName("boundary")      BOUNDARY("boundary", "Boundary"),
     @SerialName("forwardEdge")   FORWARD_EDGE("forwardEdge", "Forward line (FLOT)"),
     @SerialName("axisOfAdvance") AXIS_OF_ADVANCE("axisOfAdvance", "Axis of advance");
+
+    val displayName: String get() = L10n.text(displayNameKey)
+
 
     companion object {
         fun fromWire(s: String?): LineGraphic? = entries.firstOrNull { it.wire == s }
@@ -250,7 +259,7 @@ data class DrawingDocument(
 
         fun defaultLayer(): DrawingLayer = DrawingLayer(
             id = DEFAULT_LAYER_ID,
-            name = "Friendly",
+            name = L10n.text("Friendly"),
             color = FRIENDLY_LAYER_COLOR
         )
 
@@ -258,17 +267,17 @@ data class DrawingDocument(
             defaultLayer(),
             DrawingLayer(
                 id = HOSTILE_LAYER_ID,
-                name = "Hostile",
+                name = L10n.text("Hostile"),
                 color = HOSTILE_LAYER_COLOR
             ),
             DrawingLayer(
                 id = UNKNOWN_LAYER_ID,
-                name = "Unknown",
+                name = L10n.text("Unknown"),
                 color = UNKNOWN_LAYER_COLOR
             ),
             DrawingLayer(
                 id = CIVILIAN_LAYER_ID,
-                name = "Civilian",
+                name = L10n.text("Civilian"),
                 color = CIVILIAN_LAYER_COLOR
             )
         )

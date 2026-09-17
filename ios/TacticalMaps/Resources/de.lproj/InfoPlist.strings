@@ -1,0 +1,2 @@
+"NSFaceIDUsageDescription" = "Face ID entsperrt die lokal verschlüsselten Einsatzdaten von TacMap und die optionale App-Sperre.";
+"NSLocationWhenInUseUsageDescription" = "TacMap zeigt deine Live-Position und MGRS-Koordinate an und zeichnet von dir gestartete GPX-Tracks im Hintergrund auf. Deine verschlüsselte Position wird bei ausgeschaltetem Bildschirm nur mit verbundenen Sync-Teilnehmern geteilt, wenn du unter OPSEC „Meinen Standort teilen“ und „Unit Sync im Hintergrund“ aktivierst.";

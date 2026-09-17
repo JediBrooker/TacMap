@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import android.app.Activity
 import android.app.KeyguardManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -103,14 +105,14 @@ fun OpsecSettingsDialog(
                 // DEK must never let an unattended user weaken auth-bound storage.
                 @Suppress("DEPRECATION")
                 val intent = keyguard?.createConfirmDeviceCredentialIntent(
-                    "Confirm mission-data protection change",
-                    "Authenticate to change how the mission-data key is protected."
+                    L10n.text("Confirm mission-data protection change"),
+                    L10n.text("Authenticate to change how the mission-data key is protected.")
                 )
                 if (intent != null) {
                     credentialLauncher.launch(intent)
                 } else {
                     authController.cancelPending()
-                    keyError = "No device lockscreen is set, so this can't be changed."
+                    keyError = L10n.text("No device lockscreen is set, so this can't be changed.")
                 }
             }
         }
@@ -119,7 +121,7 @@ fun OpsecSettingsDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text(L10n.text("Done")) }
         },
         title = { Text(PRIVACY_OPSEC_LABEL) },
         text = {
@@ -128,7 +130,7 @@ fun OpsecSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 persistenceIssue?.let { Caption(it, Color(0xFFB00020)) }
-                Text("Primary coordinate", fontWeight = FontWeight.SemiBold)
+                Text(L10n.text("Primary coordinate"), fontWeight = FontWeight.SemiBold)
                 CoordinateDisplayType.entries.forEach { type ->
                     CoordinateTypeRow(
                         selected = primaryCoordinateType == type,
@@ -136,9 +138,9 @@ fun OpsecSettingsDialog(
                         onSelect = { opsec.setPrimaryCoordinateType(type) }
                     )
                 }
-                Caption("Chooses the large green coordinate shown at the top of the map.")
+                Caption(L10n.text("Chooses the large green coordinate shown at the top of the map."))
 
-                Text("Map orientation", fontWeight = FontWeight.SemiBold)
+                Text(L10n.text("Map orientation"), fontWeight = FontWeight.SemiBold)
                 Column(Modifier.selectableGroup()) {
                     MapOrientationMode.entries.forEach { mode ->
                         MapOrientationRow(
@@ -151,26 +153,26 @@ fun OpsecSettingsDialog(
                 }
                 Caption(
                     if (headingAvailable) {
-                        "North Up starts north-facing and keeps two-finger rotation available. " +
-                            "Heading Up uses the phone compass to keep your pointing direction " +
-                            "at the top of the map. It uses true north when a recent location is " +
-                            "available. The compass marks bearings T for true north, or M when " +
-                            "it falls back to magnetic north, and ? while waiting for a valid reading."
+                        L10n.text("North Up starts north-facing and keeps two-finger rotation available. ") +
+                            L10n.text("Heading Up uses the phone compass to keep your pointing direction ") +
+                            L10n.text("at the top of the map. It uses true north when a recent location is ") +
+                            L10n.text("available. The compass marks bearings T for true north, or M when ") +
+                            L10n.text("it falls back to magnetic north, and ? while waiting for a valid reading.")
                     } else {
-                        "Heading Up is unavailable because this device does not report compass headings."
+                        L10n.text("Heading Up is unavailable because this device does not report compass headings.")
                     }
                 )
 
-                SettingRow(blockCapture, { opsec.setBlockScreenCapture(it) }, "Block screenshots & recents preview")
+                SettingRow(blockCapture, { opsec.setBlockScreenCapture(it) }, L10n.text("Block screenshots & recents preview"))
 
-                Text("Unit Sync", fontWeight = FontWeight.SemiBold)
+                Text(L10n.text("Unit Sync"), fontWeight = FontWeight.SemiBold)
                 SettingRow(
                     backgroundUnitSyncLocation,
                     {
                         opsec.setBackgroundUnitSyncLocation(it)
                         if (!it) backgroundIntervalExpanded = false
                     },
-                    "Background Unit Sync location",
+                    L10n.text("Background Unit Sync location"),
                 )
                 ExposedDropdownMenuBox(
                     expanded = backgroundIntervalExpanded,
@@ -185,7 +187,7 @@ fun OpsecSettingsDialog(
                         onValueChange = {},
                         readOnly = true,
                         enabled = backgroundUnitSyncLocation,
-                        label = { Text("Screen-off update interval") },
+                        label = { Text(L10n.text("Screen-off update interval")) },
                         trailingIcon = {
                             ExposedDropdownMenuDefaults.TrailingIcon(
                                 expanded = backgroundIntervalExpanded
@@ -217,7 +219,7 @@ fun OpsecSettingsDialog(
                         relayDraft = it
                         opsec.clearRelayValidationIssue()
                     },
-                    label = { Text("Unit Sync relay") },
+                    label = { Text(L10n.text("Unit Sync relay")) },
                     singleLine = true,
                     isError = relayValidationIssue != null,
                     keyboardOptions = KeyboardOptions(
@@ -241,62 +243,62 @@ fun OpsecSettingsDialog(
                             if (opsec.setRelayUrl(relayDraft)) relayDraft = opsec.relayUrl.value
                         },
                         enabled = relayDraft != relayUrl,
-                    ) { Text("Save relay") }
+                    ) { Text(L10n.text("Save relay")) }
                     TextButton(
                         onClick = {
                             if (opsec.resetRelayUrl()) relayDraft = opsec.relayUrl.value
                         },
                         enabled = relayUrl != OpsecSettings.DEFAULT_RELAY ||
                             relayDraft != OpsecSettings.DEFAULT_RELAY,
-                    ) { Text("Use default") }
+                    ) { Text(L10n.text("Use default")) }
                 }
                 relayValidationIssue?.let { Caption(it, Color(0xFFB00020)) }
                 Caption(
-                    "Off by default. While the app is active, Unit Sync location remains " +
-                        "near-real-time (about every 5 seconds); the selected interval affects " +
-                        "only screen-off background updates. When enabled, a joined v3 room " +
-                        "can continue sharing your encrypted position after the screen locks—" +
-                        "but only while Share my location is also on. Background updates are " +
-                        "best-effort, Android shows an ongoing location notification, and the " +
-                        "room reconnects for a verified snapshot when you return. Track " +
-                        "recording is controlled separately. Custom relays must use secure " +
-                        "wss://. Debug builds also permit ws:// only on this device's " +
-                        "loopback address."
+                    L10n.text("Off by default. While the app is active, Unit Sync location remains ") +
+                        L10n.text("near-real-time (about every 5 seconds); the selected interval affects ") +
+                        L10n.text("only screen-off background updates. When enabled, a joined v3 room ") +
+                        L10n.text("can continue sharing your encrypted position after the screen locks—") +
+                        L10n.text("but only while Share my location is also on. Background updates are ") +
+                        L10n.text("best-effort, Android shows an ongoing location notification, and the ") +
+                        L10n.text("room reconnects for a verified snapshot when you return. Track ") +
+                        L10n.text("recording is controlled separately. Custom relays must use secure ") +
+                        L10n.text("wss://. Debug builds also permit ws:// only on this device's ") +
+                        L10n.text("loopback address.")
                 )
 
-                SettingRow(online, { opsec.setOnlineLookups(it) }, "Online place, terrain & weather lookups")
+                SettingRow(online, { opsec.setOnlineLookups(it) }, L10n.text("Online place, terrain & weather lookups"))
                 Caption(
-                    "Off by default. When you turn this on, place-name " +
-                        "search may use the device's geocoder. Elevation and weather send the " +
-                        "map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain " +
-                        "heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering " +
-                        "the visible map area. Turn this off when you need a fully " +
-                        "offline/OPSEC posture."
+                    L10n.text("Off by default. When you turn this on, place-name ") +
+                        L10n.text("search may use the device's geocoder. Elevation and weather send the ") +
+                        L10n.text("map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain ") +
+                        L10n.text("heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering ") +
+                        L10n.text("the visible map area. Turn this off when you need a fully ") +
+                        L10n.text("offline/OPSEC posture.")
                 )
 
-                SettingRow(onlineBasemaps, { opsec.setOnlineBasemaps(it) }, "Online basemap tiles")
+                SettingRow(onlineBasemaps, { opsec.setOnlineBasemaps(it) }, L10n.text("Online basemap tiles"))
                 Caption(
-                    "Off by default. While off the " +
-                        "map only draws imported offline maps, and no tile request leaves the " +
-                        "device. While on, Esri or OpenTopoMap can see the ground you are " +
-                        "looking at from your IP. Turn this off for a fully offline posture."
+                    L10n.text("Off by default. While off the ") +
+                        L10n.text("map only draws imported offline maps, and no tile request leaves the ") +
+                        L10n.text("device. While on, Esri or OpenTopoMap can see the ground you are ") +
+                        L10n.text("looking at from your IP. Turn this off for a fully offline posture.")
                 )
 
-                SettingRow(authBound, { requestAuthBound(it) }, "Require unlock to decrypt mission data")
+                SettingRow(authBound, { requestAuthBound(it) }, L10n.text("Require unlock to decrypt mission data"))
                 Caption(
-                    "Off: waypoints, drawings and tracks are encrypted with a key the device " +
-                        "Keystore releases to this app automatically. Copied app files contain " +
-                        "ciphertext, but code running as this app on a compromised device may ask " +
-                        "the Keystore to decrypt.\n\n" +
-                        "On: Android Keystore requires a recent device credential or strong " +
-                        "biometric before key use. Hardware backing varies by device and TacMap " +
-                        "does not verify it, so a fully compromised system remains outside this " +
-                        "protection. After the app is killed, nothing can read or write mission " +
-                        "data until you unlock, including background track recording. Removing " +
-                        "your device lockscreen can invalidate the key and make mission data " +
-                        "unrecoverable."
+                    L10n.text("Off: waypoints, drawings and tracks are encrypted with a key the device ") +
+                        L10n.text("Keystore releases to this app automatically. Copied app files contain ") +
+                        L10n.text("ciphertext, but code running as this app on a compromised device may ask ") +
+                        L10n.text("the Keystore to decrypt.\n\n") +
+                        L10n.text("On: Android Keystore requires a recent device credential or strong ") +
+                        L10n.text("biometric before key use. Hardware backing varies by device and TacMap ") +
+                        L10n.text("does not verify it, so a fully compromised system remains outside this ") +
+                        L10n.text("protection. After the app is killed, nothing can read or write mission ") +
+                        L10n.text("data until you unlock, including background track recording. Removing ") +
+                        L10n.text("your device lockscreen can invalidate the key and make mission data ") +
+                        L10n.text("unrecoverable.")
                 )
-                keyError?.let { Caption("Could not change key protection: $it", Color(0xFFB00020)) }
+                keyError?.let { Caption(L10n.text("Could not change key protection: %1\$s", it), Color(0xFFB00020)) }
             }
         }
     )

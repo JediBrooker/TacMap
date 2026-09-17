@@ -7,7 +7,7 @@ struct SymbolEditDraft: Equatable {
         "higherFormation", "uniqueIdentifier", "reinforcementStatus", "mgrs",
         "rotationDegrees", "scaleX", "scaleY", "delete",
     ]
-    static let elevationValidationError = "Enter a valid elevation in metres."
+    static let elevationValidationError = L10n.text("Enter a valid elevation in metres.")
 
     var name: String
     var kind: WaypointKind
@@ -134,27 +134,27 @@ struct SymbolEditDraft: Equatable {
 /// controls and by fast unit tests when a hosted accessibility tree is absent.
 enum SymbolEditorAccessibility {
     static let minimumTargetPoints: CGFloat = 44
-    static let closeLabel = "Close symbol editor"
-    static let moveLabel = "Move symbol to crosshair"
-    static let deleteLabel = "Delete symbol"
-    static let rotationLabel = "Rotation"
-    static let widthLabel = "Width scale"
-    static let heightLabel = "Height scale"
-    static let resetRotationLabel = "Reset rotation"
-    static let resetWidthLabel = "Reset width scale"
-    static let resetHeightLabel = "Reset height scale"
+    static let closeLabel = L10n.text("Close symbol editor")
+    static let moveLabel = L10n.text("Move symbol to crosshair")
+    static let deleteLabel = L10n.text("Delete symbol")
+    static let rotationLabel = L10n.text("Rotation")
+    static let widthLabel = L10n.text("Width scale")
+    static let heightLabel = L10n.text("Height scale")
+    static let resetRotationLabel = L10n.text("Reset rotation")
+    static let resetWidthLabel = L10n.text("Reset width scale")
+    static let resetHeightLabel = L10n.text("Reset height scale")
     static let requiredLabels = [closeLabel, moveLabel, deleteLabel,
                                  rotationLabel, widthLabel, heightLabel]
 
     static let markerSwatches: [(name: String, hex: String)] =
-        MarkerCatalog.teamColors + [(name: "Slate", hex: "#8A93A6"),
-                                    (name: "Black", hex: "#111417")]
+        MarkerCatalog.teamColors + [(name: L10n.text("Slate"), hex: "#8A93A6"),
+                                    (name: L10n.text("Black"), hex: "#111417")]
 
     static func markerLabel(for hex: String) -> String {
         let name = markerSwatches.first {
             $0.hex.caseInsensitiveCompare(hex) == .orderedSame
         }?.name ?? hex
-        return "Marker colour, \(name)"
+        return L10n.text("Marker colour, %1$@", name)
     }
 }
 
@@ -216,8 +216,8 @@ struct WaypointCreationSheet: View {
                 Section {
                     TextField(currentKind.displayName, text: $name)
                         .autocorrectionDisabled()
-                } header: { Text("Name") } footer: {
-                    Text("Optional — leave blank to use the symbol's name automatically.")
+                } header: { Text(L10n.text("Name")) } footer: {
+                    Text(L10n.text("Optional — leave blank to use the symbol's name automatically."))
                         .font(.caption2)
                 }
 
@@ -233,9 +233,9 @@ struct WaypointCreationSheet: View {
                         Spacer()
                     }
                     .listRowBackground(Color.white)
-                } header: { Text("Preview") }
+                } header: { Text(L10n.text("Preview")) }
 
-                Section("Type") {
+                Section(L10n.text("Type")) {
                     // Custom segmented control b/c SwiftUI's
                     // .pickerStyle(.segmented) on iOS 26 ignores
                     // short taps (< ~200ms). The culprit is some
@@ -254,29 +254,29 @@ struct WaypointCreationSheet: View {
                     EmptyView() // plain point, no symbol config
 
                 case .military:
-                    Section("Military Unit (APP-6C)") {
+                    Section(L10n.text("Military Unit (APP-6C)")) {
                         // Only 4 options so popup menu (default style)
                         // fits fine without scrolling.
-                        Picker("Affiliation", selection: $affiliation) {
+                        Picker(L10n.text("Affiliation"), selection: $affiliation) {
                             ForEach(SymbolAffiliation.allCases, id: \.self) { a in
                                 Text(a.displayName).tag(a)
                             }
                         }
                         StableNavigationSelection(
-                            title: "Echelon",
+                            title: L10n.text("Echelon"),
                             stableID: "create-unit-echelon",
                             options: SymbolPickerOptions.echelons,
                             selection: $echelon,
                             optionTitle: { $0.displayName }
                         )
                         StableNavigationSelection(
-                            title: "Function / Branch",
+                            title: L10n.text("Function / Branch"),
                             stableID: "create-unit-function",
                             options: SymbolPickerOptions.functions,
                             selection: $function,
                             optionTitle: { $0.displayName }
                         )
-                        Toggle("Headquarters", isOn: $isHeadquarters)
+                        Toggle(L10n.text("Headquarters"), isOn: $isHeadquarters)
                     }
                     Section {
                         UnitAmplifierFields(
@@ -285,15 +285,15 @@ struct WaypointCreationSheet: View {
                             reinforcementStatus: $reinforcementStatus
                         )
                     } header: {
-                        Text("Unit Amplifiers")
+                        Text(L10n.text("Unit Amplifiers"))
                     } footer: {
-                        Text("M: higher formation (bottom-right). T: unit callsign / unique identifier (bottom-left). F: reinforced or reduced (upper-right).")
+                        Text(L10n.text("M: higher formation (bottom-right). T: unit callsign / unique identifier (bottom-left). F: reinforced or reduced (upper-right)."))
                             .font(.caption2)
                     }
 
                 case .marker:
-                    Section("Symbol Set") {
-                        Picker("Set", selection: $markerSet) {
+                    Section(L10n.text("Symbol Set")) {
+                        Picker(L10n.text("Set"), selection: $markerSet) {
                             ForEach(MarkerSet.allCases, id: \.self) { s in
                                 Text(s.displayName).tag(s)
                             }
@@ -305,8 +305,8 @@ struct WaypointCreationSheet: View {
                             markerColorHex = first.defaultColorHex
                         }
                     }
-                    Section("Symbol") {
-                        Picker("Symbol", selection: $markerSymbolID) {
+                    Section(L10n.text("Symbol")) {
+                        Picker(L10n.text("Symbol"), selection: $markerSymbolID) {
                             ForEach(MarkerCatalog.entries(for: markerSet), id: \.id) { e in
                                 Label(e.name, systemImage: e.sfSymbol).tag(e.id)
                             }
@@ -316,16 +316,16 @@ struct WaypointCreationSheet: View {
                             markerColorHex = MarkerCatalog.entry(set: markerSet, id: newID).defaultColorHex
                         }
                     }
-                    Section("Colour") {
+                    Section(L10n.text("Colour")) {
                         MarkerColorSwatches(selection: $markerColorHex)
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                     }
 
                 case .controlMeasure:
-                    Section("Tactical Task / Control Measure") {
+                    Section(L10n.text("Tactical Task / Control Measure")) {
                         StableNavigationSelection(
-                            title: "Measure",
+                            title: L10n.text("Measure"),
                             stableID: "create-task-measure",
                             options: SymbolPickerOptions.controlMeasures,
                             selection: $control,
@@ -335,7 +335,7 @@ struct WaypointCreationSheet: View {
                     Section {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text("Rotation")
+                                Text(L10n.text("Rotation"))
                                 Spacer()
                                 Text("\(Int(rotation.rounded()))°")
                                     .font(.subheadline.monospacedDigit())
@@ -346,7 +346,7 @@ struct WaypointCreationSheet: View {
                                 .accessibilityValue("\(Int(rotation.rounded()))°")
                                 .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
                             HStack {
-                                Button("Reset") { rotation = 0 }
+                                Button(L10n.text("Reset")) { rotation = 0 }
                                     .buttonStyle(.bordered)
                                     .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
                                            minHeight: SymbolEditorAccessibility.minimumTargetPoints)
@@ -357,12 +357,12 @@ struct WaypointCreationSheet: View {
                                         .buttonStyle(.bordered)
                                         .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
                                                minHeight: SymbolEditorAccessibility.minimumTargetPoints)
-                                        .accessibilityLabel("Set rotation to \(deg) degrees")
+                                        .accessibilityLabel(L10n.text("Set rotation to %1$@ degrees", deg))
                                 }
                             }
                         }
-                    } header: { Text("Orientation") } footer: {
-                        Text("Rotate the symbol to indicate direction (e.g. axis of advance, ambush facing).")
+                    } header: { Text(L10n.text("Orientation")) } footer: {
+                        Text(L10n.text("Rotate the symbol to indicate direction (e.g. axis of advance, ambush facing)."))
                             .font(.caption2)
                     }
                     Section {
@@ -370,12 +370,12 @@ struct WaypointCreationSheet: View {
                             // Width
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Label("Width", systemImage: "arrow.left.and.right")
+                                    Label(L10n.text("Width"), systemImage: "arrow.left.and.right")
                                     Spacer()
                                     Text(String(format: "%.2f×", scaleX))
                                         .font(.subheadline.monospacedDigit())
                                         .foregroundStyle(.secondary)
-                                    Button("Reset") { scaleX = 1.0 }
+                                    Button(L10n.text("Reset")) { scaleX = 1.0 }
                                         .buttonStyle(.bordered)
                                         .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
                                                minHeight: SymbolEditorAccessibility.minimumTargetPoints)
@@ -389,12 +389,12 @@ struct WaypointCreationSheet: View {
                             // Height
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Label("Height", systemImage: "arrow.up.and.down")
+                                    Label(L10n.text("Height"), systemImage: "arrow.up.and.down")
                                     Spacer()
                                     Text(String(format: "%.2f×", scaleY))
                                         .font(.subheadline.monospacedDigit())
                                         .foregroundStyle(.secondary)
-                                    Button("Reset") { scaleY = 1.0 }
+                                    Button(L10n.text("Reset")) { scaleY = 1.0 }
                                         .buttonStyle(.bordered)
                                         .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
                                                minHeight: SymbolEditorAccessibility.minimumTargetPoints)
@@ -410,7 +410,7 @@ struct WaypointCreationSheet: View {
                             // Just lets the user go "make it 2x bigger"
                             // without dragging both sliders.
                             HStack {
-                                Text("Both:")
+                                Text(L10n.text("Both:"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 Spacer()
@@ -421,52 +421,52 @@ struct WaypointCreationSheet: View {
                                     .buttonStyle(.bordered)
                                     .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
                                            minHeight: SymbolEditorAccessibility.minimumTargetPoints)
-                                    .accessibilityLabel(String(format: "Set width and height to %g times", s))
+                                    .accessibilityLabel(L10n.text("Set width and height to %1$@ times", String(format: "%g", s)))
                                 }
                             }
                         }
-                    } header: { Text("Size") } footer: {
-                        Text("Independent width and height multipliers — stretch the symbol wider/thinner or longer/shorter. The geographic footprint scales with the map zoom.")
+                    } header: { Text(L10n.text("Size")) } footer: {
+                        Text(L10n.text("Independent width and height multipliers — stretch the symbol wider/thinner or longer/shorter. The geographic footprint scales with the map zoom."))
                             .font(.caption2)
                     }
                 }
 
-                Section("Notes") {
-                    TextField("Optional", text: $notes, axis: .vertical)
+                Section(L10n.text("Notes")) {
+                    TextField(L10n.text("Optional"), text: $notes, axis: .vertical)
                         .lineLimit(3...6)
                 }
 
-                Section("Elevation (metres)") {
-                    TextField("Optional — leave blank for none", text: $elevationText)
+                Section(L10n.text("Elevation (metres)")) {
+                    TextField(L10n.text("Optional — leave blank for none"), text: $elevationText)
                         .keyboardType(.numbersAndPunctuation)
                 }
 
                 Section {
                     HStack {
-                        Text("Location")
+                        Text(L10n.text("Location"))
                         Spacer()
                         Text(MGRSFormatter.string(from: locationCoordinate))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                     }
-                } header: { Text("Position") } footer: {
-                    Text("The new symbol will be placed at the current map crosshair.")
+                } header: { Text(L10n.text("Position")) } footer: {
+                    Text(L10n.text("The new symbol will be placed at the current map crosshair."))
                         .font(.caption2)
                 }
 
             }
-            .navigationTitle("New Symbol")
+            .navigationTitle(L10n.text("New Symbol"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.text("Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") { save() }
+                    Button(L10n.text("Save")) { save() }
                         .bold()
                 }
             }
-            .alert("Could Not Save Symbol",
+            .alert(L10n.text("Could Not Save Symbol"),
                    isPresented: Binding(get: { errorMessage != nil },
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in
@@ -608,7 +608,7 @@ struct SelectedSymbolEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Name") {
+                Section(L10n.text("Name")) {
                     TextField(draft.kind.displayName, text: $draft.name)
                         .autocorrectionDisabled()
                         .frame(minHeight: 44)
@@ -624,29 +624,29 @@ struct SelectedSymbolEditSheet: View {
                             reinforcementStatus: $draft.reinforcementStatus
                         )
                     } header: {
-                        Text("Unit Amplifiers")
+                        Text(L10n.text("Unit Amplifiers"))
                     } footer: {
-                        Text("Separate from Unit Labels. M is bottom-right, T is bottom-left, and F is upper-right.")
+                        Text(L10n.text("Separate from Unit Labels. M is bottom-right, T is bottom-left, and F is upper-right."))
                             .font(.caption2)
                     }
                 }
 
                 mgrsLocationSection
 
-                Section("Notes") {
-                    TextField("Optional", text: $draft.notes, axis: .vertical)
+                Section(L10n.text("Notes")) {
+                    TextField(L10n.text("Optional"), text: $draft.notes, axis: .vertical)
                         .lineLimit(3...6)
                         .frame(minHeight: 44)
                 }
 
-                Section("Elevation (metres)") {
-                    TextField("Optional — leave blank for none", text: $draft.elevationText)
+                Section(L10n.text("Elevation (metres)")) {
+                    TextField(L10n.text("Optional — leave blank for none"), text: $draft.elevationText)
                         .keyboardType(.numbersAndPunctuation)
                         .frame(minHeight: 44)
                 }
 
-                Section("Layer") {
-                    Picker("Layer", selection: $draft.layerID) {
+                Section(L10n.text("Layer")) {
+                    Picker(L10n.text("Layer"), selection: $draft.layerID) {
                         ForEach(drawingStore.layers) { layer in
                             Text(layer.name).tag(layer.id)
                         }
@@ -658,7 +658,7 @@ struct SelectedSymbolEditSheet: View {
                 if draft.kind.controlMeasure != nil {
                     taskColourSection
                     controlValueSection(
-                        title: "Rotation",
+                        title: L10n.text("Rotation"),
                         value: $draft.rotationDegrees,
                         range: 0...359,
                         step: 1,
@@ -668,7 +668,7 @@ struct SelectedSymbolEditSheet: View {
                         reset: { draft.resetRotation() }
                     )
                     controlValueSection(
-                        title: "Width Scale",
+                        title: L10n.text("Width Scale"),
                         value: $draft.scaleX,
                         range: 0.1...20,
                         step: 0.1,
@@ -678,7 +678,7 @@ struct SelectedSymbolEditSheet: View {
                         reset: { draft.resetWidth() }
                     )
                     controlValueSection(
-                        title: "Height Scale",
+                        title: L10n.text("Height Scale"),
                         value: $draft.scaleY,
                         range: 0.1...20,
                         step: 0.1,
@@ -693,40 +693,40 @@ struct SelectedSymbolEditSheet: View {
                     Button(role: .destructive) {
                         showDeleteConfirmation = true
                     } label: {
-                        Label("Delete symbol", systemImage: "trash")
+                        Label(L10n.text("Delete symbol"), systemImage: "trash")
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     }
                     .accessibilityLabel(SymbolEditorAccessibility.deleteLabel)
                 }
             }
-            .navigationTitle("Edit Symbol")
+            .navigationTitle(L10n.text("Edit Symbol"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.text("Cancel")) { dismiss() }
                         .fixedSize(horizontal: true, vertical: false)
                         .frame(minWidth: 64, minHeight: 44)
                         .accessibilityLabel(SymbolEditorAccessibility.closeLabel)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save", action: save)
+                    Button(L10n.text("Save"), action: save)
                         .bold()
                         .frame(minWidth: 44, minHeight: 44)
                 }
             }
-            .alert("Symbol Change Failed",
+            .alert(L10n.text("Symbol Change Failed"),
                    isPresented: Binding(get: { errorMessage != nil },
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in
                 Button("OK", role: .cancel) { errorMessage = nil }
             } message: { Text($0) }
             .confirmationDialog(
-                "Delete “\(waypoint.name)”?",
+                L10n.text("Delete “%1$@”?", waypoint.name),
                 isPresented: $showDeleteConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Delete symbol", role: .destructive, action: deleteSymbol)
-                Button("Cancel", role: .cancel) { }
+                Button(L10n.text("Delete symbol"), role: .destructive, action: deleteSymbol)
+                Button(L10n.text("Cancel"), role: .cancel) { }
             }
         }
         .interactiveDismissDisabled()
@@ -735,7 +735,7 @@ struct SelectedSymbolEditSheet: View {
 
     @ViewBuilder
     private var kindSections: some View {
-        Section("Kind") {
+        Section(L10n.text("Kind")) {
             KindCategorySegmentedPicker(selection: Binding(
                 get: { category },
                 set: { selectCategory($0) }
@@ -761,7 +761,7 @@ struct SelectedSymbolEditSheet: View {
                 militaryPickers(spec)
             case .controlMeasure(let measure):
                 StableNavigationSelection(
-                    title: "Measure",
+                    title: L10n.text("Measure"),
                     stableID: "edit-task-measure",
                     options: SymbolPickerOptions.controlMeasures,
                     selection: Binding(
@@ -778,7 +778,7 @@ struct SelectedSymbolEditSheet: View {
 
     @ViewBuilder
     private func militaryPickers(_ spec: MilitarySymbolSpec) -> some View {
-        Picker("Affiliation", selection: Binding(
+        Picker(L10n.text("Affiliation"), selection: Binding(
             get: { spec.affiliation },
             set: { draft.kind = .military(.init(affiliation: $0,
                                                  echelon: spec.echelon,
@@ -788,7 +788,7 @@ struct SelectedSymbolEditSheet: View {
             ForEach(SymbolAffiliation.allCases, id: \.self) { Text($0.displayName).tag($0) }
         }
         StableNavigationSelection(
-            title: "Echelon",
+            title: L10n.text("Echelon"),
             stableID: "edit-unit-echelon",
             options: SymbolPickerOptions.echelons,
             selection: Binding(
@@ -805,7 +805,7 @@ struct SelectedSymbolEditSheet: View {
             optionTitle: { $0.displayName }
         )
         StableNavigationSelection(
-            title: "Function / Branch",
+            title: L10n.text("Function / Branch"),
             stableID: "edit-unit-function",
             options: SymbolPickerOptions.functions,
             selection: Binding(
@@ -821,7 +821,7 @@ struct SelectedSymbolEditSheet: View {
             ),
             optionTitle: { $0.displayName }
         )
-        Toggle("Headquarters", isOn: Binding(
+        Toggle(L10n.text("Headquarters"), isOn: Binding(
             get: { spec.isHeadquarters },
             set: { draft.kind = .military(.init(affiliation: spec.affiliation,
                                                  echelon: spec.echelon,
@@ -832,7 +832,7 @@ struct SelectedSymbolEditSheet: View {
 
     @ViewBuilder
     private func markerPickers(_ marker: MarkerSymbol) -> some View {
-        Picker("Set", selection: Binding(
+        Picker(L10n.text("Set"), selection: Binding(
             get: { marker.set },
             set: { newSet in
                 let first = MarkerCatalog.entries(for: newSet)[0]
@@ -843,7 +843,7 @@ struct SelectedSymbolEditSheet: View {
         )) {
             ForEach(MarkerSet.allCases, id: \.self) { Text($0.displayName).tag($0) }
         }
-        Picker("Symbol", selection: Binding(
+        Picker(L10n.text("Symbol"), selection: Binding(
             get: { marker.symbolID },
             set: { draft.kind = .marker(.init(set: marker.set,
                                                symbolID: $0,
@@ -863,7 +863,7 @@ struct SelectedSymbolEditSheet: View {
     }
 
     private var taskColourSection: some View {
-        Section("Task Colour") {
+        Section(L10n.text("Task Colour")) {
             HStack(spacing: 8) {
                 ForEach(TaskColor.allCases, id: \.self) { colour in
                     Button {
@@ -878,7 +878,7 @@ struct SelectedSymbolEditSheet: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(colour.label)
-                    .accessibilityValue(draft.taskColor == colour ? "Selected" : "Not selected")
+                    .accessibilityValue(draft.taskColor == colour ? L10n.text("Selected") : L10n.text("Not selected"))
                     .accessibilityAddTraits(draft.taskColor == colour ? .isSelected : [])
                 }
             }
@@ -887,7 +887,7 @@ struct SelectedSymbolEditSheet: View {
 
     private var mgrsLocationSection: some View {
         Section {
-            TextField("1234 or 56HLH 1234 5678", text: $mgrsInput)
+            TextField(L10n.text("1234 or 56HLH 1234 5678"), text: $mgrsInput)
                 .keyboardType(.asciiCapable)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
@@ -899,14 +899,14 @@ struct SelectedSymbolEditSheet: View {
             Button {
                 _ = applyMGRSMove()
             } label: {
-                Label("Set MGRS Location", systemImage: "scope")
+                Label(L10n.text("Set MGRS Location"), systemImage: "scope")
                     .frame(maxWidth: .infinity,
                            minHeight: SymbolEditorAccessibility.minimumTargetPoints,
                            alignment: .leading)
             }
 
             if draft.hasStagedMove(from: waypoint) {
-                Text("Will move to \(MGRSFormatter.string(from: draft.stagedCoordinate)) when saved.")
+                Text(L10n.text("Will move to %1$@ when saved.", MGRSFormatter.string(from: draft.stagedCoordinate)))
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             }
@@ -916,9 +916,9 @@ struct SelectedSymbolEditSheet: View {
                     .foregroundStyle(.red)
             }
         } header: {
-            Text("Location (MGRS)")
+            Text(L10n.text("Location (MGRS)"))
         } footer: {
-            Text("Enter a full MGRS reference or a local 4, 6, 8, or 10-figure grid. TacMap uses this symbol's current grid square for numeric shorthand and centres the selected square offline.")
+            Text(L10n.text("Enter a full MGRS reference or a local 4, 6, 8, or 10-figure grid. TacMap uses this symbol's current grid square for numeric shorthand and centres the selected square offline."))
                 .font(.caption2)
         }
     }
@@ -938,7 +938,7 @@ struct SelectedSymbolEditSheet: View {
                     Spacer()
                     Text(valueText).monospacedDigit().foregroundStyle(.secondary)
                     Button(action: reset) {
-                        Label("Reset", systemImage: "arrow.counterclockwise")
+                        Label(L10n.text("Reset"), systemImage: "arrow.counterclockwise")
                             .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
                                    minHeight: SymbolEditorAccessibility.minimumTargetPoints)
                     }
@@ -1051,10 +1051,10 @@ private enum KindCategory: String, CaseIterable, Hashable {
 
     var displayName: String {
         switch self {
-        case .generic:        return "Point"
-        case .military:       return "Military"
-        case .controlMeasure: return "Tasks"
-        case .marker:         return "Markers"
+        case .generic:        return L10n.text("Point")
+        case .military:       return L10n.text("Military")
+        case .controlMeasure: return L10n.text("Tasks")
+        case .marker:         return L10n.text("Markers")
         }
     }
 }
@@ -1133,19 +1133,19 @@ private struct UnitAmplifierFields: View {
     @Binding var reinforcementStatus: ReinforcementStatus
 
     var body: some View {
-        TextField("Higher formation (M)", text: bounded(
+        TextField(L10n.text("Higher formation (M)"), text: bounded(
             $higherFormation, maximumLength: UnitAmplifierText.higherFormationMaxLength))
             .autocorrectionDisabled()
             .textInputAutocapitalization(.characters)
             .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
 
-        TextField("Unique identifier / callsign (T)", text: bounded(
+        TextField(L10n.text("Unique identifier / callsign (T)"), text: bounded(
             $uniqueIdentifier, maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength))
             .autocorrectionDisabled()
             .textInputAutocapitalization(.characters)
             .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
 
-        Picker("Reinforcement (F)", selection: $reinforcementStatus) {
+        Picker(L10n.text("Reinforcement (F)"), selection: $reinforcementStatus) {
             ForEach(ReinforcementStatus.allCases, id: \.self) { status in
                 Text(status.displayName).tag(status)
             }
@@ -1189,7 +1189,7 @@ private struct MarkerColorSwatches: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(SymbolEditorAccessibility.markerLabel(for: swatch.hex))
-                    .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                    .accessibilityValue(isSelected ? L10n.text("Selected") : L10n.text("Not selected"))
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
@@ -1230,8 +1230,8 @@ private struct KindCategorySegmentedPicker: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(kind.displayName) symbol kind")
-                .accessibilityValue(selection == kind ? "Selected" : "Not selected")
+                .accessibilityLabel(L10n.text("%1$@ symbol kind", kind.displayName))
+                .accessibilityValue(selection == kind ? L10n.text("Selected") : L10n.text("Not selected"))
                 .accessibilityAddTraits(selection == kind ? .isSelected : [])
             }
         }

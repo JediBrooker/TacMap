@@ -19,16 +19,16 @@ struct DrawingsSheet: View {
                 Section {
                     layerPicker
                 } header: {
-                    Text("Active Layer")
+                    Text(L10n.text("Active Layer"))
                 } footer: {
-                    Text("New drawings are added to this layer.")
+                    Text(L10n.text("New drawings are added to this layer."))
                         .font(.caption2)
                 }
 
-                Section("New Drawing") {
-                    newRow(.polyline, subtitle: "Tap successive points on the map to trace a route")
-                    newRow(.polygon,  subtitle: "Mark out an area or boundary")
-                    newRow(.point,    subtitle: "Drop a single labelled point")
+                Section(L10n.text("New Drawing")) {
+                    newRow(.polyline, subtitle: L10n.text("Tap successive points on the map to trace a route"))
+                    newRow(.polygon,  subtitle: L10n.text("Mark out an area or boundary"))
+                    newRow(.point,    subtitle: L10n.text("Drop a single labelled point"))
                 }
 
                 // group by layer so user can scan one layer at a time
@@ -47,7 +47,7 @@ struct DrawingsSheet: View {
                                     .frame(width: 10, height: 10)
                                 Text("\(layer.name) (\(shapesInLayer.count))")
                                 if !layer.visible {
-                                    Text("hidden")
+                                    Text(L10n.text("hidden"))
                                         .foregroundStyle(.secondary)
                                 }
                             }
@@ -56,58 +56,58 @@ struct DrawingsSheet: View {
                 }
 
                 if drawingStore.shapes.isEmpty {
-                    Section { Text("No drawings yet.").foregroundStyle(.secondary).font(.callout) }
+                    Section { Text(L10n.text("No drawings yet.")).foregroundStyle(.secondary).font(.callout) }
                 }
             }
-            .navigationTitle("Drawings")
+            .navigationTitle(L10n.text("Drawings"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button(L10n.text("Done")) { dismiss() }
                 }
             }
-            .alert("Delete drawing?",
+            .alert(L10n.text("Delete drawing?"),
                    isPresented: Binding(get: { pendingDelete != nil },
                                         set: { if !$0 { pendingDelete = nil } }),
                    presenting: pendingDelete) { shape in
-                Button("Delete", role: .destructive) {
+                Button(L10n.text("Delete"), role: .destructive) {
                     do {
                         _ = try drawingStore.deleteDurably(shape)
                         pendingDelete = nil
                     } catch {
                         pendingDelete = nil
-                        mutationError = "\(error.localizedDescription) Check available storage, then try again."
+                        mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
                     }
                 }
-                Button("Cancel", role: .cancel) { pendingDelete = nil }
+                Button(L10n.text("Cancel"), role: .cancel) { pendingDelete = nil }
             } message: { shape in
-                Text("This will permanently remove “\(shape.name ?? shape.kind.displayName)” — \(shape.coordinates.count) point\(shape.coordinates.count == 1 ? "" : "s").")
+                Text(L10n.text("This will permanently remove “%1$@” — %2$@.", shape.name ?? shape.kind.displayName, L10n.quantity("point", shape.coordinates.count)))
             }
-            .alert("Rename drawing",
+            .alert(L10n.text("Rename drawing"),
                    isPresented: Binding(get: { renamingShape != nil },
                                         set: { if !$0 { renamingShape = nil } }),
                    presenting: renamingShape) { shape in
-                TextField("Name", text: $renameDraft).autocorrectionDisabled()
-                Button("Save") {
+                TextField(L10n.text("Name"), text: $renameDraft).autocorrectionDisabled()
+                Button(L10n.text("Save")) {
                     var updated = shape
                     let trimmed = renameDraft.trimmingCharacters(in: .whitespaces)
                     updated.name = trimmed.isEmpty ? nil : trimmed
                     do {
-                        _ = try drawingStore.commitEdit(updated, actionName: "Rename Drawing")
+                        _ = try drawingStore.commitEdit(updated, actionName: L10n.text("Rename Drawing"))
                         renamingShape = nil
                     } catch {
                         renamingShape = nil
-                        mutationError = "\(error.localizedDescription) Check available storage, then try again."
+                        mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
                     }
                 }
-                Button("Cancel", role: .cancel) { renamingShape = nil }
+                Button(L10n.text("Cancel"), role: .cancel) { renamingShape = nil }
             }
-            .alert("Drawing Not Saved", isPresented: Binding(
+            .alert(L10n.text("Drawing Not Saved"), isPresented: Binding(
                 get: { mutationError != nil },
                 set: { if !$0 { mutationError = nil } }
             )) {
                 Button("OK", role: .cancel) { mutationError = nil }
             } message: {
-                Text(mutationError ?? "The drawing change could not be saved. Check available storage, then try again.")
+                Text(mutationError ?? L10n.text("The drawing change could not be saved. Check available storage, then try again."))
             }
         }
     }
@@ -128,7 +128,7 @@ struct DrawingsSheet: View {
                     .frame(width: 28)
                     .foregroundStyle(Color(red: 1, green: 0.65, blue: 0.18))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("New \(kind.displayName)")
+                    Text(L10n.text("New %1$@", kind.displayName))
                         .foregroundStyle(.primary)
                         .font(.body.weight(.semibold))
                     Text(subtitle)
@@ -149,7 +149,7 @@ struct DrawingsSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(shape.name ?? shape.kind.displayName)
                     .font(.callout)
-                Text("\(shape.coordinates.count) point\(shape.coordinates.count == 1 ? "" : "s") · \(shape.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                Text(L10n.quantity("point", shape.coordinates.count) + " · " + shape.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -166,7 +166,7 @@ struct DrawingsSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Rename \(shape.name ?? shape.kind.displayName)")
+            .accessibilityLabel(L10n.text("Rename %1$@", shape.name ?? shape.kind.displayName))
             Button(role: .destructive) {
                 pendingDelete = shape
             } label: {
@@ -176,19 +176,19 @@ struct DrawingsSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Delete \(shape.name ?? shape.kind.displayName)")
+            .accessibilityLabel(L10n.text("Delete %1$@", shape.name ?? shape.kind.displayName))
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 pendingDelete = shape
             } label: {
-                Label("Delete", systemImage: "trash")
+                Label(L10n.text("Delete"), systemImage: "trash")
             }
             Button {
                 renameDraft = shape.name ?? ""
                 renamingShape = shape
             } label: {
-                Label("Rename", systemImage: "pencil")
+                Label(L10n.text("Rename"), systemImage: "pencil")
             }
             .tint(.indigo)
         }
@@ -197,19 +197,19 @@ struct DrawingsSheet: View {
                 renameDraft = shape.name ?? ""
                 renamingShape = shape
             } label: {
-                Label("Rename", systemImage: "pencil")
+                Label(L10n.text("Rename"), systemImage: "pencil")
             }
             Button(role: .destructive) {
                 pendingDelete = shape
             } label: {
-                Label("Delete", systemImage: "trash")
+                Label(L10n.text("Delete"), systemImage: "trash")
             }
         }
     }
 
     @ViewBuilder
     private var layerPicker: some View {
-        Picker("Layer", selection: Binding(
+        Picker(L10n.text("Layer"), selection: Binding(
             get: { drawingStore.activeLayerID ?? drawingStore.layers.first?.id ?? UUID() },
             set: { drawingStore.activeLayerID = $0 }
         )) {

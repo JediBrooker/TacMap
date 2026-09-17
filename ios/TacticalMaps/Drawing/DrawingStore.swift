@@ -21,11 +21,11 @@ enum DrawingMutationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .locked:
-            return "Mission drawings are locked. Unlock mission data, then try again."
+            return L10n.text("Mission drawings are locked. Unlock mission data, then try again.")
         case .missing:
-            return "That drawing no longer exists. Close its controls and try again."
+            return L10n.text("That drawing no longer exists. Close its controls and try again.")
         case .persistenceFailed(let error):
-            return "The drawing change could not be saved: \(error.localizedDescription)"
+            return L10n.text("The drawing change could not be saved: %1$@", error.localizedDescription)
         }
     }
 }
@@ -107,9 +107,9 @@ final class DrawingStore: ObservableObject {
         let candidateLayers = layers + [layer]
         let candidateActive = activeLayerID ?? layer.id
         try commitLayerCandidate(candidateLayers, activeLayerID: candidateActive,
-                                 failureContext: "new layer")
+                                 failureContext: L10n.text("new layer"))
         undoManager?.registerUndo(withTarget: self) { s in s.removeLayerUndo(layer) }
-        undoManager?.setActionName("Add Layer")
+        undoManager?.setActionName(L10n.text("Add Layer"))
         return layer
     }
 
@@ -123,14 +123,14 @@ final class DrawingStore: ObservableObject {
             : activeLayerID
         do {
             try commitLayerCandidate(candidateLayers, activeLayerID: candidateActive,
-                                     failureContext: "layer undo")
+                                     failureContext: L10n.text("layer undo"))
             undoManager?.registerUndo(withTarget: self) { [layer] s in
                 _ = try? s.addLayerVerbatim(layer)
-                s.undoManager?.setActionName("Add Layer")
+                s.undoManager?.setActionName(L10n.text("Add Layer"))
             }
-            undoManager?.setActionName("Add Layer")
+            undoManager?.setActionName(L10n.text("Add Layer"))
         } catch {
-            loadError = "Could not undo the new layer: \(error.localizedDescription)"
+            loadError = L10n.text("Could not undo the new layer: %1$@", error.localizedDescription)
         }
     }
 
@@ -143,7 +143,7 @@ final class DrawingStore: ObservableObject {
         let candidateLayers = layers + [layer]
         try commitLayerCandidate(candidateLayers,
                                  activeLayerID: activeLayerID ?? layer.id,
-                                 failureContext: "imported layer")
+                                 failureContext: L10n.text("imported layer"))
         return true
     }
 
@@ -159,7 +159,7 @@ final class DrawingStore: ObservableObject {
         let candidateLayers = layers + additions
         try commitLayerCandidate(candidateLayers,
                                  activeLayerID: activeLayerID ?? candidateLayers.first?.id,
-                                 failureContext: "synced layers")
+                                 failureContext: L10n.text("synced layers"))
         return additions.count
     }
 
@@ -231,13 +231,13 @@ final class DrawingStore: ObservableObject {
                       shapes: candidateShapes,
                       activeLayerID: candidateActive)
         } catch {
-            loadError = "Could not save reassigned drawings to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save reassigned drawings to disk: %1$@", error.localizedDescription)
             throw MissionLayerMutationError.persistenceFailed(store: "drawings", underlying: error)
         }
         layers = candidateLayers
         shapes = candidateShapes
         activeLayerID = candidateActive
-        if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save")) == true { loadError = nil }
         return LayerDeletionCommit(reassignedWaypointCount: waypointCount,
                                    reassignedDrawingCount: drawingCount,
                                    fallbackLayerID: fallbackID)
@@ -252,7 +252,7 @@ final class DrawingStore: ObservableObject {
         var candidate = layers
         candidate[idx].visible = visible
         try commitLayerCandidate(candidate, activeLayerID: activeLayerID,
-                                 failureContext: "layer visibility")
+                                 failureContext: L10n.text("layer visibility"))
     }
 
     /// Renames and recolours in one candidate document and one durable write.
@@ -280,7 +280,7 @@ final class DrawingStore: ObservableObject {
         candidate[idx].defaultColorHex = defaultColorHex.uppercased()
         guard candidate[idx] != layers[idx] else { return }
         try commitLayerCandidate(candidate, activeLayerID: activeLayerID,
-                                 failureContext: "layer details")
+                                 failureContext: L10n.text("layer details"))
     }
 
     func layer(id: UUID) -> DrawingLayer? {
@@ -312,15 +312,15 @@ final class DrawingStore: ObservableObject {
                       shapes: candidate,
                       activeLayerID: activeLayerID)
         } catch {
-            loadError = "Could not save new drawing to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save new drawing to disk: %1$@", error.localizedDescription)
             throw DrawingMutationError.persistenceFailed(error)
         }
         shapes = candidate
-        if loadError?.hasPrefix("Could not save new drawing") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save new drawing")) == true { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.deleteDurably(shape)
         }
-        undoManager?.setActionName("Add Drawing")
+        undoManager?.setActionName(L10n.text("Add Drawing"))
         return true
     }
 
@@ -328,7 +328,7 @@ final class DrawingStore: ObservableObject {
     /// Returns false for an unchanged candidate and performs no write.
     @discardableResult
     func commitEdit(_ shape: DrawingShape,
-                    actionName: String = "Edit Drawing") throws -> Bool {
+                    actionName: String = L10n.text("Edit Drawing")) throws -> Bool {
         guard !locked else { throw DrawingMutationError.locked }
         guard let index = shapes.firstIndex(where: { $0.id == shape.id }) else {
             throw DrawingMutationError.missing
@@ -342,11 +342,11 @@ final class DrawingStore: ObservableObject {
                       shapes: candidate,
                       activeLayerID: activeLayerID)
         } catch {
-            loadError = "Could not save drawing change to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save drawing change to disk: %1$@", error.localizedDescription)
             throw DrawingMutationError.persistenceFailed(error)
         }
         shapes = candidate
-        if loadError?.hasPrefix("Could not save drawing change") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save drawing change")) == true { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.commitEdit(old, actionName: actionName)
         }
@@ -368,15 +368,15 @@ final class DrawingStore: ObservableObject {
                       shapes: candidate,
                       activeLayerID: activeLayerID)
         } catch {
-            loadError = "Could not delete drawing from disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not delete drawing from disk: %1$@", error.localizedDescription)
             throw DrawingMutationError.persistenceFailed(error)
         }
         shapes = candidate
-        if loadError?.hasPrefix("Could not delete drawing") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not delete drawing")) == true { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.restoreDurably(removed, at: index)
         }
-        undoManager?.setActionName("Delete Drawing")
+        undoManager?.setActionName(L10n.text("Delete Drawing"))
         return true
     }
 
@@ -391,15 +391,15 @@ final class DrawingStore: ObservableObject {
                       shapes: candidate,
                       activeLayerID: activeLayerID)
         } catch {
-            loadError = "Could not restore drawing to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not restore drawing to disk: %1$@", error.localizedDescription)
             throw DrawingMutationError.persistenceFailed(error)
         }
         shapes = candidate
-        if loadError?.hasPrefix("Could not restore drawing") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not restore drawing")) == true { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.deleteDurably(shape)
         }
-        undoManager?.setActionName("Delete Drawing")
+        undoManager?.setActionName(L10n.text("Delete Drawing"))
         return true
     }
 
@@ -442,14 +442,14 @@ final class DrawingStore: ObservableObject {
                       shapes: candidateShapes,
                       activeLayerID: candidateActiveLayerID)
         } catch {
-            loadError = "Could not save imported drawings to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save imported drawings to disk: %1$@", error.localizedDescription)
             throw BatchImportStoreError.persistenceFailed(error)
         }
 
         layers = candidateLayers
         shapes = candidateShapes
         activeLayerID = candidateActiveLayerID
-        if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save")) == true { loadError = nil }
         let insertedLayerIDs = Set(layersToInsert.map(\.id))
         let insertedShapeIDs = Set(shapesToInsert.map(\.id))
         undoManager?.registerUndo(withTarget: self) { store in
@@ -457,7 +457,7 @@ final class DrawingStore: ObservableObject {
                                       shapeIDs: insertedShapeIDs,
                                       batchKey: batchKey)
         }
-        undoManager?.setActionName("Import Drawings")
+        undoManager?.setActionName(L10n.text("Import Drawings"))
         return DrawingBatchImportCommit(insertedLayerCount: layersToInsert.count,
                                         insertedDrawingCount: shapesToInsert.count,
                                         skippedExistingDrawingCount: skipped)
@@ -519,9 +519,9 @@ final class DrawingStore: ObservableObject {
                                            drawings: removedShapes,
                                            batchKey: batchKey)
             }
-            undoManager?.setActionName("Import Drawings")
+            undoManager?.setActionName(L10n.text("Import Drawings"))
         } catch {
-            loadError = "Could not undo imported drawings: \(error.localizedDescription)"
+            loadError = L10n.text("Could not undo imported drawings: %1$@", error.localizedDescription)
         }
     }
 
@@ -573,8 +573,8 @@ final class DrawingStore: ObservableObject {
             if migrated { persist() } // one-time provenance upgrade
             if !unresolvedLegacyLayerIDs.isEmpty,
                loadError == nil {
-                loadError = "Some legacy layers have ambiguous default-layer history. "
-                    + "Confirm each one as custom or default before renaming, recolouring, or deleting it."
+                loadError = L10n.text("Some legacy layers have ambiguous default-layer history. ")
+                    + L10n.text("Confirm each one as custom or default before renaming, recolouring, or deleting it.")
             }
         case .empty:
             seedFreshInstall()
@@ -582,15 +582,15 @@ final class DrawingStore: ObservableObject {
             // Don't clobber the unreadable file - set it aside and tell the
             // user, otherwise the next edit would persist an empty doc over
             // the only copy
-            loadError = "Saved drawings could not be read and were set aside "
-                + "(\(quarantine?.lastPathComponent ?? "recovery copy")). Starting with an empty map."
+            loadError = L10n.text("Saved drawings could not be read and were set aside ")
+                + L10n.text("(%1$@). Starting with an empty map.", quarantine?.lastPathComponent ?? "recovery copy")
             seedFreshInstall()
         case .locked(let error):
             // The file is intact, we just can't open it yet. Give the UI some
             // layers to render but never write: persist() is gated on `locked`
             // so an empty doc can't land on top of real drawings.
             locked = true
-            loadError = "Drawings are encrypted and locked. \(error.localizedDescription)"
+            loadError = L10n.text("Drawings are encrypted and locked. %1$@", error.localizedDescription)
             layers = DrawingLayer.seedDefaults
             shapes = []
             activeLayerID = layers.first?.id
@@ -694,7 +694,7 @@ final class DrawingStore: ObservableObject {
                       shapes: shapes,
                       activeLayerID: candidateActive)
         } catch {
-            loadError = "Could not save \(failureContext) to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save %1$@ to disk: %2$@", failureContext, error.localizedDescription)
             throw MissionLayerMutationError.persistenceFailed(store: "drawings", underlying: error)
         }
         layers = candidateLayers
@@ -703,18 +703,18 @@ final class DrawingStore: ObservableObject {
     }
 
     private func clearLayerSaveError() {
-        if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save")) == true { loadError = nil }
     }
 
     private func persist() {
         guard !locked else { return }
         do {
             try write(layers: layers, shapes: shapes, activeLayerID: activeLayerID)
-            if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+            if loadError?.hasPrefix(L10n.text("Could not save")) == true { loadError = nil }
         } catch {
             // don't swallow this, user is editing but nothing is hitting disk
             print("[DrawingStore] persist failed")
-            loadError = "Could not save drawings to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save drawings to disk: %1$@", error.localizedDescription)
         }
     }
 

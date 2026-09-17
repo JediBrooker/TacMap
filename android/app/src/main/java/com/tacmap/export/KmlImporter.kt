@@ -1,5 +1,7 @@
 package com.tacmap.export
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
@@ -48,7 +50,7 @@ object KmlImporter {
         val storedStrokeWidth = density?.takeIf { it.isFinite() && it > 0f }
             ?.let { PORTABLE_DEFAULT_STROKE_WIDTH_DP * it }
             ?: LEGACY_DEFAULT_STROKE_WIDTH_PX
-        val bounded = BufferedInputStream(LimitInputStream(input, MAX_INPUT_BYTES.toLong(), "KML/KMZ exceeds 8 MiB"))
+        val bounded = BufferedInputStream(LimitInputStream(input, MAX_INPUT_BYTES.toLong(), L10n.text("KML/KMZ exceeds 8 MiB")))
         bounded.mark(4)
         val a = bounded.read()
         val b = bounded.read()
@@ -64,7 +66,7 @@ object KmlImporter {
         density: Float? = null,
     ): GeoJsonImporter.Result {
         val bytes = kml.toByteArray(Charsets.UTF_8)
-        if (bytes.size > MAX_INPUT_BYTES) throw ImportException("KML exceeds 8 MiB")
+        if (bytes.size > MAX_INPUT_BYTES) throw ImportException(L10n.text("KML exceeds 8 MiB"))
         val storedStrokeWidth = density?.takeIf { it.isFinite() && it > 0f }
             ?.let { PORTABLE_DEFAULT_STROKE_WIDTH_DP * it }
             ?: LEGACY_DEFAULT_STROKE_WIDTH_PX
@@ -82,13 +84,13 @@ object KmlImporter {
             var inflated = 0L
             while (true) {
                 val entry = zip.nextEntry ?: break
-                if (++count > MAX_ZIP_ENTRIES) throw ImportException("KMZ contains too many entries")
+                if (++count > MAX_ZIP_ENTRIES) throw ImportException(L10n.text("KMZ contains too many entries"))
                 if (entry.size > MAX_INPUT_BYTES ||
                     (entry.size > 0 && entry.compressedSize > 0 && entry.size.toDouble() / entry.compressedSize > 100.0)
-                ) throw ImportException("KMZ entry exceeds safe expansion limits")
+                ) throw ImportException(L10n.text("KMZ entry exceeds safe expansion limits"))
                 val remaining = MAX_INPUT_BYTES.toLong() - inflated
-                if (remaining <= 0) throw ImportException("KMZ expands beyond 8 MiB")
-                val limitedEntry = LimitInputStream(zip, remaining, "KMZ expands beyond 8 MiB", closeDelegate = false)
+                if (remaining <= 0) throw ImportException(L10n.text("KMZ expands beyond 8 MiB"))
+                val limitedEntry = LimitInputStream(zip, remaining, L10n.text("KMZ expands beyond 8 MiB"), closeDelegate = false)
                 if (!entry.isDirectory && entry.name.endsWith(".kml", ignoreCase = true)) {
                     return parseXml(limitedEntry, existingLayers, fallbackLayerId, storedStrokeWidth)
                 }
@@ -101,7 +103,7 @@ object KmlImporter {
                 zip.closeEntry()
             }
         }
-        throw ImportException("No .kml entry inside this KMZ")
+        throw ImportException(L10n.text("No .kml entry inside this KMZ"))
     }
 
     private fun parseXml(
@@ -130,7 +132,7 @@ object KmlImporter {
         } catch (e: ImportException) {
             throw e
         } catch (e: Exception) {
-            throw ImportException("Not valid KML: ${e.message ?: e.javaClass.simpleName}")
+            throw ImportException(L10n.text("Not valid KML: %1\$s", e.message ?: e.javaClass.simpleName))
         }
         return handler.result()
     }
@@ -173,16 +175,16 @@ object KmlImporter {
         override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes?) {
             depth++
             checkBudget()
-            if (depth > MAX_DEPTH) throw ImportException("KML nesting is too deep")
+            if (depth > MAX_DEPTH) throw ImportException(L10n.text("KML nesting is too deep"))
             val tag = tag(localName, qName)
             if (!rootSeen) {
-                if (tag != "kml") throw ImportException("Not a KML document")
+                if (tag != "kml") throw ImportException(L10n.text("Not a KML document"))
                 rootSeen = true
             }
             when (tag) {
                 "Document", "Folder" -> containers.addLast(Container(depth, containers.lastOrNull()?.layerId ?: fallback))
                 "Placemark" -> {
-                    if (++features > MAX_FEATURES) throw ImportException("KML contains too many features")
+                    if (++features > MAX_FEATURES) throw ImportException(L10n.text("KML contains too many features"))
                     placemark = Placemark(
                         depth = depth,
                         layerId = containers.lastOrNull()?.layerId ?: fallback,
@@ -207,7 +209,7 @@ object KmlImporter {
 
         override fun characters(ch: CharArray, start: Int, length: Int) {
             if (textName == null) return
-            if (text.length + length > MAX_TEXT_CHARS) throw ImportException("KML text field is too large")
+            if (text.length + length > MAX_TEXT_CHARS) throw ImportException(L10n.text("KML text field is too large"))
             text.append(ch, start, length)
         }
 
@@ -235,7 +237,7 @@ object KmlImporter {
         }
 
         fun result(): GeoJsonImporter.Result {
-            if (!rootSeen) throw ImportException("Empty KML document")
+            if (!rootSeen) throw ImportException(L10n.text("Empty KML document"))
             return GeoJsonImporter.Result(
                 waypoints = waypoints,
                 drawings = drawings,
@@ -275,7 +277,7 @@ object KmlImporter {
                 "Point" -> {
                     val index = waypoints.size
                     waypoints += Waypoint(
-                        id = id, name = p.name.ifBlank { "Imported" }, notes = p.notes,
+                        id = id, name = p.name.ifBlank { L10n.text("Imported") }, notes = p.notes,
                         latitude = tuples[0].first.latitude, longitude = tuples[0].first.longitude,
                         elevationMetres = tuples[0].second, kind = WaypointKind.Generic,
                         rotation = 0.0, scaleX = 1.0, scaleY = 1.0, layerId = p.layerId
@@ -328,14 +330,14 @@ object KmlImporter {
                 if (start >= raw.length) break
                 var end = start
                 while (end < raw.length && !raw[end].isWhitespace()) end++
-                if (++coordinates > MAX_COORDINATES) throw ImportException("KML contains too many coordinates")
+                if (++coordinates > MAX_COORDINATES) throw ImportException(L10n.text("KML contains too many coordinates"))
                 val tuple = raw.substring(start, end)
                 val parts = tuple.split(',', limit = 4)
-                val lon = parts.getOrNull(0)?.toDoubleOrNull() ?: throw ImportException("Invalid KML longitude")
-                val lat = parts.getOrNull(1)?.toDoubleOrNull() ?: throw ImportException("Invalid KML latitude")
+                val lon = parts.getOrNull(0)?.toDoubleOrNull() ?: throw ImportException(L10n.text("Invalid KML longitude"))
+                val lat = parts.getOrNull(1)?.toDoubleOrNull() ?: throw ImportException(L10n.text("Invalid KML latitude"))
                 val alt = parts.getOrNull(2)?.toDoubleOrNull()?.takeIf { it.isFinite() }
                 if (!lon.isFinite() || !lat.isFinite() || lon !in -180.0..180.0 || lat !in -90.0..90.0)
-                    throw ImportException("KML coordinate is outside WGS84 bounds")
+                    throw ImportException(L10n.text("KML coordinate is outside WGS84 bounds"))
                 out += DrawingPoint(latitude = lat, longitude = lon) to alt
                 start = end
             }
@@ -343,7 +345,7 @@ object KmlImporter {
         }
 
         private fun checkBudget() {
-            if (System.nanoTime() > deadline) throw ImportException("KML import exceeded time limit")
+            if (System.nanoTime() > deadline) throw ImportException(L10n.text("KML import exceeded time limit"))
         }
 
         private fun tag(localName: String?, qName: String?): String =

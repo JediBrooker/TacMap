@@ -1,5 +1,7 @@
 package com.tacmap.app
 
+import com.tacmap.localization.L10n
+
 import android.content.ActivityNotFoundException
 import android.Manifest
 import android.app.Activity
@@ -270,17 +272,17 @@ class MainActivity : ComponentActivity() {
                     if (showNotificationPermissionExplanation.value) {
                         AlertDialog(
                             onDismissRequest = { showNotificationPermissionExplanation.value = false },
-                            title = { Text("Recording notification is off") },
+                            title = { Text(L10n.text("Recording notification is off")) },
                             text = {
                                 Text(
-                                    "Recording can continue, but Android may hide its ongoing notification " +
-                                        "from the notification drawer. You can still find TacMap in Active apps."
+                                    L10n.text("Recording can continue, but Android may hide its ongoing notification ") +
+                                        L10n.text("from the notification drawer. You can still find TacMap in Active apps.")
                                 )
                             },
                             confirmButton = {
                                 TextButton(
                                     onClick = { showNotificationPermissionExplanation.value = false }
-                                ) { Text("Continue recording") }
+                                ) { Text(L10n.text("Continue recording")) }
                             },
                         )
                     }
@@ -366,11 +368,11 @@ class MainActivity : ComponentActivity() {
         val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         @Suppress("DEPRECATION")
         val intent = keyguard.createConfirmDeviceCredentialIntent(
-            "Unlock mission data",
-            "Confirm your device credential to decrypt maps and mission data."
+            L10n.text("Unlock mission data"),
+            L10n.text("Confirm your device credential to decrypt maps and mission data.")
         )
         if (intent == null) {
-            missionKeyError.value = "No device credential is available for this protected key."
+            missionKeyError.value = L10n.text("No device credential is available for this protected key.")
         } else {
             credentialLauncher.launch(intent)
         }
@@ -467,7 +469,7 @@ class MainActivity : ComponentActivity() {
         }
         val saved = edit.commit()
         if (!saved) {
-            missionKeyError.value = "Could not preserve the pending document import across process restart."
+            missionKeyError.value = L10n.text("Could not preserve the pending document import across process restart.")
         }
         return saved
     }
@@ -480,12 +482,12 @@ class MainActivity : ComponentActivity() {
             AuthBoundChangeController.Request.PromptCredential -> {
                 @Suppress("DEPRECATION")
                 val intent = keyguard.createConfirmDeviceCredentialIntent(
-                    "Confirm mission-data protection change",
-                    "Authenticate to change how the mission-data key is protected."
+                    L10n.text("Confirm mission-data protection change"),
+                    L10n.text("Authenticate to change how the mission-data key is protected.")
                 )
                 if (intent == null) {
                     authBoundChangeController.cancelPending()
-                    missionKeyError.value = "No device lockscreen is set, so this can't be changed."
+                    missionKeyError.value = L10n.text("No device lockscreen is set, so this can't be changed.")
                 } else {
                     authBoundChangeLauncher.launch(intent)
                 }
@@ -529,9 +531,9 @@ class MainActivity : ComponentActivity() {
                 }
                 (application as TacticalApp).trackRecorder.awaitPermissionRequest(
                     if (currentLocationAccess() == LocationAccess.Precise) {
-                        "Waiting for the recording notification choice…"
+                        L10n.text("Waiting for the recording notification choice…")
                     } else {
-                        "Waiting for Precise location permission…"
+                        L10n.text("Waiting for Precise location permission…")
                     }
                 )
                 trackRecordingPermissionLauncher.launch(requests.toTypedArray())
@@ -594,7 +596,7 @@ class MainActivity : ComponentActivity() {
         )
         if (!preflight.canStart) {
             recorder.failRecording(
-                preflight.message ?: "Track recording prerequisites are unavailable.",
+                preflight.message ?: L10n.text("Track recording prerequisites are unavailable."),
                 preflight.settingsTarget,
             )
             return
@@ -602,7 +604,7 @@ class MainActivity : ComponentActivity() {
         if (!recorder.prepareStart()) return
         runCatching { TrackRecordingService.start(this) }
             .onFailure {
-                recorder.failRecording("Could not start background recording: ${it.message}")
+                recorder.failRecording(L10n.text("Could not start background recording: %1\$s", it.message))
             }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

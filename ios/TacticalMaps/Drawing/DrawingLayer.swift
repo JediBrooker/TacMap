@@ -41,16 +41,16 @@ struct DrawingLayer: Identifiable, Codable, Hashable {
     /// loosely APP-6C affiliation palette but bumped to read on satellite.
     static let seedDefaults: [DrawingLayer] = [
         DrawingLayer(id: legacyFallbackID,
-                     name: "Friendly",
+                     name: L10n.text("Friendly"),
                      defaultColorHex: "#4DA6FF"),
         DrawingLayer(id: hostileDefaultID,
-                     name: "Hostile",
+                     name: L10n.text("Hostile"),
                      defaultColorHex: "#E63946"),
         DrawingLayer(id: unknownDefaultID,
-                     name: "Unknown",
+                     name: L10n.text("Unknown"),
                      defaultColorHex: "#FFB000"),
         DrawingLayer(id: civilianDefaultID,
-                     name: "Civilian",
+                     name: L10n.text("Civilian"),
                      defaultColorHex: "#2A9D8F"),
     ]
 }

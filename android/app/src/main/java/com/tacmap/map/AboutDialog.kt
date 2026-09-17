@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,42 +30,42 @@ fun AboutDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    L10n.text("Version %1\$s (%2\$s)", BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text("Satellite: Esri World Imagery (Esri, Maxar, Earthstar Geographics)", fontSize = 12.sp)
-                Text("Topographic / street: Esri basemap styles · map data © OpenStreetMap contributors", fontSize = 12.sp)
-                Text("Terrain: OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors", fontSize = 12.sp)
-                Text("Elevation / weather: Open-Meteo · Copernicus DEM (CC BY 4.0)", fontSize = 12.sp)
-                Text("APP-6C symbols: spatialillusions/milsymbol", fontSize = 12.sp)
-                Text("Unit Sync transport: Java-WebSocket + SLF4J (MIT; notices bundled)", fontSize = 12.sp)
-                Text("PDF maps and overlays stay on this device unless exported.", fontSize = 12.sp)
+                Text(L10n.text("Satellite: Esri World Imagery (Esri, Maxar, Earthstar Geographics)"), fontSize = 12.sp)
+                Text(L10n.text("Topographic / street: Esri basemap styles · map data © OpenStreetMap contributors"), fontSize = 12.sp)
+                Text(L10n.text("Terrain: OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors"), fontSize = 12.sp)
+                Text(L10n.text("Elevation / weather: Open-Meteo · Copernicus DEM (CC BY 4.0)"), fontSize = 12.sp)
+                Text(L10n.text("APP-6C symbols: spatialillusions/milsymbol"), fontSize = 12.sp)
+                Text(L10n.text("Unit Sync transport: Java-WebSocket + SLF4J (MIT; notices bundled)"), fontSize = 12.sp)
+                Text(L10n.text("PDF maps and overlays stay on this device unless exported."), fontSize = 12.sp)
 
                 crashReport?.let { report ->
                     Text(
-                        "A crash was recorded last run — nothing is sent anywhere.",
+                        L10n.text("A crash was recorded last run — nothing is sent anywhere."),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     TextButton(onClick = {
                         val intent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "TacMap crash log")
+                            putExtra(Intent.EXTRA_SUBJECT, L10n.text("TacMap crash log"))
                             putExtra(Intent.EXTRA_TEXT, report)
                         }
-                        context.startActivity(Intent.createChooser(intent, "Export crash log"))
-                    }) { Text("Export crash log", fontSize = 12.sp) }
+                        context.startActivity(Intent.createChooser(intent, L10n.text("Export crash log")))
+                    }) { Text(L10n.text("Export crash log"), fontSize = 12.sp) }
                     TextButton(onClick = {
                         CrashReporter.clear(context)
                         crashReport = null
-                    }) { Text("Clear crash log", fontSize = 12.sp) }
+                    }) { Text(L10n.text("Clear crash log"), fontSize = 12.sp) }
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(L10n.text("Close"))
             }
         }
     )

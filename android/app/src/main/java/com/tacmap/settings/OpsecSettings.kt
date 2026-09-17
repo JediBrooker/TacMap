@@ -1,5 +1,7 @@
 package com.tacmap.settings
 
+import com.tacmap.localization.L10n
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
@@ -25,9 +27,11 @@ enum class CoordinateDisplayType(val displayName: String) {
 
 /** Map-up behavior. Persisted names are stable; absent/unknown values preserve
  * the existing north-facing, gesture-rotatable mode. */
-enum class MapOrientationMode(val displayName: String) {
+enum class MapOrientationMode(private val displayNameKey: String) {
     NORTH_UP("North Up"),
     HEADING_UP("Heading Up");
+
+    val displayName: String get() = L10n.text(displayNameKey)
 
     companion object {
         fun fromPersisted(value: String?): MapOrientationMode =
@@ -37,12 +41,14 @@ enum class MapOrientationMode(val displayName: String) {
 
 /** User-selected cadence for screen-off Unit Sync location updates. Persisting
  * minute values keeps the preference stable if enum names change. */
-enum class BackgroundUnitSyncInterval(val minutes: Int, val displayName: String) {
+enum class BackgroundUnitSyncInterval(val minutes: Int, private val displayNameKey: String) {
     ONE_MINUTE(1, "Every minute"),
     FIVE_MINUTES(5, "Every 5 minutes"),
     FIFTEEN_MINUTES(15, "Every 15 minutes"),
     THIRTY_MINUTES(30, "Every 30 minutes"),
     SIXTY_MINUTES(60, "Every 60 minutes");
+
+    val displayName: String get() = L10n.text(displayNameKey)
 
     companion object {
         val DEFAULT = FIFTEEN_MINUTES
@@ -142,8 +148,8 @@ class OpsecSettings(context: Context) {
             )
             if (!repaired) {
                 _persistenceIssue.value =
-                    "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its " +
-                        "secure default for this run, but could not repair the saved setting."
+                    L10n.text("The saved Unit Sync relay was unsafe or obsolete. TacMap is using its ") +
+                        L10n.text("secure default for this run, but could not repair the saved setting.")
             }
         }
     }
@@ -241,8 +247,8 @@ class OpsecSettings(context: Context) {
         _persistenceIssue.value = if (committed) {
             null
         } else {
-            "Could not save this privacy setting. The previous setting remains active; " +
-                "check available storage and try again."
+            L10n.text("Could not save this privacy setting. The previous setting remains active; ") +
+                L10n.text("check available storage and try again.")
         }
         return committed
     }

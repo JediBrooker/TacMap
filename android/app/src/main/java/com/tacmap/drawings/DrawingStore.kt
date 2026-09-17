@@ -1,5 +1,7 @@
 package com.tacmap.drawings
 
+import com.tacmap.localization.L10n
+
 import android.content.Context
 import com.tacmap.util.SafeStore
 import com.tacmap.util.MissionStorePersistence
@@ -115,7 +117,7 @@ class DrawingStore private constructor(
     @Synchronized
     fun addLayer(name: String, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL): Boolean {
         val before = stableDocument()
-        val cleanName = name.trim().ifBlank { "Layer ${before.layers.size + 1}" }
+        val cleanName = name.trim().ifBlank { L10n.text("Layer %1\$s", before.layers.size + 1) }
         val candidate = before.copy(
             layers = before.layers + DrawingLayer(
                 name = cleanName,
@@ -408,25 +410,25 @@ class DrawingStore private constructor(
                 // Do NOT overwrite: unreadable file is preserved as
                 // drawings.json.corrupt-* and user is told. Otherwise the next
                 // edit would silently persist an empty doc over it.
-                _loadError.value = "Saved drawings could not be read and were set aside " +
-                    "(${r.quarantinedTo?.name ?: "recovery copy"}). Starting with an empty map."
+                _loadError.value = L10n.text("Saved drawings could not be read and were set aside ") +
+                    L10n.text("(%1\$s). Starting with an empty map.", r.quarantinedTo?.name ?: "recovery copy")
             is SafeStore.LoadResult.Locked -> {
                 _locked.value = true
-                _loadError.value = "Drawings are encrypted and locked. ${r.error.message}"
+                _loadError.value = L10n.text("Drawings are encrypted and locked. %1\$s", r.error.message)
             }
         }
     }
 
     private fun persistCandidate(candidate: DrawingDocument): Boolean {
         if (_locked.value) {
-            _loadError.value = "Drawings are locked and the change was not saved."
+            _loadError.value = L10n.text("Drawings are locked and the change was not saved.")
             return false
         }
         return runCatching { persistence.write(file, LABEL, json.encodeToString(candidate)) }
             .fold(
                 onSuccess = { true },
                 onFailure = {
-                    _loadError.value = "Could not save drawings to disk; the change was reverted: ${it.message}"
+                    _loadError.value = L10n.text("Could not save drawings to disk; the change was reverted: %1\$s", it.message)
                     false
                 },
             )

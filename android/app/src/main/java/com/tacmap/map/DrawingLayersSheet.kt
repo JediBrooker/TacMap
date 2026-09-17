@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.rememberScrollState
@@ -125,7 +127,7 @@ fun DrawingLayersSheet(
         ) {
             item(key = "header") {
                 Column {
-                    Text("Drawings", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(L10n.text("Drawings"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Text(
                         MgrsFormatter.format(crosshairLat, crosshairLng),
                         fontSize = 11.sp,
@@ -136,7 +138,7 @@ fun DrawingLayersSheet(
             }
             item(key = "active-layer") {
                 Column {
-                    Text("Active Layer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(L10n.text("Active Layer"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -164,7 +166,7 @@ fun DrawingLayersSheet(
                         ElevatedButton(onClick = onPlacePoint, modifier = Modifier.weight(1f)) {
                             DrawingTypeIcon(DrawingGeometry.POINT)
                             Spacer(Modifier.size(6.dp))
-                            Text("Point")
+                            Text(L10n.text("Point"))
                         }
                         ElevatedButton(
                             onClick = { onStartDraft(DrawingGeometry.LINE) },
@@ -172,7 +174,7 @@ fun DrawingLayersSheet(
                         ) {
                             DrawingTypeIcon(DrawingGeometry.LINE)
                             Spacer(Modifier.size(6.dp))
-                            Text("Line Tool")
+                            Text(L10n.text("Line Tool"))
                         }
                         ElevatedButton(
                             onClick = { onStartDraft(DrawingGeometry.POLYGON) },
@@ -180,20 +182,20 @@ fun DrawingLayersSheet(
                         ) {
                             DrawingTypeIcon(DrawingGeometry.POLYGON)
                             Spacer(Modifier.size(6.dp))
-                            Text("Area")
+                            Text(L10n.text("Area"))
                         }
                     }
                     ElevatedButton(onClick = onStartFreeDraw, modifier = Modifier.fillMaxWidth()) {
                         FreeDrawIcon()
                         Spacer(Modifier.size(6.dp))
-                        Text("Free Draw")
+                        Text(L10n.text("Free Draw"))
                     }
                     Text(
-                        "After selecting a tool, tap the map to place points. Free Draw: drag to sketch freely — lifts to finish.",
+                        L10n.text("After selecting a tool, tap the map to place points. Free Draw: drag to sketch freely — lifts to finish."),
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
                     )
-                    Text("Layers", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(L10n.text("Layers"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
             items(safeLayers, key = { "layer:${it.id}" }) { layer ->
@@ -228,7 +230,7 @@ fun DrawingLayersSheet(
                         value = newLayerName,
                         onValueChange = { newLayerName = it },
                         singleLine = true,
-                        label = { Text("Layer name") },
+                        label = { Text(L10n.text("Layer name")) },
                         modifier = Modifier.weight(1f),
                     )
                     Button(onClick = {
@@ -236,12 +238,12 @@ fun DrawingLayersSheet(
                             newLayerName = ""
                             layerMutationError = null
                         } else {
-                            layerMutationError = "The layer could not be saved. Check the name and try again."
+                            layerMutationError = L10n.text("The layer could not be saved. Check the name and try again.")
                         }
                     }) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(Modifier.size(6.dp))
-                        Text("Add")
+                        Text(L10n.text("Add"))
                     }
                 }
                 layerMutationError?.let { error ->
@@ -255,7 +257,7 @@ fun DrawingLayersSheet(
             }
             item(key = "features-heading") {
                 Text(
-                    "Features (${visibleFeatures.size}/${features.size})",
+                    L10n.text("Features (%1\$s/%2\$s)", visibleFeatures.size, features.size),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
@@ -263,7 +265,7 @@ fun DrawingLayersSheet(
             }
             if (features.isEmpty()) {
                 item(key = "empty-features") {
-                    Text("No drawings yet.", fontSize = 12.sp, modifier = Modifier.padding(bottom = 24.dp))
+                    Text(L10n.text("No drawings yet."), fontSize = 12.sp, modifier = Modifier.padding(bottom = 24.dp))
                 }
             } else {
                 items(features, key = { "feature:${it.id}" }) { feature ->
@@ -295,10 +297,10 @@ fun DrawingLayersSheet(
     }
 
     deletingLayer?.let { layer ->
-        val waypointCountLabel = "All symbols and drawings on this layer will move to Friendly."
+        val waypointCountLabel = L10n.text("All symbols and drawings on this layer will move to Friendly.")
         AlertDialog(
             onDismissRequest = { deletingLayer = null },
-            title = { Text("Delete ${layer.name}?") },
+            title = { Text(L10n.text("Delete %1\$s?", layer.name)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(waypointCountLabel)
@@ -313,12 +315,12 @@ fun DrawingLayersSheet(
                         deletingLayer = null
                         layerMutationError = null
                     } else {
-                        layerMutationError = "The layer remains. Any symbols already moved to Friendly are safe; retry to finish."
+                        layerMutationError = L10n.text("The layer remains. Any symbols already moved to Friendly are safe; retry to finish.")
                     }
-                }) { Text("Delete layer", color = Color(0xFFD32F2F)) }
+                }) { Text(L10n.text("Delete layer"), color = Color(0xFFD32F2F)) }
             },
             dismissButton = {
-                TextButton(onClick = { deletingLayer = null }) { Text("Cancel") }
+                TextButton(onClick = { deletingLayer = null }) { Text(L10n.text("Cancel")) }
             },
         )
     }
@@ -326,13 +328,13 @@ fun DrawingLayersSheet(
     pendingDrawingMutation?.let { pending ->
         AlertDialog(
             onDismissRequest = { pendingDrawingMutation = null },
-            title = { Text("Drawing change not saved") },
+            title = { Text(L10n.text("Drawing change not saved")) },
             text = { Text(pending.message) },
             confirmButton = {
-                TextButton(onClick = { attempt(pending.retry) }) { Text("Retry") }
+                TextButton(onClick = { attempt(pending.retry) }) { Text(L10n.text("Retry")) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDrawingMutation = null }) { Text("Not now") }
+                TextButton(onClick = { pendingDrawingMutation = null }) { Text(L10n.text("Not now")) }
             },
         )
     }
@@ -420,19 +422,19 @@ private fun LayerRow(
         }
         onEdit?.let { edit ->
             IconButton(onClick = edit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit ${layer.name} layer")
+                Icon(Icons.Default.Edit, contentDescription = L10n.text("Edit %1\$s layer", layer.name))
             }
         }
         onDelete?.let { delete ->
             IconButton(onClick = delete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete ${layer.name} layer")
+                Icon(Icons.Default.Delete, contentDescription = L10n.text("Delete %1\$s layer", layer.name))
             }
         }
         Switch(
             checked = layer.isVisible,
             onCheckedChange = onVisibleChange,
             modifier = Modifier.semantics {
-                contentDescription = "${layer.name} layer visibility"
+                contentDescription = L10n.text("%1\$s layer visibility", layer.name)
             },
         )
     }
@@ -451,7 +453,7 @@ private fun LayerEditDialog(
     val colors = (DrawingDocument.CUSTOM_LAYER_COLORS + layer.color).distinct()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit drawing layer") },
+        title = { Text(L10n.text("Edit drawing layer")) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -461,10 +463,10 @@ private fun LayerEditDialog(
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
-                    label = { Text("Layer name") },
+                    label = { Text(L10n.text("Layer name")) },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("Layer colour", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(L10n.text("Layer colour"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -500,17 +502,17 @@ private fun LayerEditDialog(
                 enabled = name.isNotBlank(),
                 onClick = {
                     if (!onSave(name.trim(), color)) {
-                        saveError = "The layer could not be saved. Your previous name and colour remain active."
+                        saveError = L10n.text("The layer could not be saved. Your previous name and colour remain active.")
                     }
                 },
-            ) { Text("Save") }
+            ) { Text(L10n.text("Save")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L10n.text("Cancel")) } },
     )
 }
 
 internal fun layerColorAccessibilityLabel(color: Int): String =
-    "Layer colour #${(color and 0xFFFFFF).toString(16).uppercase().padStart(6, '0')}"
+    L10n.text("Layer colour #%1\$s", (color and 0xFFFFFF).toString(16).uppercase().padStart(6, '0'))
 
 @Composable
 private fun DrawingFeatureRow(
@@ -526,13 +528,13 @@ private fun DrawingFeatureRow(
         Column(Modifier.weight(1f)) {
             Text(feature.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Text(
-                "${feature.geometry.displayName} • ${layerName ?: "Layer"} • ${feature.points.size} pts" +
-                    if (isVisible) "" else " • hidden",
+                L10n.text("%1\$s • %2\$s • %3\$s pts", feature.geometry.displayName, layerName ?: "Layer", feature.points.size) +
+                    if (isVisible) "" else L10n.text(" • hidden"),
                 fontSize = 11.sp
             )
         }
         IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete ${feature.name} drawing")
+            Icon(Icons.Default.Delete, contentDescription = L10n.text("Delete %1\$s drawing", feature.name))
         }
     }
 }

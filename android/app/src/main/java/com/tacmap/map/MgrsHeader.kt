@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,26 +73,26 @@ fun MgrsHeader(
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xCC000000))
             .combinedClickable(
-                onClickLabel = "Copy ${coordinateType.displayName} coordinate",
+                onClickLabel = L10n.text("Copy %1\$s coordinate", coordinateType.displayName),
                 role = Role.Button,
                 onClick = {
                     val copied = copySensitivePlainText(
                         context,
-                        "${coordinateType.displayName} coordinate",
+                        L10n.text("%1\$s coordinate", coordinateType.displayName),
                         primaryCoordinate,
                     )
                     Toast.makeText(
                         context,
                         if (copied) {
-                            "${coordinateType.displayName} copied"
+                            L10n.text("%1\$s copied", coordinateType.displayName)
                         } else {
-                            "Unable to copy ${coordinateType.displayName.lowercase()}"
+                            L10n.text("Unable to copy %1\$s", coordinateType.displayName.lowercase())
                         },
                         Toast.LENGTH_SHORT
                     ).show()
                     if (copied) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 },
-                onLongClickLabel = "Drop pin at displayed coordinate",
+                onLongClickLabel = L10n.text("Drop pin at displayed coordinate"),
                 onLongClick = onDropPin?.let { drop ->
                     {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -125,7 +127,7 @@ fun MgrsHeader(
                 .fillMaxWidth()
                 .semantics {
                     contentDescription =
-                        "${coordinateType.displayName} coordinate $primaryCoordinate"
+                        L10n.text("%1\$s coordinate %2\$s", coordinateType.displayName, primaryCoordinate)
                 }
         )
         // Immediate operational row: range left, elevation right.
@@ -135,7 +137,7 @@ fun MgrsHeader(
         ) {
             if (distanceFromUserMetres != null) {
                 Text(
-                    "FROM ME ${MeasureFormat.distance(distanceFromUserMetres)}",
+                    L10n.text("FROM ME %1\$s", MeasureFormat.distance(distanceFromUserMetres)),
                     color = Color.White.copy(alpha = 0.75f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -196,7 +198,7 @@ fun MgrsHeader(
                             )
                             Spacer(Modifier.size(4.dp))
                             Text(
-                                "Unit Sync",
+                                L10n.text("Unit Sync"),
                                 color = SyncBlue,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -223,9 +225,9 @@ fun MgrsHeader(
                                 .fillMaxWidth()
                                 .clickable(
                                     onClickLabel = if (gmMils.value) {
-                                        "Show grid-magnetic angle in degrees"
+                                        L10n.text("Show grid-magnetic angle in degrees")
                                     } else {
-                                        "Show grid-magnetic angle in mils"
+                                        L10n.text("Show grid-magnetic angle in mils")
                                     }
                                 ) {
                                     gmMils.value = !gmMils.value
@@ -241,9 +243,9 @@ fun MgrsHeader(
 /// iOS-matching elevation readout: "ELEV 0 m", "ELEV ~1025 m" (~ = approximate
 /// / offline cache), or "ELEV —" when there's no reading.
 private fun elevationText(elevation: Double?, approx: Boolean): String {
-    if (elevation == null) return "ELEV —"
+    if (elevation == null) return L10n.text("ELEV —")
     val mark = if (approx) "~" else ""
-    return "ELEV %s%.0f m".format(mark, elevation)
+    return L10n.text("ELEV %1\$s", "%s%.0f m".format(mark, elevation))
 }
 
 private val SyncBlue = Color(0xFF4FA8FF)

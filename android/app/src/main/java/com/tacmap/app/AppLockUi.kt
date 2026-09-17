@@ -1,5 +1,7 @@
 package com.tacmap.app
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -60,7 +62,7 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
         ) {
             Icon(Icons.Default.Lock, contentDescription = null,
                 tint = Color(0xFF8CF28C), modifier = Modifier.size(52.dp))
-            Text("TacMap Locked", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(L10n.text("TacMap Locked"), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             OutlinedTextField(
                 value = pin,
                 enabled = !lockedOut && !corruptConfiguration && (!storageError || canAcceptPin),
@@ -78,7 +80,7 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
                         }
                     }
                 },
-                label = { Text("Enter PIN") },
+                label = { Text(L10n.text("Enter PIN")) },
                 singleLine = true,
                 isError = error,
                 visualTransformation = PasswordVisualTransformation(),
@@ -86,25 +88,25 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
             )
             if (corruptConfiguration || (storageError && !canAcceptPin)) {
                 Text(
-                    "App Lock data is damaged and cannot be verified. Clear TacMap's app data " +
-                        "in Android Settings to recover.",
+                    L10n.text("App Lock data is damaged and cannot be verified. Clear TacMap's app data ") +
+                        L10n.text("in Android Settings to recover."),
                     color = Color(0xFFEF5350),
                     fontSize = 12.sp,
                 )
             } else if (storageError) {
                 Text(
-                    "App Lock storage could not be updated. The lock remains armed; enter your " +
-                        "existing PIN.",
+                    L10n.text("App Lock storage could not be updated. The lock remains armed; enter your ") +
+                        L10n.text("existing PIN."),
                     color = Color(0xFFFFB74D),
                     fontSize = 12.sp,
                 )
             } else if (lockedOut) {
                 Text(
-                    "Too many attempts. Try again in ${ceil(lockoutMs / 1000.0).toInt()}s",
+                    L10n.text("Too many attempts. Try again in %1\$ss", ceil(lockoutMs / 1000.0).toInt()),
                     color = Color(0xFFFFB74D), fontSize = 12.sp
                 )
             } else if (error) {
-                Text("Incorrect PIN", color = Color(0xFFEF5350), fontSize = 12.sp)
+                Text(L10n.text("Incorrect PIN"), color = Color(0xFFEF5350), fontSize = 12.sp)
             }
         }
     }
@@ -121,13 +123,13 @@ fun MissionKeyUnlockScreen(error: String?, onUnlock: () -> Unit) {
         ) {
             Icon(Icons.Default.Lock, contentDescription = null,
                 tint = Color(0xFF8CF28C), modifier = Modifier.size(52.dp))
-            Text("Mission data locked", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(L10n.text("Mission data locked"), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text(
-                error ?: "Authenticate with your device credential to decrypt mission data.",
+                error ?: L10n.text("Authenticate with your device credential to decrypt mission data."),
                 color = if (error == null) Color.LightGray else Color(0xFFEF5350),
                 fontSize = 13.sp
             )
-            TextButton(onClick = onUnlock) { Text("Authenticate") }
+            TextButton(onClick = onUnlock) { Text(L10n.text("Authenticate")) }
         }
     }
 }
@@ -144,16 +146,16 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        title = { Text("App Lock") },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(L10n.text("Done")) } },
+        title = { Text(L10n.text("App Lock")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (enabled) {
-                    Text("App Lock is on.", fontSize = 13.sp)
+                    Text(L10n.text("App Lock is on."), fontSize = 13.sp)
                     OutlinedTextField(
                         value = currentPin,
                         onValueChange = { currentPin = it.filter { c -> c.isDigit() }.take(4); message = null },
-                        label = { Text("Current PIN") },
+                        label = { Text(L10n.text("Current PIN")) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
@@ -161,7 +163,7 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                     OutlinedTextField(
                         value = newPin,
                         onValueChange = { newPin = it.filter { c -> c.isDigit() }.take(4) },
-                        label = { Text("New PIN (to change)") },
+                        label = { Text(L10n.text("New PIN (to change)")) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
@@ -169,7 +171,7 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                     OutlinedTextField(
                         value = confirmPin,
                         onValueChange = { confirmPin = it.filter { c -> c.isDigit() }.take(4) },
-                        label = { Text("Confirm new PIN") },
+                        label = { Text(L10n.text("Confirm new PIN")) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
@@ -178,39 +180,39 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                         enabled = currentPin.length == 4 && newPin.length == 4 && confirmPin.length == 4,
                         onClick = {
                             when {
-                                newPin != confirmPin -> message = "New PINs don't match."
+                                newPin != confirmPin -> message = L10n.text("New PINs don't match.")
                                 appLock.changePin(currentPin, newPin) -> {
                                     currentPin = ""; newPin = ""; confirmPin = ""
-                                    message = "PIN changed."
+                                    message = L10n.text("PIN changed.")
                                 }
-                                appLock.lockoutRemainingMs() > 0 -> message = "Too many attempts. Try again shortly."
+                                appLock.lockoutRemainingMs() > 0 -> message = L10n.text("Too many attempts. Try again shortly.")
                                 appLock.hasStorageError -> message =
-                                    "PIN change could not be saved. The existing PIN remains active."
-                                else -> message = "Current PIN is incorrect."
+                                    L10n.text("PIN change could not be saved. The existing PIN remains active.")
+                                else -> message = L10n.text("Current PIN is incorrect.")
                             }
                         }
-                    ) { Text("Change PIN") }
+                    ) { Text(L10n.text("Change PIN")) }
                     TextButton(
                         enabled = currentPin.length == 4,
                         onClick = {
                             if (appLock.disable(currentPin)) {
                                 enabled = false
                                 currentPin = ""; newPin = ""; confirmPin = ""
-                                message = "App Lock disabled."
+                                message = L10n.text("App Lock disabled.")
                             } else {
                                 message = if (appLock.hasStorageError) {
-                                    "App Lock could not be disabled and remains active."
+                                    L10n.text("App Lock could not be disabled and remains active.")
                                 } else if (appLock.lockoutRemainingMs() > 0)
-                                    "Too many attempts. Try again shortly."
-                                else "Current PIN is incorrect."
+                                    L10n.text("Too many attempts. Try again shortly.")
+                                else L10n.text("Current PIN is incorrect.")
                             }
                         }
-                    ) { Text("Turn Off App Lock") }
+                    ) { Text(L10n.text("Turn Off App Lock")) }
                 } else {
                     OutlinedTextField(
                         value = newPin,
                         onValueChange = { newPin = it.filter { c -> c.isDigit() }.take(4) },
-                        label = { Text("New 4-digit PIN") },
+                        label = { Text(L10n.text("New 4-digit PIN")) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
@@ -218,7 +220,7 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                     OutlinedTextField(
                         value = confirmPin,
                         onValueChange = { confirmPin = it.filter { c -> c.isDigit() }.take(4) },
-                        label = { Text("Confirm PIN") },
+                        label = { Text(L10n.text("Confirm PIN")) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
@@ -229,18 +231,18 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                             if (newPin == confirmPin && appLock.setPin(newPin)) {
                                 enabled = true
                                 newPin = ""; confirmPin = ""
-                                message = "App Lock enabled. TacMap locks when backgrounded."
+                                message = L10n.text("App Lock enabled. TacMap locks when backgrounded.")
                             } else if (newPin == confirmPin) {
-                                message = "App Lock could not be saved. Try again."
+                                message = L10n.text("App Lock could not be saved. Try again.")
                             } else {
-                                message = "PINs don't match."
+                                message = L10n.text("PINs don't match.")
                             }
                         }
-                    ) { Text("Enable App Lock") }
+                    ) { Text(L10n.text("Enable App Lock")) }
                 }
                 message?.let { Text(it, fontSize = 12.sp, color = Color.Gray) }
                 Text(
-                    "A deterrent if your device is lost or borrowed — not a substitute for device encryption.",
+                    L10n.text("A deterrent if your device is lost or borrowed — not a substitute for device encryption."),
                     fontSize = 11.sp, color = Color.Gray
                 )
             }

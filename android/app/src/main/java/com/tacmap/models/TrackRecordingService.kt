@@ -1,5 +1,7 @@
 package com.tacmap.models
 
+import com.tacmap.localization.L10n
+
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -98,7 +100,7 @@ class TrackRecordingService : Service() {
                         if (provider == LocationManager.GPS_PROVIDER) {
                             recorder.onServiceFailure(
                                 generation,
-                                "GPS was turned off; recording stopped.",
+                                L10n.text("GPS was turned off; recording stopped."),
                                 TrackRecordingSettingsTarget.LocationServices,
                             )
                             stopSelf()
@@ -110,7 +112,7 @@ class TrackRecordingService : Service() {
                 if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     recorder.onServiceFailure(
                         generation,
-                        "GPS is turned off; recording stopped.",
+                        L10n.text("GPS is turned off; recording stopped."),
                         TrackRecordingSettingsTarget.LocationServices,
                     )
                     stopSelf(startId)
@@ -129,7 +131,7 @@ class TrackRecordingService : Service() {
         } catch (failure: RuntimeException) {
             recorder.onServiceFailure(
                 generation,
-                "Could not activate background track recording: " +
+                L10n.text("Could not activate background track recording: ") +
                     (failure.message ?: failure.javaClass.simpleName)
             )
             stopSelf(startId)
@@ -170,22 +172,22 @@ class TrackRecordingService : Service() {
 
     private fun permissionLossMessage(access: LocationAccess): String = when (access) {
         LocationAccess.ApproximateOnly ->
-            "Precise location was removed; recording stopped. Approximate location is not accurate enough for a GPS track."
-        LocationAccess.Denied -> "Location permission was removed; recording stopped."
-        LocationAccess.Precise -> "Location access became unavailable; recording stopped."
+            L10n.text("Precise location was removed; recording stopped. Approximate location is not accurate enough for a GPS track.")
+        LocationAccess.Denied -> L10n.text("Location permission was removed; recording stopped.")
+        LocationAccess.Precise -> L10n.text("Location access became unavailable; recording stopped.")
     }
 
     private fun buildNotification(): Notification {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Track recording",
+            L10n.text("Track recording"),
             NotificationManager.IMPORTANCE_LOW
-        ).apply { description = "Shown while TacMap is recording a patrol track." }
+        ).apply { description = L10n.text("Shown while TacMap is recording a patrol track.") }
         nm.createNotificationChannel(channel)
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Recording patrol track")
-            .setContentText("TacMap is logging your GPS track.")
+            .setContentTitle(L10n.text("Recording patrol track"))
+            .setContentText(L10n.text("TacMap is logging your GPS track."))
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)

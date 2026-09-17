@@ -1,5 +1,7 @@
 package com.tacmap.waypoints
 
+import com.tacmap.localization.L10n
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -19,10 +21,12 @@ data class MarkerSymbol(
 }
 
 @Serializable
-enum class MarkerSet(val displayName: String) {
+enum class MarkerSet(private val displayNameKey: String) {
     @SerialName("airsoft") AIRSOFT("Airsoft / Milsim"),
     @SerialName("sar") SAR("Search & Rescue"),
-    @SerialName("poi") POI("Points of Interest")
+    @SerialName("poi") POI("Points of Interest");
+
+    val displayName: String get() = L10n.text(displayNameKey)
 }
 
 /** The symbol catalog: for each set, an ordered list with a display name, a short
@@ -30,15 +34,17 @@ enum class MarkerSet(val displayName: String) {
 object MarkerCatalog {
     data class Entry(
         val id: String,
-        val displayName: String,
+        private val displayNameKey: String,
         val code: String,
         val defaultColor: String
-    )
+    ) {
+        val displayName: String get() = L10n.text(displayNameKey)
+    }
 
     /** Airsoft team colours the picker offers (the team IS the colour). */
-    val teamColors: List<Pair<String, String>> = listOf(
-        "Red" to "#E23B3B", "Blue" to "#3B7BE0", "Green" to "#3BC85A",
-        "Yellow" to "#EBC12E", "Orange" to "#F2872E"
+    val teamColors: List<Pair<String, String>> get() = listOf(
+        L10n.text("Red") to "#E23B3B", L10n.text("Blue") to "#3B7BE0", L10n.text("Green") to "#3BC85A",
+        L10n.text("Yellow") to "#EBC12E", L10n.text("Orange") to "#F2872E"
     )
 
     val airsoft = listOf(

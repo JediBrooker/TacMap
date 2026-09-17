@@ -1,5 +1,7 @@
 package com.tacmap.export
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.waypoints.Waypoint
@@ -26,7 +28,7 @@ internal fun commitExternalImport(
         return ExternalImportCommitResult(
             succeeded = false,
             partialCommit = false,
-            message = "Import could not save waypoints. Nothing else was changed; retry the same file.",
+            message = L10n.text("Import could not save waypoints. Nothing else was changed; retry the same file."),
         )
     }
     val drawingCommitted = commitDrawings(imported.newLayers, imported.drawings)
@@ -35,21 +37,21 @@ internal fun commitExternalImport(
             succeeded = false,
             partialCommit = waypointCommitted.insertedCount > 0,
             message = if (waypointCommitted.insertedCount > 0) {
-                "Waypoints were saved, but drawings could not be saved. Retry the same file; existing objects will be skipped and the same IDs reused."
+                L10n.text("Waypoints were saved, but drawings could not be saved. Retry the same file; existing objects will be skipped and the same IDs reused.")
             } else {
-                "Import could not save drawings. Retry the same file; the same IDs will be reused."
+                L10n.text("Import could not save drawings. Retry the same file; the same IDs will be reused.")
             },
         )
     }
     val skipped = if (imported.invalidSkipped > 0) {
-        "; skipped ${imported.invalidSkipped} invalid feature(s)"
+        L10n.text("; skipped %1\$s invalid feature(s)", imported.invalidSkipped)
     } else {
         ""
     }
     return ExternalImportCommitResult(
         succeeded = true,
         partialCommit = false,
-        message = "Imported ${waypointCommitted.insertedCount} waypoint(s) and " +
-            "${drawingCommitted.insertedCount} drawing(s)$skipped",
+        message = L10n.text("Imported %1\$s waypoint(s) and ", waypointCommitted.insertedCount) +
+            L10n.text("%1\$s drawing(s)%2\$s", drawingCommitted.insertedCount, skipped),
     )
 }

@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -89,7 +91,7 @@ internal fun TacMapChatHudButton(unreadCount: Int, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(44.dp)
-            .clickable(onClickLabel = "Open TacMap Chat", onClick = onClick)
+            .clickable(onClickLabel = L10n.text("Open TacMap Chat"), onClick = onClick)
             .semantics { contentDescription = tacMapChatContentDescription(count) },
         contentAlignment = Alignment.Center,
     ) {
@@ -138,8 +140,8 @@ internal fun tacMapChatUnreadBadgeText(count: Int): String? = when {
 }
 
 internal fun tacMapChatContentDescription(count: Int): String = when (count) {
-    1 -> "TacMap Chat, 1 unread message"
-    in 2..Int.MAX_VALUE -> "TacMap Chat, $count unread messages"
+    1 -> L10n.text("TacMap Chat, 1 unread message")
+    in 2..Int.MAX_VALUE -> L10n.text("TacMap Chat, %1\$s unread messages", count)
     else -> "TacMap Chat"
 }
 
@@ -151,8 +153,8 @@ internal fun QuickAddSymbolButton(onClick: () -> Unit) {
             .size(44.dp)
             .clip(CircleShape)
             .background(Color(0xFFE99020))
-            .clickable(onClickLabel = "Add symbol at crosshair", onClick = onClick)
-            .semantics { contentDescription = "Add symbol at crosshair" },
+            .clickable(onClickLabel = L10n.text("Add symbol at crosshair"), onClick = onClick)
+            .semantics { contentDescription = L10n.text("Add symbol at crosshair") },
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -203,9 +205,9 @@ internal fun CompassChip(
     val screenUpBearingDegrees = normalizedDegrees(mapOrientationDegrees)
     val mils = mapHeadingMils(screenUpBearingDegrees)
     val referenceDescription = when {
-        orientationMode != MapOrientationMode.HEADING_UP -> "true north"
+        orientationMode != MapOrientationMode.HEADING_UP -> L10n.text("true north")
         northReference != null -> northReference.accessibilityLabel
-        else -> "north reference pending"
+        else -> L10n.text("north reference pending")
     }
     val referenceSuffix = if (orientationMode == MapOrientationMode.HEADING_UP) {
         northReference?.displaySuffix ?: "?"
@@ -222,10 +224,10 @@ internal fun CompassChip(
         currentHeading = screenUpBearingDegrees,
         headingAvailable = headingAvailable,
     )) {
-        CompassTapAction.RESET_NORTH -> "Reset map to north"
-        CompassTapAction.ENABLE_HEADING_UP -> "Switch to Heading Up"
-        CompassTapAction.DISABLE_HEADING_UP -> "Switch to North Up"
-        CompassTapAction.HEADING_UNAVAILABLE -> "Explain Heading Up availability"
+        CompassTapAction.RESET_NORTH -> L10n.text("Reset map to north")
+        CompassTapAction.ENABLE_HEADING_UP -> L10n.text("Switch to Heading Up")
+        CompassTapAction.DISABLE_HEADING_UP -> L10n.text("Switch to North Up")
+        CompassTapAction.HEADING_UNAVAILABLE -> L10n.text("Explain Heading Up availability")
     }
     Box(
         modifier = Modifier
@@ -246,7 +248,7 @@ internal fun CompassChip(
                 contentDescription = buildString {
                     append(orientationMode.displayName)
                     append(", $referenceDescription")
-                    append(", compass, $mils mils")
+                    append(L10n.text(", compass, %1\$s mils", mils))
                 }
             },
         contentAlignment = Alignment.Center
@@ -324,13 +326,13 @@ internal fun UndoRedoButtons(
             UndoRedoChip(
                 icon = Icons.AutoMirrored.Filled.Undo,
                 enabled = canUndo,
-                contentDescription = "Undo",
+                contentDescription = L10n.text("Undo"),
                 onClick = onUndo
             )
             UndoRedoChip(
                 icon = Icons.AutoMirrored.Filled.Redo,
                 enabled = canRedo,
-                contentDescription = "Redo",
+                contentDescription = L10n.text("Redo"),
                 onClick = onRedo
             )
         }
@@ -354,7 +356,7 @@ internal fun LockButton(
     ) {
         Icon(
             if (locked) Icons.Default.Lock else Icons.Default.LockOpen,
-            contentDescription = if (locked) "Graphics locked — tap to unlock" else "Lock graphics in place",
+            contentDescription = if (locked) L10n.text("Graphics locked — tap to unlock") else L10n.text("Lock graphics in place"),
             tint = Color.White,
             modifier = Modifier.size(18.dp)
         )
@@ -376,7 +378,7 @@ internal fun UnitLabelsToggle(
     ) {
         Icon(
             Icons.Default.Flag,
-            contentDescription = if (active) "Hide unit labels" else "Show unit labels",
+            contentDescription = if (active) L10n.text("Hide unit labels") else L10n.text("Show unit labels"),
             tint = Color.White,
             modifier = Modifier.size(18.dp)
         )
@@ -426,7 +428,7 @@ internal fun CalibrationBar(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "Calibrating PDF",
+                L10n.text("Calibrating PDF"),
                 color = Color(0xFFFFA000),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
@@ -438,7 +440,7 @@ internal fun CalibrationBar(
             )
         }
         TextButton(onClick = onCancel) {
-            Text("Cancel", color = Color.White)
+            Text(L10n.text("Cancel"), color = Color.White)
         }
         Button(
             onClick = onFinish,
@@ -451,16 +453,16 @@ internal fun CalibrationBar(
                 disabledContentColor = Color.White.copy(alpha = 0.45f)
             )
         ) {
-            Text("Finish", fontWeight = FontWeight.Bold)
+            Text(L10n.text("Finish"), fontWeight = FontWeight.Bold)
         }
     }
 }
 
 private fun calibrationStatus(fiduciaryCount: Int): String =
     when {
-        fiduciaryCount == 0 -> "Tap a known point on the PDF, then enter its MGRS."
-        fiduciaryCount < 3 -> "$fiduciaryCount/3 fiduciaries placed. Add another known point."
-        else -> "$fiduciaryCount fiduciaries placed. Finish or add more for accuracy."
+        fiduciaryCount == 0 -> L10n.text("Tap a known point on the PDF, then enter its MGRS.")
+        fiduciaryCount < 3 -> L10n.text("%1\$s/3 fiduciaries placed. Add another known point.", fiduciaryCount)
+        else -> L10n.text("%1\$s fiduciaries placed. Finish or add more for accuracy.", fiduciaryCount)
     }
 
 @Composable
@@ -481,11 +483,11 @@ internal fun CalibrationInputDialog(
         // tap outside the dialog. Require explicit Cancel or Save.
         properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         onDismissRequest = onDismiss,
-        title = { Text("Fiduciary #$fiduciaryNumber") },
+        title = { Text(L10n.text("Fiduciary #%1\$s", fiduciaryNumber)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "PDF point: ${point.pdfX.toInt()}, ${point.pdfY.toInt()}",
+                    L10n.text("PDF point: %1\$s, %2\$s", point.pdfX.toInt(), point.pdfY.toInt()),
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -502,11 +504,11 @@ internal fun CalibrationInputDialog(
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
-                    label = { Text("Label") },
-                    placeholder = { Text("Grid intersection") },
+                    label = { Text(L10n.text("Label")) },
+                    placeholder = { Text(L10n.text("Grid intersection")) },
                     singleLine = true
                 )
-                Text("Sheet datum", fontSize = 12.sp, color = Color.White)
+                Text(L10n.text("Sheet datum"), fontSize = 12.sp, color = Color.White)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Datum.entries.forEach { d ->
                         val selected = d == datum
@@ -532,17 +534,17 @@ internal fun CalibrationInputDialog(
                 onClick = {
                     val saved = onSave(mgrs, label)
                     if (!saved) {
-                        error = "Couldn't parse MGRS. Try a full grid reference."
+                        error = L10n.text("Couldn't parse MGRS. Try a full grid reference.")
                     }
                 },
                 enabled = mgrs.trim().isNotEmpty()
             ) {
-                Text("Save")
+                Text(L10n.text("Save"))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(L10n.text("Cancel"))
             }
         }
     )

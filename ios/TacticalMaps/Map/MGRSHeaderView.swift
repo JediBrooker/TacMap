@@ -52,12 +52,12 @@ struct MGRSHeaderView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .accessibilityLabel(
-                    "\(resolvedCoordinate.format.label) coordinate \(resolvedCoordinate.text)"
+                    L10n.text("%1$@ coordinate %2$@", resolvedCoordinate.format.label, resolvedCoordinate.text)
                 )
 
             HStack(spacing: 8) {
                 if let distanceFromUser {
-                    Text("FROM ME \(MeasureFormat.distance(distanceFromUser))")
+                    Text(L10n.text("FROM ME %1$@", MeasureFormat.distance(distanceFromUser)))
                         .font(.caption2.weight(.semibold).monospacedDigit())
                         .foregroundStyle(.white.opacity(0.75))
                         .lineLimit(1)
@@ -88,7 +88,7 @@ struct MGRSHeaderView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "antenna.radiowaves.left.and.right")
                             .font(.caption2)
-                        Text("Unit Sync")
+                        Text(L10n.text("Unit Sync"))
                             .font(.caption2.weight(.semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
@@ -126,7 +126,7 @@ struct MGRSHeaderView: View {
         )
         .overlay(alignment: .top) {
             if showCopiedToast {
-                Text("\(resolvedCoordinate.format.label) copied")
+                Text(L10n.text("%1$@ copied", resolvedCoordinate.format.label))
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -157,8 +157,8 @@ struct MGRSHeaderView: View {
             drop(coord, resolvedCoordinate.text)
         }
         .accessibilityHint(
-            "Tap to copy the displayed \(resolvedCoordinate.format.label) coordinate. "
-                + "Long-press to drop a pin here."
+            L10n.text("Tap to copy the displayed %1$@ coordinate. ", resolvedCoordinate.format.label)
+                + L10n.text("Long-press to drop a pin here.")
         )
     }
 
@@ -167,9 +167,9 @@ struct MGRSHeaderView: View {
     }
 
     private var elevationText: String {
-        guard let e = elevation else { return "ELEV —" }
+        guard let e = elevation else { return L10n.text("ELEV —") }
         let mark = elevationIsApproximate ? "~" : ""
-        return String(format: "ELEV %@%.0f m", mark, e)
+        return L10n.text("ELEV %1$@", mark + String(format: "%.0f m", e))
     }
 }
 

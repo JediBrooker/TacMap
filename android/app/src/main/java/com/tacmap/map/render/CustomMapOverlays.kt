@@ -1,5 +1,7 @@
 package com.tacmap.map.render
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
@@ -555,7 +557,7 @@ private fun AmplifierLabelC(field: String, text: String) {
             // Font padding is disabled above, so this 3 dp horizontal inset
             // produces a compact chip without hidden Android top/bottom space.
             .padding(horizontal = 3.dp)
-            .semantics { contentDescription = "Unit amplifier $field, $text" },
+            .semantics { contentDescription = L10n.text("Unit amplifier %1\$s, %2\$s", field, text) },
     )
 }
 
@@ -849,7 +851,7 @@ fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modi
     Canvas(
         modifier
             .fillMaxSize()
-            .semantics { contentDescription = "PDF map rendered: ${source.displayName}" }
+            .semantics { contentDescription = L10n.text("PDF map rendered: %1\$s", source.displayName) }
     ) {
         // Corners in lat/lon: georeferenced -> the affine page corners (bitmap top
         // = page-top = PDF maxY), else the coverage bounds box.

@@ -1,9 +1,11 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.waypoints.Waypoint
 
-internal const val SYMBOL_CREATION_ERROR =
-    "The symbol could not be saved. Check available storage, then try again."
+internal val SYMBOL_CREATION_ERROR =
+    L10n.text("The symbol could not be saved. Check available storage, then try again.")
 
 internal sealed interface DurableSymbolCreation {
     data class Saved(val waypoint: Waypoint) : DurableSymbolCreation

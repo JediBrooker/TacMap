@@ -34,34 +34,34 @@ enum RelayEndpointPolicy {
         allowInsecureLoopback: Bool = allowsInsecureLoopback
     ) throws -> String {
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { throw ValidationError(message: "Enter a Unit Sync relay address.") }
+        guard !value.isEmpty else { throw ValidationError(message: L10n.text("Enter a Unit Sync relay address.")) }
         guard let components = URLComponents(string: value),
               let rawScheme = components.scheme else {
-            throw ValidationError(message: "The relay address is not a valid URL.")
+            throw ValidationError(message: L10n.text("The relay address is not a valid URL."))
         }
         guard components.user == nil, components.password == nil else {
-            throw ValidationError(message: "Relay addresses cannot contain a username or password.")
+            throw ValidationError(message: L10n.text("Relay addresses cannot contain a username or password."))
         }
         guard components.percentEncodedQuery == nil, components.fragment == nil else {
-            throw ValidationError(message: "Relay addresses cannot contain a query or fragment.")
+            throw ValidationError(message: L10n.text("Relay addresses cannot contain a query or fragment."))
         }
         guard !authority(in: value).hasSuffix(":") else {
-            throw ValidationError(message: "The relay address contains an invalid port.")
+            throw ValidationError(message: L10n.text("The relay address contains an invalid port."))
         }
         guard acceptedPaths.contains(components.percentEncodedPath) else {
-            throw ValidationError(message: "Use the relay origin only; custom paths are not allowed.")
+            throw ValidationError(message: L10n.text("Use the relay origin only; custom paths are not allowed."))
         }
         guard let rawHost = components.host, !rawHost.isEmpty else {
-            throw ValidationError(message: "The relay address must include wss:// and a valid host.")
+            throw ValidationError(message: L10n.text("The relay address must include wss:// and a valid host."))
         }
         let host = rawHost
             .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
             .lowercased()
         guard isValidHost(host) else {
-            throw ValidationError(message: "The relay address contains an invalid host.")
+            throw ValidationError(message: L10n.text("The relay address contains an invalid host."))
         }
         if let port = components.port, !(1...65_535).contains(port) {
-            throw ValidationError(message: "The relay address contains an invalid port.")
+            throw ValidationError(message: L10n.text("The relay address contains an invalid port."))
         }
 
         let scheme = rawScheme.lowercased()
@@ -73,10 +73,10 @@ enum RelayEndpointPolicy {
             break
         case "ws":
             throw ValidationError(
-                message: "Unencrypted ws:// is allowed only for a loopback relay in a debug build."
+                message: L10n.text("Unencrypted ws:// is allowed only for a loopback relay in a debug build.")
             )
         default:
-            throw ValidationError(message: "Unit Sync relay addresses must use wss://.")
+            throw ValidationError(message: L10n.text("Unit Sync relay addresses must use wss://."))
         }
 
         var canonical = URLComponents()
@@ -87,7 +87,7 @@ enum RelayEndpointPolicy {
             canonical.port = port
         }
         guard let endpoint = canonical.string else {
-            throw ValidationError(message: "The relay address could not be normalized.")
+            throw ValidationError(message: L10n.text("The relay address could not be normalized."))
         }
         return endpoint
     }

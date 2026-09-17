@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,7 +89,7 @@ fun SymbolControlsCard(
                 onClick = { showEditor = true },
                 modifier = Modifier.weight(1f).height(48.dp),
             ) {
-                Text("Edit symbol", maxLines = 1)
+                Text(L10n.text("Edit symbol"), maxLines = 1)
             }
             OutlinedButton(
                 onClick = { moveToCrosshair() },
@@ -95,7 +97,7 @@ fun SymbolControlsCard(
             ) {
                 Icon(Icons.Default.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("Move to crosshair", maxLines = 1, fontSize = 12.sp)
+                Text(L10n.text("Move to crosshair"), maxLines = 1, fontSize = 12.sp)
             }
         }
 
@@ -118,13 +120,13 @@ fun SymbolControlsCard(
     if (moveFailed) {
         AlertDialog(
             onDismissRequest = { moveFailed = false },
-            title = { Text("Symbol not moved") },
-            text = { Text("The new position could not be saved. The symbol is still at its previous position.") },
+            title = { Text(L10n.text("Symbol not moved")) },
+            text = { Text(L10n.text("The new position could not be saved. The symbol is still at its previous position.")) },
             confirmButton = {
-                TextButton(onClick = { moveToCrosshair() }) { Text("Retry") }
+                TextButton(onClick = { moveToCrosshair() }) { Text(L10n.text("Retry")) }
             },
             dismissButton = {
-                TextButton(onClick = { moveFailed = false }) { Text("Cancel") }
+                TextButton(onClick = { moveFailed = false }) { Text(L10n.text("Cancel")) }
             },
         )
     }
@@ -177,7 +179,7 @@ private fun Header(
         IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(
                 Icons.Default.Close,
-                contentDescription = "Close symbol editor",
+                contentDescription = L10n.text("Close symbol editor"),
                 tint = Color.White.copy(alpha = 0.6f)
             )
         }

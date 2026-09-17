@@ -14,9 +14,9 @@ enum BatchImportStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .locked:
-            return "Mission data is locked. Unlock it before importing."
+            return L10n.text("Mission data is locked. Unlock it before importing.")
         case .persistenceFailed(let error):
-            return "The import could not be saved: \(error.localizedDescription)"
+            return L10n.text("The import could not be saved: %1$@", error.localizedDescription)
         }
     }
 }
@@ -34,21 +34,21 @@ enum MissionLayerMutationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .protectedDefault:
-            return "Default mission layers cannot be renamed, recoloured, or deleted."
+            return L10n.text("Default mission layers cannot be renamed, recoloured, or deleted.")
         case .legacyProtectionReview:
-            return "This layer predates default-layer provenance. Confirm whether it is a custom layer before renaming, recolouring, or deleting it."
+            return L10n.text("This layer predates default-layer provenance. Confirm whether it is a custom layer before renaming, recolouring, or deleting it.")
         case .layerMissing:
-            return "That layer no longer exists. Refresh the layer list and try again."
+            return L10n.text("That layer no longer exists. Refresh the layer list and try again.")
         case .fallbackMissing:
-            return "The default fallback layer is unavailable. Restore the default layers before deleting this layer."
+            return L10n.text("The default fallback layer is unavailable. Restore the default layers before deleting this layer.")
         case .invalidName:
-            return "Enter a non-empty layer name."
+            return L10n.text("Enter a non-empty layer name.")
         case .invalidColor:
-            return "Choose a valid six-digit layer colour."
+            return L10n.text("Choose a valid six-digit layer colour.")
         case .locked(let store):
-            return "Mission \(store) are locked. Unlock mission data, then try again."
+            return L10n.text("Mission %1$@ are locked. Unlock mission data, then try again.", store)
         case .persistenceFailed(let store, let underlying):
-            return "Could not save mission \(store): \(underlying.localizedDescription). No unsafe layer change was published; try again."
+            return L10n.text("Could not save mission %1$@: %2$@. No unsafe layer change was published; try again.", store, underlying.localizedDescription)
         }
     }
 }
@@ -61,11 +61,11 @@ enum WaypointMutationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .locked:
-            return "Mission waypoints are locked. Unlock mission data, then try again."
+            return L10n.text("Mission waypoints are locked. Unlock mission data, then try again.")
         case .missing:
-            return "That symbol no longer exists. Close the editor and try again."
+            return L10n.text("That symbol no longer exists. Close the editor and try again.")
         case .persistenceFailed(let error):
-            return "The symbol change could not be saved: \(error.localizedDescription)"
+            return L10n.text("The symbol change could not be saved: %1$@", error.localizedDescription)
         }
     }
 }
@@ -112,22 +112,22 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = "Could not save new waypoint to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save new waypoint to disk: %1$@", error.localizedDescription)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix("Could not save new waypoint") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save new waypoint")) == true { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.deleteDurably(waypoint)
         }
-        undoManager?.setActionName("Add Waypoint")
+        undoManager?.setActionName(L10n.text("Add Waypoint"))
         return true
     }
 
     /// Persists an edited candidate before publishing it to UI, undo, or Sync.
     /// Returns false when the candidate is unchanged and performs no write.
     @discardableResult
-    func commitEdit(_ waypoint: Waypoint, actionName: String = "Edit Waypoint") throws -> Bool {
+    func commitEdit(_ waypoint: Waypoint, actionName: String = L10n.text("Edit Waypoint")) throws -> Bool {
         guard !locked else { throw WaypointMutationError.locked }
         guard let index = waypoints.firstIndex(where: { $0.id == waypoint.id }) else {
             throw WaypointMutationError.missing
@@ -139,11 +139,11 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = "Could not save waypoint change to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save waypoint change to disk: %1$@", error.localizedDescription)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix("Could not save waypoint change") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save waypoint change")) == true { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.commitEdit(old, actionName: actionName)
         }
@@ -163,15 +163,15 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = "Could not delete waypoint from disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not delete waypoint from disk: %1$@", error.localizedDescription)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix("Could not delete waypoint") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not delete waypoint")) == true { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.restoreDurably(removed, at: index)
         }
-        undoManager?.setActionName("Delete Waypoint")
+        undoManager?.setActionName(L10n.text("Delete Waypoint"))
         return true
     }
 
@@ -184,15 +184,15 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = "Could not restore waypoint to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not restore waypoint to disk: %1$@", error.localizedDescription)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix("Could not restore waypoint") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not restore waypoint")) == true { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.deleteDurably(waypoint)
         }
-        undoManager?.setActionName("Delete Waypoint")
+        undoManager?.setActionName(L10n.text("Delete Waypoint"))
         return true
     }
 
@@ -212,11 +212,11 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = "Could not save reassigned waypoints to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save reassigned waypoints to disk: %1$@", error.localizedDescription)
             throw MissionLayerMutationError.persistenceFailed(store: "waypoints", underlying: error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save")) == true { loadError = nil }
         return affected
     }
 
@@ -245,19 +245,19 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = "Could not save imported waypoints to disk: \(error.localizedDescription)"
+            loadError = L10n.text("Could not save imported waypoints to disk: %1$@", error.localizedDescription)
             throw BatchImportStoreError.persistenceFailed(error)
         }
 
         // Publish and register undo only after the candidate is durable. Sync's
         // model observers therefore cannot advertise data that failed to save.
         waypoints = candidate
-        if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+        if loadError?.hasPrefix(L10n.text("Could not save")) == true { loadError = nil }
         let insertedIDs = Set(additions.map(\.id))
         undoManager?.registerUndo(withTarget: self) { store in
             store.removeImportedBatch(ids: insertedIDs, batchKey: batchKey)
         }
-        undoManager?.setActionName("Import Waypoints")
+        undoManager?.setActionName(L10n.text("Import Waypoints"))
         return BatchImportCommit(insertedCount: additions.count, skippedExistingCount: skipped)
     }
 
@@ -271,9 +271,9 @@ final class WaypointStore: ObservableObject {
             undoManager?.registerUndo(withTarget: self) { store in
                 _ = try? store.importBatch(removed, batchKey: batchKey)
             }
-            undoManager?.setActionName("Import Waypoints")
+            undoManager?.setActionName(L10n.text("Import Waypoints"))
         } catch {
-            loadError = "Could not undo imported waypoints: \(error.localizedDescription)"
+            loadError = L10n.text("Could not undo imported waypoints: %1$@", error.localizedDescription)
         }
     }
 
@@ -307,11 +307,11 @@ final class WaypointStore: ObservableObject {
         case .corrupt(let quarantine, _):
             // Preserve the unreadable file rather than letting the next write
             // clobber it with a one-element list.
-            loadError = "Saved waypoints could not be read and were set aside "
-                + "(\(quarantine?.lastPathComponent ?? "recovery copy")). Starting with no waypoints."
+            loadError = L10n.text("Saved waypoints could not be read and were set aside ")
+                + L10n.text("(%1$@). Starting with no waypoints.", quarantine?.lastPathComponent ?? "recovery copy")
         case .locked(let error):
             locked = true
-            loadError = "Waypoints are encrypted and locked. \(error.localizedDescription)"
+            loadError = L10n.text("Waypoints are encrypted and locked. %1$@", error.localizedDescription)
         }
     }
 

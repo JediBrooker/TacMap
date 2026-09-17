@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,7 +39,7 @@ fun MeasureToolbar(
 ) {
     if (!session.isActive) return
     val distance = MeasureFormat.distance(session.totalDistanceMeters)
-    val mils = session.lastBearingMils?.let { "%04d mils".format(it) }
+    val mils = session.lastBearingMils?.let { L10n.text("%1\$s mils", "%04d".format(it)) }
     val area = session.enclosedAreaSquareMeters?.let(MeasureFormat::area)
 
     Row(
@@ -83,7 +85,7 @@ fun MeasureToolbar(
                 .size(30.dp)
                 .background(Color.White.copy(alpha = 0.10f), CircleShape)
         ) {
-            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo last point", tint = Color.White,
+            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = L10n.text("Undo last point"), tint = Color.White,
                  modifier = Modifier.size(16.dp))
         }
         Button(
@@ -96,7 +98,7 @@ fun MeasureToolbar(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             modifier = Modifier.height(30.dp)
         ) {
-            Text("Done", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(L10n.text("Done"), fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -199,7 +201,7 @@ fun SymbolEditorDialog(
                             value = name,
                             onValueChange = { name = it },
                             placeholder = { Text(currentKind.displayName) },
-                            label = { Text("Title") },
+                            label = { Text(L10n.text("Title")) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -214,7 +216,7 @@ fun SymbolEditorDialog(
                                     .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
                                     .padding(12.dp)
                             ) {
-                                Text("Placed at crosshair", color = Color.White.copy(alpha = 0.62f), fontSize = 12.sp)
+                                Text(L10n.text("Placed at crosshair"), color = Color.White.copy(alpha = 0.62f), fontSize = 12.sp)
                                 Text(
                                     MgrsFormatter.format(lat, lng),
                                     color = Color.White,
@@ -279,7 +281,7 @@ fun SymbolEditorDialog(
                                     color = Color(0xFFFF8A80),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .semantics { contentDescription = "Symbol save error: $error" },
+                                        .semantics { contentDescription = L10n.text("Symbol save error: %1\$s", error) },
                                 )
                             }
                             Row(
@@ -291,7 +293,7 @@ fun SymbolEditorDialog(
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text("Cancel")
+                                    Text(L10n.text("Cancel"))
                                 }
                                 Button(
                                     onClick = {
@@ -360,7 +362,7 @@ private fun EditorTopBar(
             )
         }
         IconButton(onClick = onDismiss) {
-            Icon(Icons.Default.Close, contentDescription = "Close symbol editor", tint = Color.White)
+            Icon(Icons.Default.Close, contentDescription = L10n.text("Close symbol editor"), tint = Color.White)
         }
     }
 }
@@ -438,18 +440,18 @@ internal fun MilitaryTypeFields(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("Unit Type", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        PickerField("Affiliation", spec.affiliation, SymbolAffiliation.entries, { it.displayName }, onSelected = {
+        Text(L10n.text("Unit Type"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        PickerField(L10n.text("Affiliation"), spec.affiliation, SymbolAffiliation.entries, { it.displayName }, onSelected = {
             onChange(spec.copy(affiliation = it))
         })
-        PickerField("Echelon", spec.echelon, SymbolEchelon.entries, { it.displayName }, onSelected = {
+        PickerField(L10n.text("Echelon"), spec.echelon, SymbolEchelon.entries, { it.displayName }, onSelected = {
             onChange(spec.copy(echelon = it))
         })
-        PickerField("Function", spec.function, SymbolFunction.pickerEntries, { it.displayName }, onSelected = {
+        PickerField(L10n.text("Function"), spec.function, SymbolFunction.pickerEntries, { it.displayName }, onSelected = {
             onChange(spec.copy(function = it))
         })
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Headquarters", color = Color.White, modifier = Modifier.weight(1f))
+            Text(L10n.text("Headquarters"), color = Color.White, modifier = Modifier.weight(1f))
             Switch(
                 checked = spec.isHeadquarters,
                 onCheckedChange = { onChange(spec.copy(isHeadquarters = it)) }
@@ -474,13 +476,13 @@ internal fun UnitAmplifierFields(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Unit Amplifiers", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text(L10n.text("Unit Amplifiers"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
             value = higherFormation,
             onValueChange = {
                 onHigherFormationChange(boundUnitAmplifier(it, HIGHER_FORMATION_MAX_CODE_POINTS))
             },
-            label = { Text("Higher formation / parent unit (M)") },
+            label = { Text(L10n.text("Higher formation / parent unit (M)")) },
             supportingText = {
                 Text("${higherFormation.codePointCount(0, higherFormation.length)}/$HIGHER_FORMATION_MAX_CODE_POINTS")
             },
@@ -492,7 +494,7 @@ internal fun UnitAmplifierFields(
             onValueChange = {
                 onUniqueIdentifierChange(boundUnitAmplifier(it, UNIQUE_IDENTIFIER_MAX_CODE_POINTS))
             },
-            label = { Text("Unique identifier / callsign (T)") },
+            label = { Text(L10n.text("Unique identifier / callsign (T)")) },
             supportingText = {
                 Text("${uniqueIdentifier.codePointCount(0, uniqueIdentifier.length)}/$UNIQUE_IDENTIFIER_MAX_CODE_POINTS")
             },
@@ -500,14 +502,14 @@ internal fun UnitAmplifierFields(
             modifier = Modifier.fillMaxWidth(),
         )
         PickerField(
-            label = "Reinforced / reduced (F)",
+            label = L10n.text("Reinforced / reduced (F)"),
             selected = reinforcementStatus,
             values = ReinforcementStatus.entries,
             text = { it.displayName },
             onSelected = onReinforcementStatusChange,
         )
         Text(
-            "These labels use the separate Unit Amplifiers switch in Layers and Labels.",
+            L10n.text("These labels use the separate Unit Amplifiers switch in Layers and Labels."),
             color = Color.White.copy(alpha = 0.62f),
             fontSize = 11.sp,
         )
@@ -526,8 +528,8 @@ internal fun TaskTypeField(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("Task Type", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        PickerField("Task", measure, TacticalControlMeasure.pickerEntries, { it.displayName }, onChange)
+        Text(L10n.text("Task Type"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        PickerField(L10n.text("Task"), measure, TacticalControlMeasure.pickerEntries, { it.displayName }, onChange)
     }
 }
 
@@ -548,12 +550,12 @@ internal fun MarkerTypeFields(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("Symbol Set", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        PickerField("Set", set, MarkerSet.entries.toList(), { it.displayName }, onSetChange)
+        Text(L10n.text("Symbol Set"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        PickerField(L10n.text("Set"), set, MarkerSet.entries.toList(), { it.displayName }, onSetChange)
         val entries = MarkerCatalog.entries(set)
         val selectedEntry = entries.firstOrNull { it.id == symbolId } ?: entries[0]
-        PickerField("Symbol", selectedEntry, entries, { it.displayName }, { onSymbolChange(it.id) })
-        Text("Colour", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+        PickerField(L10n.text("Symbol"), selectedEntry, entries, { it.displayName }, { onSymbolChange(it.id) })
+        Text(L10n.text("Colour"), color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
         val swatches = MarkerCatalog.teamColors.map { it.second } + listOf("#8A93A6", "#111417")
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -565,7 +567,7 @@ internal fun MarkerTypeFields(
                     modifier = Modifier
                         .size(48.dp)
                         .semantics {
-                            contentDescription = "$hex marker colour"
+                            contentDescription = L10n.text("%1\$s marker colour", hex)
                             role = Role.RadioButton
                             this.selected = selected
                         }

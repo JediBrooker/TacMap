@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -126,9 +128,9 @@ internal val DrawingGeometry.minimumVertices: Int
 internal fun defaultDrawingName(geometry: DrawingGeometry, existing: List<DrawingFeature>): String {
     val next = existing.count { it.geometry == geometry } + 1
     return when (geometry) {
-        DrawingGeometry.POINT -> "Point $next"
-        DrawingGeometry.LINE -> "Line $next"
-        DrawingGeometry.POLYGON -> "Area $next"
+        DrawingGeometry.POINT -> L10n.text("Point %1\$s", next)
+        DrawingGeometry.LINE -> L10n.text("Line %1\$s", next)
+        DrawingGeometry.POLYGON -> L10n.text("Area %1\$s", next)
     }
 }
 
@@ -158,7 +160,7 @@ internal suspend fun shareGeoJson(
         exportLabel = "GeoJSON",
         fileName = "TacMap.geojson",
         mimeType = "application/geo+json",
-        chooserTitle = "Export GeoJSON",
+        chooserTitle = L10n.text("Export GeoJSON"),
     ) {
         GeoJsonExporter.export(
             waypoints,
@@ -174,15 +176,15 @@ internal suspend fun shareGpx(
     points: List<com.tacmap.models.TrackPoint>
 ) {
     if (points.isEmpty()) {
-        Toast.makeText(context, "No track recorded yet.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, L10n.text("No track recorded yet."), Toast.LENGTH_SHORT).show()
         return
     }
     shareTextExport(
         context = context,
-        exportLabel = "GPX track",
+        exportLabel = L10n.text("GPX track"),
         fileName = "TacMap-track.gpx",
         mimeType = "application/gpx+xml",
-        chooserTitle = "Export GPX",
+        chooserTitle = L10n.text("Export GPX"),
     ) { com.tacmap.export.GpxExporter.export(points) }
 }
 
@@ -194,12 +196,12 @@ internal suspend fun exportAllMissionObjects(
     layers: List<com.tacmap.drawings.DrawingLayer>
 ) {
     if (!MissionObjectExport.hasExportableContent(waypoints, drawings, layers)) {
-        Toast.makeText(context, "Nothing to export.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, L10n.text("Nothing to export."), Toast.LENGTH_SHORT).show()
         return
     }
     shareTextExport(
         context = context,
-        exportLabel = "mission-object GeoJSON",
+        exportLabel = L10n.text("mission-object GeoJSON"),
         fileName = MissionObjectExport.FILE_NAME,
         mimeType = "application/geo+json",
         chooserTitle = MissionObjectExport.SHARE_TITLE,
@@ -328,16 +330,16 @@ private class AndroidTextExportDriver(
 internal class PdfImportRejectedException(message: String) : Exception(message)
 
 internal fun pdfRotationRejectionMessage(rotationDegrees: Int): String =
-    "This PDF's first page is rotated $rotationDegrees°. TacMap cannot safely " +
-        "georeference rotated pages yet. Flatten the page rotation in a PDF editor or " +
-        "print it to a new PDF, then import that copy."
+    L10n.text("This PDF's first page is rotated %1\$s°. TacMap cannot safely ", rotationDegrees) +
+        L10n.text("georeference rotated pages yet. Flatten the page rotation in a PDF editor or ") +
+        L10n.text("print it to a new PDF, then import that copy.")
 
 internal fun pdfImportUserMessage(failure: Throwable): String = when {
-    failure is PdfImportRejectedException -> failure.message ?: "Unable to import PDF map."
+    failure is PdfImportRejectedException -> failure.message ?: L10n.text("Unable to import PDF map.")
     generateSequence(failure as Throwable?) { it.cause }
-        .any { it.message == "Import exceeds the supported size limit" } ->
-        "This PDF is larger than TacMap's 256 MB import limit."
-    else -> "TacMap could not read the first page. The PDF may be invalid or password-protected."
+        .any { it.message == L10n.text("Import exceeds the supported size limit") } ->
+        L10n.text("This PDF is larger than TacMap's 256 MB import limit.")
+    else -> L10n.text("TacMap could not read the first page. The PDF may be invalid or password-protected.")
 }
 
 internal fun preflightPdfImport(context: Context, file: File): com.tacmap.calibration.PdfPageInfo {
@@ -346,12 +348,12 @@ internal fun preflightPdfImport(context: Context, file: File): com.tacmap.calibr
         PdfPageRenderer.firstPageInfo(context.applicationContext, fileUri)
     } catch (_: Exception) {
         throw PdfImportRejectedException(
-            "TacMap could not read the first page. The PDF may be invalid or password-protected."
+            L10n.text("TacMap could not read the first page. The PDF may be invalid or password-protected.")
         )
     }
     val rotation = GeoPdfParser.pageRotation(context.applicationContext, fileUri)
         ?: throw PdfImportRejectedException(
-            "TacMap could not safely inspect this PDF's page rotation. Flatten or print it to a new PDF, then import that copy."
+            L10n.text("TacMap could not safely inspect this PDF's page rotation. Flatten or print it to a new PDF, then import that copy.")
         )
     if (rotation != 0) throw PdfImportRejectedException(pdfRotationRejectionMessage(rotation))
     return pageInfo
@@ -375,7 +377,7 @@ internal fun importPdfMapSource(
         stateStore = copyJournal,
         openSource = {
             requireNotNull(appContext.contentResolver.openInputStream(sourceUri)) {
-                "Unable to open selected PDF"
+                L10n.text("Unable to open selected PDF")
             }
         },
         validate = { file ->
@@ -445,7 +447,7 @@ internal fun importMBTilesMapSource(
         stateStore = copyJournal,
         openSource = {
             requireNotNull(appContext.contentResolver.openInputStream(sourceUri)) {
-                "Unable to open selected MBTiles"
+                L10n.text("Unable to open selected MBTiles")
             }
         },
         validate = { file ->

@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.L10n
+
 /** Signature-verified v3 sessions reported live by the relay. This is
  * deliberately separate from
  * [PresencePeer], which only represents a peer that elected to share a map
@@ -141,7 +143,7 @@ internal class OnlineMemberTracker(
             val suffix = clientId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
                 .takeLast(8)
                 .ifBlank { "unknown" }
-            return "Member $suffix"
+            return L10n.text("Member %1\$s", suffix)
         }
 
         private fun safeDisplayText(value: String, maxCodePoints: Int): String? {

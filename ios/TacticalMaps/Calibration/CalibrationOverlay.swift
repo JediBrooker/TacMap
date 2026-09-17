@@ -11,7 +11,7 @@ struct CalibrationOverlay: View {
         VStack(spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Calibrating PDF")
+                    Text(L10n.text("Calibrating PDF"))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color(red: 1, green: 0.65, blue: 0.18))
                     Text(statusLine)
@@ -19,12 +19,12 @@ struct CalibrationOverlay: View {
                         .foregroundStyle(.white.opacity(0.85))
                 }
                 Spacer()
-                Button("Cancel", action: onCancel)
+                Button(L10n.text("Cancel"), action: onCancel)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(.white.opacity(0.10), in: Capsule())
-                Button("Finish", action: onFinish)
+                Button(L10n.text("Finish"), action: onFinish)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.black)
                     .padding(.horizontal, 12).padding(.vertical, 6)
@@ -37,7 +37,7 @@ struct CalibrationOverlay: View {
             }
 
             if let rms = session.lastFitRMSMetres {
-                Text("Previous fit RMS: \(Int(rms))m - add more fiduciaries to refine")
+                Text(L10n.text("Previous fit RMS: %1$@m - add more fiduciaries to refine", Int(rms)))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.6))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -52,11 +52,11 @@ struct CalibrationOverlay: View {
     private var statusLine: String {
         let n = session.fiduciaries.count
         if n == 0 {
-            return "Tap a known feature on the PDF to drop fiduciary #1 (need 3+)."
+            return L10n.text("Tap a known feature on the PDF to drop fiduciary #1 (need 3+).")
         }
         if n < 3 {
-            return "\(n)/3 fiduciaries placed. Tap another known feature."
+            return L10n.text("%1$@/3 fiduciaries placed. Tap another known feature.", n)
         }
-        return "\(n) fiduciaries placed. Tap Finish to apply, or add more for accuracy."
+        return L10n.text("%1$@ fiduciaries placed. Tap Finish to apply, or add more for accuracy.", n)
     }
 }

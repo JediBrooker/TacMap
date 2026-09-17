@@ -24,9 +24,9 @@ enum MarkerSet: String, Codable, CaseIterable, Hashable {
 
     var displayName: String {
         switch self {
-        case .airsoft: return "Airsoft / Milsim"
-        case .sar:     return "Search & Rescue"
-        case .poi:     return "Points of Interest"
+        case .airsoft: return L10n.text("Airsoft / Milsim")
+        case .sar:     return L10n.text("Search & Rescue")
+        case .poi:     return L10n.text("Points of Interest")
         }
     }
 }
@@ -44,63 +44,63 @@ enum MarkerCatalog {
 
     /// Airsoft team colours the picker offers (the team IS the colour).
     static let teamColors: [(name: String, hex: String)] = [
-        ("Red", "#E23B3B"), ("Blue", "#3B7BE0"), ("Green", "#3BC85A"),
-        ("Yellow", "#EBC12E"), ("Orange", "#F2872E")
+        (L10n.text("Red"), "#E23B3B"), (L10n.text("Blue"), "#3B7BE0"), (L10n.text("Green"), "#3BC85A"),
+        (L10n.text("Yellow"), "#EBC12E"), (L10n.text("Orange"), "#F2872E")
     ]
 
     static let airsoft: [Entry] = [
         // Team marker - colour carries the team, glyph is a person.
-        .init(id: "team", name: "Team Member", sfSymbol: "person.fill", defaultColorHex: "#3B7BE0"),
+        .init(id: "team", name: L10n.text("Team Member"), sfSymbol: "person.fill", defaultColorHex: "#3B7BE0"),
         // Objectives
-        .init(id: "capture", name: "Capture Point", sfSymbol: "target", defaultColorHex: "#F2872E"),
-        .init(id: "flag", name: "Flag / CTF", sfSymbol: "flag.fill", defaultColorHex: "#3B7BE0"),
-        .init(id: "objective", name: "Objective", sfSymbol: "scope", defaultColorHex: "#F2872E"),
-        .init(id: "spawn", name: "Spawn", sfSymbol: "arrow.up.circle.fill", defaultColorHex: "#3BC85A"),
-        .init(id: "respawn", name: "Respawn", sfSymbol: "arrow.clockwise.circle.fill", defaultColorHex: "#3BC85A"),
-        .init(id: "safezone", name: "Safe Zone", sfSymbol: "checkmark.shield.fill", defaultColorHex: "#3BC85A"),
-        .init(id: "staging", name: "Staging", sfSymbol: "tent.fill", defaultColorHex: "#8A93A6"),
-        .init(id: "chrono", name: "Chrono / Marshalling", sfSymbol: "gauge.medium", defaultColorHex: "#8A93A6"),
-        .init(id: "deadzone", name: "Dead Zone", sfSymbol: "xmark.octagon.fill", defaultColorHex: "#E23B3B"),
-        .init(id: "oob", name: "Out of Bounds", sfSymbol: "nosign", defaultColorHex: "#E23B3B"),
+        .init(id: "capture", name: L10n.text("Capture Point"), sfSymbol: "target", defaultColorHex: "#F2872E"),
+        .init(id: "flag", name: L10n.text("Flag / CTF"), sfSymbol: "flag.fill", defaultColorHex: "#3B7BE0"),
+        .init(id: "objective", name: L10n.text("Objective"), sfSymbol: "scope", defaultColorHex: "#F2872E"),
+        .init(id: "spawn", name: L10n.text("Spawn"), sfSymbol: "arrow.up.circle.fill", defaultColorHex: "#3BC85A"),
+        .init(id: "respawn", name: L10n.text("Respawn"), sfSymbol: "arrow.clockwise.circle.fill", defaultColorHex: "#3BC85A"),
+        .init(id: "safezone", name: L10n.text("Safe Zone"), sfSymbol: "checkmark.shield.fill", defaultColorHex: "#3BC85A"),
+        .init(id: "staging", name: L10n.text("Staging"), sfSymbol: "tent.fill", defaultColorHex: "#8A93A6"),
+        .init(id: "chrono", name: L10n.text("Chrono / Marshalling"), sfSymbol: "gauge.medium", defaultColorHex: "#8A93A6"),
+        .init(id: "deadzone", name: L10n.text("Dead Zone"), sfSymbol: "xmark.octagon.fill", defaultColorHex: "#E23B3B"),
+        .init(id: "oob", name: L10n.text("Out of Bounds"), sfSymbol: "nosign", defaultColorHex: "#E23B3B"),
         // Roles
-        .init(id: "rifleman", name: "Rifleman", sfSymbol: "figure.walk", defaultColorHex: "#3B7BE0"),
-        .init(id: "marksman", name: "Marksman / Sniper", sfSymbol: "scope", defaultColorHex: "#3B7BE0"),
-        .init(id: "support", name: "Support / Gunner", sfSymbol: "flame.fill", defaultColorHex: "#3B7BE0"),
-        .init(id: "medic", name: "Medic", sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
-        .init(id: "squadlead", name: "Squad Lead", sfSymbol: "star.fill", defaultColorHex: "#EBC12E"),
-        .init(id: "grenadier", name: "Grenadier", sfSymbol: "burst.fill", defaultColorHex: "#F2872E"),
-        .init(id: "breacher", name: "Breacher", sfSymbol: "hammer.fill", defaultColorHex: "#8A93A6"),
+        .init(id: "rifleman", name: L10n.text("Rifleman"), sfSymbol: "figure.walk", defaultColorHex: "#3B7BE0"),
+        .init(id: "marksman", name: L10n.text("Marksman / Sniper"), sfSymbol: "scope", defaultColorHex: "#3B7BE0"),
+        .init(id: "support", name: L10n.text("Support / Gunner"), sfSymbol: "flame.fill", defaultColorHex: "#3B7BE0"),
+        .init(id: "medic", name: L10n.text("Medic"), sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
+        .init(id: "squadlead", name: L10n.text("Squad Lead"), sfSymbol: "star.fill", defaultColorHex: "#EBC12E"),
+        .init(id: "grenadier", name: L10n.text("Grenadier"), sfSymbol: "burst.fill", defaultColorHex: "#F2872E"),
+        .init(id: "breacher", name: L10n.text("Breacher"), sfSymbol: "hammer.fill", defaultColorHex: "#8A93A6"),
     ]
 
     static let sar: [Entry] = [
-        .init(id: "pls", name: "Point Last Seen (PLS)", sfSymbol: "eye.fill", defaultColorHex: "#E23B3B"),
-        .init(id: "lkp", name: "Last Known Position (LKP)", sfSymbol: "mappin.slash", defaultColorHex: "#E23B3B"),
-        .init(id: "ipp", name: "Initial Planning Point (IPP)", sfSymbol: "mappin.and.ellipse", defaultColorHex: "#F2872E"),
-        .init(id: "segment", name: "Search Segment", sfSymbol: "square.dashed", defaultColorHex: "#3B7BE0"),
-        .init(id: "assignment", name: "Assignment", sfSymbol: "list.bullet.rectangle.fill", defaultColorHex: "#3B7BE0"),
-        .init(id: "clue", name: "Clue / Find", sfSymbol: "magnifyingglass", defaultColorHex: "#EBC12E"),
-        .init(id: "subject", name: "Subject Found", sfSymbol: "person.fill.checkmark", defaultColorHex: "#3BC85A"),
-        .init(id: "casualty", name: "Casualty", sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
-        .init(id: "evac", name: "Evac Route", sfSymbol: "arrow.triangle.turn.up.right.diamond.fill", defaultColorHex: "#3BC85A"),
-        .init(id: "icp", name: "Command Post (ICP)", sfSymbol: "flag.checkered", defaultColorHex: "#111417"),
-        .init(id: "base", name: "Base", sfSymbol: "house.fill", defaultColorHex: "#3B7BE0"),
-        .init(id: "staging", name: "Staging", sfSymbol: "tent.fill", defaultColorHex: "#8A93A6"),
-        .init(id: "helispot", name: "Helispot / LZ", sfSymbol: "h.square.fill", defaultColorHex: "#3BC85A"),
-        .init(id: "water", name: "Water", sfSymbol: "drop.fill", defaultColorHex: "#3B7BE0"),
-        .init(id: "medical", name: "Medical", sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
-        .init(id: "hazard", name: "Hazard", sfSymbol: "exclamationmark.triangle.fill", defaultColorHex: "#EBC12E"),
-        .init(id: "containment", name: "Containment", sfSymbol: "shield.lefthalf.filled", defaultColorHex: "#F2872E"),
-        .init(id: "roadblock", name: "Road Block", sfSymbol: "hand.raised.fill", defaultColorHex: "#E23B3B"),
+        .init(id: "pls", name: L10n.text("Point Last Seen (PLS)"), sfSymbol: "eye.fill", defaultColorHex: "#E23B3B"),
+        .init(id: "lkp", name: L10n.text("Last Known Position (LKP)"), sfSymbol: "mappin.slash", defaultColorHex: "#E23B3B"),
+        .init(id: "ipp", name: L10n.text("Initial Planning Point (IPP)"), sfSymbol: "mappin.and.ellipse", defaultColorHex: "#F2872E"),
+        .init(id: "segment", name: L10n.text("Search Segment"), sfSymbol: "square.dashed", defaultColorHex: "#3B7BE0"),
+        .init(id: "assignment", name: L10n.text("Assignment"), sfSymbol: "list.bullet.rectangle.fill", defaultColorHex: "#3B7BE0"),
+        .init(id: "clue", name: L10n.text("Clue / Find"), sfSymbol: "magnifyingglass", defaultColorHex: "#EBC12E"),
+        .init(id: "subject", name: L10n.text("Subject Found"), sfSymbol: "person.fill.checkmark", defaultColorHex: "#3BC85A"),
+        .init(id: "casualty", name: L10n.text("Casualty"), sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
+        .init(id: "evac", name: L10n.text("Evac Route"), sfSymbol: "arrow.triangle.turn.up.right.diamond.fill", defaultColorHex: "#3BC85A"),
+        .init(id: "icp", name: L10n.text("Command Post (ICP)"), sfSymbol: "flag.checkered", defaultColorHex: "#111417"),
+        .init(id: "base", name: L10n.text("Base"), sfSymbol: "house.fill", defaultColorHex: "#3B7BE0"),
+        .init(id: "staging", name: L10n.text("Staging"), sfSymbol: "tent.fill", defaultColorHex: "#8A93A6"),
+        .init(id: "helispot", name: L10n.text("Helispot / LZ"), sfSymbol: "h.square.fill", defaultColorHex: "#3BC85A"),
+        .init(id: "water", name: L10n.text("Water"), sfSymbol: "drop.fill", defaultColorHex: "#3B7BE0"),
+        .init(id: "medical", name: L10n.text("Medical"), sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
+        .init(id: "hazard", name: L10n.text("Hazard"), sfSymbol: "exclamationmark.triangle.fill", defaultColorHex: "#EBC12E"),
+        .init(id: "containment", name: L10n.text("Containment"), sfSymbol: "shield.lefthalf.filled", defaultColorHex: "#F2872E"),
+        .init(id: "roadblock", name: L10n.text("Road Block"), sfSymbol: "hand.raised.fill", defaultColorHex: "#E23B3B"),
     ]
 
     static let poi: [Entry] = [
-        .init(id: "medical", name: "Medical", sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
-        .init(id: "water", name: "Water", sfSymbol: "drop.fill", defaultColorHex: "#3B7BE0"),
-        .init(id: "comms", name: "Comms", sfSymbol: "antenna.radiowaves.left.and.right", defaultColorHex: "#3B7BE0"),
-        .init(id: "parking", name: "Parking", sfSymbol: "parkingsign", defaultColorHex: "#3B7BE0"),
-        .init(id: "hazard", name: "Hazard", sfSymbol: "exclamationmark.triangle.fill", defaultColorHex: "#EBC12E"),
-        .init(id: "checkpoint", name: "Checkpoint", sfSymbol: "checkmark.shield.fill", defaultColorHex: "#3BC85A"),
-        .init(id: "pin", name: "Marker", sfSymbol: "mappin", defaultColorHex: "#EBC12E"),
+        .init(id: "medical", name: L10n.text("Medical"), sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
+        .init(id: "water", name: L10n.text("Water"), sfSymbol: "drop.fill", defaultColorHex: "#3B7BE0"),
+        .init(id: "comms", name: L10n.text("Comms"), sfSymbol: "antenna.radiowaves.left.and.right", defaultColorHex: "#3B7BE0"),
+        .init(id: "parking", name: L10n.text("Parking"), sfSymbol: "parkingsign", defaultColorHex: "#3B7BE0"),
+        .init(id: "hazard", name: L10n.text("Hazard"), sfSymbol: "exclamationmark.triangle.fill", defaultColorHex: "#EBC12E"),
+        .init(id: "checkpoint", name: L10n.text("Checkpoint"), sfSymbol: "checkmark.shield.fill", defaultColorHex: "#3BC85A"),
+        .init(id: "pin", name: L10n.text("Marker"), sfSymbol: "mappin", defaultColorHex: "#EBC12E"),
     ]
 
     static func entries(for set: MarkerSet) -> [Entry] {

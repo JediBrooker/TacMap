@@ -71,8 +71,8 @@ enum MapOrientationMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .northUp: "North Up"
-        case .headingUp: "Heading Up"
+        case .northUp: L10n.text("North Up")
+        case .headingUp: L10n.text("Heading Up")
         }
     }
 
@@ -106,7 +106,7 @@ enum BackgroundUnitSyncInterval: Int, CaseIterable, Identifiable {
     var seconds: TimeInterval { TimeInterval(rawValue * 60) }
 
     var label: String {
-        rawValue == 1 ? "Every minute" : "Every \(rawValue) minutes"
+        rawValue == 1 ? L10n.text("Every minute") : L10n.text("Every %1$@ minutes", rawValue)
     }
 
     static func stored(in defaults: UserDefaults = .standard) -> Self {
@@ -196,7 +196,7 @@ final class OpsecSettings: ObservableObject {
            !persist(relayResolution.endpoint, key: Keys.relay, verify: {
                self.defaults.string(forKey: Keys.relay) == relayResolution.endpoint
            }) {
-            persistenceIssue = "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting."
+            persistenceIssue = L10n.text("The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.")
         }
     }
 
@@ -254,7 +254,7 @@ final class OpsecSettings: ObservableObject {
             relayValidationIssue = error.localizedDescription
             return false
         } catch {
-            relayValidationIssue = "The relay address is not valid."
+            relayValidationIssue = L10n.text("The relay address is not valid.")
             return false
         }
         guard persist(normalized, key: Keys.relay, verify: {
@@ -309,7 +309,7 @@ final class OpsecSettings: ObservableObject {
                 defaults.removeObject(forKey: key)
             }
             _ = synchronize(defaults)
-            persistenceIssue = "Could not save this privacy setting. The previous setting remains active; check available storage and try again."
+            persistenceIssue = L10n.text("Could not save this privacy setting. The previous setting remains active; check available storage and try again.")
             return false
         }
         persistenceIssue = nil

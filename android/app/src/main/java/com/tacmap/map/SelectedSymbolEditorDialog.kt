@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.L10n
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -69,10 +71,10 @@ import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 
 private enum class SelectedKindCategory(val displayName: String) {
-    GENERIC("Waypoint"),
-    MILITARY("Military Unit"),
-    CONTROL_MEASURE("Tactical Task"),
-    MARKER("Marker"),
+    GENERIC(L10n.text("Waypoint")),
+    MILITARY(L10n.text("Military Unit")),
+    CONTROL_MEASURE(L10n.text("Tactical Task")),
+    MARKER(L10n.text("Marker")),
 }
 
 private val WaypointKind.selectedCategory: SelectedKindCategory
@@ -108,14 +110,14 @@ internal fun SelectedSymbolEditorDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Edit symbol", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(L10n.text("Edit symbol"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Text(draft.kindDisplayName, color = Color.White.copy(alpha = 0.65f), fontSize = 12.sp)
                     }
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier.size(48.dp),
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close symbol editor", tint = Color.White)
+                        Icon(Icons.Default.Close, contentDescription = L10n.text("Close symbol editor"), tint = Color.White)
                     }
                 }
 
@@ -126,19 +128,19 @@ internal fun SelectedSymbolEditorDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    ) { Text("Cancel") }
+                    ) { Text(L10n.text("Cancel")) }
                     Button(
                         onClick = {
                             when (val result = draft.normalized(safeLayers)) {
                                 is SymbolDraftResult.Invalid -> validationError = result.message
                                 is SymbolDraftResult.Valid -> {
                                     if (onSave(result.waypoint)) onDismiss()
-                                    else validationError = "The symbol could not be saved. Try again."
+                                    else validationError = L10n.text("The symbol could not be saved. Try again.")
                                 }
                             }
                         },
                         modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    ) { Text("Save") }
+                    ) { Text(L10n.text("Save")) }
                 }
 
                 LazyColumn(
@@ -155,7 +157,7 @@ internal fun SelectedSymbolEditorDialog(
                         OutlinedTextField(
                             value = draft.name,
                             onValueChange = { draft = draft.copy(name = it); validationError = null },
-                            label = { Text("Name") },
+                            label = { Text(L10n.text("Name")) },
                             placeholder = { Text(draft.kindDisplayName) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
@@ -164,7 +166,7 @@ internal fun SelectedSymbolEditorDialog(
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             PickerField(
-                                label = "Kind",
+                                label = L10n.text("Kind"),
                                 selected = draft.kind.selectedCategory,
                                 values = SelectedKindCategory.entries,
                                 text = { it.displayName },
@@ -236,14 +238,14 @@ internal fun SelectedSymbolEditorDialog(
                                 draft = draft.copy(mgrsInput = it)
                                 validationError = null
                             },
-                            label = { Text("Move to MGRS") },
+                            label = { Text(L10n.text("Move to MGRS")) },
                             placeholder = { Text(MgrsFormatter.format(draft.latitude, draft.longitude)) },
                             supportingText = {
                                 Text(
                                     if (validationError == MGRS_MOVE_VALIDATION_ERROR) {
                                         MGRS_MOVE_VALIDATION_ERROR
                                     } else {
-                                        "4, 6, 8, or 10 figures; shorthand uses this graphic's local grid square."
+                                        L10n.text("4, 6, 8, or 10 figures; shorthand uses this graphic's local grid square.")
                                     }
                                 )
                             },
@@ -257,7 +259,7 @@ internal fun SelectedSymbolEditorDialog(
                         OutlinedTextField(
                             value = draft.notes,
                             onValueChange = { draft = draft.copy(notes = it) },
-                            label = { Text("Notes") },
+                            label = { Text(L10n.text("Notes")) },
                             minLines = 3,
                             maxLines = 5,
                             modifier = Modifier.fillMaxWidth(),
@@ -267,7 +269,7 @@ internal fun SelectedSymbolEditorDialog(
                         OutlinedTextField(
                             value = draft.elevationText,
                             onValueChange = { draft = draft.copy(elevationText = it); validationError = null },
-                            label = { Text("Elevation (metres)") },
+                            label = { Text(L10n.text("Elevation (metres)")) },
                             singleLine = true,
                             isError = validationError == ELEVATION_VALIDATION_ERROR,
                             supportingText = validationError
@@ -281,7 +283,7 @@ internal fun SelectedSymbolEditorDialog(
                         val selectedLayer = safeLayers.firstOrNull { it.id == draft.layerId }
                             ?: safeLayers.first()
                         PickerField(
-                            label = "Layer",
+                            label = L10n.text("Layer"),
                             selected = selectedLayer,
                             values = safeLayers,
                             text = { it.name },
@@ -294,7 +296,7 @@ internal fun SelectedSymbolEditorDialog(
                         }
                         item {
                             DraftSlider(
-                                label = "Rotation",
+                                label = L10n.text("Rotation"),
                                 value = draft.rotationDegrees.toFloat().coerceIn(0f, 360f),
                                 valueLabel = "${normalizedDegrees(draft.rotationDegrees).toInt()}°",
                                 range = 0f..360f,
@@ -304,7 +306,7 @@ internal fun SelectedSymbolEditorDialog(
                         }
                         item {
                             DraftSlider(
-                                label = "Width scale",
+                                label = L10n.text("Width scale"),
                                 value = draft.scaleX.toFloat().coerceIn(MIN_SYMBOL_SCALE.toFloat(), MAX_SYMBOL_SCALE.toFloat()),
                                 valueLabel = "%.2fx".format(draft.scaleX),
                                 range = MIN_SYMBOL_SCALE.toFloat()..MAX_SYMBOL_SCALE.toFloat(),
@@ -314,7 +316,7 @@ internal fun SelectedSymbolEditorDialog(
                         }
                         item {
                             DraftSlider(
-                                label = "Height scale",
+                                label = L10n.text("Height scale"),
                                 value = draft.scaleY.toFloat().coerceIn(MIN_SYMBOL_SCALE.toFloat(), MAX_SYMBOL_SCALE.toFloat()),
                                 valueLabel = "%.2fx".format(draft.scaleY),
                                 range = MIN_SYMBOL_SCALE.toFloat()..MAX_SYMBOL_SCALE.toFloat(),
@@ -334,7 +336,7 @@ internal fun SelectedSymbolEditorDialog(
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = null)
                             Spacer(Modifier.size(8.dp))
-                            Text("Delete symbol")
+                            Text(L10n.text("Delete symbol"))
                         }
                     }
                 }
@@ -346,10 +348,10 @@ internal fun SelectedSymbolEditorDialog(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete symbol?") },
+            title = { Text(L10n.text("Delete symbol?")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("This will permanently remove \"${waypoint.name}\".")
+                    Text(L10n.text("This will permanently remove \"%1\$s\".", waypoint.name))
                     deleteError?.let { error ->
                         Text(error, color = Color(0xFFFF8A80), fontSize = 12.sp)
                     }
@@ -362,11 +364,11 @@ internal fun SelectedSymbolEditorDialog(
                         confirmDelete = false
                         onDismiss()
                     } else {
-                        deleteError = "The symbol could not be deleted. It remains on the map."
+                        deleteError = L10n.text("The symbol could not be deleted. It remains on the map.")
                     }
-                }) { Text("Delete", color = Color(0xFFFF5A5A)) }
+                }) { Text(L10n.text("Delete"), color = Color(0xFFFF5A5A)) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(L10n.text("Cancel")) } },
         )
     }
 }
@@ -375,7 +377,7 @@ internal fun SelectedSymbolEditorDialog(
 @Composable
 private fun TaskColorPicker(selectedColor: TaskColor, onSelect: (TaskColor) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Task colour", color = Color.White, fontWeight = FontWeight.SemiBold)
+        Text(L10n.text("Task colour"), color = Color.White, fontWeight = FontWeight.SemiBold)
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -385,7 +387,7 @@ private fun TaskColorPicker(selectedColor: TaskColor, onSelect: (TaskColor) -> U
                     modifier = Modifier
                         .size(48.dp)
                         .semantics {
-                            contentDescription = "${taskColor.displayName} task colour"
+                            contentDescription = L10n.text("%1\$s task colour", taskColor.displayName)
                             selected = taskColor == selectedColor
                             role = Role.RadioButton
                         }
@@ -423,7 +425,7 @@ private fun DraftSlider(
                 modifier = Modifier
                     .heightIn(min = 48.dp)
                     .semantics { contentDescription = resetLabel },
-            ) { Text("Reset") }
+            ) { Text(L10n.text("Reset")) }
         }
         Slider(
             value = value,
@@ -440,8 +442,8 @@ private fun DraftSlider(
 }
 
 internal fun resetAccessibilityLabel(label: String): String = when (label) {
-    "Rotation" -> "Reset rotation"
-    "Width scale" -> "Reset width"
-    "Height scale" -> "Reset height"
-    else -> "Reset $label"
+    L10n.text("Rotation") -> L10n.text("Reset rotation")
+    L10n.text("Width scale") -> L10n.text("Reset width")
+    L10n.text("Height scale") -> L10n.text("Reset height")
+    else -> L10n.text("Reset %1\$s", label)
 }

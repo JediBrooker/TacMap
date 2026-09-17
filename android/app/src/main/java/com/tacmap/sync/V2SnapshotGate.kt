@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.L10n
+
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -67,7 +69,7 @@ internal class V2SnapshotGate(
             return V2SnapshotGateEvent.Ignored
         }
         if (frameBytes < 0 || aggregateBytes > maxAggregateBytes - frameBytes.toLong()) {
-            return reject("The relay snapshot exceeded the safe size limit.")
+            return reject(L10n.text("The relay snapshot exceeded the safe size limit."))
         }
         aggregateBytes += frameBytes
 
@@ -75,7 +77,7 @@ internal class V2SnapshotGate(
             "snapshot-begin" -> acceptBegin(message)
             "snapshot" -> acceptPage(message)
             "snapshot-end" -> acceptEnd(message)
-            else -> reject("The relay sent live data before completing its snapshot fence.")
+            else -> reject(L10n.text("The relay sent live data before completing its snapshot fence."))
         }
     }
 
@@ -83,17 +85,17 @@ internal class V2SnapshotGate(
         if (!isCurrent(socketIdentity, generation)) return V2SnapshotGateEvent.Ignored
         return when (phase) {
             Phase.AWAITING_BEGIN, Phase.RECEIVING, Phase.FINAL_PAGE ->
-                reject("The relay did not complete its initial snapshot in time.")
+                reject(L10n.text("The relay did not complete its initial snapshot in time."))
             else -> V2SnapshotGateEvent.Ignored
         }
     }
 
     private fun acceptBegin(message: JSONObject): V2SnapshotGateEvent {
         if (phase != Phase.AWAITING_BEGIN) {
-            return reject("The relay snapshot began out of order.")
+            return reject(L10n.text("The relay snapshot began out of order."))
         }
         val seq = strictJsonInteger(message.opt("seq"), 0, Long.MAX_VALUE)
-            ?: return reject("The relay snapshot fence was malformed.")
+            ?: return reject(L10n.text("The relay snapshot fence was malformed."))
         sequence = seq
         phase = Phase.RECEIVING
         return V2SnapshotGateEvent.Began
@@ -101,27 +103,27 @@ internal class V2SnapshotGate(
 
     private fun acceptPage(message: JSONObject): V2SnapshotGateEvent {
         if (phase != Phase.RECEIVING) {
-            return reject("The relay snapshot page arrived out of order.")
+            return reject(L10n.text("The relay snapshot page arrived out of order."))
         }
         val items = message.opt("items") as? JSONArray
-            ?: return reject("The relay snapshot page was malformed.")
+            ?: return reject(L10n.text("The relay snapshot page was malformed."))
         val more = message.opt("more") as? Boolean
-            ?: return reject("The relay snapshot page was missing its final-page marker.")
+            ?: return reject(L10n.text("The relay snapshot page was missing its final-page marker."))
         if (records.size > maxItems - items.length()) {
-            return reject("The relay snapshot contained too many records.")
+            return reject(L10n.text("The relay snapshot contained too many records."))
         }
         val pageRecords = arrayObjects(items)
-            ?: return reject("The relay snapshot contained a malformed record.")
+            ?: return reject(L10n.text("The relay snapshot contained a malformed record."))
         records += pageRecords
 
         if (message.has("members")) {
             val memberArray = message.opt("members") as? JSONArray
-                ?: return reject("The relay snapshot member list was malformed.")
+                ?: return reject(L10n.text("The relay snapshot member list was malformed."))
             if (members.size > maxItems - memberArray.length()) {
-                return reject("The relay snapshot contained too many members.")
+                return reject(L10n.text("The relay snapshot contained too many members."))
             }
             val pageMembers = arrayObjects(memberArray)
-                ?: return reject("The relay snapshot contained a malformed member.")
+                ?: return reject(L10n.text("The relay snapshot contained a malformed member."))
             members += pageMembers
         }
 
@@ -131,12 +133,12 @@ internal class V2SnapshotGate(
 
     private fun acceptEnd(message: JSONObject): V2SnapshotGateEvent {
         if (phase != Phase.FINAL_PAGE) {
-            return reject("The relay snapshot ended before its final page.")
+            return reject(L10n.text("The relay snapshot ended before its final page."))
         }
-        val expected = sequence ?: return reject("The relay snapshot fence was missing.")
+        val expected = sequence ?: return reject(L10n.text("The relay snapshot fence was missing."))
         val end = strictJsonInteger(message.opt("seq"), 0, Long.MAX_VALUE)
-            ?: return reject("The relay snapshot end fence was malformed.")
-        if (end != expected) return reject("The relay snapshot fence changed before completion.")
+            ?: return reject(L10n.text("The relay snapshot end fence was malformed."))
+        if (end != expected) return reject(L10n.text("The relay snapshot fence changed before completion."))
 
         phase = Phase.COMPLETE
         return V2SnapshotGateEvent.Completed(

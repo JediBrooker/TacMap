@@ -11,9 +11,9 @@ enum ReinforcementStatus: String, Codable, Hashable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .none:       return "None"
-        case .reinforced: return "Reinforced (+)"
-        case .reduced:    return "Reduced (-)"
+        case .none:       return L10n.text("None")
+        case .reinforced: return L10n.text("Reinforced (+)")
+        case .reduced:    return L10n.text("Reduced (-)")
         }
     }
 
@@ -311,7 +311,7 @@ enum WaypointKind: Hashable, Codable {
     /// Short human-readable summary.
     var displayName: String {
         switch self {
-        case .generic:                return "Waypoint"
+        case .generic:                return L10n.text("Waypoint")
         case .military(let spec):
             // e.g. "Friendly Infantry Platoon"
             let prefix = spec.affiliation.displayName
@@ -325,9 +325,9 @@ enum WaypointKind: Hashable, Codable {
     /// Two-line category label used in the edit sheet.
     var categoryDisplayName: String {
         switch self {
-        case .generic:         return "Field Marker"
-        case .military:        return "Military Unit (APP-6C)"
-        case .controlMeasure:  return "Tactical Control Measure"
+        case .generic:         return L10n.text("Field Marker")
+        case .military:        return L10n.text("Military Unit (APP-6C)")
+        case .controlMeasure:  return L10n.text("Tactical Control Measure")
         case .marker(let mk):  return mk.set.displayName
         }
     }
@@ -414,11 +414,11 @@ enum TaskColor: String, Codable, Hashable, CaseIterable {
     /// Picker label - colour + APP-6 affiliation meaning.
     var label: String {
         switch self {
-        case .black:  return "Black"
-        case .blue:   return "Blue (Friendly)"
-        case .red:    return "Red (Hostile)"
-        case .green:  return "Green (Neutral)"
-        case .yellow: return "Yellow (Unknown)"
+        case .black:  return L10n.text("Black")
+        case .blue:   return L10n.text("Blue (Friendly)")
+        case .red:    return L10n.text("Red (Hostile)")
+        case .green:  return L10n.text("Green (Neutral)")
+        case .yellow: return L10n.text("Yellow (Unknown)")
         }
     }
 }
@@ -446,44 +446,44 @@ enum TacticalControlMeasure: String, Codable, Hashable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .block:                  return "Block"
-        case .breach:                 return "Breach"
-        case .bypass:                 return "Bypass"
-        case .canalise:               return "Canalise"
-        case .clear:                  return "Clear"
-        case .contain:                return "Contain"
-        case .counterattack:          return "Counter-Attack"
-        case .counterattackByFire:    return "Counter-Attack by Fire"
-        case .delay:                  return "Delay"
-        case .destroy:                return "Destroy"
-        case .disrupt:                return "Disrupt"
-        case .fix:                    return "Fix"
-        case .interdict:              return "Interdict"
-        case .isolate:                return "Isolate"
-        case .neutralise:             return "Neutralise"
-        case .occupy:                 return "Occupy"
-        case .penetrate:              return "Penetrate"
-        case .reliefInPlace:          return "Relief in Place"
-        case .retain:                 return "Retain"
-        case .secure:                 return "Secure"
-        case .screen:                 return "Screen"
-        case .`guard`:                  return "Guard"
-        case .cover:                  return "Cover"
-        case .seize:                  return "Seize"
-        case .withdraw:               return "Withdraw"
-        case .withdrawUnderPressure:  return "Withdraw Under Pressure"
-        case .landingZone:            return "Landing Zone"
-        case .ccp:                    return "Casualty Collection Point"
-        case .observationPostRecon:   return "Observation Post (Recon)"
-        case .axisOfMainAttack:       return "Axis of Main Attack"
-        case .axisOfSupportingAttack: return "Axis of Supporting Attack"
-        case .attackByFire:           return "Attack by Fire"
-        case .supportByFire:          return "Support by Fire"
-        case .ambush:                 return "Ambush"
-        case .antipersonnelMinefield: return "Anti-Personnel Minefield"
-        case .turn:                   return "Turn"
-        case .assemblyArea:           return "Assembly Area"
-        case .formUpPoint:            return "Form-Up Point"
+        case .block:                  return L10n.text("Block")
+        case .breach:                 return L10n.text("Breach")
+        case .bypass:                 return L10n.text("Bypass")
+        case .canalise:               return L10n.text("Canalise")
+        case .clear:                  return L10n.text("Clear")
+        case .contain:                return L10n.text("Contain")
+        case .counterattack:          return L10n.text("Counter-Attack")
+        case .counterattackByFire:    return L10n.text("Counter-Attack by Fire")
+        case .delay:                  return L10n.text("Delay")
+        case .destroy:                return L10n.text("Destroy")
+        case .disrupt:                return L10n.text("Disrupt")
+        case .fix:                    return L10n.text("Fix")
+        case .interdict:              return L10n.text("Interdict")
+        case .isolate:                return L10n.text("Isolate")
+        case .neutralise:             return L10n.text("Neutralise")
+        case .occupy:                 return L10n.text("Occupy")
+        case .penetrate:              return L10n.text("Penetrate")
+        case .reliefInPlace:          return L10n.text("Relief in Place")
+        case .retain:                 return L10n.text("Retain")
+        case .secure:                 return L10n.text("Secure")
+        case .screen:                 return L10n.text("Screen")
+        case .`guard`:                  return L10n.text("Guard")
+        case .cover:                  return L10n.text("Cover")
+        case .seize:                  return L10n.text("Seize")
+        case .withdraw:               return L10n.text("Withdraw")
+        case .withdrawUnderPressure:  return L10n.text("Withdraw Under Pressure")
+        case .landingZone:            return L10n.text("Landing Zone")
+        case .ccp:                    return L10n.text("Casualty Collection Point")
+        case .observationPostRecon:   return L10n.text("Observation Post (Recon)")
+        case .axisOfMainAttack:       return L10n.text("Axis of Main Attack")
+        case .axisOfSupportingAttack: return L10n.text("Axis of Supporting Attack")
+        case .attackByFire:           return L10n.text("Attack by Fire")
+        case .supportByFire:          return L10n.text("Support by Fire")
+        case .ambush:                 return L10n.text("Ambush")
+        case .antipersonnelMinefield: return L10n.text("Anti-Personnel Minefield")
+        case .turn:                   return L10n.text("Turn")
+        case .assemblyArea:           return L10n.text("Assembly Area")
+        case .formUpPoint:            return L10n.text("Form-Up Point")
         }
     }
 

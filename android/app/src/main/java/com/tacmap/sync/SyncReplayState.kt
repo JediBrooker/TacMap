@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.L10n
+
 import com.tacmap.util.SafeStore
 import com.tacmap.models.ModelMutationEvent
 import com.tacmap.models.ModelMutationOrigin
@@ -111,7 +113,7 @@ class SyncReplayState(
         val before = memorySnapshot()
         return try {
             change()
-            if (!save()) throw IllegalStateException("replay-state persistence failed")
+            if (!save()) throw IllegalStateException(L10n.text("replay-state persistence failed"))
             true
         } catch (_: Throwable) {
             restore(before)

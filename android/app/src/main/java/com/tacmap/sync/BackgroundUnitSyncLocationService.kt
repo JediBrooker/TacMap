@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.L10n
+
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -79,20 +81,20 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
             if (!hasPreciseLocation()) {
                 fail(
                     generation,
-                    "Precise location is unavailable; Background Unit Sync location stopped.",
+                    L10n.text("Precise location is unavailable; Background Unit Sync location stopped."),
                 )
                 return START_NOT_STICKY
             }
             val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                fail(generation, "GPS is turned off; Background Unit Sync location stopped.")
+                fail(generation, L10n.text("GPS is turned off; Background Unit Sync location stopped."))
                 return START_NOT_STICKY
             }
             registerLocationListener(interval)
         } catch (failure: RuntimeException) {
             fail(
                 generation,
-                "Background Unit Sync location stopped: " +
+                L10n.text("Background Unit Sync location stopped: ") +
                     (failure.message ?: failure.javaClass.simpleName),
             )
         }
@@ -104,7 +106,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
         if (activeGeneration == null || selectedInterval == interval) return
         if (!hasPreciseLocation()) {
             activeGeneration?.let { generation ->
-                fail(generation, "Precise location is unavailable; Background Unit Sync location stopped.")
+                fail(generation, L10n.text("Precise location is unavailable; Background Unit Sync location stopped."))
             }
             return
         }
@@ -130,7 +132,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
                 if (!hasPreciseLocation()) {
                     fail(
                         generation,
-                        "Precise location is unavailable; Background Unit Sync location stopped.",
+                        L10n.text("Precise location is unavailable; Background Unit Sync location stopped."),
                     )
                     return
                 }
@@ -141,7 +143,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
 
             override fun onProviderDisabled(provider: String) {
                 if (provider == LocationManager.GPS_PROVIDER) {
-                    fail(generation, "GPS was turned off; Background Unit Sync location stopped.")
+                    fail(generation, L10n.text("GPS was turned off; Background Unit Sync location stopped."))
                 }
             }
 
@@ -184,10 +186,10 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "Background Unit Sync",
+                L10n.text("Background Unit Sync"),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Shown while TacMap can share location with Unit Sync when the screen is off."
+                description = L10n.text("Shown while TacMap can share location with Unit Sync when the screen is off.")
             }
         )
         val openApp = PendingIntent.getActivity(
@@ -206,11 +208,11 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Background Unit Sync is on")
-            .setContentText("TacMap can update your encrypted unit location with the screen off.")
+            .setContentTitle(L10n.text("Background Unit Sync is on"))
+            .setContentText(L10n.text("TacMap can update your encrypted unit location with the screen off."))
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(openApp)
-            .addAction(0, "Stop sharing", stopSharing)
+            .addAction(0, L10n.text("Stop sharing"), stopSharing)
             .setOngoing(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
