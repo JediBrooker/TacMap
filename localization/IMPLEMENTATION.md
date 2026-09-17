@@ -4,7 +4,7 @@ The implementation is split into the six milestones in the [full localisation pl
 
 ## Milestone 1: source inventory and regression guard
 
-- Registered 281 app-owned Swift/Kotlin components in `source-inventory.json`, grouped by feature and platform. Generated resource references, typed accessors and language choices are covered by byte-for-byte generation checks instead.
+- Registered 283 app-owned Swift/Kotlin components in `source-inventory.json`, grouped by feature and platform. Generated resource references, typed accessors and language choices are covered by byte-for-byte generation checks instead.
 - Added a dependency-free, token-aware source guard to the existing localisation check on both CI workflows. It handles nested comments, raw/multiline strings, interpolation, named arguments, common display APIs and the app's positional display helpers.
 - Added exact, occurrence-limited exceptions for official names, standards, example coordinates, technical labels that share display-like parameter names. Exceptions contain reasons. New or stale exceptions fail CI.
 - Fixed the Android reinforcement, task-colour, selected-symbol-category and compass-reference labels that cached translations in enum initialisers. Display names are resolved using the current language. The “None” reinforcement option now uses the catalogue too.
@@ -46,7 +46,7 @@ The compatibility bridge deliberately remains. Migrating every legacy call and r
 
 ## Milestone 3: first formatting batch
 
-Shared presentation formatters now cover measurements, weather numbers, elevations and chat times on both platforms. Explicit app language keeps the device region; time formatting keeps the device time zone. Units and measurement thresholds stay the same. Tests cover German/English decimals, Swiss German, mixed language/region, thresholds, time zones and preserving an active iOS measurement while changing language. See [FORMATTING.md](FORMATTING.md) for policy and the remaining migration/lifecycle work. Phase 3 is still in progress.
+Shared presentation formatters now cover measurements, weather numbers, elevations and chat times on both platforms. Explicit app language keeps the device region; time formatting keeps the device time zone. Units and measurement thresholds stay the same. Tests cover German/English decimals, Swiss German, mixed language/region, thresholds, time zones and preserving an active iOS measurement while changing language. See [FORMATTING.md](FORMATTING.md) for policy and the remaining migration/lifecycle work. The next editor batch migrates symbol/drawing sizes and accessibility values, and adds a strict locale-aware elevation parser with visible input guidance. Phase 3 is still in progress.
 
 ## Next milestones and measured backlog
 

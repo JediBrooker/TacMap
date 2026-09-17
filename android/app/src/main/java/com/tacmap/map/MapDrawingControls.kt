@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DisplayFormat
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.background
@@ -230,7 +232,7 @@ internal fun DrawingFeatureEditBar(
                     icon = Icons.Default.SwapHoriz,
                     label = L10n.text("Width scale"),
                     value = feature.scaleX.toFloat().coerceIn(0.15f, 6f),
-                    valueLabel = "%.2fx".format(feature.scaleX),
+                    valueLabel = DisplayFormat.number(feature.scaleX, 2) + "x",
                     range = 0.15f..6f,
                     onChange = { onFeatureChangeDraft(feature.copy(scaleX = it.toDouble())) },
                     onCommit = { attempt { onFeatureChange(feature.copy(scaleX = it.toDouble())) } },
@@ -240,7 +242,7 @@ internal fun DrawingFeatureEditBar(
                     icon = Icons.Default.SwapVert,
                     label = L10n.text("Height scale"),
                     value = feature.scaleY.toFloat().coerceIn(0.15f, 6f),
-                    valueLabel = "%.2fx".format(feature.scaleY),
+                    valueLabel = DisplayFormat.number(feature.scaleY, 2) + "x",
                     range = 0.15f..6f,
                     onChange = { onFeatureChangeDraft(feature.copy(scaleY = it.toDouble())) },
                     onCommit = { attempt { onFeatureChange(feature.copy(scaleY = it.toDouble())) } },

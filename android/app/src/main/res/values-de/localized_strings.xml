@@ -4,6 +4,7 @@
     <string name="chat_recipient_heading">"EMPFÄNGER"</string>
     <string name="common_ok">"OK"</string>
     <string name="import_failed">"Import fehlgeschlagen: %1$s"</string>
+    <string name="input_decimal_hint">"Verwende einen Dezimalpunkt oder das Dezimaltrennzeichen deiner Sprache. Verwende keine Tausendertrennzeichen."</string>
     <string name="settings_language_device">"Gerätesprache"</string>
     <string name="settings_language_save_failed">"Die Spracheinstellung konnte nicht gespeichert werden. Versuche es erneut."</string>
     <string name="settings_language_title">"Sprache"</string>

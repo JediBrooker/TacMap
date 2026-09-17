@@ -12068,5 +12068,17 @@
     "accessor": "acknowledge",
     "context": "Button acknowledging a message or dismissing an alert.",
     "parameters": []
+  },
+  "input_decimal_hint": {
+    "en": "Use a decimal point or your language’s decimal separator. Do not use thousands separators.",
+    "de": "Verwende einen Dezimalpunkt oder das Dezimaltrennzeichen deiner Sprache. Verwende keine Tausendertrennzeichen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "decimalInputHint",
+    "context": "Help below a scalar elevation input. A dot always means a decimal, and the selected regional decimal separator is also accepted. Grouping is prohibited.",
+    "parameters": []
   }
 }

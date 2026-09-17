@@ -57,7 +57,7 @@ struct SymbolEditDraft: Equatable {
         let elevation: Double?
         if trimmedElevation.isEmpty {
             elevation = nil
-        } else if let parsed = Double(trimmedElevation), parsed.isFinite {
+        } else if let parsed = DecimalInput.parse(trimmedElevation) {
             elevation = parsed
         } else {
             throw ValidationError.invalidElevation
@@ -374,7 +374,7 @@ struct WaypointCreationSheet: View {
                                 HStack {
                                     Label(L10n.text("Width"), systemImage: "arrow.left.and.right")
                                     Spacer()
-                                    Text(String(format: "%.2f×", scaleX))
+                                    Text(DisplayFormat.number(scaleX, decimals: 2) + "×")
                                         .font(.subheadline.monospacedDigit())
                                         .foregroundStyle(.secondary)
                                     Button(L10n.text("Reset")) { scaleX = 1.0 }
@@ -385,7 +385,7 @@ struct WaypointCreationSheet: View {
                                 }
                                 Slider(value: $scaleX, in: 0.1...20.0, step: 0.1)
                                     .accessibilityLabel(SymbolEditorAccessibility.widthLabel)
-                                    .accessibilityValue(String(format: "%.1f×", scaleX))
+                                    .accessibilityValue(DisplayFormat.number(scaleX, decimals: 1) + "×")
                                     .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
                             }
                             // Height
@@ -393,7 +393,7 @@ struct WaypointCreationSheet: View {
                                 HStack {
                                     Label(L10n.text("Height"), systemImage: "arrow.up.and.down")
                                     Spacer()
-                                    Text(String(format: "%.2f×", scaleY))
+                                    Text(DisplayFormat.number(scaleY, decimals: 2) + "×")
                                         .font(.subheadline.monospacedDigit())
                                         .foregroundStyle(.secondary)
                                     Button(L10n.text("Reset")) { scaleY = 1.0 }
@@ -404,7 +404,7 @@ struct WaypointCreationSheet: View {
                                 }
                                 Slider(value: $scaleY, in: 0.1...20.0, step: 0.1)
                                     .accessibilityLabel(SymbolEditorAccessibility.heightLabel)
-                                    .accessibilityValue(String(format: "%.1f×", scaleY))
+                                    .accessibilityValue(DisplayFormat.number(scaleY, decimals: 1) + "×")
                                     .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
                             }
                             // Quick uniform-scale presets, applied to both
@@ -417,13 +417,13 @@ struct WaypointCreationSheet: View {
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 ForEach([0.5, 1.0, 2.0, 5.0, 10.0], id: \.self) { s in
-                                    Button(String(format: "%g×", s)) {
+                                    Button(DisplayFormat.number(s, decimals: s < 1 ? 1 : 0) + "×") {
                                         scaleX = s; scaleY = s
                                     }
                                     .buttonStyle(.bordered)
                                     .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
                                            minHeight: SymbolEditorAccessibility.minimumTargetPoints)
-                                    .accessibilityLabel(L10n.text("Set width and height to %1$@ times", String(format: "%g", s)))
+                                    .accessibilityLabel(L10n.text("Set width and height to %1$@ times", DisplayFormat.number(s, decimals: s < 1 ? 1 : 0)))
                                 }
                             }
                         }
@@ -441,6 +441,7 @@ struct WaypointCreationSheet: View {
                 Section(L10n.text("Elevation (metres)")) {
                     TextField(L10n.text("Optional — leave blank for none"), text: $elevationText)
                         .keyboardType(.numbersAndPunctuation)
+                    Text(Messages.decimalInputHint()).font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section {
@@ -527,7 +528,7 @@ struct WaypointCreationSheet: View {
         let parsedElevation: Double?
         if trimmedElevation.isEmpty {
             parsedElevation = nil
-        } else if let parsed = Double(trimmedElevation), parsed.isFinite {
+        } else if let parsed = DecimalInput.parse(trimmedElevation) {
             parsedElevation = parsed
         } else {
             errorMessage = SymbolEditDraft.elevationValidationError
@@ -646,6 +647,7 @@ struct SelectedSymbolEditSheet: View {
                     TextField(L10n.text("Optional — leave blank for none"), text: $draft.elevationText)
                         .keyboardType(.numbersAndPunctuation)
                         .frame(minHeight: 44)
+                    Text(Messages.decimalInputHint()).font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section(L10n.text("Layer")) {
@@ -675,7 +677,7 @@ struct SelectedSymbolEditSheet: View {
                         value: $draft.scaleX,
                         range: 0.1...20,
                         step: 0.1,
-                        valueText: String(format: "%.1f×", draft.scaleX),
+                        valueText: DisplayFormat.number(draft.scaleX, decimals: 1) + "×",
                         accessibilityLabel: SymbolEditorAccessibility.widthLabel,
                         resetLabel: SymbolEditorAccessibility.resetWidthLabel,
                         reset: { draft.resetWidth() }
@@ -685,7 +687,7 @@ struct SelectedSymbolEditSheet: View {
                         value: $draft.scaleY,
                         range: 0.1...20,
                         step: 0.1,
-                        valueText: String(format: "%.1f×", draft.scaleY),
+                        valueText: DisplayFormat.number(draft.scaleY, decimals: 1) + "×",
                         accessibilityLabel: SymbolEditorAccessibility.heightLabel,
                         resetLabel: SymbolEditorAccessibility.resetHeightLabel,
                         reset: { draft.resetHeight() }

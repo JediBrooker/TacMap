@@ -9,6 +9,9 @@ enum Messages {
     static func importFailed(_ detail: String) -> String {
         L10n.message("id.import_failed", fallback: "Import failed: %1$@", detail)
     }
+    static func decimalInputHint() -> String {
+        L10n.message("id.input_decimal_hint", fallback: "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
+    }
     static func deviceLanguage() -> String {
         L10n.message("id.settings_language_device", fallback: "Device language")
     }

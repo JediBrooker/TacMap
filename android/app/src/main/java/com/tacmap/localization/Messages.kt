@@ -8,6 +8,8 @@ object Messages {
         L10n.message("id.common_ok", "OK")
     fun importFailed(detail: String): String =
         L10n.message("id.import_failed", "Import failed: %1\$s", detail)
+    fun decimalInputHint(): String =
+        L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
     fun deviceLanguage(): String =
         L10n.message("id.settings_language_device", "Device language")
     fun languageSaveFailed(): String =

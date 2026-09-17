@@ -1,5 +1,8 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+import com.tacmap.localization.DisplayFormat
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.background
@@ -276,7 +279,8 @@ internal fun SelectedSymbolEditorDialog(
                             isError = validationError == ELEVATION_VALIDATION_ERROR,
                             supportingText = validationError
                                 ?.takeIf { it != MGRS_MOVE_VALIDATION_ERROR }
-                                ?.let { error -> { Text(error) } },
+                                ?.let { error -> { Text(error) } }
+                                ?: { Text(Messages.decimalInputHint()) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -310,7 +314,7 @@ internal fun SelectedSymbolEditorDialog(
                             DraftSlider(
                                 label = L10n.text("Width scale"),
                                 value = draft.scaleX.toFloat().coerceIn(MIN_SYMBOL_SCALE.toFloat(), MAX_SYMBOL_SCALE.toFloat()),
-                                valueLabel = "%.2fx".format(draft.scaleX),
+                                valueLabel = DisplayFormat.number(draft.scaleX, 2) + "x",
                                 range = MIN_SYMBOL_SCALE.toFloat()..MAX_SYMBOL_SCALE.toFloat(),
                                 onChange = { draft = draft.copy(scaleX = it.toDouble()) },
                                 onReset = { draft = draft.copy(scaleX = 1.0) },
@@ -320,7 +324,7 @@ internal fun SelectedSymbolEditorDialog(
                             DraftSlider(
                                 label = L10n.text("Height scale"),
                                 value = draft.scaleY.toFloat().coerceIn(MIN_SYMBOL_SCALE.toFloat(), MAX_SYMBOL_SCALE.toFloat()),
-                                valueLabel = "%.2fx".format(draft.scaleY),
+                                valueLabel = DisplayFormat.number(draft.scaleY, 2) + "x",
                                 range = MIN_SYMBOL_SCALE.toFloat()..MAX_SYMBOL_SCALE.toFloat(),
                                 onChange = { draft = draft.copy(scaleY = it.toDouble()) },
                                 onReset = { draft = draft.copy(scaleY = 1.0) },

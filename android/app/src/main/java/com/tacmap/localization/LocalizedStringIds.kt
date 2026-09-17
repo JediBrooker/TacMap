@@ -11,6 +11,7 @@ internal val localizedStringIds: Map<String, Int> = mapOf(
     "OK" to R.string.common_ok,
     "id.import_failed" to R.string.import_failed,
     "Import failed: %1\$s" to R.string.import_failed,
+    "id.input_decimal_hint" to R.string.input_decimal_hint,
     "id.settings_language_device" to R.string.settings_language_device,
     "Device language" to R.string.settings_language_device,
     "id.settings_language_save_failed" to R.string.settings_language_save_failed,

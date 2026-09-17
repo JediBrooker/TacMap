@@ -400,7 +400,7 @@ struct DrawingControlsCard: View {
         sliderRow(
             icon: "scribble.variable",
             title: L10n.text("Stroke width"),
-            valueLabel: String(format: "%.1f pt", shape.style.strokeWidth),
+            valueLabel: DisplayFormat.number(shape.style.strokeWidth, decimals: 1) + " pt",
             value: shape.style.strokeWidth,
             range: 0.5...16,
             step: 0.5,
@@ -456,7 +456,7 @@ struct DrawingControlsCard: View {
         sliderRow(
             icon: "arrow.left.and.right.circle",
             title: L10n.text("Width"),
-            valueLabel: String(format: "%.2f×", shape.scaleX),
+            valueLabel: DisplayFormat.number(shape.scaleX, decimals: 2) + "×",
             value: shape.scaleX,
             range: 0.1...10.0,
             step: 0.05,
@@ -472,7 +472,7 @@ struct DrawingControlsCard: View {
         sliderRow(
             icon: "arrow.up.and.down.circle",
             title: L10n.text("Height"),
-            valueLabel: String(format: "%.2f×", shape.scaleY),
+            valueLabel: DisplayFormat.number(shape.scaleY, decimals: 2) + "×",
             value: shape.scaleY,
             range: 0.1...10.0,
             step: 0.05,

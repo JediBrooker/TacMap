@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DecimalInput
+
 import com.tacmap.localization.L10n
 
 import com.tacmap.drawings.DrawingDocument
@@ -82,8 +84,7 @@ internal data class SymbolEditDraft(
         val elevation = if (cleanElevation.isBlank()) {
             null
         } else {
-            cleanElevation.toDoubleOrNull()
-                ?.takeIf { it.isFinite() }
+            DecimalInput.parse(cleanElevation)
                 ?: return SymbolDraftResult.Invalid(ELEVATION_VALIDATION_ERROR)
         }
         val fallbackLayerId = layers.firstOrNull {

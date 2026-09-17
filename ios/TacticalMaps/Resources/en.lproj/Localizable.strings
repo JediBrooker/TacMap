@@ -5,6 +5,7 @@
 "OK" = "OK";
 "id.import_failed" = "Import failed: %1$@";
 "Import failed: %1$@" = "Import failed: %1$@";
+"id.input_decimal_hint" = "Use a decimal point or your language’s decimal separator. Do not use thousands separators.";
 "id.settings_language_device" = "Device language";
 "Device language" = "Device language";
 "id.settings_language_save_failed" = "Could not save the language setting. Try again.";

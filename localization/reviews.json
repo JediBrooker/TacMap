@@ -11612,6 +11612,13 @@
         "translation": "98c4922bb641c65c7a30b7bcafdf230b9b00b6693631c56146ab25b2786ee4a3",
         "status": "reviewed"
       }
+    },
+    "input_decimal_hint": {
+      "de": {
+        "source": "7fb45c28b81c7b1dc4befd19c371e522220c00977f120f296edbc0882db49b99",
+        "translation": "d73ff9e0e07e8cf125df26cfa1f2ffde33295cff90f47f152ad151609606d971",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {
