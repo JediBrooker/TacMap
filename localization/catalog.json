@@ -842,49 +842,77 @@
     "de": "Der App Store konnte nicht erreicht werden. Dein bisheriger Freischaltstatus bleibt erhalten. Versuche es erneut, sobald du online bist.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingCouldnTContactTheAppStoreYourExistingUnlock",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_couldn_t_verify_purchases_right_now_your_existin_a05f57ac": {
     "en": "Couldn't verify purchases right now. Your existing unlock state was kept; try again when online.",
     "de": "Käufe konnten derzeit nicht überprüft werden. Dein bisheriger Freischaltstatus bleibt erhalten. Versuche es erneut, sobald du online bist.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingCouldnTVerifyPurchasesRightNowYourExistingUnlock",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_already_unlocked_9f5005e4": {
     "en": "Already unlocked.",
     "de": "Bereits freigeschaltet.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingAlreadyUnlocked",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_purchase_restored_5008cbb8": {
     "en": "Purchase restored.",
     "de": "Kauf wiederhergestellt.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingPurchaseRestored",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_no_previous_purchase_found_on_this_apple_id_05e7d993": {
     "en": "No previous purchase found on this Apple ID.",
     "de": "Für diese Apple-ID wurde kein früherer Kauf gefunden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingNoPreviousPurchaseFoundOnThisAppleId",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_couldn_t_open_apple_s_code_redemption_sheet_try__89332ea0": {
     "en": "Couldn't open Apple's code redemption sheet. Try again.",
     "de": "Apples Ansicht zum Einlösen von Codes konnte nicht geöffnet werden. Versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingCouldnTOpenAppleSCodeRedemptionSheetTry",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_your_code_may_have_been_redeemed_but_tacmap_coul_086e7c0e": {
     "en": "Your code may have been redeemed, but TacMap couldn't verify the unlock. Check your connection, then tap Restore purchase.",
     "de": "Dein Code wurde möglicherweise eingelöst, aber TacMap konnte die Freischaltung nicht überprüfen. Prüfe deine Verbindung und tippe dann auf „Kauf wiederherstellen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingYourCodeMayHaveBeenRedeemedButTacmapCouldn086e7c0e",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tapped_point_d47e876a": {
     "en": "Tapped point",
@@ -9674,14 +9702,22 @@
     "de": "Kaufoptionen sind nicht geladen. Kehre zum Freischaltbildschirm zurück und tippe auf „Erneut versuchen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingPurchaseOptionsArenTLoadedReturnToTheUnlock",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_apple_returned_a_purchase_tacmap_couldn_t_verify_b3c93b20": {
     "en": "Apple returned a purchase TacMap couldn't verify. Your existing unlock was kept. Tap Check Again, then Restore purchase if needed.",
     "de": "Apple hat einen Kauf zurückgegeben, den TacMap nicht verifizieren konnte. Deine bisherige Freischaltung blieb erhalten. Tippe auf „Erneut prüfen“ und bei Bedarf auf „Kauf wiederherstellen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingAppleReturnedAPurchaseTacmapCouldnTVerifyYour",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_purchase_cancelled_you_have_not_been_charged_4962904b": {
     "en": "Purchase cancelled. You have not been charged.",
@@ -9689,77 +9725,121 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "billingPurchaseCancelledYouHaveNotBeenCharged",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_your_purchase_is_awaiting_approval_tacmap_will_u_47aa8f84": {
     "en": "Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval.",
     "de": "Dein Kauf wartet auf Genehmigung. TacMap wird freigeschaltet, sobald Apple ihn abschließt. Tippe danach auf „Erneut prüfen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingYourPurchaseIsAwaitingApprovalTacmapWillUnlockWhen",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_the_app_store_returned_an_unknown_purchase_resul_a59e82d0": {
     "en": "The App Store returned an unknown purchase result. Tap Check Again before trying the purchase again.",
     "de": "Der App Store hat ein unbekanntes Kaufergebnis zurückgegeben. Tippe auf „Erneut prüfen“, bevor du den Kauf erneut versuchst.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingTheAppStoreReturnedAnUnknownPurchaseResultTap",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_the_purchase_couldn_t_be_completed_check_your_co_5524be32": {
     "en": "The purchase couldn't be completed. Check your connection, tap Check Again, and try once more.",
     "de": "Der Kauf konnte nicht abgeschlossen werden. Prüfe die Verbindung, tippe auf „Erneut prüfen“ und versuche es noch einmal.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingThePurchaseCouldnTBeCompletedCheckYourConnection",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_found_the_latest_purchase_status_but_coul_5c9e82cd": {
     "en": "TacMap found the latest purchase status but couldn't save it securely. Restart the device, then tap Restore purchase again.",
     "de": "TacMap hat den aktuellen Kaufstatus ermittelt, konnte ihn aber nicht sicher speichern. Starte das Gerät neu und tippe erneut auf „Kauf wiederherstellen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingTacmapFoundTheLatestPurchaseStatusButCouldnT",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_your_code_may_have_been_redeemed_but_tacmap_coul_6fe17d6c": {
     "en": "Your code may have been redeemed, but TacMap couldn't save the unlock securely. Restart the device, then tap Restore purchase.",
     "de": "Dein Code wurde möglicherweise eingelöst, aber TacMap konnte die Freischaltung nicht sicher speichern. Starte das Gerät neu und tippe auf „Kauf wiederherstellen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingYourCodeMayHaveBeenRedeemedButTacmapCouldn",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_still_couldn_t_verify_your_app_store_stat_3004f574": {
     "en": "TacMap still couldn't verify your App Store status. Your existing unlock was kept. Check your connection and try Check Again, or use Restore purchase from the unlock screen.",
     "de": "TacMap konnte deinen App-Store-Status weiterhin nicht verifizieren. Deine bisherige Freischaltung blieb erhalten. Prüfe die Verbindung und tippe auf „Erneut prüfen“ oder nutze „Kauf wiederherstellen“ im Freischaltbildschirm.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingTacmapStillCouldnTVerifyYourAppStoreStatus",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_verified_your_app_store_status_but_couldn_afd6e407": {
     "en": "TacMap verified your App Store status but couldn't save it securely. Your existing unlock was kept. Restart the device, then tap Check Again.",
     "de": "TacMap hat deinen App-Store-Status verifiziert, konnte ihn aber nicht sicher speichern. Deine bisherige Freischaltung blieb erhalten. Starte das Gerät neu und tippe auf „Erneut prüfen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingTacmapVerifiedYourAppStoreStatusButCouldnT",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_apple_verified_your_purchase_but_tacmap_couldn_t_268afcfa": {
     "en": "Apple verified your purchase, but TacMap couldn't save the unlock securely. The purchase remains pending in TacMap; restart the device and tap Check Again.",
     "de": "Apple hat deinen Kauf verifiziert, aber TacMap konnte die Freischaltung nicht sicher speichern. Der Kauf bleibt in TacMap ausstehend. Starte das Gerät neu und tippe auf „Erneut prüfen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingAppleVerifiedYourPurchaseButTacmapCouldnTSave",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_apple_reported_an_unlock_status_change_but_tacma_c7677269": {
     "en": "Apple reported an unlock-status change, but TacMap couldn't verify your current aggregate entitlement. Your existing state was kept; tap Check Again.",
     "de": "Apple hat eine Änderung des Freischaltstatus gemeldet, aber TacMap konnte deine aktuelle Gesamtberechtigung nicht verifizieren. Dein bisheriger Status blieb erhalten. Tippe auf „Erneut prüfen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingAppleReportedAnUnlockStatusChangeButTacmapCouldn",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_the_app_store_sent_an_unlock_update_tacmap_could_3b7c44d2": {
     "en": "The App Store sent an unlock update TacMap couldn't verify. Your existing unlock was kept. Tap Check Again; use Restore purchase if the problem continues.",
     "de": "Der App Store hat eine Freischaltungsänderung gesendet, die TacMap nicht verifizieren konnte. Deine bisherige Freischaltung blieb erhalten. Tippe auf „Erneut prüfen“; nutze bei anhaltendem Problem „Kauf wiederherstellen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "billingTheAppStoreSentAnUnlockUpdateTacmapCouldn",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_move_waypoint_01df3022": {
     "en": "Move Waypoint",
@@ -10636,7 +10716,11 @@
     "de": "Später",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingNotNow",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_cancel_drawing_d0c99052": {
     "en": "Cancel drawing",
@@ -12043,139 +12127,224 @@
     "de": "Google Play prüfen",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayNeedsAttention",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_saved_your_purchase_but_google_play_has_n_c7732e0b": {
     "en": "TacMap saved your purchase, but Google Play has not confirmed its acknowledgement. Your access remains available. Retry soon to avoid Play automatically refunding an unacknowledged purchase.",
     "de": "TacMap hat deinen Kauf gespeichert, aber Google Play hat dessen Bestätigung noch nicht quittiert. Dein Zugriff bleibt erhalten. Versuche es bald erneut, damit Play einen unbestätigten Kauf nicht automatisch erstattet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTacmapSavedYourPurchaseButGooglePlayHasNot",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_unlock_status_needs_attention_f49aa5e4": {
     "en": "Unlock status needs attention",
     "de": "Freischaltstatus prüfen",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingUnlockStatusNeedsAttention",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_checked_google_play_but_couldn_t_save_the_2f769b9c": {
     "en": "TacMap checked Google Play but couldn't save the latest unlock status securely. Your existing access was kept. Free some device storage, then retry.",
     "de": "TacMap hat Google Play geprüft, konnte den aktuellen Freischaltstatus aber nicht sicher speichern. Dein bisheriger Zugriff blieb erhalten. Schaffe Gerätespeicher und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTacmapCheckedGooglePlayButCouldnTSaveThe",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_retry_google_play_8520938e": {
     "en": "Retry Google Play",
     "de": "Google Play erneut versuchen",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingRetryGooglePlay",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_the_google_play_price_is_not_ready_yet_retry_to__ae5677c5": {
     "en": "The Google Play price is not ready yet. Retry to load it.",
     "de": "Der Google-Play-Preis ist noch nicht verfügbar. Versuche erneut, ihn zu laden.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTheGooglePlayPriceIsNotReadyYetRetry",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_the_purchase_window_could_not_open_return_to_tac_790f34d5": {
     "en": "The purchase window could not open. Return to TacMap and try Unlock again.",
     "de": "Das Kauffenster konnte nicht geöffnet werden. Kehre zu TacMap zurück und versuche „Freischalten“ erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingThePurchaseWindowCouldNotOpenReturnToTacmap",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_disconnected_before_the_operation_co_a70c8754": {
     "en": "Google Play disconnected before the operation completed.",
     "de": "Google Play wurde getrennt, bevor der Vorgang abgeschlossen war.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayDisconnectedBeforeTheOperationCompleted",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_could_not_confirm_the_purchase_retry_b5f9a1e0": {
     "en": "Google Play could not confirm the purchase. Retry to check your ownership before purchasing again.",
     "de": "Google Play konnte den Kauf nicht bestätigen. Prüfe deine Berechtigung erneut, bevor du nochmals kaufst.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayCouldNotConfirmThePurchaseRetryTo",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_could_not_return_the_tacmap_unlock_p_894c2cad": {
     "en": "Google Play could not return the TacMap unlock product. Check your connection and retry.",
     "de": "Google Play konnte das TacMap-Freischaltprodukt nicht zurückgeben. Prüfe die Verbindung und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayCouldNotReturnTheTacmapUnlockProduct",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_the_tacmap_unlock_product_is_not_currently_avail_ed188837": {
     "en": "The TacMap unlock product is not currently available from Google Play. Retry, or check that you are using the Play Store build.",
     "de": "Das TacMap-Freischaltprodukt ist bei Google Play derzeit nicht verfügbar. Versuche es erneut oder prüfe, ob du den Play-Store-Build verwendest.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTheTacmapUnlockProductIsNotCurrentlyAvailableFrom",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693": {
     "en": "Your Google Play payment is pending. TacMap unlocks after Play confirms it.",
     "de": "Deine Google-Play-Zahlung ist ausstehend. TacMap wird freigeschaltet, sobald Play sie bestätigt.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingYourGooglePlayPaymentIsPendingTacmapUnlocksAfter",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_no_active_tacmap_purchase_was_found_on_this_goog_f745c3e8": {
     "en": "No active TacMap purchase was found on this Google Play account.",
     "de": "Für dieses Google-Play-Konto wurde kein aktiver TacMap-Kauf gefunden.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingNoActiveTacmapPurchaseWasFoundOnThisGoogle",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_no_active_purchase_was_found_retry_to_load_the_u_fe8d025d": {
     "en": "No active purchase was found. Retry to load the unlock product.",
     "de": "Kein aktiver Kauf gefunden. Versuche erneut, das Freischaltprodukt zu laden.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingNoActivePurchaseWasFoundRetryToLoadThe",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_could_not_check_your_purchase_your_k_bdc2b5f8": {
     "en": "Google Play could not check your purchase. Your known-good access has not been changed. Retry when Play is available.",
     "de": "Google Play konnte deinen Kauf nicht prüfen. Dein bestätigter Zugriff blieb unverändert. Versuche es erneut, wenn Play verfügbar ist.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayCouldNotCheckYourPurchaseYourKnown",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_could_not_safely_save_the_restored_entitl_87d67d86": {
     "en": "TacMap could not safely save the restored entitlement. Free some device storage and retry.",
     "de": "TacMap konnte die wiederhergestellte Berechtigung nicht sicher speichern. Schaffe Gerätespeicher und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTacmapCouldNotSafelySaveTheRestoredEntitlementFree",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_did_not_return_a_tacmap_purchase_ret_457626f6": {
     "en": "Google Play did not return a TacMap purchase. Retry to check your ownership before purchasing again.",
     "de": "Google Play hat keinen TacMap-Kauf zurückgegeben. Prüfe deine Berechtigung erneut, bevor du nochmals kaufst.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayDidNotReturnATacmapPurchaseRetry",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_has_not_completed_this_purchase_retr_9b191482": {
     "en": "Google Play has not completed this purchase. Retry to check its status.",
     "de": "Google Play hat diesen Kauf noch nicht abgeschlossen. Prüfe seinen Status erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayHasNotCompletedThisPurchaseRetryTo",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_could_not_safely_save_the_purchase_do_not_9d49f678": {
     "en": "TacMap could not safely save the purchase. Do not purchase again; free some device storage, then retry Restore purchase.",
     "de": "TacMap konnte den Kauf nicht sicher speichern. Kaufe nicht erneut. Schaffe Gerätespeicher und versuche „Kauf wiederherstellen“ erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTacmapCouldNotSafelySaveThePurchaseDoNot",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_1_reload_the_current_google_play_offer_before_tr_0fcb92e6": {
     "en": "{1} Reload the current Google Play offer before trying again.",
     "de": "{1} Lade vor dem nächsten Versuch das aktuelle Google-Play-Angebot erneut.",
     "platforms": [
       "android"
+    ],
+    "accessor": "billingReloadTheCurrentGooglePlayOfferBeforeTryingAgain",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
     ]
   },
   "ui_google_play_connection_timed_out_11fc9cf9": {
@@ -12183,119 +12352,187 @@
     "de": "Zeitüberschreitung bei der Verbindung zu Google Play.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayConnectionTimedOut",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_took_too_long_to_load_the_current_pr_a63fad1d": {
     "en": "Google Play took too long to load the current price. Retry Google Play.",
     "de": "Google Play brauchte zu lange, um den aktuellen Preis zu laden. Versuche Google Play erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayTookTooLongToLoadTheCurrent",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_ownership_check_timed_out_942987fb": {
     "en": "Google Play ownership check timed out.",
     "de": "Zeitüberschreitung bei der Google-Play-Kaufprüfung.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayOwnershipCheckTimedOut",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_purchase_acknowledgement_timed_out_08292ff0": {
     "en": "Google Play purchase acknowledgement timed out.",
     "de": "Zeitüberschreitung bei der Google-Play-Kaufbestätigung.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayPurchaseAcknowledgementTimedOut",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_billing_is_unavailable_on_this_devic_bf7caddb": {
     "en": "Google Play Billing is unavailable on this device or account. Check Play Store setup, then retry.",
     "de": "Google Play Billing ist auf diesem Gerät oder Konto nicht verfügbar. Prüfe die Play-Store-Einrichtung und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayBillingIsUnavailableOnThisDeviceOr",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_this_google_play_version_does_not_support_in_app_ad901add": {
     "en": "This Google Play version does not support in-app purchases. Update the Play Store and retry.",
     "de": "Diese Google-Play-Version unterstützt keine In-App-Käufe. Aktualisiere den Play Store und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingThisGooglePlayVersionDoesNotSupportInApp",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_could_not_connect_to_google_play_check_yo_51a569fd": {
     "en": "TacMap could not connect to Google Play. Check your connection and retry.",
     "de": "TacMap konnte keine Verbindung zu Google Play herstellen. Prüfe die Verbindung und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTacmapCouldNotConnectToGooglePlayCheckYour",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_the_tacmap_unlock_product_is_not_available_for_t_9d8a3562": {
     "en": "The TacMap unlock product is not available for this Play Store account.",
     "de": "Das TacMap-Freischaltprodukt ist für dieses Play-Store-Konto nicht verfügbar.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTheTacmapUnlockProductIsNotAvailableForThis",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_billing_is_unavailable_check_the_pla_f06ceae3": {
     "en": "Google Play Billing is unavailable. Check the Play Store app and account, then retry.",
     "de": "Google Play Billing ist nicht verfügbar. Prüfe die Play-Store-App und das Konto und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayBillingIsUnavailableCheckThePlayStore",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_tacmap_could_not_load_the_google_play_price_chec_8f65f352": {
     "en": "TacMap could not load the Google Play price. Check your connection and retry.",
     "de": "TacMap konnte den Google-Play-Preis nicht laden. Prüfe die Verbindung und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingTacmapCouldNotLoadTheGooglePlayPriceCheck",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_billing_is_unavailable_check_the_pla_c6d54b3b": {
     "en": "Google Play Billing is unavailable. Check the Play Store app and account, then try again.",
     "de": "Google Play Billing ist nicht verfügbar. Prüfe die Play-Store-App und das Konto und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayBillingIsUnavailableCheckThePlayStorec6d54b3b",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_this_build_cannot_start_the_configured_google_pl_66554d76": {
     "en": "This build cannot start the configured Google Play purchase. Install the Play Store release and try again.",
     "de": "Dieser Build kann den eingerichteten Google-Play-Kauf nicht starten. Installiere die Play-Store-Version und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingThisBuildCannotStartTheConfiguredGooglePlayPurchase",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_google_play_could_not_start_the_purchase_check_y_a7caaf1c": {
     "en": "Google Play could not start the purchase. Check your connection and try again.",
     "de": "Google Play konnte den Kauf nicht starten. Prüfe die Verbindung und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingGooglePlayCouldNotStartThePurchaseCheckYour",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_connecting_to_google_play_75d0cdf5": {
     "en": "Connecting to Google Play…",
     "de": "Verbindung zu Google Play wird hergestellt …",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingConnectingToGooglePlay",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_loading_price_from_google_play_ce945d9e": {
     "en": "Loading price from Google Play…",
     "de": "Preis wird von Google Play geladen …",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingLoadingPriceFromGooglePlay",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_checking_google_play_for_your_purchase_fa0f4b1f": {
     "en": "Checking Google Play for your purchase…",
     "de": "Google Play wird nach deinem Kauf geprüft …",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingCheckingGooglePlayForYourPurchase",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_opening_google_play_3d38b231": {
     "en": "Opening Google Play…",
     "de": "Google Play wird geöffnet …",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "billingOpeningGooglePlay",
+    "deferred": true,
+    "context": "Purchase status or recovery guidance. Changing language must not start/retry a purchase or change entitlement. Keep prices and transaction state unchanged.",
+    "parameters": []
   },
   "ui_you_re_on_the_free_trial_1_52985d5d": {
     "en": "You're on the free trial ({1} ",

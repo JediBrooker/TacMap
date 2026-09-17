@@ -120,6 +120,10 @@ object Messages {
         L10n.message("id.trial_remaining_details", "You're on the free trial (%1\$s left). Unlock now for permanent access.", value)
     fun trialRemainingDetailsMessage(value: String): LocalizedMessage =
         LocalizedMessage("id.trial_remaining_details", "You're on the free trial (%1\$s left). Unlock now for permanent access.", listOf(value))
+    fun billingReloadTheCurrentGooglePlayOfferBeforeTryingAgain(detail: String): String =
+        L10n.message("id.ui_1_reload_the_current_google_play_offer_before_tr_0fcb92e6", "%1\$s Reload the current Google Play offer before trying again.", detail)
+    fun billingReloadTheCurrentGooglePlayOfferBeforeTryingAgainMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.ui_1_reload_the_current_google_play_offer_before_tr_0fcb92e6", "%1\$s Reload the current Google Play offer before trying again.", listOf(detail))
     fun liveLocationPreciseNeeded(): String =
         L10n.message("id.ui_allow_precise_location_to_show_your_live_positio_0adb7f1b", "Allow Precise location to show your live position on the map.")
     fun liveLocationPreciseNeededMessage(): LocalizedMessage =
@@ -148,6 +152,14 @@ object Messages {
         L10n.message("id.ui_centres_the_map_on_your_latest_precise_location_a4532c96", "Centres the map on your latest precise location.")
     fun liveLocationCentrePreciseHintMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_centres_the_map_on_your_latest_precise_location_a4532c96", "Centres the map on your latest precise location.", listOf())
+    fun billingCheckingGooglePlayForYourPurchase(): String =
+        L10n.message("id.ui_checking_google_play_for_your_purchase_fa0f4b1f", "Checking Google Play for your purchase…")
+    fun billingCheckingGooglePlayForYourPurchaseMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_checking_google_play_for_your_purchase_fa0f4b1f", "Checking Google Play for your purchase…", listOf())
+    fun billingConnectingToGooglePlay(): String =
+        L10n.message("id.ui_connecting_to_google_play_75d0cdf5", "Connecting to Google Play…")
+    fun billingConnectingToGooglePlayMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_connecting_to_google_play_75d0cdf5", "Connecting to Google Play…", listOf())
     fun trackDiscardFailed(detail: String): String =
         L10n.message("id.ui_could_not_discard_the_saved_track_1_01f1dcdf", "Could not discard the saved track: %1\$s", detail)
     fun trackDiscardFailedMessage(detail: String): LocalizedMessage =
@@ -204,6 +216,66 @@ object Messages {
         L10n.message("id.ui_export_or_discard_the_saved_track_before_startin_11ec4f4c", "Export or discard the saved track before starting a new recording.")
     fun recordingExistingTrackMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_export_or_discard_the_saved_track_before_startin_11ec4f4c", "Export or discard the saved track before starting a new recording.", listOf())
+    fun billingGooglePlayBillingIsUnavailableCheckThePlayStorec6d54b3b(): String =
+        L10n.message("id.ui_google_play_billing_is_unavailable_check_the_pla_c6d54b3b", "Google Play Billing is unavailable. Check the Play Store app and account, then try again.")
+    fun billingGooglePlayBillingIsUnavailableCheckThePlayStorec6d54b3bMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_billing_is_unavailable_check_the_pla_c6d54b3b", "Google Play Billing is unavailable. Check the Play Store app and account, then try again.", listOf())
+    fun billingGooglePlayBillingIsUnavailableCheckThePlayStore(): String =
+        L10n.message("id.ui_google_play_billing_is_unavailable_check_the_pla_f06ceae3", "Google Play Billing is unavailable. Check the Play Store app and account, then retry.")
+    fun billingGooglePlayBillingIsUnavailableCheckThePlayStoreMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_billing_is_unavailable_check_the_pla_f06ceae3", "Google Play Billing is unavailable. Check the Play Store app and account, then retry.", listOf())
+    fun billingGooglePlayBillingIsUnavailableOnThisDeviceOr(): String =
+        L10n.message("id.ui_google_play_billing_is_unavailable_on_this_devic_bf7caddb", "Google Play Billing is unavailable on this device or account. Check Play Store setup, then retry.")
+    fun billingGooglePlayBillingIsUnavailableOnThisDeviceOrMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_billing_is_unavailable_on_this_devic_bf7caddb", "Google Play Billing is unavailable on this device or account. Check Play Store setup, then retry.", listOf())
+    fun billingGooglePlayConnectionTimedOut(): String =
+        L10n.message("id.ui_google_play_connection_timed_out_11fc9cf9", "Google Play connection timed out.")
+    fun billingGooglePlayConnectionTimedOutMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_connection_timed_out_11fc9cf9", "Google Play connection timed out.", listOf())
+    fun billingGooglePlayCouldNotCheckYourPurchaseYourKnown(): String =
+        L10n.message("id.ui_google_play_could_not_check_your_purchase_your_k_bdc2b5f8", "Google Play could not check your purchase. Your known-good access has not been changed. Retry when Play is available.")
+    fun billingGooglePlayCouldNotCheckYourPurchaseYourKnownMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_could_not_check_your_purchase_your_k_bdc2b5f8", "Google Play could not check your purchase. Your known-good access has not been changed. Retry when Play is available.", listOf())
+    fun billingGooglePlayCouldNotConfirmThePurchaseRetryTo(): String =
+        L10n.message("id.ui_google_play_could_not_confirm_the_purchase_retry_b5f9a1e0", "Google Play could not confirm the purchase. Retry to check your ownership before purchasing again.")
+    fun billingGooglePlayCouldNotConfirmThePurchaseRetryToMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_could_not_confirm_the_purchase_retry_b5f9a1e0", "Google Play could not confirm the purchase. Retry to check your ownership before purchasing again.", listOf())
+    fun billingGooglePlayCouldNotReturnTheTacmapUnlockProduct(): String =
+        L10n.message("id.ui_google_play_could_not_return_the_tacmap_unlock_p_894c2cad", "Google Play could not return the TacMap unlock product. Check your connection and retry.")
+    fun billingGooglePlayCouldNotReturnTheTacmapUnlockProductMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_could_not_return_the_tacmap_unlock_p_894c2cad", "Google Play could not return the TacMap unlock product. Check your connection and retry.", listOf())
+    fun billingGooglePlayCouldNotStartThePurchaseCheckYour(): String =
+        L10n.message("id.ui_google_play_could_not_start_the_purchase_check_y_a7caaf1c", "Google Play could not start the purchase. Check your connection and try again.")
+    fun billingGooglePlayCouldNotStartThePurchaseCheckYourMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_could_not_start_the_purchase_check_y_a7caaf1c", "Google Play could not start the purchase. Check your connection and try again.", listOf())
+    fun billingGooglePlayDidNotReturnATacmapPurchaseRetry(): String =
+        L10n.message("id.ui_google_play_did_not_return_a_tacmap_purchase_ret_457626f6", "Google Play did not return a TacMap purchase. Retry to check your ownership before purchasing again.")
+    fun billingGooglePlayDidNotReturnATacmapPurchaseRetryMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_did_not_return_a_tacmap_purchase_ret_457626f6", "Google Play did not return a TacMap purchase. Retry to check your ownership before purchasing again.", listOf())
+    fun billingGooglePlayDisconnectedBeforeTheOperationCompleted(): String =
+        L10n.message("id.ui_google_play_disconnected_before_the_operation_co_a70c8754", "Google Play disconnected before the operation completed.")
+    fun billingGooglePlayDisconnectedBeforeTheOperationCompletedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_disconnected_before_the_operation_co_a70c8754", "Google Play disconnected before the operation completed.", listOf())
+    fun billingGooglePlayHasNotCompletedThisPurchaseRetryTo(): String =
+        L10n.message("id.ui_google_play_has_not_completed_this_purchase_retr_9b191482", "Google Play has not completed this purchase. Retry to check its status.")
+    fun billingGooglePlayHasNotCompletedThisPurchaseRetryToMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_has_not_completed_this_purchase_retr_9b191482", "Google Play has not completed this purchase. Retry to check its status.", listOf())
+    fun billingGooglePlayNeedsAttention(): String =
+        L10n.message("id.ui_google_play_needs_attention_b73fea15", "Google Play needs attention")
+    fun billingGooglePlayNeedsAttentionMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_needs_attention_b73fea15", "Google Play needs attention", listOf())
+    fun billingGooglePlayOwnershipCheckTimedOut(): String =
+        L10n.message("id.ui_google_play_ownership_check_timed_out_942987fb", "Google Play ownership check timed out.")
+    fun billingGooglePlayOwnershipCheckTimedOutMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_ownership_check_timed_out_942987fb", "Google Play ownership check timed out.", listOf())
+    fun billingGooglePlayPurchaseAcknowledgementTimedOut(): String =
+        L10n.message("id.ui_google_play_purchase_acknowledgement_timed_out_08292ff0", "Google Play purchase acknowledgement timed out.")
+    fun billingGooglePlayPurchaseAcknowledgementTimedOutMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_purchase_acknowledgement_timed_out_08292ff0", "Google Play purchase acknowledgement timed out.", listOf())
+    fun billingGooglePlayTookTooLongToLoadTheCurrent(): String =
+        L10n.message("id.ui_google_play_took_too_long_to_load_the_current_pr_a63fad1d", "Google Play took too long to load the current price. Retry Google Play.")
+    fun billingGooglePlayTookTooLongToLoadTheCurrentMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_google_play_took_too_long_to_load_the_current_pr_a63fad1d", "Google Play took too long to load the current price. Retry Google Play.", listOf())
     fun recordingGpsOff(): String =
         L10n.message("id.ui_gps_is_turned_off_recording_stopped_ee16972d", "GPS is turned off; recording stopped.")
     fun recordingGpsOffMessage(): LocalizedMessage =
@@ -216,6 +288,10 @@ object Messages {
         L10n.message("id.ui_gps_was_turned_off_recording_stopped_d4078430", "GPS was turned off; recording stopped.")
     fun recordingGpsDisabledMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_gps_was_turned_off_recording_stopped_d4078430", "GPS was turned off; recording stopped.", listOf())
+    fun billingLoadingPriceFromGooglePlay(): String =
+        L10n.message("id.ui_loading_price_from_google_play_ce945d9e", "Loading price from Google Play…")
+    fun billingLoadingPriceFromGooglePlayMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_loading_price_from_google_play_ce945d9e", "Loading price from Google Play…", listOf())
     fun recordingAccessUnavailable(): String =
         L10n.message("id.ui_location_access_became_unavailable_recording_sto_3c08130f", "Location access became unavailable; recording stopped.")
     fun recordingAccessUnavailableMessage(): LocalizedMessage =
@@ -236,10 +312,26 @@ object Messages {
         L10n.message("id.ui_location_restricted_7b8c5d17", "Location Restricted")
     fun liveLocationRestrictedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_location_restricted_7b8c5d17", "Location Restricted", listOf())
+    fun billingNoActivePurchaseWasFoundRetryToLoadThe(): String =
+        L10n.message("id.ui_no_active_purchase_was_found_retry_to_load_the_u_fe8d025d", "No active purchase was found. Retry to load the unlock product.")
+    fun billingNoActivePurchaseWasFoundRetryToLoadTheMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_no_active_purchase_was_found_retry_to_load_the_u_fe8d025d", "No active purchase was found. Retry to load the unlock product.", listOf())
+    fun billingNoActiveTacmapPurchaseWasFoundOnThisGoogle(): String =
+        L10n.message("id.ui_no_active_tacmap_purchase_was_found_on_this_goog_f745c3e8", "No active TacMap purchase was found on this Google Play account.")
+    fun billingNoActiveTacmapPurchaseWasFoundOnThisGoogleMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_no_active_tacmap_purchase_was_found_on_this_goog_f745c3e8", "No active TacMap purchase was found on this Google Play account.", listOf())
+    fun billingNotNow(): String =
+        L10n.message("id.ui_not_now_a0e63d7c", "Not now")
+    fun billingNotNowMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_not_now_a0e63d7c", "Not now", listOf())
     fun liveLocationSettings(): String =
         L10n.message("id.ui_open_location_settings_4295919a", "Open Location Settings")
     fun liveLocationSettingsMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_open_location_settings_4295919a", "Open Location Settings", listOf())
+    fun billingOpeningGooglePlay(): String =
+        L10n.message("id.ui_opening_google_play_3d38b231", "Opening Google Play…")
+    fun billingOpeningGooglePlayMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_opening_google_play_3d38b231", "Opening Google Play…", listOf())
     fun recordingPreciseRequired(): String =
         L10n.message("id.ui_precise_location_permission_is_required_to_recor_4e3a2e91", "Precise location permission is required to record a GPS track.")
     fun recordingPreciseRequiredMessage(): LocalizedMessage =
@@ -248,24 +340,80 @@ object Messages {
         L10n.message("id.ui_precise_location_was_removed_recording_stopped_a_00f6cc68", "Precise location was removed; recording stopped. Approximate location is not accurate enough for a GPS track.")
     fun recordingPrecisionLostMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_precise_location_was_removed_recording_stopped_a_00f6cc68", "Precise location was removed; recording stopped. Approximate location is not accurate enough for a GPS track.", listOf())
+    fun billingPurchaseCancelledYouHaveNotBeenCharged(): String =
+        L10n.message("id.ui_purchase_cancelled_you_have_not_been_charged_4962904b", "Purchase cancelled. You have not been charged.")
+    fun billingPurchaseCancelledYouHaveNotBeenChargedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_purchase_cancelled_you_have_not_been_charged_4962904b", "Purchase cancelled. You have not been charged.", listOf())
     fun recordingSessionKeyUnavailable(): String =
         L10n.message("id.ui_recording_stopped_because_its_session_key_was_un_6082de71", "Recording stopped because its session key was unavailable.")
     fun recordingSessionKeyUnavailableMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_recording_stopped_because_its_session_key_was_un_6082de71", "Recording stopped because its session key was unavailable.", listOf())
     fun recoveryCopyFallback(): String =
         L10n.message("id.ui_recovery_copy_6f7749ab", "recovery copy")
+    fun billingRetryGooglePlay(): String =
+        L10n.message("id.ui_retry_google_play_8520938e", "Retry Google Play")
+    fun billingRetryGooglePlayMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_retry_google_play_8520938e", "Retry Google Play", listOf())
     fun trackStopBeforeDiscard(): String =
         L10n.message("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.")
     fun trackStopBeforeDiscardMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.", listOf())
+    fun billingTacmapCheckedGooglePlayButCouldnTSaveThe(): String =
+        L10n.message("id.ui_tacmap_checked_google_play_but_couldn_t_save_the_2f769b9c", "TacMap checked Google Play but couldn't save the latest unlock status securely. Your existing access was kept. Free some device storage, then retry.")
+    fun billingTacmapCheckedGooglePlayButCouldnTSaveTheMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_tacmap_checked_google_play_but_couldn_t_save_the_2f769b9c", "TacMap checked Google Play but couldn't save the latest unlock status securely. Your existing access was kept. Free some device storage, then retry.", listOf())
+    fun billingTacmapCouldNotConnectToGooglePlayCheckYour(): String =
+        L10n.message("id.ui_tacmap_could_not_connect_to_google_play_check_yo_51a569fd", "TacMap could not connect to Google Play. Check your connection and retry.")
+    fun billingTacmapCouldNotConnectToGooglePlayCheckYourMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_tacmap_could_not_connect_to_google_play_check_yo_51a569fd", "TacMap could not connect to Google Play. Check your connection and retry.", listOf())
+    fun billingTacmapCouldNotLoadTheGooglePlayPriceCheck(): String =
+        L10n.message("id.ui_tacmap_could_not_load_the_google_play_price_chec_8f65f352", "TacMap could not load the Google Play price. Check your connection and retry.")
+    fun billingTacmapCouldNotLoadTheGooglePlayPriceCheckMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_tacmap_could_not_load_the_google_play_price_chec_8f65f352", "TacMap could not load the Google Play price. Check your connection and retry.", listOf())
+    fun billingTacmapCouldNotSafelySaveThePurchaseDoNot(): String =
+        L10n.message("id.ui_tacmap_could_not_safely_save_the_purchase_do_not_9d49f678", "TacMap could not safely save the purchase. Do not purchase again; free some device storage, then retry Restore purchase.")
+    fun billingTacmapCouldNotSafelySaveThePurchaseDoNotMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_tacmap_could_not_safely_save_the_purchase_do_not_9d49f678", "TacMap could not safely save the purchase. Do not purchase again; free some device storage, then retry Restore purchase.", listOf())
+    fun billingTacmapCouldNotSafelySaveTheRestoredEntitlementFree(): String =
+        L10n.message("id.ui_tacmap_could_not_safely_save_the_restored_entitl_87d67d86", "TacMap could not safely save the restored entitlement. Free some device storage and retry.")
+    fun billingTacmapCouldNotSafelySaveTheRestoredEntitlementFreeMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_tacmap_could_not_safely_save_the_restored_entitl_87d67d86", "TacMap could not safely save the restored entitlement. Free some device storage and retry.", listOf())
     fun liveLocationFirstLaunch(): String =
         L10n.message("id.ui_tacmap_requests_location_access_on_first_launch__581e58e5", "TacMap requests Location access on first launch. Tap to request it again if needed.")
     fun liveLocationFirstLaunchMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_tacmap_requests_location_access_on_first_launch__581e58e5", "TacMap requests Location access on first launch. Tap to request it again if needed.", listOf())
+    fun billingTacmapSavedYourPurchaseButGooglePlayHasNot(): String =
+        L10n.message("id.ui_tacmap_saved_your_purchase_but_google_play_has_n_c7732e0b", "TacMap saved your purchase, but Google Play has not confirmed its acknowledgement. Your access remains available. Retry soon to avoid Play automatically refunding an unacknowledged purchase.")
+    fun billingTacmapSavedYourPurchaseButGooglePlayHasNotMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_tacmap_saved_your_purchase_but_google_play_has_n_c7732e0b", "TacMap saved your purchase, but Google Play has not confirmed its acknowledgement. Your access remains available. Retry soon to avoid Play automatically refunding an unacknowledged purchase.", listOf())
+    fun billingTheGooglePlayPriceIsNotReadyYetRetry(): String =
+        L10n.message("id.ui_the_google_play_price_is_not_ready_yet_retry_to__ae5677c5", "The Google Play price is not ready yet. Retry to load it.")
+    fun billingTheGooglePlayPriceIsNotReadyYetRetryMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_google_play_price_is_not_ready_yet_retry_to__ae5677c5", "The Google Play price is not ready yet. Retry to load it.", listOf())
+    fun billingThePurchaseWindowCouldNotOpenReturnToTacmap(): String =
+        L10n.message("id.ui_the_purchase_window_could_not_open_return_to_tac_790f34d5", "The purchase window could not open. Return to TacMap and try Unlock again.")
+    fun billingThePurchaseWindowCouldNotOpenReturnToTacmapMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_purchase_window_could_not_open_return_to_tac_790f34d5", "The purchase window could not open. Return to TacMap and try Unlock again.", listOf())
+    fun billingTheTacmapUnlockProductIsNotAvailableForThis(): String =
+        L10n.message("id.ui_the_tacmap_unlock_product_is_not_available_for_t_9d8a3562", "The TacMap unlock product is not available for this Play Store account.")
+    fun billingTheTacmapUnlockProductIsNotAvailableForThisMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_tacmap_unlock_product_is_not_available_for_t_9d8a3562", "The TacMap unlock product is not available for this Play Store account.", listOf())
+    fun billingTheTacmapUnlockProductIsNotCurrentlyAvailableFrom(): String =
+        L10n.message("id.ui_the_tacmap_unlock_product_is_not_currently_avail_ed188837", "The TacMap unlock product is not currently available from Google Play. Retry, or check that you are using the Play Store build.")
+    fun billingTheTacmapUnlockProductIsNotCurrentlyAvailableFromMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_tacmap_unlock_product_is_not_currently_avail_ed188837", "The TacMap unlock product is not currently available from Google Play. Retry, or check that you are using the Play Store build.", listOf())
+    fun billingThisBuildCannotStartTheConfiguredGooglePlayPurchase(): String =
+        L10n.message("id.ui_this_build_cannot_start_the_configured_google_pl_66554d76", "This build cannot start the configured Google Play purchase. Install the Play Store release and try again.")
+    fun billingThisBuildCannotStartTheConfiguredGooglePlayPurchaseMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_this_build_cannot_start_the_configured_google_pl_66554d76", "This build cannot start the configured Google Play purchase. Install the Play Store release and try again.", listOf())
     fun recordingBuildPrerequisite(): String =
         L10n.message("id.ui_this_build_is_missing_an_android_foreground_loca_d9bda81b", "This build is missing an Android foreground-location service prerequisite.")
     fun recordingBuildPrerequisiteMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_this_build_is_missing_an_android_foreground_loca_d9bda81b", "This build is missing an Android foreground-location service prerequisite.", listOf())
+    fun billingThisGooglePlayVersionDoesNotSupportInApp(): String =
+        L10n.message("id.ui_this_google_play_version_does_not_support_in_app_ad901add", "This Google Play version does not support in-app purchases. Update the Play Store and retry.")
+    fun billingThisGooglePlayVersionDoesNotSupportInAppMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_this_google_play_version_does_not_support_in_app_ad901add", "This Google Play version does not support in-app purchases. Update the Play Store and retry.", listOf())
     fun recordingFixFailed(detail: String): String =
         L10n.message("id.ui_track_fix_not_saved_recording_stopped_1_7a513ad8", "Track fix not saved; recording stopped: %1\$s", detail)
     fun recordingFixFailedMessage(detail: String): LocalizedMessage =
@@ -278,6 +426,10 @@ object Messages {
         L10n.message("id.ui_track_recording_prerequisites_are_unavailable_363d5a9f", "Track recording prerequisites are unavailable.")
     fun recordingPrerequisitesUnavailableMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_track_recording_prerequisites_are_unavailable_363d5a9f", "Track recording prerequisites are unavailable.", listOf())
+    fun billingUnlockStatusNeedsAttention(): String =
+        L10n.message("id.ui_unlock_status_needs_attention_f49aa5e4", "Unlock status needs attention")
+    fun billingUnlockStatusNeedsAttentionMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_unlock_status_needs_attention_f49aa5e4", "Unlock status needs attention", listOf())
     fun recordingAwaitingPermission(): String =
         L10n.message("id.ui_waiting_for_precise_location_permission_9db6f154", "Waiting for Precise location permission…")
     fun recordingAwaitingPermissionMessage(): LocalizedMessage =
@@ -294,6 +446,10 @@ object Messages {
         L10n.message("id.ui_waypoints_are_locked_and_the_change_was_not_save_f2b9af87", "Waypoints are locked and the change was not saved.")
     fun waypointsAreLockedAndTheChangeWasNotSavedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_waypoints_are_locked_and_the_change_was_not_save_f2b9af87", "Waypoints are locked and the change was not saved.", listOf())
+    fun billingYourGooglePlayPaymentIsPendingTacmapUnlocksAfter(): String =
+        L10n.message("id.ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693", "Your Google Play payment is pending. TacMap unlocks after Play confirms it.")
+    fun billingYourGooglePlayPaymentIsPendingTacmapUnlocksAfterMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693", "Your Google Play payment is pending. TacMap unlocks after Play confirms it.", listOf())
     fun waypointsQuarantined(value: String): String =
         L10n.message("id.waypoints_quarantined", "Saved waypoints could not be read and were set aside (%1\$s). Starting with no waypoints.", value)
     fun waypointsQuarantinedMessage(value: String): LocalizedMessage =

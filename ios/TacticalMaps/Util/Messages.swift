@@ -117,6 +117,30 @@ enum Messages {
     static func trackSavedExistsMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_a_saved_track_already_exists_export_or_discard_i_a1920160", fallback: "A saved track already exists. Export or discard it before starting a new recording.", arguments: [])
     }
+    static func billingAlreadyUnlocked() -> String {
+        L10n.message("id.ui_already_unlocked_9f5005e4", fallback: "Already unlocked.")
+    }
+    static func billingAlreadyUnlockedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_already_unlocked_9f5005e4", fallback: "Already unlocked.", arguments: [])
+    }
+    static func billingAppleReportedAnUnlockStatusChangeButTacmapCouldn() -> String {
+        L10n.message("id.ui_apple_reported_an_unlock_status_change_but_tacma_c7677269", fallback: "Apple reported an unlock-status change, but TacMap couldn't verify your current aggregate entitlement. Your existing state was kept; tap Check Again.")
+    }
+    static func billingAppleReportedAnUnlockStatusChangeButTacmapCouldnMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_apple_reported_an_unlock_status_change_but_tacma_c7677269", fallback: "Apple reported an unlock-status change, but TacMap couldn't verify your current aggregate entitlement. Your existing state was kept; tap Check Again.", arguments: [])
+    }
+    static func billingAppleReturnedAPurchaseTacmapCouldnTVerifyYour() -> String {
+        L10n.message("id.ui_apple_returned_a_purchase_tacmap_couldn_t_verify_b3c93b20", fallback: "Apple returned a purchase TacMap couldn't verify. Your existing unlock was kept. Tap Check Again, then Restore purchase if needed.")
+    }
+    static func billingAppleReturnedAPurchaseTacmapCouldnTVerifyYourMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_apple_returned_a_purchase_tacmap_couldn_t_verify_b3c93b20", fallback: "Apple returned a purchase TacMap couldn't verify. Your existing unlock was kept. Tap Check Again, then Restore purchase if needed.", arguments: [])
+    }
+    static func billingAppleVerifiedYourPurchaseButTacmapCouldnTSave() -> String {
+        L10n.message("id.ui_apple_verified_your_purchase_but_tacmap_couldn_t_268afcfa", fallback: "Apple verified your purchase, but TacMap couldn't save the unlock securely. The purchase remains pending in TacMap; restart the device and tap Check Again.")
+    }
+    static func billingAppleVerifiedYourPurchaseButTacmapCouldnTSaveMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_apple_verified_your_purchase_but_tacmap_couldn_t_268afcfa", fallback: "Apple verified your purchase, but TacMap couldn't save the unlock securely. The purchase remains pending in TacMap; restart the device and tap Check Again.", arguments: [])
+    }
     static func liveLocationCentre() -> String {
         L10n.message("id.ui_centre_on_my_location_82529ff7", fallback: "Centre on My Location")
     }
@@ -237,6 +261,24 @@ enum Messages {
     static func couldNotUndoTheNewLayerMessage(_ detail1: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_could_not_undo_the_new_layer_1_b0a380c6", fallback: "Could not undo the new layer: %1$@", arguments: [detail1])
     }
+    static func billingCouldnTContactTheAppStoreYourExistingUnlock() -> String {
+        L10n.message("id.ui_couldn_t_contact_the_app_store_your_existing_unl_2e5133cc", fallback: "Couldn't contact the App Store. Your existing unlock state was kept; try again when online.")
+    }
+    static func billingCouldnTContactTheAppStoreYourExistingUnlockMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_couldn_t_contact_the_app_store_your_existing_unl_2e5133cc", fallback: "Couldn't contact the App Store. Your existing unlock state was kept; try again when online.", arguments: [])
+    }
+    static func billingCouldnTOpenAppleSCodeRedemptionSheetTry() -> String {
+        L10n.message("id.ui_couldn_t_open_apple_s_code_redemption_sheet_try__89332ea0", fallback: "Couldn't open Apple's code redemption sheet. Try again.")
+    }
+    static func billingCouldnTOpenAppleSCodeRedemptionSheetTryMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_couldn_t_open_apple_s_code_redemption_sheet_try__89332ea0", fallback: "Couldn't open Apple's code redemption sheet. Try again.", arguments: [])
+    }
+    static func billingCouldnTVerifyPurchasesRightNowYourExistingUnlock() -> String {
+        L10n.message("id.ui_couldn_t_verify_purchases_right_now_your_existin_a05f57ac", fallback: "Couldn't verify purchases right now. Your existing unlock state was kept; try again when online.")
+    }
+    static func billingCouldnTVerifyPurchasesRightNowYourExistingUnlockMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_couldn_t_verify_purchases_right_now_your_existin_a05f57ac", fallback: "Couldn't verify purchases right now. Your existing unlock state was kept; try again when online.", arguments: [])
+    }
     static func drawingsAreEncryptedAndLocked(_ detail1: String) -> String {
         L10n.message("id.ui_drawings_are_encrypted_and_locked_1_45b3c976", fallback: "Drawings are encrypted and locked. %1$@", detail1)
     }
@@ -279,11 +321,35 @@ enum Messages {
     static func liveLocationSettingsTitleMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_location_settings_d165789b", fallback: "Location Settings", arguments: [])
     }
+    static func billingNoPreviousPurchaseFoundOnThisAppleId() -> String {
+        L10n.message("id.ui_no_previous_purchase_found_on_this_apple_id_05e7d993", fallback: "No previous purchase found on this Apple ID.")
+    }
+    static func billingNoPreviousPurchaseFoundOnThisAppleIdMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_no_previous_purchase_found_on_this_apple_id_05e7d993", fallback: "No previous purchase found on this Apple ID.", arguments: [])
+    }
     static func liveLocationSettings() -> String {
         L10n.message("id.ui_open_location_settings_4295919a", fallback: "Open Location Settings")
     }
     static func liveLocationSettingsMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_open_location_settings_4295919a", fallback: "Open Location Settings", arguments: [])
+    }
+    static func billingPurchaseCancelledYouHaveNotBeenCharged() -> String {
+        L10n.message("id.ui_purchase_cancelled_you_have_not_been_charged_4962904b", fallback: "Purchase cancelled. You have not been charged.")
+    }
+    static func billingPurchaseCancelledYouHaveNotBeenChargedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_purchase_cancelled_you_have_not_been_charged_4962904b", fallback: "Purchase cancelled. You have not been charged.", arguments: [])
+    }
+    static func billingPurchaseOptionsArenTLoadedReturnToTheUnlock() -> String {
+        L10n.message("id.ui_purchase_options_aren_t_loaded_return_to_the_unl_eae114f7", fallback: "Purchase options aren't loaded. Return to the unlock screen and tap Try Again.")
+    }
+    static func billingPurchaseOptionsArenTLoadedReturnToTheUnlockMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_purchase_options_aren_t_loaded_return_to_the_unl_eae114f7", fallback: "Purchase options aren't loaded. Return to the unlock screen and tap Try Again.", arguments: [])
+    }
+    static func billingPurchaseRestored() -> String {
+        L10n.message("id.ui_purchase_restored_5008cbb8", fallback: "Purchase restored.")
+    }
+    static func billingPurchaseRestoredMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_purchase_restored_5008cbb8", fallback: "Purchase restored.", arguments: [])
     }
     static func trackStartFailed(_ detail: String) -> String {
         L10n.message("id.ui_recording_did_not_start_1_8940e9cc", fallback: "Recording did not start: %1$@", detail)
@@ -336,6 +402,12 @@ enum Messages {
     static func trackTooLargeMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_saved_track_is_too_large_to_recover_safely_87b7d3da", fallback: "Saved track is too large to recover safely.", arguments: [])
     }
+    static func billingTacmapFoundTheLatestPurchaseStatusButCouldnT() -> String {
+        L10n.message("id.ui_tacmap_found_the_latest_purchase_status_but_coul_5c9e82cd", fallback: "TacMap found the latest purchase status but couldn't save it securely. Restart the device, then tap Restore purchase again.")
+    }
+    static func billingTacmapFoundTheLatestPurchaseStatusButCouldnTMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_tacmap_found_the_latest_purchase_status_but_coul_5c9e82cd", fallback: "TacMap found the latest purchase status but couldn't save it securely. Restart the device, then tap Restore purchase again.", arguments: [])
+    }
     static func recordingAccessNeeded() -> String {
         L10n.message("id.ui_tacmap_needs_location_access_to_record_a_track_a_a651e8f4", fallback: "TacMap needs Location access to record a track. Allow access in Settings, then try again.")
     }
@@ -347,6 +419,36 @@ enum Messages {
     }
     static func liveLocationFirstLaunchMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_tacmap_requests_location_access_on_first_launch__581e58e5", fallback: "TacMap requests Location access on first launch. Tap to request it again if needed.", arguments: [])
+    }
+    static func billingTacmapStillCouldnTVerifyYourAppStoreStatus() -> String {
+        L10n.message("id.ui_tacmap_still_couldn_t_verify_your_app_store_stat_3004f574", fallback: "TacMap still couldn't verify your App Store status. Your existing unlock was kept. Check your connection and try Check Again, or use Restore purchase from the unlock screen.")
+    }
+    static func billingTacmapStillCouldnTVerifyYourAppStoreStatusMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_tacmap_still_couldn_t_verify_your_app_store_stat_3004f574", fallback: "TacMap still couldn't verify your App Store status. Your existing unlock was kept. Check your connection and try Check Again, or use Restore purchase from the unlock screen.", arguments: [])
+    }
+    static func billingTacmapVerifiedYourAppStoreStatusButCouldnT() -> String {
+        L10n.message("id.ui_tacmap_verified_your_app_store_status_but_couldn_afd6e407", fallback: "TacMap verified your App Store status but couldn't save it securely. Your existing unlock was kept. Restart the device, then tap Check Again.")
+    }
+    static func billingTacmapVerifiedYourAppStoreStatusButCouldnTMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_tacmap_verified_your_app_store_status_but_couldn_afd6e407", fallback: "TacMap verified your App Store status but couldn't save it securely. Your existing unlock was kept. Restart the device, then tap Check Again.", arguments: [])
+    }
+    static func billingTheAppStoreReturnedAnUnknownPurchaseResultTap() -> String {
+        L10n.message("id.ui_the_app_store_returned_an_unknown_purchase_resul_a59e82d0", fallback: "The App Store returned an unknown purchase result. Tap Check Again before trying the purchase again.")
+    }
+    static func billingTheAppStoreReturnedAnUnknownPurchaseResultTapMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_app_store_returned_an_unknown_purchase_resul_a59e82d0", fallback: "The App Store returned an unknown purchase result. Tap Check Again before trying the purchase again.", arguments: [])
+    }
+    static func billingTheAppStoreSentAnUnlockUpdateTacmapCouldn() -> String {
+        L10n.message("id.ui_the_app_store_sent_an_unlock_update_tacmap_could_3b7c44d2", fallback: "The App Store sent an unlock update TacMap couldn't verify. Your existing unlock was kept. Tap Check Again; use Restore purchase if the problem continues.")
+    }
+    static func billingTheAppStoreSentAnUnlockUpdateTacmapCouldnMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_app_store_sent_an_unlock_update_tacmap_could_3b7c44d2", fallback: "The App Store sent an unlock update TacMap couldn't verify. Your existing unlock was kept. Tap Check Again; use Restore purchase if the problem continues.", arguments: [])
+    }
+    static func billingThePurchaseCouldnTBeCompletedCheckYourConnection() -> String {
+        L10n.message("id.ui_the_purchase_couldn_t_be_completed_check_your_co_5524be32", fallback: "The purchase couldn't be completed. Check your connection, tap Check Again, and try once more.")
+    }
+    static func billingThePurchaseCouldnTBeCompletedCheckYourConnectionMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_purchase_couldn_t_be_completed_check_your_co_5524be32", fallback: "The purchase couldn't be completed. Check your connection, tap Check Again, and try once more.", arguments: [])
     }
     static func recordingStartInactive() -> String {
         L10n.message("id.ui_track_recording_could_not_start_no_recording_is__62bcfbe1", fallback: "Track recording could not start. No recording is active.")
@@ -377,6 +479,24 @@ enum Messages {
     }
     static func waypointsAreEncryptedAndLockedMessage(_ detail1: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_waypoints_are_encrypted_and_locked_1_93dedbe5", fallback: "Waypoints are encrypted and locked. %1$@", arguments: [detail1])
+    }
+    static func billingYourCodeMayHaveBeenRedeemedButTacmapCouldn086e7c0e() -> String {
+        L10n.message("id.ui_your_code_may_have_been_redeemed_but_tacmap_coul_086e7c0e", fallback: "Your code may have been redeemed, but TacMap couldn't verify the unlock. Check your connection, then tap Restore purchase.")
+    }
+    static func billingYourCodeMayHaveBeenRedeemedButTacmapCouldn086e7c0eMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_your_code_may_have_been_redeemed_but_tacmap_coul_086e7c0e", fallback: "Your code may have been redeemed, but TacMap couldn't verify the unlock. Check your connection, then tap Restore purchase.", arguments: [])
+    }
+    static func billingYourCodeMayHaveBeenRedeemedButTacmapCouldn() -> String {
+        L10n.message("id.ui_your_code_may_have_been_redeemed_but_tacmap_coul_6fe17d6c", fallback: "Your code may have been redeemed, but TacMap couldn't save the unlock securely. Restart the device, then tap Restore purchase.")
+    }
+    static func billingYourCodeMayHaveBeenRedeemedButTacmapCouldnMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_your_code_may_have_been_redeemed_but_tacmap_coul_6fe17d6c", fallback: "Your code may have been redeemed, but TacMap couldn't save the unlock securely. Restart the device, then tap Restore purchase.", arguments: [])
+    }
+    static func billingYourPurchaseIsAwaitingApprovalTacmapWillUnlockWhen() -> String {
+        L10n.message("id.ui_your_purchase_is_awaiting_approval_tacmap_will_u_47aa8f84", fallback: "Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval.")
+    }
+    static func billingYourPurchaseIsAwaitingApprovalTacmapWillUnlockWhenMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_your_purchase_is_awaiting_approval_tacmap_will_u_47aa8f84", fallback: "Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval.", arguments: [])
     }
     static func waypointsQuarantined(_ value: String) -> String {
         L10n.message("id.waypoints_quarantined", fallback: "Saved waypoints could not be read and were set aside (%1$@). Starting with no waypoints.", value)

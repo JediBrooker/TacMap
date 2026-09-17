@@ -65,6 +65,32 @@ class LocalizationTest {
         } finally { AppLanguage.select(context, original) }
     }
 
+    @Test fun retainedBillingMessagesChangeLanguageWithoutChangingPurchaseState() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        L10n.install(context)
+        val original = AppLanguage.selection
+        try {
+            AppLanguage.select(context, SupportedLanguage.ENGLISH)
+            val loading = com.tacmap.billing.BillingUiReducer.reduce(
+                com.tacmap.billing.BillingUiState(priceText = "€9.99"),
+                com.tacmap.billing.BillingUiEvent.Connecting)
+            val issue = com.tacmap.billing.BillingStoreIssues.purchaseAcknowledgement()
+            val reason = Messages.billingTheTacmapUnlockProductIsNotAvailableForThisMessage()
+            val nested = Messages.billingReloadTheCurrentGooglePlayOfferBeforeTryingAgainMessage(reason.text)
+                .withArgument(0, reason)
+            assertEquals("Connecting to Google Play…", loading.message)
+            val english = nested.text
+            AppLanguage.select(context, SupportedLanguage.GERMAN)
+            assertEquals("Verbindung zu Google Play wird hergestellt …", loading.message)
+            assertEquals("Google Play prüfen", issue.title)
+            org.junit.Assert.assertFalse(nested.text == english)
+            org.junit.Assert.assertTrue(nested.text.startsWith(reason.text))
+            assertEquals(com.tacmap.billing.BillingPhase.Connecting, loading.phase)
+            org.junit.Assert.assertFalse(loading.purchaseEnabled)
+            assertEquals(com.tacmap.billing.BillingStoreIssueKind.PurchaseAcknowledgement, issue.kind)
+        } finally { AppLanguage.select(context, original) }
+    }
+
     @Test fun retainedRecordingStatesRefreshWithoutChangingTransitions() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         L10n.install(context)

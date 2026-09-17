@@ -67,6 +67,29 @@ final class StoreManagerTests: XCTestCase {
         StoreManager.ProductOffer(displayPrice: price) { result }
     }
 
+    func testRetainedPurchaseIssueChangesLanguageWithoutChangingEntitlement() async {
+        let original = AppLanguage.shared.selection
+        defer { AppLanguage.shared.select(original) }
+        let manager = StoreManager(
+            entitlementQuery: { throw QueryUnavailable() },
+            readCachedEntitlement: { true },
+            writeCachedEntitlement: { _ in XCTFail("language refresh must not write entitlement") },
+            presentOfferCodeRedemption: {},
+            makeUpdatesTask: noUpdates
+        )
+        AppLanguage.shared.select(.en)
+        await manager.checkEntitlementAgain()
+        let issue = manager.storeIssue
+        XCTAssertNotNil(issue)
+        let english = issue?.message
+        AppLanguage.shared.select(.de)
+        XCTAssertNotEqual(issue?.message, english)
+        XCTAssertTrue(issue?.message.contains("App-Store-Status") == true)
+        XCTAssertEqual(manager.storeIssue, issue)
+        XCTAssertTrue(manager.isPurchased)
+        XCTAssertEqual(manager.purchaseOperation, .idle)
+    }
+
     func testAuthoritativeNoEntitlementClearsVerifiedCache() async {
         var cacheWrites: [Bool] = []
         let manager = StoreManager(
@@ -219,7 +242,7 @@ final class StoreManagerTests: XCTestCase {
         await manager.start()
         manager.storeIssue = StoreManager.StoreIssue(
             kind: .purchaseFailed,
-            message: "Previous issue",
+            pendingMessage: .literal("Previous issue"),
             retryable: true,
             purchaseOperationID: nil
         )
@@ -643,7 +666,7 @@ final class StoreManagerTests: XCTestCase {
         await manager.purchase()
         manager.storeIssue = StoreManager.StoreIssue(
             kind: .purchaseFailed,
-            message: "Keep this issue",
+            pendingMessage: .literal("Keep this issue"),
             retryable: true,
             purchaseOperationID: nil
         )

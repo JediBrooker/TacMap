@@ -1,6 +1,7 @@
 package com.tacmap.billing
 
-import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 import android.app.Activity
 import android.content.Context
@@ -52,7 +53,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
     private val productLoadPolicy = BillingProductLoadPolicy()
     private val entitlementOperations = BillingEntitlementOperationPolicy()
     private var productDetails: ProductDetails? = null
-    private var deferredProductFailure: String? = null
+    private var deferredProductFailure: LocalizedMessage? = null
     private var lastEntitlementQueryStartedElapsedMs: Long? = null
     private var observationStarted = false
     private var ended = false
@@ -173,7 +174,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         if (ended) return
         val details = productDetails
         if (details == null) {
-            failProductLoad(L10n.text("The Google Play price is not ready yet. Retry to load it."), retryable = true)
+            failProductLoad(Messages.billingTheGooglePlayPriceIsNotReadyYetRetryMessage(), retryable = true)
             return
         }
 
@@ -184,7 +185,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
                 val current = activityRef.get()
                 if (current == null || current.isFinishing || current.isDestroyed) {
                     showError(
-                        L10n.text("The purchase window could not open. Return to TacMap and try Unlock again."),
+                        Messages.billingThePurchaseWindowCouldNotOpenReturnToTacmapMessage(),
                         retryable = false,
                         allowPurchase = true,
                     )
@@ -239,7 +240,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         connectionAttemptInFlight = false
         val result = localFailureResult(
             BillingClient.BillingResponseCode.SERVICE_DISCONNECTED,
-            L10n.text("Google Play disconnected before the operation completed."),
+            Messages.billingGooglePlayDisconnectedBeforeTheOperationCompletedMessage(),
         )
         val actions = synchronized(whenConnected) {
             whenConnected.toList().also { whenConnected.clear() }
@@ -254,7 +255,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             BillingClient.BillingResponseCode.OK -> handlePurchaseUpdate(purchases.orEmpty())
 
             BillingClient.BillingResponseCode.USER_CANCELED -> showError(
-                L10n.text("Purchase cancelled. You have not been charged."),
+                Messages.billingPurchaseCancelledYouHaveNotBeenChargedMessage(),
                 retryable = false,
                 allowPurchase = true,
             )
@@ -266,7 +267,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
                 retryAction = if (transient) UiRetryAction.Restore else UiRetryAction.None
                 showError(
                     if (transient) {
-                        L10n.text("Google Play could not confirm the purchase. Retry to check your ownership before purchasing again.")
+                        Messages.billingGooglePlayCouldNotConfirmThePurchaseRetryToMessage()
                     } else {
                         purchaseFailureMessage(result)
                     },
@@ -311,12 +312,12 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
                 }
 
                 queryResult.unfetchedProductList.isNotEmpty() -> failProductLoad(
-                    L10n.text("Google Play could not return the TacMap unlock product. Check your connection and retry."),
+                    Messages.billingGooglePlayCouldNotReturnTheTacmapUnlockProductMessage(),
                     retryable = true,
                 )
 
                 else -> failProductLoad(
-                    L10n.text("The TacMap unlock product is not currently available from Google Play. Retry, or check that you are using the Play Store build."),
+                    Messages.billingTheTacmapUnlockProductIsNotCurrentlyAvailableFromMessage(),
                     retryable = true,
                 )
             }
@@ -419,7 +420,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             } else if (pending.isNotEmpty()) {
                 transition(
                     BillingUiEvent.Pending(
-                        L10n.text("Your Google Play payment is pending. TacMap unlocks after Play confirms it.")
+                        Messages.billingYourGooglePlayPaymentIsPendingTacmapUnlocksAfterMessage()
                     )
                 )
             } else if (completed.userInitiated) {
@@ -429,10 +430,10 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
                 retryAction = if (hasPrice) UiRetryAction.None else UiRetryAction.LoadProduct
                 showError(
                     if (hasPrice) {
-                        L10n.text("No active TacMap purchase was found on this Google Play account.")
+                        Messages.billingNoActiveTacmapPurchaseWasFoundOnThisGoogleMessage()
                     } else {
                         deferredFailure
-                            ?: L10n.text("No active purchase was found. Retry to load the unlock product.")
+                            ?: Messages.billingNoActivePurchaseWasFoundRetryToLoadTheMessage()
                     },
                     retryable = !hasPrice,
                     allowPurchase = hasPrice,
@@ -469,7 +470,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         if (active.userInitiated) {
             retryAction = UiRetryAction.Restore
             showError(
-                L10n.text("Google Play could not check your purchase. Your known-good access has not been changed. Retry when Play is available."),
+                Messages.billingGooglePlayCouldNotCheckYourPurchaseYourKnownMessage(),
                 retryable = true,
                 allowPurchase = false,
             )
@@ -489,7 +490,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         if (active.userInitiated) {
             retryAction = UiRetryAction.Restore
             showError(
-                L10n.text("TacMap could not safely save the restored entitlement. Free some device storage and retry."),
+                Messages.billingTacmapCouldNotSafelySaveTheRestoredEntitlementFreeMessage(),
                 retryable = true,
                 allowPurchase = false,
             )
@@ -516,7 +517,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         if (relevant.isEmpty()) {
             retryAction = UiRetryAction.Restore
             showError(
-                L10n.text("Google Play did not return a TacMap purchase. Retry to check your ownership before purchasing again."),
+                Messages.billingGooglePlayDidNotReturnATacmapPurchaseRetryMessage(),
                 retryable = true,
                 allowPurchase = false,
             )
@@ -535,13 +536,13 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         if (!granted && pending) {
             transition(
                 BillingUiEvent.Pending(
-                    L10n.text("Your Google Play payment is pending. TacMap unlocks after Play confirms it.")
+                    Messages.billingYourGooglePlayPaymentIsPendingTacmapUnlocksAfterMessage()
                 )
             )
         } else if (!granted) {
             retryAction = UiRetryAction.Restore
             showError(
-                L10n.text("Google Play has not completed this purchase. Retry to check its status."),
+                Messages.billingGooglePlayHasNotCompletedThisPurchaseRetryToMessage(),
                 retryable = true,
                 allowPurchase = false,
             )
@@ -562,7 +563,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             _storeIssue.value = BillingStoreIssues.entitlementPersistence()
             retryAction = UiRetryAction.Restore
             showError(
-                L10n.text("TacMap could not safely save the purchase. Do not purchase again; free some device storage, then retry Restore purchase."),
+                Messages.billingTacmapCouldNotSafelySaveThePurchaseDoNotMessage(),
                 retryable = true,
                 allowPurchase = false,
             )
@@ -731,7 +732,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             BillingClient.BillingResponseCode.OK -> Unit
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> restore()
             BillingClient.BillingResponseCode.USER_CANCELED -> showError(
-                L10n.text("Purchase cancelled. You have not been charged."),
+                Messages.billingPurchaseCancelledYouHaveNotBeenChargedMessage(),
                 retryable = false,
                 allowPurchase = true,
             )
@@ -739,7 +740,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         }
     }
 
-    private fun recoverFromFailedLaunch(message: String) {
+    private fun recoverFromFailedLaunch(message: LocalizedMessage) {
         val recovery = BillingLaunchRecoveryPolicy.resolve(BillingLaunchOutcome.Failed)
         if (recovery.clearProductDetails) {
             productLoadPolicy.invalidate()
@@ -752,7 +753,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             UiRetryAction.None
         }
         showError(
-            message = L10n.text("%1\$s Reload the current Google Play offer before trying again.", message),
+            message = Messages.billingReloadTheCurrentGooglePlayOfferBeforeTryingAgainMessage(message.text).withArgument(0, message),
             retryable = recovery.retryProductLoad,
             allowPurchase = recovery.allowImmediateRepurchase,
             discardPrice = recovery.clearProductDetails,
@@ -792,7 +793,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             ) return@Runnable
             setupWatchdog = null
             connectionAttemptInFlight = false
-            val result = timeoutResult(L10n.text("Google Play connection timed out."))
+            val result = timeoutResult(Messages.billingGooglePlayConnectionTimedOutMessage())
             val actions = synchronized(whenConnected) {
                 whenConnected.toList().also { whenConnected.clear() }
             }
@@ -819,7 +820,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             if (productLoadPolicy.accepts(generation)) {
                 productLoadPolicy.invalidate()
                 failProductLoad(
-                    L10n.text("Google Play took too long to load the current price. Retry Google Play."),
+                    Messages.billingGooglePlayTookTooLongToLoadTheCurrentMessage(),
                     retryable = true,
                 )
             }
@@ -851,7 +852,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             entitlementWatchdogs.remove(active.operationId)
             val completed = completeEntitlementQuery(active) ?: return@Runnable
             handleEntitlementFailure(
-                timeoutResult(L10n.text("Google Play ownership check timed out.")),
+                timeoutResult(Messages.billingGooglePlayOwnershipCheckTimedOutMessage()),
                 completed,
             )
         }
@@ -885,7 +886,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
             if (!completeAcknowledgement(active)) return@Runnable
             handleAcknowledgementFailure(
                 active,
-                timeoutResult(L10n.text("Google Play purchase acknowledgement timed out.")),
+                timeoutResult(Messages.billingGooglePlayPurchaseAcknowledgementTimedOutMessage()),
             )
         }
         acknowledgementWatchdogs[active.purchaseToken] = watchdog
@@ -954,21 +955,21 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         }
     }
 
-    private fun timeoutResult(message: String): BillingResult = localFailureResult(
+    private fun timeoutResult(message: LocalizedMessage): BillingResult = localFailureResult(
         BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE,
         message,
     )
 
-    private fun localFailureResult(responseCode: Int, message: String): BillingResult =
+    private fun localFailureResult(responseCode: Int, message: LocalizedMessage): BillingResult =
         BillingResult.newBuilder()
             .setResponseCode(responseCode)
-            .setDebugMessage(message)
+            .setDebugMessage(message.text)
             .build()
 
     private fun nextGeneration(current: Long): Long =
         if (current == Long.MAX_VALUE) 1L else current + 1L
 
-    private fun failProductLoad(message: String, retryable: Boolean) {
+    private fun failProductLoad(message: LocalizedMessage, retryable: Boolean) {
         // Do not hide progress for a restore/purchase that began while the
         // independent product query was still completing.
         if (
@@ -990,7 +991,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
     }
 
     private fun showError(
-        message: String,
+        message: LocalizedMessage,
         retryable: Boolean,
         allowPurchase: Boolean,
         discardPrice: Boolean = false,
@@ -1020,30 +1021,30 @@ class BillingManager(context: Context) : PurchasesUpdatedListener, BillingClient
         else -> false
     }
 
-    private fun connectionFailureMessage(result: BillingResult): String = when (result.responseCode) {
+    private fun connectionFailureMessage(result: BillingResult): LocalizedMessage = when (result.responseCode) {
         BillingClient.BillingResponseCode.BILLING_UNAVAILABLE ->
-            L10n.text("Google Play Billing is unavailable on this device or account. Check Play Store setup, then retry.")
+            Messages.billingGooglePlayBillingIsUnavailableOnThisDeviceOrMessage()
         BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED ->
-            L10n.text("This Google Play version does not support in-app purchases. Update the Play Store and retry.")
-        else -> L10n.text("TacMap could not connect to Google Play. Check your connection and retry.")
+            Messages.billingThisGooglePlayVersionDoesNotSupportInAppMessage()
+        else -> Messages.billingTacmapCouldNotConnectToGooglePlayCheckYourMessage()
     }
 
-    private fun productFailureMessage(result: BillingResult): String = when (result.responseCode) {
+    private fun productFailureMessage(result: BillingResult): LocalizedMessage = when (result.responseCode) {
         BillingClient.BillingResponseCode.ITEM_UNAVAILABLE ->
-            L10n.text("The TacMap unlock product is not available for this Play Store account.")
+            Messages.billingTheTacmapUnlockProductIsNotAvailableForThisMessage()
         BillingClient.BillingResponseCode.BILLING_UNAVAILABLE ->
-            L10n.text("Google Play Billing is unavailable. Check the Play Store app and account, then retry.")
-        else -> L10n.text("TacMap could not load the Google Play price. Check your connection and retry.")
+            Messages.billingGooglePlayBillingIsUnavailableCheckThePlayStoreMessage()
+        else -> Messages.billingTacmapCouldNotLoadTheGooglePlayPriceCheckMessage()
     }
 
-    private fun purchaseFailureMessage(result: BillingResult): String = when (result.responseCode) {
+    private fun purchaseFailureMessage(result: BillingResult): LocalizedMessage = when (result.responseCode) {
         BillingClient.BillingResponseCode.ITEM_UNAVAILABLE ->
-            L10n.text("The TacMap unlock product is not available for this Play Store account.")
+            Messages.billingTheTacmapUnlockProductIsNotAvailableForThisMessage()
         BillingClient.BillingResponseCode.BILLING_UNAVAILABLE ->
-            L10n.text("Google Play Billing is unavailable. Check the Play Store app and account, then try again.")
+            Messages.billingGooglePlayBillingIsUnavailableCheckThePlayStorec6d54b3bMessage()
         BillingClient.BillingResponseCode.DEVELOPER_ERROR ->
-            L10n.text("This build cannot start the configured Google Play purchase. Install the Play Store release and try again.")
-        else -> L10n.text("Google Play could not start the purchase. Check your connection and try again.")
+            Messages.billingThisBuildCannotStartTheConfiguredGooglePlayPurchaseMessage()
+        else -> Messages.billingGooglePlayCouldNotStartThePurchaseCheckYourMessage()
     }
 
     private data class ConnectedAction(

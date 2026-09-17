@@ -32,7 +32,7 @@ class BillingUiReducerTest {
         val failed = BillingUiReducer.reduce(
             ready,
             BillingUiEvent.Error(
-                message = "Could not load product",
+                message = com.tacmap.localization.LocalizedMessage.literal("Could not load product"),
                 retryable = true,
                 discardPrice = true,
             ),
@@ -116,7 +116,7 @@ class BillingUiReducerTest {
 
         val pending = BillingUiReducer.reduce(
             ready,
-            BillingUiEvent.Pending("Payment pending"),
+            BillingUiEvent.Pending(com.tacmap.localization.LocalizedMessage.literal("Payment pending")),
         )
 
         assertEquals(BillingPhase.Pending, pending.phase)
@@ -144,7 +144,7 @@ class BillingUiReducerTest {
         val cancelled = BillingUiReducer.reduce(
             ready,
             BillingUiEvent.Error(
-                message = "Purchase cancelled",
+                message = com.tacmap.localization.LocalizedMessage.literal("Purchase cancelled"),
                 retryable = false,
                 allowPurchase = true,
             ),

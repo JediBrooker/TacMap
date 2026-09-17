@@ -1,6 +1,7 @@
 package com.tacmap.billing
 
-import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -14,9 +15,12 @@ enum class BillingStoreIssueKind {
 
 data class BillingStoreIssue(
     val kind: BillingStoreIssueKind,
-    val title: String,
-    val message: String,
-)
+    val titleMessage: LocalizedMessage,
+    val pendingMessage: LocalizedMessage,
+) {
+    val title: String get() = titleMessage.text
+    val message: String get() = pendingMessage.text
+}
 
 internal enum class BillingRootContent {
     Unlocked,
@@ -44,14 +48,14 @@ internal object BillingRootPresentationPolicy {
 internal object BillingStoreIssues {
     fun purchaseAcknowledgement(): BillingStoreIssue = BillingStoreIssue(
         kind = BillingStoreIssueKind.PurchaseAcknowledgement,
-        title = L10n.text("Google Play needs attention"),
-        message = L10n.text("TacMap saved your purchase, but Google Play has not confirmed its acknowledgement. Your access remains available. Retry soon to avoid Play automatically refunding an unacknowledged purchase."),
+        titleMessage = Messages.billingGooglePlayNeedsAttentionMessage(),
+        pendingMessage = Messages.billingTacmapSavedYourPurchaseButGooglePlayHasNotMessage(),
     )
 
     fun entitlementPersistence(): BillingStoreIssue = BillingStoreIssue(
         kind = BillingStoreIssueKind.EntitlementPersistence,
-        title = L10n.text("Unlock status needs attention"),
-        message = L10n.text("TacMap checked Google Play but couldn't save the latest unlock status securely. Your existing access was kept. Free some device storage, then retry."),
+        titleMessage = Messages.billingUnlockStatusNeedsAttentionMessage(),
+        pendingMessage = Messages.billingTacmapCheckedGooglePlayButCouldnTSaveTheMessage(),
     )
 }
 
@@ -66,10 +70,10 @@ fun BillingStoreIssueAlert(
         title = { Text(issue.title) },
         text = { Text(issue.message) },
         confirmButton = {
-            TextButton(onClick = onRetry) { Text(L10n.text("Retry Google Play")) }
+            TextButton(onClick = onRetry) { Text(Messages.billingRetryGooglePlay()) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(L10n.text("Not now")) }
+            TextButton(onClick = onDismiss) { Text(Messages.billingNotNow()) }
         },
     )
 }

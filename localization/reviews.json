@@ -793,49 +793,49 @@
     },
     "ui_couldn_t_contact_the_app_store_your_existing_unl_2e5133cc": {
       "de": {
-        "source": "598b0dc7d25358e40d21a20a3aaf84b4018522cbe6c873940cdfec97ad61595f",
+        "source": "043b48e3f398341a1a7ac6cb7d5f6dccfa53a0524b3918d4696969b5f6a97139",
         "translation": "f5726ff388d24c615400cd2290e7b49f1e5ba9b40901c8b9566438189690ef7e",
         "status": "reviewed"
       }
     },
     "ui_couldn_t_verify_purchases_right_now_your_existin_a05f57ac": {
       "de": {
-        "source": "d58cd63fe523894361755dc96a5621c9cdfbd8f478f46e84f950c6b2c20ff67a",
+        "source": "a849d375cd03e269cfb41ea49b6b391318353b3730e602db32405a4391cceafa",
         "translation": "d46788ca7a9a300f76210ac23302adf19e2ece5c90e519a3206068f665254b03",
         "status": "reviewed"
       }
     },
     "ui_already_unlocked_9f5005e4": {
       "de": {
-        "source": "a64a29d867ecbc0e75e5aa6d823983fd5b86d53e69e4fa274df8d02bdb70193a",
+        "source": "f0518602b95843f2304a2357f939bc03370549c3cb1d8b836b3958e88e64d6d7",
         "translation": "92a809ab4ebbaf868da765338c297b5d4bb94384cfa8b5471de9e51e47be4abb",
         "status": "reviewed"
       }
     },
     "ui_purchase_restored_5008cbb8": {
       "de": {
-        "source": "163e03b589ea0fc55a5750a1da6bbbc8b1279e4bc178c79f332ff896e209818b",
+        "source": "56aa6e356e97a8f82a4b43116153c1cc2ccca6b73ae90cb05afa6d1f027dab40",
         "translation": "ccb0cada4474f00a4f4e4b6a41c4bfb36ccd31cfb8b4496aa121bbd6f964ef72",
         "status": "reviewed"
       }
     },
     "ui_no_previous_purchase_found_on_this_apple_id_05e7d993": {
       "de": {
-        "source": "139c5a1892180b7d29e7de4b28f1ca3a9f25bc1d7a7c1512bba09234d69e9951",
+        "source": "5b1419d737e8e9d32e366f53f780f89ec66441bf6ef4286a18245511cea348f1",
         "translation": "d077c68ca11e0d9e7d64fd45cde0d44a8cd226862d0934620ff14c71889e53b9",
         "status": "reviewed"
       }
     },
     "ui_couldn_t_open_apple_s_code_redemption_sheet_try__89332ea0": {
       "de": {
-        "source": "6ad0c206ca101b934b1d6736c011c693d39f342641e4ecb918e51a0372ac9523",
+        "source": "ba10eb3395bd37adaae5e1aeb0b4b502f0b1a8985976966af57cd3c228f6e9eb",
         "translation": "584e2aa7b89fb881e998a571bab050898acdea4503610d2b8637c26de0106074",
         "status": "reviewed"
       }
     },
     "ui_your_code_may_have_been_redeemed_but_tacmap_coul_086e7c0e": {
       "de": {
-        "source": "c1c715461c30b27069ab00e4bacbdebbfe7356d92d7f3279b6251e7c4b77da9f",
+        "source": "ae834e3660053b1df15a90295ccd992a84a76c73a29732aeead47e063cb510d1",
         "translation": "2298d1cd5d0d62af673b4afba2f9656bd21f6aea07c5b9d09342d992dd37ec7c",
         "status": "reviewed"
       }
@@ -8906,91 +8906,91 @@
     },
     "ui_purchase_options_aren_t_loaded_return_to_the_unl_eae114f7": {
       "de": {
-        "source": "d503694758aa878e8cfff2b7a90bb382c5757b6439fb824d0db5f41c9d6b5560",
+        "source": "6d6f595d05402b0f6eea2afa9bb7a45a9410c0409413532e845431bea9a94095",
         "translation": "52277330e00d3799fca05e52bd8d919d98c9dcc0247b18a01b01d02bd153eeef",
         "status": "reviewed"
       }
     },
     "ui_apple_returned_a_purchase_tacmap_couldn_t_verify_b3c93b20": {
       "de": {
-        "source": "85a7e11a91a1f263c6a641883a80f4422d69b1b8aca5038fa5cae2e55f88b020",
+        "source": "efb83b4312f2be0b518f822eca73f699b2c20cc989d0e0c51051973548c271db",
         "translation": "090c9ea552f1466e6fe94a09dd57459e18edac4c09e53021d5a2f956b2df9f0f",
         "status": "reviewed"
       }
     },
     "ui_purchase_cancelled_you_have_not_been_charged_4962904b": {
       "de": {
-        "source": "408b0454a5351ed68c47b48da8db6228c1a263bf3dff1238f1236fc9b5fdb510",
+        "source": "9961e9823f52561dfbb78aacecf92533ecf079a94cc30578e8cdfea3b4b77492",
         "translation": "83754569b05191c35c740c66a1d9e07555029efdf4737783c31ac8e0a7c83133",
         "status": "reviewed"
       }
     },
     "ui_your_purchase_is_awaiting_approval_tacmap_will_u_47aa8f84": {
       "de": {
-        "source": "29ffa1cb4df6d70c2dae90d9e853b85afbd4df65251ef7f22f9aba424b9a66da",
+        "source": "9de2e10157b355b6e4721c19e39801c31611456aeaa0d94d4be5dd92f9810950",
         "translation": "7ddda95fac595755e6221256972674afb27be16f57441ddca5d102f922f1a3a5",
         "status": "reviewed"
       }
     },
     "ui_the_app_store_returned_an_unknown_purchase_resul_a59e82d0": {
       "de": {
-        "source": "e89baefbc0b82694809be2b67e0199cdce3e586ffbfe6933412f0729df7b191a",
+        "source": "c77ad5b413a167859444f2c89eb0aa9c1bdff2aae6ea7bf3e9c9aeeca145d62e",
         "translation": "2c92e415bd17a993ba753233e3a55737ddf4442507acaf120d26a5f1cb7b7e09",
         "status": "reviewed"
       }
     },
     "ui_the_purchase_couldn_t_be_completed_check_your_co_5524be32": {
       "de": {
-        "source": "717f1b489fca0d3096abe50e4a9063fd3a2f238d7738fbcca4a2f9d5c8adf1fd",
+        "source": "a559704e6e1b06e3945b81f570b12b7d80fdc61fbee2bcedf1c43e8bb48e3b4f",
         "translation": "297be70294c8499c29a5c58facb0b262f8e9fc53e87afd61bf36fb8238d35674",
         "status": "reviewed"
       }
     },
     "ui_tacmap_found_the_latest_purchase_status_but_coul_5c9e82cd": {
       "de": {
-        "source": "6b257e5584f0a10a8259aefea2a25e43fea736757b175f71f8cff9e4a82b2659",
+        "source": "08a41a2f698651783e383915af4202e4091cd5dda293671a468fe96281072159",
         "translation": "0962cc2a2e254dea3106a4216c146c42812b5d093c14d98b758ab46aaf3453fc",
         "status": "reviewed"
       }
     },
     "ui_your_code_may_have_been_redeemed_but_tacmap_coul_6fe17d6c": {
       "de": {
-        "source": "67e147ffa0cac782c2b8ff19047793d99af8c470500195fe8510149bde07e898",
+        "source": "c4a78b5f6499df15c4d611dbee68ab0d02127191360e8196c558ab71aab453db",
         "translation": "aeca15b0f03f830a2fd56f7af1a3bc2c884abd899a591d9c9e980d5e2e593fb6",
         "status": "reviewed"
       }
     },
     "ui_tacmap_still_couldn_t_verify_your_app_store_stat_3004f574": {
       "de": {
-        "source": "9bca443f2f7e7ebad4f0128e6ed03b99e0ffbd5d6a8d37a4e273265e314bccab",
+        "source": "bf958a6ab1b86365776bc6478dd6ad359cd87a6b63de08dd65f29ee80ad8bfc4",
         "translation": "2c77dafbc91bec52589970c8625a15bc824575cedc213d247478b7898f0f75e2",
         "status": "reviewed"
       }
     },
     "ui_tacmap_verified_your_app_store_status_but_couldn_afd6e407": {
       "de": {
-        "source": "26576a0192f205ce2b052a8c8aef4671bce249708e671935661b36633b443bb5",
+        "source": "1e556598fccbd89326d6df19616a6b60348ed69917f0714a5f2ab3371490c0aa",
         "translation": "e5dba91a02eb215287a8fd9a9c37496afee95ee88b044db00bfc7be4b4926470",
         "status": "reviewed"
       }
     },
     "ui_apple_verified_your_purchase_but_tacmap_couldn_t_268afcfa": {
       "de": {
-        "source": "413f8a98f5ab53150f737d174b3f6cfe989ea1df14dea659fff0b4691807d2ea",
+        "source": "c786aec54ba93572049348fc5e8267384012cb5fe8154a50e79a4ffcd72f9c1b",
         "translation": "ac86638a5502088809804c9c3f30fe1d09add6db96628ce824dcd36365f8feea",
         "status": "reviewed"
       }
     },
     "ui_apple_reported_an_unlock_status_change_but_tacma_c7677269": {
       "de": {
-        "source": "79fd49791e2975b2515faa1e415b17bc01283c4dda57fe38c1db51d410b670af",
+        "source": "dbe9e8eb8d9f5011ec82ed137a374bb597c4b4b6193573894667f07ed5946273",
         "translation": "2552a5ec24ea4469493724bc35eb1d2f67eba140c22c3c46eb200ba9cd275ae8",
         "status": "reviewed"
       }
     },
     "ui_the_app_store_sent_an_unlock_update_tacmap_could_3b7c44d2": {
       "de": {
-        "source": "419a01226c967bc51aba828f93c20ef49b65d227d72b50a441e341cbfa4c7975",
+        "source": "df29caae75a42d08d981d8116e889205a64a0e5e87f252bca26c9d7038dab550",
         "translation": "81547acba67868973fffbd11d83c3303a5d71020a9929d5cb18bdbfd6b471095",
         "status": "reviewed"
       }
@@ -9753,7 +9753,7 @@
     },
     "ui_not_now_a0e63d7c": {
       "de": {
-        "source": "0f0d4f0c4209866c1f4057705155f178ccc2f1fc75575a991279fb4a229347a0",
+        "source": "6e9f659b54c893f63f27caf4c5484938f96b4a406d72e255697f02f36993b1f1",
         "translation": "be086c58c7d53baefa949080814ebe253e570adfc206c8d13c62bb939a5a1b6d",
         "status": "reviewed"
       }
@@ -11160,259 +11160,259 @@
     },
     "ui_google_play_needs_attention_b73fea15": {
       "de": {
-        "source": "73b13010c2d75a73d902b018b2655a74313b8723b2d539f91c4f373bf7d96fde",
+        "source": "1d0af3da16cf2750d340020e93c6c1814cfe43a120d883b622d547539fa00672",
         "translation": "2ce514fca05a259c789ab91a6ea31211cf95618044ede7e6c0207abc40f596fa",
         "status": "reviewed"
       }
     },
     "ui_tacmap_saved_your_purchase_but_google_play_has_n_c7732e0b": {
       "de": {
-        "source": "47bfb2401fbf2cef978fb6c05c59a7894afdf5a6598dc6cf827e34cd890250fb",
+        "source": "9d23ed650fbc84357380a05527a9fd6f93027cfcdb5037a54644ce3ab7382fa9",
         "translation": "71b8aa7017e953c485eea0efb3d7cd6524bcc3eae44489aa7dbe2afd2fbfe95a",
         "status": "reviewed"
       }
     },
     "ui_unlock_status_needs_attention_f49aa5e4": {
       "de": {
-        "source": "21500b0d4099b609c97b29af86e72fa13903f5d989a132330ac6748346148202",
+        "source": "d0636ac84ed8003f95e18eb0598a3b791f14b61f2b2b091647f083eeed3c9f9c",
         "translation": "52fd3863ff790882183fff9d64732c96dcd6fc65f1b42bf901d243711d346b5b",
         "status": "reviewed"
       }
     },
     "ui_tacmap_checked_google_play_but_couldn_t_save_the_2f769b9c": {
       "de": {
-        "source": "364a6a368fe188a42fd49e6166c43acd7090ba5f7470005f936791b6a2c94c6c",
+        "source": "ef424317830b6a189ca1290b48f8d222c934fe67af5bb21af964d13fd3d6842f",
         "translation": "ea72aab45dbe22c3411d7eb4ce2f38872f8ac0afcd17dcae2c07fdad3ad589e8",
         "status": "reviewed"
       }
     },
     "ui_retry_google_play_8520938e": {
       "de": {
-        "source": "a36436bbd877f55e263e15c44828cdf3795c5c700a8a5e72fa51d554180a416a",
+        "source": "9c57b60f862a6f16d2abdf3edab1b77c86bb5435b066a966181e3258e4481985",
         "translation": "ee7b8ce604bee4f8da322ddbeb951257245210e18f9235508802d8201ff9d46f",
         "status": "reviewed"
       }
     },
     "ui_the_google_play_price_is_not_ready_yet_retry_to__ae5677c5": {
       "de": {
-        "source": "00fd8463a193f139020a83bb1709bcb6f4bc5aea07c7e3de15e7517a9174d989",
+        "source": "f2f676e5398dc5f6241284535240be867d34bde23a2f97ca4cd9c3ed557f4ac9",
         "translation": "e67dd3ba7ac915c55862221c48afc24985a073aa460f73fe39564246b1aca4dc",
         "status": "reviewed"
       }
     },
     "ui_the_purchase_window_could_not_open_return_to_tac_790f34d5": {
       "de": {
-        "source": "c0009ca255943f9c3fcb5deaa0c2c1464d931de44aab90992b2fcceb1df39227",
+        "source": "8ebf29b6f6c0462a3acf6540d492ced670881abe9753ce3da38f550d28d1617c",
         "translation": "aa848ee890447ce3bc16153c1c247e5521219bdb3c05dd688b02293de59ce83d",
         "status": "reviewed"
       }
     },
     "ui_google_play_disconnected_before_the_operation_co_a70c8754": {
       "de": {
-        "source": "26c904a66be2c614b4ffe70875f213425d73a346e226b81912933ebd9dca20b5",
+        "source": "6b7833f40d0a3488de3696643489ade25c3f8ca66cfa95f10054c489173a8ac5",
         "translation": "a4e17070211af5c2faf614074b9ded7e9c42b79196e728befd214ccda97c8132",
         "status": "reviewed"
       }
     },
     "ui_google_play_could_not_confirm_the_purchase_retry_b5f9a1e0": {
       "de": {
-        "source": "24f047d85a3af973a4c8a4a065d18db001a1b30ad2be710b0516b687b89e7768",
+        "source": "be0009afebb5f61efbf8d37395b3fad81af064ef56ff46566199b8b9d463540b",
         "translation": "b6db0e9842ff4200e36353eeaf138b5ea7f3460b4c77c3999d4d77d43c2cf1f7",
         "status": "reviewed"
       }
     },
     "ui_google_play_could_not_return_the_tacmap_unlock_p_894c2cad": {
       "de": {
-        "source": "358a9e73e07454cbc088541f8975a952d3a2caa15369418cb7359241a8e4d777",
+        "source": "1fbd465e2280d30a344784ab5de513680ed8fe19fecae8eb950e305672302cea",
         "translation": "256a4e5d742e1fd9e6b9f0fcd082e7285ad4a45b7d4e4c3126ffc27dfc2294c4",
         "status": "reviewed"
       }
     },
     "ui_the_tacmap_unlock_product_is_not_currently_avail_ed188837": {
       "de": {
-        "source": "fcf3337e64f674f682cae357308a26362a595357488e0558328d33b9271939a2",
+        "source": "3470c0b52d288128990211caa2167274c1ec784df6919703006c3e3274c4e74c",
         "translation": "3929377cb27f017f3a5fc67e460220b6bdf733f09bd1777633468c68334817da",
         "status": "reviewed"
       }
     },
     "ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693": {
       "de": {
-        "source": "918f5e6572e3d7088228eecaeb876a60931049be7bba131e00a707b4a47fa23c",
+        "source": "8d6e7b2196beeb8b9a25441b1d60a9f053a4b8ea28a2c65bb2516ead479882f7",
         "translation": "22a3f33ecbccafc794ac992181f5211a75526f3287508ad9cd375bfa4bbe13d6",
         "status": "reviewed"
       }
     },
     "ui_no_active_tacmap_purchase_was_found_on_this_goog_f745c3e8": {
       "de": {
-        "source": "4fa57b63fbea7753904e31c97b8a007129790fce83027201fcdb38fcd68f5e62",
+        "source": "13558acfc316977803cdf3befc2acb49c737618894c467a5b4a10dd8546c0f61",
         "translation": "9a109c9c87d92367ec14b04dacc0dbc6b749654afcdeff7ab4c625ef9516b8c9",
         "status": "reviewed"
       }
     },
     "ui_no_active_purchase_was_found_retry_to_load_the_u_fe8d025d": {
       "de": {
-        "source": "76d5c3f995588a3f86dedde53acef032ba4ad6db569565e2e4c5c150d536c6bb",
+        "source": "633245f9d9375dec11384394e7bfd8be3416dad2587d44c42c34ca4b044d24be",
         "translation": "29181ece55fcf3b999d12ab6d352b44e4790e95dd8168a3a3c583c4992063a96",
         "status": "reviewed"
       }
     },
     "ui_google_play_could_not_check_your_purchase_your_k_bdc2b5f8": {
       "de": {
-        "source": "baad5d70d0b5e721ab0a65e5c7fbaa67575f2ddb6ebcad8801ada9362902ec43",
+        "source": "0dc939d63a0046143474137049089c06996844722fd7fdf7290dac0a56ee91b6",
         "translation": "7efd68a025bf6ee04d16317c43060b8c62be3ddcf638e51b0fff14145af67cc7",
         "status": "reviewed"
       }
     },
     "ui_tacmap_could_not_safely_save_the_restored_entitl_87d67d86": {
       "de": {
-        "source": "d2699180a1c98ca4fe0cadba253ab4cb1fb832c3b3c2f681d4afbdc6ecfe5e94",
+        "source": "c6964e1e0ee338d60082492e81546076c39be132643263d5d09e97d114fa00f6",
         "translation": "bbfa9cabbc281f1adad1712cbdbb3cffb2054c017b790575149017f6ca29c42c",
         "status": "reviewed"
       }
     },
     "ui_google_play_did_not_return_a_tacmap_purchase_ret_457626f6": {
       "de": {
-        "source": "e0cc3080b2600da4c53f8a070ce3cbca2c718e949d4b36b6a6f25f7fe4481dc0",
+        "source": "d1e1d01295c36f60cb5f679a3f49c54faa32917b3e31503d72ff2ac26887d2c1",
         "translation": "c88e054e2a870eccb376fad94c9f5b65eb983c00362bd98c33fe161f12c6312d",
         "status": "reviewed"
       }
     },
     "ui_google_play_has_not_completed_this_purchase_retr_9b191482": {
       "de": {
-        "source": "d747d3d844e0903653168181945ddfffebf7a337e0d7ebdaedb60f15731dfd6d",
+        "source": "d22149cfb344ea362c764a1bc6075b2b6e6f8d3402fb2a93179be4267acdece0",
         "translation": "97bdc739f1c932b5a85ef5da3e658d3cabb6a0db7ed7ffa56a4ded480031857a",
         "status": "reviewed"
       }
     },
     "ui_tacmap_could_not_safely_save_the_purchase_do_not_9d49f678": {
       "de": {
-        "source": "cb9eabf6f00ea61c38c1b4279163816ae269c27ee794c80b2eaaf54ff82f42f2",
+        "source": "587fce6aa43d3c8ee9b40c1ba8cb343f3a3c0a85371817add72581a4d71cde43",
         "translation": "792a1afc3ccdf6ab89c423f1f8ccdebe8a0c175d9cc99f9756e69aef6b53255c",
         "status": "reviewed"
       }
     },
     "ui_1_reload_the_current_google_play_offer_before_tr_0fcb92e6": {
       "de": {
-        "source": "4962ddde8634ee8e7fb3ea45d8ae07bfee3ac917ea01f5c3694bb5c064b704ea",
+        "source": "d7e14575bc2466a02beb08be7c6284c1a9820d5255820328c21df4dcd8a80836",
         "translation": "9359db64bb9ef186f8ad77c97b43b12e0a8368899f24581df7e1ccebe8f8c1b9",
         "status": "reviewed"
       }
     },
     "ui_google_play_connection_timed_out_11fc9cf9": {
       "de": {
-        "source": "206227cab096dae0ff23e3bc0f79c43d0637fc1d5c7a7c2ff43ad17390c39ddf",
+        "source": "1c27eb8774e0a6764ee49f5d8f43b417949eefad3dfc040320b8dc9c3d141334",
         "translation": "0174175c2d016e1b452c6b82c53e041ff975bab28019b003c8af9094395a0b7a",
         "status": "reviewed"
       }
     },
     "ui_google_play_took_too_long_to_load_the_current_pr_a63fad1d": {
       "de": {
-        "source": "52a4e93276bd015cca78dbb882124294882f748c7b63cea525049fe3548e9f76",
+        "source": "4bee1373959ae050a549d70b0ac6370d3e116223e80fffbd4d34b1da35934b21",
         "translation": "c87ebdf62d3fdb45c092663cacdbdc1c5ceebda4ad0608c29e402dd7540e1662",
         "status": "reviewed"
       }
     },
     "ui_google_play_ownership_check_timed_out_942987fb": {
       "de": {
-        "source": "8c4cb36505725f3f29ca3dbcc93486af9395538725fb01a5091a6faabe7b4eb6",
+        "source": "6fded66a88203b0e4d6f2822eaaff80be98f293bd4344062db400ba5679ef485",
         "translation": "2eaebd8228170422d715b1df283122f49a66fc5f2e7d58abc4a57959d4efc476",
         "status": "reviewed"
       }
     },
     "ui_google_play_purchase_acknowledgement_timed_out_08292ff0": {
       "de": {
-        "source": "9af0400c45680300ba52424e58769096e2a54ef2376ca9c3818bbfa1591c3ec0",
+        "source": "ed39a0cb2d8f17eb53736bdd506525c47c69a7a37ebf5ab286197f37a0cf78be",
         "translation": "46abc1999020cc5330174d2b7ffd92b49ae6a71dbff7d775bd65127770365e06",
         "status": "reviewed"
       }
     },
     "ui_google_play_billing_is_unavailable_on_this_devic_bf7caddb": {
       "de": {
-        "source": "b639e58113fa8ea94d23ace5526a10e03d7ced18cbc4d7840b1d40e1a2997531",
+        "source": "339ef8b11d6db74a02642c6a0f05946c02ce45a7100590fffa7e8ce017e2be04",
         "translation": "32a3c85a66137872bd0c5300d497186ef6462b04f65a80c234b92efa2bc598b8",
         "status": "reviewed"
       }
     },
     "ui_this_google_play_version_does_not_support_in_app_ad901add": {
       "de": {
-        "source": "b9f40e9fbb57efa415670a58888593b9da22ce74805a8841c60e0e1760608f08",
+        "source": "70362043629486cec6e02c9ab77050af565f4438d3115f1244f954b2cb66c1eb",
         "translation": "95c121017317a918ed48738694b5c7934bf432217d166c63a54b8034352485f7",
         "status": "reviewed"
       }
     },
     "ui_tacmap_could_not_connect_to_google_play_check_yo_51a569fd": {
       "de": {
-        "source": "0d9179c19179966325a3424f82447423b6e5d13b7e6538addd3cb9e7e2cda81b",
+        "source": "360b4e6497a6aed5f692bf92159f1bacf467ab25aa008622b2827318243bec79",
         "translation": "aa56891dfdae53474607328cbe4bcce5186d07a5a15f608470ef17a292645452",
         "status": "reviewed"
       }
     },
     "ui_the_tacmap_unlock_product_is_not_available_for_t_9d8a3562": {
       "de": {
-        "source": "f91fd4a05b883cb86c42933991f4873e4618536aa97b94e85607422a3358551b",
+        "source": "6fd29fbd3fff211bbbb052e479f4ffb83829efafd08ab15197f28375ab983abb",
         "translation": "442934ee89ea089eff2d5d712188719bcff7f96cfbcfcf71ecd943e1aba1fb3d",
         "status": "reviewed"
       }
     },
     "ui_google_play_billing_is_unavailable_check_the_pla_f06ceae3": {
       "de": {
-        "source": "a5d9cc38ccacc8da7256c96e28cdc1702ab86947807ffba06ae3094548c8700e",
+        "source": "1ea618b44d2e316637f55cc35f255cab761716901bb92e72215dcfbd4e36d9f2",
         "translation": "7d5d7938e27db1111ef513d170c2199421e59d390bd6b49a4cfd2162394746d4",
         "status": "reviewed"
       }
     },
     "ui_tacmap_could_not_load_the_google_play_price_chec_8f65f352": {
       "de": {
-        "source": "36630206c62b8e8f9132c0f5e0b54d6502e45d5fc7bf7a4c3dd517a635528633",
+        "source": "7c84ccefc4b9803d412138f74a3c939da16c9c7013e5c00356934e143a2e5e77",
         "translation": "41882d304644d7e1bac77b08ca2d824dad436f7febfeb22dc48bef924ebfe8aa",
         "status": "reviewed"
       }
     },
     "ui_google_play_billing_is_unavailable_check_the_pla_c6d54b3b": {
       "de": {
-        "source": "c3a0e0b4210597148cda657debddeb3361b88665bc64d67221b0f3b127148ef5",
+        "source": "5a4c675ceb885909996b3078abd234e580c2c20e8e14df8cb7363f0db5101e95",
         "translation": "7d5d7938e27db1111ef513d170c2199421e59d390bd6b49a4cfd2162394746d4",
         "status": "reviewed"
       }
     },
     "ui_this_build_cannot_start_the_configured_google_pl_66554d76": {
       "de": {
-        "source": "0c583ef1a7ad7111c6db1191652e7e84d1187650edc7823651db3effd2291bd8",
+        "source": "7894a14a57ade527a11c71fb052d459b4f2a6642f2272be87a6f8ac908c2c922",
         "translation": "758901e02402da6f663bbe922d26d01522d28d1c3d94f950f10db73d2b2b42bb",
         "status": "reviewed"
       }
     },
     "ui_google_play_could_not_start_the_purchase_check_y_a7caaf1c": {
       "de": {
-        "source": "0220c9fdba7dabeecfbc6a2fa265eb42b89bf96460fa2f4172fd71c97ad91819",
+        "source": "b0d4ae14e74717a647303e99b5ba13cbeac93d17c0ee01405abad2cdacf054d2",
         "translation": "45619c28515b8de48300056cc1e6e1920c809785d2fe3ab777657f8678e5c652",
         "status": "reviewed"
       }
     },
     "ui_connecting_to_google_play_75d0cdf5": {
       "de": {
-        "source": "0de19cc60ade2ebb460d46322b5a19fe12fd4e43cf7383d9151f07ddb57fc8ba",
+        "source": "4ebe5d79dfc83484cdb8a99ab5521ab479ea13b7922662c9e7ee189137e485b0",
         "translation": "8c55e2eadbf8eaaa7dbf961e0cadf4c5adffe47c6dde78c6955d5b4e4d4f9258",
         "status": "reviewed"
       }
     },
     "ui_loading_price_from_google_play_ce945d9e": {
       "de": {
-        "source": "dfde701e8b95984b3a100db4b4e8e509af4adfade4a4239b82436dc3d81da47c",
+        "source": "cd6f5003869d5df2372305f091ebf203b9573f7edffa2e30a615428b586d4f9f",
         "translation": "329150bc882becd9f34481e1894e13865e665903a15d00821479ddcacdcea35d",
         "status": "reviewed"
       }
     },
     "ui_checking_google_play_for_your_purchase_fa0f4b1f": {
       "de": {
-        "source": "8ec55d20abb2bff3aa626927a3d4f8ddba0164cd11900f390d9dd8f79e6cee95",
+        "source": "35ac3a210fa6a2acd808ef5382d279b161bb7d08b96215eb3a2ecbdd8ca0a4f3",
         "translation": "ef8ba074827cdb5b88197874f408ab69d744596387ecd92e52558facd1a7c4bf",
         "status": "reviewed"
       }
     },
     "ui_opening_google_play_3d38b231": {
       "de": {
-        "source": "9bb2b50392d6125078997857ae2d6a912b5b02f5ea04cf2ddcc62f8775285cf2",
+        "source": "70e858971d07cbae01d662611d956a34b9d415c940d1963efab0d5b4c11fdfce",
         "translation": "c4673e7e73c372cdfd06b47de2b3f0f6a2127a377879d2052471cde866837e25",
         "status": "reviewed"
       }

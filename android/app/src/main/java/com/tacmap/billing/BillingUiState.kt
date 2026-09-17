@@ -1,15 +1,18 @@
 package com.tacmap.billing
 
-import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 /** One paywall contract shared by the expired-trial and in-trial entry points. */
 data class BillingUiState(
     val phase: BillingPhase = BillingPhase.Idle,
     val priceText: String? = null,
-    val message: String? = null,
+    val pendingMessage: LocalizedMessage? = null,
     val retryable: Boolean = false,
     val purchaseEnabled: Boolean = false,
-)
+) {
+    val message: String? get() = pendingMessage?.text
+}
 
 enum class BillingPhase {
     Idle,
@@ -28,10 +31,10 @@ internal sealed interface BillingUiEvent {
     data class ProductLoaded(val priceText: String) : BillingUiEvent
     data object Restoring : BillingUiEvent
     data object Purchasing : BillingUiEvent
-    data class Pending(val message: String) : BillingUiEvent
+    data class Pending(val message: LocalizedMessage) : BillingUiEvent
     data object PendingCleared : BillingUiEvent
     data class Error(
-        val message: String,
+        val message: LocalizedMessage,
         val retryable: Boolean,
         val allowPurchase: Boolean = false,
         val discardPrice: Boolean = false,
@@ -50,7 +53,7 @@ internal object BillingUiReducer {
             state.copy(
                 phase = BillingPhase.Connecting,
                 priceText = null,
-                message = L10n.text("Connecting to Google Play…"),
+                pendingMessage = Messages.billingConnectingToGooglePlayMessage(),
                 retryable = false,
                 purchaseEnabled = false,
             )
@@ -66,7 +69,7 @@ internal object BillingUiReducer {
             state.copy(
                 phase = BillingPhase.LoadingProduct,
                 priceText = null,
-                message = L10n.text("Loading price from Google Play…"),
+                pendingMessage = Messages.billingLoadingPriceFromGooglePlayMessage(),
                 retryable = false,
                 purchaseEnabled = false,
             )
@@ -89,21 +92,21 @@ internal object BillingUiReducer {
 
         BillingUiEvent.Restoring -> state.copy(
             phase = BillingPhase.Restoring,
-            message = L10n.text("Checking Google Play for your purchase…"),
+            pendingMessage = Messages.billingCheckingGooglePlayForYourPurchaseMessage(),
             retryable = false,
             purchaseEnabled = false,
         )
 
         BillingUiEvent.Purchasing -> state.copy(
             phase = BillingPhase.Purchasing,
-            message = L10n.text("Opening Google Play…"),
+            pendingMessage = Messages.billingOpeningGooglePlayMessage(),
             retryable = false,
             purchaseEnabled = false,
         )
 
         is BillingUiEvent.Pending -> state.copy(
             phase = BillingPhase.Pending,
-            message = event.message,
+            pendingMessage = event.message,
             retryable = false,
             purchaseEnabled = false,
         )
@@ -125,7 +128,7 @@ internal object BillingUiReducer {
             state.copy(
                 phase = BillingPhase.Error,
                 priceText = price,
-                message = event.message,
+                pendingMessage = event.message,
                 retryable = event.retryable,
                 purchaseEnabled = event.allowPurchase && price != null,
             )
