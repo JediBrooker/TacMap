@@ -4,6 +4,7 @@ import SwiftUI
 /// Location"; pass a shorter title + icon for the paired "Map" button that
 /// reframes an imported offline map.
 struct CentreButton: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     var title: String = L10n.text("Centre on My Location")
     var systemImage: String = "location.viewfinder"
     let action: () -> Void

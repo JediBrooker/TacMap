@@ -6,6 +6,7 @@ import UIKit
 /// size exactly so SwiftUI hit-testing lines up with visible pixels,
 /// no padding-induced tap hijack.
 struct TacticalControlMeasureSymbolView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let measure: TacticalControlMeasure
     /// Clockwise rotation in degrees. 0 = canonical orientation.
     var rotation: Double = 0

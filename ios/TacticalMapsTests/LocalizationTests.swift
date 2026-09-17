@@ -2,6 +2,36 @@ import XCTest
 @testable import TacticalMaps
 
 final class LocalizationTests: XCTestCase {
+    func testLanguageChoicePersistsAndInvalidChoiceFallsBackToDevice() throws {
+        let name = "LocalizationTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let language = AppLanguage(defaults: defaults)
+        XCTAssertEqual(language.selection, .system)
+        language.select(.de)
+        XCTAssertEqual(AppLanguage(defaults: defaults).selection, .de)
+        defaults.set("unsupported", forKey: AppLanguage.preferenceKey)
+        XCTAssertEqual(AppLanguage(defaults: defaults).selection, .system)
+    }
+
+    func testLanguageChangesRefreshTextPluralsAndCatalogs() {
+        let language = AppLanguage.shared
+        let original = language.selection
+        defer { language.select(original) }
+        language.select(.en)
+        XCTAssertEqual(L10n.text("Save"), "Save")
+        XCTAssertEqual(MarkerCatalog.teamColors[0].name, "Red")
+        language.select(.de)
+        XCTAssertEqual(L10n.text("Save"), "Speichern")
+        XCTAssertEqual(L10n.quantity("point", 1), "1 Punkt")
+        XCTAssertEqual(L10n.quantity("point", 2), "2 Punkte")
+        XCTAssertEqual(MarkerCatalog.teamColors[0].name, "Rot")
+        language.select(.en)
+        XCTAssertEqual(L10n.text("Save"), "Save")
+        XCTAssertEqual(L10n.quantity("point", 2), "2 points")
+        XCTAssertEqual(MarkerCatalog.teamColors[0].name, "Red")
+    }
+
     private func resources(_ language: String) throws -> Bundle {
         let path = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj"))
         return try XCTUnwrap(Bundle(path: path))

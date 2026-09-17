@@ -5,6 +5,7 @@ import MapKit
 /// a new waypoint at map centre and opens the edit sheet so you can name
 /// and symbolise it.
 struct WaypointListSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var mapVM: MapViewModel

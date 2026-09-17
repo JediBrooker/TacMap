@@ -4,6 +4,7 @@ import CoreLocation
 /// Modal that asks user for the MGRS of a tapped fiduciary point.
 /// Pops up automatically when session.pendingTap != nil.
 struct CalibrationInputSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var session: CalibrationSession
     /// Closure called when the user dismisses without confirming, so we can
     /// clear the pending tap.

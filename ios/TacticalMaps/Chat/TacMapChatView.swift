@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TacMapChatView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var manager: SyncManager
     @ObservedObject var store: TacMapChatStore
     @Environment(\.dismiss) private var dismiss

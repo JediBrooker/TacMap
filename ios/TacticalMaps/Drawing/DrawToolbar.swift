@@ -3,6 +3,7 @@ import SwiftUI
 /// Floating bottom HUD while a drawing session is active.
 /// Replaces the centre-on-location button in drawing mode.
 struct DrawToolbar: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var session: DrawingSessionViewModel
     let onFinish: () -> Void
 

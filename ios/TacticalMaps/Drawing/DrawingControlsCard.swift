@@ -37,6 +37,7 @@ struct DrawingSliderTransaction {
 /// map. Same idea as `SymbolControlsCard` for waypoints: name, colour,
 /// solid/dashed, stroke width, delete.
 struct DrawingControlsCard: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var drawingStore: DrawingStore
     let drawingID: UUID
     let crosshairCoordinate: CLLocationCoordinate2D

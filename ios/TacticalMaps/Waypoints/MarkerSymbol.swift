@@ -43,12 +43,12 @@ enum MarkerCatalog {
     }
 
     /// Airsoft team colours the picker offers (the team IS the colour).
-    static let teamColors: [(name: String, hex: String)] = [
+    static var teamColors: [(name: String, hex: String)] { [
         (L10n.text("Red"), "#E23B3B"), (L10n.text("Blue"), "#3B7BE0"), (L10n.text("Green"), "#3BC85A"),
         (L10n.text("Yellow"), "#EBC12E"), (L10n.text("Orange"), "#F2872E")
-    ]
+    ] }
 
-    static let airsoft: [Entry] = [
+    static var airsoft: [Entry] { [
         // Team marker - colour carries the team, glyph is a person.
         .init(id: "team", name: L10n.text("Team Member"), sfSymbol: "person.fill", defaultColorHex: "#3B7BE0"),
         // Objectives
@@ -70,9 +70,9 @@ enum MarkerCatalog {
         .init(id: "squadlead", name: L10n.text("Squad Lead"), sfSymbol: "star.fill", defaultColorHex: "#EBC12E"),
         .init(id: "grenadier", name: L10n.text("Grenadier"), sfSymbol: "burst.fill", defaultColorHex: "#F2872E"),
         .init(id: "breacher", name: L10n.text("Breacher"), sfSymbol: "hammer.fill", defaultColorHex: "#8A93A6"),
-    ]
+    ] }
 
-    static let sar: [Entry] = [
+    static var sar: [Entry] { [
         .init(id: "pls", name: L10n.text("Point Last Seen (PLS)"), sfSymbol: "eye.fill", defaultColorHex: "#E23B3B"),
         .init(id: "lkp", name: L10n.text("Last Known Position (LKP)"), sfSymbol: "mappin.slash", defaultColorHex: "#E23B3B"),
         .init(id: "ipp", name: L10n.text("Initial Planning Point (IPP)"), sfSymbol: "mappin.and.ellipse", defaultColorHex: "#F2872E"),
@@ -91,9 +91,9 @@ enum MarkerCatalog {
         .init(id: "hazard", name: L10n.text("Hazard"), sfSymbol: "exclamationmark.triangle.fill", defaultColorHex: "#EBC12E"),
         .init(id: "containment", name: L10n.text("Containment"), sfSymbol: "shield.lefthalf.filled", defaultColorHex: "#F2872E"),
         .init(id: "roadblock", name: L10n.text("Road Block"), sfSymbol: "hand.raised.fill", defaultColorHex: "#E23B3B"),
-    ]
+    ] }
 
-    static let poi: [Entry] = [
+    static var poi: [Entry] { [
         .init(id: "medical", name: L10n.text("Medical"), sfSymbol: "cross.case.fill", defaultColorHex: "#E23B3B"),
         .init(id: "water", name: L10n.text("Water"), sfSymbol: "drop.fill", defaultColorHex: "#3B7BE0"),
         .init(id: "comms", name: L10n.text("Comms"), sfSymbol: "antenna.radiowaves.left.and.right", defaultColorHex: "#3B7BE0"),
@@ -101,7 +101,7 @@ enum MarkerCatalog {
         .init(id: "hazard", name: L10n.text("Hazard"), sfSymbol: "exclamationmark.triangle.fill", defaultColorHex: "#EBC12E"),
         .init(id: "checkpoint", name: L10n.text("Checkpoint"), sfSymbol: "checkmark.shield.fill", defaultColorHex: "#3BC85A"),
         .init(id: "pin", name: L10n.text("Marker"), sfSymbol: "mappin", defaultColorHex: "#EBC12E"),
-    ]
+    ] }
 
     static func entries(for set: MarkerSet) -> [Entry] {
         switch set {

@@ -11983,5 +11983,51 @@
       "ios",
       "android"
     ]
+  },
+  "ui_language_a4fe6526": {
+    "en": "Language",
+    "de": "Sprache",
+    "platforms": [
+      "ios",
+      "android"
+    ]
+  },
+  "ui_device_language_1dd6611c": {
+    "en": "Device language",
+    "de": "Gerätesprache",
+    "platforms": [
+      "ios",
+      "android"
+    ]
+  },
+  "ui_could_not_save_the_language_setting_try_again_3217b525": {
+    "en": "Could not save the language setting. Try again.",
+    "de": "Die Spracheinstellung konnte nicht gespeichert werden. Versuche es erneut.",
+    "platforms": [
+      "ios",
+      "android"
+    ]
+  },
+  "ui_recording_is_controlled_separately_bf1d9aae": {
+    "en": "recording is controlled separately.",
+    "de": "Die Trackaufzeichnung wird separat gesteuert.",
+    "platforms": [
+      "ios",
+      "android"
+    ]
+  },
+  "ui_unit_sync_background_help_0565ba22": {
+    "en": "Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, iOS shows its background-location indicator, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately.",
+    "de": "Standardmäßig aus. Während die App aktiv ist, aktualisiert Unit Sync den Standort nahezu in Echtzeit (etwa alle 5 Sekunden). Das gewählte Intervall betrifft nur Hintergrundaktualisierungen bei ausgeschaltetem Bildschirm. Wenn aktiviert, kann ein beigetretener v3-Raum deine verschlüsselte Position nach der Bildschirmsperre weitergeben – aber nur, wenn auch „Meinen Standort teilen“ aktiviert ist. Hintergrundaktualisierungen erfolgen nach Möglichkeit. iOS zeigt seine Anzeige für die Standortnutzung im Hintergrund an. Bei der Rückkehr wird der Raum für einen verifizierten Datenstand neu verbunden. Die Trackaufzeichnung wird separat gesteuert.",
+    "platforms": [
+      "ios"
+    ]
+  },
+  "ui_cffa512f0d5c": {
+    "en": "Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, Android shows an ongoing location notification, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately.",
+    "de": "Standardmäßig aus. Während die App aktiv ist, aktualisiert Unit Sync den Standort nahezu in Echtzeit (etwa alle 5 Sekunden). Das gewählte Intervall betrifft nur Hintergrundaktualisierungen bei ausgeschaltetem Bildschirm. Wenn aktiviert, kann ein beigetretener v3-Raum deine verschlüsselte Position nach der Bildschirmsperre weitergeben – aber nur, wenn auch „Meinen Standort teilen“ aktiviert ist. Hintergrundaktualisierungen erfolgen nach Möglichkeit. Android zeigt eine dauerhafte Standortbenachrichtigung an. Bei der Rückkehr wird der Raum für einen verifizierten Datenstand neu verbunden. Die Trackaufzeichnung wird separat gesteuert.",
+    "platforms": [
+      "android"
+    ]
   }
 }

@@ -4,6 +4,7 @@ import MapKit
 /// Full list of saved drawings. Open via DrawingsPanel > "All Drawings".
 /// Per-row delete via trash button + swipe action.
 struct DrawingsSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var session: DrawingSessionViewModel
     @Environment(\.dismiss) private var dismiss

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 /// FeatureCollection, shows a preview, and offers ShareLink to
 /// write it out to Files / Mail / AirDrop / etc.
 struct ExportSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var drawingStore: DrawingStore
     @Environment(\.dismiss) private var dismiss

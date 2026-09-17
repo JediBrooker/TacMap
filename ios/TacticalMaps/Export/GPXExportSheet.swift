@@ -3,6 +3,7 @@ import SwiftUI
 /// Exports the recorded GPX track: writes a temp `.gpx` and offers `ShareLink`
 /// to Files / AirDrop / Mail, etc.
 struct GPXExportSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let points: [TrackPoint]
     @Environment(\.dismiss) private var dismiss
 

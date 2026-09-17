@@ -4,6 +4,7 @@ import SwiftUI
 /// picks "Drawings". Replaces the full `DrawingsSheet` modal for the
 /// common start-a-new-drawing path, full list is one tap away.
 struct DrawingsPanel: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var session: DrawingSessionViewModel
     let onShowAll: () -> Void

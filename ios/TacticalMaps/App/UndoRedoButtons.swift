@@ -3,6 +3,7 @@ import SwiftUI
 /// Undo/redo button pair. Shows below compass chip when there's
 /// history to navigate. Matches compass chip's dark-circle look.
 struct UndoRedoButtons: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let canUndo: Bool
     let canRedo: Bool
     let onUndo: () -> Void

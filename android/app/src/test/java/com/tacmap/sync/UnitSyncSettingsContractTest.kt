@@ -10,6 +10,19 @@ import java.io.File
 
 class UnitSyncSettingsContractTest {
     @Test
+    fun neitherPlatformExposesManualRelayControls() {
+        for (path in listOf(
+            "android/app/src/main/java/com/tacmap/map/OpsecSettingsDialog.kt",
+            "ios/TacticalMaps/App/OpsecSettingsView.swift",
+        )) {
+            val screen = sourceText(path)
+            for (removedControl in listOf("relayDraft", "Save relay", "Unit Sync relay", "wss://", "Custom relays")) {
+                assertFalse("$path exposes $removedControl", screen.contains(removedControl))
+            }
+        }
+    }
+
+    @Test
     fun backgroundLocationDefaultsOffAndCadenceChoicesRoundTripByMinutes() {
         assertFalse(OpsecSettings.DEFAULT_BACKGROUND_UNIT_SYNC_LOCATION)
         assertEquals(BackgroundUnitSyncInterval.FIFTEEN_MINUTES, BackgroundUnitSyncInterval.DEFAULT)

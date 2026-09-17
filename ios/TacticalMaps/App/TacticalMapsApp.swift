@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct TacticalMapsApp: App {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @StateObject private var store = StoreManager()
     private let trial = TrialManager()
 
@@ -26,6 +27,7 @@ struct TacticalMapsApp: App {
     var body: some Scene {
         WindowGroup {
             RootGate(store: store, trial: trial)
+                .environment(\.locale, appLanguage.locale)
                 .preferredColorScheme(.dark)
                 .statusBar(hidden: false)
         }
@@ -36,6 +38,7 @@ struct TacticalMapsApp: App {
 /// unlock is purchased or the free trial is still running. Re-checks
 /// on foreground so a trial that lapsed while backgrounded gates on resume.
 private struct RootGate: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var store: StoreManager
     let trial: TrialManager
     @Environment(\.scenePhase) private var scenePhase
@@ -124,6 +127,7 @@ private struct RootGate: View {
 /// Opaque branded cover for the privacy screen (app-switcher snapshot).
 /// Map and live position are never captured in the thumbnail.
 private struct PrivacyCoverView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()

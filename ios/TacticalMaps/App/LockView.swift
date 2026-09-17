@@ -4,6 +4,7 @@ import SwiftUI
 /// (auto-prompted) and 4-digit PIN fallback. After repeated failures
 /// PIN entry is throttled with escalating lockout (see AppLock).
 struct LockView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let onUnlocked: () -> Void
     @State private var pin = ""
     @State private var showError = false
@@ -85,6 +86,7 @@ struct LockView: View {
 /// PIN requires entering the current one so it can't be removed by someone
 /// who doesn't know it.
 struct AppLockSetupView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     @State private var isEnabled = AppLock.isEnabled
     @State private var currentPIN = ""

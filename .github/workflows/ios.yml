@@ -164,7 +164,7 @@ jobs:
             -resultBundlePath TestResults.xcresult \
             test 2>&1 | tee test.log | xcbeautify --renderer github-actions
 
-      - name: Run PDF picker smoke test (iPhone Simulator)
+      - name: Run PDF picker and settings smoke tests (iPhone Simulator)
         working-directory: ios
         shell: bash
         run: |
@@ -190,6 +190,7 @@ jobs:
             -clonedSourcePackagesDirPath /tmp/spm-cache \
             -derivedDataPath build \
             -only-testing:TacticalMapsUITests/PDFPickerSmokeTests \
+            -only-testing:TacticalMapsUITests/SettingsLanguageTests \
             -parallel-testing-enabled NO \
             -resultBundlePath PDFSmokeResults.xcresult \
             test 2>&1 | tee pdf-smoke-test.log | xcbeautify --renderer github-actions

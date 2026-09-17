@@ -13,10 +13,11 @@ object L10n {
 
     fun install(context: Context) {
         application = context.applicationContext
+        AppLanguage.install(context.applicationContext)
     }
 
     fun text(key: String, vararg arguments: Any?): String {
-        val context = application
+        val context = application?.let(AppLanguage::localizedContext)
         val id = localizedStringIds[key]
         val format = if (context != null && id != null) context.getString(id) else key
         if (arguments.isEmpty()) return format
@@ -25,7 +26,7 @@ object L10n {
     }
 
     fun quantity(noun: String, count: Int): String {
-        val context = application
+        val context = application?.let(AppLanguage::localizedContext)
         val id = localizedPluralIds.getValue(noun)
         if (context != null) return context.resources.getQuantityString(id, count, count)
         val forms = englishPlurals.getValue(noun)

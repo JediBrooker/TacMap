@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Modal listing toggleable overlay layers.
 struct LayersSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var visibility: LayerVisibility
     @ObservedObject var mapVM: MapViewModel
     @ObservedObject var drawingStore: DrawingStore
@@ -501,6 +502,7 @@ struct LayersSheet: View {
 
 /// Asks for a name + colour for a new drawing layer.
 private struct NewLayerSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let onCreate: (String, String) throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name: String = ""
@@ -576,6 +578,7 @@ private struct NewLayerSheet: View {
 
 /// Edits a custom layer's name and colour as one durable transaction.
 private struct EditLayerSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let layer: DrawingLayer
     let onSave: (String, String) throws -> Void
     @Environment(\.dismiss) private var dismiss

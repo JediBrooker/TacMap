@@ -4,16 +4,28 @@ import CoreLocation
 /// General, privacy and OPSEC settings: map coordinate display, privacy screen,
 /// independently switchable online lookups and basemaps, and at-rest key binding.
 struct OpsecSettingsView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var opsec = OpsecSettings.shared
 
     @State private var authBound = DataKey.isAuthBound
     @State private var keyError: String?
-    @State private var relayDraft = OpsecSettings.shared.relayURL
 
     var body: some View {
         NavigationStack {
             Form {
+                Section(L10n.text("Language")) {
+                    Picker(L10n.text("Language"), selection: Binding(
+                        get: { appLanguage.selection },
+                        set: { appLanguage.select($0) }
+                    )) {
+                        ForEach(AppLanguage.Choice.allCases) { choice in
+                            Text(choice.label).tag(choice)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.language")
+                }
+
                 if let issue = opsec.persistenceIssue {
                     Section(L10n.text("Settings need attention")) {
                         Text(issue)
@@ -104,32 +116,10 @@ struct OpsecSettingsView: View {
                     }
                     .disabled(!opsec.backgroundUnitSyncLocation)
 
-                    TextField(L10n.text("Unit Sync relay"), text: $relayDraft)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .submitLabel(.done)
-                        .onSubmit(saveRelay)
-                        .onChange(of: relayDraft) { _ in
-                            opsec.clearRelayValidationIssue()
-                        }
-                    HStack {
-                        Button(L10n.text("Save relay"), action: saveRelay)
-                            .disabled(relayDraft == opsec.relayURL)
-                        Spacer()
-                        Button(L10n.text("Use default"), action: resetRelay)
-                            .disabled(opsec.relayURL == OpsecSettings.defaultRelay &&
-                                      relayDraft == OpsecSettings.defaultRelay)
-                    }
-                    if let issue = opsec.relayValidationIssue {
-                        Text(issue)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
                 } header: {
                     Text(L10n.text("Unit Sync"))
                 } footer: {
-                    Text(L10n.text("Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, iOS shows its background-location indicator, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately. Custom relays must use secure wss://. Debug builds also permit ws:// only on this device's loopback address."))
+                    Text(L10n.text("Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, iOS shows its background-location indicator, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately."))
                 }
 
                 Section {
@@ -182,18 +172,6 @@ struct OpsecSettingsView: View {
             keyError = error.localizedDescription
         }
         authBound = DataKey.isAuthBound
-    }
-
-    private func saveRelay() {
-        if opsec.setRelayURL(relayDraft) {
-            relayDraft = opsec.relayURL
-        }
-    }
-
-    private func resetRelay() {
-        if opsec.resetRelayURL() {
-            relayDraft = opsec.relayURL
-        }
     }
 
     private func settingBinding<Value>(

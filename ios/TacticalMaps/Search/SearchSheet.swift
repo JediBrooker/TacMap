@@ -75,10 +75,12 @@ struct OnlinePlaceLookupOutcome {
 /// inject a provider spy through `perform`, so the no-egress guarantee covers
 /// the same orchestration path the SwiftUI sheet uses rather than fixture data.
 enum OnlinePlaceLookup {
-    static let disabledStatus =
+    static var disabledStatus: String {
         L10n.text("Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work.")
-    static let unavailableStatus =
+    }
+    static var unavailableStatus: String {
         L10n.text("Place search unavailable offline — MGRS, grid and lat/lon still work.")
+    }
 
     static func decision(rawQuery: String,
                          offlineOutput: OfflineSearchOutput,
@@ -123,8 +125,9 @@ enum OnlinePlaceLookup {
 /// Pure, deterministic, offline-only mission search. Online providers are
 /// deliberately absent from this type and are appended by SearchSheet.
 enum OfflineSearchEngine {
-    static let coordinateRangeMessage =
+    static var coordinateRangeMessage: String {
         L10n.text("Latitude must be between -90 and 90, and longitude between -180 and 180.")
+    }
 
     static func records(waypoints: [Waypoint],
                         drawings: [DrawingShape],
@@ -398,6 +401,7 @@ enum OfflineSearchEngine {
 }
 
 struct SearchSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var mapVM: MapViewModel
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var drawingStore: DrawingStore

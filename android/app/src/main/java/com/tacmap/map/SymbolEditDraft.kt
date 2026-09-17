@@ -10,7 +10,7 @@ import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.normalizedUnitAmplifiersForKind
 
-internal val ELEVATION_VALIDATION_ERROR = L10n.text("Enter a valid elevation in metres.")
+internal val ELEVATION_VALIDATION_ERROR: String get() = L10n.text("Enter a valid elevation in metres.")
 internal val MGRS_MOVE_VALIDATION_ERROR =
     L10n.text("Enter a 4, 6, 8, or 10-figure grid, or full MGRS at one of those precisions.")
 

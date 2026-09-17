@@ -4,6 +4,7 @@ import SwiftUI
 /// controls live in a scroll-safe sheet so draft gestures never publish model
 /// changes or trigger persistence writes.
 struct SymbolControlsCard: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var mapVM: MapViewModel

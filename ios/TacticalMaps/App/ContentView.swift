@@ -472,6 +472,7 @@ enum ImportedMapWorker {
 }
 
 struct ContentView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @StateObject private var locationService: LocationService
     @StateObject private var waypointStore   = WaypointStore()
     @StateObject private var drawingStore    = DrawingStore()
@@ -1915,6 +1916,7 @@ struct ContentView: View {
 }
 
 private struct MissionDataUnlockView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let detail: String?
     let unlock: () -> Void
 
@@ -1938,6 +1940,7 @@ private struct MissionDataUnlockView: View {
 /// nothing at all. Explain that, b/c a blank map with no message reads as a
 /// broken app rather than a deliberate OPSEC posture.
 private struct NoBasemapNotice: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     var body: some View {
         VStack(spacing: 6) {
             Text(L10n.text("No basemap")).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)

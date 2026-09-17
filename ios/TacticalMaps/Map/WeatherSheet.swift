@@ -5,6 +5,7 @@ import CoreLocation
 /// on map centre, we fetch conditions and show green/amber/red
 /// drone risk assesment.
 struct WeatherSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let coordinate: CLLocationCoordinate2D
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var opsec = OpsecSettings.shared

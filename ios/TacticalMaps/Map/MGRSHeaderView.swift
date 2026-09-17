@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 /// Tap to copy the displayed coordinate. Long-press to drop a waypoint here
 /// (caller provides closure, nil disables it).
 struct MGRSHeaderView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let mgrs: String
     let wgs84: String
     /// User-facing UTM readout (e.g. "33N 450000mE 6700000mN").

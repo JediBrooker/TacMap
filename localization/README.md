@@ -1,9 +1,10 @@
 # English and German localization
 
-TacMap follows the language selected by the operating system. German (`de`)
-covers Germany, Austria and Switzerland; English is the fallback. Android 13+
-also exposes English and German in the system's app-language settings. iOS uses
-its native app-language selection. No network translation service is used.
+Settings, Privacy & OPSEC → Language offers English, Deutsch, and Device language
+on both platforms. The choice is saved and updates app labels immediately without
+restarting the map or recording session. Device language follows the operating
+system, with English as the fallback. System permission dialogs use the operating
+system's language. No network translation service is used.
 
 ## Editing copy
 

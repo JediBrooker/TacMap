@@ -11,6 +11,26 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalizationTest {
+    @Test fun languageSelectionPersistsAndRefreshesTextAndPlurals() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        L10n.install(context)
+        val original = AppLanguage.selection
+        try {
+            org.junit.Assert.assertTrue(AppLanguage.select(context, AppLanguage.Choice.ENGLISH))
+            assertEquals("Save", L10n.text("Save"))
+            org.junit.Assert.assertTrue(AppLanguage.select(context, AppLanguage.Choice.GERMAN))
+            assertEquals("Speichern", L10n.text("Save"))
+            assertEquals("1 Punkt", L10n.quantity("point", 1))
+            assertEquals("2 Punkte", L10n.quantity("point", 2))
+            AppLanguage.install(context)
+            assertEquals(AppLanguage.Choice.GERMAN, AppLanguage.selection)
+            org.junit.Assert.assertTrue(AppLanguage.select(context, AppLanguage.Choice.ENGLISH))
+            assertEquals("Save", L10n.text("Save"))
+        } finally {
+            AppLanguage.select(context, original)
+        }
+    }
+
     private fun resources(language: String): Resources {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val configuration = Configuration(context.resources.configuration)

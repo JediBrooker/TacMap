@@ -3,6 +3,7 @@ import SwiftUI
 /// HUD overlay shown during a calibration session. Sits across top of
 /// screen, shows fiduciary count + Finish/Cancel buttons.
 struct CalibrationOverlay: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var session: CalibrationSession
     let onFinish: () -> Void
     let onCancel: () -> Void

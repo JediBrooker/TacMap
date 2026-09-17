@@ -3,6 +3,7 @@ import SwiftUI
 /// Bottom HUD for the measure tool. Shows running distance,
 /// last-segment bearing in mils, area (3+ pts), undo + done.
 struct MeasureToolbar: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var session: MeasureSession
 
     var body: some View {

@@ -3,6 +3,7 @@ import SwiftUI
 /// Credits screen (App Store compliant). Lists every third-party lib or
 /// data source we use with its license + project link.
 struct AcknowledgementsView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     /// Captured once on appear so the "Clear" button can hide the section
     /// without a re-render fight.
@@ -120,6 +121,7 @@ struct AcknowledgementsView: View {
 }
 
 private struct LinkRow: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let title: String
     let subtitle: String
     let url: URL?

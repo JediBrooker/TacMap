@@ -5,6 +5,7 @@ import SwiftUI
 /// Control measures -> TacticalControlMeasureSymbolView
 /// Generic -> SF Symbol fallback
 struct WaypointKindIcon: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let kind: WaypointKind
     var size: CGFloat = 32
     /// Clockwise rotation in degrees. Only applied to control measures,

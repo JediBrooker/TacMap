@@ -1,6 +1,7 @@
 package com.tacmap.map
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.AppLanguage
 
 import android.app.Activity
 import android.app.KeyguardManager
@@ -37,10 +38,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.getSystemService
@@ -68,11 +65,9 @@ fun OpsecSettingsDialog(
     val primaryCoordinateType by opsec.primaryCoordinateType.collectAsState()
     val mapOrientationMode by opsec.mapOrientationMode.collectAsState()
     val persistenceIssue by opsec.persistenceIssue.collectAsState()
-    val relayUrl by opsec.relayUrl.collectAsState()
-    val relayValidationIssue by opsec.relayValidationIssue.collectAsState()
     var backgroundIntervalExpanded by remember { mutableStateOf(false) }
-    var relayDraft by remember(relayUrl) { mutableStateOf(relayUrl) }
     var authBound by remember { mutableStateOf(DataKey.isAuthBound) }
+    var languageError by remember { mutableStateOf(false) }
     var keyError by remember { mutableStateOf<String?>(null) }
     val authController = remember {
         AuthBoundChangeController(object : AuthBoundChangeController.KeyProtection {
@@ -129,6 +124,23 @@ fun OpsecSettingsDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Text(L10n.text("Language"), fontWeight = FontWeight.SemiBold)
+                Column(Modifier.selectableGroup()) {
+                    AppLanguage.Choice.entries.forEach { choice ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().selectable(
+                                selected = AppLanguage.selection == choice,
+                                role = Role.RadioButton,
+                                onClick = { languageError = !AppLanguage.select(context, choice) },
+                            ).padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = AppLanguage.selection == choice, onClick = null)
+                            Text(choice.label, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+                if (languageError) Caption(L10n.text("Could not save the language setting. Try again."), Color(0xFFB00020))
                 persistenceIssue?.let { Caption(it, Color(0xFFB00020)) }
                 Text(L10n.text("Primary coordinate"), fontWeight = FontWeight.SemiBold)
                 CoordinateDisplayType.entries.forEach { type ->
@@ -213,57 +225,8 @@ fun OpsecSettingsDialog(
                         }
                     }
                 }
-                OutlinedTextField(
-                    value = relayDraft,
-                    onValueChange = {
-                        relayDraft = it
-                        opsec.clearRelayValidationIssue()
-                    },
-                    label = { Text(L10n.text("Unit Sync relay")) },
-                    singleLine = true,
-                    isError = relayValidationIssue != null,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Uri,
-                        imeAction = ImeAction.Done,
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (opsec.setRelayUrl(relayDraft)) relayDraft = opsec.relayUrl.value
-                        }
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        onClick = {
-                            if (opsec.setRelayUrl(relayDraft)) relayDraft = opsec.relayUrl.value
-                        },
-                        enabled = relayDraft != relayUrl,
-                    ) { Text(L10n.text("Save relay")) }
-                    TextButton(
-                        onClick = {
-                            if (opsec.resetRelayUrl()) relayDraft = opsec.relayUrl.value
-                        },
-                        enabled = relayUrl != OpsecSettings.DEFAULT_RELAY ||
-                            relayDraft != OpsecSettings.DEFAULT_RELAY,
-                    ) { Text(L10n.text("Use default")) }
-                }
-                relayValidationIssue?.let { Caption(it, Color(0xFFB00020)) }
                 Caption(
-                    L10n.text("Off by default. While the app is active, Unit Sync location remains ") +
-                        L10n.text("near-real-time (about every 5 seconds); the selected interval affects ") +
-                        L10n.text("only screen-off background updates. When enabled, a joined v3 room ") +
-                        L10n.text("can continue sharing your encrypted position after the screen locks—") +
-                        L10n.text("but only while Share my location is also on. Background updates are ") +
-                        L10n.text("best-effort, Android shows an ongoing location notification, and the ") +
-                        L10n.text("room reconnects for a verified snapshot when you return. Track ") +
-                        L10n.text("recording is controlled separately. Custom relays must use secure ") +
-                        L10n.text("wss://. Debug builds also permit ws:// only on this device's ") +
-                        L10n.text("loopback address.")
+                    L10n.text("Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, Android shows an ongoing location notification, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately.")
                 )
 
                 SettingRow(online, { opsec.setOnlineLookups(it) }, L10n.text("Online place, terrain & weather lookups"))

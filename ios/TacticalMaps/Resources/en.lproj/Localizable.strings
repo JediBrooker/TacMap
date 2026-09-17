@@ -201,6 +201,7 @@
 "Could not save reassigned drawings to disk: %1$@" = "Could not save reassigned drawings to disk: %1$@";
 "Could not save reassigned waypoints to disk: %1$@" = "Could not save reassigned waypoints to disk: %1$@";
 "Could Not Save Symbol" = "Could Not Save Symbol";
+"Could not save the language setting. Try again." = "Could not save the language setting. Try again.";
 "Could not save this privacy setting. The previous setting remains active; check available storage and try again." = "Could not save this privacy setting. The previous setting remains active; check available storage and try again.";
 "Could not save Unit Sync identity/location sharing. The previous setting remains active; check available storage and try again." = "Could not save Unit Sync identity/location sharing. The previous setting remains active; check available storage and try again.";
 "Could not save waypoint change" = "Could not save waypoint change";
@@ -259,6 +260,7 @@
 "Delete symbol?" = "Delete symbol?";
 "Delete Waypoint" = "Delete Waypoint";
 "Destroy" = "Destroy";
+"Device language" = "Device language";
 "Diagnostics" = "Diagnostics";
 "Discard drawing?" = "Discard drawing?";
 "Discard" = "Discard";
@@ -434,6 +436,7 @@
 "KMZ has too many entries" = "KMZ has too many entries";
 "Labels" = "Labels";
 "Landing Zone" = "Landing Zone";
+"Language" = "Language";
 "Last known · %1$@" = "Last known · %1$@";
 "Last Known Position (LKP)" = "Last Known Position (LKP)";
 "Last map position • %1$@" = "Last map position • %1$@";
@@ -670,6 +673,7 @@
 "Recipient scope" = "Recipient scope";
 "Reconnaissance" = "Reconnaissance";
 "Recording did not start: %1$@" = "Recording did not start: %1$@";
+"recording is controlled separately." = "recording is controlled separately.";
 "Recording track — %1$@ points. Tap to stop." = "Recording track — %1$@ points. Tap to stop.";
 "recovery copy" = "recovery copy";
 "Red" = "Red";
@@ -998,6 +1002,7 @@
 "Unit Labels" = "Unit Labels";
 "Unit room code %1$@" = "Unit room code %1$@";
 "Unit Sync" = "Unit Sync";
+"Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, iOS shows its background-location indicator, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately." = "Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, iOS shows its background-location indicator, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately.";
 "Unit Sync disconnected. Check the relay or network; reconnecting automatically." = "Unit Sync disconnected. Check the relay or network; reconnecting automatically.";
 "Unit Sync…" = "Unit Sync…";
 "Unit Sync handshake timed out. Reconnecting automatically." = "Unit Sync handshake timed out. Reconnecting automatically.";

@@ -143,6 +143,7 @@
     <string name="ui_centre_of_1_grid_square_a670f680">"Centre of %1$s grid square"</string>
     <string name="ui_centre_on_my_location_82529ff7">"Centre on My Location"</string>
     <string name="ui_centres_the_map_on_your_latest_precise_location_a4532c96">"Centres the map on your latest precise location."</string>
+    <string name="ui_cffa512f0d5c">"Off by default. While the app is active, Unit Sync location remains near-real-time (about every 5 seconds); the selected interval affects only screen-off background updates. When enabled, a joined v3 room can continue sharing your encrypted position after the screen locks—but only while Share my location is also on. Background updates are best-effort, Android shows an ongoing location notification, and the room reconnects for a verified snapshot when you return. Track recording is controlled separately."</string>
     <string name="ui_change_layer_577636cc">"Change layer"</string>
     <string name="ui_change_marker_df9a120e">"Change Marker"</string>
     <string name="ui_change_military_unit_292101f0">"Change Military Unit"</string>
@@ -214,6 +215,7 @@
     <string name="ui_could_not_remove_encrypted_track_log_2bb0661d">"Could not remove encrypted track log"</string>
     <string name="ui_could_not_save_drawings_to_disk_1_165e4ac6">"Could not save drawings to disk: %1$s"</string>
     <string name="ui_could_not_save_drawings_to_disk_the_change_was_r_ac83ca6c">"Could not save drawings to disk; the change was reverted: %1$s"</string>
+    <string name="ui_could_not_save_the_language_setting_try_again_3217b525">"Could not save the language setting. Try again."</string>
     <string name="ui_could_not_save_this_privacy_setting_the_previous_0f572b30">"Could not save this privacy setting. The previous setting remains active; "</string>
     <string name="ui_could_not_save_unit_sync_identity_location_shari_07624acb">"Could not save Unit Sync identity/location sharing. The previous setting remains active; check available storage and try again."</string>
     <string name="ui_could_not_save_waypoints_to_disk_1_fcf2ddcb">"Could not save waypoints to disk: %1$s"</string>
@@ -247,6 +249,7 @@
     <string name="ui_delete_symbol_592ccd3a">"Delete symbol"</string>
     <string name="ui_delete_symbol_5adc871f">"Delete symbol?"</string>
     <string name="ui_destroy_ea9bb7ea">"Destroy"</string>
+    <string name="ui_device_language_1dd6611c">"Device language"</string>
     <string name="ui_device_while_on_esri_or_opentopomap_can_see_the__67cc60cf">"device. While on, Esri or OpenTopoMap can see the ground you are "</string>
     <string name="ui_discard_eb1a70e3">"Discard"</string>
     <string name="ui_discard_saved_track_3a850edd">"Discard Saved Track"</string>
@@ -452,6 +455,7 @@
     <string name="ui_label_0e66373f">"Label"</string>
     <string name="ui_labels_934b8899">"Labels"</string>
     <string name="ui_landing_zone_4224b1fc">"Landing Zone"</string>
+    <string name="ui_language_a4fe6526">"Language"</string>
     <string name="ui_last_known_1_ed4ae731">"Last known · %1$s"</string>
     <string name="ui_last_known_position_lkp_dd6530c0">"Last Known Position (LKP)"</string>
     <string name="ui_last_map_position_0d66e362">"Last map position • "</string>
@@ -670,6 +674,7 @@
     <string name="ui_reconciled_1_live_id_collision_s_c2e626c8">"; reconciled %1$s live ID collision(s)"</string>
     <string name="ui_reconnaissance_ba7fab76">"Reconnaissance"</string>
     <string name="ui_recording_can_continue_but_android_may_hide_its__541d029a">"Recording can continue, but Android may hide its ongoing notification "</string>
+    <string name="ui_recording_is_controlled_separately_bf1d9aae">"recording is controlled separately."</string>
     <string name="ui_recording_is_controlled_separately_custom_relays_facdeeac">"recording is controlled separately. Custom relays must use secure "</string>
     <string name="ui_recording_notification_is_off_b63ecf70">"Recording notification is off"</string>
     <string name="ui_recording_patrol_track_14d5006e">"Recording patrol track"</string>

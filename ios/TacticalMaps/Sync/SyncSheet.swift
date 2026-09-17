@@ -21,6 +21,7 @@ private struct PendingUnitSyncJoin: Identifiable {
 
 /// Join / create a unit sync room and show connection status.
 struct SyncSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var manager: SyncManager
     let onOpenChat: (TacMapChatRoute) -> Void
     @ObservedObject private var opsec = OpsecSettings.shared

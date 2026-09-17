@@ -4,6 +4,7 @@ import SwiftUI
 /// b/c we need full-width 54pt buttons with 28pt icons - system Menu
 /// rows were too hard to tap on a real phone.
 struct HamburgerMenu: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     /// Billing: show trial status + an unlock entry point (hidden once bought).
     let isPurchased: Bool
     let trialDaysRemaining: Int
@@ -52,6 +53,7 @@ struct HamburgerMenu: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L10n.text("Menu"))
+        .accessibilityIdentifier("map.menu")
         /// Large detent only - medium sheet clips the bottom rows on
         /// shorter iPhones. ScrollView so everything's reachable.
         .sheet(isPresented: $isOpen, onDismiss: runPendingAction) {
@@ -84,6 +86,7 @@ struct HamburgerMenu: View {
                         row(L10n.text("Unit Sync…"), systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
                         row(L10n.text("App Lock…"), systemImage: "lock.shield")               { close(onAppLock) }
                         row(L10n.text("Settings, Privacy & OPSEC"), systemImage: "eye.slash.fill") { close(onOpsec) }
+                            .accessibilityIdentifier("menu.settings")
                         row(L10n.text("About & Credits"), systemImage: "info.circle")         { close(onAbout) }
                     }
                 }
@@ -255,6 +258,7 @@ struct HamburgerMenu: View {
 /// Truthful GPX workflow pill. Only the `.recording` state renders the red,
 /// pulsing `REC`; permission and durable-start states use distinct copy.
 struct RecordingIndicator: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let state: RecordingCoordinator.State
     let pointCount: Int
     let onStop: () -> Void
@@ -348,6 +352,7 @@ struct RecordingIndicator: View {
 /// Lock toggle. Freezes all graphics when on - no select, drag, or
 /// vertex-edit. Sits under the undo/redo buttons in right rail.
 struct LockButton: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let locked: Bool
     let onToggle: () -> Void
 
@@ -372,6 +377,7 @@ struct LockButton: View {
 }
 
 struct UnitLabelsToggle: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let active: Bool
     let onToggle: () -> Void
 
@@ -397,6 +403,7 @@ struct UnitLabelsToggle: View {
 /// Only the aggregate unread count leaves the sealed chat store; message IDs,
 /// conversation metadata and plaintext remain private to that store.
 struct TacMapChatShortcutButton: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var store: TacMapChatStore
     let action: () -> Void
 
@@ -447,6 +454,7 @@ struct TacMapChatShortcutButton: View {
 /// the top-left HUD rail so adding a symbol no longer requires opening the
 /// hamburger menu and then the full symbology list first.
 struct QuickAddSymbolButton: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let action: () -> Void
 
     var body: some View {
@@ -468,6 +476,7 @@ struct QuickAddSymbolButton: View {
 /// Top-right compass chip. N marker rotates live with map heading,
 /// lower half shows NATO mils (6400/circle). Tap to reset to north.
 struct CompassChip: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     /// Map heading in degrees (0 = north-up, 90 = east-up).
     let heading: Double
     let orientationMode: MapOrientationMode

@@ -4,6 +4,7 @@ import SwiftUI
 /// MGRS header “Map Centre” line), double-shadow glow so its
 /// readable on any basemap.
 struct CrosshairOverlay: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     /// same orange as MGRSHeaderView's status row
     private let tactical = Color.orange
 

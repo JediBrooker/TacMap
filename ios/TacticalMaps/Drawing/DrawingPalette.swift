@@ -20,10 +20,10 @@ enum DrawingPalette {
     }
 
     /// Default colour for a fresh drawing session.
-    static let `default` = swatches[0]
+    static var `default`: Swatch { swatches[0] }
 
     /// Swatches in grid order (4 cols x 3 rows in the palette menu).
-    static let swatches: [Swatch] = [
+    static var swatches: [Swatch] { [
         .init(L10n.text("Orange"),  "#FFA500"),
         .init(L10n.text("Red"),     "#E03434"),
         .init(L10n.text("Crimson"), "#B30000"),
@@ -36,7 +36,7 @@ enum DrawingPalette {
         .init(L10n.text("Magenta"), "#FF2D92"),
         .init(L10n.text("White"),   "#FFFFFF"),
         .init(L10n.text("Black"),   "#1A1A1A"),
-    ]
+    ] }
 
     /// Look up swatch by hex (case-insensitive) to get its display name.
     static func swatch(forHex hex: String) -> Swatch? {

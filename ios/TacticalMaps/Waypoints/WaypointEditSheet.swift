@@ -7,7 +7,7 @@ struct SymbolEditDraft: Equatable {
         "higherFormation", "uniqueIdentifier", "reinforcementStatus", "mgrs",
         "rotationDegrees", "scaleX", "scaleY", "delete",
     ]
-    static let elevationValidationError = L10n.text("Enter a valid elevation in metres.")
+    static var elevationValidationError: String { L10n.text("Enter a valid elevation in metres.") }
 
     var name: String
     var kind: WaypointKind
@@ -134,21 +134,22 @@ struct SymbolEditDraft: Equatable {
 /// controls and by fast unit tests when a hosted accessibility tree is absent.
 enum SymbolEditorAccessibility {
     static let minimumTargetPoints: CGFloat = 44
-    static let closeLabel = L10n.text("Close symbol editor")
-    static let moveLabel = L10n.text("Move symbol to crosshair")
-    static let deleteLabel = L10n.text("Delete symbol")
-    static let rotationLabel = L10n.text("Rotation")
-    static let widthLabel = L10n.text("Width scale")
-    static let heightLabel = L10n.text("Height scale")
-    static let resetRotationLabel = L10n.text("Reset rotation")
-    static let resetWidthLabel = L10n.text("Reset width scale")
-    static let resetHeightLabel = L10n.text("Reset height scale")
-    static let requiredLabels = [closeLabel, moveLabel, deleteLabel,
-                                 rotationLabel, widthLabel, heightLabel]
+    static var closeLabel: String { L10n.text("Close symbol editor") }
+    static var moveLabel: String { L10n.text("Move symbol to crosshair") }
+    static var deleteLabel: String { L10n.text("Delete symbol") }
+    static var rotationLabel: String { L10n.text("Rotation") }
+    static var widthLabel: String { L10n.text("Width scale") }
+    static var heightLabel: String { L10n.text("Height scale") }
+    static var resetRotationLabel: String { L10n.text("Reset rotation") }
+    static var resetWidthLabel: String { L10n.text("Reset width scale") }
+    static var resetHeightLabel: String { L10n.text("Reset height scale") }
+    static var requiredLabels: [String] { [closeLabel, moveLabel, deleteLabel,
+                                 rotationLabel, widthLabel, heightLabel] }
 
-    static let markerSwatches: [(name: String, hex: String)] =
+    static var markerSwatches: [(name: String, hex: String)] {
         MarkerCatalog.teamColors + [(name: L10n.text("Slate"), hex: "#8A93A6"),
                                     (name: L10n.text("Black"), hex: "#111417")]
+    }
 
     static func markerLabel(for hex: String) -> String {
         let name = markerSwatches.first {
@@ -169,6 +170,7 @@ enum SymbolPickerOptions {
 /// Builder for a brand-new symbol. Existing symbols always use the
 /// transactional `SelectedSymbolEditSheet` below.
 struct WaypointCreationSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var waypointStore: WaypointStore
     let defaultCoordinate: CLLocationCoordinate2D
     let defaultLayerID: UUID
@@ -572,6 +574,7 @@ struct WaypointCreationSheet: View {
 /// live on the selected-symbol quick-action card; Save and confirmed Delete
 /// each perform one durable-before-publish store mutation.
 struct SelectedSymbolEditSheet: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var drawingStore: DrawingStore
     let waypoint: Waypoint
@@ -1064,6 +1067,7 @@ private enum KindCategory: String, CaseIterable, Hashable {
 /// publishes, which resets its List scroll offset on iOS. This link and its
 /// immutable option IDs remain the same across those redraws.
 private struct StableNavigationSelection<Option: Hashable>: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let title: String
     let stableID: String
     let options: [Option]
@@ -1093,6 +1097,7 @@ private struct StableNavigationSelection<Option: Hashable>: View {
 }
 
 private struct StableOptionList<Option: Hashable>: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let title: String
     let options: [Option]
     @Binding var selection: Option
@@ -1128,6 +1133,7 @@ private struct StableOptionList<Option: Hashable>: View {
 }
 
 private struct UnitAmplifierFields: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @Binding var higherFormation: String
     @Binding var uniqueIdentifier: String
     @Binding var reinforcementStatus: ReinforcementStatus
@@ -1168,6 +1174,7 @@ private struct UnitAmplifierFields: View {
 /// Preset colour swatches for markers (the airsoft team colours plus a couple
 /// of neutrals), with the current pick ringed.
 private struct MarkerColorSwatches: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @Binding var selection: String
 
     var body: some View {
@@ -1206,6 +1213,7 @@ private struct MarkerColorSwatches: View {
 /// for simulator testing and flaky on device too. Plain SwiftUI Buttons
 /// don't have that issue.
 private struct KindCategorySegmentedPicker: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     @Binding var selection: KindCategory
 
     var body: some View {

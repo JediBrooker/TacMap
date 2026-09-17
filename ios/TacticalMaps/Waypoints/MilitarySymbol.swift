@@ -200,6 +200,7 @@ struct MilitarySymbolSpec: Hashable, Codable {
 /// Draws the APP-6C symbol in SwiftUI Canvas. Use in lists/pickers directly,
 /// or bake to UIImage via MilitarySymbolRenderer for MapKit annotations.
 struct MilitarySymbolView: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
     let spec: MilitarySymbolSpec
     var size: CGFloat = 56
 

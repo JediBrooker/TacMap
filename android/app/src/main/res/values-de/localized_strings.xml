@@ -143,6 +143,7 @@
     <string name="ui_centre_of_1_grid_square_a670f680">"Mitte des %1$s-Gitterquadrats"</string>
     <string name="ui_centre_on_my_location_82529ff7">"Auf meinen Standort zentrieren"</string>
     <string name="ui_centres_the_map_on_your_latest_precise_location_a4532c96">"Zentriert die Karte auf deinen zuletzt ermittelten genauen Standort."</string>
+    <string name="ui_cffa512f0d5c">"Standardmäßig aus. Während die App aktiv ist, aktualisiert Unit Sync den Standort nahezu in Echtzeit (etwa alle 5 Sekunden). Das gewählte Intervall betrifft nur Hintergrundaktualisierungen bei ausgeschaltetem Bildschirm. Wenn aktiviert, kann ein beigetretener v3-Raum deine verschlüsselte Position nach der Bildschirmsperre weitergeben – aber nur, wenn auch „Meinen Standort teilen“ aktiviert ist. Hintergrundaktualisierungen erfolgen nach Möglichkeit. Android zeigt eine dauerhafte Standortbenachrichtigung an. Bei der Rückkehr wird der Raum für einen verifizierten Datenstand neu verbunden. Die Trackaufzeichnung wird separat gesteuert."</string>
     <string name="ui_change_layer_577636cc">"Ebene wechseln"</string>
     <string name="ui_change_marker_df9a120e">"Marker ändern"</string>
     <string name="ui_change_military_unit_292101f0">"Militärische Einheit ändern"</string>
@@ -214,6 +215,7 @@
     <string name="ui_could_not_remove_encrypted_track_log_2bb0661d">"Verschlüsseltes Trackprotokoll konnte nicht entfernt werden"</string>
     <string name="ui_could_not_save_drawings_to_disk_1_165e4ac6">"Speichern fehlgeschlagen – Zeichnungen: %1$s"</string>
     <string name="ui_could_not_save_drawings_to_disk_the_change_was_r_ac83ca6c">"Zeichnungen konnten nicht gespeichert werden; die Änderung wurde zurückgenommen: %1$s"</string>
+    <string name="ui_could_not_save_the_language_setting_try_again_3217b525">"Die Spracheinstellung konnte nicht gespeichert werden. Versuche es erneut."</string>
     <string name="ui_could_not_save_this_privacy_setting_the_previous_0f572b30">"Diese Datenschutzeinstellung konnte nicht gespeichert werden. Die bisherige Einstellung bleibt aktiv. "</string>
     <string name="ui_could_not_save_unit_sync_identity_location_shari_07624acb">"Unit-Sync-Identität/Standortfreigabe konnte nicht gespeichert werden. Die bisherige Einstellung bleibt aktiv. Prüfe den verfügbaren Speicherplatz und versuche es erneut."</string>
     <string name="ui_could_not_save_waypoints_to_disk_1_fcf2ddcb">"Speichern fehlgeschlagen – Wegpunkte: %1$s"</string>
@@ -247,6 +249,7 @@
     <string name="ui_delete_symbol_592ccd3a">"Symbol löschen"</string>
     <string name="ui_delete_symbol_5adc871f">"Symbol löschen?"</string>
     <string name="ui_destroy_ea9bb7ea">"Vernichten"</string>
+    <string name="ui_device_language_1dd6611c">"Gerätesprache"</string>
     <string name="ui_device_while_on_esri_or_opentopomap_can_see_the__67cc60cf">"Gerät. Wenn aktiviert, können Esri oder OpenTopoMap anhand deiner IP-Adresse erkennen, welches Gebiet du "</string>
     <string name="ui_discard_eb1a70e3">"Verwerfen"</string>
     <string name="ui_discard_saved_track_3a850edd">"Gespeicherten Track verwerfen"</string>
@@ -452,6 +455,7 @@
     <string name="ui_label_0e66373f">"Beschriftung"</string>
     <string name="ui_labels_934b8899">"Beschriftungen"</string>
     <string name="ui_landing_zone_4224b1fc">"Landezone"</string>
+    <string name="ui_language_a4fe6526">"Sprache"</string>
     <string name="ui_last_known_1_ed4ae731">"Zuletzt bekannt · %1$s"</string>
     <string name="ui_last_known_position_lkp_dd6530c0">"Letzte bekannte Position (LKP)"</string>
     <string name="ui_last_map_position_0d66e362">"Letzte Kartenposition • "</string>
@@ -670,6 +674,7 @@
     <string name="ui_reconciled_1_live_id_collision_s_c2e626c8">"; %1$s Konflikte mit vorhandenen IDs abgeglichen"</string>
     <string name="ui_reconnaissance_ba7fab76">"Aufklärung"</string>
     <string name="ui_recording_can_continue_but_android_may_hide_its__541d029a">"Die Aufzeichnung kann weiterlaufen, aber Android blendet ihre dauerhafte Benachrichtigung möglicherweise "</string>
+    <string name="ui_recording_is_controlled_separately_bf1d9aae">"Die Trackaufzeichnung wird separat gesteuert."</string>
     <string name="ui_recording_is_controlled_separately_custom_relays_facdeeac">"Trackaufzeichnung wird separat gesteuert. Eigene Relays müssen sicheres "</string>
     <string name="ui_recording_notification_is_off_b63ecf70">"Aufzeichnungsbenachrichtigung ist aus"</string>
     <string name="ui_recording_patrol_track_14d5006e">"Patrouillentrack wird aufgezeichnet"</string>
