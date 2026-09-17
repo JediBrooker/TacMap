@@ -86,15 +86,6 @@ final class MeasureSession: ObservableObject {
 
 /// Formatting helpers for MeasureToolbar + the running HUD.
 enum MeasureFormat {
-    static func distance(_ m: Double) -> String {
-        if m < 1000 { return String(format: "%.0f m", m) }
-        if m < 100_000 { return String(format: "%.2f km", m / 1000) }
-        return String(format: "%.0f km", m / 1000)
-    }
-
-    static func area(_ sqm: Double) -> String {
-        if sqm < 10_000 { return String(format: "%.0f m²", sqm) }
-        if sqm < 1_000_000 { return String(format: "%.2f ha", sqm / 10_000) }
-        return String(format: "%.2f km²", sqm / 1_000_000)
-    }
+    static func distance(_ m: Double) -> String { DisplayFormat.distance(m) }
+    static func area(_ sqm: Double) -> String { DisplayFormat.area(sqm) }
 }

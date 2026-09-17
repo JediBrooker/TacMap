@@ -170,7 +170,7 @@ struct MGRSHeaderView: View {
     private var elevationText: String {
         guard let e = elevation else { return L10n.text("ELEV —") }
         let mark = elevationIsApproximate ? "~" : ""
-        return L10n.text("ELEV %1$@", mark + String(format: "%.0f m", e))
+        return L10n.text("ELEV %1$@", mark + (DisplayFormat.number(e, decimals: 0) + " m"))
     }
 }
 

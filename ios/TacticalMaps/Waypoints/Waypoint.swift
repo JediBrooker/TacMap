@@ -153,7 +153,7 @@ struct Waypoint: Identifiable, Codable, Hashable {
     }
 
     var subtitle: String? {
-        elevation.map { String(format: "%.0f m", $0) }
+        elevation.map { DisplayFormat.number($0, decimals: 0) + " m" }
     }
 
     /// Compact identity used by MapContainerView's refresh fingerprint.

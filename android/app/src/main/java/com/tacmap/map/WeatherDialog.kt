@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DisplayFormat
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.background
@@ -110,7 +112,7 @@ private fun Metric(name: String, value: Double?, unit: String) {
     ) {
         Text(name, color = Color.Gray)
         Text(
-            value?.let { "%.1f %s".format(it, unit) } ?: "—",
+            value?.let { DisplayFormat.number(it, 1) + " " + unit } ?: "—",
             fontWeight = FontWeight.SemiBold
         )
     }

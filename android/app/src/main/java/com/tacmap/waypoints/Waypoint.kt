@@ -1,5 +1,7 @@
 package com.tacmap.waypoints
 
+import com.tacmap.localization.DisplayFormat
+
 import com.tacmap.localization.L10n
 
 import kotlinx.serialization.KSerializer
@@ -44,7 +46,7 @@ data class Waypoint(
     @SerialName("layer_id") val layerId: String = DEFAULT_LAYER_ID,
     @SerialName("created_at_epoch_ms") val createdAt: Long = System.currentTimeMillis()
 ) {
-    val elevationLabel: String? get() = elevationMetres?.let { "%.0f m".format(it) }
+    val elevationLabel: String? get() = elevationMetres?.let { DisplayFormat.number(it, 0) + " m" }
 
     companion object {
         const val DEFAULT_LAYER_ID = "default"

@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DisplayFormat
+
 import com.tacmap.localization.L10n
 
 import android.widget.Toast
@@ -245,7 +247,7 @@ fun MgrsHeader(
 private fun elevationText(elevation: Double?, approx: Boolean): String {
     if (elevation == null) return L10n.text("ELEV —")
     val mark = if (approx) "~" else ""
-    return L10n.text("ELEV %1\$s", "%s%.0f m".format(mark, elevation))
+    return L10n.text("ELEV %1\$s", mark + DisplayFormat.number(elevation, 0) + " m")
 }
 
 private val SyncBlue = Color(0xFF4FA8FF)

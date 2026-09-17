@@ -129,3 +129,9 @@ now includes the localisation instrumentation tests in its emulator job.
 
 Use `python3 scripts/localization_coverage_report.py` to generate the per-component
 report. Counts describe scanned source, not completed linguistic/device review.
+
+## Display formatting
+
+Use `DisplayFormat` for migrated presentation values. It follows the app language
+and device region/time zone while preserving units. See [FORMATTING.md](FORMATTING.md)
+for the policy, data boundaries, covered screens and remaining migration work.

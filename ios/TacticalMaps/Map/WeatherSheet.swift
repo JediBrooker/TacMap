@@ -84,7 +84,7 @@ struct WeatherSheet: View {
         GridRow {
             Label(name, systemImage: icon)
                 .foregroundStyle(.secondary)
-            Text(value.map { String(format: "%.1f %@", $0, unit) } ?? "—")
+            Text(value.map { DisplayFormat.number($0, decimals: 1) + " " + unit } ?? "—")
                 .font(.system(.body, design: .rounded).weight(.semibold))
                 .gridColumnAlignment(.trailing)
         }

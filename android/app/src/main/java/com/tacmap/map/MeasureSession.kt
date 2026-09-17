@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DisplayFormat
+
 import android.location.Location
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -97,15 +99,6 @@ class MeasureSession {
 
 /** Format helpers used by the measure HUD. */
 object MeasureFormat {
-    fun distance(m: Double): String = when {
-        m < 1000 -> "%.0f m".format(m)
-        m < 100_000 -> "%.2f km".format(m / 1000)
-        else -> "%.0f km".format(m / 1000)
-    }
-
-    fun area(sqm: Double): String = when {
-        sqm < 10_000 -> "%.0f m²".format(sqm)
-        sqm < 1_000_000 -> "%.2f ha".format(sqm / 10_000)
-        else -> "%.2f km²".format(sqm / 1_000_000)
-    }
+    fun distance(m: Double): String = DisplayFormat.distance(m)
+    fun area(sqm: Double): String = DisplayFormat.area(sqm)
 }

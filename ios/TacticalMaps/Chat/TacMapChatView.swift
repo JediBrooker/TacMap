@@ -349,7 +349,7 @@ struct TacMapChatView: View {
                     .font(.body)
                     .textSelection(.enabled)
                 HStack(spacing: 5) {
-                    Text(message.sentAt, format: .dateTime.hour().minute())
+                    Text(DisplayFormat.time(message.sentAt))
                     if message.isOutgoing {
                         Text(deliveryLabel(message))
                     }

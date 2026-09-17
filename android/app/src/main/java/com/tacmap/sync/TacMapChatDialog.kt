@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.DisplayFormat
+
 import com.tacmap.localization.Messages
 
 import com.tacmap.localization.L10n
@@ -47,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import java.text.DateFormat
 import java.util.Date
 
 @Composable
@@ -421,7 +422,7 @@ private fun TacMapChatMessageRow(message: TacMapChatMessage) {
                 TacMapChatDeliveryState.FAILED -> L10n.text("Not routed")
             }
             Text(
-                "${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.sentAtMilliseconds))}" +
+                "${DisplayFormat.time(Date(message.sentAtMilliseconds))}" +
                     if (message.isOutgoing) " · $delivery" else "",
                 fontSize = 9.sp,
                 color = if (message.deliveryState == TacMapChatDeliveryState.FAILED) Color.Red else Color.Gray,
