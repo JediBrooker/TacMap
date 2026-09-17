@@ -60,7 +60,7 @@ struct TacMapChatView: View {
                 get: { sendIssue != nil },
                 set: { if !$0 { sendIssue = nil } }
             )) {
-                Button("OK", role: .cancel) { sendIssue = nil }
+                Button(L10n.text("OK"), role: .cancel) { sendIssue = nil }
             } message: {
                 Text(sendIssue ?? L10n.text("The message was not sent."))
             }

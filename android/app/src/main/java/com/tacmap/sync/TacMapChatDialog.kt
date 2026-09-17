@@ -340,7 +340,7 @@ fun TacMapChatDialog(
             title = { Text("TacMap Chat") },
             text = { Text(issue) },
             confirmButton = {
-                TextButton(onClick = { sendIssue = null }) { Text("OK") }
+                TextButton(onClick = { sendIssue = null }) { Text(L10n.text("OK")) }
             },
         )
     }

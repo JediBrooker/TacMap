@@ -10,7 +10,7 @@ on:
       - 'ios/**'
       - 'testdata/**'
       - 'localization/**'
-      - 'scripts/*localizations.py'
+      - 'scripts/*localization*.py'
       - '.github/workflows/ios.yml'
   pull_request:
     branches: [main]
@@ -18,7 +18,7 @@ on:
       - 'ios/**'
       - 'testdata/**'
       - 'localization/**'
-      - 'scripts/*localizations.py'
+      - 'scripts/*localization*.py'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
 
@@ -35,7 +35,9 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Validate English and German localizations
-        run: python3 scripts/check_localizations.py
+        run: |
+          python3 -m unittest discover -s scripts -p test_localization_audit.py
+          python3 scripts/check_localizations.py
 
       - name: Require Xcode 26
         shell: bash

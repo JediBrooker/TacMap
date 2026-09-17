@@ -10,7 +10,7 @@ on:
       - 'android/**'
       - 'testdata/**'
       - 'localization/**'
-      - 'scripts/*localizations.py'
+      - 'scripts/*localization*.py'
       - '.github/workflows/android.yml'
   pull_request:
     branches: [main]
@@ -18,7 +18,7 @@ on:
       - 'android/**'
       - 'testdata/**'
       - 'localization/**'
-      - 'scripts/*localizations.py'
+      - 'scripts/*localization*.py'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
@@ -33,7 +33,9 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Validate English and German localizations
-        run: python3 scripts/check_localizations.py
+        run: |
+          python3 -m unittest discover -s scripts -p test_localization_audit.py
+          python3 scripts/check_localizations.py
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
@@ -79,9 +81,9 @@ jobs:
             -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
 
   pdf-import-smoke:
-    name: PDF import smoke test
+    name: PDF import and localisation tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -103,7 +105,7 @@ jobs:
           set -euo pipefail
           sudo chmod 666 /dev/kvm
 
-      - name: Run end-to-end PDF import smoke test
+      - name: Run PDF import and localisation instrumentation tests
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
@@ -112,7 +114,7 @@ jobs:
           emulator-boot-timeout: 300
           working-directory: android
           script: >-
-            timeout 600 ./gradlew --no-daemon --dependency-verification strict
+            timeout 1200 ./gradlew --no-daemon --dependency-verification strict
             :app:connectedDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=com.tacmap.map.PdfImportSmokeTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.tacmap.map.PdfImportSmokeTest,com.tacmap.localization.LocalizationTest
             --stacktrace

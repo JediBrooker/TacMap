@@ -7,12 +7,13 @@ import plistlib
 import re
 import sys
 import xml.etree.ElementTree as ET
+from localization_audit import check as check_display_text
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    errors = []
+    errors, reviewed_literals, source_count = check_display_text(ROOT)
     catalog = json.loads((ROOT / 'localization/catalog.json').read_text())
     seen = set()
     for key, entry in catalog.items():
@@ -77,6 +78,7 @@ def main():
     if errors:
         print('\n'.join(errors), file=sys.stderr)
         return 1
+    print(f'Display guard: {source_count} registered source components, {reviewed_literals} reviewed literal occurrences.')
     print(f'Validated {len(catalog)} translations, {len(plurals)} plural families, native resource parity and literal lookup coverage.')
     return 0
 

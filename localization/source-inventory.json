@@ -1,0 +1,1676 @@
+[
+  {
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/AppLock.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/ContentView.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/CrashReporter.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/LockView.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/OpsecSettings.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/OpsecSettingsView.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/SheetSizing.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/TacticalMapsApp.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/UndoRedoButtons.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Billing/KeychainStore.swift",
+    "platform": "ios",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Billing/PaywallView.swift",
+    "platform": "ios",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Billing/StoreManager.swift",
+    "platform": "ios",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Billing/TrialManager.swift",
+    "platform": "ios",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/ActiveMapSelectionStore.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/AffineTransform2D.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationInputSheet.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationOverlay.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationSession.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/Datum.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/EsriKey.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/Fiduciary.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/GeoPDFReader.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/MBTilesStore.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/MBTilesWriter.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/MapSource.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/OfflineTileMapSource.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/OnlineRasterBasemapSource.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/PDFMapImporter.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/PDFMapSource.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/PDFOverlay.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/PDFSessionStore.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/PDFTiler.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/Projection.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/WebMercatorTiles.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Chat/TacMapChatCrypto.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Chat/TacMapChatMessage.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Chat/TacMapChatStore.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Chat/TacMapChatView.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/ColorHex.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawToolbar.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawingControlsCard.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawingLayer.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawingPalette.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawingSessionViewModel.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawingShape.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawingStore.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawingsPanel.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/DrawingsSheet.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/ExportSheet.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/LayerVisibility.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/LayersSheet.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/GPXExportSheet.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/GPXExporter.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/GeoJSONExporter.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/GeoJSONImporter.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/KMLImporter.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/MissionObjectExport.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/MGRS/MGRSFormatter.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/MGRS/MGRSGridRenderer.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/BlankBasemapOverlay.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/CrosshairOverlay.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/DrawingsOverlayView.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/ElevationService.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/GeoMagnetism.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/GridMagnetic.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/LockedSizeAnnotationView.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MBTilesTileOverlay.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MGRSGridOverlayView.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MGRSHeaderView.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MapBottomBar.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MapGeometry.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MapSideToolbar.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MapViewModel.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MeasureSession.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MeasureToolbar.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/DrawingDecorationsOverlayView.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/DrawingVectorShapes.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/HeatmapOverlayView.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/MapCamera.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/MapEditingController.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/MapHeading.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/PresenceOverlayView.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/RasterTileSource.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/TileMapContainer.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/TileMapView.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/TileMath.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/UserLocationOverlayView.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/VertexHandlesOverlayView.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/WebMercator.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/TacticalSymbolOverlay.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/TerrainHeatmapOverlay.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/TerrainHeatmapService.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/WeatherService.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/WeatherSheet.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Models/LocationService.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Models/TrackRecorder.swift",
+    "platform": "ios",
+    "area": "tracking",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Search/SearchSheet.swift",
+    "platform": "ios",
+    "area": "search",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/PresenceConfig.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/PresencePeer.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/PresenceQuality.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/RelayEndpointPolicy.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncCrypto.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncIdentity.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncInboundFramePolicy.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncManager.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncReplayState.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncSheet.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncSigning.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/VersionStamp.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/AppLanguage.swift",
+    "platform": "ios",
+    "area": "localisation-infrastructure",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/DataKey.swift",
+    "platform": "ios",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/ExportFileSecurity.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/L10n.swift",
+    "platform": "ios",
+    "area": "localisation-infrastructure",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/NetworkSession.swift",
+    "platform": "ios",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/SafeStore.swift",
+    "platform": "ios",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/SealedEnvelope.swift",
+    "platform": "ios",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/ShareSheetView.swift",
+    "platform": "ios",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/MarkerSymbol.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/MilitarySymbol.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/SymbolControlsCard.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/TacticalControlMeasureSymbol.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/Waypoint.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/WaypointEditSheet.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/WaypointKindIcon.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/WaypointListSheet.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/WaypointStore.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/AppLock.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/AppLockStorage.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/AppLockUi.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/CrashReporter.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/MainActivity.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/PendingDocumentImport.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/TacticalApp.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/TrackRecordingStartLifecycleGate.kt",
+    "platform": "android",
+    "area": "tracking",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/BillingEntitlement.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/BillingManager.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/BillingOperationPolicy.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/BillingStoreIssue.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/BillingUiState.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/PaywallScreen.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/SharedPreferencesBillingPersistence.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/TrialManager.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/ActiveMapSelectionStore.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/AffineTransform2D.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/Datum.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/EsriKey.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/Fiduciary.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/GeoPdfParser.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/LgiProjection.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/MBTilesStore.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/MBTilesWriter.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/ManagedImportedMapFileLifecycle.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/MapSource.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/OfflineTileMapSourceAndroid.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfMapSource.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfPageRenderer.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfSessionStore.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfTiler.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/WebMercatorTiles.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/drawings/Drawing.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/drawings/DrawingStore.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/ExportPipeline.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/ExternalImportCommitCoordinator.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/ExternalImportIdentityJournal.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/ExternalImportIdentityResolver.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/GeoJsonExporter.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/GeoJsonImporter.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/GpxExporter.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/KmlImporter.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/MissionObjectExport.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/localization/AppLanguage.kt",
+    "platform": "android",
+    "area": "localisation-infrastructure",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/localization/L10n.kt",
+    "platform": "android",
+    "area": "localisation-infrastructure",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/AboutDialog.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ActiveMapSelectionCommitCoordinator.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/AuthBoundChangeController.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/BoundedInput.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CrosshairMetrics.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CrosshairOverlay.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CustomMapScreen.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CustomMapTouch.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/DocumentImportCopy.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/DrawingLayersSheet.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/DrawingMutationUiCoordinator.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/DurableSymbolCreation.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ElevationService.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/GeoJsonImportHandler.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/GridMagnetic.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ImportExportSheet.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/LayerPrefs.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/LayerSelectorButton.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/LayersSheet.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MainMenuActions.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapCameraLifecycle.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapDrawingControls.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapGeometry.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapOrientationInteraction.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapScreen.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapScreenChrome.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapScreenHelpers.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapViewModel.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MeasureSession.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MeasureToolbar.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MgrsCoordinateResolver.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MgrsHeader.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MissionLayerMutations.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/OpsecSettingsDialog.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/PrimaryCoordinateDisplay.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/SearchDialog.kt",
+    "platform": "android",
+    "area": "search",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/SelectedSymbolEditorDialog.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/SymbolControlsCard.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/SymbolEditDraft.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/SymbolEditorDialog.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/SymbolIconFactory.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/TerrainHeatmapService.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/WaypointListSheet.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/WeatherDialog.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/WeatherService.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/CustomMapOverlays.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/MapCamera.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/MapProjection.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/ScopedTileLoadCoordinator.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/TileMapView.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/TileMath.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/TileSource.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/WebMercator.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/mgrs/MgrsFormatter.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/mgrs/MgrsGridRenderer.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/HeadingService.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/LocationService.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/ModelMutationEvent.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/TrackLog.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/TrackRecorder.kt",
+    "platform": "android",
+    "area": "tracking",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/TrackRecordingPreflight.kt",
+    "platform": "android",
+    "area": "tracking",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/TrackRecordingService.kt",
+    "platform": "android",
+    "area": "tracking",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/TrackRecordingState.kt",
+    "platform": "android",
+    "area": "tracking",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/settings/OpsecSettings.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/BackgroundUnitSyncLocationService.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/ForegroundPresenceLiveness.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/OnlineMember.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/OutboundDeliveryTracker.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/PresenceAccuracyV3.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/PresenceConfig.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/PresenceLocationQuality.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/PresencePayloadV3.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/PresencePeer.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/PresenceRetentionV3.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/RelayEndpointPolicy.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncCrypto.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncDialog.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncIdentity.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncInboundFramePolicy.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncIssueLifecycle.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncLifecycleGate.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncManager.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncReconnectBackoff.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncReplayState.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncSigning.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncWebSocketTransport.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/TacMapChatCrypto.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/TacMapChatDialog.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/TacMapChatHistoryStore.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/TacMapChatModels.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/TacMapChatWire.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/UnitSyncPresenceCadence.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/UnitSyncRuntime.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/V2SnapshotGate.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/VersionStamp.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/DataKey.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/DataKeyAuthModeTransition.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/DataKeyPayload.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/DurablePreferenceCommit.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/MissionStorePersistence.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/SafeStore.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/SealedEnvelope.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/SensitiveClipboard.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/waypoints/MarkerSymbol.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/waypoints/Waypoint.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/waypoints/WaypointStore.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  }
+]

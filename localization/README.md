@@ -67,3 +67,14 @@ These changes are integrated with the 2.0.0/build 64 source at `1c023de`.
 Store listing copy, screenshots and store-managed product metadata are not changed.
 Device layout review and Android instrumentation tests remain release checks.
 Signing material and machine-specific configuration remain ignored by Git.
+
+## Coverage and prevention
+
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the phased backlog and the source
+inventory. `check_localizations.py` also rejects new unapproved display literals,
+eager enum translations, missing source-inventory entries and stale exceptions.
+The guard's regression fixtures run on both platform CI workflows. Android CI
+now includes the localisation instrumentation tests in its emulator job.
+
+Use `python3 scripts/localization_coverage_report.py` to generate the per-component
+report. Counts describe scanned source, not completed linguistic/device review.

@@ -1675,7 +1675,7 @@ internal fun MapScreen(
                             vm.trackRecorder.acknowledgePersistError()
                         }
                     }
-                ) { Text(if (recordingStateMessage != null) L10n.text("Retry") else "OK") }
+                ) { Text(if (recordingStateMessage != null) L10n.text("Retry") else L10n.text("OK")) }
             },
             dismissButton = trackRecordingState.settingsTarget?.let { target ->
                 {
@@ -1728,7 +1728,7 @@ internal fun MapScreen(
                         if (waypointStoreError != null) waypointStore.acknowledgeLoadError()
                         else drawingStore.acknowledgeLoadError()
                     }
-                ) { Text("OK") }
+                ) { Text(L10n.text("OK")) }
             },
         )
     }

@@ -100,13 +100,13 @@ struct LayersSheet: View {
                    isPresented: Binding(get: { tilingError != nil },
                                         set: { if !$0 { tilingError = nil } }),
                    presenting: tilingError) { _ in
-                Button("OK", role: .cancel) { tilingError = nil }
+                Button(L10n.text("OK"), role: .cancel) { tilingError = nil }
             } message: { msg in Text(msg) }
             .alert(L10n.text("Layer change not saved"),
                    isPresented: Binding(get: { layerMutationError != nil },
                                         set: { if !$0 { layerMutationError = nil } }),
                    presenting: layerMutationError) { _ in
-                Button("OK", role: .cancel) { layerMutationError = nil }
+                Button(L10n.text("OK"), role: .cancel) { layerMutationError = nil }
             } message: { msg in Text(msg) }
             .alert(L10n.text("Delete imported map from this device?"),
                    isPresented: $confirmingImportedMapDeletion) {
@@ -400,7 +400,7 @@ struct LayersSheet: View {
                isPresented: Binding(get: { layerDeleteError != nil },
                                     set: { if !$0 { layerDeleteError = nil } }),
                presenting: layerDeleteError) { _ in
-            Button("OK", role: .cancel) { layerDeleteError = nil }
+            Button(L10n.text("OK"), role: .cancel) { layerDeleteError = nil }
         } message: { msg in Text(msg) }
     }
 
@@ -570,7 +570,7 @@ private struct NewLayerSheet: View {
                    isPresented: Binding(get: { saveError != nil },
                                         set: { if !$0 { saveError = nil } }),
                    presenting: saveError) { _ in
-                Button("OK", role: .cancel) { saveError = nil }
+                Button(L10n.text("OK"), role: .cancel) { saveError = nil }
             } message: { message in Text(message) }
         }
     }
@@ -653,7 +653,7 @@ private struct EditLayerSheet: View {
                    isPresented: Binding(get: { saveError != nil },
                                         set: { if !$0 { saveError = nil } }),
                    presenting: saveError) { _ in
-                Button("OK", role: .cancel) { saveError = nil }
+                Button(L10n.text("OK"), role: .cancel) { saveError = nil }
             } message: { message in Text(message) }
         }
     }

@@ -57,10 +57,12 @@ const val UNIQUE_IDENTIFIER_MAX_CODE_POINTS = 30
 /** FM 1-02.2 Field F. The map renderer uses the parenthesized constructs
  * shown in Figure 2-6 while the stable lowercase values travel in GeoJSON. */
 @Serializable
-enum class ReinforcementStatus(val displayName: String, val amplifier: String) {
+enum class ReinforcementStatus(private val displayNameKey: String, val amplifier: String) {
     @SerialName("none") NONE("None", ""),
-    @SerialName("reinforced") REINFORCED(L10n.text("Reinforced (+)"), "(+)"),
-    @SerialName("reduced") REDUCED(L10n.text("Reduced (-)"), "(-)")
+    @SerialName("reinforced") REINFORCED("Reinforced (+)", "(+)"),
+    @SerialName("reduced") REDUCED("Reduced (-)", "(-)");
+
+    val displayName: String get() = L10n.text(displayNameKey)
 }
 
 internal fun boundUnitAmplifier(value: String, maxCodePoints: Int): String {
@@ -226,7 +228,7 @@ data class MilitarySymbolSpec(
  */
 @Serializable
 enum class TaskColor(private val displayNameKey: String, val argb: Int) {
-    @SerialName("black") BLACK(L10n.text("Black"), 0xFF000000.toInt()),
+    @SerialName("black") BLACK("Black", 0xFF000000.toInt()),
     @SerialName("blue") BLUE("Blue (Friendly)", 0xFF0E5FD8.toInt()),
     @SerialName("red") RED("Red (Hostile)", 0xFFD8281F.toInt()),
     @SerialName("green") GREEN("Green (Neutral)", 0xFF1E8A34.toInt()),

@@ -1,0 +1,426 @@
+[
+  {
+    "id": "61ecfe22fc24a830",
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "sink": "LinkRow.title",
+    "literal": "\"OpenStreetMap\"",
+    "occurrences": 1,
+    "reason": "Official project, standard or document title in linked third-party acknowledgements."
+  },
+  {
+    "id": "ee5f995604c65d5a",
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "sink": "LinkRow.title",
+    "literal": "\"NGA grid-ios (MIT)\"",
+    "occurrences": 1,
+    "reason": "Official project, standard or document title in linked third-party acknowledgements."
+  },
+  {
+    "id": "a2c45102186a2b6f",
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "sink": "LinkRow.title",
+    "literal": "\"NGA simple-features-ios (MIT)\"",
+    "occurrences": 1,
+    "reason": "Official project, standard or document title in linked third-party acknowledgements."
+  },
+  {
+    "id": "51d4c16c50508ae7",
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "sink": "LinkRow.title",
+    "literal": "\"NGA color-ios (MIT)\"",
+    "occurrences": 1,
+    "reason": "Official project, standard or document title in linked third-party acknowledgements."
+  },
+  {
+    "id": "8ee600d7a708021c",
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "sink": "LinkRow.title",
+    "literal": "\"OGC GeoPDF Encoding Best Practice\"",
+    "occurrences": 1,
+    "reason": "Official project, standard or document title in linked third-party acknowledgements."
+  },
+  {
+    "id": "eef1e7c338c82af4",
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "sink": "LinkRow.title",
+    "literal": "\"GeoJSON (RFC 7946)\"",
+    "occurrences": 1,
+    "reason": "Official project, standard or document title in linked third-party acknowledgements."
+  },
+  {
+    "id": "6db2edb6321ea42e",
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "sink": "LinkRow.title",
+    "literal": "\"Mapbox simplestyle-spec\"",
+    "occurrences": 1,
+    "reason": "Official project, standard or document title in linked third-party acknowledgements."
+  },
+  {
+    "id": "5ea3d91d89c9e028",
+    "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
+    "sink": "LinkRow.title",
+    "literal": "\"Mapbox Maki Icon Set\"",
+    "occurrences": 1,
+    "reason": "Official project, standard or document title in linked third-party acknowledgements."
+  },
+  {
+    "id": "452746d9689e34e9",
+    "path": "ios/TacticalMaps/App/LockView.swift",
+    "sink": "SecureField",
+    "literal": "\"PIN\"",
+    "occurrences": 1,
+    "reason": "PIN is the same established abbreviation in English and German; review before enabling another language."
+  },
+  {
+    "id": "72fdfcb83b5ea53b",
+    "path": "ios/TacticalMaps/App/OpsecSettings.swift",
+    "sink": "property.label",
+    "literal": "\"MGRS\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "b985fc5e7eb15f7b",
+    "path": "ios/TacticalMaps/App/OpsecSettings.swift",
+    "sink": "property.label",
+    "literal": "\"WGS84\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "1ec727704c9812b2",
+    "path": "ios/TacticalMaps/App/OpsecSettings.swift",
+    "sink": "property.label",
+    "literal": "\"UTM\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "7b5ee85e6f9e2606",
+    "path": "ios/TacticalMaps/App/TacticalMapsApp.swift",
+    "sink": "alert",
+    "literal": "\"App Store\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "f76380ee8d3b6b2e",
+    "path": "ios/TacticalMaps/App/TacticalMapsApp.swift",
+    "sink": "Text",
+    "literal": "\"TacMap\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "6c9162163ee53288",
+    "path": "ios/TacticalMaps/Billing/PaywallView.swift",
+    "sink": "Text",
+    "literal": "\"TacMap\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "5a4bf016444684f8",
+    "path": "ios/TacticalMaps/Calibration/ActiveMapSelectionStore.swift",
+    "sink": "property.label",
+    "literal": "\"map_source/active_selection\"",
+    "occurrences": 1,
+    "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  },
+  {
+    "id": "32ca0e33edd5347f",
+    "path": "ios/TacticalMaps/Calibration/CalibrationInputSheet.swift",
+    "sink": "TextField",
+    "literal": "\"56HLH 12345 67890\"",
+    "occurrences": 1,
+    "reason": "Valid example MGRS coordinate; retain canonical ASCII coordinate syntax."
+  },
+  {
+    "id": "afc419e49c07fdeb",
+    "path": "ios/TacticalMaps/Calibration/Datum.swift",
+    "sink": "property.displayName",
+    "literal": "\"WGS84\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "45be5429ad6f83d7",
+    "path": "ios/TacticalMaps/Calibration/Datum.swift",
+    "sink": "property.displayName",
+    "literal": "\"GDA94 / MGA94\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "b6ff056543c24f33",
+    "path": "ios/TacticalMaps/Calibration/Datum.swift",
+    "sink": "property.displayName",
+    "literal": "\"GDA2020 / MGA2020\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "37a97dcd868ad2eb",
+    "path": "ios/TacticalMaps/Chat/TacMapChatView.swift",
+    "sink": "navigationTitle",
+    "literal": "\"TacMap Chat\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "733c3efa11ac1382",
+    "path": "ios/TacticalMaps/Chat/TacMapChatView.swift",
+    "sink": "alert",
+    "literal": "\"TacMap Chat\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "43499a981d90d8f3",
+    "path": "ios/TacticalMaps/Drawing/DrawingStore.swift",
+    "sink": "property.label",
+    "literal": "\"drawings.json\"",
+    "occurrences": 1,
+    "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  },
+  {
+    "id": "d0660d18b91eb468",
+    "path": "ios/TacticalMaps/Map/MapSideToolbar.swift",
+    "sink": "row",
+    "literal": "\"KML / KMZ…\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "3dac5939f895b9bb",
+    "path": "ios/TacticalMaps/Map/MapSideToolbar.swift",
+    "sink": "accessibilityLabel",
+    "literal": "\"TacMap Chat\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "0ad625ceb21e8bbe",
+    "path": "ios/TacticalMaps/Map/MapSideToolbar.swift",
+    "sink": "Text",
+    "literal": "\"N\"",
+    "occurrences": 1,
+    "reason": "North indicator is N in both shipped languages; review for each additional language."
+  },
+  {
+    "id": "f2c468e69af556c5",
+    "path": "ios/TacticalMaps/Map/Renderer/RasterTileSource.swift",
+    "sink": "DispatchQueue.label",
+    "literal": "\"tacmap.offline-tiles\"",
+    "occurrences": 1,
+    "reason": "Internal animation/queue debugging label, never shown to the user."
+  },
+  {
+    "id": "8febd30b0ab2d165",
+    "path": "ios/TacticalMaps/Models/TrackRecorder.swift",
+    "sink": "property.label",
+    "literal": "\"tracks/recording.ndjson\"",
+    "occurrences": 1,
+    "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  },
+  {
+    "id": "bc0d7ac7446940a0",
+    "path": "ios/TacticalMaps/Sync/SyncReplayState.swift",
+    "sink": "property.label",
+    "literal": "\"sync/model-revisions\"",
+    "occurrences": 1,
+    "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  },
+  {
+    "id": "e3db31bc5913dc2f",
+    "path": "ios/TacticalMaps/Util/AppLanguage.swift",
+    "sink": "property.label",
+    "literal": "\"English\"",
+    "occurrences": 1,
+    "reason": "Language autonym intentionally stays recognisable regardless of the current UI language."
+  },
+  {
+    "id": "09636d55301f8236",
+    "path": "ios/TacticalMaps/Util/AppLanguage.swift",
+    "sink": "property.label",
+    "literal": "\"Deutsch\"",
+    "occurrences": 1,
+    "reason": "Language autonym intentionally stays recognisable regardless of the current UI language."
+  },
+  {
+    "id": "9bfb2d1cdefc85f8",
+    "path": "ios/TacticalMaps/Waypoints/WaypointListSheet.swift",
+    "sink": "Text",
+    "literal": "\"• \\(Int(el)) m\"",
+    "occurrences": 1,
+    "reason": "Integer elevation with a bullet and SI metre symbol; no language-dependent wording. Number formatting remains in the regional-format audit."
+  },
+  {
+    "id": "ffca2821aef1a935",
+    "path": "ios/TacticalMaps/Waypoints/WaypointStore.swift",
+    "sink": "property.label",
+    "literal": "\"waypoints.json\"",
+    "occurrences": 1,
+    "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  },
+  {
+    "id": "39e2636abb5c5781",
+    "path": "android/app/src/main/java/com/tacmap/billing/PaywallScreen.kt",
+    "sink": "Text",
+    "literal": "\"TacMap\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "565bd954286cdc47",
+    "path": "android/app/src/main/java/com/tacmap/calibration/Datum.kt",
+    "sink": "enum.Datum",
+    "literal": "\"WGS84\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "4c2210df3974caa0",
+    "path": "android/app/src/main/java/com/tacmap/calibration/Datum.kt",
+    "sink": "enum.Datum",
+    "literal": "\"GDA94 / MGA94\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "20e9df1b0a13b9c0",
+    "path": "android/app/src/main/java/com/tacmap/calibration/Datum.kt",
+    "sink": "enum.Datum",
+    "literal": "\"GDA2020 / MGA2020\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "c09107c3a83a77cd",
+    "path": "android/app/src/main/java/com/tacmap/map/AboutDialog.kt",
+    "sink": "Text",
+    "literal": "\"TacMap\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "54ef1100f2645ebd",
+    "path": "android/app/src/main/java/com/tacmap/map/ImportExportSheet.kt",
+    "sink": "rememberInfiniteTransition.label",
+    "literal": "\"rec\"",
+    "occurrences": 1,
+    "reason": "Internal animation/queue debugging label, never shown to the user."
+  },
+  {
+    "id": "09a458f6f1bf1dcb",
+    "path": "android/app/src/main/java/com/tacmap/map/ImportExportSheet.kt",
+    "sink": "animateFloat.label",
+    "literal": "\"dot\"",
+    "occurrences": 1,
+    "reason": "Internal animation/queue debugging label, never shown to the user."
+  },
+  {
+    "id": "e028161f43cd7735",
+    "path": "android/app/src/main/java/com/tacmap/map/MapScreen.kt",
+    "sink": "Text",
+    "literal": "\"TacMap Chat\"",
+    "occurrences": 1,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "1d224256b3beb335",
+    "path": "android/app/src/main/java/com/tacmap/map/MapScreenChrome.kt",
+    "sink": "Text",
+    "literal": "\"N\"",
+    "occurrences": 1,
+    "reason": "North indicator is N in both shipped languages; review for each additional language."
+  },
+  {
+    "id": "36dfb2aa11b719f0",
+    "path": "android/app/src/main/java/com/tacmap/map/MapScreenChrome.kt",
+    "sink": "Text",
+    "literal": "\"MGRS\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "fdaa39ec63748179",
+    "path": "android/app/src/main/java/com/tacmap/map/MapScreenChrome.kt",
+    "sink": "Text",
+    "literal": "\"56HLH 12345 67890\"",
+    "occurrences": 1,
+    "reason": "Valid example MGRS coordinate; retain canonical ASCII coordinate syntax."
+  },
+  {
+    "id": "f4199838a4c9ce38",
+    "path": "android/app/src/main/java/com/tacmap/map/SearchDialog.kt",
+    "sink": "SearchResult.title",
+    "literal": "\"MGRS\"",
+    "occurrences": 2,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "92d623d99261fd1b",
+    "path": "android/app/src/main/java/com/tacmap/settings/OpsecSettings.kt",
+    "sink": "enum.CoordinateDisplayType",
+    "literal": "\"MGRS\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "d1860edcb4cb03fe",
+    "path": "android/app/src/main/java/com/tacmap/settings/OpsecSettings.kt",
+    "sink": "enum.CoordinateDisplayType",
+    "literal": "\"WGS84\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "e3f8fac67131b95e",
+    "path": "android/app/src/main/java/com/tacmap/settings/OpsecSettings.kt",
+    "sink": "enum.CoordinateDisplayType",
+    "literal": "\"UTM\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
+    "id": "f497e81f01d09e4d",
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncDialog.kt",
+    "sink": "Text",
+    "literal": "\"Alpha 1-1\"",
+    "occurrences": 1,
+    "reason": "Example user callsign using the NATO phonetic alphabet; not generated prose."
+  },
+  {
+    "id": "65d70ff232366579",
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncReplayState.kt",
+    "sink": "property.label",
+    "literal": "\"sync/room/$roomId\"",
+    "occurrences": 1,
+    "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  },
+  {
+    "id": "52ddeb8bbf5b62a4",
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncReplayState.kt",
+    "sink": "property.label",
+    "literal": "\"sync/model-revisions\"",
+    "occurrences": 1,
+    "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  },
+  {
+    "id": "3f4235e08f844e57",
+    "path": "android/app/src/main/java/com/tacmap/sync/TacMapChatDialog.kt",
+    "sink": "Text",
+    "literal": "\"TacMap Chat\"",
+    "occurrences": 2,
+    "reason": "Product/service name; preserve the official spelling."
+  },
+  {
+    "id": "fa67476a5abbf190",
+    "path": "android/app/src/main/java/com/tacmap/sync/TacMapChatHistoryStore.kt",
+    "sink": "property.label",
+    "literal": "\"sync/chat/$roomId\"",
+    "occurrences": 1,
+    "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  }
+]

@@ -5,6 +5,7 @@ import com.tacmap.R
 
 /** Explicit resource references keep translations reachable during resource shrinking. */
 internal val localizedStringIds: Map<String, Int> = mapOf(
+    "OK" to R.string.common_ok,
     "%1\$s • %2\$s • %3\$s pts" to R.string.ui_1_2_3_pts_ab8f6c81,
     "%1\$s · %2\$s" to R.string.ui_1_2_d576425a,
     "%1\$s - %2\$s pts" to R.string.ui_1_2_pts_2e8bc109,

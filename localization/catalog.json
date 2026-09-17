@@ -12037,5 +12037,13 @@
       "ios",
       "android"
     ]
+  },
+  "common_ok": {
+    "en": "OK",
+    "de": "OK",
+    "platforms": [
+      "ios",
+      "android"
+    ]
   }
 }

@@ -472,7 +472,7 @@ struct WaypointCreationSheet: View {
                    isPresented: Binding(get: { errorMessage != nil },
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in
-                Button("OK", role: .cancel) { errorMessage = nil }
+                Button(L10n.text("OK"), role: .cancel) { errorMessage = nil }
             } message: { Text($0) }
         }
         // Block swipe-to-dismiss. This is an edit form, accidental
@@ -721,7 +721,7 @@ struct SelectedSymbolEditSheet: View {
                    isPresented: Binding(get: { errorMessage != nil },
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in
-                Button("OK", role: .cancel) { errorMessage = nil }
+                Button(L10n.text("OK"), role: .cancel) { errorMessage = nil }
             } message: { Text($0) }
             .confirmationDialog(
                 L10n.text("Delete “%1$@”?", waypoint.name),

@@ -121,7 +121,7 @@ struct DrawingControlsCard: View {
             get: { mutationError != nil },
             set: { if !$0 { mutationError = nil } }
         )) {
-            Button("OK", role: .cancel) { mutationError = nil }
+            Button(L10n.text("OK"), role: .cancel) { mutationError = nil }
         } message: {
             Text(mutationError ?? L10n.text("The drawing change could not be saved. Check available storage, then try again."))
         }

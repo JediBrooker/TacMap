@@ -850,7 +850,7 @@ struct ContentView: View {
             get: { missionMutationMessage != nil },
             set: { if !$0 { missionMutationMessage = nil } }
         )) {
-            Button("OK", role: .cancel) { missionMutationMessage = nil }
+            Button(L10n.text("OK"), role: .cancel) { missionMutationMessage = nil }
         } message: {
             Text(missionMutationMessage ?? L10n.text("The change could not be saved. Check available storage, then try again."))
         }
@@ -861,7 +861,7 @@ struct ContentView: View {
             if !trackRecorder.points.isEmpty || trackRecorder.recovered {
                 Button(L10n.text("Discard Saved Track"), role: .destructive) { trackRecorder.discard() }
             }
-            Button("OK", role: .cancel) { trackRecorder.persistError = nil }
+            Button(L10n.text("OK"), role: .cancel) { trackRecorder.persistError = nil }
         } message: {
             Text(trackRecorder.persistError ?? L10n.text("Track recording failed."))
         }
@@ -1205,7 +1205,7 @@ struct ContentView: View {
                     importMessage = nil
                 }
             } else {
-                Button("OK", role: .cancel) { importMessage = nil }
+                Button(L10n.text("OK"), role: .cancel) { importMessage = nil }
             }
         } message: { msg in
             Text(msg)

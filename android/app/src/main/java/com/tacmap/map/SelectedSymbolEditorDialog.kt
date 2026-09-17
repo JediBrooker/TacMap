@@ -70,11 +70,13 @@ import com.tacmap.waypoints.TacticalControlMeasure
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 
-private enum class SelectedKindCategory(val displayName: String) {
-    GENERIC(L10n.text("Waypoint")),
-    MILITARY(L10n.text("Military Unit")),
-    CONTROL_MEASURE(L10n.text("Tactical Task")),
-    MARKER(L10n.text("Marker")),
+private enum class SelectedKindCategory(private val displayNameKey: String) {
+    GENERIC("Waypoint"),
+    MILITARY("Military Unit"),
+    CONTROL_MEASURE("Tactical Task"),
+    MARKER("Marker");
+
+    val displayName: String get() = L10n.text(displayNameKey)
 }
 
 private val WaypointKind.selectedCategory: SelectedKindCategory

@@ -21,10 +21,12 @@ import kotlin.math.abs
 
 enum class HeadingNorthReference(
     val displaySuffix: String,
-    val accessibilityLabel: String,
+    private val accessibilityLabelKey: String,
 ) {
-    TRUE_NORTH("T", L10n.text("true north")),
-    MAGNETIC_NORTH("M", L10n.text("magnetic north")),
+    TRUE_NORTH("T", "true north"),
+    MAGNETIC_NORTH("M", "magnetic north");
+
+    val accessibilityLabel: String get() = L10n.text(accessibilityLabelKey)
 }
 
 /** Foreground-only phone-compass adapter for Heading Up map orientation. */

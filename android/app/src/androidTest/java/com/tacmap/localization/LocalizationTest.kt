@@ -1,5 +1,8 @@
 package com.tacmap.localization
 
+import com.tacmap.waypoints.ReinforcementStatus
+import com.tacmap.waypoints.TaskColor
+import com.tacmap.models.HeadingNorthReference
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.LocaleList
@@ -18,14 +21,24 @@ class LocalizationTest {
         try {
             org.junit.Assert.assertTrue(AppLanguage.select(context, AppLanguage.Choice.ENGLISH))
             assertEquals("Save", L10n.text("Save"))
+            assertEquals("None", ReinforcementStatus.NONE.displayName)
+            assertEquals("Black", TaskColor.BLACK.displayName)
+            assertEquals("true north", HeadingNorthReference.TRUE_NORTH.accessibilityLabel)
             org.junit.Assert.assertTrue(AppLanguage.select(context, AppLanguage.Choice.GERMAN))
             assertEquals("Speichern", L10n.text("Save"))
+            assertEquals("Keine", ReinforcementStatus.NONE.displayName)
+            assertEquals("Verstärkt (+)", ReinforcementStatus.REINFORCED.displayName)
+            assertEquals("Schwarz", TaskColor.BLACK.displayName)
+            assertEquals("geografisch Nord", HeadingNorthReference.TRUE_NORTH.accessibilityLabel)
             assertEquals("1 Punkt", L10n.quantity("point", 1))
             assertEquals("2 Punkte", L10n.quantity("point", 2))
             AppLanguage.install(context)
             assertEquals(AppLanguage.Choice.GERMAN, AppLanguage.selection)
             org.junit.Assert.assertTrue(AppLanguage.select(context, AppLanguage.Choice.ENGLISH))
             assertEquals("Save", L10n.text("Save"))
+            assertEquals("None", ReinforcementStatus.NONE.displayName)
+            assertEquals("Black", TaskColor.BLACK.displayName)
+            assertEquals("true north", HeadingNorthReference.TRUE_NORTH.accessibilityLabel)
         } finally {
             AppLanguage.select(context, original)
         }

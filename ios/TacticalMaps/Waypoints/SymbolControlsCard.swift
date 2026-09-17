@@ -64,7 +64,7 @@ struct SymbolControlsCard: View {
             .alert(L10n.text("Symbol Not Moved"),
                    isPresented: Binding(get: { mutationError != nil },
                                         set: { if !$0 { mutationError = nil } })) {
-                Button("OK", role: .cancel) { mutationError = nil }
+                Button(L10n.text("OK"), role: .cancel) { mutationError = nil }
             } message: {
                 Text(mutationError ?? L10n.text("The symbol is still at its previous position."))
             }
