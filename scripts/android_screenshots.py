@@ -76,6 +76,7 @@ def wait_boot(timeout=180):
 def nodes():
     """Parse the current uiautomator dump into a flat node list. Empty list
     if the dump failed (e.g. FLAG_SECURE still on, or a transient race)."""
+    adb("shell", "rm", "-f", "/sdcard/ui.xml")
     adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
     raw = adb("shell", "cat", "/sdcard/ui.xml").stdout.decode("utf-8", "replace")
     raw = raw[raw.find("<?xml"):]
@@ -219,10 +220,16 @@ def edited_preferences(original, changes):
     return ET.tostring(tree, encoding="utf-8", xml_declaration=True)
 
 
-def relaunch():
+def relaunch(wait_for_map=False):
     adb("shell", "am", "force-stop", PKG)
     adb("shell", "am", "start", "-n", ACT)
     time.sleep(6)
+    if wait_for_map:
+        deadline = time.monotonic() + 120
+        while not on_map():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Map did not become ready after launch")
+            time.sleep(2)
 
 def disable_secure():
     """Temporarily configure the isolated screenshot emulator; preserve all prefs."""
@@ -299,7 +306,7 @@ try:
         snap("00-map")
         destinations = ["Search", "Symbology", "Drawings", "Layers and Labels", "Weather & UAV Safety", "Import / Export", "TacMap Chat", "Unit Sync", "App Lock", "Settings, Privacy & OPSEC", "About & Credits"]
         for index, destination in enumerate(destinations, 1):
-            relaunch()
+            relaunch(wait_for_map=True)
             ensure_map()
             tap_hamburger()
             for attempt in range(4):
@@ -310,6 +317,7 @@ try:
                 print("MISSING SCREEN:", destination)
                 continue
             name = f"{index:02d}-" + re.sub(r"[^a-z0-9]+", "-", destination.lower()).strip("-")
+            time.sleep(4)  # Allow sheet transitions to settle before capture.
             snap(name)
             Path(OUT, name + ".xml").write_text(ET.tostring(ET.Element("empty"), encoding="unicode") if not nodes() else "\n".join(ET.tostring(n, encoding="unicode") for n in nodes()))
             if destination in ("Settings, Privacy & OPSEC", "Import / Export", "Drawings"):
