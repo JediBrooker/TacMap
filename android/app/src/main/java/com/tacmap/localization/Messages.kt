@@ -34,12 +34,26 @@ object Messages {
         L10n.message("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", value)
     fun drawingsQuarantinedMessage(value: String): LocalizedMessage =
         LocalizedMessage("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", listOf(value))
+    fun importCollisionSummary(summary: String, count: String): String =
+        L10n.message("id.import_collision_summary", "%1\$s Conflicting object IDs reassigned: %2\$s.", summary, count)
+    fun importCollisionSummaryMessage(summary: String, count: String): LocalizedMessage =
+        LocalizedMessage("id.import_collision_summary", "%1\$s Conflicting object IDs reassigned: %2\$s.", listOf(summary, count))
+    fun importCompleteSummary(waypoints: String, drawings: String): String =
+        L10n.message("id.import_complete_summary", "Imported %1\$s and %2\$s.", waypoints, drawings)
+    fun importCompleteSummaryMessage(waypoints: String, drawings: String): LocalizedMessage =
+        LocalizedMessage("id.import_complete_summary", "Imported %1\$s and %2\$s.", listOf(waypoints, drawings))
     fun importFailed(detail: String): String =
         L10n.message("id.import_failed", "Import failed: %1\$s", detail)
+    fun importFailedMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.import_failed", "Import failed: %1\$s", listOf(detail))
     fun importFeatureSummary(waypoints: String, drawings: String, skipped: String): String =
         L10n.message("id.import_feature_summary", "Imported %1\$s waypoint(s) and %2\$s drawing(s)%3\$s", waypoints, drawings, skipped)
     fun importFeatureSummaryMessage(waypoints: String, drawings: String, skipped: String): LocalizedMessage =
         LocalizedMessage("id.import_feature_summary", "Imported %1\$s waypoint(s) and %2\$s drawing(s)%3\$s", listOf(waypoints, drawings, skipped))
+    fun importInvalidSummary(summary: String, count: String): String =
+        L10n.message("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", summary, count)
+    fun importInvalidSummaryMessage(summary: String, count: String): LocalizedMessage =
+        LocalizedMessage("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", listOf(summary, count))
     fun decimalInputHint(): String =
         L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
     fun liveLocationApproximateGuidance(): String =
@@ -104,6 +118,8 @@ object Messages {
         L10n.message("id.sync_configured_relay_unavailable", "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.")
     fun syncConfiguredRelayUnavailableMessage(): LocalizedMessage =
         LocalizedMessage("id.sync_configured_relay_unavailable", "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.", listOf())
+    fun syncDialogTitle(): String =
+        L10n.message("id.sync_dialog_title", "Unit Sync")
     fun syncJoinLocationConsent(value: String): String =
         L10n.message("id.sync_join_location_consent", "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately %1\$s while the screen is off.", value)
     fun syncJoinLocationConsentMessage(value: String): LocalizedMessage =
@@ -136,6 +152,10 @@ object Messages {
         L10n.message("id.ui_1_reload_the_current_google_play_offer_before_tr_0fcb92e6", "%1\$s Reload the current Google Play offer before trying again.", detail)
     fun billingReloadTheCurrentGooglePlayOfferBeforeTryingAgainMessage(detail: String): LocalizedMessage =
         LocalizedMessage("id.ui_1_reload_the_current_google_play_offer_before_tr_0fcb92e6", "%1\$s Reload the current Google Play offer before trying again.", listOf(detail))
+    fun displayUnlockMissionDataOrFreeDeviceStorageThenTap(detail1: String): String =
+        L10n.message("id.ui_1_unlock_mission_data_or_free_device_storage_the_dbe9b576", "%1\$s Unlock mission data or free device storage, then tap Retry.", detail1)
+    fun displayUnlockMissionDataOrFreeDeviceStorageThenTapMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_1_unlock_mission_data_or_free_device_storage_the_dbe9b576", "%1\$s Unlock mission data or free device storage, then tap Retry.", listOf(detail1))
     fun syncASyncedSymbolDeleteCouldNotBeSavedCheck(): String =
         L10n.message("id.ui_a_synced_symbol_delete_could_not_be_saved_check__fc350e3a", "A synced symbol delete could not be saved. Check available storage, then leave and rejoin to retry.")
     fun syncASyncedSymbolDeleteCouldNotBeSavedCheckMessage(): LocalizedMessage =
@@ -144,10 +164,30 @@ object Messages {
         L10n.message("id.ui_a_unit_sync_change_is_still_unconfirmed_after_bo_3d3fc607", "A Unit Sync change is still unconfirmed after bounded retries. Reconnecting to reconcile it; the local edit remains saved.")
     fun syncAUnitSyncChangeIsStillUnconfirmedAfterBoundedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_a_unit_sync_change_is_still_unconfirmed_after_bo_3d3fc607", "A Unit Sync change is still unconfirmed after bounded retries. Reconnecting to reconcile it; the local edit remains saved.", listOf())
+    fun displayAcross(detail1: String): String =
+        L10n.message("id.ui_across_1_647f7db4", " across %1\$s", detail1)
+    fun displayAcrossMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_across_1_647f7db4", " across %1\$s", listOf(detail1))
     fun liveLocationPreciseNeeded(): String =
         L10n.message("id.ui_allow_precise_location_to_show_your_live_positio_0adb7f1b", "Allow Precise location to show your live position on the map.")
     fun liveLocationPreciseNeededMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_allow_precise_location_to_show_your_live_positio_0adb7f1b", "Allow Precise location to show your live position on the map.", listOf())
+    fun displayAppLockCouldNotBeDisabledAndRemainsActive(): String =
+        L10n.message("id.ui_app_lock_could_not_be_disabled_and_remains_activ_78d08964", "App Lock could not be disabled and remains active.")
+    fun displayAppLockCouldNotBeDisabledAndRemainsActiveMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_app_lock_could_not_be_disabled_and_remains_activ_78d08964", "App Lock could not be disabled and remains active.", listOf())
+    fun displayAppLockCouldNotBeSavedTryAgain(): String =
+        L10n.message("id.ui_app_lock_could_not_be_saved_try_again_26f7a461", "App Lock could not be saved. Try again.")
+    fun displayAppLockCouldNotBeSavedTryAgainMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_app_lock_could_not_be_saved_try_again_26f7a461", "App Lock could not be saved. Try again.", listOf())
+    fun displayAppLockDisabled(): String =
+        L10n.message("id.ui_app_lock_disabled_3073ec2e", "App Lock disabled.")
+    fun displayAppLockDisabledMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_app_lock_disabled_3073ec2e", "App Lock disabled.", listOf())
+    fun displayAppLockEnabledTacmapLocksWhenBackgrounded(): String =
+        L10n.message("id.ui_app_lock_enabled_tacmap_locks_when_backgrounded_3ec32b96", "App Lock enabled. TacMap locks when backgrounded.")
+    fun displayAppLockEnabledTacmapLocksWhenBackgroundedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_app_lock_enabled_tacmap_locks_when_backgrounded_3ec32b96", "App Lock enabled. TacMap locks when backgrounded.", listOf())
     fun recordingPreciseRequiredShort(): String =
         L10n.message("id.ui_approximate_location_cannot_provide_the_precise__fa2a6228", "Approximate location cannot provide the precise GPS track TacMap records.")
     fun recordingPreciseRequiredShortMessage(): LocalizedMessage =
@@ -164,6 +204,10 @@ object Messages {
         L10n.message("id.ui_background_recording_stopped_unexpectedly_your_s_4fb5f807", "Background recording stopped unexpectedly. Your saved track was preserved.")
     fun recordingServiceStoppedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_background_recording_stopped_unexpectedly_your_s_4fb5f807", "Background recording stopped unexpectedly. Your saved track was preserved.", listOf())
+    fun syncFormBackgroundUnitSyncCouldNotBeSavedThePreviousSetting(): String =
+        L10n.message("id.ui_background_unit_sync_could_not_be_saved_the_prev_fdbad447", "Background Unit Sync could not be saved. The previous setting remains active; check available storage and try again.")
+    fun syncFormBackgroundUnitSyncCouldNotBeSavedThePreviousSettingMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_background_unit_sync_could_not_be_saved_the_prev_fdbad447", "Background Unit Sync could not be saved. The previous setting remains active; check available storage and try again.", listOf())
     fun syncBackgroundUnitSyncNeedsGpsTurnedOnBeforeIt(): String =
         L10n.message("id.ui_background_unit_sync_needs_gps_turned_on_before__9d05489c", "Background Unit Sync needs GPS turned on before it can run with the screen off.")
     fun syncBackgroundUnitSyncNeedsGpsTurnedOnBeforeItMessage(): LocalizedMessage =
@@ -196,6 +240,10 @@ object Messages {
         L10n.message("id.ui_checking_google_play_for_your_purchase_fa0f4b1f", "Checking Google Play for your purchase…")
     fun billingCheckingGooglePlayForYourPurchaseMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_checking_google_play_for_your_purchase_fa0f4b1f", "Checking Google Play for your purchase…", listOf())
+    fun syncFormCodesMustStartWith3Enter2OnlyForAn(): String =
+        L10n.message("id.ui_codes_must_start_with_3_enter_2_only_for_an_inte_9f1fdcc3", "Codes must start with 3:. Enter 2: only for an intentional legacy room.")
+    fun syncFormCodesMustStartWith3Enter2OnlyForAnMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_codes_must_start_with_3_enter_2_only_for_an_inte_9f1fdcc3", "Codes must start with 3:. Enter 2: only for an intentional legacy room.", listOf())
     fun billingConnectingToGooglePlay(): String =
         L10n.message("id.ui_connecting_to_google_play_75d0cdf5", "Connecting to Google Play…")
     fun billingConnectingToGooglePlayMessage(): LocalizedMessage =
@@ -212,6 +260,10 @@ object Messages {
         L10n.message("id.ui_could_not_migrate_unit_sync_identity_location_sh_18a0783f", "Could not migrate Unit Sync identity/location sharing to encrypted storage. Location sharing remains off.")
     fun syncCouldNotMigrateUnitSyncIdentityLocationSharingToMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_could_not_migrate_unit_sync_identity_location_sh_18a0783f", "Could not migrate Unit Sync identity/location sharing to encrypted storage. Location sharing remains off.", listOf())
+    fun missionKeyCouldNotPreserveThePendingDocumentImportAcrossProcess(): String =
+        L10n.message("id.ui_could_not_preserve_the_pending_document_import_a_fa90a962", "Could not preserve the pending document import across process restart.")
+    fun missionKeyCouldNotPreserveThePendingDocumentImportAcrossProcessMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_preserve_the_pending_document_import_a_fa90a962", "Could not preserve the pending document import across process restart.", listOf())
     fun trackReadFailed(detail: String): String =
         L10n.message("id.ui_could_not_read_the_saved_track_1_fd3205b4", "Could not read the saved track: %1\$s", detail)
     fun trackReadFailedMessage(detail: String): LocalizedMessage =
@@ -244,6 +296,14 @@ object Messages {
         L10n.message("id.ui_could_not_verify_the_saved_track_before_recordin_74d65e13", "Could not verify the saved track before recording.")
     fun recordingVerifyFailedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_could_not_verify_the_saved_track_before_recordin_74d65e13", "Could not verify the saved track before recording.", listOf())
+    fun displayCouldnTParseMgrsTryAFullGridReference(): String =
+        L10n.message("id.ui_couldn_t_parse_mgrs_try_a_full_grid_reference_edb73b8e", "Couldn't parse MGRS. Try a full grid reference.")
+    fun displayCouldnTParseMgrsTryAFullGridReferenceMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_couldn_t_parse_mgrs_try_a_full_grid_reference_edb73b8e", "Couldn't parse MGRS. Try a full grid reference.", listOf())
+    fun displayCurrentPinIsIncorrect(): String =
+        L10n.message("id.ui_current_pin_is_incorrect_3526dcc8", "Current PIN is incorrect.")
+    fun displayCurrentPinIsIncorrectMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_current_pin_is_incorrect_3526dcc8", "Current PIN is incorrect.", listOf())
     fun drawingsAreEncryptedAndLocked(detail1: String): String =
         L10n.message("id.ui_drawings_are_encrypted_and_locked_1_45b3c976", "Drawings are encrypted and locked. %1\$s", detail1)
     fun drawingsAreEncryptedAndLockedMessage(detail1: String): LocalizedMessage =
@@ -284,10 +344,22 @@ object Messages {
         L10n.message("id.ui_encrypted_chat_history_is_unavailable_18886913", "Encrypted chat history is unavailable")
     fun chatEncryptedChatHistoryIsUnavailableMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_encrypted_chat_history_is_unavailable_18886913", "Encrypted chat history is unavailable", listOf())
+    fun displayEnterAOrFigureGridOrFullMgrsAt(): String =
+        L10n.message("id.ui_enter_a_4_6_8_or_10_figure_grid_or_full_mgrs_at__630e578d", "Enter a 4, 6, 8, or 10-figure grid, or full MGRS at one of those precisions.")
+    fun displayEnterAOrFigureGridOrFullMgrsAtMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_enter_a_4_6_8_or_10_figure_grid_or_full_mgrs_at__630e578d", "Enter a 4, 6, 8, or 10-figure grid, or full MGRS at one of those precisions.", listOf())
     fun chatEnterAMessage(): String =
         L10n.message("id.ui_enter_a_message_4f2da3b8", "Enter a message")
     fun chatEnterAMessageMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_enter_a_message_4f2da3b8", "Enter a message", listOf())
+    fun displayEnterAUnitSyncRelayAddress(): String =
+        L10n.message("id.ui_enter_a_unit_sync_relay_address_5fe0e6ff", "Enter a Unit Sync relay address.")
+    fun displayEnterAUnitSyncRelayAddressMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_enter_a_unit_sync_relay_address_5fe0e6ff", "Enter a Unit Sync relay address.", listOf())
+    fun displayEnterAValidElevationInMetres(): String =
+        L10n.message("id.ui_enter_a_valid_elevation_in_metres_6e3013e1", "Enter a valid elevation in metres.")
+    fun displayEnterAValidElevationInMetresMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_enter_a_valid_elevation_in_metres_6e3013e1", "Enter a valid elevation in metres.", listOf())
     fun recordingExistingTrack(): String =
         L10n.message("id.ui_export_or_discard_the_saved_track_before_startin_11ec4f4c", "Export or discard the saved track before starting a new recording.")
     fun recordingExistingTrackMessage(): LocalizedMessage =
@@ -372,6 +444,18 @@ object Messages {
         L10n.message("id.ui_gps_was_turned_off_recording_stopped_d4078430", "GPS was turned off; recording stopped.")
     fun recordingGpsDisabledMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_gps_was_turned_off_recording_stopped_d4078430", "GPS was turned off; recording stopped.", listOf())
+    fun importDrawingsSaveFailed(): String =
+        L10n.message("id.ui_import_could_not_save_drawings_retry_the_same_fi_5094a9e1", "Import could not save drawings. Retry the same file; the same IDs will be reused.")
+    fun importDrawingsSaveFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_import_could_not_save_drawings_retry_the_same_fi_5094a9e1", "Import could not save drawings. Retry the same file; the same IDs will be reused.", listOf())
+    fun importWaypointsSaveFailed(): String =
+        L10n.message("id.ui_import_could_not_save_waypoints_nothing_else_was_219f397e", "Import could not save waypoints. Nothing else was changed; retry the same file.")
+    fun importWaypointsSaveFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_import_could_not_save_waypoints_nothing_else_was_219f397e", "Import could not save waypoints. Nothing else was changed; retry the same file.", listOf())
+    fun displayImportedAnd(detail1: String, detail2: String): String =
+        L10n.message("id.ui_imported_1_and_2_c496a313", "Imported %1\$s and %2\$s", detail1, detail2)
+    fun displayImportedAndMessage(detail1: String, detail2: String): LocalizedMessage =
+        LocalizedMessage("id.ui_imported_1_and_2_c496a313", "Imported %1\$s and %2\$s", listOf(detail1, detail2))
     fun chatInvalidChatRoomIdentity(): String =
         L10n.message("id.ui_invalid_chat_room_identity_d3e319cc", "Invalid chat room identity")
     fun chatInvalidChatRoomIdentityMessage(): LocalizedMessage =
@@ -396,6 +480,22 @@ object Messages {
         L10n.message("id.ui_join_code_must_start_with_3_legacy_rooms_require_8e0b55c2", "Join code must start with 3:. Legacy rooms require an explicit 2: prefix.")
     fun syncJoinCodeMustStartWithLegacyRoomsRequireAnMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_join_code_must_start_with_3_legacy_rooms_require_8e0b55c2", "Join code must start with 3:. Legacy rooms require an explicit 2: prefix.", listOf())
+    fun displayKeyProtectionCouldNotBeChanged(): String =
+        L10n.message("id.ui_key_protection_could_not_be_changed_849fc57e", "Key protection could not be changed")
+    fun displayKeyProtectionCouldNotBeChangedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_key_protection_could_not_be_changed_849fc57e", "Key protection could not be changed", listOf())
+    fun displayLatitudeMustBeBetweenAndAndLongitudeBetweenAnd(): String =
+        L10n.message("id.ui_latitude_must_be_between_90_and_90_and_longitude_b0b6158d", "Latitude must be between -90 and 90, and longitude between -180 and 180.")
+    fun displayLatitudeMustBeBetweenAndAndLongitudeBetweenAndMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_latitude_must_be_between_90_and_90_and_longitude_b0b6158d", "Latitude must be between -90 and 90, and longitude between -180 and 180.", listOf())
+    fun displayLayerVisibilityWasNotSavedThePreviousSettingRemains(): String =
+        L10n.message("id.ui_layer_visibility_was_not_saved_the_previous_sett_07bb1566", "Layer visibility was not saved. The previous setting remains active.")
+    fun displayLayerVisibilityWasNotSavedThePreviousSettingRemainsMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_layer_visibility_was_not_saved_the_previous_sett_07bb1566", "Layer visibility was not saved. The previous setting remains active.", listOf())
+    fun syncFormLegacyV2HasWeakerRollbackAndIdentityProtectionTapAgainLegacyJoin(): String =
+        L10n.message("id.ui_legacy_v2_has_weaker_rollback_and_identity_prote_0e06e1ac", "Legacy v2 has weaker rollback and identity protection. Tap again to confirm legacy join.")
+    fun syncFormLegacyV2HasWeakerRollbackAndIdentityProtectionTapAgainLegacyJoinMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_legacy_v2_has_weaker_rollback_and_identity_prote_0e06e1ac", "Legacy v2 has weaker rollback and identity protection. Tap again to confirm legacy join.", listOf())
     fun billingLoadingPriceFromGooglePlay(): String =
         L10n.message("id.ui_loading_price_from_google_play_ce945d9e", "Loading price from Google Play…")
     fun billingLoadingPriceFromGooglePlayMessage(): LocalizedMessage =
@@ -428,6 +528,10 @@ object Messages {
         L10n.message("id.ui_location_restricted_7b8c5d17", "Location Restricted")
     fun liveLocationRestrictedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_location_restricted_7b8c5d17", "Location Restricted", listOf())
+    fun displayMapStorageRecoveryDidNotCompleteKeepTheApp10246bcb(): String =
+        L10n.message("id.ui_map_storage_recovery_did_not_complete_keep_the_a_10246bcb", "Map storage recovery did not complete. Keep the app open and retry before closing it.")
+    fun displayMapStorageRecoveryDidNotCompleteKeepTheApp10246bcbMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_map_storage_recovery_did_not_complete_keep_the_a_10246bcb", "Map storage recovery did not complete. Keep the app open and retry before closing it.", listOf())
     fun chatMessageCouldNotBeEncodedSafely(): String =
         L10n.message("id.ui_message_could_not_be_encoded_safely_29a1d49e", "Message could not be encoded safely")
     fun chatMessageCouldNotBeEncodedSafelyMessage(): LocalizedMessage =
@@ -444,6 +548,18 @@ object Messages {
         L10n.message("id.ui_message_is_longer_than_4096_utf_8_bytes_48ec0ecd", "Message is longer than 4096 UTF-8 bytes")
     fun chatMessageIsLongerThanUtfBytesMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_message_is_longer_than_4096_utf_8_bytes_48ec0ecd", "Message is longer than 4096 UTF-8 bytes", listOf())
+    fun displayMissionDataKeyIsLockedAuthenticateToContinue(): String =
+        L10n.message("id.ui_mission_data_key_is_locked_authenticate_to_conti_271c5f6c", "Mission data key is locked. Authenticate to continue.")
+    fun displayMissionDataKeyIsLockedAuthenticateToContinueMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_mission_data_key_is_locked_authenticate_to_conti_271c5f6c", "Mission data key is locked. Authenticate to continue.", listOf())
+    fun displayMissionDataKeyWasInvalidatedByADeviceSecurity87bf4b9f(): String =
+        L10n.message("id.ui_mission_data_key_was_invalidated_by_a_device_sec_87bf4b9f", "Mission data key was invalidated by a device security change.")
+    fun displayMissionDataKeyWasInvalidatedByADeviceSecurity87bf4b9fMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_mission_data_key_was_invalidated_by_a_device_sec_87bf4b9f", "Mission data key was invalidated by a device security change.", listOf())
+    fun displayNewPinsDonTMatch(): String =
+        L10n.message("id.ui_new_pins_don_t_match_e4b8a582", "New PINs don't match.")
+    fun displayNewPinsDonTMatchMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_new_pins_don_t_match_e4b8a582", "New PINs don't match.", listOf())
     fun billingNoActivePurchaseWasFoundRetryToLoadThe(): String =
         L10n.message("id.ui_no_active_purchase_was_found_retry_to_load_the_u_fe8d025d", "No active purchase was found. Retry to load the unlock product.")
     fun billingNoActivePurchaseWasFoundRetryToLoadTheMessage(): LocalizedMessage =
@@ -456,6 +572,14 @@ object Messages {
         L10n.message("id.ui_no_chat_ready_units_are_available_1dd5f612", "No chat-ready units are available")
     fun chatNoChatReadyUnitsAreAvailableMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_no_chat_ready_units_are_available_1dd5f612", "No chat-ready units are available", listOf())
+    fun missionKeyNoDeviceCredentialIsAvailableForThisProtectedKey(): String =
+        L10n.message("id.ui_no_device_credential_is_available_for_this_prote_190f2cd7", "No device credential is available for this protected key.")
+    fun missionKeyNoDeviceCredentialIsAvailableForThisProtectedKeyMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_no_device_credential_is_available_for_this_prote_190f2cd7", "No device credential is available for this protected key.", listOf())
+    fun displayNoDeviceLockscreenIsSetSoThisCanT(): String =
+        L10n.message("id.ui_no_device_lockscreen_is_set_so_this_can_t_be_cha_95be4a4c", "No device lockscreen is set, so this can't be changed.")
+    fun displayNoDeviceLockscreenIsSetSoThisCanTMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_no_device_lockscreen_is_set_so_this_can_t_be_cha_95be4a4c", "No device lockscreen is set, so this can't be changed.", listOf())
     fun billingNotNow(): String =
         L10n.message("id.ui_not_now_a0e63d7c", "Not now")
     fun billingNotNowMessage(): LocalizedMessage =
@@ -468,6 +592,30 @@ object Messages {
         L10n.message("id.ui_opening_google_play_3d38b231", "Opening Google Play…")
     fun billingOpeningGooglePlayMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_opening_google_play_3d38b231", "Opening Google Play…", listOf())
+    fun displayPdfSessionCleanupStillCouldNotBeSavedCheck(): String =
+        L10n.message("id.ui_pdf_session_cleanup_still_could_not_be_saved_che_d44e56e1", "PDF session cleanup still could not be saved. Check device storage and retry.")
+    fun displayPdfSessionCleanupStillCouldNotBeSavedCheckMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_pdf_session_cleanup_still_could_not_be_saved_che_d44e56e1", "PDF session cleanup still could not be saved. Check device storage and retry.", listOf())
+    fun displayPinChangeCouldNotBeSavedTheExistingPin(): String =
+        L10n.message("id.ui_pin_change_could_not_be_saved_the_existing_pin_r_223cb071", "PIN change could not be saved. The existing PIN remains active.")
+    fun displayPinChangeCouldNotBeSavedTheExistingPinMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_pin_change_could_not_be_saved_the_existing_pin_r_223cb071", "PIN change could not be saved. The existing PIN remains active.", listOf())
+    fun displayPinChanged(): String =
+        L10n.message("id.ui_pin_changed_622a5845", "PIN changed.")
+    fun displayPinChangedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_pin_changed_622a5845", "PIN changed.", listOf())
+    fun displayPinsDonTMatch(): String =
+        L10n.message("id.ui_pins_don_t_match_7354a781", "PINs don't match.")
+    fun displayPinsDonTMatchMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_pins_don_t_match_7354a781", "PINs don't match.", listOf())
+    fun displayPlaceNameSearchIsOffEnableOnlineLookupsIn(): String =
+        L10n.message("id.ui_place_name_search_is_off_enable_online_lookups_i_f9e87402", "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work.")
+    fun displayPlaceNameSearchIsOffEnableOnlineLookupsInMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_place_name_search_is_off_enable_online_lookups_i_f9e87402", "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work.", listOf())
+    fun displayPlaceSearchUnavailableOfflineMgrsGridAndLatLon(): String =
+        L10n.message("id.ui_place_search_unavailable_offline_mgrs_grid_and_l_bf7fb25c", "Place search unavailable offline — MGRS, grid and lat/lon still work.")
+    fun displayPlaceSearchUnavailableOfflineMgrsGridAndLatLonMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_place_search_unavailable_offline_mgrs_grid_and_l_bf7fb25c", "Place search unavailable offline — MGRS, grid and lat/lon still work.", listOf())
     fun syncPreciseLocationIsUnavailableBackgroundUnitSyncLocationStopped(): String =
         L10n.message("id.ui_precise_location_is_unavailable_background_unit__4b896752", "Precise location is unavailable; Background Unit Sync location stopped.")
     fun syncPreciseLocationIsUnavailableBackgroundUnitSyncLocationStoppedMessage(): LocalizedMessage =
@@ -490,6 +638,14 @@ object Messages {
         LocalizedMessage("id.ui_recording_stopped_because_its_session_key_was_un_6082de71", "Recording stopped because its session key was unavailable.", listOf())
     fun recoveryCopyFallback(): String =
         L10n.message("id.ui_recovery_copy_6f7749ab", "recovery copy")
+    fun displayRelayAddressesCannotContainAQueryOrFragment(): String =
+        L10n.message("id.ui_relay_addresses_cannot_contain_a_query_or_fragme_6cb20dcb", "Relay addresses cannot contain a query or fragment.")
+    fun displayRelayAddressesCannotContainAQueryOrFragmentMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_relay_addresses_cannot_contain_a_query_or_fragme_6cb20dcb", "Relay addresses cannot contain a query or fragment.", listOf())
+    fun displayRelayAddressesCannotContainAUsernameOrPassword(): String =
+        L10n.message("id.ui_relay_addresses_cannot_contain_a_username_or_pas_399c2034", "Relay addresses cannot contain a username or password.")
+    fun displayRelayAddressesCannotContainAUsernameOrPasswordMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_relay_addresses_cannot_contain_a_username_or_pas_399c2034", "Relay addresses cannot contain a username or password.", listOf())
     fun billingRetryGooglePlay(): String =
         L10n.message("id.ui_retry_google_play_8520938e", "Retry Google Play")
     fun billingRetryGooglePlayMessage(): LocalizedMessage =
@@ -534,6 +690,18 @@ object Messages {
         L10n.message("id.ui_selected_unit_s_secure_key_is_invalid_eabdf2af", "Selected unit's secure key is invalid")
     fun chatSelectedUnitSSecureKeyIsInvalidMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_selected_unit_s_secure_key_is_invalid_eabdf2af", "Selected unit's secure key is invalid", listOf())
+    fun displaySetADevicePinPatternOrPasswordFirstThen(): String =
+        L10n.message("id.ui_set_a_device_pin_pattern_or_password_first_then__cd1b6a54", "Set a device PIN, pattern or password first, then try again.")
+    fun displaySetADevicePinPatternOrPasswordFirstThenMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_set_a_device_pin_pattern_or_password_first_then__cd1b6a54", "Set a device PIN, pattern or password first, then try again.", listOf())
+    fun syncFormShareMyLocationCouldNotBeSavedSoTacmapDid(): String =
+        L10n.message("id.ui_share_my_location_could_not_be_saved_so_tacmap_d_57862bba", "Share my location could not be saved, so TacMap did not join. Check available storage and try again.")
+    fun syncFormShareMyLocationCouldNotBeSavedSoTacmapDidMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_share_my_location_could_not_be_saved_so_tacmap_d_57862bba", "Share my location could not be saved, so TacMap did not join. Check available storage and try again.", listOf())
+    fun displaySkippedAlreadyPresentObjects(detail1: String): String =
+        L10n.message("id.ui_skipped_1_already_present_objects_41a816dc", "; skipped %1\$s already-present objects", detail1)
+    fun displaySkippedAlreadyPresentObjectsMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_skipped_1_already_present_objects_41a816dc", "; skipped %1\$s already-present objects", listOf(detail1))
     fun trackStopBeforeDiscard(): String =
         L10n.message("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.")
     fun trackStopBeforeDiscardMessage(): LocalizedMessage =
@@ -590,18 +758,78 @@ object Messages {
         L10n.message("id.ui_tacmap_saved_your_purchase_but_google_play_has_n_c7732e0b", "TacMap saved your purchase, but Google Play has not confirmed its acknowledgement. Your access remains available. Retry soon to avoid Play automatically refunding an unacknowledged purchase.")
     fun billingTacmapSavedYourPurchaseButGooglePlayHasNotMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_tacmap_saved_your_purchase_but_google_play_has_n_c7732e0b", "TacMap saved your purchase, but Google Play has not confirmed its acknowledgement. Your access remains available. Retry soon to avoid Play automatically refunding an unacknowledged purchase.", listOf())
+    fun displayTheBasemapChoiceCouldNotBeSavedThePrevious420c88c7(): String =
+        L10n.message("id.ui_the_basemap_choice_could_not_be_saved_the_previo_420c88c7", "The basemap choice could not be saved. The previous map remains active. Check device storage and retry.")
+    fun displayTheBasemapChoiceCouldNotBeSavedThePrevious420c88c7Message(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_basemap_choice_could_not_be_saved_the_previo_420c88c7", "The basemap choice could not be saved. The previous map remains active. Check device storage and retry.", listOf())
     fun syncTheConfiguredUnitSyncRelayIsUnsafeOrInvalid(): String =
         L10n.message("id.ui_the_configured_unit_sync_relay_is_unsafe_or_inva_59fe82a1", "The configured Unit Sync relay is unsafe or invalid. Correct it in Privacy & OPSEC.")
     fun syncTheConfiguredUnitSyncRelayIsUnsafeOrInvalidMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_the_configured_unit_sync_relay_is_unsafe_or_inva_59fe82a1", "The configured Unit Sync relay is unsafe or invalid. Correct it in Privacy & OPSEC.", listOf())
+    fun displayTheDrawingChangeWasNotSavedThePreviousDrawing(): String =
+        L10n.message("id.ui_the_drawing_change_was_not_saved_the_previous_dr_b9bc8875", "The drawing change was not saved. The previous drawing remains active.")
+    fun displayTheDrawingChangeWasNotSavedThePreviousDrawingMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_drawing_change_was_not_saved_the_previous_dr_b9bc8875", "The drawing change was not saved. The previous drawing remains active.", listOf())
+    fun displayTheDrawingWasNotDeletedItRemainsSelected(): String =
+        L10n.message("id.ui_the_drawing_was_not_deleted_it_remains_selected_55190285", "The drawing was not deleted. It remains selected.")
+    fun displayTheDrawingWasNotDeletedItRemainsSelectedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_drawing_was_not_deleted_it_remains_selected_55190285", "The drawing was not deleted. It remains selected.", listOf())
+    fun displayTheDrawingWasNotSavedYourDraftIsStill(): String =
+        L10n.message("id.ui_the_drawing_was_not_saved_your_draft_is_still_op_d299d51b", "The drawing was not saved. Your draft is still open.")
+    fun displayTheDrawingWasNotSavedYourDraftIsStillMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_drawing_was_not_saved_your_draft_is_still_op_d299d51b", "The drawing was not saved. Your draft is still open.", listOf())
     fun billingTheGooglePlayPriceIsNotReadyYetRetry(): String =
         L10n.message("id.ui_the_google_play_price_is_not_ready_yet_retry_to__ae5677c5", "The Google Play price is not ready yet. Retry to load it.")
     fun billingTheGooglePlayPriceIsNotReadyYetRetryMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_the_google_play_price_is_not_ready_yet_retry_to__ae5677c5", "The Google Play price is not ready yet. Retry to load it.", listOf())
+    fun displayTheLayerCouldNotBeSavedCheckTheName(): String =
+        L10n.message("id.ui_the_layer_could_not_be_saved_check_the_name_and__67c01b25", "The layer could not be saved. Check the name and try again.")
+    fun displayTheLayerCouldNotBeSavedCheckTheNameMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_layer_could_not_be_saved_check_the_name_and__67c01b25", "The layer could not be saved. Check the name and try again.", listOf())
+    fun displayTheLayerCouldNotBeSavedYourPreviousName(): String =
+        L10n.message("id.ui_the_layer_could_not_be_saved_your_previous_name__0b859376", "The layer could not be saved. Your previous name and colour remain active.")
+    fun displayTheLayerCouldNotBeSavedYourPreviousNameMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_layer_could_not_be_saved_your_previous_name__0b859376", "The layer could not be saved. Your previous name and colour remain active.", listOf())
+    fun displayTheLayerRemainsAnySymbolsAlreadyMovedToFriendly(): String =
+        L10n.message("id.ui_the_layer_remains_any_symbols_already_moved_to_f_340dad03", "The layer remains. Any symbols already moved to Friendly are safe; retry to finish.")
+    fun displayTheLayerRemainsAnySymbolsAlreadyMovedToFriendlyMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_layer_remains_any_symbols_already_moved_to_f_340dad03", "The layer remains. Any symbols already moved to Friendly are safe; retry to finish.", listOf())
+    fun displayThePdfMapCouldNotBeSavedForRelauncha195ed9e(): String =
+        L10n.message("id.ui_the_pdf_map_could_not_be_saved_for_relaunch_the__a195ed9e", "The PDF map could not be saved for relaunch. The previous map remains active. Check device storage and retry.")
+    fun displayThePdfMapCouldNotBeSavedForRelauncha195ed9eMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_pdf_map_could_not_be_saved_for_relaunch_the__a195ed9e", "The PDF map could not be saved for relaunch. The previous map remains active. Check device storage and retry.", listOf())
+    fun displayThePdfMapWasUnloadedButItsPrivateSession(): String =
+        L10n.message("id.ui_the_pdf_map_was_unloaded_but_its_private_session_f417400f", "The PDF map was unloaded, but its private session metadata could not be removed. Retry cleanup.")
+    fun displayThePdfMapWasUnloadedButItsPrivateSessionMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_pdf_map_was_unloaded_but_its_private_session_f417400f", "The PDF map was unloaded, but its private session metadata could not be removed. Retry cleanup.", listOf())
     fun billingThePurchaseWindowCouldNotOpenReturnToTacmap(): String =
         L10n.message("id.ui_the_purchase_window_could_not_open_return_to_tac_790f34d5", "The purchase window could not open. Return to TacMap and try Unlock again.")
     fun billingThePurchaseWindowCouldNotOpenReturnToTacmapMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_the_purchase_window_could_not_open_return_to_tac_790f34d5", "The purchase window could not open. Return to TacMap and try Unlock again.", listOf())
+    fun displayTheRelayAddressContainsAnInvalidHost(): String =
+        L10n.message("id.ui_the_relay_address_contains_an_invalid_host_091cc81f", "The relay address contains an invalid host.")
+    fun displayTheRelayAddressContainsAnInvalidHostMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_relay_address_contains_an_invalid_host_091cc81f", "The relay address contains an invalid host.", listOf())
+    fun displayTheRelayAddressContainsAnInvalidPort(): String =
+        L10n.message("id.ui_the_relay_address_contains_an_invalid_port_cdfa2fd1", "The relay address contains an invalid port.")
+    fun displayTheRelayAddressContainsAnInvalidPortMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_relay_address_contains_an_invalid_port_cdfa2fd1", "The relay address contains an invalid port.", listOf())
+    fun displayTheRelayAddressCouldNotBeNormalized(): String =
+        L10n.message("id.ui_the_relay_address_could_not_be_normalized_597c59b3", "The relay address could not be normalized.")
+    fun displayTheRelayAddressCouldNotBeNormalizedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_relay_address_could_not_be_normalized_597c59b3", "The relay address could not be normalized.", listOf())
+    fun displayTheRelayAddressIsNotAValidUrl(): String =
+        L10n.message("id.ui_the_relay_address_is_not_a_valid_url_b87a714c", "The relay address is not a valid URL.")
+    fun displayTheRelayAddressIsNotAValidUrlMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_relay_address_is_not_a_valid_url_b87a714c", "The relay address is not a valid URL.", listOf())
+    fun displayTheRelayAddressMustContainAValidHost(): String =
+        L10n.message("id.ui_the_relay_address_must_contain_a_valid_host_ea2bdbb3", "The relay address must contain a valid host.")
+    fun displayTheRelayAddressMustContainAValidHostMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_relay_address_must_contain_a_valid_host_ea2bdbb3", "The relay address must contain a valid host.", listOf())
+    fun displayTheRelayAddressMustIncludeWssAndAHost(): String =
+        L10n.message("id.ui_the_relay_address_must_include_wss_and_a_host_5637d3fa", "The relay address must include wss:// and a host.")
+    fun displayTheRelayAddressMustIncludeWssAndAHostMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_relay_address_must_include_wss_and_a_host_5637d3fa", "The relay address must include wss:// and a host.", listOf())
     fun syncTheRelayDidNotCompleteItsInitialSnapshotIn(): String =
         L10n.message("id.ui_the_relay_did_not_complete_its_initial_snapshot__98e4c95c", "The relay did not complete its initial snapshot in time.")
     fun syncTheRelayDidNotCompleteItsInitialSnapshotInMessage(): LocalizedMessage =
@@ -638,6 +866,22 @@ object Messages {
         L10n.message("id.ui_the_relay_snapshot_page_arrived_out_of_order_f442b665", "The relay snapshot page arrived out of order.")
     fun syncTheRelaySnapshotPageArrivedOutOfOrderMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_the_relay_snapshot_page_arrived_out_of_order_f442b665", "The relay snapshot page arrived out of order.", listOf())
+    fun importUnknownFailure(): String =
+        L10n.message("id.ui_the_selected_file_could_not_be_imported_4ece6e65", "The selected file could not be imported")
+    fun importUnknownFailureMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_selected_file_could_not_be_imported_4ece6e65", "The selected file could not be imported", listOf())
+    fun displayTheSymbolCouldNotBeDeletedItRemainsOn(): String =
+        L10n.message("id.ui_the_symbol_could_not_be_deleted_it_remains_on_th_96cfc9c3", "The symbol could not be deleted. It remains on the map.")
+    fun displayTheSymbolCouldNotBeDeletedItRemainsOnMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_symbol_could_not_be_deleted_it_remains_on_th_96cfc9c3", "The symbol could not be deleted. It remains on the map.", listOf())
+    fun displayTheSymbolCouldNotBeSavedCheckAvailableStorage(): String =
+        L10n.message("id.ui_the_symbol_could_not_be_saved_check_available_st_5da9c75a", "The symbol could not be saved. Check available storage, then try again.")
+    fun displayTheSymbolCouldNotBeSavedCheckAvailableStorageMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_symbol_could_not_be_saved_check_available_st_5da9c75a", "The symbol could not be saved. Check available storage, then try again.", listOf())
+    fun displayTheSymbolCouldNotBeSavedTryAgain(): String =
+        L10n.message("id.ui_the_symbol_could_not_be_saved_try_again_2272a4c8", "The symbol could not be saved. Try again.")
+    fun displayTheSymbolCouldNotBeSavedTryAgainMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_the_symbol_could_not_be_saved_try_again_2272a4c8", "The symbol could not be saved. Try again.", listOf())
     fun billingTheTacmapUnlockProductIsNotAvailableForThis(): String =
         L10n.message("id.ui_the_tacmap_unlock_product_is_not_available_for_t_9d8a3562", "The TacMap unlock product is not available for this Play Store account.")
     fun billingTheTacmapUnlockProductIsNotAvailableForThisMessage(): LocalizedMessage =
@@ -686,6 +930,14 @@ object Messages {
         L10n.message("id.ui_this_unit_sync_session_can_no_longer_confirm_cha_ae41c407", "This Unit Sync session can no longer confirm changes. The local edit remains saved; reconnecting with a fresh authenticated session.")
     fun syncThisUnitSyncSessionCanNoLongerConfirmChangesMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_this_unit_sync_session_can_no_longer_confirm_cha_ae41c407", "This Unit Sync session can no longer confirm changes. The local edit remains saved; reconnecting with a fresh authenticated session.", listOf())
+    fun displayTooManyAttemptsTryAgainInS(detail1: String): String =
+        L10n.message("id.ui_too_many_attempts_try_again_in_1_s_cf7c317f", "Too many attempts. Try again in %1\$ss", detail1)
+    fun displayTooManyAttemptsTryAgainInSMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_too_many_attempts_try_again_in_1_s_cf7c317f", "Too many attempts. Try again in %1\$ss", listOf(detail1))
+    fun displayTooManyAttemptsTryAgainShortly(): String =
+        L10n.message("id.ui_too_many_attempts_try_again_shortly_94ee6062", "Too many attempts. Try again shortly.")
+    fun displayTooManyAttemptsTryAgainShortlyMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_too_many_attempts_try_again_shortly_94ee6062", "Too many attempts. Try again shortly.", listOf())
     fun recordingFixFailed(detail: String): String =
         L10n.message("id.ui_track_fix_not_saved_recording_stopped_1_7a513ad8", "Track fix not saved; recording stopped: %1\$s", detail)
     fun recordingFixFailedMessage(detail: String): LocalizedMessage =
@@ -702,6 +954,14 @@ object Messages {
         L10n.message("id.ui_unencrypted_chat_history_was_rejected_4094bb5f", "Unencrypted chat history was rejected")
     fun chatUnencryptedChatHistoryWasRejectedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_unencrypted_chat_history_was_rejected_4094bb5f", "Unencrypted chat history was rejected", listOf())
+    fun displayUnencryptedWsIsAllowedOnlyForALoopbackRelay(): String =
+        L10n.message("id.ui_unencrypted_ws_is_allowed_only_for_a_loopback_re_89c73bce", "Unencrypted ws:// is allowed only for a loopback relay in a debug build.")
+    fun displayUnencryptedWsIsAllowedOnlyForALoopbackRelayMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_unencrypted_ws_is_allowed_only_for_a_loopback_re_89c73bce", "Unencrypted ws:// is allowed only for a loopback relay in a debug build.", listOf())
+    fun syncFormUnitIdentityLocationSharingCouldNotBeSavedSoTacmap(): String =
+        L10n.message("id.ui_unit_identity_location_sharing_could_not_be_save_f7ed3f43", "Unit identity/location sharing could not be saved, so TacMap did not join. Check available storage and try again.")
+    fun syncFormUnitIdentityLocationSharingCouldNotBeSavedSoTacmapMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_unit_identity_location_sharing_could_not_be_save_f7ed3f43", "Unit identity/location sharing could not be saved, so TacMap did not join. Check available storage and try again.", listOf())
     fun syncUnitSyncConnectionFailedCheckTheRelayOrNetwork(detail1: String): String =
         L10n.message("id.ui_unit_sync_connection_failed_1_check_the_relay_or_789de674", "Unit Sync connection failed: %1\$s. Check the relay or network; reconnecting automatically.", detail1)
     fun syncUnitSyncConnectionFailedCheckTheRelayOrNetworkMessage(detail1: String): LocalizedMessage =
@@ -710,6 +970,10 @@ object Messages {
         L10n.message("id.ui_unit_sync_disconnected_check_the_relay_or_networ_87e21148", "Unit Sync disconnected. Check the relay or network; reconnecting automatically.")
     fun syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnectingMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_unit_sync_disconnected_check_the_relay_or_networ_87e21148", "Unit Sync disconnected. Check the relay or network; reconnecting automatically.", listOf())
+    fun displayUnitSyncRelayAddressesMustUseWss(): String =
+        L10n.message("id.ui_unit_sync_relay_addresses_must_use_wss_bf1ce252", "Unit Sync relay addresses must use wss://.")
+    fun displayUnitSyncRelayAddressesMustUseWssMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_unit_sync_relay_addresses_must_use_wss_bf1ce252", "Unit Sync relay addresses must use wss://.", listOf())
     fun syncUnitSyncSecureHandshakeTimedOutCheckTheRelay(): String =
         L10n.message("id.ui_unit_sync_secure_handshake_timed_out_check_the_r_8219de68", "Unit Sync secure handshake timed out. Check the relay or network; reconnecting automatically.")
     fun syncUnitSyncSecureHandshakeTimedOutCheckTheRelayMessage(): LocalizedMessage =
@@ -726,6 +990,10 @@ object Messages {
         L10n.message("id.ui_unlock_status_needs_attention_f49aa5e4", "Unlock status needs attention")
     fun billingUnlockStatusNeedsAttentionMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_unlock_status_needs_attention_f49aa5e4", "Unlock status needs attention", listOf())
+    fun displayUseTheRelayOriginOnlyCustomPathsAreNot(): String =
+        L10n.message("id.ui_use_the_relay_origin_only_custom_paths_are_not_a_38438a43", "Use the relay origin only; custom paths are not allowed.")
+    fun displayUseTheRelayOriginOnlyCustomPathsAreNotMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_use_the_relay_origin_only_custom_paths_are_not_a_38438a43", "Use the relay origin only; custom paths are not allowed.", listOf())
     fun recordingAwaitingPermission(): String =
         L10n.message("id.ui_waiting_for_precise_location_permission_9db6f154", "Waiting for Precise location permission…")
     fun recordingAwaitingPermissionMessage(): LocalizedMessage =
@@ -734,6 +1002,10 @@ object Messages {
         L10n.message("id.ui_waiting_for_the_recording_notification_choice_b6d01585", "Waiting for the recording notification choice…")
     fun recordingAwaitingNotificationMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_waiting_for_the_recording_notification_choice_b6d01585", "Waiting for the recording notification choice…", listOf())
+    fun displayWaypointStoreCommittedNewObjectsAndSkippedAlreadyPresent(detail1: String, detail2: String): String =
+        L10n.message("id.ui_waypoint_store_committed_1_new_objects_and_skipp_cd85649d", "Waypoint store committed %1\$s new objects and skipped %2\$s already-present objects, but drawings and their layers were not saved. Retry will reuse the reconciled object IDs and will not duplicate the saved waypoints.", detail1, detail2)
+    fun displayWaypointStoreCommittedNewObjectsAndSkippedAlreadyPresentMessage(detail1: String, detail2: String): LocalizedMessage =
+        LocalizedMessage("id.ui_waypoint_store_committed_1_new_objects_and_skipp_cd85649d", "Waypoint store committed %1\$s new objects and skipped %2\$s already-present objects, but drawings and their layers were not saved. Retry will reuse the reconciled object IDs and will not duplicate the saved waypoints.", listOf(detail1, detail2))
     fun waypointsAreEncryptedAndLocked(detail1: String): String =
         L10n.message("id.ui_waypoints_are_encrypted_and_locked_1_93dedbe5", "Waypoints are encrypted and locked. %1\$s", detail1)
     fun waypointsAreEncryptedAndLockedMessage(detail1: String): LocalizedMessage =
@@ -742,6 +1014,10 @@ object Messages {
         L10n.message("id.ui_waypoints_are_locked_and_the_change_was_not_save_f2b9af87", "Waypoints are locked and the change was not saved.")
     fun waypointsAreLockedAndTheChangeWasNotSavedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_waypoints_are_locked_and_the_change_was_not_save_f2b9af87", "Waypoints are locked and the change was not saved.", listOf())
+    fun importDrawingsPartiallySaved(): String =
+        L10n.message("id.ui_waypoints_were_saved_but_drawings_could_not_be_s_f1ec9386", "Waypoints were saved, but drawings could not be saved. Retry the same file; existing objects will be skipped and the same IDs reused.")
+    fun importDrawingsPartiallySavedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_waypoints_were_saved_but_drawings_could_not_be_s_f1ec9386", "Waypoints were saved, but drawings could not be saved. Retry the same file; existing objects will be skipped and the same IDs reused.", listOf())
     fun billingYourGooglePlayPaymentIsPendingTacmapUnlocksAfter(): String =
         L10n.message("id.ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693", "Your Google Play payment is pending. TacMap unlocks after Play confirms it.")
     fun billingYourGooglePlayPaymentIsPendingTacmapUnlocksAfterMessage(): LocalizedMessage =
@@ -755,24 +1031,45 @@ object Messages {
     fun weatherFetchFailedMessage(): LocalizedMessage =
         LocalizedMessage("id.weather_fetch_failed", "Couldn't fetch conditions. If online lookups are off (Settings, Privacy & OPSEC), enable them; otherwise check your connection.", listOf())
     fun dayCount(count: Int): String = L10n.quantity("day", count)
+    fun dayCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("day", count)
     fun pointCount(count: Int): String = L10n.quantity("point", count)
+    fun pointCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("point", count)
     fun drawingCount(count: Int): String = L10n.quantity("drawing", count)
+    fun drawingCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("drawing", count)
     fun waypointCount(count: Int): String = L10n.quantity("waypoint", count)
+    fun waypointCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("waypoint", count)
     fun unitCount(count: Int): String = L10n.quantity("unit", count)
+    fun unitCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("unit", count)
     fun taskCount(count: Int): String = L10n.quantity("task", count)
+    fun taskCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("task", count)
     fun markerCount(count: Int): String = L10n.quantity("marker", count)
+    fun markerCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("marker", count)
     fun lineCount(count: Int): String = L10n.quantity("line", count)
+    fun lineCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("line", count)
     fun freeDrawCount(count: Int): String = L10n.quantity("free-draw", count)
+    fun freeDrawCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("free-draw", count)
     fun areaCount(count: Int): String = L10n.quantity("area", count)
+    fun areaCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("area", count)
     fun trackRecordedCount(count: Int): String = L10n.quantity("track_recorded", count)
+    fun trackRecordedCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("track_recorded", count)
     fun trialRemainingCount(count: Int): String = L10n.quantity("trial_remaining", count)
+    fun trialRemainingCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("trial_remaining", count)
     fun unreadCount(count: Int): String = L10n.quantity("unread", count)
+    fun unreadCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("unread", count)
     fun sendUnitsCount(count: Int): String = L10n.quantity("send_units", count)
+    fun sendUnitsCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("send_units", count)
     fun minuteAgoCount(count: Int): String = L10n.quantity("minute_ago", count)
+    fun minuteAgoCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("minute_ago", count)
     fun hourAgoCount(count: Int): String = L10n.quantity("hour_ago", count)
+    fun hourAgoCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("hour_ago", count)
     fun objectCount(count: Int): String = L10n.quantity("object", count)
+    fun objectCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("object", count)
     fun layerCount(count: Int): String = L10n.quantity("layer", count)
+    fun layerCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("layer", count)
     fun newWaypointCount(count: Int): String = L10n.quantity("new_waypoint", count)
+    fun newWaypointCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("new_waypoint", count)
     fun newDrawingCount(count: Int): String = L10n.quantity("new_drawing", count)
+    fun newDrawingCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("new_drawing", count)
     fun newLayerCount(count: Int): String = L10n.quantity("new_layer", count)
+    fun newLayerCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("new_layer", count)
 }

@@ -47,7 +47,7 @@ struct DrawingControlsCard: View {
     @State private var showDeleteConfirm = false
     @State private var showNameAlert     = false
     @State private var draftName: String = ""
-    @State private var mutationError: String?
+    @State private var mutationError: LocalizedMessage?
     @State private var sliderTransaction = DrawingSliderTransaction()
     /// Rotation / width / height sliders visibility. They eat most of
     /// the card's vertical space so they hide behind a toggle.
@@ -99,7 +99,7 @@ struct DrawingControlsCard: View {
                     _ = try drawingStore.deleteDurably(shape)
                     onDismiss()
                 } catch {
-                    mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
+                    mutationError = Messages.displayCheckAvailableStorageThenTryAgainMessage("").withArgument(0, error.displayMessage)
                 }
             }
             Button(L10n.text("Cancel"), role: .cancel) { }
@@ -123,7 +123,7 @@ struct DrawingControlsCard: View {
         )) {
             Button(Messages.acknowledge(), role: .cancel) { mutationError = nil }
         } message: {
-            Text(mutationError ?? L10n.text("The drawing change could not be saved. Check available storage, then try again."))
+            Text(mutationError?.text ?? L10n.text("The drawing change could not be saved. Check available storage, then try again."))
         }
     }
 
@@ -595,7 +595,7 @@ struct DrawingControlsCard: View {
             // commitEdit is durable-before-publish, so clearing the transient
             // candidate immediately restores the last known-good store shape.
             onPreview(nil)
-            mutationError = L10n.text("%1$@ The previous drawing is still active. Check available storage, then try again.", error.localizedDescription)
+            mutationError = Messages.displayThePreviousDrawingIsStillActiveCheckAvailableStorageMessage("").withArgument(0, error.displayMessage)
         }
     }
 
@@ -603,7 +603,7 @@ struct DrawingControlsCard: View {
                              mutation: (inout DrawingShape) -> Void) {
         cancelSliderTransaction()
         guard var durable = drawingStore.shapes.first(where: { $0.id == drawingID }) else {
-            mutationError = L10n.text("That drawing no longer exists. Close its controls and try again.")
+            mutationError = Messages.displayThatDrawingNoLongerExistsCloseItsControlsAndMessage()
             return
         }
         mutation(&durable)
@@ -625,7 +625,7 @@ struct DrawingControlsCard: View {
         do {
             _ = try drawingStore.commitEdit(shape, actionName: actionName)
         } catch {
-            mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
+            mutationError = Messages.displayCheckAvailableStorageThenTryAgainMessage("").withArgument(0, error.displayMessage)
         }
     }
 }

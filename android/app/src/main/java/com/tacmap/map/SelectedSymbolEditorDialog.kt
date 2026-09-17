@@ -99,8 +99,8 @@ internal fun SelectedSymbolEditorDialog(
     onDismiss: () -> Unit,
 ) {
     var draft by remember(waypoint.id) { mutableStateOf(SymbolEditDraft(waypoint)) }
-    var validationError by remember(waypoint.id) { mutableStateOf<String?>(null) }
-    var deleteError by remember(waypoint.id) { mutableStateOf<String?>(null) }
+    var validationError by remember(waypoint.id) { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
+    var deleteError by remember(waypoint.id) { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     var confirmDelete by remember(waypoint.id) { mutableStateOf(false) }
     val safeLayers = layers.ifEmpty { DrawingDocument.defaultLayers() }
 
@@ -137,10 +137,10 @@ internal fun SelectedSymbolEditorDialog(
                     Button(
                         onClick = {
                             when (val result = draft.normalized(safeLayers)) {
-                                is SymbolDraftResult.Invalid -> validationError = result.message
+                                is SymbolDraftResult.Invalid -> validationError = result.pendingMessage
                                 is SymbolDraftResult.Valid -> {
                                     if (onSave(result.waypoint)) onDismiss()
-                                    else validationError = L10n.text("The symbol could not be saved. Try again.")
+                                    else validationError = Messages.displayTheSymbolCouldNotBeSavedTryAgainMessage()
                                 }
                             }
                         },
@@ -247,14 +247,14 @@ internal fun SelectedSymbolEditorDialog(
                             placeholder = { Text(MgrsFormatter.format(draft.latitude, draft.longitude)) },
                             supportingText = {
                                 Text(
-                                    if (validationError == MGRS_MOVE_VALIDATION_ERROR) {
+                                    if (validationError?.id == MGRS_MOVE_VALIDATION_MESSAGE.id) {
                                         MGRS_MOVE_VALIDATION_ERROR
                                     } else {
                                         L10n.text("4, 6, 8, or 10 figures; shorthand uses this graphic's local grid square.")
                                     }
                                 )
                             },
-                            isError = validationError == MGRS_MOVE_VALIDATION_ERROR,
+                            isError = validationError?.id == MGRS_MOVE_VALIDATION_MESSAGE.id,
                             textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
@@ -276,10 +276,10 @@ internal fun SelectedSymbolEditorDialog(
                             onValueChange = { draft = draft.copy(elevationText = it); validationError = null },
                             label = { Text(L10n.text("Elevation (metres)")) },
                             singleLine = true,
-                            isError = validationError == ELEVATION_VALIDATION_ERROR,
+                            isError = validationError?.id == ELEVATION_VALIDATION_MESSAGE.id,
                             supportingText = validationError
-                                ?.takeIf { it != MGRS_MOVE_VALIDATION_ERROR }
-                                ?.let { error -> { Text(error) } }
+                                ?.takeIf { it.id != MGRS_MOVE_VALIDATION_MESSAGE.id }
+                                ?.let { error -> { Text(error.text) } }
                                 ?: { Text(Messages.decimalInputHint()) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth(),
@@ -359,7 +359,7 @@ internal fun SelectedSymbolEditorDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(L10n.text("This will permanently remove \"%1\$s\".", waypoint.name))
                     deleteError?.let { error ->
-                        Text(error, color = Color(0xFFFF8A80), fontSize = 12.sp)
+                        Text(error.text, color = Color(0xFFFF8A80), fontSize = 12.sp)
                     }
                 }
             },
@@ -370,7 +370,7 @@ internal fun SelectedSymbolEditorDialog(
                         confirmDelete = false
                         onDismiss()
                     } else {
-                        deleteError = L10n.text("The symbol could not be deleted. It remains on the map.")
+                        deleteError = Messages.displayTheSymbolCouldNotBeDeletedItRemainsOnMessage()
                     }
                 }) { Text(L10n.text("Delete"), color = Color(0xFFFF5A5A)) }
             },

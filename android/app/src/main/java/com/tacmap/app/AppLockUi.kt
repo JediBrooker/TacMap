@@ -142,7 +142,7 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
     var currentPin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -180,15 +180,15 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                         enabled = currentPin.length == 4 && newPin.length == 4 && confirmPin.length == 4,
                         onClick = {
                             when {
-                                newPin != confirmPin -> message = L10n.text("New PINs don't match.")
+                                newPin != confirmPin -> message = Messages.displayNewPinsDonTMatchMessage()
                                 appLock.changePin(currentPin, newPin) -> {
                                     currentPin = ""; newPin = ""; confirmPin = ""
-                                    message = L10n.text("PIN changed.")
+                                    message = Messages.displayPinChangedMessage()
                                 }
-                                appLock.lockoutRemainingMs() > 0 -> message = L10n.text("Too many attempts. Try again shortly.")
+                                appLock.lockoutRemainingMs() > 0 -> message = Messages.displayTooManyAttemptsTryAgainShortlyMessage()
                                 appLock.hasStorageError -> message =
-                                    L10n.text("PIN change could not be saved. The existing PIN remains active.")
-                                else -> message = L10n.text("Current PIN is incorrect.")
+                                    Messages.displayPinChangeCouldNotBeSavedTheExistingPinMessage()
+                                else -> message = Messages.displayCurrentPinIsIncorrectMessage()
                             }
                         }
                     ) { Text(L10n.text("Change PIN")) }
@@ -198,13 +198,13 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                             if (appLock.disable(currentPin)) {
                                 enabled = false
                                 currentPin = ""; newPin = ""; confirmPin = ""
-                                message = L10n.text("App Lock disabled.")
+                                message = Messages.displayAppLockDisabledMessage()
                             } else {
                                 message = if (appLock.hasStorageError) {
-                                    L10n.text("App Lock could not be disabled and remains active.")
+                                    Messages.displayAppLockCouldNotBeDisabledAndRemainsActiveMessage()
                                 } else if (appLock.lockoutRemainingMs() > 0)
-                                    L10n.text("Too many attempts. Try again shortly.")
-                                else L10n.text("Current PIN is incorrect.")
+                                    Messages.displayTooManyAttemptsTryAgainShortlyMessage()
+                                else Messages.displayCurrentPinIsIncorrectMessage()
                             }
                         }
                     ) { Text(L10n.text("Turn Off App Lock")) }
@@ -231,16 +231,16 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                             if (newPin == confirmPin && appLock.setPin(newPin)) {
                                 enabled = true
                                 newPin = ""; confirmPin = ""
-                                message = L10n.text("App Lock enabled. TacMap locks when backgrounded.")
+                                message = Messages.displayAppLockEnabledTacmapLocksWhenBackgroundedMessage()
                             } else if (newPin == confirmPin) {
-                                message = L10n.text("App Lock could not be saved. Try again.")
+                                message = Messages.displayAppLockCouldNotBeSavedTryAgainMessage()
                             } else {
-                                message = L10n.text("PINs don't match.")
+                                message = Messages.displayPinsDonTMatchMessage()
                             }
                         }
                     ) { Text(L10n.text("Enable App Lock")) }
                 }
-                message?.let { Text(it, fontSize = 12.sp, color = Color.Gray) }
+                message?.let { Text(it.text, fontSize = 12.sp, color = Color.Gray) }
                 Text(
                     L10n.text("A deterrent if your device is lost or borrowed — not a substitute for device encryption."),
                     fontSize = 11.sp, color = Color.Gray

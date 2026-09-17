@@ -1,0 +1,26 @@
+{
+  "appStore": {
+    "name": "TacMap",
+    "subtitle": "Offline GPS field maps + grid",
+    "promotionalText": "Use TacMap in English or German. Choose your language in Settings, then take your maps, waypoints, drawings and encrypted team tools into the field.",
+    "keywords": "mgrs,utm,topo,hunting,hiking,overland,geopdf,geojson,kml,waypoint,gpx,nato,sar,survey,gis,trail",
+    "description": "TacMap is an offline map for the field: unlock once, with no subscription. No TacMap account, ads or behavioural analytics. Built for hiking, hunting, overlanding, search and rescue, surveying and MGRS navigation.\n\nMAPS WITHOUT A CONNECTION\n• Import PDF, GeoPDF and MBTiles maps.\n• Calibrate an ungeoreferenced PDF using three control points and review the reported residual.\n• Use imported maps offline, without country restrictions.\n• Online basemaps, terrain elevation and weather are optional and require a connection.\n\nNAVIGATE AND PLAN\n• Read your position in MGRS, UTM or latitude/longitude.\n• Keep the map North Up or rotate it with your heading.\n• Measure distances, areas and bearings in degrees or NATO mils.\n• Add waypoints, draw lines and areas, and organise them into layers.\n• Use search-and-rescue, points-of-interest, airsoft and NATO APP-6 symbols.\n• Record your route and export GPX tracks.\n\nWORK TOGETHER\n• Share drawings and symbols between iOS and Android with end-to-end encrypted Unit Sync.\n• Optionally share your callsign, position and heading with your unit.\n• Send encrypted text or reports to the room or a selected live unit with TacMap Chat.\n• Screen-off location sharing has a separate switch. Updates depend on the operating system and connection.\n• The relay cannot decrypt mission content, but sees admission, routing, session and control data, Chat recipients, IP addresses, timing and data size. “Routed” is not delivery or read proof; member status is relay-reported.\n\nYOUR DATA, YOUR TOOLS\n• Import and export GeoJSON, and import KML/KMZ.\n• Export mission objects together; recorded tracks remain separate GPX files.\n• Mission data is encrypted in app-private storage. Imported maps remain in private, device-protected storage.\n• Online basemaps and lookups are off at first launch and can be enabled independently. While enabled, providers receive your IP address and requested map area, search query or coordinates. Coordinate and mission search stays on-device.\n• Optional Face ID or Touch ID app lock. For iPhone and iPad.\n\nENGLISH AND GERMAN\nChoose English, German or Device language in Settings. Your own names, notes and messages remain unchanged.\n\nUNLOCK ONCE\nTry TacMap free for three days, then unlock with a one-time purchase. No subscription. The App Store shows your local price.",
+    "whatsNew": "• Choose English, German or Device language in Settings.\n• Updated translations across maps, editing, imports and exports, recording, Unit Sync, Chat and purchases.\n• Messages and displayed numbers follow your selected language.\n• Improved layouts for longer German text.\n• TacMap manages the Unit Sync relay address."
+  },
+  "googlePlay": {
+    "title": "TacMap: Offline GPS Field Maps",
+    "shortDescription": "Offline field maps, MGRS, waypoints and encrypted team sharing. No subscription.",
+    "descriptionFromAppStore": true,
+    "descriptionReplacements": {
+      "Optional Face ID or Touch ID app lock. For iPhone and iPad.": "Optional PIN or biometric app lock. For Android phones and tablets.",
+      "The App Store shows your local price.": "Google Play shows your local price."
+    },
+    "releaseNotes": "• Choose English, German or Device language in Settings.\n• Updated translations throughout the app.\n• Messages and numbers follow your selected language.\n• Improved layouts for longer German text.\n• TacMap manages the Unit Sync relay address."
+  },
+  "purchase": {
+    "iosProductId": "com.tacticalmaps.app.unlock",
+    "androidProductId": "unlock_full",
+    "name": "TacMap Permanent Unlock",
+    "description": "Unlock permanently. No subscription."
+  }
+}

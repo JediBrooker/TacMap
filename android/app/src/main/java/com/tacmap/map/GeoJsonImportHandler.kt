@@ -4,6 +4,9 @@ import com.tacmap.localization.DisplayFormat
 
 import com.tacmap.localization.Messages
 
+import com.tacmap.localization.LocalizedMessage
+import com.tacmap.localization.displayMessage
+import com.tacmap.export.importSummaryMessage
 import com.tacmap.localization.L10n
 
 import com.tacmap.drawings.DrawingLayer
@@ -16,8 +19,8 @@ import java.io.ByteArrayOutputStream
  * testable without replacing Android's ContentResolver. */
 internal data class GeoJsonImportFeedback(
     val succeeded: Boolean,
-    val message: String,
-)
+    val pendingMessage: LocalizedMessage,
+) { val message: String get() = pendingMessage.text }
 
 internal fun parseGeoJsonDocument(
     input: InputStream?,
@@ -43,28 +46,23 @@ internal fun applyGeoJsonImportResult(
     onSuccess = { parsed ->
         runCatching { apply(parsed) }.fold(
             onSuccess = {
-                val skipped = if (parsed.invalidSkipped > 0) {
-                    L10n.text("; skipped %1\$s invalid feature(s)", parsed.invalidSkipped)
-                } else {
-                    ""
-                }
                 GeoJsonImportFeedback(
                     succeeded = true,
-                    message = Messages.importFeatureSummary(DisplayFormat.number((parsed.waypoints.size).toDouble(), 0), DisplayFormat.number((parsed.drawings.size).toDouble(), 0), skipped),
+                    pendingMessage = importSummaryMessage(parsed.waypoints.size, parsed.drawings.size, parsed.invalidSkipped),
                 )
             },
             onFailure = { failure ->
-                GeoJsonImportFeedback(false, Messages.importFailed(failure.readableMessage()))
+                GeoJsonImportFeedback(false, Messages.importFailedMessage("").withArgument(0, failure.readableMessage()))
             },
         )
     },
     onFailure = { failure ->
-        GeoJsonImportFeedback(false, Messages.importFailed(failure.readableMessage()))
+        GeoJsonImportFeedback(false, Messages.importFailedMessage("").withArgument(0, failure.readableMessage()))
     },
 )
 
-private fun Throwable.readableMessage(): String =
-    message?.takeIf { it.isNotBlank() } ?: L10n.text("The selected file could not be imported")
+private fun Throwable.readableMessage(): LocalizedMessage =
+    if (message.isNullOrBlank()) Messages.importUnknownFailureMessage() else displayMessage
 
 internal fun readBoundedExternalImport(input: InputStream?): ByteArray {
     val readable = input ?: throw IllegalStateException(L10n.text("Couldn't read the selected file"))

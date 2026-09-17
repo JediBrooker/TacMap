@@ -24,7 +24,7 @@ German uses informal **du**, sentence case for ordinary labels and typographic G
 
 ## Review evidence
 
-On 17 September 2026, Codex read and compared all 1,701 catalogue entries, all 21 plural families and both permission descriptions for meaning, parameter preservation, German grammar, action names and terminology. This is an AI linguistic review, not a certification by a native tactical-domain translator. Compatibility-only fragments remain to avoid breaking older lookups; new messages should be complete sentences with named arguments and context.
+On 17 September 2026, Codex read and compared all 1,720 catalogue entries, all 21 plural families and both permission descriptions for meaning, parameter preservation, German grammar, action names and terminology. This is an AI linguistic review, not a certification by a native tactical-domain translator. Compatibility-only fragments remain to avoid breaking older lookups; new messages should be complete sentences with named arguments and context.
 
 The wording correction list in `testdata/localization/reviewed-wording-changes.json` records the exact 48 legacy German edits. The original resource hashes remain in place: the migration regression test accounts only for these explicit corrections. English source, wire values, coordinates, IDs and user content are not rebaselined.
 

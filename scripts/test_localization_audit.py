@@ -16,6 +16,12 @@ class DisplayTextAuditTests(unittest.TestCase):
         self.assertEqual(self.literals('Text(L10n.text("%1$@ point%2$@", count, count == 1 ? "" : "s"))'), ['"s"'])
         self.assertEqual(self.literals('Text(Messages.drawingCount(count))', 'android'), [])
 
+    def test_top_level_translations_need_a_getter(self):
+        self.assertEqual(self.literals('internal val ERROR = L10n.text("Try again")', 'android'), ['"Try again"'])
+        self.assertEqual(self.literals('internal val ERROR: String get() = L10n.text("Try again")', 'android'), [])
+        self.assertEqual(self.literals('fun run() { val message = L10n.text("Try again") }', 'android'), [])
+        self.assertEqual(self.literals('internal val ERROR = Messages.failureMessage()', 'android'), [])
+
     def test_direct_labels_on_both_platforms(self):
         self.assertEqual(self.literals('Text("Save"); Button("Cancel", action: close)'), ['"Save"', '"Cancel"'])
         self.assertEqual(self.literals('Text(text = "Save"); Icon(contentDescription = "Close")', 'android'), ['"Save"', '"Close"'])

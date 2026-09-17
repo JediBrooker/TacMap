@@ -78,7 +78,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
     /// the store. Passing nil restores the latest durable renderer snapshot.
     var showDrawingPreview: ((DrawingShape?) -> Void)?
     /// Routed to ContentView's existing "Mission Object Not Saved" alert.
-    var onMutationError: ((String) -> Void)?
+    var onMutationError: ((LocalizedMessage) -> Void)?
     /// A remote Unit Sync marker was tapped. Kept on the parent recognizer so
     /// marker views never steal map pan/pinch gestures.
     var onPresenceTap: ((String) -> Void)?
@@ -151,8 +151,8 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                     _ = try drawingStore.addDurably(shape)
                 } catch {
                     reportMutationFailure(
-                        L10n.text("The drawing was not added."), error: error,
-                        recovery: L10n.text("Check available storage, then draw it again.")
+                        Messages.displayTheDrawingWasNotAddedMessage(), error: error,
+                        recovery: Messages.displayCheckAvailableStorageThenDrawItAgainMessage()
                     )
                 }
             }
@@ -186,7 +186,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                 _ = try drawingStore.commitEdit(shape, actionName: L10n.text("Insert Drawing Vertex"))
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             } catch {
-                reportMutationFailure(L10n.text("The new drawing vertex was not saved."), error: error)
+                reportMutationFailure(Messages.displayTheNewDrawingVertexWasNotSavedMessage(), error: error)
             }
             return
         }
@@ -304,7 +304,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                             _ = try drawingStore.commitEdit(shape, actionName: L10n.text("Delete Drawing Vertex"))
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         } catch {
-                            reportMutationFailure(L10n.text("The drawing vertex was not deleted."), error: error)
+                            reportMutationFailure(Messages.displayTheDrawingVertexWasNotDeletedMessage(), error: error)
                         }
                     } else {
                         UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -320,7 +320,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                         _ = try preview.commit(to: waypointStore)
                     } catch {
                         restoreWaypointPreview(preview)
-                        reportMutationFailure(L10n.text("The waypoint move was not saved."), error: error)
+                        reportMutationFailure(Messages.displayTheWaypointMoveWasNotSavedMessage(), error: error)
                     }
                 } else {
                     restoreWaypointPreview(preview)
@@ -339,7 +339,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                         }
                     } catch {
                         restoreDrawingPreview()
-                        reportMutationFailure(L10n.text("The drawing move was not saved."), error: error)
+                        reportMutationFailure(Messages.displayTheDrawingMoveWasNotSavedMessage(), error: error)
                     }
                 } else {
                     restoreDrawingPreview()
@@ -395,7 +395,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             } catch {
                 handlesView?.update(handles: handles)
-                reportMutationFailure(L10n.text("The drawing vertex move was not saved."), error: error)
+                reportMutationFailure(Messages.displayTheDrawingVertexMoveWasNotSavedMessage(), error: error)
             }
         default:
             break
@@ -414,11 +414,11 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
         handlesView?.update(handles: handles)
     }
 
-    private func reportMutationFailure(_ summary: String,
+    private func reportMutationFailure(_ summary: LocalizedMessage,
                                        error: Error,
-                                       recovery: String = L10n.text("Check available storage, then try again.")) {
+                                       recovery: LocalizedMessage = Messages.displayCheckAvailableStorageThenTryAgainef641206Message()) {
         UINotificationFeedbackGenerator().notificationOccurred(.error)
-        onMutationError?("\(summary) \(error.localizedDescription) \(recovery)")
+        onMutationError?(Messages.displayFailureContextMessage("", "", "").withArgument(0, summary).withArgument(1, error.displayMessage).withArgument(2, recovery))
     }
 
     // MARK: - Gesture delegate

@@ -1,0 +1,26 @@
+{
+  "appStore": {
+    "name": "TacMap",
+    "subtitle": "Offline-Karten, GPS und MGRS",
+    "promotionalText": "TacMap auf Deutsch oder Englisch: Wähle deine Sprache in den Einstellungen. Offline-Karten, Wegpunkte, Zeichnungen und verschlüsselter Austausch für unterwegs.",
+    "keywords": "wandern,jagd,rettung,geopdf,geojson,kml,wegpunkt,gpx,nato,sar,vermessung,gis,utm,kompass",
+    "description": "TacMap ist deine Offline-Karte für unterwegs: einmal freischalten, ohne Abo. Kein TacMap-Konto, keine Werbung und keine Verhaltensanalyse. Für Wandern, Jagd, Geländefahrten, Suche und Rettung, Vermessung und die Arbeit mit MGRS.\n\nKARTEN AUCH OHNE NETZ\n• Importiere PDF- und GeoPDF-Karten oder MBTiles-Kartensätze.\n• Kalibriere nicht georeferenzierte PDF-Karten mit drei Passpunkten und prüfe die angezeigte Abweichung.\n• Nutze deine importierten Karten offline, ohne Beschränkung auf bestimmte Länder.\n• Online-Hintergrundkarten, Geländehöhen und Wetter sind optional und benötigen eine Verbindung.\n\nORIENTIERUNG UND PLANUNG\n• Zeige deinen Standort in MGRS, UTM oder Breiten- und Längengrad an.\n• Richte die Karte nach Norden oder deiner Blickrichtung aus.\n• Miss Entfernungen, Flächen und Richtungen in Grad oder NATO-Strich.\n• Setze Wegpunkte, zeichne Linien und Flächen und ordne sie in Ebenen.\n• Nutze Symbole für Suche und Rettung, interessante Orte, Airsoft und NATO APP-6.\n• Zeichne Wege auf und exportiere sie als GPX.\n\nGEMEINSAM IM EINSATZ\n• Teile Zeichnungen und Symbole zwischen iOS und Android über die Ende-zu-Ende-verschlüsselte Einheitensynchronisierung.\n• Teile auf Wunsch Rufzeichen, Position und Richtung mit deiner Einheit.\n• Sende mit TacMap Chat verschlüsselte Nachrichten oder Meldungen an den Raum oder eine ausgewählte aktive Einheit.\n• Die Standortfreigabe bei ausgeschaltetem Bildschirm ist separat aktivierbar. Aktualisierungen hängen vom Betriebssystem und der Verbindung ab.\n• Der Relay kann Einsatzinhalte nicht entschlüsseln, sieht aber Zugangs-, Routing-, Sitzungs- und Steuerungsdaten, Chat-Empfänger sowie IP-Adresse, Zeitpunkt und Datenumfang. „Weitergeleitet“ bestätigt weder Zustellung noch Lesen; der Mitgliedsstatus stammt vom Relay.\n\nDEINE DATEN, DEINE WERKZEUGE\n• Importiere und exportiere GeoJSON und importiere KML/KMZ.\n• Exportiere Einsatzobjekte gemeinsam; aufgezeichnete Wege bleiben separate GPX-Dateien.\n• Einsatzdaten werden im privaten App-Speicher verschlüsselt. Importierte Karten bleiben im privaten, vom Gerät geschützten Speicher.\n• Online-Hintergrundkarten und Online-Abfragen sind anfangs ausgeschaltet und lassen sich unabhängig aktivieren. Bei Nutzung erhalten Anbieter deine IP-Adresse und den angefragten Kartenausschnitt, Suchbegriff oder Standort. Koordinaten- und Einsatzsuche bleiben auf dem Gerät.\n• Optionale App-Sperre mit Face ID oder Touch ID. Für iPhone und iPad.\n\nDEUTSCH UND ENGLISCH\nWähle Deutsch, Englisch oder die Gerätesprache in den Einstellungen. Eigene Namen, Notizen und Nachrichten bleiben unverändert.\n\nEINMAL FREISCHALTEN\nDrei Tage kostenlos testen, danach einmalig freischalten. Kein Abo. Den für dich gültigen Preis zeigt der App Store.",
+    "whatsNew": "• Deutsch und Englisch in den Einstellungen wählen oder der Gerätesprache folgen.\n• Überarbeitete Übersetzungen für Karten, Bearbeitung, Import und Export, Aufzeichnung, Einheitensynchronisierung, Chat und Käufe.\n• Meldungen und Zahlen passen sich der gewählten Sprache an.\n• Verbesserte Lesbarkeit längerer deutscher Texte.\n• Die Relay-Adresse für Einheitensynchronisierung wird von der App verwaltet."
+  },
+  "googlePlay": {
+    "title": "TacMap: Offline-Karten und GPS",
+    "shortDescription": "Offline-Karten, MGRS, Wegpunkte und verschlüsselter Austausch. Ohne Abo.",
+    "descriptionFromAppStore": true,
+    "descriptionReplacements": {
+      "Optionale App-Sperre mit Face ID oder Touch ID. Für iPhone und iPad.": "Optionale App-Sperre mit PIN oder Biometrie. Für Android-Smartphones und -Tablets.",
+      "Den für dich gültigen Preis zeigt der App Store.": "Den für dich gültigen Preis zeigt Google Play."
+    },
+    "releaseNotes": "• Deutsch, Englisch oder Gerätesprache in den Einstellungen wählen.\n• Überarbeitete Übersetzungen in allen App-Bereichen.\n• Meldungen und Zahlen folgen der gewählten Sprache.\n• Bessere Lesbarkeit längerer deutscher Texte.\n• Die App verwaltet die Relay-Adresse für Einheitensynchronisierung."
+  },
+  "purchase": {
+    "iosProductId": "com.tacticalmaps.app.unlock",
+    "androidProductId": "unlock_full",
+    "name": "TacMap dauerhaft freischalten",
+    "description": "Dauerhaft nutzen. Einmal kaufen, kein Abo."
+  }
+}

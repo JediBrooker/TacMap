@@ -277,7 +277,7 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         guard case .unavailable(let message) = ActiveMapSelectionStore.restoreRetained() else {
             return XCTFail("a missing retained file needs an actionable unavailable state")
         }
-        XCTAssertTrue(message.localizedCaseInsensitiveContains("missing"))
+        XCTAssertTrue(message.text.localizedCaseInsensitiveContains("missing"))
 
         XCTAssertNoThrow(try ActiveMapSelectionStore.removeRetainedMap(deleteBackingFile: false))
         guard case .noRetainedMap = ActiveMapSelectionStore.restoreRetained() else {
@@ -372,7 +372,7 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         guard case .unavailable(let message) = ActiveMapSelectionStore.restoreRetained() else {
             return XCTFail("the retained-map UI still needs an actionable recovery state")
         }
-        XCTAssertTrue(message.localizedCaseInsensitiveContains("recovery"))
+        XCTAssertTrue(message.text.localizedCaseInsensitiveContains("recovery"))
 
         XCTAssertNoThrow(try ActiveMapSelectionStore.removeRetainedMap(deleteBackingFile: false))
         guard case .noRetainedMap = ActiveMapSelectionStore.restoreRetained() else {

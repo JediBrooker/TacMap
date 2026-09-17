@@ -4,6 +4,7 @@ import com.tacmap.localization.DisplayFormat
 
 import com.tacmap.localization.Messages
 
+import com.tacmap.localization.LocalizedMessage
 import com.tacmap.localization.L10n
 
 import com.tacmap.drawings.DrawingFeature
@@ -13,8 +14,8 @@ import com.tacmap.waypoints.Waypoint
 internal data class ExternalImportCommitResult(
     val succeeded: Boolean,
     val partialCommit: Boolean,
-    val message: String,
-)
+    val pendingMessage: LocalizedMessage,
+) { val message: String get() = pendingMessage.text }
 
 internal data class ExternalImportStoreCommit(
     val succeeded: Boolean,
@@ -32,7 +33,7 @@ internal fun commitExternalImport(
         return ExternalImportCommitResult(
             succeeded = false,
             partialCommit = false,
-            message = L10n.text("Import could not save waypoints. Nothing else was changed; retry the same file."),
+            pendingMessage = Messages.importWaypointsSaveFailedMessage(),
         )
     }
     val drawingCommitted = commitDrawings(imported.newLayers, imported.drawings)
@@ -40,21 +41,25 @@ internal fun commitExternalImport(
         return ExternalImportCommitResult(
             succeeded = false,
             partialCommit = waypointCommitted.insertedCount > 0,
-            message = if (waypointCommitted.insertedCount > 0) {
-                L10n.text("Waypoints were saved, but drawings could not be saved. Retry the same file; existing objects will be skipped and the same IDs reused.")
+            pendingMessage = if (waypointCommitted.insertedCount > 0) {
+                Messages.importDrawingsPartiallySavedMessage()
             } else {
-                L10n.text("Import could not save drawings. Retry the same file; the same IDs will be reused.")
+                Messages.importDrawingsSaveFailedMessage()
             },
         )
-    }
-    val skipped = if (imported.invalidSkipped > 0) {
-        L10n.text("; skipped %1\$s invalid feature(s)", imported.invalidSkipped)
-    } else {
-        ""
     }
     return ExternalImportCommitResult(
         succeeded = true,
         partialCommit = false,
-        message = Messages.importFeatureSummary(DisplayFormat.number((waypointCommitted.insertedCount).toDouble(), 0), DisplayFormat.number((drawingCommitted.insertedCount).toDouble(), 0), skipped),
+        pendingMessage = importSummaryMessage(waypointCommitted.insertedCount, drawingCommitted.insertedCount, imported.invalidSkipped),
     )
+}
+
+/** Display-only summary; re-resolving it never repeats either durable commit. */
+internal fun importSummaryMessage(waypoints: Int, drawings: Int, invalid: Int): LocalizedMessage {
+    val summary = Messages.importCompleteSummaryMessage("", "")
+        .withArgument(0, Messages.waypointCountMessage(waypoints))
+        .withArgument(1, Messages.drawingCountMessage(drawings))
+    return if (invalid > 0) Messages.importInvalidSummaryMessage("", DisplayFormat.number(invalid.toDouble(), 0))
+        .withArgument(0, summary) else summary
 }

@@ -92,7 +92,7 @@ out-of-range coordinate text — is not forwarded to either place provider.
 
 Unit Sync is off until you enter a join code. Joining opens a WebSocket to the
 configured relay (the default service is hosted on Cloudflare, and you may
-self-host it).
+self-host it). The store app manages the relay address and does not provide a manual address field.
 
 Mission payloads are sealed on-device with AES-256-GCM. Synced map objects,
 presence, and **Entire room** Chat use keys derived from the join code, so every

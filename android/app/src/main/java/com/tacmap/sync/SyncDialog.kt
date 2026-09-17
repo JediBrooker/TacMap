@@ -4,6 +4,7 @@ import com.tacmap.localization.DisplayFormat
 
 import com.tacmap.localization.Messages
 
+import com.tacmap.localization.LocalizedMessage
 import com.tacmap.localization.L10n
 
 import android.content.Context
@@ -88,7 +89,7 @@ fun SyncDialog(
     val backgroundUnitSyncLocation by opsec.backgroundUnitSyncLocation.collectAsState()
     val backgroundUnitSyncInterval by opsec.backgroundUnitSyncInterval.collectAsState()
     var code by remember { mutableStateOf(room ?: "") }
-    var codeError by remember { mutableStateOf<String?>(null) }
+    var codeError by remember { mutableStateOf<LocalizedMessage?>(null) }
     var legacyConfirmed by remember { mutableStateOf(false) }
     var pendingJoinCode by remember { mutableStateOf<String?>(null) }
 
@@ -133,7 +134,7 @@ fun SyncDialog(
                 if (commitConfig()) onDismiss()
             }) { Text(L10n.text("Done")) }
         },
-        title = { Text(L10n.text("Unit Sync")) },
+        title = { Text(Messages.syncDialogTitle()) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -234,7 +235,7 @@ fun SyncDialog(
                         label = { Text(L10n.text("Unit join code")) },
                         isError = codeError != null,
                         supportingText = {
-                            Text(codeError
+                            Text(codeError?.text
                                 ?: L10n.text("Share this with your unit. Tap Generate for a strong one."))
                         },
                         singleLine = true,
@@ -253,12 +254,12 @@ fun SyncDialog(
                             onClick = {
                                 val trimmedCode = code.trim()
                                 if (!trimmedCode.startsWith("3:") && !trimmedCode.startsWith("2:")) {
-                                    codeError = L10n.text("Codes must start with 3:. Enter 2: only for an intentional legacy room.")
+                                    codeError = Messages.syncFormCodesMustStartWith3Enter2OnlyForAnMessage()
                                 } else if (trimmedCode.startsWith("2:") && !legacyConfirmed) {
                                     legacyConfirmed = true
-                                    codeError = L10n.text("Legacy v2 has weaker rollback and identity protection. Tap again to confirm legacy join.")
+                                    codeError = Messages.syncFormLegacyV2HasWeakerRollbackAndIdentityProtectionTapAgainLegacyJoinMessage()
                                 } else if (SyncCrypto.isJoinCodeTooWeak(code)) {
-                                    codeError = Messages.syncCodeTooShort(DisplayFormat.number((SyncCrypto.MIN_JOIN_CODE_LEN).toDouble(), 0))
+                                    codeError = Messages.syncCodeTooShortMessage(DisplayFormat.number((SyncCrypto.MIN_JOIN_CODE_LEN).toDouble(), 0))
                                 } else if (UnitSyncJoinGate.requiresConsent(
                                         roomCode = trimmedCode,
                                         shareLocation = shareLocation,
@@ -268,7 +269,7 @@ fun SyncDialog(
                                     codeError = null
                                     pendingJoinCode = trimmedCode
                                 } else if (!commitConfig()) {
-                                    codeError = L10n.text("Unit identity/location sharing could not be saved, so TacMap did not join. Check available storage and try again.")
+                                    codeError = Messages.syncFormUnitIdentityLocationSharingCouldNotBeSavedSoTacmapMessage()
                                 } else {
                                     manager.join(trimmedCode)
                                 }
@@ -514,7 +515,7 @@ fun SyncDialog(
                 TextButton(
                     onClick = {
                         if (!opsec.setBackgroundUnitSyncLocation(true)) {
-                            codeError = L10n.text("Background Unit Sync could not be saved. The previous setting remains active; check available storage and try again.")
+                            codeError = Messages.syncFormBackgroundUnitSyncCouldNotBeSavedThePreviousSettingMessage()
                             return@TextButton
                         }
                         val previousShareLocation = shareLocation
@@ -522,7 +523,7 @@ fun SyncDialog(
                         if (!commitConfig()) {
                             shareLocation = previousShareLocation
                             opsec.setBackgroundUnitSyncLocation(backgroundUnitSyncLocation)
-                            codeError = L10n.text("Share my location could not be saved, so TacMap did not join. Check available storage and try again.")
+                            codeError = Messages.syncFormShareMyLocationCouldNotBeSavedSoTacmapDidMessage()
                             return@TextButton
                         }
                         pendingJoinCode = null

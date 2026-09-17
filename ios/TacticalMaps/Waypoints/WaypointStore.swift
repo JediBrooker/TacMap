@@ -7,65 +7,74 @@ struct BatchImportCommit: Equatable {
     let skippedExistingCount: Int
 }
 
-enum BatchImportStoreError: LocalizedError {
+enum BatchImportStoreError: LocalizedError, LocalizedMessageError {
     case locked
     case persistenceFailed(Error)
 
-    var errorDescription: String? {
+    var errorDescription: String? { localizedMessage.text }
+
+    var localizedMessage: LocalizedMessage {
         switch self {
         case .locked:
-            return L10n.text("Mission data is locked. Unlock it before importing.")
+            return Messages.displayMissionDataIsLockedUnlockItBeforeImportingMessage()
         case .persistenceFailed(let error):
-            return L10n.text("The import could not be saved: %1$@", error.localizedDescription)
+            return Messages.displayTheImportCouldNotBeSavedMessage("").withArgument(0, error.displayMessage)
         }
     }
 }
 
-enum MissionLayerMutationError: LocalizedError {
+enum MissionLayerStore { case drawings, waypoints }
+
+enum MissionLayerMutationError: LocalizedError, LocalizedMessageError {
     case protectedDefault
     case legacyProtectionReview
     case layerMissing
     case fallbackMissing
     case invalidName
     case invalidColor
-    case locked(store: String)
-    case persistenceFailed(store: String, underlying: Error)
+    case locked(store: MissionLayerStore)
+    case persistenceFailed(store: MissionLayerStore, underlying: Error)
 
-    var errorDescription: String? {
+    var errorDescription: String? { localizedMessage.text }
+
+    var localizedMessage: LocalizedMessage {
         switch self {
         case .protectedDefault:
-            return L10n.text("Default mission layers cannot be renamed, recoloured, or deleted.")
+            return Messages.displayDefaultMissionLayersCannotBeRenamedRecolouredOrDeletedMessage()
         case .legacyProtectionReview:
-            return L10n.text("This layer predates default-layer provenance. Confirm whether it is a custom layer before renaming, recolouring, or deleting it.")
+            return Messages.displayThisLayerPredatesDefaultLayerProvenanceConfirmWhetherItMessage()
         case .layerMissing:
-            return L10n.text("That layer no longer exists. Refresh the layer list and try again.")
+            return Messages.displayThatLayerNoLongerExistsRefreshTheLayerListMessage()
         case .fallbackMissing:
-            return L10n.text("The default fallback layer is unavailable. Restore the default layers before deleting this layer.")
+            return Messages.displayTheDefaultFallbackLayerIsUnavailableRestoreTheDefaultMessage()
         case .invalidName:
-            return L10n.text("Enter a non-empty layer name.")
+            return Messages.displayEnterANonEmptyLayerNameMessage()
         case .invalidColor:
-            return L10n.text("Choose a valid six-digit layer colour.")
+            return Messages.displayChooseAValidSixDigitLayerColourMessage()
         case .locked(let store):
-            return L10n.text("Mission %1$@ are locked. Unlock mission data, then try again.", store)
+            return store == .drawings ? Messages.layerDrawingsLockedMessage() : Messages.layerWaypointsLockedMessage()
         case .persistenceFailed(let store, let underlying):
-            return L10n.text("Could not save mission %1$@: %2$@. No unsafe layer change was published; try again.", store, underlying.localizedDescription)
+            return (store == .drawings ? Messages.layerDrawingsSaveFailedMessage("") : Messages.layerWaypointsSaveFailedMessage(""))
+                .withArgument(0, underlying.displayMessage)
         }
     }
 }
 
-enum WaypointMutationError: LocalizedError {
+enum WaypointMutationError: LocalizedError, LocalizedMessageError {
     case locked
     case missing
     case persistenceFailed(Error)
 
-    var errorDescription: String? {
+    var errorDescription: String? { localizedMessage.text }
+
+    var localizedMessage: LocalizedMessage {
         switch self {
         case .locked:
-            return L10n.text("Mission waypoints are locked. Unlock mission data, then try again.")
+            return Messages.displayMissionWaypointsAreLockedUnlockMissionDataThenTryMessage()
         case .missing:
-            return L10n.text("That symbol no longer exists. Close the editor and try again.")
+            return Messages.displayThatSymbolNoLongerExistsCloseTheEditorAndMessage()
         case .persistenceFailed(let error):
-            return L10n.text("The symbol change could not be saved: %1$@", error.localizedDescription)
+            return Messages.displayTheSymbolChangeCouldNotBeSavedMessage("").withArgument(0, error.displayMessage)
         }
     }
 }
@@ -124,7 +133,7 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            pendingLoadError = Messages.couldNotSaveNewWaypointToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveNewWaypointToDiskMessage("").withArgument(0, error.displayMessage)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
@@ -151,7 +160,7 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            pendingLoadError = Messages.couldNotSaveWaypointChangeToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveWaypointChangeToDiskMessage("").withArgument(0, error.displayMessage)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
@@ -175,7 +184,7 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            pendingLoadError = Messages.couldNotDeleteWaypointFromDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotDeleteWaypointFromDiskMessage("").withArgument(0, error.displayMessage)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
@@ -196,7 +205,7 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            pendingLoadError = Messages.couldNotRestoreWaypointToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotRestoreWaypointToDiskMessage("").withArgument(0, error.displayMessage)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
@@ -212,7 +221,7 @@ final class WaypointStore: ObservableObject {
     /// A no-op retry does not rewrite the store.
     @discardableResult
     func reassignLayer(from sourceLayerID: UUID, to fallbackLayerID: UUID) throws -> Int {
-        guard !locked else { throw MissionLayerMutationError.locked(store: "waypoints") }
+        guard !locked else { throw MissionLayerMutationError.locked(store: .waypoints) }
         let affected = waypoints.filter { $0.layerID == sourceLayerID }.count
         guard affected > 0 else { return 0 }
         let candidate = waypoints.map { waypoint -> Waypoint in
@@ -224,8 +233,8 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            pendingLoadError = Messages.couldNotSaveReassignedWaypointsToDiskMessage(error.localizedDescription)
-            throw MissionLayerMutationError.persistenceFailed(store: "waypoints", underlying: error)
+            pendingLoadError = Messages.couldNotSaveReassignedWaypointsToDiskMessage("").withArgument(0, error.displayMessage)
+            throw MissionLayerMutationError.persistenceFailed(store: .waypoints, underlying: error)
         }
         waypoints = candidate
         if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
@@ -257,7 +266,7 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            pendingLoadError = Messages.couldNotSaveImportedWaypointsToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveImportedWaypointsToDiskMessage("").withArgument(0, error.displayMessage)
             throw BatchImportStoreError.persistenceFailed(error)
         }
 
@@ -285,7 +294,7 @@ final class WaypointStore: ObservableObject {
             }
             undoManager?.setActionName(L10n.text("Import Waypoints"))
         } catch {
-            pendingLoadError = Messages.couldNotUndoImportedWaypointsMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotUndoImportedWaypointsMessage("").withArgument(0, error.displayMessage)
         }
     }
 
@@ -322,7 +331,7 @@ final class WaypointStore: ObservableObject {
             pendingLoadError = Messages.waypointsQuarantinedMessage(quarantine?.lastPathComponent ?? Messages.recoveryCopyFallback())
         case .locked(let error):
             locked = true
-            pendingLoadError = Messages.waypointsAreEncryptedAndLockedMessage(error.localizedDescription)
+            pendingLoadError = Messages.waypointsAreEncryptedAndLockedMessage("").withArgument(0, error.displayMessage)
         }
     }
 

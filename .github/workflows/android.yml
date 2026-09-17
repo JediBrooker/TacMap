@@ -81,9 +81,13 @@ jobs:
             -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
 
   pdf-import-smoke:
-    name: PDF import and localisation tests
+    name: PDF import and localisation tests (API ${{ matrix.api }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 36]
 
     steps:
       - name: Checkout
@@ -108,7 +112,7 @@ jobs:
       - name: Run PDF import and localisation instrumentation tests
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
-          api-level: 36
+          api-level: ${{ matrix.api }}
           target: google_apis
           arch: x86_64
           emulator-boot-timeout: 300

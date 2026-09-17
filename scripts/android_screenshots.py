@@ -9,7 +9,7 @@ tree, so this works without any testTag plumbing in the app.
 
     python3 scripts/android_screenshots.py <apk|-> <out_dir>
 
-Pass a real .apk path to reinstall first (fresh state), or "-" to just drive
+Pass a real .apk path to reinstall first (preserving existing data), or "-" to just drive
 the app already on the device.
 
 The catch: the app defaults `block_screen_capture=true` (OPSEC), which sets
@@ -21,17 +21,24 @@ which is exactly the state the old script kept tripping over.
 Fix: before capturing we flip `block_screen_capture` off in the app's private
 prefs via `run-as` (only works on a *debuggable* build - use the debug APK),
 force-stop, relaunch. We verify the window really is capturable (screencap not
-mostly-black) and restore the original pref on the way out.
+mostly-black) and restore the original preference files on the way out.
+Set TACMAP_SCREENSHOT_LANGUAGE=en or de. Only isolated emulators are accepted.
 
 Raw filenames match what scripts/compose_store_set.py consumes as `raw_dir`
 (hero.png, symbols.png, ...) plus a basemaps/ fan (bm-*.png). The GeoPDF
 "pdfmap" raw needs a staged map sheet and stays with scripts/android_pdf_hero.py.
 """
-import re, struct, subprocess, sys, time, os
+import re, struct, subprocess, sys, time, os, json
+from pathlib import Path
 import xml.etree.ElementTree as ET
 
 APK = sys.argv[1] if len(sys.argv) > 1 else "-"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "."
+LANGUAGE = os.environ.get("TACMAP_SCREENSHOT_LANGUAGE", "en")
+if LANGUAGE not in ("en", "de"):
+    raise SystemExit("TACMAP_SCREENSHOT_LANGUAGE must be en or de")
+CATALOG = json.loads((Path(__file__).resolve().parents[1] / "localization/catalog.json").read_text())
+COPY = {entry["en"]: entry[LANGUAGE] for entry in CATALOG.values() if entry.get("legacy", True)}
 PKG = "com.tacmap"
 ACT = "com.tacmap/.app.MainActivity"
 LON, LAT = "150.305", "-33.700"          # Blue Mountains, situation centre
@@ -90,6 +97,7 @@ def tap(x, y, pause=2.0):
 
 def find(text, exact=False):
     """Center of the first node whose text or contentDescription matches."""
+    text = COPY.get(text, text)
     for n in nodes():
         lab = (n.get("text", "") or "") + "\x00" + (n.get("content-desc", "") or "")
         hit = (text == n.get("text", "")) if exact else (text.lower() in lab.lower())
@@ -126,8 +134,10 @@ def back(n=1):
         time.sleep(1.2)
 
 def on_map():
-    return any("centre on my location" in (n.get("text", "") or "").lower()
-               for n in nodes())
+    labels = ("centre on my location", "center on my location", "auf meinen standort zentrieren", "meinen standort")
+    return any(any(label in ((n.get("text", "") or "") + " " + (n.get("content-desc", "") or "")).lower()
+                   for label in labels) for n in nodes())
+
 
 def ensure_map(tries=5):
     for _ in range(tries):
@@ -180,38 +190,34 @@ def snap(name, subdir=None):
 
 # ---- FLAG_SECURE / block_screen_capture --------------------------------
 
-RELAY = "wss://tacmap-sync.christianbrooker.workers.dev/room/"
+def read_preferences(name):
+    result = adb("shell", "run-as", PKG, "cat", f"shared_prefs/{name}.xml")
+    return result.stdout if result.returncode == 0 else None
 
-def read_pref_blocking():
-    """Current block_screen_capture value from the app's prefs, or None if the
-    file/key isn't there yet (fresh install => defaults to blocking)."""
-    xml = adb("shell", "run-as", PKG, "cat", "shared_prefs/opsec.xml"
-              ).stdout.decode("utf-8", "replace")
-    m = re.search(r'name="block_screen_capture"\s+value="(true|false)"', xml)
-    return None if not m else (m.group(1) == "true")
 
-def write_opsec(block):
-    """Overwrite opsec.xml with capture blocking set as asked. Also enables
-    online basemaps + lookups so tiles and weather actually populate the shots.
-    Needs a debuggable build for run-as."""
-    xml = (
-        "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n"
-        "<map>\n"
-        '    <boolean name="online_basemaps" value="true" />\n'
-        '    <boolean name="online_lookups" value="true" />\n'
-        f'    <boolean name="block_screen_capture" value="{"true" if block else "false"}" />\n'
-        f'    <string name="relay_url">{RELAY}</string>\n'
-        "</map>\n"
-    )
-    tmp = "/data/local/tmp/opsec.xml"
-    p = subprocess.Popen(["adb", "shell", "cat", ">", tmp], stdin=subprocess.PIPE)
-    p.communicate(xml.encode())
-    r = adb("shell", "run-as", PKG, "cp", tmp, "shared_prefs/opsec.xml")
-    err = r.stderr.decode().strip()
-    if err:
-        print(f"  [!] run-as cp failed: {err} (build must be debuggable)")
-        return False
-    return True
+def write_preferences(name, content):
+    adb("shell", "am", "force-stop", PKG, check=True)
+    if content is None:
+        adb("shell", "run-as", PKG, "rm", "-f", f"shared_prefs/{name}.xml", check=True)
+        return
+    tmp = f"/data/local/tmp/tacmap-capture-{name}.xml"
+    adb("shell", "cat", ">", tmp, input=content, check=True)
+    adb("shell", "run-as", PKG, "mkdir", "-p", "shared_prefs", check=True)
+    adb("shell", "run-as", PKG, "cp", tmp, f"shared_prefs/{name}.xml", check=True)
+    adb("shell", "rm", "-f", tmp, check=True)
+
+
+def edited_preferences(original, changes):
+    tree = ET.fromstring(original) if original else ET.Element("map")
+    for name, (kind, value) in changes.items():
+        for existing in list(tree):
+            if existing.get("name") == name:
+                tree.remove(existing)
+        entry = ET.SubElement(tree, kind, name=name)
+        if kind == "string": entry.text = value
+        else: entry.set("value", value)
+    return ET.tostring(tree, encoding="utf-8", xml_declaration=True)
+
 
 def relaunch():
     adb("shell", "am", "force-stop", PKG)
@@ -219,41 +225,50 @@ def relaunch():
     time.sleep(6)
 
 def disable_secure():
-    """Flip FLAG_SECURE off and prove the window is now capturable. Returns the
-    original pref value so we can put it back afterwards."""
-    original = read_pref_blocking()
-    if original is None:
-        original = True                       # fresh install default
-    print(f"  block_screen_capture was: {original}")
-    for attempt in range(3):
-        write_opsec(False)
+    """Temporarily configure the isolated screenshot emulator; preserve all prefs."""
+    originals = {name: read_preferences(name) for name in ("opsec", "app_language", "localization_qa")}
+    try:
+        write_preferences("opsec", edited_preferences(originals["opsec"], {
+            "block_screen_capture": ("boolean", "false"),
+            "online_basemaps": ("boolean", "true"),
+            "online_lookups": ("boolean", "true"),
+        }))
+        write_preferences("app_language", edited_preferences(originals["app_language"], {
+            "display_language": ("string", LANGUAGE),
+        }))
+        write_preferences("localization_qa", edited_preferences(originals["localization_qa"], {
+            "expanded_text": ("boolean", "true" if os.environ.get("TACMAP_SCREENSHOT_EXPANDED") == "1" else "false"),
+        }))
         relaunch()
-        # dismiss any perm prompt that the relaunch surfaced
-        for lbl in ["While using", "Allow", "OK"]:
-            if tap_text(lbl, 1.2):
-                break
-        ensure_map()
+        # A cold-start splash is also mostly black; allow the map to render.
+        deadline = time.monotonic() + 120
         bf = black_fraction(grab_png())
-        if bf is None or bf < 0.9:
-            print(f"  FLAG_SECURE cleared (black={None if bf is None else round(bf,2)})")
-            return original
-        print(f"  still black (attempt {attempt+1}), retrying…")
-    print("  [!] could not clear FLAG_SECURE - captures may be black")
-    return original
+        while bf is not None and bf > 0.9 and time.monotonic() < deadline:
+            time.sleep(3)
+            bf = black_fraction(grab_png())
+        if bf is not None and bf > 0.9:
+            Path(OUT, "capture-failure.png").write_bytes(grab_png())
+            raise RuntimeError("Screenshot capture remains blocked")
+        return originals
+    except BaseException:
+        restore_secure(originals)
+        raise
 
-def restore_secure(original):
-    print(f"  restoring block_screen_capture -> {original}")
-    write_opsec(original)
+
+def restore_secure(originals):
+    for name, content in originals.items():
+        write_preferences(name, content)
     relaunch()
 
 
 # ============================ run =======================================
 
+if adb("shell", "getprop", "ro.kernel.qemu").stdout.strip() != b"1":
+    raise SystemExit("Use an isolated Android emulator for screenshot seeding")
 print("waiting for boot…"); wait_boot(); time.sleep(3)
 
 if APK not in ("-", "", None) and os.path.exists(APK):
-    print("installing apk (fresh state)…")
-    adb("uninstall", PKG)
+    print("installing apk (preserving existing app data)…")
     print(adb("install", "-r", "-g", APK).stdout.decode()[-120:])
 else:
     print("no apk given - driving the installed app")
@@ -279,88 +294,104 @@ print("disabling block_screen_capture (FLAG_SECURE)…")
 original_block = disable_secure()
 
 try:
-    # 1) basemap -> Esri Satellite so the hero sits over real imagery, then HUD
-    ensure_map()
-    if tap_hamburger() and tap_text("Layers and Labels"):
-        if not tap_text("Satellite (Esri)", 3.0):
-            # sheet may need scrolling to reach basemap rows
-            adb("shell", "input", "swipe", str(CX), str(int(SCREEN_H*0.8)),
-                str(CX), str(int(SCREEN_H*0.3)), "300"); time.sleep(1)
-            tap_text("Satellite (Esri)", 3.0)
-        back(1)
-    ensure_map(); time.sleep(7)               # let tiles stream in
-    snap("hero")
-
-    # 2) symbols - zoom in a level so the symbology reads big
-    ensure_map()
-    adb("shell", "input", "tap", str(CX), str(CY)); time.sleep(0.12)
-    adb("shell", "input", "tap", str(CX), str(CY)); time.sleep(3)
-    snap("symbols")
-    adb("shell", "input", "swipe", str(CX), str(CY-40), str(CX), str(CY+40), "150"); time.sleep(1)
-
-    # 3) unit sync dialog
-    ensure_map()
-    if tap_hamburger() and tap_text("Unit Sync"):
-        time.sleep(1)
-        # optional: seed a callsign so the field isn't empty
-        for n in nodes():
-            if n.get("class", "").endswith("EditText") and n.get("bounds"):
-                x, y = center(n.get("bounds")); tap(x, y, 1.0)
-                adb("shell", "input", "text", "WOLFPACK-6"); time.sleep(0.8)
-                adb("shell", "input", "keyevent", "111"); time.sleep(0.8)   # dismiss keyboard
-                break
-        snap("unit-sync")
-    ensure_map()
-
-    # 4) recording - REC breadcrumb badge
-    ensure_map()
-    if tap_hamburger() and tap_text("Start Track Recording", 3):
-        time.sleep(2); snap("recording")
-        if tap_hamburger():
-            tap_text("Stop Track Recording", 2)   # matches "Stop Track Recording (N pts)"
-    ensure_map()
-
-    # 5) weather & UAV safety
-    ensure_map()
-    if tap_hamburger() and tap_text("Weather", 4):
-        time.sleep(2); snap("weather")
-    ensure_map()
-
-    # 6) import / export
-    ensure_map()
-    if tap_hamburger() and tap_text("Import / Export", 3):
-        time.sleep(1); snap("import-export")
-    ensure_map()
-
-    # 7) symbol builder - APP-6 editor (New Military Unit)
-    ensure_map()
-    if tap_hamburger() and tap_text("Symbology", 3):
-        if tap_text("Military Unit", 3):          # "Add Military Unit" row
-            time.sleep(1); snap("symbol-builder")
-            tap_text("Cancel", 2)
-    ensure_map()
-
-    # 8) search
-    ensure_map()
-    if tap_hamburger() and tap_text("Search", 3):
-        time.sleep(1); snap("search")
-    ensure_map()
-
-    # 9) basemap fan (bm-satellite / bm-terrain / bm-esri) for the fan slide
-    def set_basemap_and_snap(label, out):
+    if os.environ.get("TACMAP_SCREENSHOT_REVIEW") == "1":
+        ensure_map()
+        snap("00-map")
+        destinations = ["Search", "Symbology", "Drawings", "Layers and Labels", "Weather & UAV Safety", "Import / Export", "TacMap Chat", "Unit Sync", "App Lock", "Settings, Privacy & OPSEC", "About & Credits"]
+        for index, destination in enumerate(destinations, 1):
+            relaunch()
+            ensure_map()
+            tap_hamburger()
+            for attempt in range(4):
+                if find(destination): break
+                adb("shell", "input", "swipe", str(CX), str(int(SCREEN_H * .8)), str(CX), str(int(SCREEN_H * .3)), "300")
+                time.sleep(.5)
+            if not tap_text(destination, 2):
+                print("MISSING SCREEN:", destination)
+                continue
+            name = f"{index:02d}-" + re.sub(r"[^a-z0-9]+", "-", destination.lower()).strip("-")
+            snap(name)
+            Path(OUT, name + ".xml").write_text(ET.tostring(ET.Element("empty"), encoding="unicode") if not nodes() else "\n".join(ET.tostring(n, encoding="unicode") for n in nodes()))
+            if destination in ("Settings, Privacy & OPSEC", "Import / Export", "Drawings"):
+                adb("shell", "input", "swipe", str(CX), str(int(SCREEN_H * .8)), str(CX), str(int(SCREEN_H * .35)), "400")
+                time.sleep(1)
+                snap(name + "-scrolled")
+    else:
+        # 1) basemap -> Esri Satellite so the hero sits over real imagery, then HUD
         ensure_map()
         if tap_hamburger() and tap_text("Layers and Labels"):
-            if not tap_text(label, 3.0):
+            if not tap_text("Satellite (Esri)", 3.0):
+                # sheet may need scrolling to reach basemap rows
                 adb("shell", "input", "swipe", str(CX), str(int(SCREEN_H*0.8)),
                     str(CX), str(int(SCREEN_H*0.3)), "300"); time.sleep(1)
-                tap_text(label, 3.0)
+                tap_text("Satellite (Esri)", 3.0)
             back(1)
-        ensure_map(); time.sleep(6)
-        snap(out, subdir="basemaps")
+        ensure_map(); time.sleep(7)               # let tiles stream in
+        snap("hero")
 
-    set_basemap_and_snap("Satellite (Esri)", "bm-satellite")
-    set_basemap_and_snap("Topographic (OpenTopoMap)", "bm-terrain")
-    set_basemap_and_snap("Topographic (Esri)", "bm-esri")
+        # 2) symbols - zoom in a level so the symbology reads big
+        ensure_map()
+        adb("shell", "input", "tap", str(CX), str(CY)); time.sleep(0.12)
+        adb("shell", "input", "tap", str(CX), str(CY)); time.sleep(3)
+        snap("symbols")
+        adb("shell", "input", "swipe", str(CX), str(CY-40), str(CX), str(CY+40), "150"); time.sleep(1)
+
+        # 3) unit sync dialog
+        ensure_map()
+        if tap_hamburger() and tap_text("Unit Sync"):
+            time.sleep(1)
+            snap("unit-sync")
+        ensure_map()
+
+        # 4) recording - REC breadcrumb badge
+        ensure_map()
+        if tap_hamburger() and tap_text("Start Track Recording", 3):
+            time.sleep(2); snap("recording")
+            if tap_hamburger():
+                tap_text("Trackaufzeichnung stoppen" if LANGUAGE == "de" else "Stop Track Recording", 2)   # matches "Stop Track Recording (N pts)"
+        ensure_map()
+
+        # 5) weather & UAV safety
+        ensure_map()
+        if tap_hamburger() and tap_text("Weather & UAV Safety", 4):
+            time.sleep(2); snap("weather")
+        ensure_map()
+
+        # 6) import / export
+        ensure_map()
+        if tap_hamburger() and tap_text("Import / Export", 3):
+            time.sleep(1); snap("import-export")
+        ensure_map()
+
+        # 7) symbol builder - APP-6 editor (New Military Unit)
+        ensure_map()
+        if tap_hamburger() and tap_text("Symbology", 3):
+            if tap_text("Military Unit", 3):          # "Add Military Unit" row
+                time.sleep(1); snap("symbol-builder")
+                tap_text("Close symbol editor", 2)
+        ensure_map()
+
+        # 8) search
+        ensure_map()
+        if tap_hamburger() and tap_text("Search", 3):
+            time.sleep(1); snap("search")
+        ensure_map()
+
+        # 9) basemap fan (bm-satellite / bm-terrain / bm-esri) for the fan slide
+        def set_basemap_and_snap(label, out):
+            ensure_map()
+            if tap_hamburger() and tap_text("Layers and Labels"):
+                if not tap_text(label, 3.0):
+                    adb("shell", "input", "swipe", str(CX), str(int(SCREEN_H*0.8)),
+                        str(CX), str(int(SCREEN_H*0.3)), "300"); time.sleep(1)
+                    tap_text(label, 3.0)
+                back(1)
+            ensure_map(); time.sleep(6)
+            snap(out, subdir="basemaps")
+
+        set_basemap_and_snap("Satellite (Esri)", "bm-satellite")
+        set_basemap_and_snap("Topographic (OpenTopoMap)", "bm-terrain")
+        set_basemap_and_snap("Topographic (Esri)", "bm-esri")
 
 finally:
     # always put OPSEC back the way we found it

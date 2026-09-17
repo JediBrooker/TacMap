@@ -17,13 +17,13 @@ struct LayersSheet: View {
     @State private var editingLayer: DrawingLayer? = nil
     @State private var tilingProgress: PDFTiler.Progress? = nil
     @State private var tilingTask: Task<Void, Never>? = nil
-    @State private var tilingError: String? = nil
-    @State private var layerDeleteError: String? = nil
-    @State private var layerMutationError: String? = nil
+    @State private var tilingError: LocalizedMessage? = nil
+    @State private var layerDeleteError: LocalizedMessage? = nil
+    @State private var layerMutationError: LocalizedMessage? = nil
     /// Persisted imported map that's not currently active, so user can
     /// switch back after picking an online basemap.
     @State private var restorableImportedMap: MapSource? = nil
-    @State private var retainedMapError: String? = nil
+    @State private var retainedMapError: LocalizedMessage? = nil
     @State private var confirmingImportedMapDeletion = false
 
     var body: some View {
@@ -55,7 +55,8 @@ struct LayersSheet: View {
                 // the current source.
                 refreshRetainedMap()
             }
-            .navigationTitle(L10n.text("Layers and Labels"))
+            .navigationTitle(Messages.layersScreenTitle())
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L10n.text("Done")) { dismiss() }
@@ -86,7 +87,7 @@ struct LayersSheet: View {
                             reassigningWaypointsIn: waypointStore
                         )
                     } catch {
-                        layerDeleteError = error.localizedDescription
+                        layerDeleteError = error.displayMessage
                     }
                     pendingDeleteLayer = nil
                 }
@@ -101,13 +102,13 @@ struct LayersSheet: View {
                                         set: { if !$0 { tilingError = nil } }),
                    presenting: tilingError) { _ in
                 Button(Messages.acknowledge(), role: .cancel) { tilingError = nil }
-            } message: { msg in Text(msg) }
+            } message: { msg in Text(msg.text) }
             .alert(L10n.text("Layer change not saved"),
                    isPresented: Binding(get: { layerMutationError != nil },
                                         set: { if !$0 { layerMutationError = nil } }),
                    presenting: layerMutationError) { _ in
                 Button(Messages.acknowledge(), role: .cancel) { layerMutationError = nil }
-            } message: { msg in Text(msg) }
+            } message: { msg in Text(msg.text) }
             .alert(L10n.text("Delete imported map from this device?"),
                    isPresented: $confirmingImportedMapDeletion) {
                 Button(L10n.text("Delete Map"), role: .destructive) { deleteRetainedImportedMap() }
@@ -158,7 +159,7 @@ struct LayersSheet: View {
                     }
                 } else {
                     // don't fail silently, the bake didn't produce a usable set
-                    tilingError = L10n.text("Couldn't generate offline tiles. Check that the device has free storage and try again.")
+                    tilingError = Messages.displayCouldnTGenerateOfflineTilesCheckThatTheDeviceMessage()
                 }
             }
         }
@@ -299,7 +300,7 @@ struct LayersSheet: View {
             if !importedActive, let retainedMapError {
                 Label(L10n.text("Saved imported map unavailable"), systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
-                Text(retainedMapError)
+                Text(retainedMapError.text)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Button(L10n.text("Remove Saved Map Entry")) {
@@ -401,7 +402,7 @@ struct LayersSheet: View {
                                     set: { if !$0 { layerDeleteError = nil } }),
                presenting: layerDeleteError) { _ in
             Button(Messages.acknowledge(), role: .cancel) { layerDeleteError = nil }
-        } message: { msg in Text(msg) }
+        } message: { msg in Text(msg.text) }
     }
 
     @ViewBuilder
@@ -430,7 +431,7 @@ struct LayersSheet: View {
                     do {
                         try drawingStore.setLayerVisible(layer, visible)
                     } catch {
-                        layerMutationError = error.localizedDescription
+                        layerMutationError = error.displayMessage
                     }
                 }
             ))
@@ -467,7 +468,7 @@ struct LayersSheet: View {
                             asProtectedDefault: false
                         )
                     } catch {
-                        layerMutationError = error.localizedDescription
+                        layerMutationError = error.displayMessage
                     }
                 } label: {
                     Label(L10n.text("Confirm as Custom Layer"), systemImage: "checkmark.shield")
@@ -479,7 +480,7 @@ struct LayersSheet: View {
                             asProtectedDefault: true
                         )
                     } catch {
-                        layerMutationError = error.localizedDescription
+                        layerMutationError = error.displayMessage
                     }
                 } label: {
                     Label(L10n.text("Keep as Default Layer"), systemImage: "lock.shield")
@@ -507,7 +508,7 @@ private struct NewLayerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String = ""
     @State private var hex: String  = DrawingPalette.swatches[0].hex
-    @State private var saveError: String?
+    @State private var saveError: LocalizedMessage?
 
     var body: some View {
         NavigationStack {
@@ -560,7 +561,7 @@ private struct NewLayerSheet: View {
                             try onCreate(trimmed, hex)
                             dismiss()
                         } catch {
-                            saveError = error.localizedDescription
+                            saveError = error.displayMessage
                         }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -571,7 +572,7 @@ private struct NewLayerSheet: View {
                                         set: { if !$0 { saveError = nil } }),
                    presenting: saveError) { _ in
                 Button(Messages.acknowledge(), role: .cancel) { saveError = nil }
-            } message: { message in Text(message) }
+            } message: { message in Text(message.text) }
         }
     }
 }
@@ -584,7 +585,7 @@ private struct EditLayerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var hex: String
-    @State private var saveError: String?
+    @State private var saveError: LocalizedMessage?
 
     init(layer: DrawingLayer,
          onSave: @escaping (String, String) throws -> Void) {
@@ -643,7 +644,7 @@ private struct EditLayerSheet: View {
                             try onSave(name, hex)
                             dismiss()
                         } catch {
-                            saveError = error.localizedDescription
+                            saveError = error.displayMessage
                         }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -654,7 +655,7 @@ private struct EditLayerSheet: View {
                                         set: { if !$0 { saveError = nil } }),
                    presenting: saveError) { _ in
                 Button(Messages.acknowledge(), role: .cancel) { saveError = nil }
-            } message: { message in Text(message) }
+            } message: { message in Text(message.text) }
         }
     }
 }

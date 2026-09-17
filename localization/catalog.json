@@ -211,6 +211,15 @@
     "de": "Datei ist größer als {1} MB",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayFileIsOverMb2a0bff1a",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_file_changed_while_it_was_being_read_942e4043": {
@@ -218,7 +227,11 @@
     "de": "Datei wurde während des Lesens geändert",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayFileChangedWhileItWasBeingRead",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_offline_basemap_295608f5": {
     "en": "Offline basemap",
@@ -306,6 +319,15 @@
     "de": "Export fehlgeschlagen: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayExportFailed",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_couldn_t_parse_this_file_as_geojson_1_266549d1": {
@@ -341,6 +363,15 @@
     "de": "Diese PDF-Karte konnte nicht importiert werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayCouldnTImportThisPdfMap",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_couldn_t_save_this_pdf_map_securely_429e6650": {
@@ -355,6 +386,15 @@
     "de": "Diese MBTiles-Karte konnte nicht importiert werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayCouldnTImportThisMbtilesMap",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_couldn_t_open_this_file_as_an_mbtiles_map_ccbb0968": {
@@ -362,13 +402,26 @@
     "de": "Diese Datei konnte nicht als MBTiles-Karte geöffnet werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayCouldnTOpenThisFileAsAnMbtilesMap",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_loaded_offline_tiles_1_199bde78": {
     "en": "Loaded offline tiles: {1}.",
     "de": "Offline-Kacheln geladen: {1}.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayLoadedOfflineTiles",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_mission_data_locked_09b32f18": {
@@ -432,6 +485,15 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "displayTooManyAttemptsTryAgainInS",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_incorrect_pin_f76f82ec": {
@@ -552,14 +614,22 @@
     "de": "Die PINs müssen übereinstimmen und 4-stellig sein.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayPinsMustMatchAndBeDigits",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_app_lock_enabled_tacmap_will_lock_when_backgroun_22c27ba3": {
     "en": "App Lock enabled. TacMap will lock when backgrounded.",
     "de": "App-Sperre aktiviert. TacMap wird im Hintergrund gesperrt.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayAppLockEnabledTacmapWillLockWhenBackgrounded",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_too_many_attempts_try_again_shortly_94ee6062": {
     "en": "Too many attempts. Try again shortly.",
@@ -567,7 +637,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayTooManyAttemptsTryAgainShortly",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_current_pin_is_incorrect_3526dcc8": {
     "en": "Current PIN is incorrect.",
@@ -575,14 +649,22 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayCurrentPinIsIncorrect",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_new_pins_must_match_and_be_4_digits_401a7369": {
     "en": "New PINs must match and be 4 digits.",
     "de": "Die neuen PINs müssen übereinstimmen und 4-stellig sein.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayNewPinsMustMatchAndBeDigits",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_pin_changed_622a5845": {
     "en": "PIN changed.",
@@ -590,7 +672,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayPinChanged",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_app_lock_disabled_3073ec2e": {
     "en": "App Lock disabled.",
@@ -598,7 +684,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayAppLockDisabled",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_primary_map_coordinate_f2fc855e": {
     "en": "Primary map coordinate",
@@ -1012,7 +1102,11 @@
     "de": "MGRS konnte nicht gelesen werden. Format: <Zone><Band><Quadrat> <Ostwert> <Nordwert>, z. B. 56HLH 12345 67890",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayCouldnTParseMgrsFormatZoneBandSquareEasting",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_calibrating_pdf_6dec5e65": {
     "en": "Calibrating PDF",
@@ -1127,7 +1221,11 @@
     "de": "Diese Datei konnte nicht als gültige PDF-Karte importiert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayCouldnTImportThisFileAsAValidPdf",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_name_this_drawing_7680456e": {
     "en": "Name this drawing",
@@ -2021,7 +2119,11 @@
     "de": "Offline-Kacheln konnten nicht erstellt werden. Prüfe den freien Gerätespeicher und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayCouldnTGenerateOfflineTilesCheckThatTheDevice",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_basemap_1d43d772": {
     "en": "Basemap",
@@ -2189,20 +2291,37 @@
     "de": "Diese Datei ist kein gültiges GeoJSON.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayThisFileIsnTValidGeojson",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_this_geojson_is_not_a_featurecollection_6e836657": {
     "en": "This GeoJSON is not a FeatureCollection.",
     "de": "Dieses GeoJSON ist keine FeatureCollection.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayThisGeojsonIsNotAFeaturecollection",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_import_safety_limit_exceeded_1_058eeea7": {
     "en": "Import safety limit exceeded: {1}.",
     "de": "Sicherheitsgrenze beim Import überschritten: {1}.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayImportSafetyLimitExceeded",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_import_cancelled_33ffe414": {
@@ -2210,63 +2329,99 @@
     "de": "Import abgebrochen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayImportCancelled",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_file_is_over_16_mb_1484fb58": {
     "en": "file is over 16 MB",
     "de": "Datei ist größer als 16 MB",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayFileIsOverMb",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_more_than_10_000_features_7bd94cf0": {
     "en": "more than 10,000 features",
     "de": "mehr als 10.000 Objekte",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayMoreThanFeatures",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_parsing_took_too_long_849dde72": {
     "en": "parsing took too long",
     "de": "Verarbeitung dauerte zu lange",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayParsingTookTooLong",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_more_than_100_000_coordinates_e9d13237": {
     "en": "more than 100,000 coordinates",
     "de": "mehr als 100.000 Koordinaten",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayMoreThanCoordinates",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_json_nesting_is_too_deep_3625ea9a": {
     "en": "JSON nesting is too deep",
     "de": "JSON-Verschachtelung ist zu tief",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayJsonNestingIsTooDeep",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_json_has_too_many_values_c3d89def": {
     "en": "JSON has too many values",
     "de": "JSON enthält zu viele Werte",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayJsonHasTooManyValues",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_property_name_is_too_long_5c057a2d": {
     "en": "property name is too long",
     "de": "Attributname ist zu lang",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayPropertyNameIsTooLong",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_text_field_is_over_1_mb_1ee58427": {
     "en": "text field is over 1 MB",
     "de": "Textfeld ist größer als 1 MB",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTextFieldIsOverMb",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_imported_321f179c": {
     "en": "Imported",
@@ -2281,49 +2436,77 @@
     "de": "Diese Datei ist kein gültiges KML.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayThisFileIsnTValidKml",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_no_kml_entry_was_found_inside_this_kmz_b9cf83ca": {
     "en": "No .kml entry was found inside this KMZ.",
     "de": "In dieser KMZ-Datei wurde kein .kml-Eintrag gefunden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayNoKmlEntryWasFoundInsideThisKmz",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_xml_nesting_is_too_deep_837fb9e7": {
     "en": "XML nesting is too deep",
     "de": "XML-Verschachtelung ist zu tief",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayXmlNestingIsTooDeep",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_more_than_10_000_placemarks_926874a7": {
     "en": "more than 10,000 placemarks",
     "de": "mehr als 10.000 Ortsmarken",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayMoreThanPlacemarks",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_an_xml_text_field_is_over_4_mb_90f5dd14": {
     "en": "an XML text field is over 4 MB",
     "de": "Ein XML-Textfeld ist größer als 4 MB",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayAnXmlTextFieldIsOverMb",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_kmz_has_too_many_entries_a988916a": {
     "en": "KMZ has too many entries",
     "de": "KMZ enthält zu viele Einträge",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayKmzHasTooManyEntries",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_kmz_expansion_is_too_large_854b5106": {
     "en": "KMZ expansion is too large",
     "de": "KMZ ist nach dem Entpacken zu groß",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayKmzExpansionIsTooLarge",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_1_coordinate_2_7b642cff": {
     "en": "{1} coordinate {2}",
@@ -2856,13 +3039,26 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayPlaceNameSearchIsOffEnableOnlineLookupsIn",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_no_matches_for_1_4261d6b8": {
     "en": "No matches for “{1}”.",
     "de": "Keine Treffer für „{1}“.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayNoMatchesFor",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_search_failed_1_bf65ea5c": {
@@ -3480,20 +3676,37 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncFormCodesMustStartWith3Enter2OnlyForAn",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": []
   },
   "ui_legacy_v2_has_weaker_rollback_and_identity_prote_e42a7507": {
     "en": "Legacy v2 has weaker rollback and identity protection. Tap again to confirm.",
     "de": "Das ältere v2-Verfahren bietet schwächeren Rücksetz- und Identitätsschutz. Zum Bestätigen erneut tippen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncFormLegacyV2HasWeakerRollbackAndIdentityProtectionTapAgain",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": []
   },
   "ui_too_short_to_be_safe_use_at_least_1_characters_o_3222cb85": {
     "en": "Too short to be safe. Use at least {1} characters, or tap Generate.",
     "de": "Für einen sicheren Code zu kurz. Verwende mindestens {1} Zeichen oder tippe auf „Erzeugen“.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "syncFormTooShortToBeSafeUseAtLeast1Characters",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": [
+      {
+        "name": "minimum",
+        "type": "string"
+      }
     ]
   },
   "ui_join_create_room_952ff766": {
@@ -3554,13 +3767,26 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayMissionDataKeyIsLockedAuthenticateToContinue",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_mission_data_key_was_invalidated_by_a_device_sec_60d215bc": {
     "en": "Mission data key was invalidated by a device security change ({1}).",
     "de": "Der Schlüssel für Einsatzdaten wurde durch eine Änderung der Gerätesicherheit ungültig ({1}).",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayMissionDataKeyWasInvalidatedByADeviceSecurity",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_sealed_store_failed_authentication_tampered_or_w_b7fcfa83": {
@@ -3568,7 +3794,11 @@
     "de": "Authentifizierung des verschlüsselten Speichers fehlgeschlagen (manipuliert oder falscher Speicher).",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displaySealedStoreFailedAuthenticationTamperedOrWrongStore",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_airsoft_milsim_a74e6ca5": {
     "en": "Airsoft / Milsim",
@@ -4683,7 +4913,11 @@
     "de": "Die neuen PINs stimmen nicht überein.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayNewPinsDonTMatch",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_new_4_digit_pin_bded4d94": {
     "en": "New 4-digit PIN",
@@ -4697,14 +4931,22 @@
     "de": "App-Sperre aktiviert. TacMap wird im Hintergrund gesperrt.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayAppLockEnabledTacmapLocksWhenBackgrounded",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_pins_don_t_match_7354a781": {
     "en": "PINs don't match.",
     "de": "Die PINs stimmen nicht überein.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayPinsDonTMatch",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_a_deterrent_if_your_device_is_lost_or_borrowed_n_ece71314": {
     "en": "A deterrent if your device is lost or borrowed — not a substitute for device encryption.",
@@ -4725,7 +4967,11 @@
     "de": "Für diesen geschützten Schlüssel ist keine Gerätesperre verfügbar.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "missionKeyNoDeviceCredentialIsAvailableForThisProtectedKey",
+    "deferred": true,
+    "context": "Mission-data unlock failure shown without changing protected data.",
+    "parameters": []
   },
   "ui_confirm_mission_data_protection_change_957bd59d": {
     "en": "Confirm mission-data protection change",
@@ -4746,7 +4992,11 @@
     "de": "Es ist keine Gerätesperre eingerichtet. Die Einstellung kann daher nicht geändert werden.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayNoDeviceLockscreenIsSetSoThisCanT",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_your_1_day_free_trial_is_over_190778c1": {
     "en": "Your {1}-day free trial is over. ",
@@ -5068,14 +5318,22 @@
     "de": "Richte zuerst eine Geräte-PIN, ein Muster oder ein Passwort ein und versuche es dann erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displaySetADevicePinPatternOrPasswordFirstThen",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_key_protection_could_not_be_changed_849fc57e": {
     "en": "Key protection could not be changed",
     "de": "Schlüsselschutz konnte nicht geändert werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayKeyProtectionCouldNotBeChanged",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_after_selecting_a_tool_tap_the_map_to_place_poin_c8a52b8e": {
     "en": "After selecting a tool, tap the map to place points. Free Draw: drag to sketch freely — lifts to finish.",
@@ -5152,7 +5410,11 @@
     "de": "Die ausgewählte Datei konnte nicht importiert werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "importUnknownFailure",
+    "deferred": true,
+    "context": "Fallback when a document-import error supplies no readable diagnostic.",
+    "parameters": []
   },
   "ui_import_40bc4983": {
     "en": "IMPORT",
@@ -5572,7 +5834,11 @@
     "de": "MGRS konnte nicht gelesen werden. Versuche es mit einer vollständigen Gitterkoordinate.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayCouldnTParseMgrsTryAFullGridReference",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_point_1_c985066b": {
     "en": "Point {1}",
@@ -6200,7 +6466,11 @@
     "de": "Das ältere v2-Verfahren bietet schwächeren Rücksetz- und Identitätsschutz. Tippe erneut, um den Beitritt zum älteren Raum zu bestätigen.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncFormLegacyV2HasWeakerRollbackAndIdentityProtectionTapAgainLegacyJoin",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": []
   },
   "ui_too_short_to_be_safe_use_at_least_009e65bb": {
     "en": "Too short to be safe. Use at least ",
@@ -6368,7 +6638,11 @@
     "de": "Der Schlüssel für Einsatzdaten wurde durch eine Änderung der Gerätesicherheit ungültig.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayMissionDataKeyWasInvalidatedByADeviceSecurity87bf4b9f",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_could_not_upgrade_mission_key_payload_06366453": {
     "en": "Could not upgrade mission-key payload",
@@ -6744,6 +7018,15 @@
     "de": "{1} Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayCheckAvailableStorageThenTryAgain",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_this_will_permanently_remove_1_2_point_3_ec5c9bbe": {
@@ -6964,6 +7247,15 @@
     "de": "{1} Die bisherige Zeichnung bleibt aktiv. Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayThePreviousDrawingIsStillActiveCheckAvailableStorage",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_that_drawing_no_longer_exists_close_its_controls_42d9c95c": {
@@ -6971,20 +7263,37 @@
     "de": "Diese Zeichnung existiert nicht mehr. Schließe ihre Einstellungen und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayThatDrawingNoLongerExistsCloseItsControlsAnd",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_mission_drawings_are_locked_unlock_mission_data__7e1857f0": {
     "en": "Mission drawings are locked. Unlock mission data, then try again.",
     "de": "Einsatzzeichnungen sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayMissionDrawingsAreLockedUnlockMissionDataThenTry",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_drawing_change_could_not_be_saved_1_83b096a3": {
     "en": "The drawing change could not be saved: {1}",
     "de": "Die Zeichnungsänderung konnte nicht gespeichert werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheDrawingChangeCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_new_layer_59a0e00e": {
@@ -7351,28 +7660,44 @@
     "de": "Die Zugangsdaten der App-Sperre konnten nicht sicher gespeichert werden. Deine bisherige Einstellung wurde beibehalten.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheAppLockCredentialCouldNotBeSavedSecurely",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_saved_app_lock_credential_is_invalid_your_pr_96790995": {
     "en": "The saved App Lock credential is invalid. Your previous setting was kept.",
     "de": "Die gespeicherten Zugangsdaten der App-Sperre sind ungültig. Deine bisherige Einstellung wurde beibehalten.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheSavedAppLockCredentialIsInvalidYourPrevious",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_app_lock_credential_could_not_be_verified_af_e1cea3b0": {
     "en": "The App Lock credential could not be verified after saving. Your previous setting was kept.",
     "de": "Die Zugangsdaten der App-Sperre konnten nach dem Speichern nicht überprüft werden. Deine bisherige Einstellung wurde beibehalten.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheAppLockCredentialCouldNotBeVerifiedAfter",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_a_secure_app_lock_credential_could_not_be_genera_3d08684f": {
     "en": "A secure App Lock credential could not be generated. Your previous setting was kept.",
     "de": "Sichere Zugangsdaten für die App-Sperre konnten nicht erzeugt werden. Deine bisherige Einstellung wurde beibehalten.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayASecureAppLockCredentialCouldNotBeGenerated",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_check_again_32e60e73": {
     "en": "Check Again",
@@ -7424,21 +7749,33 @@
     "de": "Das gespeicherte Unit-Sync-Relay war unsicher oder veraltet. TacMap verwendet für diesen Lauf den sicheren Standard, konnte die gespeicherte Einstellung aber nicht korrigieren.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheSavedUnitSyncRelayWasUnsafeOrObsolete",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_relay_address_is_not_valid_84642ed7": {
     "en": "The relay address is not valid.",
     "de": "Die Relay-Adresse ist ungültig.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheRelayAddressIsNotValid",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_could_not_save_this_privacy_setting_the_previous_c5b7cd76": {
     "en": "Could not save this privacy setting. The previous setting remains active; check available storage and try again.",
     "de": "Diese Datenschutzeinstellung konnte nicht gespeichert werden. Die bisherige Einstellung bleibt aktiv. Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayCouldNotSaveThisPrivacySettingThePreviousSetting",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_tacmap_adds_no_analytics_or_remote_crash_telemet_5f747a3f": {
     "en": "TacMap adds no analytics or remote crash telemetry. Optional online basemaps and lookups are off on a fresh install; if you enable them, the provider receives your IP plus the requested tile area, place query, or lookup coordinate. Unit Sync payload content is end-to-end encrypted, while its relay still sees routing and traffic metadata.",
@@ -7510,6 +7847,15 @@
     "de": "Das abgelegte Symbol wurde nicht hinzugefügt. {1} Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheDroppedSymbolWasNotAddedCheckAvailableStorage",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_the_drawing_was_not_added_1_check_available_stor_454d2431": {
@@ -7517,6 +7863,15 @@
     "de": "Die Zeichnung wurde nicht hinzugefügt. {1} Prüfe den verfügbaren Speicherplatz und zeichne sie erneut.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheDrawingWasNotAddedCheckAvailableStorageThen",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_the_symbol_layer_could_not_be_made_visible_1_che_136045ef": {
@@ -7524,6 +7879,15 @@
     "de": "Die Symbolebene konnte nicht eingeblendet werden. {1} Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheSymbolLayerCouldNotBeMadeVisibleCheck",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_a_symbol_layer_could_not_be_restored_1_check_ava_2e4ab148": {
@@ -7531,6 +7895,15 @@
     "de": "Eine Symbolebene konnte nicht wiederhergestellt werden. {1} Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayASymbolLayerCouldNotBeRestoredCheckAvailable",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_couldn_t_prepare_this_1_import_2_ebd620df": {
@@ -7538,6 +7911,19 @@
     "de": "Dieser {1}-Import konnte nicht vorbereitet werden: {2}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayCouldnTPrepareThisImport",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      },
+      {
+        "name": "detail2",
+        "type": "string"
+      }
     ]
   },
   "ui_couldn_t_parse_this_file_as_1_2_4fba71e5": {
@@ -7545,6 +7931,19 @@
     "de": "Diese Datei konnte nicht als {1} gelesen werden: {2}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayCouldnTParseThisFileAs",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      },
+      {
+        "name": "detail2",
+        "type": "string"
+      }
     ]
   },
   "ui_send_to_the_entire_room_ab6f1a50": {
@@ -7930,7 +8329,11 @@
     "de": "Der Zugriffsschutz für Einsatzdaten wurde nicht geändert, da der bisherige Schlüsselplatz nicht sicher entfernt werden konnte. Versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayMissionDataAccessControlWasNotChangedBecauseThe",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_could_not_delete_symbol_0f660194": {
     "en": "Could Not Delete Symbol",
@@ -7945,7 +8348,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayEnterAValidElevationInMetres",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_close_symbol_editor_07c1b540": {
     "en": "Close symbol editor",
@@ -8170,13 +8577,26 @@
     "de": "Einsatzdaten sind gesperrt. Entsperre sie vor dem Import.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayMissionDataIsLockedUnlockItBeforeImporting",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_import_could_not_be_saved_1_b3852e9b": {
     "en": "The import could not be saved: {1}",
     "de": "Der Import konnte nicht gespeichert werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheImportCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_default_mission_layers_cannot_be_renamed_recolou_c6bcfae4": {
@@ -8184,48 +8604,81 @@
     "de": "Standard-Einsatzebenen können nicht umbenannt, umgefärbt oder gelöscht werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayDefaultMissionLayersCannotBeRenamedRecolouredOrDeleted",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_this_layer_predates_default_layer_provenance_con_c84d95d4": {
     "en": "This layer predates default-layer provenance. Confirm whether it is a custom layer before renaming, recolouring, or deleting it.",
     "de": "Diese Ebene stammt aus einer Zeit ohne Kennzeichnung von Standardebenen. Bestätige vor dem Umbenennen, Umfärben oder Löschen, ob sie benutzerdefiniert ist.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayThisLayerPredatesDefaultLayerProvenanceConfirmWhetherIt",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_that_layer_no_longer_exists_refresh_the_layer_li_a269d93c": {
     "en": "That layer no longer exists. Refresh the layer list and try again.",
     "de": "Diese Ebene existiert nicht mehr. Aktualisiere die Ebenenliste und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayThatLayerNoLongerExistsRefreshTheLayerList",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_default_fallback_layer_is_unavailable_restor_835b34c8": {
     "en": "The default fallback layer is unavailable. Restore the default layers before deleting this layer.",
     "de": "Die Standard-Ausweichebene ist nicht verfügbar. Stelle vor dem Löschen dieser Ebene die Standardebenen wieder her.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheDefaultFallbackLayerIsUnavailableRestoreTheDefault",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_enter_a_non_empty_layer_name_e368daef": {
     "en": "Enter a non-empty layer name.",
     "de": "Gib einen nicht leeren Ebenennamen ein.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayEnterANonEmptyLayerName",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_choose_a_valid_six_digit_layer_colour_f64618a6": {
     "en": "Choose a valid six-digit layer colour.",
     "de": "Wähle eine gültige sechsstellige Ebenenfarbe.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayChooseAValidSixDigitLayerColour",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_mission_1_are_locked_unlock_mission_data_then_tr_873d7f20": {
     "en": "Mission {1} are locked. Unlock mission data, then try again.",
     "de": "Einsatzdaten ({1}) sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayMissionAreLockedUnlockMissionDataThenTryAgain",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_mission_1_2_no_unsafe_layer_chang_4d0c4410": {
@@ -8233,6 +8686,19 @@
     "de": "Einsatzdaten ({1}) konnten nicht gespeichert werden: {2}. Es wurde keine unsichere Ebenenänderung veröffentlicht. Versuche es erneut.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayCouldNotSaveMissionNoUnsafeLayerChangeWas",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      },
+      {
+        "name": "detail2",
+        "type": "string"
+      }
     ]
   },
   "ui_mission_waypoints_are_locked_unlock_mission_data_926e3d02": {
@@ -8240,20 +8706,37 @@
     "de": "Einsatzwegpunkte sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayMissionWaypointsAreLockedUnlockMissionDataThenTry",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_that_symbol_no_longer_exists_close_the_editor_an_6fd5189e": {
     "en": "That symbol no longer exists. Close the editor and try again.",
     "de": "Dieses Symbol existiert nicht mehr. Schließe den Editor und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayThatSymbolNoLongerExistsCloseTheEditorAnd",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_symbol_change_could_not_be_saved_1_4eb6ffc5": {
     "en": "The symbol change could not be saved: {1}",
     "de": "Die Symboländerung konnte nicht gespeichert werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheSymbolChangeCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_new_waypoint_to_disk_1_ea209d9a": {
@@ -8436,6 +8919,15 @@
     "de": "{1} Das Symbol befindet sich weiterhin an seiner bisherigen Position.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheSymbolIsStillAtItsPreviousPosition",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_edit_1_c310ac46": {
@@ -8450,27 +8942,48 @@
     "de": "Die gespeicherte Kartenbibliothek ist gesperrt oder unlesbar. Entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheSavedMapLibraryIsLockedOrUnreadableUnlock",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_switch_to_an_online_basemap_before_deleting_the__8f9cc1d1": {
     "en": "Switch to an online basemap before deleting the imported map.",
     "de": "Wechsle vor dem Löschen der importierten Karte zu einer Online-Grundkarte.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displaySwitchToAnOnlineBasemapBeforeDeletingTheImported",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_imported_map_is_outside_app_managed_storage__33e606d9": {
     "en": "The imported map is outside app-managed storage, so it was not deleted.",
     "de": "Die importierte Karte liegt außerhalb des von der App verwalteten Speichers und wurde daher nicht gelöscht.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheImportedMapIsOutsideAppManagedStorageSo",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_imported_map_library_could_not_be_updated_1_9e2d9ad6": {
     "en": "The imported map library could not be updated: {1}",
     "de": "Die Bibliothek importierter Karten konnte nicht aktualisiert werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheImportedMapLibraryCouldNotBeUpdated",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_the_imported_map_could_not_be_deleted_and_its_sa_d1ccb908": {
@@ -8478,6 +8991,15 @@
     "de": "Die importierte Karte konnte nicht gelöscht und ihr gespeicherter Eintrag nicht wiederhergestellt werden. Lass die App geöffnet und versuche es erneut: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheImportedMapCouldNotBeDeletedAndIts",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_saved_imported_map_details_are_locked_unlock_mis_1b506086": {
@@ -8485,28 +9007,44 @@
     "de": "Gespeicherte Angaben zur importierten Karte sind gesperrt. Entsperre die Einsatzdaten, um sie wiederherzustellen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displaySavedImportedMapDetailsAreLockedUnlockMissionData",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_saved_imported_map_details_could_not_be_authenti_370c6bb9": {
     "en": "Saved imported-map details could not be authenticated. The recovery copy was preserved; reset the saved map selection or import the map again.",
     "de": "Gespeicherte Angaben zur importierten Karte konnten nicht authentifiziert werden. Die Wiederherstellungskopie blieb erhalten. Setze die gespeicherte Kartenauswahl zurück oder importiere die Karte erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displaySavedImportedMapDetailsCouldNotBeAuthenticatedThe",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_saved_imported_map_is_missing_or_unreadable__01f0ec56": {
     "en": "The saved imported map is missing or unreadable. Remove its saved entry, then import the source file again.",
     "de": "Die gespeicherte importierte Karte fehlt oder ist unlesbar. Entferne ihren gespeicherten Eintrag und importiere die Quelldatei erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheSavedImportedMapIsMissingOrUnreadableRemove",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_saved_imported_map_entry_could_not_be_upgrad_014ea51a": {
     "en": "The saved imported-map entry could not be upgraded securely. Unlock mission data or free storage, then try again.",
     "de": "Der gespeicherte Eintrag der importierten Karte konnte nicht sicher aktualisiert werden. Entsperre Einsatzdaten oder schaffe Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheSavedImportedMapEntryCouldNotBeUpgraded",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_track_recording_was_interrupted_the_saved_track__d5e7016b": {
     "en": "Track recording was interrupted. The saved track was preserved.",
@@ -8688,28 +9226,44 @@
     "de": "Gib eine MGRS-Gitterreferenz ein.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayEnterAnMgrsGridReference",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_use_a_4_6_8_or_10_figure_grid_reference_80ffd52f": {
     "en": "Use a 4, 6, 8, or 10-figure grid reference.",
     "de": "Verwende eine 4-, 6-, 8- oder 10-stellige Gitterreferenz.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayUseAOrFigureGridReference",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_enter_a_valid_full_mgrs_reference_or_a_local_4_6_52ffd57d": {
     "en": "Enter a valid full MGRS reference or a local 4, 6, 8, or 10-figure grid.",
     "de": "Gib eine gültige vollständige MGRS-Referenz oder eine lokale 4-, 6-, 8- oder 10-stellige Gitterreferenz ein.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayEnterAValidFullMgrsReferenceOrALocal",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_a_local_mgrs_grid_context_is_unavailable_at_this_1966ae5d": {
     "en": "A local MGRS grid context is unavailable at this symbol's location. Enter a full MGRS reference.",
     "de": "An der Position dieses Symbols ist kein lokaler MGRS-Gitterbezug verfügbar. Gib eine vollständige MGRS-Referenz ein.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayALocalMgrsGridContextIsUnavailableAtThis",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_place_search_unavailable_offline_mgrs_grid_and_l_bf7fb25c": {
     "en": "Place search unavailable offline — MGRS, grid and lat/lon still work.",
@@ -8717,7 +9271,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayPlaceSearchUnavailableOfflineMgrsGridAndLatLon",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_latitude_must_be_between_90_and_90_and_longitude_b0b6158d": {
     "en": "Latitude must be between -90 and 90, and longitude between -180 and 180.",
@@ -8725,7 +9283,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayLatitudeMustBeBetweenAndAndLongitudeBetweenAnd",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_centre_of_1_grid_square_relative_to_local_grid_74ad4ef5": {
     "en": "Centre of {1} grid square (relative to local grid)",
@@ -8889,13 +9451,26 @@
     "de": "Die gespeicherte Grundkarte ist gesperrt oder unlesbar. Entsperre die Einsatzdaten und tippe auf „Erneut versuchen“. Die aktuelle Karte bleibt aktiv.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheSavedBasemapIsLockedOrUnreadableUnlockMission",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_imported_map_could_not_be_deleted_securely_t_b4183ab3": {
     "en": "The imported map could not be deleted securely. The online map remains active and the saved entry was preserved where possible. Unlock mission data or free storage, then tap Retry. {1}",
     "de": "Die importierte Karte konnte nicht sicher gelöscht werden. Die Online-Karte bleibt aktiv; der gespeicherte Eintrag wurde soweit möglich erhalten. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheImportedMapCouldNotBeDeletedSecurelyThe",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_the_unavailable_saved_map_entry_could_not_be_rem_d280da76": {
@@ -8903,6 +9478,15 @@
     "de": "Der nicht verfügbare gespeicherte Karteneintrag konnte nicht entfernt werden. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayTheUnavailableSavedMapEntryCouldNotBeRemoved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_the_pdf_map_could_not_be_saved_for_relaunch_the__2518d178": {
@@ -8910,21 +9494,33 @@
     "de": "Die PDF-Karte konnte nicht für den nächsten Start gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayThePdfMapCouldNotBeSavedForRelaunch",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_basemap_choice_could_not_be_saved_the_previo_83f0c14a": {
     "en": "The basemap choice could not be saved. The previous map remains active. Unlock mission data or free storage, then tap Retry.",
     "de": "Die Grundkartenauswahl konnte nicht gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheBasemapChoiceCouldNotBeSavedThePrevious",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_map_storage_recovery_did_not_complete_keep_the_a_b8d9e1c8": {
     "en": "Map storage recovery did not complete. Keep the app open, unlock mission data or free storage, then tap Retry before closing the app.",
     "de": "Die Wiederherstellung des Kartenspeichers wurde nicht abgeschlossen. Lass die App geöffnet, entsperre Einsatzdaten oder schaffe Speicherplatz und tippe vor dem Schließen auf „Erneut versuchen“.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayMapStorageRecoveryDidNotCompleteKeepTheApp",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_exceeded_the_safe_size_limit_39e358a0": {
     "en": "The relay snapshot exceeded the safe size limit.",
@@ -9801,14 +10397,22 @@
     "de": "Die Zustimmung zu Unit Sync im Hintergrund konnte nicht gespeichert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncFormCouldNotSaveBackgroundUnitSyncConsent",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": []
   },
   "ui_could_not_save_location_sharing_consent_dcc4c30d": {
     "en": "Could not save location-sharing consent.",
     "de": "Die Zustimmung zur Standortfreigabe konnte nicht gespeichert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncFormCouldNotSaveLocationSharingConsent",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": []
   },
   "ui_to_join_tacmap_will_enable_share_my_location_and_bad9fa2f": {
     "en": "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately {1} while the screen is off.",
@@ -9852,7 +10456,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayEnterAUnitSyncRelayAddress",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_relay_address_is_not_a_valid_url_b87a714c": {
     "en": "The relay address is not a valid URL.",
@@ -9860,7 +10468,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayTheRelayAddressIsNotAValidUrl",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_relay_addresses_cannot_contain_a_username_or_pas_399c2034": {
     "en": "Relay addresses cannot contain a username or password.",
@@ -9868,7 +10480,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayRelayAddressesCannotContainAUsernameOrPassword",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_relay_addresses_cannot_contain_a_query_or_fragme_6cb20dcb": {
     "en": "Relay addresses cannot contain a query or fragment.",
@@ -9876,7 +10492,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayRelayAddressesCannotContainAQueryOrFragment",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_relay_address_contains_an_invalid_port_cdfa2fd1": {
     "en": "The relay address contains an invalid port.",
@@ -9884,7 +10504,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayTheRelayAddressContainsAnInvalidPort",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_use_the_relay_origin_only_custom_paths_are_not_a_38438a43": {
     "en": "Use the relay origin only; custom paths are not allowed.",
@@ -9892,14 +10516,22 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayUseTheRelayOriginOnlyCustomPathsAreNot",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_relay_address_must_include_wss_and_a_valid_h_fb48c579": {
     "en": "The relay address must include wss:// and a valid host.",
     "de": "Die Relay-Adresse muss wss:// und einen gültigen Host enthalten.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheRelayAddressMustIncludeWssAndAValid",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_relay_address_contains_an_invalid_host_091cc81f": {
     "en": "The relay address contains an invalid host.",
@@ -9907,7 +10539,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayTheRelayAddressContainsAnInvalidHost",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_unencrypted_ws_is_allowed_only_for_a_loopback_re_89c73bce": {
     "en": "Unencrypted ws:// is allowed only for a loopback relay in a debug build.",
@@ -9915,7 +10551,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayUnencryptedWsIsAllowedOnlyForALoopbackRelay",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_unit_sync_relay_addresses_must_use_wss_bf1ce252": {
     "en": "Unit Sync relay addresses must use wss://.",
@@ -9923,7 +10563,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayUnitSyncRelayAddressesMustUseWss",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_relay_address_could_not_be_normalized_597c59b3": {
     "en": "The relay address could not be normalized.",
@@ -9931,7 +10575,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "displayTheRelayAddressCouldNotBeNormalized",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_export_all_mission_objects_e4853a29": {
     "en": "Export All Mission Objects",
@@ -9946,6 +10594,15 @@
     "de": "Es wurden keine importierten Einsatzobjekte gespeichert. {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "displayNoImportedMissionObjectsWereSaved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_waypoint_store_committed_1_new_and_skipped_2_alr_6d7cfdde": {
@@ -9960,7 +10617,11 @@
     "de": "Es wurden keine importierten Einsatzobjekte gespeichert.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayNoImportedMissionObjectsWereSaved3176accf",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_imported_1_new_waypoint_08ce4562": {
     "en": "Imported {1} new waypoint",
@@ -10196,14 +10857,22 @@
     "de": "Die Zeichnung wurde nicht hinzugefügt.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheDrawingWasNotAdded",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_check_available_storage_then_draw_it_again_b1bcfd91": {
     "en": "Check available storage, then draw it again.",
     "de": "Prüfe den verfügbaren Speicherplatz und zeichne sie erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayCheckAvailableStorageThenDrawItAgain",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_insert_drawing_vertex_2811db86": {
     "en": "Insert Drawing Vertex",
@@ -10217,7 +10886,11 @@
     "de": "Der neue Zeichnungspunkt wurde nicht gespeichert.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheNewDrawingVertexWasNotSaved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_delete_drawing_vertex_aa79367b": {
     "en": "Delete Drawing Vertex",
@@ -10231,21 +10904,33 @@
     "de": "Der Zeichnungspunkt wurde nicht gelöscht.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheDrawingVertexWasNotDeleted",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_waypoint_move_was_not_saved_6cf0b207": {
     "en": "The waypoint move was not saved.",
     "de": "Die Wegpunktverschiebung wurde nicht gespeichert.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheWaypointMoveWasNotSaved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_drawing_move_was_not_saved_94834387": {
     "en": "The drawing move was not saved.",
     "de": "Die Zeichnungsverschiebung wurde nicht gespeichert.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheDrawingMoveWasNotSaved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_move_drawing_vertex_22248fe2": {
     "en": "Move Drawing Vertex",
@@ -10259,14 +10944,22 @@
     "de": "Die Verschiebung des Zeichnungspunkts wurde nicht gespeichert.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayTheDrawingVertexMoveWasNotSaved",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_check_available_storage_then_try_again_ef641206": {
     "en": "Check available storage, then try again.",
     "de": "Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "displayCheckAvailableStorageThenTryAgainef641206",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_every_5_minutes_dead1dee": {
     "en": "Every 5 minutes",
@@ -10357,7 +11050,11 @@
     "de": "Der ausstehende Dokumentimport konnte nicht über den Neustart des Prozesses hinweg erhalten werden.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "missionKeyCouldNotPreserveThePendingDocumentImportAcrossProcess",
+    "deferred": true,
+    "context": "Mission-data unlock failure shown without changing protected data.",
+    "parameters": []
   },
   "ui_waiting_for_the_recording_notification_choice_b6d01585": {
     "en": "Waiting for the recording notification choice…",
@@ -10425,21 +11122,33 @@
     "de": "Die PIN-Änderung konnte nicht gespeichert werden. Die bisherige PIN bleibt aktiv.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayPinChangeCouldNotBeSavedTheExistingPin",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_app_lock_could_not_be_disabled_and_remains_activ_78d08964": {
     "en": "App Lock could not be disabled and remains active.",
     "de": "Die App-Sperre konnte nicht deaktiviert werden und bleibt aktiv.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayAppLockCouldNotBeDisabledAndRemainsActive",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_app_lock_could_not_be_saved_try_again_26f7a461": {
     "en": "App Lock could not be saved. Try again.",
     "de": "Die App-Sperre konnte nicht gespeichert werden. Versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayAppLockCouldNotBeSavedTryAgain",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_waypoints_are_locked_and_the_change_was_not_save_f2b9af87": {
     "en": "Waypoints are locked and the change was not saved.",
@@ -10933,7 +11642,11 @@
     "de": "Das Symbol konnte nicht gespeichert werden. Versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheSymbolCouldNotBeSavedTryAgain",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_move_to_mgrs_3a34ac75": {
     "en": "Move to MGRS",
@@ -10954,7 +11667,11 @@
     "de": "Das Symbol konnte nicht gelöscht werden. Es bleibt auf der Karte.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheSymbolCouldNotBeDeletedItRemainsOn",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_task_colour_598f7518": {
     "en": "Task colour",
@@ -10989,41 +11706,70 @@
     "de": "Gib ein 4-, 6-, 8- oder 10-stelliges Gitter oder eine vollständige MGRS-Referenz mit einer dieser Genauigkeiten ein.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayEnterAOrFigureGridOrFullMgrsAt",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_drawing_was_not_saved_your_draft_is_still_op_d299d51b": {
     "en": "The drawing was not saved. Your draft is still open.",
     "de": "Die Zeichnung wurde nicht gespeichert. Dein Entwurf bleibt geöffnet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheDrawingWasNotSavedYourDraftIsStill",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_drawing_change_was_not_saved_the_previous_dr_b9bc8875": {
     "en": "The drawing change was not saved. The previous drawing remains active.",
     "de": "Die Zeichnungsänderung wurde nicht gespeichert. Die bisherige Zeichnung bleibt aktiv.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheDrawingChangeWasNotSavedThePreviousDrawing",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_drawing_was_not_deleted_it_remains_selected_55190285": {
     "en": "The drawing was not deleted. It remains selected.",
     "de": "Die Zeichnung wurde nicht gelöscht. Sie bleibt ausgewählt.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheDrawingWasNotDeletedItRemainsSelected",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_layer_visibility_was_not_saved_the_previous_sett_07bb1566": {
     "en": "Layer visibility was not saved. The previous setting remains active.",
     "de": "Die Ebenensichtbarkeit wurde nicht gespeichert. Die bisherige Einstellung bleibt aktiv.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayLayerVisibilityWasNotSavedThePreviousSettingRemains",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_1_unlock_mission_data_or_free_device_storage_the_dbe9b576": {
     "en": "{1} Unlock mission data or free device storage, then tap Retry.",
     "de": "{1} Entsperre Einsatzdaten oder schaffe Gerätespeicher und tippe auf „Erneut versuchen“.",
     "platforms": [
       "android"
+    ],
+    "accessor": "displayUnlockMissionDataOrFreeDeviceStorageThenTap",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_unable_to_copy_1_bfc1d6bd": {
@@ -11077,14 +11823,22 @@
     "de": "Das Symbol konnte nicht gespeichert werden. Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheSymbolCouldNotBeSavedCheckAvailableStorage",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_layer_could_not_be_saved_check_the_name_and__67c01b25": {
     "en": "The layer could not be saved. Check the name and try again.",
     "de": "Die Ebene konnte nicht gespeichert werden. Prüfe den Namen und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheLayerCouldNotBeSavedCheckTheName",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_all_symbols_and_drawings_on_this_layer_will_move_9e71f7b5": {
     "en": "All symbols and drawings on this layer will move to Friendly.",
@@ -11105,7 +11859,11 @@
     "de": "Die Ebene bleibt erhalten. Bereits zu „Eigene Kräfte“ verschobene Symbole sind sicher; versuche es erneut, um den Vorgang abzuschließen.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheLayerRemainsAnySymbolsAlreadyMovedToFriendly",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_edit_1_layer_151a20a4": {
     "en": "Edit {1} layer",
@@ -11147,7 +11905,11 @@
     "de": "Die Ebene konnte nicht gespeichert werden. Ihr bisheriger Name und ihre Farbe bleiben aktiv.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheLayerCouldNotBeSavedYourPreviousName",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_layer_colour_1_e7c523b3": {
     "en": "Layer colour #{1}",
@@ -11301,7 +12063,11 @@
     "de": "Die PDF-Karte wurde entladen, aber ihre privaten Sitzungsmetadaten konnten nicht entfernt werden. Versuche die Bereinigung erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayThePdfMapWasUnloadedButItsPrivateSession",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_saved_basemap_details_could_not_be_authentic_9e82a378": {
     "en": "The saved basemap details could not be authenticated. ",
@@ -11336,28 +12102,44 @@
     "de": "Die Bereinigung der PDF-Sitzung konnte weiterhin nicht gespeichert werden. Prüfe den Gerätespeicher und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayPdfSessionCleanupStillCouldNotBeSavedCheck",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_pdf_map_could_not_be_saved_for_relaunch_the__a195ed9e": {
     "en": "The PDF map could not be saved for relaunch. The previous map remains active. Check device storage and retry.",
     "de": "Die PDF-Karte konnte nicht für den nächsten Start gespeichert werden. Die bisherige Karte bleibt aktiv. Prüfe den Gerätespeicher und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayThePdfMapCouldNotBeSavedForRelauncha195ed9e",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_basemap_choice_could_not_be_saved_the_previo_420c88c7": {
     "en": "The basemap choice could not be saved. The previous map remains active. Check device storage and retry.",
     "de": "Die Grundkartenauswahl konnte nicht gespeichert werden. Die bisherige Karte bleibt aktiv. Prüfe den Gerätespeicher und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheBasemapChoiceCouldNotBeSavedThePrevious420c88c7",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_map_storage_recovery_did_not_complete_keep_the_a_10246bcb": {
     "en": "Map storage recovery did not complete. Keep the app open and retry before closing it.",
     "de": "Die Wiederherstellung des Kartenspeichers wurde nicht abgeschlossen. Lass die App geöffnet und versuche es vor dem Schließen erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayMapStorageRecoveryDidNotCompleteKeepTheApp10246bcb",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_import_exceeds_8_mib_89d398af": {
     "en": "Import exceeds 8 MiB",
@@ -12329,14 +13111,22 @@
     "de": "Die Relay-Adresse muss wss:// und einen Host enthalten.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheRelayAddressMustIncludeWssAndAHost",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_the_relay_address_must_contain_a_valid_host_ea2bdbb3": {
     "en": "The relay address must contain a valid host.",
     "de": "Die Relay-Adresse muss einen gültigen Host enthalten.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "displayTheRelayAddressMustContainAValidHost",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": []
   },
   "ui_entire_room_1_6cd31f08": {
     "en": "Entire room{1}",
@@ -12501,7 +13291,11 @@
     "de": "Einheitenidentität/Standortfreigabe konnte nicht gespeichert werden; TacMap ist daher nicht beigetreten. Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncFormUnitIdentityLocationSharingCouldNotBeSavedSoTacmap",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": []
   },
   "ui_authenticated_online_membership_is_unavailable_i_1caa9924": {
     "en": "Authenticated online membership is unavailable in legacy v2 rooms. ",
@@ -12571,35 +13365,55 @@
     "de": "Unit Sync im Hintergrund konnte nicht gespeichert werden. Die bisherige Einstellung bleibt aktiv. Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncFormBackgroundUnitSyncCouldNotBeSavedThePreviousSetting",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": []
   },
   "ui_share_my_location_could_not_be_saved_so_tacmap_d_57862bba": {
     "en": "Share my location could not be saved, so TacMap did not join. Check available storage and try again.",
     "de": "„Meinen Standort teilen“ konnte nicht gespeichert werden; TacMap ist daher nicht beigetreten. Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncFormShareMyLocationCouldNotBeSavedSoTacmapDid",
+    "deferred": true,
+    "context": "Retained Unit Sync join-form validation or consent failure; changing language must preserve the entered code and consent state.",
+    "parameters": []
   },
   "ui_import_could_not_save_waypoints_nothing_else_was_219f397e": {
     "en": "Import could not save waypoints. Nothing else was changed; retry the same file.",
     "de": "Wegpunkte konnten beim Import nicht gespeichert werden. Sonst wurde nichts geändert. Versuche dieselbe Datei erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "importWaypointsSaveFailed",
+    "deferred": true,
+    "context": "Import save failure. Preserve the partial-commit and retry instructions.",
+    "parameters": []
   },
   "ui_waypoints_were_saved_but_drawings_could_not_be_s_f1ec9386": {
     "en": "Waypoints were saved, but drawings could not be saved. Retry the same file; existing objects will be skipped and the same IDs reused.",
     "de": "Wegpunkte wurden gespeichert, Zeichnungen jedoch nicht. Versuche dieselbe Datei erneut; vorhandene Objekte werden übersprungen und dieselben IDs wiederverwendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "importDrawingsPartiallySaved",
+    "deferred": true,
+    "context": "Import save failure. Preserve the partial-commit and retry instructions.",
+    "parameters": []
   },
   "ui_import_could_not_save_drawings_retry_the_same_fi_5094a9e1": {
     "en": "Import could not save drawings. Retry the same file; the same IDs will be reused.",
     "de": "Zeichnungen konnten beim Import nicht gespeichert werden. Versuche dieselbe Datei erneut; dieselben IDs werden wiederverwendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "importDrawingsSaveFailed",
+    "deferred": true,
+    "context": "Import save failure. Preserve the partial-commit and retry instructions.",
+    "parameters": []
   },
   "ui_1_is_ready_to_share_dfa306a2": {
     "en": "{1} is ready to share",
@@ -13170,6 +13984,19 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "displayImportedAnd",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      },
+      {
+        "name": "detail2",
+        "type": "string"
+      }
     ]
   },
   "ui_across_1_647f7db4": {
@@ -13178,6 +14005,15 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "displayAcross",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_skipped_1_already_present_objects_41a816dc": {
@@ -13186,6 +14022,15 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "displaySkippedAlreadyPresentObjects",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_waypoint_store_committed_1_new_objects_and_skipp_cd85649d": {
@@ -13194,6 +14039,19 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "displayWaypointStoreCommittedNewObjectsAndSkippedAlreadyPresent",
+    "deferred": true,
+    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      },
+      {
+        "name": "detail2",
+        "type": "string"
+      }
     ]
   },
   "ui_report_845e9183": {
@@ -13256,7 +14114,8 @@
         "name": "detail",
         "type": "string"
       }
-    ]
+    ],
+    "deferred": true
   },
   "settings_language_title": {
     "en": "Language",
@@ -13982,6 +14841,276 @@
     "accessor": "syncConfiguredRelayUnavailable",
     "deferred": true,
     "context": "Configured relay validation failed. Relay is app-managed; there is no user-editable relay URL.",
+    "parameters": []
+  },
+  "layer_drawings_locked": {
+    "en": "Mission drawings are locked. Unlock mission data, then try again.",
+    "de": "Einsatzzeichnungen sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "layerDrawingsLocked",
+    "deferred": true,
+    "context": "Complete layer mutation failure; underlying diagnostics retained and translated when app-owned. No translated store-name fragments.",
+    "parameters": []
+  },
+  "layer_waypoints_locked": {
+    "en": "Mission waypoints are locked. Unlock mission data, then try again.",
+    "de": "Einsatzwegpunkte sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "layerWaypointsLocked",
+    "deferred": true,
+    "context": "Complete layer mutation failure; underlying diagnostics retained and translated when app-owned. No translated store-name fragments.",
+    "parameters": []
+  },
+  "layer_drawings_save_failed": {
+    "en": "Could not save mission drawings: {1}. No unsafe layer change was published; try again.",
+    "de": "Einsatzzeichnungen konnten nicht gespeichert werden: {1}. Es wurde keine unsichere Ebenenänderung übernommen. Versuche es erneut.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "layerDrawingsSaveFailed",
+    "deferred": true,
+    "context": "Complete layer mutation failure; underlying diagnostics retained and translated when app-owned. No translated store-name fragments.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "layer_waypoints_save_failed": {
+    "en": "Could not save mission waypoints: {1}. No unsafe layer change was published; try again.",
+    "de": "Einsatzwegpunkte konnten nicht gespeichert werden: {1}. Es wurde keine unsichere Ebenenänderung übernommen. Versuche es erneut.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "layerWaypointsSaveFailed",
+    "deferred": true,
+    "context": "Complete layer mutation failure; underlying diagnostics retained and translated when app-owned. No translated store-name fragments.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "import_complete_summary": {
+    "en": "Imported {1} and {2}.",
+    "de": "{1} und {2} importiert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "importCompleteSummary",
+    "deferred": true,
+    "context": "Complete retained import or edit status. Nested messages and plural counts resolve in selected language without replaying the operation.",
+    "parameters": [
+      {
+        "name": "waypoints",
+        "type": "string"
+      },
+      {
+        "name": "drawings",
+        "type": "string"
+      }
+    ]
+  },
+  "import_complete_layers_summary": {
+    "en": "Imported {1} and {2} across {3}.",
+    "de": "{1} und {2} auf {3} importiert.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "importCompleteLayersSummary",
+    "deferred": true,
+    "context": "Complete retained import or edit status. Nested messages and plural counts resolve in selected language without replaying the operation.",
+    "parameters": [
+      {
+        "name": "waypoints",
+        "type": "string"
+      },
+      {
+        "name": "drawings",
+        "type": "string"
+      },
+      {
+        "name": "layers",
+        "type": "string"
+      }
+    ]
+  },
+  "import_complete_skipped_summary": {
+    "en": "Imported {1} and {2}; skipped {3} already-present objects.",
+    "de": "{1} und {2} importiert; {3} bereits vorhandene Objekte übersprungen.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "importCompleteSkippedSummary",
+    "deferred": true,
+    "context": "Complete retained import or edit status. Nested messages and plural counts resolve in selected language without replaying the operation.",
+    "parameters": [
+      {
+        "name": "waypoints",
+        "type": "string"
+      },
+      {
+        "name": "drawings",
+        "type": "string"
+      },
+      {
+        "name": "skipped",
+        "type": "string"
+      }
+    ]
+  },
+  "import_complete_layers_skipped_summary": {
+    "en": "Imported {1} and {2} across {3}; skipped {4} already-present objects.",
+    "de": "{1} und {2} auf {3} importiert; {4} bereits vorhandene Objekte übersprungen.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "importCompleteLayersSkippedSummary",
+    "deferred": true,
+    "context": "Complete retained import or edit status. Nested messages and plural counts resolve in selected language without replaying the operation.",
+    "parameters": [
+      {
+        "name": "waypoints",
+        "type": "string"
+      },
+      {
+        "name": "drawings",
+        "type": "string"
+      },
+      {
+        "name": "layers",
+        "type": "string"
+      },
+      {
+        "name": "skipped",
+        "type": "string"
+      }
+    ]
+  },
+  "display_failure_context": {
+    "en": "{1} {2} {3}",
+    "de": "{1} {2} {3}",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "displayFailureContext",
+    "deferred": true,
+    "context": "Complete retained import or edit status. Nested messages and plural counts resolve in selected language without replaying the operation.",
+    "parameters": [
+      {
+        "name": "summary",
+        "type": "string"
+      },
+      {
+        "name": "detail",
+        "type": "string"
+      },
+      {
+        "name": "recovery",
+        "type": "string"
+      }
+    ]
+  },
+  "sync_dialog_title": {
+    "en": "Unit Sync",
+    "de": "Einheiten-Sync",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncDialogTitle",
+    "context": "Compact Android dialog title. Full explanation elsewhere uses Einheitensynchronisierung; this shorter heading avoids an orphan final character on narrow phones.",
+    "parameters": []
+  },
+  "layers_screen_title": {
+    "en": "Layers",
+    "de": "Ebenen",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "layersScreenTitle",
+    "context": "Compact title for the layer and label settings screen. Its menu row retains the full title.",
+    "parameters": []
+  },
+  "import_invalid_summary": {
+    "en": "{1} Invalid features skipped: {2}.",
+    "de": "{1} Ungültige Objekte übersprungen: {2}.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "importInvalidSummary",
+    "deferred": true,
+    "context": "Complete import outcome with a count label; the preceding result is a deferred complete sentence. IDs and imported content remain unchanged.",
+    "parameters": [
+      {
+        "name": "summary",
+        "type": "string"
+      },
+      {
+        "name": "count",
+        "type": "string"
+      }
+    ]
+  },
+  "import_collision_summary": {
+    "en": "{1} Conflicting object IDs reassigned: {2}.",
+    "de": "{1} Wegen Konflikten neu vergebene Objekt-IDs: {2}.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "importCollisionSummary",
+    "deferred": true,
+    "context": "Complete import outcome with a count label; the preceding result is a deferred complete sentence. IDs and imported content remain unchanged.",
+    "parameters": [
+      {
+        "name": "summary",
+        "type": "string"
+      },
+      {
+        "name": "count",
+        "type": "string"
+      }
+    ]
+  },
+  "weather_screen_title": {
+    "en": "Weather",
+    "de": "Wetter",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "weatherScreenTitle",
+    "context": "Short navigation title; the full feature name remains in the main menu.",
+    "parameters": []
+  },
+  "about_screen_title": {
+    "en": "About TacMap",
+    "de": "Über TacMap",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "aboutScreenTitle",
+    "context": "Short navigation title; the full feature name remains in the main menu.",
     "parameters": []
   }
 }

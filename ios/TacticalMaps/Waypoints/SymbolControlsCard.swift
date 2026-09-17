@@ -12,7 +12,7 @@ struct SymbolControlsCard: View {
     let onDismiss: () -> Void
 
     @State private var showingEdit = false
-    @State private var mutationError: String?
+    @State private var mutationError: LocalizedMessage?
 
     var body: some View {
         if let waypoint = waypointStore.waypoints.first(where: { $0.id == waypointID }) {
@@ -66,7 +66,7 @@ struct SymbolControlsCard: View {
                                         set: { if !$0 { mutationError = nil } })) {
                 Button(Messages.acknowledge(), role: .cancel) { mutationError = nil }
             } message: {
-                Text(mutationError ?? L10n.text("The symbol is still at its previous position."))
+                Text(mutationError?.text ?? L10n.text("The symbol is still at its previous position."))
             }
         }
     }
@@ -78,7 +78,7 @@ struct SymbolControlsCard: View {
         do {
             _ = try waypointStore.commitEdit(updated, actionName: L10n.text("Move Symbol to Crosshair"))
         } catch {
-            mutationError = L10n.text("%1$@ The symbol is still at its previous position.", error.localizedDescription)
+            mutationError = Messages.displayTheSymbolIsStillAtItsPreviousPositionMessage("").withArgument(0, error.displayMessage)
         }
     }
 

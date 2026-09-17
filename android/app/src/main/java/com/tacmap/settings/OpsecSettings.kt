@@ -1,6 +1,7 @@
 package com.tacmap.settings
 
 import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 import com.tacmap.localization.L10n
 
@@ -131,13 +132,13 @@ class OpsecSettings(context: Context) {
     private val _relayUrl = MutableStateFlow(persistedRelayPreference.endpoint)
     val relayUrl: StateFlow<String> = _relayUrl.asStateFlow()
 
-    private val _persistenceIssue = MutableStateFlow<String?>(null)
+    private val _persistenceIssue = MutableStateFlow<LocalizedMessage?>(null)
     /** Non-null means the requested value was rejected and the last durable
      * value remains active. The UI must never imply the safer value stuck. */
-    val persistenceIssue: StateFlow<String?> = _persistenceIssue.asStateFlow()
+    val persistenceIssue: StateFlow<LocalizedMessage?> = _persistenceIssue.asStateFlow()
 
-    private val _relayValidationIssue = MutableStateFlow<String?>(null)
-    val relayValidationIssue: StateFlow<String?> = _relayValidationIssue.asStateFlow()
+    private val _relayValidationIssue = MutableStateFlow<LocalizedMessage?>(null)
+    val relayValidationIssue: StateFlow<LocalizedMessage?> = _relayValidationIssue.asStateFlow()
 
     init {
         shared = this
@@ -150,7 +151,7 @@ class OpsecSettings(context: Context) {
             )
             if (!repaired) {
                 _persistenceIssue.value =
-                    Messages.relayRecoveryFailed()
+                    Messages.relayRecoveryFailedMessage()
             }
         }
     }
@@ -204,7 +205,7 @@ class OpsecSettings(context: Context) {
         val clean = when (val result = RelayEndpointPolicy.normalize(value)) {
             is RelayEndpointPolicy.Result.Valid -> result.endpoint
             is RelayEndpointPolicy.Result.Invalid -> {
-                _relayValidationIssue.value = result.message
+                _relayValidationIssue.value = result.pendingMessage
                 return false
             }
         }
@@ -248,7 +249,7 @@ class OpsecSettings(context: Context) {
         _persistenceIssue.value = if (committed) {
             null
         } else {
-            Messages.privacySettingSaveFailed()
+            Messages.privacySettingSaveFailedMessage()
         }
         return committed
     }

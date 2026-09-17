@@ -12,7 +12,7 @@ struct DrawingsSheet: View {
     @State private var pendingDelete: DrawingShape? = nil
     @State private var renamingShape: DrawingShape? = nil
     @State private var renameDraft: String = ""
-    @State private var mutationError: String? = nil
+    @State private var mutationError: LocalizedMessage? = nil
 
     var body: some View {
         NavigationStack {
@@ -76,7 +76,7 @@ struct DrawingsSheet: View {
                         pendingDelete = nil
                     } catch {
                         pendingDelete = nil
-                        mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
+                        mutationError = Messages.displayCheckAvailableStorageThenTryAgainMessage("").withArgument(0, error.displayMessage)
                     }
                 }
                 Button(L10n.text("Cancel"), role: .cancel) { pendingDelete = nil }
@@ -97,7 +97,7 @@ struct DrawingsSheet: View {
                         renamingShape = nil
                     } catch {
                         renamingShape = nil
-                        mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
+                        mutationError = Messages.displayCheckAvailableStorageThenTryAgainMessage("").withArgument(0, error.displayMessage)
                     }
                 }
                 Button(L10n.text("Cancel"), role: .cancel) { renamingShape = nil }
@@ -108,7 +108,7 @@ struct DrawingsSheet: View {
             )) {
                 Button(Messages.acknowledge(), role: .cancel) { mutationError = nil }
             } message: {
-                Text(mutationError ?? L10n.text("The drawing change could not be saved. Check available storage, then try again."))
+                Text(mutationError?.text ?? L10n.text("The drawing change could not be saved. Check available storage, then try again."))
             }
         }
     }

@@ -7,7 +7,7 @@ enum TacMapChatCrypto {
     static let domainChatKey: UInt8 = 0x05
     static let domainChat: UInt8 = 0x06
 
-    enum CryptoError: LocalizedError, Equatable {
+    enum CryptoError: LocalizedError, LocalizedMessageError, Equatable {
         case invalidContext
         case invalidPayload
         case invalidFrame

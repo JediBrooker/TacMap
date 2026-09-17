@@ -7,7 +7,7 @@
 <meta name="description" content="How TacMap stores data, when optional services make network requests, and what service providers can observe.">
 <link rel="canonical" href="https://tacmap.app/privacy">
 <meta name="theme-color" content="#0E1519">
-<link rel="icon" type="image/png" href="assets/brand/app-icon-512.png">
+<link rel="icon" type="image/png" href="/assets/brand/app-icon-512.png">
 <meta property="og:title" content="TacMap privacy policy">
 <meta property="og:description" content="How TacMap handles on-device data and optional network services.">
 <meta property="og:type" content="article">
@@ -84,7 +84,7 @@
 <header class="nav">
   <div class="nav-in">
     <a class="brand" href="/">
-      <img class="glyph" src="assets/brand/app-icon-512.png" width="26" height="26" alt="">
+      <img class="glyph" src="/assets/brand/app-icon-512.png" width="26" height="26" alt="">
       TACMAP
     </a>
     <a class="back" href="/">← Back to site</a>
@@ -165,7 +165,7 @@ out-of-range coordinate text — is not forwarded to either place provider.</p>
 <h3 id="33-unit-sync-optional">3.3 Unit Sync — optional</h3>
 <p>Unit Sync is off until you enter a join code. Joining opens a WebSocket to the
 configured relay (the default service is hosted on Cloudflare, and you may
-self-host it).</p>
+self-host it). The store app manages the relay address and does not provide a manual address field.</p>
 <p>Mission payloads are sealed on-device with AES-256-GCM. Synced map objects,
 presence, and <strong>Entire room</strong> Chat use keys derived from the join code, so every
 join-code holder can decrypt content shared to the room. A <strong>Selected unit</strong>

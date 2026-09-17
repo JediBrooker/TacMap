@@ -8,7 +8,7 @@ struct GPXExportSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var generatedURL: URL? = nil
-    @State private var error: String? = nil
+    @State private var error: LocalizedMessage? = nil
 
     var body: some View {
         NavigationStack {
@@ -34,7 +34,7 @@ struct GPXExportSheet: View {
                 }
 
                 if let error {
-                    Text(error).foregroundStyle(.red)
+                    Text(error.text).foregroundStyle(.red)
                 }
 
                 Text(L10n.text("Format: GPX 1.1 - opens in Garmin, Strava, Gaia GPS, QGIS, Google Earth, and most GPS tools."))
@@ -61,7 +61,7 @@ struct GPXExportSheet: View {
                 timestamp: Int(Date().timeIntervalSince1970)
             )
         } catch {
-            self.error = L10n.text("Export failed: %1$@", error.localizedDescription)
+            self.error = Messages.displayExportFailedMessage("").withArgument(0, error.displayMessage)
         }
     }
 }

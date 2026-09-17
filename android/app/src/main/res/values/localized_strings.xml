@@ -10,8 +10,11 @@
     <string name="chat_recipient_heading">"RECIPIENT"</string>
     <string name="common_ok">"OK"</string>
     <string name="drawings_quarantined">"Saved drawings could not be read and were set aside (%1$s). Starting with an empty map."</string>
+    <string name="import_collision_summary">"%1$s Conflicting object IDs reassigned: %2$s."</string>
+    <string name="import_complete_summary">"Imported %1$s and %2$s."</string>
     <string name="import_failed">"Import failed: %1$s"</string>
     <string name="import_feature_summary">"Imported %1$s waypoint(s) and %2$s drawing(s)%3$s"</string>
+    <string name="import_invalid_summary">"%1$s Invalid features skipped: %2$s."</string>
     <string name="input_decimal_hint">"Use a decimal point or your language’s decimal separator. Do not use thousands separators."</string>
     <string name="live_location_approximate_guidance">"Approximate location cannot provide TacMap\'s on-device GPS position. Allow Precise location, then try again."</string>
     <string name="online_basemaps_disabled">"Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy &amp; OPSEC."</string>
@@ -32,6 +35,7 @@
     <string name="settings_online_lookups_help">"Off by default. When you turn this on, place-name search may use the device\'s geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture."</string>
     <string name="sync_code_too_short">"Too short to be safe. Use at least %1$s characters, or tap Generate."</string>
     <string name="sync_configured_relay_unavailable">"Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again."</string>
+    <string name="sync_dialog_title">"Unit Sync"</string>
     <string name="sync_join_location_consent">"To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately %1$s while the screen is off."</string>
     <string name="sync_legacy_membership_help">"Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions."</string>
     <string name="sync_liveness_caveat">"Identity and session signatures are verified, but connection liveness is relay-attested; it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat above."</string>

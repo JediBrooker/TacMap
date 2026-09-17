@@ -107,8 +107,8 @@ def outputs(root=ROOT, data=None):
     for noun in plurals:
         accessor = ''.join(part.title() if i else part for i, part in enumerate(re.split('[-_]', noun))) + 'Count'
         if accessor in {e.get('accessor') for e in catalog.values()}: raise ValueError('Plural accessor collision: ' + accessor)
-        swift += [f'    static func {accessor}(_ count: Int) -> String {{ L10n.quantity({quoted(noun)}, count) }}']
-        kotlin += [f'    fun {accessor}(count: Int): String = L10n.quantity({quoted(noun)}, count)']
+        swift += [f'    static func {accessor}(_ count: Int) -> String {{ L10n.quantity({quoted(noun)}, count) }}', f'    static func {accessor}Message(_ count: Int) -> LocalizedMessage {{ .quantity({quoted(noun)}, count) }}']
+        kotlin += [f'    fun {accessor}(count: Int): String = L10n.quantity({quoted(noun)}, count)', f'    fun {accessor}Message(count: Int): LocalizedMessage = LocalizedMessage.quantity({quoted(noun)}, count)']
     result[root / 'ios/TacticalMaps/Util/Messages.swift'] = '\n'.join(swift + ['}', ''])
     result[root / 'android/app/src/main/java/com/tacmap/localization/Messages.kt'] = '\n'.join(kotlin + ['}', ''])
     swift = ['// ' + banner, 'enum SupportedLanguage: String, CaseIterable, Identifiable {', '    case system']

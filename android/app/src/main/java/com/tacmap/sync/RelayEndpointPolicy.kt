@@ -1,6 +1,8 @@
 package com.tacmap.sync
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 import com.tacmap.BuildConfig
 import java.net.Inet6Address
@@ -25,7 +27,9 @@ internal object RelayEndpointPolicy {
 
     sealed interface Result {
         data class Valid(val endpoint: String) : Result
-        data class Invalid(val message: String) : Result
+        data class Invalid(val pendingMessage: LocalizedMessage) : Result {
+            val message: String get() = pendingMessage.text
+        }
     }
 
     private val acceptedPaths = setOf("", "/", "/room", "/room/", "/v3/room", "/v3/room/")
@@ -38,38 +42,38 @@ internal object RelayEndpointPolicy {
         allowInsecureLoopback: Boolean = BuildConfig.DEBUG,
     ): Result {
         val value = rawValue.trim()
-        if (value.isEmpty()) return Result.Invalid(L10n.text("Enter a Unit Sync relay address."))
+        if (value.isEmpty()) return Result.Invalid(Messages.displayEnterAUnitSyncRelayAddressMessage())
 
         val uri = runCatching { URI(value) }.getOrNull()
-            ?: return Result.Invalid(L10n.text("The relay address is not a valid URL."))
+            ?: return Result.Invalid(Messages.displayTheRelayAddressIsNotAValidUrlMessage())
         if (!uri.isAbsolute || uri.isOpaque) {
-            return Result.Invalid(L10n.text("The relay address must include wss:// and a host."))
+            return Result.Invalid(Messages.displayTheRelayAddressMustIncludeWssAndAHostMessage())
         }
         if (uri.rawUserInfo != null) {
-            return Result.Invalid(L10n.text("Relay addresses cannot contain a username or password."))
+            return Result.Invalid(Messages.displayRelayAddressesCannotContainAUsernameOrPasswordMessage())
         }
         if (uri.rawQuery != null || uri.rawFragment != null) {
-            return Result.Invalid(L10n.text("Relay addresses cannot contain a query or fragment."))
+            return Result.Invalid(Messages.displayRelayAddressesCannotContainAQueryOrFragmentMessage())
         }
         if (uri.rawAuthority?.endsWith(':') == true) {
-            return Result.Invalid(L10n.text("The relay address contains an invalid port."))
+            return Result.Invalid(Messages.displayTheRelayAddressContainsAnInvalidPortMessage())
         }
         val path = uri.rawPath ?: ""
         if (path !in acceptedPaths) {
-            return Result.Invalid(L10n.text("Use the relay origin only; custom paths are not allowed."))
+            return Result.Invalid(Messages.displayUseTheRelayOriginOnlyCustomPathsAreNotMessage())
         }
 
         val host = uri.host
             ?.removePrefix("[")
             ?.removeSuffix("]")
             ?.lowercase(Locale.US)
-            ?: return Result.Invalid(L10n.text("The relay address must contain a valid host."))
+            ?: return Result.Invalid(Messages.displayTheRelayAddressMustContainAValidHostMessage())
         if (!isValidHost(host)) {
-            return Result.Invalid(L10n.text("The relay address contains an invalid host."))
+            return Result.Invalid(Messages.displayTheRelayAddressContainsAnInvalidHostMessage())
         }
         val port = uri.port
         if (port == 0 || port > 65_535) {
-            return Result.Invalid(L10n.text("The relay address contains an invalid port."))
+            return Result.Invalid(Messages.displayTheRelayAddressContainsAnInvalidPortMessage())
         }
 
         val scheme = uri.scheme?.lowercase(Locale.US)
@@ -78,9 +82,9 @@ internal object RelayEndpointPolicy {
             scheme == "wss" -> Unit
             scheme == "ws" && allowInsecureLoopback && loopback -> Unit
             scheme == "ws" -> return Result.Invalid(
-                L10n.text("Unencrypted ws:// is allowed only for a loopback relay in a debug build.")
+                Messages.displayUnencryptedWsIsAllowedOnlyForALoopbackRelayMessage()
             )
-            else -> return Result.Invalid(L10n.text("Unit Sync relay addresses must use wss://."))
+            else -> return Result.Invalid(Messages.displayUnitSyncRelayAddressesMustUseWssMessage())
         }
 
         val canonicalPort = when {
@@ -90,7 +94,7 @@ internal object RelayEndpointPolicy {
         }
         val canonical = runCatching {
             URI(scheme, null, host, canonicalPort, null, null, null).toASCIIString()
-        }.getOrNull() ?: return Result.Invalid(L10n.text("The relay address could not be normalized."))
+        }.getOrNull() ?: return Result.Invalid(Messages.displayTheRelayAddressCouldNotBeNormalizedMessage())
         return Result.Valid(canonical)
     }
 

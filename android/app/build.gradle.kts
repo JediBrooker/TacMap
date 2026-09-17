@@ -281,8 +281,8 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 36
-        versionCode = injectedVersionCode ?: 66
-        versionName = "2.0.1"
+        versionCode = injectedVersionCode ?: 67
+        versionName = "2.0.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables { useSupportLibrary = true }
@@ -293,6 +293,9 @@ android {
         // to force a rotation before users notice. ISO-8601, UTC.
         buildConfigField("String", "ESRI_KEY_EXPIRY", "\"2027-06-30\"")
     }
+
+    // The offline in-app picker must have both languages after Play split delivery.
+    bundle { language { enableSplit = false } }
 
     buildTypes {
         release {

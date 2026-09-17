@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import androidx.compose.foundation.layout.navigationBarsPadding
+
 import com.tacmap.localization.DisplayFormat
 
 import com.tacmap.localization.Messages
@@ -158,7 +160,7 @@ private data class QuickAddTarget(
 
 private data class PendingDrawingMutation(
     val intent: DrawingMutationIntent,
-    val message: String,
+    val pendingMessage: com.tacmap.localization.LocalizedMessage,
     val persist: () -> Boolean,
     val onSaved: () -> Unit,
 )
@@ -275,7 +277,7 @@ internal fun MapScreen(
     var quickAddMenuOpen by remember { mutableStateOf(false) }
     var quickAddTarget by remember { mutableStateOf<QuickAddTarget?>(null) }
     var quickAddEditorMode by remember { mutableStateOf<SymbolEditorMode?>(null) }
-    var quickAddCreationError by remember { mutableStateOf<String?>(null) }
+    var quickAddCreationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     /// weather/UAV widget target = (lat, lng) of map centre, null when closed
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var showAppLockSetup by remember { mutableStateOf(false) }
@@ -339,7 +341,8 @@ internal fun MapScreen(
             }
         }
     }
-    LaunchedEffect(mapSelectionPersistenceIssue?.id) {
+    val mapRecoveryText = mapSelectionPersistenceIssue?.message
+    LaunchedEffect(mapSelectionPersistenceIssue?.id, mapRecoveryText) {
         val issue = mapSelectionPersistenceIssue ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
             message = issue.message,
@@ -408,7 +411,7 @@ internal fun MapScreen(
         } else {
             pendingDrawingMutation = PendingDrawingMutation(
                 intent = intent,
-                message = (result as DrawingMutationUiResult.Failed).message,
+                pendingMessage = (result as DrawingMutationUiResult.Failed).pendingMessage,
                 persist = persist,
                 onSaved = onSaved,
             )
@@ -519,12 +522,12 @@ internal fun MapScreen(
                 )
             },
         )
-        val raceDetail = reconciled.identities.consumedRemintIds.size.takeIf { it > 0 }
-            ?.let { L10n.text("; reconciled %1\$s live ID collision(s)", it) }
-            .orEmpty()
+        val collisions = reconciled.identities.consumedRemintIds.size
+        val resultMessage = if (collisions > 0) Messages.importCollisionSummaryMessage("", DisplayFormat.number(collisions.toDouble(), 0))
+            .withArgument(0, commit.pendingMessage) else commit.pendingMessage
         Toast.makeText(
             context,
-            commit.message + raceDetail,
+            resultMessage.text,
             if (commit.succeeded) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
         ).show()
     }
@@ -1303,6 +1306,7 @@ internal fun MapScreen(
                 onCancel = ::cancelPdfCalibration,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 16.dp)
                     .fillMaxWidth()
             )
@@ -1311,6 +1315,7 @@ internal fun MapScreen(
                 session = measureSession,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 16.dp)
             )
         } else if (activeDrawTool != null) {
@@ -1337,6 +1342,7 @@ internal fun MapScreen(
                 onCancel = ::stopDrawing,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 16.dp)
             )
         } else if (selectedDrawing != null) {
@@ -1370,6 +1376,7 @@ internal fun MapScreen(
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 16.dp)
                     .widthIn(max = 390.dp)
                     .fillMaxWidth()
@@ -1384,6 +1391,7 @@ internal fun MapScreen(
                 onDismiss = { vm.selectWaypoint(null) },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 16.dp)
                     .fillMaxWidth()
             )
@@ -1396,6 +1404,7 @@ internal fun MapScreen(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -1458,7 +1467,7 @@ internal fun MapScreen(
                 SymbolEditorMode.MARKER -> L10n.text("New Marker")
             },
             actionLabel = L10n.text("Place"),
-            submissionError = quickAddCreationError,
+            submissionError = quickAddCreationError?.text,
             onDismiss = {
                 quickAddEditorMode = null
                 quickAddTarget = null
@@ -1492,7 +1501,7 @@ internal fun MapScreen(
                         quickAddEditorMode = null
                         quickAddTarget = null
                     }
-                    is DurableSymbolCreation.Failed -> quickAddCreationError = result.message
+                    is DurableSymbolCreation.Failed -> quickAddCreationError = result.pendingMessage
                 }
             }
         )
@@ -1699,7 +1708,7 @@ internal fun MapScreen(
         AlertDialog(
             onDismissRequest = { pendingDrawingMutation = null },
             title = { Text(L10n.text("Drawing change not saved")) },
-            text = { Text(pending.message) },
+            text = { Text(pending.pendingMessage.text) },
             confirmButton = {
                 TextButton(onClick = {
                     val result = checkedDrawingMutation(pending.intent, pending.persist)
@@ -1708,7 +1717,7 @@ internal fun MapScreen(
                         pending.onSaved()
                     } else {
                         pendingDrawingMutation = pending.copy(
-                            message = (result as DrawingMutationUiResult.Failed).message
+                            pendingMessage = (result as DrawingMutationUiResult.Failed).pendingMessage
                         )
                     }
                 }) { Text(L10n.text("Retry")) }

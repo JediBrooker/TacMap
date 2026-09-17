@@ -14,6 +14,31 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalizationTest {
+    @Test fun retainedEditorFailuresKeepRetryAndDraftStateAcrossLanguageChanges() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        L10n.install(context)
+        val original = AppLanguage.selection
+        try {
+            AppLanguage.select(context, SupportedLanguage.ENGLISH)
+            var attempts = 0
+            val failure = com.tacmap.map.DrawingMutationUiCoordinator.attempt(
+                com.tacmap.map.DrawingMutationIntent.EDIT) { attempts += 1; false }
+                as com.tacmap.map.DrawingMutationUiResult.Failed
+            val english = failure.message
+            val validation = com.tacmap.map.MGRS_MOVE_VALIDATION_MESSAGE
+            val identity = validation.id
+            val plural = Messages.pointCountMessage(2)
+            AppLanguage.select(context, SupportedLanguage.GERMAN)
+            org.junit.Assert.assertNotEquals(english, failure.message)
+            assertEquals(1, attempts)
+            org.junit.Assert.assertFalse(failure.saved)
+            org.junit.Assert.assertFalse(failure.shouldCloseTransientUi)
+            assertEquals(identity, validation.id)
+            assertEquals(validation.text, com.tacmap.map.MGRS_MOVE_VALIDATION_ERROR)
+            assertEquals("2 Punkte", plural.text)
+        } finally { AppLanguage.select(context, original) }
+    }
+
     @Test fun lockedChatHistoryTracksLanguageWithoutUnlockingOrWriting() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         L10n.install(context)
@@ -251,5 +276,103 @@ class LocalizationTest {
         val days = localizedPluralIds.getValue("trial_remaining")
         assertEquals("Kostenloser Test – noch 1 Tag", resources.getQuantityString(days, 1, 1))
         assertEquals("Kostenloser Test – noch 3 Tage", resources.getQuantityString(days, 3, 3))
+    }
+}
+
+/** Release experiment, run explicitly on an isolated emulator. Native locale
+ * migration stays gated while editor drafts use non-saveable remember state. */
+@RunWith(AndroidJUnit4::class)
+class NativeLocalePrototypeTest {
+    @Test fun nativeLocaleChangeRecreatesActivityWhileInAppChoiceDoesNot() {
+        org.junit.Assume.assumeTrue(android.os.Build.VERSION.SDK_INT >= 33)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val manager = context.getSystemService(android.app.LocaleManager::class.java)
+        val originalLocales = manager.applicationLocales
+        val originalChoice = AppLanguage.selection
+        val scenario = androidx.test.core.app.ActivityScenario.launch(com.tacmap.app.MainActivity::class.java)
+        try {
+            lateinit var original: com.tacmap.app.MainActivity
+            scenario.onActivity { original = it; AppLanguage.select(it, SupportedLanguage.GERMAN) }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { org.junit.Assert.assertSame(original, it) }
+            val target = if (originalLocales.toLanguageTags() == "de") "en" else "de"
+            instrumentation.runOnMainSync { manager.applicationLocales = LocaleList.forLanguageTags(target) }
+            val deadline = android.os.SystemClock.uptimeMillis() + 15000
+            var recreated = false
+            while (!recreated && android.os.SystemClock.uptimeMillis() < deadline) {
+                instrumentation.waitForIdleSync()
+                scenario.onActivity { recreated = it !== original }
+                if (!recreated) android.os.SystemClock.sleep(100)
+            }
+            org.junit.Assert.assertTrue("Native API must exercise the Activity recreation risk", recreated)
+            assertEquals(SupportedLanguage.GERMAN, AppLanguage.selection)
+        } finally {
+            instrumentation.runOnMainSync { manager.applicationLocales = originalLocales }
+            AppLanguage.select(context, originalChoice)
+            scenario.close()
+        }
+    }
+}
+
+/** Explicit release check uses a temporary recorder, never the user's track. */
+@RunWith(AndroidJUnit4::class)
+class RecordingNotificationLocaleTest {
+    @Test fun runningServiceChangesNotificationWithoutReplacingRecordingSession() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val app = context.applicationContext as com.tacmap.app.TacticalApp
+        org.junit.Assume.assumeTrue(!app.trackRecorder.isRecording.value)
+        val original = app.trackRecorder
+        val originalLanguage = AppLanguage.selection
+        val temporary = java.io.File(context.cacheDir, "locale-notification-${java.util.UUID.randomUUID()}.ndjson")
+        val recorder = com.tacmap.models.TrackRecorder(temporary, recordingKeyProvider = { ByteArray(32) { 42 } })
+        // Test-only substitution keeps production constructors and durable data untouched.
+        val field = com.tacmap.app.TacticalApp::class.java.getDeclaredField("trackRecorder").apply { isAccessible = true }
+        field.set(app, recorder)
+        val scenario = androidx.test.core.app.ActivityScenario.launch(com.tacmap.app.MainActivity::class.java)
+        val notifications = context.getSystemService(android.app.NotificationManager::class.java)
+        fun awaitTitle(expected: String) {
+            val deadline = android.os.SystemClock.uptimeMillis() + 10000
+            while (android.os.SystemClock.uptimeMillis() < deadline) {
+                if (notifications.activeNotifications.any { it.id == 4201 && it.notification.extras.getString(android.app.Notification.EXTRA_TITLE) == expected }) return
+                android.os.SystemClock.sleep(100)
+            }
+            org.junit.Assert.fail("Recording notification did not become: $expected")
+        }
+        try {
+            scenario.onActivity {
+                AppLanguage.select(it, SupportedLanguage.ENGLISH)
+                org.junit.Assert.assertTrue(recorder.requestStart(com.tacmap.models.LocationAccess.Precise, true))
+                org.junit.Assert.assertTrue(recorder.prepareStart())
+                com.tacmap.models.TrackRecordingService.start(it)
+            }
+            awaitTitle("Recording patrol track")
+            val activationDeadline = android.os.SystemClock.uptimeMillis() + 10000
+            while (!recorder.isRecording.value && android.os.SystemClock.uptimeMillis() < activationDeadline) {
+                android.os.SystemClock.sleep(100)
+            }
+            val state = recorder.uiState.value
+            val generationField = com.tacmap.models.TrackRecorder::class.java.getDeclaredField("currentSessionGeneration").apply { isAccessible = true }
+            val generation = generationField.get(recorder)
+            org.junit.Assert.assertTrue(recorder.isRecording.value)
+            androidx.test.uiautomator.UiDevice.getInstance(instrumentation).pressHome()
+            instrumentation.runOnMainSync { AppLanguage.select(context, SupportedLanguage.GERMAN) }
+            awaitTitle(L10n.text("Recording patrol track"))
+            assertEquals(state.phase, recorder.uiState.value.phase)
+            assertEquals(generation, generationField.get(recorder))
+            org.junit.Assert.assertTrue(recorder.isRecording.value)
+            org.junit.Assert.assertSame(recorder, app.trackRecorder)
+        } finally {
+            instrumentation.runOnMainSync {
+                recorder.stop()
+                com.tacmap.models.TrackRecordingService.stop(context)
+                AppLanguage.select(context, originalLanguage)
+            }
+            instrumentation.waitForIdleSync()
+            scenario.close()
+            field.set(app, original)
+            temporary.delete()
+        }
     }
 }

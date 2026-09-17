@@ -44,17 +44,18 @@ struct SearchResult: Identifiable {
 
 struct OfflineSearchOutput {
     let results: [SearchResult]
-    let statusMessage: String?
+    let pendingStatusMessage: LocalizedMessage?
+    var statusMessage: String? { pendingStatusMessage?.text }
     /// Coordinate-shaped input is fully handled on-device, including range
     /// errors. The online place-search coordinator uses this production value
     /// to guarantee that coordinate text never reaches MapKit's provider.
     let recognizedCoordinateInput: Bool
 
     init(results: [SearchResult],
-         statusMessage: String?,
+         statusMessage: LocalizedMessage?,
          recognizedCoordinateInput: Bool = false) {
         self.results = results
-        self.statusMessage = statusMessage
+        self.pendingStatusMessage = statusMessage
         self.recognizedCoordinateInput = recognizedCoordinateInput
     }
 }
@@ -68,18 +69,26 @@ enum OnlinePlaceLookupDecision: Equatable {
 
 struct OnlinePlaceLookupOutcome {
     let results: [SearchResult]
-    let statusMessage: String?
+    let pendingStatusMessage: LocalizedMessage?
+    var statusMessage: String? { pendingStatusMessage?.text }
+    init(results: [SearchResult], statusMessage: LocalizedMessage?) {
+        self.results = results
+        self.pendingStatusMessage = statusMessage
+    }
+
 }
 
 /// The one production decision point between offline search and MapKit. Tests
 /// inject a provider spy through `perform`, so the no-egress guarantee covers
 /// the same orchestration path the SwiftUI sheet uses rather than fixture data.
 enum OnlinePlaceLookup {
-    static var disabledStatus: String {
-        L10n.text("Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work.")
+    static var disabledStatus: String { disabledStatusMessage.text }
+    static var disabledStatusMessage: LocalizedMessage {
+        Messages.displayPlaceNameSearchIsOffEnableOnlineLookupsInMessage()
     }
-    static var unavailableStatus: String {
-        L10n.text("Place search unavailable offline — MGRS, grid and lat/lon still work.")
+    static var unavailableStatus: String { unavailableStatusMessage.text }
+    static var unavailableStatusMessage: LocalizedMessage {
+        Messages.displayPlaceSearchUnavailableOfflineMgrsGridAndLatLonMessage()
     }
 
     static func decision(rawQuery: String,
@@ -104,19 +113,19 @@ enum OnlinePlaceLookup {
         case .skipShortOrBlank, .skipCoordinate:
             return OnlinePlaceLookupOutcome(results: [], statusMessage: nil)
         case .disabled:
-            return OnlinePlaceLookupOutcome(results: [], statusMessage: disabledStatus)
+            return OnlinePlaceLookupOutcome(results: [], statusMessage: disabledStatusMessage)
         case .requestProvider:
             do {
                 let results = try await provider()
                 let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                 let status = results.isEmpty && offlineOutput.results.isEmpty
-                    ? L10n.text("No matches for “%1$@”.", trimmed)
+                    ? Messages.displayNoMatchesForMessage(trimmed)
                     : nil
                 return OnlinePlaceLookupOutcome(results: results, statusMessage: status)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                return OnlinePlaceLookupOutcome(results: [], statusMessage: unavailableStatus)
+                return OnlinePlaceLookupOutcome(results: [], statusMessage: unavailableStatusMessage)
             }
         }
     }
@@ -125,8 +134,9 @@ enum OnlinePlaceLookup {
 /// Pure, deterministic, offline-only mission search. Online providers are
 /// deliberately absent from this type and are appended by SearchSheet.
 enum OfflineSearchEngine {
-    static var coordinateRangeMessage: String {
-        L10n.text("Latitude must be between -90 and 90, and longitude between -180 and 180.")
+    static var coordinateRangeMessage: String { coordinateRangeMessageMessage.text }
+    static var coordinateRangeMessageMessage: LocalizedMessage {
+        Messages.displayLatitudeMustBeBetweenAndAndLongitudeBetweenAndMessage()
     }
 
     static func records(waypoints: [Waypoint],
@@ -217,7 +227,7 @@ enum OfflineSearchEngine {
                     results: [result], statusMessage: nil, recognizedCoordinateInput: true)
             case .outOfRange:
                 return OfflineSearchOutput(
-                    results: [], statusMessage: coordinateRangeMessage,
+                    results: [], statusMessage: coordinateRangeMessageMessage,
                     recognizedCoordinateInput: true)
             case .notCoordinate:
                 break
@@ -411,7 +421,7 @@ struct SearchSheet: View {
     @State private var query = ""
     @State private var places: [SearchResult] = []
     @State private var isSearching = false
-    @State private var placeStatus: String?
+    @State private var placeStatus: LocalizedMessage?
 
     private var offlineOutput: OfflineSearchOutput {
         OfflineSearchEngine.search(
@@ -488,7 +498,7 @@ struct SearchSheet: View {
             } else if !places.isEmpty {
                 Section(L10n.text("Places")) { ForEach(places) { row($0) } }
             }
-            if let message = offlineOutput.statusMessage ?? placeStatus,
+            if let message = offlineOutput.statusMessage ?? placeStatus?.text,
                !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Section { Text(message).foregroundStyle(.secondary) }
             }
@@ -560,7 +570,7 @@ struct SearchSheet: View {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 places = outcome.results
-                placeStatus = outcome.statusMessage
+                placeStatus = outcome.pendingStatusMessage
                 isSearching = false
             }
         } catch is CancellationError {

@@ -13,19 +13,21 @@ struct LayerDeletionCommit: Equatable {
     let fallbackLayerID: UUID
 }
 
-enum DrawingMutationError: LocalizedError {
+enum DrawingMutationError: LocalizedError, LocalizedMessageError {
     case locked
     case missing
     case persistenceFailed(Error)
 
-    var errorDescription: String? {
+    var errorDescription: String? { localizedMessage.text }
+
+    var localizedMessage: LocalizedMessage {
         switch self {
         case .locked:
-            return L10n.text("Mission drawings are locked. Unlock mission data, then try again.")
+            return Messages.displayMissionDrawingsAreLockedUnlockMissionDataThenTryMessage()
         case .missing:
-            return L10n.text("That drawing no longer exists. Close its controls and try again.")
+            return Messages.displayThatDrawingNoLongerExistsCloseItsControlsAndMessage()
         case .persistenceFailed(let error):
-            return L10n.text("The drawing change could not be saved: %1$@", error.localizedDescription)
+            return Messages.displayTheDrawingChangeCouldNotBeSavedMessage("").withArgument(0, error.displayMessage)
         }
     }
 }
@@ -116,7 +118,7 @@ final class DrawingStore: ObservableObject {
     // MARK: - Layer CRUD
 
     func addLayer(name: String, defaultColorHex: String) throws -> DrawingLayer {
-        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard !locked else { throw MissionLayerMutationError.locked(store: .drawings) }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw MissionLayerMutationError.invalidName }
         guard Self.isValidHexColor(defaultColorHex) else {
@@ -149,7 +151,7 @@ final class DrawingStore: ObservableObject {
             }
             undoManager?.setActionName(L10n.text("Add Layer"))
         } catch {
-            pendingLoadError = Messages.couldNotUndoTheNewLayerMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotUndoTheNewLayerMessage("").withArgument(0, error.displayMessage)
         }
     }
 
@@ -157,7 +159,7 @@ final class DrawingStore: ObservableObject {
     /// the imported layer id don't become orphaned.
     @discardableResult
     func addLayerVerbatim(_ layer: DrawingLayer) throws -> Bool {
-        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard !locked else { throw MissionLayerMutationError.locked(store: .drawings) }
         guard !layers.contains(where: { $0.id == layer.id }) else { return false }
         let candidateLayers = layers + [layer]
         try commitLayerCandidate(candidateLayers,
@@ -171,7 +173,7 @@ final class DrawingStore: ObservableObject {
     /// is idempotent and cannot publish a layer that failed to reach disk.
     @discardableResult
     func addLayersVerbatimDurably(_ incoming: [DrawingLayer]) throws -> Int {
-        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard !locked else { throw MissionLayerMutationError.locked(store: .drawings) }
         var occupied = Set(layers.map(\.id))
         let additions = incoming.filter { occupied.insert($0.id).inserted }
         guard !additions.isEmpty else { return 0 }
@@ -217,7 +219,7 @@ final class DrawingStore: ObservableObject {
     @discardableResult
     func removeLayer(_ layer: DrawingLayer,
                      reassigningWaypointsIn waypointStore: WaypointStore) throws -> LayerDeletionCommit {
-        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard !locked else { throw MissionLayerMutationError.locked(store: .drawings) }
         guard layers.contains(where: { $0.id == layer.id }) else {
             throw MissionLayerMutationError.layerMissing
         }
@@ -250,8 +252,8 @@ final class DrawingStore: ObservableObject {
                       shapes: candidateShapes,
                       activeLayerID: candidateActive)
         } catch {
-            pendingLoadError = Messages.couldNotSaveReassignedDrawingsToDiskMessage(error.localizedDescription)
-            throw MissionLayerMutationError.persistenceFailed(store: "drawings", underlying: error)
+            pendingLoadError = Messages.couldNotSaveReassignedDrawingsToDiskMessage("").withArgument(0, error.displayMessage)
+            throw MissionLayerMutationError.persistenceFailed(store: .drawings, underlying: error)
         }
         layers = candidateLayers
         shapes = candidateShapes
@@ -263,7 +265,7 @@ final class DrawingStore: ObservableObject {
     }
 
     func setLayerVisible(_ layer: DrawingLayer, _ visible: Bool) throws {
-        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard !locked else { throw MissionLayerMutationError.locked(store: .drawings) }
         guard let idx = layers.firstIndex(where: { $0.id == layer.id }) else {
             throw MissionLayerMutationError.layerMissing
         }
@@ -279,7 +281,7 @@ final class DrawingStore: ObservableObject {
     func updateLayer(_ layer: DrawingLayer,
                      name: String,
                      defaultColorHex: String) throws {
-        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard !locked else { throw MissionLayerMutationError.locked(store: .drawings) }
         guard let idx = layers.firstIndex(where: { $0.id == layer.id }) else {
             throw MissionLayerMutationError.layerMissing
         }
@@ -331,7 +333,7 @@ final class DrawingStore: ObservableObject {
                       shapes: candidate,
                       activeLayerID: activeLayerID)
         } catch {
-            pendingLoadError = Messages.couldNotSaveNewDrawingToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveNewDrawingToDiskMessage("").withArgument(0, error.displayMessage)
             throw DrawingMutationError.persistenceFailed(error)
         }
         shapes = candidate
@@ -361,7 +363,7 @@ final class DrawingStore: ObservableObject {
                       shapes: candidate,
                       activeLayerID: activeLayerID)
         } catch {
-            pendingLoadError = Messages.couldNotSaveDrawingChangeToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveDrawingChangeToDiskMessage("").withArgument(0, error.displayMessage)
             throw DrawingMutationError.persistenceFailed(error)
         }
         shapes = candidate
@@ -387,7 +389,7 @@ final class DrawingStore: ObservableObject {
                       shapes: candidate,
                       activeLayerID: activeLayerID)
         } catch {
-            pendingLoadError = Messages.couldNotDeleteDrawingFromDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotDeleteDrawingFromDiskMessage("").withArgument(0, error.displayMessage)
             throw DrawingMutationError.persistenceFailed(error)
         }
         shapes = candidate
@@ -410,7 +412,7 @@ final class DrawingStore: ObservableObject {
                       shapes: candidate,
                       activeLayerID: activeLayerID)
         } catch {
-            pendingLoadError = Messages.couldNotRestoreDrawingToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotRestoreDrawingToDiskMessage("").withArgument(0, error.displayMessage)
             throw DrawingMutationError.persistenceFailed(error)
         }
         shapes = candidate
@@ -461,7 +463,7 @@ final class DrawingStore: ObservableObject {
                       shapes: candidateShapes,
                       activeLayerID: candidateActiveLayerID)
         } catch {
-            pendingLoadError = Messages.couldNotSaveImportedDrawingsToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveImportedDrawingsToDiskMessage("").withArgument(0, error.displayMessage)
             throw BatchImportStoreError.persistenceFailed(error)
         }
 
@@ -540,7 +542,7 @@ final class DrawingStore: ObservableObject {
             }
             undoManager?.setActionName(L10n.text("Import Drawings"))
         } catch {
-            pendingLoadError = Messages.couldNotUndoImportedDrawingsMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotUndoImportedDrawingsMessage("").withArgument(0, error.displayMessage)
         }
     }
 
@@ -607,7 +609,7 @@ final class DrawingStore: ObservableObject {
             // layers to render but never write: persist() is gated on `locked`
             // so an empty doc can't land on top of real drawings.
             locked = true
-            pendingLoadError = Messages.drawingsAreEncryptedAndLockedMessage(error.localizedDescription)
+            pendingLoadError = Messages.drawingsAreEncryptedAndLockedMessage("").withArgument(0, error.displayMessage)
             layers = DrawingLayer.seedDefaults
             shapes = []
             activeLayerID = layers.first?.id
@@ -711,8 +713,8 @@ final class DrawingStore: ObservableObject {
                       shapes: shapes,
                       activeLayerID: candidateActive)
         } catch {
-            pendingLoadError = failureMessage(error.localizedDescription)
-            throw MissionLayerMutationError.persistenceFailed(store: "drawings", underlying: error)
+            pendingLoadError = failureMessage("").withArgument(0, error.displayMessage)
+            throw MissionLayerMutationError.persistenceFailed(store: .drawings, underlying: error)
         }
         layers = candidateLayers
         activeLayerID = candidateActive
@@ -731,7 +733,7 @@ final class DrawingStore: ObservableObject {
         } catch {
             // don't swallow this, user is editing but nothing is hitting disk
             print("[DrawingStore] persist failed")
-            pendingLoadError = Messages.couldNotSaveDrawingsToDiskMessage(error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveDrawingsToDiskMessage("").withArgument(0, error.displayMessage)
         }
     }
 

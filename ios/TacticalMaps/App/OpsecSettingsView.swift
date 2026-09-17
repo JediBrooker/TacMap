@@ -9,7 +9,7 @@ struct OpsecSettingsView: View {
     @ObservedObject private var opsec = OpsecSettings.shared
 
     @State private var authBound = DataKey.isAuthBound
-    @State private var keyError: String?
+    @State private var keyError: LocalizedMessage?
 
     var body: some View {
         NavigationStack {
@@ -146,13 +146,13 @@ struct OpsecSettingsView: View {
                         set: { setAuthBound($0) }
                     ))
                     if let keyError {
-                        Text(keyError).font(.caption).foregroundStyle(.red)
+                        Text(keyError.text).font(.caption).foregroundStyle(.red)
                     }
                 } footer: {
                     Text(L10n.text("Off: waypoints, drawings and tracks are encrypted with a key the Keychain releases to this app automatically after the first device unlock. The key does not migrate to another device, but a protected backup can restore it to the same device. Code running as this app on a compromised device may still ask the Keychain to decrypt.\n\nOn: the Keychain requires Face ID, Touch ID or your passcode before key use. This raises the bar after process death, but a fully compromised device remains outside the guarantee. After the app is killed nothing can read or write mission data until you unlock, including background track recording."))
                 }
             }
-            .navigationTitle(L10n.text("Settings, Privacy & OPSEC"))
+            .navigationTitle(L10n.text("Settings"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } } }
         }
@@ -169,7 +169,7 @@ struct OpsecSettingsView: View {
         do {
             try DataKey.setAuthBound(enabled)
         } catch {
-            keyError = error.localizedDescription
+            keyError = error.displayMessage
         }
         authBound = DataKey.isAuthBound
     }

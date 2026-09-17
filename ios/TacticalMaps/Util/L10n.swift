@@ -22,9 +22,9 @@ enum L10n {
     static func text(_ key: String, _ arguments: Any...) -> String {
         let language = AppLanguage.shared
         let format = bundle(for: language.selection).localizedString(forKey: key, value: key, table: nil)
-        guard !arguments.isEmpty else { return format }
-        return String(format: format, locale: language.locale,
-                      arguments: arguments.map { String(describing: $0) as CVarArg })
+        guard !arguments.isEmpty else { return expandedForTesting(format) }
+        return expandedForTesting(String(format: format, locale: language.locale,
+                      arguments: arguments.map { String(describing: $0) as CVarArg }))
     }
 
     /// Stable IDs for generated, typed messages. The legacy text API remains a bridge.
@@ -35,14 +35,24 @@ enum L10n {
     static func resolveMessage(_ id: String, fallback: String, arguments: [String]) -> String {
         let language = AppLanguage.shared
         let format = bundle(for: language.selection).localizedString(forKey: id, value: fallback, table: nil)
-        guard !arguments.isEmpty else { return format }
-        return String(format: format, locale: language.locale, arguments: arguments)
+        guard !arguments.isEmpty else { return expandedForTesting(format) }
+        return expandedForTesting(String(format: format, locale: language.locale, arguments: arguments))
     }
 
     static func quantity(_ noun: String, _ count: Int) -> String {
         let language = AppLanguage.shared
         let key = "count.\(noun)"
         let format = bundle(for: language.selection).localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: language.locale, arguments: [count])
+        return expandedForTesting(String(format: format, locale: language.locale, arguments: [count]))
     }
+    /// Debug-only layout stress. Padding preserves interpolation and user text verbatim.
+    private static func expandedForTesting(_ text: String) -> String {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TACMAP_UITEST_EXPANDED_TEXT"] == "1", !text.isEmpty {
+            return "⟦" + text + String(repeating: "·", count: max(4, text.count / 2)) + "⟧"
+        }
+        #endif
+        return text
+    }
+
 }

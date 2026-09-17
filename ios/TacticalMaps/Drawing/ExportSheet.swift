@@ -12,7 +12,7 @@ struct ExportSheet: View {
 
     @State private var generatedURL: URL? = nil
     @State private var preview: String = ""
-    @State private var error: String? = nil
+    @State private var error: LocalizedMessage? = nil
 
     var body: some View {
         NavigationStack {
@@ -35,7 +35,7 @@ struct ExportSheet: View {
                     }
 
                     if let error {
-                        Text(error).foregroundStyle(.red).padding(.horizontal)
+                        Text(error.text).foregroundStyle(.red).padding(.horizontal)
                     }
 
                     Text(L10n.text("Preview"))
@@ -120,7 +120,7 @@ struct ExportSheet: View {
             generatedURL = url
             preview = bytes.count > 4_000 ? str + L10n.text("\n… (truncated, full file in Share)") : str
         } catch {
-            self.error = L10n.text("Export failed: %1$@", error.localizedDescription)
+            self.error = Messages.displayExportFailedMessage("").withArgument(0, error.displayMessage)
         }
     }
 }

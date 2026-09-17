@@ -14,7 +14,7 @@ struct WaypointListSheet: View {
     @State private var editing: Waypoint? = nil
     @State private var creatingAt: CLLocationCoordinate2D? = nil
     @State private var pendingDelete: Waypoint? = nil
-    @State private var errorMessage: String?
+    @State private var errorMessage: LocalizedMessage?
 
     var body: some View {
         NavigationStack {
@@ -93,7 +93,7 @@ struct WaypointListSheet: View {
                         pendingDelete = nil
                     } catch {
                         pendingDelete = nil
-                        errorMessage = error.localizedDescription
+                        errorMessage = error.displayMessage
                     }
                 }
                 Button(L10n.text("Cancel"), role: .cancel) { pendingDelete = nil }
@@ -103,7 +103,7 @@ struct WaypointListSheet: View {
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in
                 Button(Messages.acknowledge(), role: .cancel) { errorMessage = nil }
-            } message: { Text($0) }
+            } message: { Text($0.text) }
         }
     }
 

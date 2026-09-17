@@ -124,21 +124,24 @@ enum DataKey {
     static let lockChanged = Notification.Name("DataKeyLockChanged")
 
     /// Auth-bound and the user hasn't authenticated. Recoverable: prompt, retry.
-    struct LockedError: LocalizedError {
-        var errorDescription: String? { L10n.text("Mission data key is locked. Authenticate to continue.") }
+    struct LockedError: LocalizedError, LocalizedMessageError {
+        var errorDescription: String? { localizedMessage.text }
+        var localizedMessage: LocalizedMessage { Messages.displayMissionDataKeyIsLockedAuthenticateToContinueMessage() }
     }
 
     /// The Keychain item is gone or undecryptable. Data is unreadable.
-    struct UnrecoverableError: LocalizedError {
+    struct UnrecoverableError: LocalizedError, LocalizedMessageError {
         let status: OSStatus
-        var errorDescription: String? {
-            L10n.text("Mission data key was invalidated by a device security change (%1$@).", status)
+        var errorDescription: String? { localizedMessage.text }
+        var localizedMessage: LocalizedMessage {
+            Messages.displayMissionDataKeyWasInvalidatedByADeviceSecurityMessage(String(status))
         }
     }
 
-    struct RotationCleanupError: LocalizedError {
-        var errorDescription: String? {
-            L10n.text("Mission-data access control was not changed because the previous key slot could not be removed securely. Try again.")
+    struct RotationCleanupError: LocalizedError, LocalizedMessageError {
+        var errorDescription: String? { localizedMessage.text }
+        var localizedMessage: LocalizedMessage {
+            Messages.displayMissionDataAccessControlWasNotChangedBecauseTheMessage()
         }
     }
 

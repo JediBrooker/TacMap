@@ -158,13 +158,14 @@ struct HamburgerMenu: View {
                     .foregroundStyle(.primary)
                     .frame(width: 28, alignment: .center)
                 Text(label)
+                    .fixedSize(horizontal: false, vertical: true)
                     .font(.system(size: 16))
                     .foregroundStyle(.primary)
                 Spacer()
             }
             .padding(.horizontal, 16)
             /// 54pt tall, clears Apple's 44pt min with room to spare.
-            .frame(height: 54)
+            .frame(minHeight: 54)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -183,6 +184,7 @@ struct HamburgerMenu: View {
                     .foregroundStyle(.primary)
                     .frame(width: 28, alignment: .center)
                 Text(label)
+                    .fixedSize(horizontal: false, vertical: true)
                     .font(.system(size: 16))
                     .foregroundStyle(.primary)
                 Spacer()
@@ -191,7 +193,7 @@ struct HamburgerMenu: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
-            .frame(height: 54)
+            .frame(minHeight: 54)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

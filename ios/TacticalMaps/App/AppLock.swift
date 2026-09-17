@@ -9,22 +9,24 @@ protocol AppLockKeychainClient {
     func delete(account: String) throws
 }
 
-enum AppLockPersistenceError: LocalizedError {
+enum AppLockPersistenceError: LocalizedError, LocalizedMessageError {
     case keychain(operation: String, status: OSStatus)
     case invalidCredential
     case readBackFailed
     case randomGeneration(status: OSStatus)
 
-    var errorDescription: String? {
+    var errorDescription: String? { localizedMessage.text }
+
+    var localizedMessage: LocalizedMessage {
         switch self {
         case .keychain:
-            return L10n.text("The App Lock credential could not be saved securely. Your previous setting was kept.")
+            return Messages.displayTheAppLockCredentialCouldNotBeSavedSecurelyMessage()
         case .invalidCredential:
-            return L10n.text("The saved App Lock credential is invalid. Your previous setting was kept.")
+            return Messages.displayTheSavedAppLockCredentialIsInvalidYourPreviousMessage()
         case .readBackFailed:
-            return L10n.text("The App Lock credential could not be verified after saving. Your previous setting was kept.")
+            return Messages.displayTheAppLockCredentialCouldNotBeVerifiedAfterMessage()
         case .randomGeneration:
-            return L10n.text("A secure App Lock credential could not be generated. Your previous setting was kept.")
+            return Messages.displayASecureAppLockCredentialCouldNotBeGeneratedMessage()
         }
     }
 }

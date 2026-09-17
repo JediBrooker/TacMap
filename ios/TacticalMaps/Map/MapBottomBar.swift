@@ -13,7 +13,8 @@ struct CentreButton: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
                 .minimumScaleFactor(0.7)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 12)

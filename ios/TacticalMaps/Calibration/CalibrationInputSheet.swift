@@ -14,7 +14,7 @@ struct CalibrationInputSheet: View {
 
     @State private var mgrs: String = ""
     @State private var label: String = ""
-    @State private var errorMessage: String? = nil
+    @State private var errorMessage: LocalizedMessage? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -60,7 +60,7 @@ struct CalibrationInputSheet: View {
                     TextField(L10n.text("e.g. “Church spire”, “Grid intersection NE”"), text: $label)
                 }
                 if let error = errorMessage {
-                    Section { Text(error).foregroundStyle(.red).font(.caption) }
+                    Section { Text(error.text).foregroundStyle(.red).font(.caption) }
                 }
             }
             .navigationTitle(L10n.text("Add fiduciary #%1$@", session.fiduciaries.count + 1))
@@ -89,7 +89,7 @@ struct CalibrationInputSheet: View {
         if session.confirmFiduciary(mgrs: cleaned, label: labelOrNil) {
             dismiss()
         } else {
-            errorMessage = L10n.text("Couldn't parse MGRS. Format: <zone><band><square> <easting> <northing>, e.g. 56HLH 12345 67890")
+            errorMessage = Messages.displayCouldnTParseMgrsFormatZoneBandSquareEastingMessage()
         }
     }
 }

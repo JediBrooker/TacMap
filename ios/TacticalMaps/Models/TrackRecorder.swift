@@ -283,7 +283,7 @@ final class TrackRecorder: ObservableObject {
         } catch {
             recordingKey = nil
             isRecording = false
-            persistMessage = Messages.trackStartFailedMessage(error.localizedDescription)
+            persistMessage = Messages.trackStartFailedMessage("").withArgument(0, error.displayMessage)
             return false
         }
     }
@@ -409,7 +409,7 @@ final class TrackRecorder: ObservableObject {
         } catch {
             // Locked. The log is intact, we just can't read it yet. Say nothing
             // about "no track" because we genuinely don't know.
-            persistMessage = Messages.trackLockedMessage(error.localizedDescription)
+            persistMessage = Messages.trackLockedMessage("").withArgument(0, error.displayMessage)
             requiresUnlock = true
             return
         }
@@ -517,7 +517,7 @@ final class TrackRecorder: ObservableObject {
             return true
         } catch {
             requiresUnlock = true
-            persistMessage = Messages.trackReencryptFailedMessage(error.localizedDescription)
+            persistMessage = Messages.trackReencryptFailedMessage("").withArgument(0, error.displayMessage)
             return false
         }
     }
@@ -530,7 +530,7 @@ final class TrackRecorder: ObservableObject {
 
     private func markRecoveryUnavailable(_ error: Error) {
         requiresUnlock = true
-        persistMessage = Messages.trackRecoveryUnavailableMessage(error.localizedDescription)
+        persistMessage = Messages.trackRecoveryUnavailableMessage("").withArgument(0, error.displayMessage)
     }
 
     private static func isNoSuchFile(_ error: Error) -> Bool {

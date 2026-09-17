@@ -110,7 +110,7 @@ struct AcknowledgementsView: View {
                     }
                 }
             }
-            .navigationTitle(L10n.text("About & Credits"))
+            .navigationTitle(Messages.aboutScreenTitle())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } }

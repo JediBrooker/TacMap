@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.clickable
@@ -92,7 +94,7 @@ fun DrawingLayersSheet(
     var newLayerName by remember { mutableStateOf("") }
     var editingLayer by remember { mutableStateOf<DrawingLayer?>(null) }
     var deletingLayer by remember { mutableStateOf<DrawingLayer?>(null) }
-    var layerMutationError by remember { mutableStateOf<String?>(null) }
+    var layerMutationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     var pendingDrawingMutation by remember {
         mutableStateOf<PendingDrawingSheetMutation?>(null)
     }
@@ -238,7 +240,7 @@ fun DrawingLayersSheet(
                             newLayerName = ""
                             layerMutationError = null
                         } else {
-                            layerMutationError = L10n.text("The layer could not be saved. Check the name and try again.")
+                            layerMutationError = Messages.displayTheLayerCouldNotBeSavedCheckTheNameMessage()
                         }
                     }) {
                         Icon(Icons.Default.Add, contentDescription = null)
@@ -248,7 +250,7 @@ fun DrawingLayersSheet(
                 }
                 layerMutationError?.let { error ->
                     Text(
-                        error,
+                        error.text,
                         color = Color(0xFFD32F2F),
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 6.dp),
@@ -305,7 +307,7 @@ fun DrawingLayersSheet(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(waypointCountLabel)
                     layerMutationError?.let { error ->
-                        Text(error, color = Color(0xFFD32F2F), fontSize = 12.sp)
+                        Text(error.text, color = Color(0xFFD32F2F), fontSize = 12.sp)
                     }
                 }
             },
@@ -315,7 +317,7 @@ fun DrawingLayersSheet(
                         deletingLayer = null
                         layerMutationError = null
                     } else {
-                        layerMutationError = L10n.text("The layer remains. Any symbols already moved to Friendly are safe; retry to finish.")
+                        layerMutationError = Messages.displayTheLayerRemainsAnySymbolsAlreadyMovedToFriendlyMessage()
                     }
                 }) { Text(L10n.text("Delete layer"), color = Color(0xFFD32F2F)) }
             },
@@ -449,7 +451,7 @@ private fun LayerEditDialog(
 ) {
     var name by remember(layer.id) { mutableStateOf(layer.name) }
     var color by remember(layer.id) { mutableIntStateOf(layer.color) }
-    var saveError by remember(layer.id) { mutableStateOf<String?>(null) }
+    var saveError by remember(layer.id) { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     val colors = (DrawingDocument.CUSTOM_LAYER_COLORS + layer.color).distinct()
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -493,7 +495,7 @@ private fun LayerEditDialog(
                     }
                 }
                 saveError?.let { error ->
-                    Text(error, color = Color(0xFFD32F2F), fontSize = 12.sp)
+                    Text(error.text, color = Color(0xFFD32F2F), fontSize = 12.sp)
                 }
             }
         },
@@ -502,7 +504,7 @@ private fun LayerEditDialog(
                 enabled = name.isNotBlank(),
                 onClick = {
                     if (!onSave(name.trim(), color)) {
-                        saveError = L10n.text("The layer could not be saved. Your previous name and colour remain active.")
+                        saveError = Messages.displayTheLayerCouldNotBeSavedYourPreviousNameMessage()
                     }
                 },
             ) { Text(L10n.text("Save")) }

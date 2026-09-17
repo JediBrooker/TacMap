@@ -28,7 +28,7 @@ struct SyncSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
     @State private var roomName = ""
-    @State private var codeError: String?
+    @State private var codeError: LocalizedMessage?
     @State private var legacyConfirmed = false
     @State private var roomCodeCopied = false
     @State private var copyFeedbackToken = UUID()
@@ -180,7 +180,7 @@ struct SyncSheet: View {
                         }
                         .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty)
                         if let codeError {
-                            Text(codeError).font(.caption).foregroundStyle(.red)
+                            Text(codeError.text).font(.caption).foregroundStyle(.red)
                         }
                         if code.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("2:") {
                             Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."))
@@ -269,8 +269,8 @@ struct SyncSheet: View {
                     message: Text(joinConsentMessage),
                     primaryButton: .default(Text(L10n.text("Enable & Join"))) {
                         guard opsec.setBackgroundUnitSyncLocation(true) else {
-                            codeError = opsec.persistenceIssue
-                                ?? L10n.text("Could not save Background Unit Sync consent.")
+                            codeError = opsec.persistenceMessage
+                                ?? Messages.syncFormCouldNotSaveBackgroundUnitSyncConsentMessage()
                             pendingJoin = nil
                             return
                         }
@@ -278,8 +278,8 @@ struct SyncSheet: View {
                         updated.shareLocation = true
                         guard manager.updatePresenceConfig(updated) else {
                             _ = opsec.setBackgroundUnitSyncLocation(false)
-                            codeError = manager.lastError
-                                ?? L10n.text("Could not save location-sharing consent.")
+                            codeError = manager.lastErrorMessage
+                                ?? Messages.syncFormCouldNotSaveLocationSharingConsentMessage()
                             pendingJoin = nil
                             return
                         }
@@ -297,12 +297,12 @@ struct SyncSheet: View {
     private func attemptJoin() {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.hasPrefix("3:") && !trimmed.hasPrefix("2:") {
-            codeError = L10n.text("Codes must start with 3:. Enter 2: only for an intentional legacy room.")
+            codeError = Messages.syncFormCodesMustStartWith3Enter2OnlyForAnMessage()
         } else if trimmed.hasPrefix("2:") && !legacyConfirmed {
             legacyConfirmed = true
-            codeError = L10n.text("Legacy v2 has weaker rollback and identity protection. Tap again to confirm.")
+            codeError = Messages.syncFormLegacyV2HasWeakerRollbackAndIdentityProtectionTapAgainMessage()
         } else if SyncCrypto.isJoinCodeTooWeak(code) {
-            codeError = L10n.text("Too short to be safe. Use at least %1$@ characters, or tap Generate.", SyncCrypto.minJoinCodeLength)
+            codeError = Messages.syncFormTooShortToBeSafeUseAtLeast1CharactersMessage(String(SyncCrypto.minJoinCodeLength))
         } else if UnitSyncJoinGate.requiresConsent(
             roomCode: trimmed,
             shareLocation: manager.presenceConfig.shareLocation,

@@ -316,9 +316,9 @@ internal suspend fun performOnlinePlaceLookup(
     }
 }
 
-internal val PLACES_DISABLED_STATUS =
+internal val PLACES_DISABLED_STATUS: String get() =
     L10n.text("Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work.")
-internal val PLACES_OFFLINE_STATUS =
+internal val PLACES_OFFLINE_STATUS: String get() =
     L10n.text("Place search unavailable offline — MGRS, grid and lat/lon still work.")
 
 internal fun buildSearchResults(
@@ -631,5 +631,5 @@ internal fun looksCoordinateShaped(raw: String): Boolean {
     return firstCommaComponent.firstOrNull()?.let { it.isDigit() || it in "+-." } == true
 }
 
-internal val INVALID_COORDINATE_STATUS =
+internal val INVALID_COORDINATE_STATUS: String get() =
     L10n.text("Latitude must be between -90 and 90, and longitude between -180 and 180.")

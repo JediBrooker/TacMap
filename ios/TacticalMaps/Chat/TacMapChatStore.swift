@@ -3,7 +3,7 @@ import Combine
 
 @MainActor
 final class TacMapChatStore: ObservableObject {
-    enum StoreError: LocalizedError, Equatable {
+    enum StoreError: LocalizedError, LocalizedMessageError, Equatable {
         case inactive
         case locked
         case corrupt

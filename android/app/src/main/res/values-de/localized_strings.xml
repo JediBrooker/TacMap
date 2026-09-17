@@ -10,8 +10,11 @@
     <string name="chat_recipient_heading">"EMPFÄNGER"</string>
     <string name="common_ok">"OK"</string>
     <string name="drawings_quarantined">"Gespeicherte Zeichnungen konnten nicht gelesen werden und wurden separat gesichert (%1$s). Die Karte startet ohne Zeichnungen."</string>
+    <string name="import_collision_summary">"%1$s Wegen Konflikten neu vergebene Objekt-IDs: %2$s."</string>
+    <string name="import_complete_summary">"%1$s und %2$s importiert."</string>
     <string name="import_failed">"Import fehlgeschlagen: %1$s"</string>
     <string name="import_feature_summary">"Importierte Wegpunkte: %1$s, Zeichnungen: %2$s%3$s"</string>
+    <string name="import_invalid_summary">"%1$s Ungültige Objekte übersprungen: %2$s."</string>
     <string name="input_decimal_hint">"Verwende einen Dezimalpunkt oder das Dezimaltrennzeichen deiner Sprache. Verwende keine Tausendertrennzeichen."</string>
     <string name="live_location_approximate_guidance">"Der ungefähre Standort kann TacMaps GPS-Position auf diesem Gerät nicht liefern. Erlaube den genauen Standort und versuche es erneut."</string>
     <string name="online_basemaps_disabled">"Online-Grundkarten sind deaktiviert. Importiere ein Offline-Kartenpaket oder aktiviere Online-Kartenkacheln unter „Einstellungen, Datenschutz und OPSEC“."</string>
@@ -32,6 +35,7 @@
     <string name="settings_online_lookups_help">"Standardmäßig aus. Wenn aktiviert, kann die Ortsnamensuche den Geocoder des Geräts verwenden. Für Höhe und Wetter wird die Koordinate der Kartenmitte (auf etwa 110 m vergröbert) an Open-Meteo gesendet. Die Gelände-Heatmap sendet ein Raster aus 24 × 24 Koordinaten (auf etwa 11 m vergröbert), das den sichtbaren Kartenausschnitt abdeckt. Schalte diese Option für einen vollständig offline betriebenen Einsatz unter OPSEC-Gesichtspunkten aus."</string>
     <string name="sync_code_too_short">"Für einen sicheren Code zu kurz. Verwende mindestens %1$s Zeichen oder tippe auf „Erzeugen“."</string>
     <string name="sync_configured_relay_unavailable">"Unit Sync konnte den konfigurierten Relay-Server nicht verwenden. Starte TacMap neu oder aktualisiere die App und versuche es erneut."</string>
+    <string name="sync_dialog_title">"Einheiten-Sync"</string>
     <string name="sync_join_location_consent">"Zum Beitritt aktiviert TacMap „Meinen Standort teilen“ und „Unit-Sync-Standort im Hintergrund“. Bei erlaubtem Standortzugriff wird deine verschlüsselte Position bei geöffneter App und ungefähr %1$s bei ausgeschaltetem Bildschirm gesendet."</string>
     <string name="sync_legacy_membership_help">"Authentifizierte Online-Mitgliedschaft ist in älteren v2-Räumen nicht verfügbar. Stelle alle Geräte auf einen v3-Raum um, um vom Relay gemeldete signierte Sitzungen zu nutzen."</string>
     <string name="sync_liveness_caveat">"Identitäts- und Sitzungssignaturen werden geprüft. Ob die Verbindung aktiv ist, bestätigt jedoch das Relay; dies ist kein kryptografischer Nachweis, dass ein Teilnehmer gerade online ist. Der obige Vorbehalt zu Replay/Rollback gilt weiterhin."</string>

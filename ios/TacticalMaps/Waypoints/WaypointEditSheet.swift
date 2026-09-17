@@ -7,7 +7,8 @@ struct SymbolEditDraft: Equatable {
         "higherFormation", "uniqueIdentifier", "reinforcementStatus", "mgrs",
         "rotationDegrees", "scaleX", "scaleY", "delete",
     ]
-    static var elevationValidationError: String { L10n.text("Enter a valid elevation in metres.") }
+    static var elevationValidationError: String { elevationValidationMessage.text }
+    static var elevationValidationMessage: LocalizedMessage { Messages.displayEnterAValidElevationInMetresMessage() }
 
     var name: String
     var kind: WaypointKind
@@ -43,9 +44,10 @@ struct SymbolEditDraft: Equatable {
         isMoveStaged = false
     }
 
-    enum ValidationError: LocalizedError, Equatable {
+    enum ValidationError: LocalizedError, LocalizedMessageError, Equatable {
         case invalidElevation
-        var errorDescription: String? { SymbolEditDraft.elevationValidationError }
+        var errorDescription: String? { localizedMessage.text }
+        var localizedMessage: LocalizedMessage { SymbolEditDraft.elevationValidationMessage }
     }
 
     func applying(to waypoint: Waypoint,
@@ -197,7 +199,7 @@ struct WaypointCreationSheet: View {
     @State private var markerColorHex: String    = "#3B7BE0"
     @State private var notes: String = ""
     @State private var elevationText: String = ""
-    @State private var errorMessage: String?
+    @State private var errorMessage: LocalizedMessage?
 
     init(waypointStore: WaypointStore,
          defaultCoordinate: CLLocationCoordinate2D = .init(latitude: 0, longitude: 0),
@@ -474,7 +476,7 @@ struct WaypointCreationSheet: View {
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in
                 Button(Messages.acknowledge(), role: .cancel) { errorMessage = nil }
-            } message: { Text($0) }
+            } message: { Text($0.text) }
         }
         // Block swipe-to-dismiss. This is an edit form, accidental
         // swipe shouldn't silently nuke the user's changes.
@@ -531,7 +533,7 @@ struct WaypointCreationSheet: View {
         } else if let parsed = DecimalInput.parse(trimmedElevation) {
             parsedElevation = parsed
         } else {
-            errorMessage = SymbolEditDraft.elevationValidationError
+            errorMessage = SymbolEditDraft.elevationValidationMessage
             return
         }
 
@@ -566,7 +568,7 @@ struct WaypointCreationSheet: View {
             _ = try waypointStore.addDurably(new)
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 }
@@ -584,11 +586,11 @@ struct SelectedSymbolEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: SymbolEditDraft
     @State private var category: KindCategory
-    @State private var errorMessage: String?
+    @State private var errorMessage: LocalizedMessage?
     @State private var showDeleteConfirmation = false
     @State private var mgrsInput: String
     @State private var lastAppliedMGRSInput: String
-    @State private var mgrsError: String?
+    @State private var mgrsError: LocalizedMessage?
     @State private var mgrsMoveExplicitlyApplied = false
     private let initialMGRSInput: String
 
@@ -724,7 +726,7 @@ struct SelectedSymbolEditSheet: View {
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in
                 Button(Messages.acknowledge(), role: .cancel) { errorMessage = nil }
-            } message: { Text($0) }
+            } message: { Text($0.text) }
             .confirmationDialog(
                 L10n.text("Delete “%1$@”?", waypoint.name),
                 isPresented: $showDeleteConfirmation,
@@ -916,7 +918,7 @@ struct SelectedSymbolEditSheet: View {
                     .foregroundStyle(.secondary)
             }
             if let mgrsError {
-                Text(mgrsError)
+                Text(mgrsError.text)
                     .font(.caption)
                     .foregroundStyle(.red)
             }
@@ -999,7 +1001,7 @@ struct SelectedSymbolEditSheet: View {
             _ = try waypointStore.commitEdit(updated)
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 
@@ -1015,7 +1017,7 @@ struct SelectedSymbolEditSheet: View {
             mgrsError = nil
             return true
         } catch {
-            mgrsError = error.localizedDescription
+            mgrsError = error.displayMessage
             return false
         }
     }
@@ -1030,7 +1032,7 @@ struct SelectedSymbolEditSheet: View {
             dismiss()
             onDeleted()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.displayMessage
         }
     }
 

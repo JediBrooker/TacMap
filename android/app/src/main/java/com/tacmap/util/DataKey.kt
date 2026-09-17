@@ -1,5 +1,7 @@
 package com.tacmap.util
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.content.Context
@@ -71,11 +73,17 @@ import javax.crypto.spec.GCMParameterSpec
 object DataKey {
 
     /** Auth-bound and the user hasn't authenticated recently enough. Recoverable: prompt, retry. */
-    class LockedException : Exception(L10n.text("Mission data key is locked. Authenticate to continue."))
+    class LockedException : Exception(), com.tacmap.localization.LocalizedMessageFailure {
+        override val localizedMessage get() = Messages.displayMissionDataKeyIsLockedAuthenticateToContinueMessage()
+        override val message: String get() = localizedMessage.text
+    }
 
     /** The Keystore KEK is gone (lockscreen removed / factory keystore reset). Data is unreadable. */
     class UnrecoverableException(cause: Throwable?) :
-        Exception(L10n.text("Mission data key was invalidated by a device security change."), cause)
+        Exception(cause), com.tacmap.localization.LocalizedMessageFailure {
+        override val localizedMessage get() = Messages.displayMissionDataKeyWasInvalidatedByADeviceSecurity87bf4b9fMessage()
+        override val message: String get() = localizedMessage.text
+    }
 
     private const val KEYSTORE = "AndroidKeyStore"
     private const val ALIAS_DEVICE = "tacmap.kek.device.v1"

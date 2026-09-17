@@ -445,7 +445,7 @@ struct PresenceConfigSealedPolicy {
     )
 }
 
-enum SyncRemoteModelMutationError: LocalizedError {
+enum SyncRemoteModelMutationError: LocalizedError, LocalizedMessageError {
     case invalidPayload
     case identityCollision(UUID)
     case persistence(Error)
@@ -459,7 +459,7 @@ enum SyncRemoteModelMutationError: LocalizedError {
         case .identityCollision(let id):
             return Messages.syncTheAuthenticatedSyncRecordConflictsWithAnotherObjectTypeMessage(id.uuidString)
         case .persistence(let error):
-            return Messages.syncTheAuthenticatedSyncUpdateCouldNotBeSavedMessage(error.localizedDescription)
+            return Messages.syncTheAuthenticatedSyncUpdateCouldNotBeSavedMessage("").withArgument(0, error.displayMessage)
         }
     }
 }
@@ -710,6 +710,7 @@ final class SyncManager: ObservableObject {
     @Published private(set) var room: String?
     @Published private(set) var roomName: String?
     @Published private var pendingLastError: LocalizedMessage?
+    var lastErrorMessage: LocalizedMessage? { pendingLastError }
     var lastError: String? { pendingLastError?.text }
     @Published var peers: [String: PresencePeer] = [:]
     /// Signature-verified v3 sessions currently reported by the relay. This is
@@ -1342,7 +1343,7 @@ final class SyncManager: ObservableObject {
         }
     }
 
-    enum ChatSendError: LocalizedError {
+    enum ChatSendError: LocalizedError, LocalizedMessageError {
         case secureRoomRequired
         case historyUnavailable
         case sessionUnavailable

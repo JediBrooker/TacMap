@@ -1,7 +1,9 @@
 package com.tacmap.app
 
-import com.tacmap.localization.Messages
 
+import com.tacmap.localization.LocalizedMessage
+import com.tacmap.localization.Messages
+import com.tacmap.localization.displayMessage
 import com.tacmap.localization.L10n
 
 import android.content.ActivityNotFoundException
@@ -72,7 +74,7 @@ class MainActivity : ComponentActivity() {
     // so coming back to the app re-prompts.
     private val locked = mutableStateOf(false)
     private val missionKeyReady = mutableStateOf(false)
-    private val missionKeyError = mutableStateOf<String?>(null)
+    private val missionKeyError = mutableStateOf<LocalizedMessage?>(null)
     private lateinit var credentialLauncher: ActivityResultLauncher<Intent>
     private lateinit var authBoundChangeLauncher: ActivityResultLauncher<Intent>
     private lateinit var pdfImportLauncher: ActivityResultLauncher<Array<String>>
@@ -118,13 +120,13 @@ class MainActivity : ComponentActivity() {
                     missionKeyReady.value = true
                     continuePendingTrackRecordingStart()
                 }
-                .onFailure { missionKeyError.value = it.message }
+                .onFailure { missionKeyError.value = it.displayMessage }
         }
         // Activity-owned because the platform credential screen intentionally
         // pauses the app and tears down MapScreen with the mission key.
         authBoundChangeLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val completion = authBoundChangeController.completeCredential(result.resultCode == Activity.RESULT_OK)
-            completion.error?.let { missionKeyError.value = it }
+            completion.pendingError?.let { missionKeyError.value = it }
             if (result.resultCode == Activity.RESULT_OK && completion.error == null) {
                 missionKeyError.value = null
                 missionKeyReady.value = true
@@ -198,7 +200,7 @@ class MainActivity : ComponentActivity() {
                     return@MaterialTheme
                 }
                 if (!missionKeyReady.value) {
-                    MissionKeyUnlockScreen(missionKeyError.value, ::requestMissionKeyUnlock)
+                    MissionKeyUnlockScreen(missionKeyError.value?.text, ::requestMissionKeyUnlock)
                     return@MaterialTheme
                 }
                 val purchased by billing.isPurchased.collectAsState()
@@ -373,7 +375,7 @@ class MainActivity : ComponentActivity() {
             L10n.text("Confirm your device credential to decrypt maps and mission data.")
         )
         if (intent == null) {
-            missionKeyError.value = L10n.text("No device credential is available for this protected key.")
+            missionKeyError.value = Messages.missionKeyNoDeviceCredentialIsAvailableForThisProtectedKeyMessage()
         } else {
             credentialLauncher.launch(intent)
         }
@@ -470,7 +472,7 @@ class MainActivity : ComponentActivity() {
         }
         val saved = edit.commit()
         if (!saved) {
-            missionKeyError.value = L10n.text("Could not preserve the pending document import across process restart.")
+            missionKeyError.value = Messages.missionKeyCouldNotPreserveThePendingDocumentImportAcrossProcessMessage()
         }
         return saved
     }
@@ -479,7 +481,7 @@ class MainActivity : ComponentActivity() {
         val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         when (val request = authBoundChangeController.request(target, keyguard.isDeviceSecure)) {
             AuthBoundChangeController.Request.NoChange -> Unit
-            is AuthBoundChangeController.Request.Error -> missionKeyError.value = request.message
+            is AuthBoundChangeController.Request.Error -> missionKeyError.value = request.pendingMessage
             AuthBoundChangeController.Request.PromptCredential -> {
                 @Suppress("DEPRECATION")
                 val intent = keyguard.createConfirmDeviceCredentialIntent(
@@ -488,7 +490,7 @@ class MainActivity : ComponentActivity() {
                 )
                 if (intent == null) {
                     authBoundChangeController.cancelPending()
-                    missionKeyError.value = L10n.text("No device lockscreen is set, so this can't be changed.")
+                    missionKeyError.value = Messages.displayNoDeviceLockscreenIsSetSoThisCanTMessage()
                 } else {
                     authBoundChangeLauncher.launch(intent)
                 }
@@ -498,7 +500,7 @@ class MainActivity : ComponentActivity() {
 
     private fun prepareMissionKey() {
         missionKeyReady.value = runCatching { DataKey.key(); true }.getOrElse {
-            missionKeyError.value = it.message
+            missionKeyError.value = it.displayMessage
             false
         }
         if (missionKeyReady.value) {

@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.animation.core.RepeatMode
@@ -7,6 +9,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -63,7 +68,7 @@ fun ImportExportSheet(
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 24.dp)) {
             Text(
                 L10n.text("Import / Export"),
                 style = MaterialTheme.typography.titleLarge,
@@ -156,7 +161,7 @@ fun RecordingIndicator(
             letterSpacing = 1.sp
         )
         Text(
-            "· $pointCount ${if (pointCount == 1) "pt" else "pts"}",
+            "· " + Messages.pointCount(pointCount),
             color = Color.White.copy(alpha = 0.85f),
             fontSize = 12.sp
         )

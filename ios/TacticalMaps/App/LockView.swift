@@ -92,7 +92,7 @@ struct AppLockSetupView: View {
     @State private var currentPIN = ""
     @State private var newPIN = ""
     @State private var confirmPIN = ""
-    @State private var message: String?
+    @State private var message: LocalizedMessage?
 
     var body: some View {
         NavigationStack {
@@ -129,7 +129,7 @@ struct AppLockSetupView: View {
                 }
 
                 if let message {
-                    Section { Text(message).font(.caption).foregroundStyle(.secondary) }
+                    Section { Text(message.text).font(.caption).foregroundStyle(.secondary) }
                 }
             }
             .navigationTitle(L10n.text("App Lock"))
@@ -140,36 +140,36 @@ struct AppLockSetupView: View {
 
     private func enable() {
         guard newPIN == confirmPIN, newPIN.count == 4, newPIN.allSatisfy(\.isNumber) else {
-            message = L10n.text("PINs must match and be 4 digits.")
+            message = Messages.displayPinsMustMatchAndBeDigitsMessage()
             return
         }
         do {
             try AppLock.setPIN(newPIN)
             resetFields()
             isEnabled = true
-            message = L10n.text("App Lock enabled. TacMap will lock when backgrounded.")
+            message = Messages.displayAppLockEnabledTacmapWillLockWhenBackgroundedMessage()
         } catch {
-            message = error.localizedDescription
+            message = (error as? AppLockPersistenceError)?.localizedMessage ?? .literal(error.localizedDescription)
         }
     }
 
     private func changePIN() {
         guard AppLock.verify(currentPIN) else {
             message = AppLock.lockoutRemaining > 0
-                ? L10n.text("Too many attempts. Try again shortly.")
-                : L10n.text("Current PIN is incorrect.")
+                ? Messages.displayTooManyAttemptsTryAgainShortlyMessage()
+                : Messages.displayCurrentPinIsIncorrectMessage()
             return
         }
         guard newPIN == confirmPIN, newPIN.count == 4, newPIN.allSatisfy(\.isNumber) else {
-            message = L10n.text("New PINs must match and be 4 digits.")
+            message = Messages.displayNewPinsMustMatchAndBeDigitsMessage()
             return
         }
         do {
             try AppLock.setPIN(newPIN)
             resetFields()
-            message = L10n.text("PIN changed.")
+            message = Messages.displayPinChangedMessage()
         } catch {
-            message = error.localizedDescription
+            message = (error as? AppLockPersistenceError)?.localizedMessage ?? .literal(error.localizedDescription)
         }
     }
 
@@ -178,14 +178,14 @@ struct AppLockSetupView: View {
             if try AppLock.disable(currentPIN: currentPIN) {
                 resetFields()
                 isEnabled = false
-                message = L10n.text("App Lock disabled.")
+                message = Messages.displayAppLockDisabledMessage()
             } else {
                 message = AppLock.lockoutRemaining > 0
-                    ? L10n.text("Too many attempts. Try again shortly.")
-                    : L10n.text("Current PIN is incorrect.")
+                    ? Messages.displayTooManyAttemptsTryAgainShortlyMessage()
+                    : Messages.displayCurrentPinIsIncorrectMessage()
             }
         } catch {
-            message = error.localizedDescription
+            message = (error as? AppLockPersistenceError)?.localizedMessage ?? .literal(error.localizedDescription)
         }
     }
 

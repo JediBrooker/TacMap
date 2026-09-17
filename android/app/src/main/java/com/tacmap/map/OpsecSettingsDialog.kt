@@ -72,7 +72,7 @@ fun OpsecSettingsDialog(
     var backgroundIntervalExpanded by remember { mutableStateOf(false) }
     var authBound by remember { mutableStateOf(DataKey.isAuthBound) }
     var languageError by remember { mutableStateOf(false) }
-    var keyError by remember { mutableStateOf<String?>(null) }
+    var keyError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     val authController = remember {
         AuthBoundChangeController(object : AuthBoundChangeController.KeyProtection {
             override val isAuthBound: Boolean get() = DataKey.isAuthBound
@@ -86,7 +86,7 @@ fun OpsecSettingsDialog(
     ) { result ->
         val completion = authController.completeCredential(result.resultCode == Activity.RESULT_OK)
         authBound = completion.isAuthBound
-        keyError = completion.error
+        keyError = completion.pendingError
     }
 
     fun requestAuthBound(target: Boolean) {
@@ -98,7 +98,7 @@ fun OpsecSettingsDialog(
         val keyguard = context.getSystemService<KeyguardManager>()
         when (val request = authController.request(target, keyguard?.isDeviceSecure == true)) {
             AuthBoundChangeController.Request.NoChange -> authBound = DataKey.isAuthBound
-            is AuthBoundChangeController.Request.Error -> keyError = request.message
+            is AuthBoundChangeController.Request.Error -> keyError = request.pendingMessage
             AuthBoundChangeController.Request.PromptCredential -> {
                 // Always prompt before either direction. In particular, a cached
                 // DEK must never let an unattended user weaken auth-bound storage.
@@ -111,7 +111,7 @@ fun OpsecSettingsDialog(
                     credentialLauncher.launch(intent)
                 } else {
                     authController.cancelPending()
-                    keyError = L10n.text("No device lockscreen is set, so this can't be changed.")
+                    keyError = Messages.displayNoDeviceLockscreenIsSetSoThisCanTMessage()
                 }
             }
         }
@@ -145,7 +145,7 @@ fun OpsecSettingsDialog(
                     }
                 }
                 if (languageError) Caption(Messages.languageSaveFailed(), Color(0xFFB00020))
-                persistenceIssue?.let { Caption(it, Color(0xFFB00020)) }
+                persistenceIssue?.let { Caption(it.text, Color(0xFFB00020)) }
                 Text(L10n.text("Primary coordinate"), fontWeight = FontWeight.SemiBold)
                 CoordinateDisplayType.entries.forEach { type ->
                     CoordinateTypeRow(
@@ -243,7 +243,7 @@ fun OpsecSettingsDialog(
                 Caption(
                     Messages.androidKeyProtectionHelp()
                 )
-                keyError?.let { Caption(L10n.text("Could not change key protection: %1\$s", it), Color(0xFFB00020)) }
+                keyError?.let { Caption(L10n.text("Could not change key protection: %1\$s", it.text), Color(0xFFB00020)) }
             }
         }
     )

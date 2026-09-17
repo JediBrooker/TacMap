@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.animation.AnimatedVisibility
@@ -476,7 +478,7 @@ internal fun CalibrationInputDialog(
 ) {
     var mgrs by remember { mutableStateOf("") }
     var label by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
 
     AlertDialog(
         // Don't discard a carefully placed calibration point on a stray
@@ -525,7 +527,7 @@ internal fun CalibrationInputDialog(
                     }
                 }
                 error?.let {
-                    Text(it, color = Color(0xFFE53935), fontSize = 12.sp)
+                    Text(it.text, color = Color(0xFFE53935), fontSize = 12.sp)
                 }
             }
         },
@@ -534,7 +536,7 @@ internal fun CalibrationInputDialog(
                 onClick = {
                     val saved = onSave(mgrs, label)
                     if (!saved) {
-                        error = L10n.text("Couldn't parse MGRS. Try a full grid reference.")
+                        error = Messages.displayCouldnTParseMgrsTryAFullGridReferenceMessage()
                     }
                 },
                 enabled = mgrs.trim().isNotEmpty()

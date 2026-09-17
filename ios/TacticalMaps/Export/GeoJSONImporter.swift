@@ -146,18 +146,20 @@ enum GeoJSONImporter {
         }
     }
 
-    enum ImportError: Error, LocalizedError {
+    enum ImportError: Error, LocalizedError, LocalizedMessageError {
         case invalidJSON
         case notAFeatureCollection
-        case limitExceeded(String)
+        case limitExceeded(LocalizedMessage)
         case cancelled
 
-        var errorDescription: String? {
+        var errorDescription: String? { localizedMessage.text }
+
+        var localizedMessage: LocalizedMessage {
             switch self {
-            case .invalidJSON: return L10n.text("This file isn't valid GeoJSON.")
-            case .notAFeatureCollection: return L10n.text("This GeoJSON is not a FeatureCollection.")
-            case .limitExceeded(let reason): return L10n.text("Import safety limit exceeded: %1$@.", reason)
-            case .cancelled: return L10n.text("Import cancelled.")
+            case .invalidJSON: return Messages.displayThisFileIsnTValidGeojsonMessage()
+            case .notAFeatureCollection: return Messages.displayThisGeojsonIsNotAFeaturecollectionMessage()
+            case .limitExceeded(let reason): return Messages.displayImportSafetyLimitExceededMessage("").withArgument(0, reason)
+            case .cancelled: return Messages.displayImportCancelledMessage()
             }
         }
     }
@@ -214,7 +216,7 @@ enum GeoJSONImporter {
         preserveExternalLayerIDs: Bool,
         resolveExternalID: ((String?, ExternalImportIdentityResolver.ObjectKind, Int) -> UUID)?
     ) throws -> Result {
-        guard data.count <= maxInputBytes else { throw ImportError.limitExceeded(L10n.text("file is over 16 MB")) }
+        guard data.count <= maxInputBytes else { throw ImportError.limitExceeded(Messages.displayFileIsOverMbMessage()) }
         let deadline = Date().addingTimeInterval(parseDeadline)
         guard let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ImportError.invalidJSON
@@ -225,20 +227,20 @@ enum GeoJSONImporter {
               let features = raw["features"] as? [[String: Any]] else {
             throw ImportError.notAFeatureCollection
         }
-        guard features.count <= maxFeatures else { throw ImportError.limitExceeded(L10n.text("more than 10,000 features")) }
+        guard features.count <= maxFeatures else { throw ImportError.limitExceeded(Messages.displayMoreThanFeaturesMessage()) }
 
         var result = Result()
         var layersByID = Dictionary(uniqueKeysWithValues: existingLayers.map { ($0.id.uuidString, $0) })
         var coordinateCount = 0
 
         for (featureIndex, feature) in features.enumerated() {
-            if Date() > deadline { throw ImportError.limitExceeded(L10n.text("parsing took too long")) }
+            if Date() > deadline { throw ImportError.limitExceeded(Messages.displayParsingTookTooLongMessage()) }
             if withUnsafeCurrentTask(body: { $0?.isCancelled ?? false }) { throw ImportError.cancelled }
             guard let geometry = feature["geometry"] as? [String: Any],
                   let geomType = geometry["type"] as? String else { continue }
             coordinateCount += coordinatePairCount(geometry)
             guard coordinateCount <= maxCoordinates else {
-                throw ImportError.limitExceeded(L10n.text("more than 100,000 coordinates"))
+                throw ImportError.limitExceeded(Messages.displayMoreThanCoordinatesMessage())
             }
             // Bail out on non-finite / out-of-range coords. Don't let a corrupt
             // file drop a symbol at NaN or somewhere off the globe.
@@ -331,18 +333,18 @@ enum GeoJSONImporter {
     }
 
     private static func validateStructure(_ value: Any, depth: Int, nodes: inout Int) throws {
-        guard depth <= maxJSONDepth else { throw ImportError.limitExceeded(L10n.text("JSON nesting is too deep")) }
+        guard depth <= maxJSONDepth else { throw ImportError.limitExceeded(Messages.displayJsonNestingIsTooDeepMessage()) }
         nodes += 1
-        guard nodes <= maxJSONNodes else { throw ImportError.limitExceeded(L10n.text("JSON has too many values")) }
+        guard nodes <= maxJSONNodes else { throw ImportError.limitExceeded(Messages.displayJsonHasTooManyValuesMessage()) }
         if let dict = value as? [String: Any] {
             for (key, child) in dict {
-                guard key.utf8.count <= 4_096 else { throw ImportError.limitExceeded(L10n.text("property name is too long")) }
+                guard key.utf8.count <= 4_096 else { throw ImportError.limitExceeded(Messages.displayPropertyNameIsTooLongMessage()) }
                 try validateStructure(child, depth: depth + 1, nodes: &nodes)
             }
         } else if let array = value as? [Any] {
             for child in array { try validateStructure(child, depth: depth + 1, nodes: &nodes) }
         } else if let string = value as? String, string.utf8.count > 1_048_576 {
-            throw ImportError.limitExceeded(L10n.text("text field is over 1 MB"))
+            throw ImportError.limitExceeded(Messages.displayTextFieldIsOverMbMessage())
         }
     }
 
@@ -659,7 +661,8 @@ struct ExternalImportCommitReport {
 
     let state: State
     let progress: ExternalImportCommitProgress
-    let message: String
+    let pendingMessage: LocalizedMessage
+    var message: String { pendingMessage.text }
 
     var insertedWaypointCount: Int { progress.waypointCommit?.insertedCount ?? 0 }
     var skippedWaypointCount: Int { progress.waypointCommit?.skippedExistingCount ?? 0 }
@@ -695,7 +698,7 @@ enum ExternalImportCommitter {
                 return ExternalImportCommitReport(
                     state: .failedBeforeAnyStore,
                     progress: progress,
-                    message: L10n.text("No imported mission objects were saved. %1$@", error.localizedDescription)
+                    pendingMessage: Messages.displayNoImportedMissionObjectsWereSavedMessage("").withArgument(0, error.displayMessage)
                 )
             }
         }
@@ -715,12 +718,12 @@ enum ExternalImportCommitter {
                     + waypointCommit.skippedExistingCount
                 let partial = handledWaypointCount > 0 && progress.waypointStoreCommitted
                 let prefix = partial
-                    ? L10n.text("Waypoint store committed %1$@ new objects and skipped %2$@ already-present objects, but drawings and their layers were not saved. Retry will reuse the reconciled object IDs and will not duplicate the saved waypoints.", waypointCommit.insertedCount, waypointCommit.skippedExistingCount)
-                    : L10n.text("No imported mission objects were saved.")
+                    ? Messages.displayWaypointStoreCommittedNewObjectsAndSkippedAlreadyPresentMessage(DisplayFormat.number(Double(waypointCommit.insertedCount), decimals: 0), DisplayFormat.number(Double(waypointCommit.skippedExistingCount), decimals: 0))
+                    : Messages.displayNoImportedMissionObjectsWereSaved3176accfMessage()
                 return ExternalImportCommitReport(
                     state: partial ? .partiallyCommitted : .failedBeforeAnyStore,
                     progress: progress,
-                    message: "\(prefix) \(error.localizedDescription)"
+                    pendingMessage: Messages.syncRecoveryDetailMessage("", "").withArgument(0, prefix).withArgument(1, error.displayMessage)
                 )
             }
         }
@@ -728,7 +731,7 @@ enum ExternalImportCommitter {
         return ExternalImportCommitReport(
             state: .completed,
             progress: progress,
-            message: completionMessage(progress)
+            pendingMessage: completionMessage(progress)
         )
     }
 
@@ -862,7 +865,7 @@ enum ExternalImportCommitter {
         return progress
     }
 
-    private static func completionMessage(_ progress: ExternalImportCommitProgress) -> String {
+    private static func completionMessage(_ progress: ExternalImportCommitProgress) -> LocalizedMessage {
         let waypoint = progress.waypointCommit
             ?? BatchImportCommit(insertedCount: 0, skippedExistingCount: 0)
         let drawing = progress.drawingCommit
@@ -870,15 +873,20 @@ enum ExternalImportCommitter {
                                         insertedDrawingCount: 0,
                                         skippedExistingDrawingCount: 0)
         let skipped = waypoint.skippedExistingCount + drawing.skippedExistingDrawingCount
-        var message = L10n.text("Imported %1$@ and %2$@",
-                                L10n.quantity("new_waypoint", waypoint.insertedCount),
-                                L10n.quantity("new_drawing", drawing.insertedDrawingCount))
-        if drawing.insertedLayerCount > 0 {
-            message += L10n.text(" across %1$@", L10n.quantity("new_layer", drawing.insertedLayerCount))
+        let waypointCount = Messages.newWaypointCountMessage(waypoint.insertedCount)
+        let drawingCount = Messages.newDrawingCountMessage(drawing.insertedDrawingCount)
+        let layerCount = Messages.newLayerCountMessage(drawing.insertedLayerCount)
+        let skippedText = DisplayFormat.number(Double(skipped), decimals: 0)
+        let message: LocalizedMessage
+        if drawing.insertedLayerCount > 0 && skipped > 0 {
+            message = Messages.importCompleteLayersSkippedSummaryMessage("", "", "", skippedText).withArgument(2, layerCount)
+        } else if drawing.insertedLayerCount > 0 {
+            message = Messages.importCompleteLayersSummaryMessage("", "", "").withArgument(2, layerCount)
+        } else if skipped > 0 {
+            message = Messages.importCompleteSkippedSummaryMessage("", "", skippedText)
+        } else {
+            message = Messages.importCompleteSummaryMessage("", "")
         }
-        if skipped > 0 {
-            message += L10n.text("; skipped %1$@ already-present objects", skipped)
-        }
-        return message + "."
+        return message.withArgument(0, waypointCount).withArgument(1, drawingCount)
     }
 }

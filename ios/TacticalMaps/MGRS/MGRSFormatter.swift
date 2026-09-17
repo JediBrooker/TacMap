@@ -19,22 +19,24 @@ enum MGRSFormatter {
         let usedLocalContext: Bool
     }
 
-    enum GridReferenceError: LocalizedError, Equatable {
+    enum GridReferenceError: LocalizedError, LocalizedMessageError, Equatable {
         case empty
         case unsupportedPrecision
         case invalidReference
         case unavailableLocalContext
 
-        var errorDescription: String? {
+        var errorDescription: String? { localizedMessage.text }
+
+        var localizedMessage: LocalizedMessage {
             switch self {
             case .empty:
-                return L10n.text("Enter an MGRS grid reference.")
+                return Messages.displayEnterAnMgrsGridReferenceMessage()
             case .unsupportedPrecision:
-                return L10n.text("Use a 4, 6, 8, or 10-figure grid reference.")
+                return Messages.displayUseAOrFigureGridReferenceMessage()
             case .invalidReference:
-                return L10n.text("Enter a valid full MGRS reference or a local 4, 6, 8, or 10-figure grid.")
+                return Messages.displayEnterAValidFullMgrsReferenceOrALocalMessage()
             case .unavailableLocalContext:
-                return L10n.text("A local MGRS grid context is unavailable at this symbol's location. Enter a full MGRS reference.")
+                return Messages.displayALocalMgrsGridContextIsUnavailableAtThisMessage()
             }
         }
     }

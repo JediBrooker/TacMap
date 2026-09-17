@@ -74,7 +74,7 @@ struct TileMapContainer: UIViewRepresentable {
     var drawingControlsPreview: DrawingShape?
     var peers: [String: PresencePeer] = [:]
     var onPeerTap: (String) -> Void
-    var onMutationError: (String) -> Void
+    var onMutationError: (LocalizedMessage) -> Void
 
     func makeUIView(context: Context) -> TileMapView {
         let start = locationService.lastLocation?.coordinate
@@ -276,7 +276,7 @@ struct TileMapContainer: UIViewRepresentable {
         func wireEditing(mapVM: MapViewModel, waypointStore: WaypointStore,
                          drawingStore: DrawingStore, drawingSession: DrawingSessionViewModel,
                          measureSession: MeasureSession, calibration: CalibrationSession,
-                         onMutationError: @escaping (String) -> Void) {
+                         onMutationError: @escaping (LocalizedMessage) -> Void) {
             editing.mapVM = mapVM
             editing.waypointStore = waypointStore
             editing.drawingStore = drawingStore

@@ -1,6 +1,7 @@
 package com.tacmap.map
 
 import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 import com.tacmap.localization.L10n
 
@@ -44,8 +45,10 @@ import kotlin.math.abs
 
 data class MapSelectionPersistenceIssue(
     val id: Long,
-    val message: String,
-)
+    val pendingMessage: LocalizedMessage,
+) {
+    val message: String get() = pendingMessage.text
+}
 
 private sealed interface PendingMapSelectionTransition {
     data class Online(
@@ -240,7 +243,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         if (succeeded && clearRetained && !pdfSessionStore.clear()) {
             reportMapSelectionIssue(
                 transition = PendingMapSelectionTransition.ClearPdfSession,
-                message = L10n.text("The PDF map was unloaded, but its private session metadata could not be removed. Retry cleanup."),
+                message = Messages.displayThePdfMapWasUnloadedButItsPrivateSessionMessage(),
             )
         }
         return succeeded
@@ -338,7 +341,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                             onlineBasemap(),
                             preferredBaseMap,
                         ),
-                        message = Messages.basemapRecoveryRequired(),
+                        message = Messages.basemapRecoveryRequiredMessage(),
                     )
                 }
             }
@@ -410,7 +413,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 reportMapSelectionIssue(
                     transition,
-                    L10n.text("PDF session cleanup still could not be saved. Check device storage and retry."),
+                    Messages.displayPdfSessionCleanupStillCouldNotBeSavedCheckMessage(),
                 )
                 false
             }
@@ -458,11 +461,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             is MapSelectionCommitResult.Failed -> {
                 val message = when (outcome.reason) {
                     MapSelectionCommitFailure.PDF_SESSION ->
-                        L10n.text("The PDF map could not be saved for relaunch. The previous map remains active. Check device storage and retry.")
+                        Messages.displayThePdfMapCouldNotBeSavedForRelauncha195ed9eMessage()
                     MapSelectionCommitFailure.SELECTOR ->
-                        L10n.text("The basemap choice could not be saved. The previous map remains active. Check device storage and retry.")
+                        Messages.displayTheBasemapChoiceCouldNotBeSavedThePrevious420c88c7Message()
                     MapSelectionCommitFailure.PDF_SESSION_ROLLBACK ->
-                        L10n.text("Map storage recovery did not complete. Keep the app open and retry before closing it.")
+                        Messages.displayMapStorageRecoveryDidNotCompleteKeepTheApp10246bcbMessage()
                 }
                 reportMapSelectionIssue(transition, message)
                 false
@@ -480,12 +483,12 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun reportMapSelectionIssue(
         transition: PendingMapSelectionTransition,
-        message: String,
+        message: LocalizedMessage,
     ) {
         pendingMapSelectionTransition = transition
         _mapSelectionPersistenceIssue.value = MapSelectionPersistenceIssue(
             id = ++nextMapSelectionIssueId,
-            message = message,
+            pendingMessage = message,
         )
     }
 

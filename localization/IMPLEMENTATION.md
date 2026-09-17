@@ -1,3 +1,5 @@
+> Current release implementation and verification: [VERIFICATION.md](VERIFICATION.md). The milestone notes below record the incremental work and may describe earlier checkpoints.
+
 # Full localisation implementation
 
 The implementation is split into the six milestones in the [full localisation plan](PLAN.md). English and German are the current release languages. Milestones 1 and 2 establish the measured backlog, regression guard and extensible catalogue; it does not certify every screen as visually or linguistically reviewed.

@@ -239,6 +239,20 @@ def scan(source, platform, path='<fixture>'):
                             sinks.append(('enum.' + tokens[i + 2].value, a, b))
                     k = stop + 1
                 else: k += 1
+    # Top-level Kotlin initializers run once; only getters may translate copy.
+    if platform == 'android':
+        depth = 0
+        for i, token in enumerate(tokens):
+            if token.value == '{': depth += 1
+            elif token.value == '}': depth -= 1
+            elif depth == 0 and token.value in ('val', 'var'):
+                j = i + 1
+                while j < len(tokens) and tokens[j].value not in ('=', 'get', 'val', 'var', 'fun', 'class', 'object'):
+                    j += 1
+                if j >= len(tokens) or tokens[j].value != '=': continue
+                k = j + 1
+                if k + 3 < len(tokens) and [t.value for t in tokens[k:k + 4]] == ['L10n', '.', 'text', '(']:
+                    sinks.append(('cached.topLevel', k + 4, matched[k + 3]))
     found = {}
     for sink, a, b in sinks:
         for index in range(a, b):

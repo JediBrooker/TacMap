@@ -4,14 +4,16 @@ import SwiftUI
 /// picks "Drawings". Replaces the full `DrawingsSheet` modal for the
 /// common start-a-new-drawing path, full list is one tap away.
 struct DrawingsPanel: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var session: DrawingSessionViewModel
     let onShowAll: () -> Void
     let onDismiss: () -> Void
-    @State private var mutationError: String?
+    @State private var mutationError: LocalizedMessage?
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(L10n.text("DRAW"))
@@ -30,6 +32,7 @@ struct DrawingsPanel: View {
                         .contentShape(Rectangle().inset(by: -4))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(L10n.text("Close"))
             }
             .padding(.horizontal, 4)
 
@@ -77,16 +80,18 @@ struct DrawingsPanel: View {
             }
         }
         .padding(8)
+        }
+        .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? 430 : 520)
         .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.12)))
-        .frame(width: 250)
+        .frame(width: dynamicTypeSize.isAccessibilitySize ? 320 : 250)
         .alert(L10n.text("Drawing Not Deleted"), isPresented: Binding(
             get: { mutationError != nil },
             set: { if !$0 { mutationError = nil } }
         )) {
             Button(Messages.acknowledge(), role: .cancel) { mutationError = nil }
         } message: {
-            Text(mutationError ?? L10n.text("The drawing could not be deleted. Check available storage, then try again."))
+            Text(mutationError?.text ?? L10n.text("The drawing could not be deleted. Check available storage, then try again."))
         }
     }
 
@@ -110,7 +115,7 @@ struct DrawingsPanel: View {
                 do {
                     _ = try drawingStore.deleteDurably(shape)
                 } catch {
-                    mutationError = L10n.text("%1$@ Check available storage, then try again.", error.localizedDescription)
+                    mutationError = Messages.displayCheckAvailableStorageThenTryAgainMessage("").withArgument(0, error.displayMessage)
                 }
             } label: {
                 Image(systemName: "trash")
@@ -156,6 +161,7 @@ struct DrawingsPanel: View {
                         .font(.system(size: 9).weight(.bold))
                         .foregroundStyle(.white.opacity(0.5))
                     Text(active?.displayName ?? "—")
+                        .fixedSize(horizontal: false, vertical: true)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white)
                 }
@@ -194,9 +200,11 @@ struct DrawingsPanel: View {
                     .frame(width: 28)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(label ?? L10n.text("New %1$@", kind.displayName))
+                        .fixedSize(horizontal: false, vertical: true)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                     Text(subtitle)
+                        .fixedSize(horizontal: false, vertical: true)
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.65))
                 }

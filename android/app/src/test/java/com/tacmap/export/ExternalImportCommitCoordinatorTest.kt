@@ -56,6 +56,6 @@ class ExternalImportCommitCoordinatorTest {
         )
         assertTrue(result.succeeded)
         assertFalse(result.partialCommit)
-        assertTrue(result.message.contains("1 waypoint(s) and 1 drawing(s)"))
+        assertTrue(result.message.contains("1 waypoint and 1 drawing"))
     }
 }

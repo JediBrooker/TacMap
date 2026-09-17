@@ -2,13 +2,14 @@ import CoreLocation
 import Foundation
 import PDFKit
 
-enum PDFMapImportError: LocalizedError, Equatable {
+enum PDFMapImportError: LocalizedMessageError, LocalizedError, Equatable {
     case invalidPDF
 
-    var errorDescription: String? {
+    var errorDescription: String? { localizedMessage.text }
+        var localizedMessage: LocalizedMessage {
         switch self {
         case .invalidPDF:
-            return L10n.text("Couldn't import this file as a valid PDF map.")
+            return Messages.displayCouldnTImportThisFileAsAValidPdfMessage()
         }
     }
 }

@@ -5,6 +5,7 @@ struct TacMapChatView: View {
     @ObservedObject var manager: SyncManager
     @ObservedObject var store: TacMapChatStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var scope: TacMapChatScope
     /// Immutable actor + session + chat-key tuple captured at selection time.
@@ -32,12 +33,26 @@ struct TacMapChatView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                recipientControls
-                Divider()
-                history
-                Divider()
-                composer
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            recipientControls.fixedSize(horizontal: false, vertical: true)
+                            Divider()
+                            history.frame(minHeight: 250)
+                            Divider()
+                            composer.fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        recipientControls
+                        Divider()
+                        history
+                        Divider()
+                        composer
+                    }
+                }
             }
             .navigationTitle("TacMap Chat")
             .navigationBarTitleDisplayMode(.inline)
@@ -212,10 +227,12 @@ struct TacMapChatView: View {
                     .foregroundStyle(.secondary)
                 Text(scope == .room ? L10n.text("No room messages yet") : L10n.text("No messages with this unit yet"))
                     .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(L10n.text("Chat is live-only. Messages missed while a unit is offline are not recovered by the relay."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 28)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

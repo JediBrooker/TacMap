@@ -146,8 +146,11 @@ final class OpsecSettings: ObservableObject {
     @Published private(set) var relayURL: String
     @Published private(set) var coordinateDisplayFormat: CoordinateDisplayFormat
     @Published private(set) var mapOrientationMode: MapOrientationMode
-    @Published private(set) var persistenceIssue: String?
-    @Published private(set) var relayValidationIssue: String?
+    @Published private var pendingPersistenceIssue: LocalizedMessage?
+    var persistenceMessage: LocalizedMessage? { pendingPersistenceIssue }
+    var persistenceIssue: String? { pendingPersistenceIssue?.text }
+    @Published private var pendingRelayValidationIssue: LocalizedMessage?
+    var relayValidationIssue: String? { pendingRelayValidationIssue?.text }
 
     // Host only, no "/room/" - SyncManager appends the full "/room/<id>" path
     // itself. (Matches SyncManager.relayBase; a trailing "/room/" here would
@@ -164,8 +167,8 @@ final class OpsecSettings: ObservableObject {
     ) {
         self.defaults = defaults
         self.synchronize = synchronize
-        persistenceIssue = nil
-        relayValidationIssue = nil
+        pendingPersistenceIssue = nil
+        pendingRelayValidationIssue = nil
         privacyScreen = defaults.object(forKey: Keys.privacy) as? Bool ?? true
         onlineLookups = defaults.object(forKey: Keys.online) as? Bool ?? Self.defaultOnlineLookups
         onlineBasemaps = defaults.object(forKey: Keys.basemaps) as? Bool ?? Self.defaultOnlineBasemaps
@@ -196,7 +199,7 @@ final class OpsecSettings: ObservableObject {
            !persist(relayResolution.endpoint, key: Keys.relay, verify: {
                self.defaults.string(forKey: Keys.relay) == relayResolution.endpoint
            }) {
-            persistenceIssue = L10n.text("The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.")
+            pendingPersistenceIssue = Messages.displayTheSavedUnitSyncRelayWasUnsafeOrObsoleteMessage()
         }
     }
 
@@ -251,17 +254,17 @@ final class OpsecSettings: ObservableObject {
         do {
             normalized = try RelayEndpointPolicy.normalize(value)
         } catch let error as RelayEndpointPolicy.ValidationError {
-            relayValidationIssue = error.localizedDescription
+            pendingRelayValidationIssue = error.pendingMessage
             return false
         } catch {
-            relayValidationIssue = L10n.text("The relay address is not valid.")
+            pendingRelayValidationIssue = Messages.displayTheRelayAddressIsNotValidMessage()
             return false
         }
         guard persist(normalized, key: Keys.relay, verify: {
             self.defaults.string(forKey: Keys.relay) == normalized
         }) else { return false }
         relayURL = normalized
-        relayValidationIssue = nil
+        pendingRelayValidationIssue = nil
         return true
     }
 
@@ -271,7 +274,7 @@ final class OpsecSettings: ObservableObject {
     }
 
     func clearRelayValidationIssue() {
-        relayValidationIssue = nil
+        pendingRelayValidationIssue = nil
     }
 
     @discardableResult
@@ -309,10 +312,10 @@ final class OpsecSettings: ObservableObject {
                 defaults.removeObject(forKey: key)
             }
             _ = synchronize(defaults)
-            persistenceIssue = L10n.text("Could not save this privacy setting. The previous setting remains active; check available storage and try again.")
+            pendingPersistenceIssue = Messages.displayCouldNotSaveThisPrivacySettingThePreviousSettingMessage()
             return false
         }
-        persistenceIssue = nil
+        pendingPersistenceIssue = nil
         return true
     }
 

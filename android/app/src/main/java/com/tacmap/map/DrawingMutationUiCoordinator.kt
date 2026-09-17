@@ -1,6 +1,8 @@
 package com.tacmap.map
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 /** Durable drawing operations exposed to UI surfaces. */
 internal enum class DrawingMutationIntent {
@@ -17,7 +19,9 @@ internal enum class DrawingMutationIntent {
  */
 sealed interface DrawingMutationUiResult {
     data object Saved : DrawingMutationUiResult
-    data class Failed(val message: String) : DrawingMutationUiResult
+    data class Failed(val pendingMessage: LocalizedMessage) : DrawingMutationUiResult {
+        val message: String get() = pendingMessage.text
+    }
 
     val saved: Boolean get() = this === Saved
     val shouldCloseTransientUi: Boolean get() = saved
@@ -32,13 +36,13 @@ internal object DrawingMutationUiCoordinator {
         val saved = runCatching(persist).getOrDefault(false)
         if (saved) return DrawingMutationUiResult.Saved
         val subject = when (intent) {
-            DrawingMutationIntent.CREATE -> L10n.text("The drawing was not saved. Your draft is still open.")
-            DrawingMutationIntent.EDIT -> L10n.text("The drawing change was not saved. The previous drawing remains active.")
-            DrawingMutationIntent.DELETE -> L10n.text("The drawing was not deleted. It remains selected.")
-            DrawingMutationIntent.VISIBILITY -> L10n.text("Layer visibility was not saved. The previous setting remains active.")
+            DrawingMutationIntent.CREATE -> Messages.displayTheDrawingWasNotSavedYourDraftIsStillMessage()
+            DrawingMutationIntent.EDIT -> Messages.displayTheDrawingChangeWasNotSavedThePreviousDrawingMessage()
+            DrawingMutationIntent.DELETE -> Messages.displayTheDrawingWasNotDeletedItRemainsSelectedMessage()
+            DrawingMutationIntent.VISIBILITY -> Messages.displayLayerVisibilityWasNotSavedThePreviousSettingRemainsMessage()
         }
         return DrawingMutationUiResult.Failed(
-            L10n.text("%1\$s Unlock mission data or free device storage, then tap Retry.", subject)
+            Messages.displayUnlockMissionDataOrFreeDeviceStorageThenTapMessage("").withArgument(0, subject)
         )
     }
 }

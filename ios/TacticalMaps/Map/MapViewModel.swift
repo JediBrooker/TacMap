@@ -5,7 +5,8 @@ import Combine
 
 struct MapSelectionPersistenceIssue: Identifiable, Equatable {
     let id: UUID
-    let message: String
+    let pendingMessage: LocalizedMessage
+    var message: String { pendingMessage.text }
 }
 
 enum MapSelectionCommitFailure: Equatable {
@@ -265,7 +266,7 @@ final class MapViewModel: ObservableObject {
         case .unavailable:
             reportMapSelectionIssue(
                 transition: .restoreActive,
-                message: L10n.text("The saved basemap is locked or unreadable. Unlock mission data, then tap Retry. The current map remains active.")
+                message: Messages.displayTheSavedBasemapIsLockedOrUnreadableUnlockMissionMessage()
             )
             return nil
         }
@@ -343,7 +344,7 @@ final class MapViewModel: ObservableObject {
             } catch {
                 reportMapSelectionIssue(
                     transition: transition,
-                    message: L10n.text("The imported map could not be deleted securely. The online map remains active and the saved entry was preserved where possible. Unlock mission data or free storage, then tap Retry. %1$@", error.localizedDescription)
+                    message: Messages.displayTheImportedMapCouldNotBeDeletedSecurelyTheMessage("").withArgument(0, error.displayMessage)
                 )
                 return false
             }
@@ -358,7 +359,7 @@ final class MapViewModel: ObservableObject {
             } catch {
                 reportMapSelectionIssue(
                     transition: transition,
-                    message: L10n.text("The unavailable saved-map entry could not be removed. Unlock mission data or free storage, then tap Retry. %1$@", error.localizedDescription)
+                    message: Messages.displayTheUnavailableSavedMapEntryCouldNotBeRemovedMessage("").withArgument(0, error.displayMessage)
                 )
                 return false
             }
@@ -377,24 +378,24 @@ final class MapViewModel: ObservableObject {
     private func reportMapSelectionFailure(_ outcome: MapSelectionCommitResult,
                                            transition: PendingMapSelectionTransition) {
         guard case .failed(let reason) = outcome else { return }
-        let message: String
+        let message: LocalizedMessage
         switch reason {
         case .pdfSession:
-            message = L10n.text("The PDF map could not be saved for relaunch. The previous map remains active. Unlock mission data or free storage, then tap Retry.")
+            message = Messages.displayThePdfMapCouldNotBeSavedForRelaunchMessage()
         case .selector:
-            message = L10n.text("The basemap choice could not be saved. The previous map remains active. Unlock mission data or free storage, then tap Retry.")
+            message = Messages.displayTheBasemapChoiceCouldNotBeSavedThePreviousMessage()
         case .pdfSessionRollback:
-            message = L10n.text("Map storage recovery did not complete. Keep the app open, unlock mission data or free storage, then tap Retry before closing the app.")
+            message = Messages.displayMapStorageRecoveryDidNotCompleteKeepTheAppMessage()
         }
         reportMapSelectionIssue(transition: transition, message: message)
     }
 
     private func reportMapSelectionIssue(transition: PendingMapSelectionTransition,
-                                         message: String) {
+                                         message: LocalizedMessage) {
         pendingMapSelectionTransition = transition
         mapSelectionPersistenceIssue = MapSelectionPersistenceIssue(
             id: UUID(),
-            message: message
+            pendingMessage: message
         )
     }
 

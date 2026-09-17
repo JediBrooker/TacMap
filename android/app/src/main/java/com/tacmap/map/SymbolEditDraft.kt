@@ -3,6 +3,8 @@ package com.tacmap.map
 import com.tacmap.localization.DecimalInput
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingLayer
@@ -12,13 +14,15 @@ import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.normalizedUnitAmplifiersForKind
 
-internal val ELEVATION_VALIDATION_ERROR: String get() = L10n.text("Enter a valid elevation in metres.")
-internal val MGRS_MOVE_VALIDATION_ERROR =
-    L10n.text("Enter a 4, 6, 8, or 10-figure grid, or full MGRS at one of those precisions.")
+internal val ELEVATION_VALIDATION_MESSAGE: LocalizedMessage get() = Messages.displayEnterAValidElevationInMetresMessage()
+internal val MGRS_MOVE_VALIDATION_MESSAGE: LocalizedMessage get() =
+    Messages.displayEnterAOrFigureGridOrFullMgrsAtMessage()
 
 internal sealed interface SymbolDraftResult {
     data class Valid(val waypoint: Waypoint) : SymbolDraftResult
-    data class Invalid(val message: String) : SymbolDraftResult
+    data class Invalid(val pendingMessage: LocalizedMessage) : SymbolDraftResult {
+        val message: String get() = pendingMessage.text
+    }
 }
 
 /** UI-only selected-symbol draft. Nothing here owns a store or publishes a
@@ -78,14 +82,14 @@ internal data class SymbolEditDraft(
         } else {
             resolveMgrsCoordinate(mgrsInput, latitude, longitude)?.let {
                 it.latitude to it.longitude
-            } ?: return SymbolDraftResult.Invalid(MGRS_MOVE_VALIDATION_ERROR)
+            } ?: return SymbolDraftResult.Invalid(MGRS_MOVE_VALIDATION_MESSAGE)
         }
         val cleanElevation = elevationText.trim()
         val elevation = if (cleanElevation.isBlank()) {
             null
         } else {
             DecimalInput.parse(cleanElevation)
-                ?: return SymbolDraftResult.Invalid(ELEVATION_VALIDATION_ERROR)
+                ?: return SymbolDraftResult.Invalid(ELEVATION_VALIDATION_MESSAGE)
         }
         val fallbackLayerId = layers.firstOrNull {
             it.id == DrawingDocument.DEFAULT_LAYER_ID
@@ -122,3 +126,7 @@ internal data class SymbolEditDraft(
 
 internal const val MIN_SYMBOL_SCALE = 0.1
 internal const val MAX_SYMBOL_SCALE = 20.0
+
+internal val ELEVATION_VALIDATION_ERROR: String get() = ELEVATION_VALIDATION_MESSAGE.text
+
+internal val MGRS_MOVE_VALIDATION_ERROR: String get() = MGRS_MOVE_VALIDATION_MESSAGE.text

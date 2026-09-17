@@ -32,9 +32,9 @@ object L10n {
         val context = application?.let(AppLanguage::localizedContext)
         val id = localizedStringIds[key]
         val format = if (context != null && id != null) context.getString(id) else key
-        if (arguments.isEmpty()) return format
+        if (arguments.isEmpty()) return expandedForTesting(format)
         val locale = context?.resources?.configuration?.locales?.get(0) ?: Locale.ENGLISH
-        return String.format(locale, format, *arguments.map { it.toString() }.toTypedArray())
+        return expandedForTesting(String.format(locale, format, *arguments.map { it.toString() }.toTypedArray()))
     }
 
     /** Stable-ID lookup used by generated accessors; display arguments are typed strings. */
@@ -42,16 +42,26 @@ object L10n {
         val context = application?.let(AppLanguage::localizedContext)
         val resource = localizedStringIds[id]
         val format = if (context != null && resource != null) context.getString(resource) else fallback
-        if (arguments.isEmpty()) return format
+        if (arguments.isEmpty()) return expandedForTesting(format)
         val locale = context?.resources?.configuration?.locales?.get(0) ?: Locale.ENGLISH
-        return String.format(locale, format, *arguments)
+        return expandedForTesting(String.format(locale, format, *arguments))
     }
 
     fun quantity(noun: String, count: Int): String {
         val context = application?.let(AppLanguage::localizedContext)
         val id = localizedPluralIds.getValue(noun)
-        if (context != null) return context.resources.getQuantityString(id, count, count)
+        if (context != null) return expandedForTesting(context.resources.getQuantityString(id, count, count))
         val forms = englishPlurals.getValue(noun)
         return String.format(Locale.ENGLISH, if (count == 1) forms.first else forms.second, count)
     }
+    /** Debug-only synthetic layout stress; never an enabled release language. */
+    private fun expandedForTesting(text: String): String {
+        if (com.tacmap.BuildConfig.DEBUG && text.isNotEmpty() && application
+            ?.getSharedPreferences("localization_qa", Context.MODE_PRIVATE)
+            ?.getBoolean("expanded_text", false) == true) {
+            return "⟦" + text + "·".repeat(maxOf(4, text.length / 2)) + "⟧"
+        }
+        return text
+    }
+
 }

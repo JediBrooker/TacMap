@@ -19,6 +19,7 @@ struct WeatherSheet: View {
 
     var body: some View {
         NavigationStack {
+            ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 // location label
                 Text(MGRSFormatter.string(from: coordinate))
@@ -51,7 +52,9 @@ struct WeatherSheet: View {
                 Spacer()
             }
             .padding()
-            .navigationTitle(L10n.text("Weather & UAV Safety"))
+            .fixedSize(horizontal: false, vertical: true)
+            }
+            .navigationTitle(Messages.weatherScreenTitle())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } } }
             .task(id: WeatherTaskKey(reloadToken: reloadToken, onlineLookups: opsec.onlineLookups)) {

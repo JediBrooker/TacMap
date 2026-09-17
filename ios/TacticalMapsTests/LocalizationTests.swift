@@ -2,6 +2,27 @@ import XCTest
 @testable import TacticalMaps
 
 final class LocalizationTests: XCTestCase {
+    func testRetainedPluralSummaryAndNestedErrorsUseTheSelectedLanguage() {
+        let original = AppLanguage.shared.selection
+        defer { AppLanguage.shared.select(original) }
+        AppLanguage.shared.select(.en)
+        let summary = Messages.importCompleteSummaryMessage("", "")
+            .withArgument(0, Messages.newWaypointCountMessage(1))
+            .withArgument(1, Messages.newDrawingCountMessage(2))
+        let error = WaypointMutationError.persistenceFailed(DataKey.LockedError()).displayMessage
+        XCTAssertEqual(summary.text, "Imported 1 new waypoint and 2 new drawings.")
+        XCTAssertTrue(error.text.contains("Mission data key is locked"))
+        let mapIssue = MapSelectionPersistenceIssue(id: UUID(), pendingMessage: error)
+        let identity = mapIssue.id
+        AppLanguage.shared.select(.de)
+        XCTAssertEqual(summary.text, "1 neuer Wegpunkt und 2 neue Zeichnungen importiert.")
+        XCTAssertFalse(mapIssue.message.contains("Mission data key is locked"))
+        XCTAssertEqual(mapIssue.id, identity)
+        XCTAssertEqual(mapIssue.pendingMessage, error)
+        XCTAssertFalse(MissionLayerMutationError.locked(store: .drawings).localizedDescription.contains("drawings"))
+        XCTAssertFalse(MissionLayerMutationError.locked(store: .waypoints).localizedDescription.contains("waypoints"))
+    }
+
     func testRetainedPermissionGuidanceRefreshesWithoutRestartingRecording() {
         let language = AppLanguage.shared
         let original = language.selection

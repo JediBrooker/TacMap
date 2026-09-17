@@ -16,7 +16,7 @@ class GeoJsonImportHandlerTest {
 
         assertTrue(feedback.succeeded)
         assertEquals(1, appliedWaypoints)
-        assertEquals("Imported 1 waypoint(s) and 0 drawing(s)", feedback.message)
+        assertEquals("Imported 1 waypoint and 0 drawings.", feedback.message)
     }
 
     @Test fun unreadablePickerDocumentProducesVisibleErrorAndDoesNotApply() {

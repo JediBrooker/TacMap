@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.background
@@ -54,7 +56,7 @@ fun WaypointListSheet(
     onFlyTo: (lat: Double, lng: Double) -> Unit
 ) {
     var pendingEditor by remember { mutableStateOf<SymbolEditorMode?>(null) }
-    var creationError by remember { mutableStateOf<String?>(null) }
+    var creationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -144,7 +146,7 @@ fun WaypointListSheet(
                 SymbolEditorMode.MARKER -> L10n.text("New Marker")
             },
             actionLabel = L10n.text("Place"),
-            submissionError = creationError,
+            submissionError = creationError?.text,
             onDismiss = { creationError = null; pendingEditor = null },
             onConfirm = { name, kind, higherFormation, uniqueIdentifier, reinforcementStatus ->
                 val waypoint = Waypoint(
@@ -163,7 +165,7 @@ fun WaypointListSheet(
                         pendingEditor = null
                         onDismiss()
                     }
-                    is DurableSymbolCreation.Failed -> creationError = result.message
+                    is DurableSymbolCreation.Failed -> creationError = result.pendingMessage
                 }
             }
         )
