@@ -196,13 +196,13 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         XCTAssertTrue(PDFSessionStore.save(source))
         XCTAssertTrue(ActiveMapSelectionStore.save(source))
 
-        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmStreet)))
+        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
 
         guard case .restored(let active) = ActiveMapSelectionStore.restore(),
               let online = active as? OnlineRasterBasemapSource else {
             return XCTFail("the active selection must stay online after a cold restore")
         }
-        XCTAssertEqual(online.style, .osmStreet)
+        XCTAssertEqual(online.style, .osmTopo)
 
         for _ in 0..<2 {
             guard case .restored(let retained) = ActiveMapSelectionStore.restoreRetained(),
@@ -249,12 +249,12 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         XCTAssertTrue(ActiveMapSelectionStore.save(try XCTUnwrap(OfflineTileMapSource(url: file))))
 
         XCTAssertTrue(ActiveMapSelectionStore.save(
-            OnlineRasterBasemapSource(.osmStreet),
+            OnlineRasterBasemapSource(.osmTopo),
             clearRetained: true
         ))
 
         guard case .restored(let active) = ActiveMapSelectionStore.restore(),
-              (active as? OnlineRasterBasemapSource)?.style == .osmStreet else {
+              (active as? OnlineRasterBasemapSource)?.style == .osmTopo else {
             return XCTFail("online active choice should commit with the clear")
         }
         guard case .noRetainedMap = ActiveMapSelectionStore.restoreRetained() else {

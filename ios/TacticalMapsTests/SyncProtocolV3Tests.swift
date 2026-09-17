@@ -1145,22 +1145,21 @@ final class SyncProtocolV3Tests: XCTestCase {
 
     func testPersistenceFailureRollsBackReservedCounter() throws {
         enum Expected: Error { case unavailable }
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sync-replay-test-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        var writes = 0
-        let state = SyncReplayState(
-            roomId: "persistence-test",
-            containerURL: directory,
-            persistenceWriter: { _, _, _ in
-                writes += 1
-                if writes > 1 { throw Expected.unavailable }
-            })
-        XCTAssertEqual(try state.reserveNextCounter(), 1)
-        XCTAssertThrowsError(try state.reserveNextCounter())
-        XCTAssertEqual(state.localCounter, 1, "an unsaved counter must not become sendable")
+        // The persistence path derives encrypted store names before invoking the
+        // injected writer, so this test needs its own key like the other store tests.
+        try withReplayPersistenceSandbox(keyByte: 0x30) { directory, _ in
+            var writes = 0
+            let state = SyncReplayState(
+                roomId: "persistence-test",
+                containerURL: directory,
+                persistenceWriter: { _, _, _ in
+                    writes += 1
+                    if writes > 1 { throw Expected.unavailable }
+                })
+            XCTAssertEqual(try state.reserveNextCounter(), 1)
+            XCTAssertThrowsError(try state.reserveNextCounter())
+            XCTAssertEqual(state.localCounter, 1, "an unsaved counter must not become sendable")
+        }
     }
 
     func testLocalHelloEpochPinsActorAtomicallyAndSurvivesColdReload() throws {

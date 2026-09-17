@@ -41,8 +41,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild -version
-          xcodebuild -version | grep -Eq '^Xcode 26([.]|$)'
+          # Read all output before testing it: grep -q can close the pipe early
+          # and make xcodebuild abort with a broken pipe under pipefail.
+          xcode_version="$(xcodebuild -version)"
+          printf '%s\n' "$xcode_version"
+          grep -Eq '^Xcode 26([.]|$)' <<< "$xcode_version"
 
       - name: Xcode + Simulator runtime info
         shell: bash
