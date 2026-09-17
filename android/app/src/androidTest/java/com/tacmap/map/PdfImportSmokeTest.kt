@@ -14,6 +14,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.filters.SdkSuppress
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
@@ -65,7 +66,10 @@ class PdfImportSmokeTest {
         }
     }
 
+    // This picker fixture uses the scoped MediaStore Downloads API (Android 10+).
+    // The import/render pipeline and localisation tests also run on API 26.
     @Test
+    @SdkSuppress(minSdkVersion = 29)
     fun importsPdfThroughUserInterfaceAndSurvivesSecurityLock() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

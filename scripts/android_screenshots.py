@@ -305,6 +305,12 @@ try:
         ensure_map()
         snap("00-map")
         destinations = ["Search", "Symbology", "Drawings", "Layers and Labels", "Weather & UAV Safety", "Import / Export", "TacMap Chat", "Unit Sync", "App Lock", "Settings, Privacy & OPSEC", "About & Credits"]
+        requested = os.environ.get("TACMAP_SCREENSHOT_DESTINATIONS")
+        if requested:
+            selected = requested.split("|")
+            if any(item not in destinations for item in selected):
+                raise ValueError("Unknown screenshot destination")
+            destinations = selected
         for index, destination in enumerate(destinations, 1):
             relaunch(wait_for_map=True)
             ensure_map()

@@ -44,7 +44,10 @@ final class LocalizationCaptureTests: XCTestCase {
 
     func testExpandedEnglishScreens() { capture(language: "en", largeText: false, expanded: true) }
 
-    private func capture(language: String, largeText: Bool, expanded: Bool = false) {
+    func testEnglishStoreScreens() { capture(language: "en", largeText: false, storeOnly: true) }
+    func testGermanStoreScreens() { capture(language: "de", largeText: false, storeOnly: true) }
+
+    private func capture(language: String, largeText: Bool, expanded: Bool = false, storeOnly: Bool = false) {
         continueAfterFailure = false
         let destinations: [(String, String)] = [
             ("Search…", "Suchen …"),
@@ -67,6 +70,7 @@ final class LocalizationCaptureTests: XCTestCase {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         }
         for (index, destination) in destinations.enumerated() {
+            if storeOnly && !["Layers and Labels", "Import / Export…", "Settings, Privacy & OPSEC"].contains(destination.0) { continue }
             app.launch()
             let menu = app.buttons["map.menu"]
             XCTAssertTrue(menu.waitForExistence(timeout: 20))

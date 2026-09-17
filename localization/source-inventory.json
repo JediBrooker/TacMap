@@ -3,7 +3,8 @@
     "path": "ios/TacticalMaps/App/AcknowledgementsView.swift",
     "platform": "ios",
     "area": "navigation-settings",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "ios/TacticalMaps/App/AppLock.swift",
@@ -27,7 +28,8 @@
     "path": "ios/TacticalMaps/App/LockView.swift",
     "platform": "ios",
     "area": "navigation-settings",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "ios/TacticalMaps/App/OpsecSettings.swift",
@@ -39,7 +41,8 @@
     "path": "ios/TacticalMaps/App/OpsecSettingsView.swift",
     "platform": "ios",
     "area": "navigation-settings",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "ios/TacticalMaps/App/SheetSizing.swift",
@@ -435,7 +438,8 @@
     "path": "ios/TacticalMaps/Map/MapSideToolbar.swift",
     "platform": "ios",
     "area": "map-navigation",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "ios/TacticalMaps/Map/MapViewModel.swift",
@@ -567,7 +571,8 @@
     "path": "ios/TacticalMaps/Map/WeatherSheet.swift",
     "platform": "ios",
     "area": "weather-terrain",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "ios/TacticalMaps/Models/LocationService.swift",
@@ -585,7 +590,8 @@
     "path": "ios/TacticalMaps/Search/SearchSheet.swift",
     "platform": "ios",
     "area": "search",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "ios/TacticalMaps/Sync/PresenceConfig.swift",
@@ -753,7 +759,8 @@
     "path": "ios/TacticalMaps/Waypoints/WaypointListSheet.swift",
     "platform": "ios",
     "area": "symbols-waypoints",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "ios/TacticalMaps/Waypoints/WaypointStore.swift",
@@ -777,7 +784,8 @@
     "path": "android/app/src/main/java/com/tacmap/app/AppLockUi.kt",
     "platform": "android",
     "area": "navigation-settings",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "android/app/src/main/java/com/tacmap/app/CrashReporter.kt",
@@ -1131,7 +1139,8 @@
     "path": "android/app/src/main/java/com/tacmap/map/ImportExportSheet.kt",
     "platform": "android",
     "area": "import-export",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "android/app/src/main/java/com/tacmap/map/LayerPrefs.kt",
@@ -1239,7 +1248,8 @@
     "path": "android/app/src/main/java/com/tacmap/map/OpsecSettingsDialog.kt",
     "platform": "android",
     "area": "navigation-settings",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "android/app/src/main/java/com/tacmap/map/PrimaryCoordinateDisplay.kt",
@@ -1251,7 +1261,8 @@
     "path": "android/app/src/main/java/com/tacmap/map/SearchDialog.kt",
     "platform": "android",
     "area": "search",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "android/app/src/main/java/com/tacmap/map/SelectedSymbolEditorDialog.kt",
@@ -1293,7 +1304,8 @@
     "path": "android/app/src/main/java/com/tacmap/map/WaypointListSheet.kt",
     "platform": "android",
     "area": "symbols-waypoints",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "android/app/src/main/java/com/tacmap/map/WeatherDialog.kt",
@@ -1497,7 +1509,8 @@
     "path": "android/app/src/main/java/com/tacmap/sync/SyncDialog.kt",
     "platform": "android",
     "area": "sync-chat",
-    "reviewStatus": "manual-review-needed"
+    "reviewStatus": "language-and-device-reviewed",
+    "evidence": "English/German catalogue meaning review and simulator/emulator screen captures, with live language regression tests; see VERIFICATION.md for device coverage and limits. This is not physical-device or native-speaker certification."
   },
   {
     "path": "android/app/src/main/java/com/tacmap/sync/SyncIdentity.kt",

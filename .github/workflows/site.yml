@@ -11,6 +11,8 @@ on:
       - 'README.md'
       - 'docs/THREAT_MODEL.md'
       - 'docs/PRIVACY_POLICY.md'
+      - 'docs/SUPPORT.md'
+      - 'docs/de/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/site.yml'
@@ -21,6 +23,8 @@ on:
       - 'README.md'
       - 'docs/THREAT_MODEL.md'
       - 'docs/PRIVACY_POLICY.md'
+      - 'docs/SUPPORT.md'
+      - 'docs/de/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/site.yml'
@@ -51,6 +55,10 @@ jobs:
           set -euo pipefail
           npm run build:site
           git diff --exit-code -- \
+            site/public/de.html \
+            site/public/de/privacy.html \
+            site/public/de/support.html \
+            site/public/support.html \
             site/public/privacy.html \
             site/public/threat-model.html \
             site/src/security-policy.mjs

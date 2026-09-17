@@ -164,15 +164,14 @@ fun DrawingLayersSheet(
             }
             item(key = "drawing-tools") {
                 Column {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ElevatedButton(onClick = onPlacePoint, modifier = Modifier.weight(1f)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ElevatedButton(onClick = onPlacePoint) {
                             DrawingTypeIcon(DrawingGeometry.POINT)
                             Spacer(Modifier.size(6.dp))
                             Text(L10n.text("Point"))
                         }
                         ElevatedButton(
                             onClick = { onStartDraft(DrawingGeometry.LINE) },
-                            modifier = Modifier.weight(1f),
                         ) {
                             DrawingTypeIcon(DrawingGeometry.LINE)
                             Spacer(Modifier.size(6.dp))
@@ -180,7 +179,6 @@ fun DrawingLayersSheet(
                         }
                         ElevatedButton(
                             onClick = { onStartDraft(DrawingGeometry.POLYGON) },
-                            modifier = Modifier.weight(1f),
                         ) {
                             DrawingTypeIcon(DrawingGeometry.POLYGON)
                             Spacer(Modifier.size(6.dp))

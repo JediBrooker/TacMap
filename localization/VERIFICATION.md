@@ -16,11 +16,11 @@ A supplemental scan of prose outside the catalogue found diagnostic logs, SQL, G
 | --- | --- |
 | Catalogue/schema/generation | 31 Python tests; 1,720 entries and all native outputs validate |
 | iOS unit suite | 506 tests, one intentional skip, zero failures on iOS 27; repeated after nested error and menu changes |
-| Android unit suites | Both debug and release suites pass after retained-message and import changes |
+| Android unit suites | 581 tests in each of the debug and release suites; one intentional skip per suite, no failures |
 | Android live language regressions | 12 instrumentation tests pass on API 35 |
 | Android native-locale experiment | API 35 Activity recreation observed for LocaleManager; in-app selection preserves the Activity; original preferences restored |
 | Android recording notification | Live foreground service updated its existing notification to German while backgrounded; the same authorised recording generation remained active. A temporary recorder protected saved track data |
-| iPhone layouts | English, German and maximum accessibility text captures; settings switch/relaunch test passes |
+| iPhone layouts | English, German and maximum accessibility text captures; smaller iPhone 17e German captures reviewed; settings switch/relaunch test passes |
 | Expanded text | Debug-only 50% padding test and captured iPhone screens pass; no synthetic language ships as a selectable release locale |
 | iPad | German iPad mini screenshots captured and reviewed; first-run permission prompt follows the OS language |
 | Website | Six security/CSP tests pass, including German help/privacy pages |
@@ -46,3 +46,7 @@ Language splits are disabled (`android.bundle.language.enableSplit = false`) so 
 - Android CI now includes minimum API 26 and API 36. Its results must be checked against the final pushed commit.
 
 The plan's complete physical-device/store-delivery matrix is therefore not claimed complete. The source implementation, automated evidence, prepared store materials and remaining external checks are reported separately.
+
+## Release handoff
+
+App Store Connect accepted 2.0.2 (67), delivery `2cea5e08-6c6f-447a-8c04-6afefde4245b`, and reports processing state VALID. The signed Android AAB uses the existing upload certificate and embeds both release languages. Final file hashes and CI results are recorded alongside the delivered artifacts. Neither production review submission nor Play publication is performed by this handoff.
