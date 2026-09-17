@@ -287,7 +287,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "liveLocationCentre",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_map_be176b00": {
     "en": "Map",
@@ -626,7 +630,7 @@
   },
   "ui_covers_the_map_with_your_position_whenever_the_a_2330284f": {
     "en": "Covers the map (with your position) whenever the app isn't active, so it isn't captured in the app-switcher thumbnail.",
-    "de": "Verdeckt die Karte mit deinem Standort, wenn die App nicht aktiv ist, damit sie nicht in der Vorschau des App-Umschalters erscheint.",
+    "de": "Verdeckt die Karte einschließlich deines Standorts, wenn die App nicht aktiv ist, damit sie nicht in der Vorschau des App-Umschalters erscheint.",
     "platforms": [
       "ios"
     ]
@@ -1543,6 +1547,15 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "drawingsAreEncryptedAndLocked",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_16efcd21": {
@@ -1558,6 +1571,15 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "couldNotSaveDrawingsToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_draw_3017385a": {
@@ -3041,7 +3063,7 @@
   },
   "ui_callsign_830a83cd": {
     "en": "Callsign",
-    "de": "Rufname",
+    "de": "Rufzeichen",
     "platforms": [
       "ios",
       "android"
@@ -4514,6 +4536,15 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "waypointsAreEncryptedAndLocked",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_waypoints_to_disk_1_fcf2ddcb": {
@@ -6376,9 +6407,12 @@
     "en": "recovery copy",
     "de": "Wiederherstellungskopie",
     "platforms": [
-      "ios",
-      "android"
-    ]
+      "android",
+      "ios"
+    ],
+    "accessor": "recoveryCopyFallback",
+    "context": "Display fallback when a recovery file has no available filename.",
+    "parameters": []
   },
   "ui_this_will_permanently_remove_1_and_its_contents__58005927": {
     "en": "This will permanently remove “{1}” and its contents ({2}).",
@@ -6471,7 +6505,7 @@
   },
   "ui_this_deletes_the_app_private_pdf_or_mbtiles_copy_ca0a874e": {
     "en": "This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.",
-    "de": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Missionsobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
+    "de": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Einsatzobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
     "platforms": [
       "ios"
     ]
@@ -6853,7 +6887,7 @@
   },
   "ui_mission_drawings_are_locked_unlock_mission_data__7e1857f0": {
     "en": "Mission drawings are locked. Unlock mission data, then try again.",
-    "de": "Missionszeichnungen sind gesperrt. Entsperre die Missionsdaten und versuche es erneut.",
+    "de": "Einsatzzeichnungen sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
     ]
@@ -6884,6 +6918,15 @@
     "de": "Die neue Ebene konnte nicht rückgängig gemacht werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotUndoTheNewLayer",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_imported_layer_80e76b63": {
@@ -6905,6 +6948,15 @@
     "de": "Speichern fehlgeschlagen – neu zugeordnete Zeichnungen: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveReassignedDrawingsToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_layer_visibility_8d10e4c3": {
@@ -6926,6 +6978,15 @@
     "de": "Speichern fehlgeschlagen – neue Zeichnung: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveNewDrawingToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_new_drawing_51751004": {
@@ -6940,6 +7001,15 @@
     "de": "Speichern fehlgeschlagen – Zeichnungsänderung: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveDrawingChangeToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_drawing_change_091975d4": {
@@ -6954,6 +7024,15 @@
     "de": "Zeichnung konnte nicht gelöscht werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotDeleteDrawingFromDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_delete_drawing_36be01bb": {
@@ -6968,6 +7047,15 @@
     "de": "Zeichnung konnte nicht wiederhergestellt werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotRestoreDrawingToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_restore_drawing_6e6efcdb": {
@@ -6982,6 +7070,15 @@
     "de": "Speichern fehlgeschlagen – importierte Zeichnungen: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveImportedDrawingsToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_import_drawings_1613bdc4": {
@@ -6996,6 +7093,15 @@
     "de": "Importierte Zeichnungen konnten nicht rückgängig gemacht werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotUndoImportedDrawings",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_some_legacy_layers_have_ambiguous_default_layer__5f6b1d2c": {
@@ -7017,6 +7123,19 @@
     "de": "Speichern fehlgeschlagen – {1}: {2}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      },
+      {
+        "name": "detail2",
+        "type": "string"
+      }
     ]
   },
   "ui_settings_need_attention_e3793415": {
@@ -7134,7 +7253,7 @@
   },
   "ui_off_waypoints_drawings_and_tracks_are_encrypted__8b361e1a": {
     "en": "Off: waypoints, drawings and tracks are encrypted with a key the Keychain releases to this app automatically after the first device unlock. The key does not migrate to another device, but a protected backup can restore it to the same device. Code running as this app on a compromised device may still ask the Keychain to decrypt.\n\nOn: the Keychain requires Face ID, Touch ID or your passcode before key use. This raises the bar after process death, but a fully compromised device remains outside the guarantee. After the app is killed nothing can read or write mission data until you unlock, including background track recording.",
-    "de": "Aus: Wegpunkte, Zeichnungen und Tracks werden mit einem Schlüssel verschlüsselt, den der Schlüsselbund dieser App nach dem ersten Entsperren des Geräts automatisch freigibt. Der Schlüssel wird nicht auf andere Geräte übertragen, kann aber aus einem geschützten Backup auf demselben Gerät wiederhergestellt werden. Code, der auf einem kompromittierten Gerät als diese App läuft, kann den Schlüsselbund weiterhin um Entschlüsselung bitten.\n\nEin: Vor der Schlüsselnutzung verlangt der Schlüsselbund Face ID, Touch ID oder deinen Gerätecode. Dies erhöht den Schutz nach dem Beenden des Prozesses; ein vollständig kompromittiertes Gerät bleibt jedoch außerhalb der Schutzgarantie. Nach dem Beenden der App können Missionsdaten erst nach dem Entsperren gelesen oder geschrieben werden. Dies gilt auch für die Trackaufzeichnung im Hintergrund.",
+    "de": "Aus: Wegpunkte, Zeichnungen und Tracks werden mit einem Schlüssel verschlüsselt, den der Schlüsselbund dieser App nach dem ersten Entsperren des Geräts automatisch freigibt. Der Schlüssel wird nicht auf andere Geräte übertragen, kann aber aus einem geschützten Backup auf demselben Gerät wiederhergestellt werden. Code, der auf einem kompromittierten Gerät als diese App läuft, kann den Schlüsselbund weiterhin um Entschlüsselung bitten.\n\nEin: Vor der Schlüsselnutzung verlangt der Schlüsselbund Face ID, Touch ID oder deinen Gerätecode. Dies erhöht den Schutz nach dem Beenden des Prozesses; ein vollständig kompromittiertes Gerät bleibt jedoch außerhalb der Schutzgarantie. Nach dem Beenden der App können Einsatzdaten erst nach dem Entsperren gelesen oder geschrieben werden. Dies gilt auch für die Trackaufzeichnung im Hintergrund.",
     "platforms": [
       "ios"
     ]
@@ -7272,7 +7391,7 @@
   },
   "ui_mission_object_not_saved_2650a23a": {
     "en": "Mission Object Not Saved",
-    "de": "Missionsobjekt nicht gespeichert",
+    "de": "Einsatzobjekt nicht gespeichert",
     "platforms": [
       "ios"
     ]
@@ -7573,7 +7692,7 @@
   },
   "ui_unlock_mission_data_to_use_tacmap_chat_01a3669e": {
     "en": "Unlock mission data to use TacMap Chat.",
-    "de": "Entsperre Missionsdaten, um TacMap Chat zu verwenden.",
+    "de": "Entsperre Einsatzdaten, um TacMap Chat zu verwenden.",
     "platforms": [
       "ios"
     ]
@@ -7664,7 +7783,7 @@
   },
   "ui_mission_data_access_control_was_not_changed_beca_e902205b": {
     "en": "Mission-data access control was not changed because the previous key slot could not be removed securely. Try again.",
-    "de": "Der Zugriffsschutz für Missionsdaten wurde nicht geändert, da der bisherige Schlüsselplatz nicht sicher entfernt werden konnte. Versuche es erneut.",
+    "de": "Der Zugriffsschutz für Einsatzdaten wurde nicht geändert, da der bisherige Schlüsselplatz nicht sicher entfernt werden konnte. Versuche es erneut.",
     "platforms": [
       "ios"
     ]
@@ -7904,7 +8023,7 @@
   },
   "ui_mission_data_is_locked_unlock_it_before_importin_206b1e3a": {
     "en": "Mission data is locked. Unlock it before importing.",
-    "de": "Missionsdaten sind gesperrt. Entsperre sie vor dem Import.",
+    "de": "Einsatzdaten sind gesperrt. Entsperre sie vor dem Import.",
     "platforms": [
       "ios"
     ]
@@ -7918,7 +8037,7 @@
   },
   "ui_default_mission_layers_cannot_be_renamed_recolou_c6bcfae4": {
     "en": "Default mission layers cannot be renamed, recoloured, or deleted.",
-    "de": "Standard-Missionsebenen können nicht umbenannt, umgefärbt oder gelöscht werden.",
+    "de": "Standard-Einsatzebenen können nicht umbenannt, umgefärbt oder gelöscht werden.",
     "platforms": [
       "ios"
     ]
@@ -7960,21 +8079,21 @@
   },
   "ui_mission_1_are_locked_unlock_mission_data_then_tr_873d7f20": {
     "en": "Mission {1} are locked. Unlock mission data, then try again.",
-    "de": "Missionsdaten ({1}) sind gesperrt. Entsperre die Missionsdaten und versuche es erneut.",
+    "de": "Einsatzdaten ({1}) sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
     ]
   },
   "ui_could_not_save_mission_1_2_no_unsafe_layer_chang_4d0c4410": {
     "en": "Could not save mission {1}: {2}. No unsafe layer change was published; try again.",
-    "de": "Missionsdaten ({1}) konnten nicht gespeichert werden: {2}. Es wurde keine unsichere Ebenenänderung veröffentlicht. Versuche es erneut.",
+    "de": "Einsatzdaten ({1}) konnten nicht gespeichert werden: {2}. Es wurde keine unsichere Ebenenänderung veröffentlicht. Versuche es erneut.",
     "platforms": [
       "ios"
     ]
   },
   "ui_mission_waypoints_are_locked_unlock_mission_data_926e3d02": {
     "en": "Mission waypoints are locked. Unlock mission data, then try again.",
-    "de": "Missionswegpunkte sind gesperrt. Entsperre die Missionsdaten und versuche es erneut.",
+    "de": "Einsatzwegpunkte sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
     ]
@@ -7998,6 +8117,15 @@
     "de": "Speichern fehlgeschlagen – neuer Wegpunkt: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveNewWaypointToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_new_waypoint_85ef87d4": {
@@ -8012,6 +8140,15 @@
     "de": "Speichern fehlgeschlagen – Wegpunktänderung: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveWaypointChangeToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_waypoint_change_ef776e5a": {
@@ -8026,6 +8163,15 @@
     "de": "Wegpunkt konnte nicht gelöscht werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotDeleteWaypointFromDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_delete_waypoint_a4767c73": {
@@ -8040,6 +8186,15 @@
     "de": "Wegpunkt konnte nicht wiederhergestellt werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotRestoreWaypointToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_restore_waypoint_451b5429": {
@@ -8054,6 +8209,15 @@
     "de": "Speichern fehlgeschlagen – neu zugeordnete Wegpunkte: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveReassignedWaypointsToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_could_not_save_imported_waypoints_to_disk_1_2890a324": {
@@ -8061,6 +8225,15 @@
     "de": "Speichern fehlgeschlagen – importierte Wegpunkte: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotSaveImportedWaypointsToDisk",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_import_waypoints_48324598": {
@@ -8075,6 +8248,15 @@
     "de": "Importierte Wegpunkte konnten nicht rückgängig gemacht werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "couldNotUndoImportedWaypoints",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_opens_all_symbol_fields_and_actions_b454a5db": {
@@ -8121,7 +8303,7 @@
   },
   "ui_the_saved_map_library_is_locked_or_unreadable_un_d2580b62": {
     "en": "The saved map library is locked or unreadable. Unlock mission data, then try again.",
-    "de": "Die gespeicherte Kartenbibliothek ist gesperrt oder unlesbar. Entsperre die Missionsdaten und versuche es erneut.",
+    "de": "Die gespeicherte Kartenbibliothek ist gesperrt oder unlesbar. Entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
     ]
@@ -8156,7 +8338,7 @@
   },
   "ui_saved_imported_map_details_are_locked_unlock_mis_1b506086": {
     "en": "Saved imported-map details are locked. Unlock mission data to restore them.",
-    "de": "Gespeicherte Angaben zur importierten Karte sind gesperrt. Entsperre die Missionsdaten, um sie wiederherzustellen.",
+    "de": "Gespeicherte Angaben zur importierten Karte sind gesperrt. Entsperre die Einsatzdaten, um sie wiederherzustellen.",
     "platforms": [
       "ios"
     ]
@@ -8177,7 +8359,7 @@
   },
   "ui_the_saved_imported_map_entry_could_not_be_upgrad_014ea51a": {
     "en": "The saved imported-map entry could not be upgraded securely. Unlock mission data or free storage, then try again.",
-    "de": "Der gespeicherte Eintrag der importierten Karte konnte nicht sicher aktualisiert werden. Entsperre Missionsdaten oder schaffe Speicherplatz und versuche es erneut.",
+    "de": "Der gespeicherte Eintrag der importierten Karte konnte nicht sicher aktualisiert werden. Entsperre Einsatzdaten oder schaffe Speicherplatz und versuche es erneut.",
     "platforms": [
       "ios"
     ]
@@ -8187,35 +8369,55 @@
     "de": "Die Trackaufzeichnung wurde unterbrochen. Der gespeicherte Track blieb erhalten.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "recordingInterruptedPreserved",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_track_recording_could_not_start_no_recording_is__62bcfbe1": {
     "en": "Track recording could not start. No recording is active.",
     "de": "Die Trackaufzeichnung konnte nicht gestartet werden. Es läuft keine Aufzeichnung.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "recordingStartInactive",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_location_access_changed_so_track_recording_stopp_5b2389dc": {
     "en": "Location access changed, so track recording stopped. Your saved track was preserved. Re-enable Location access in Settings to record again.",
     "de": "Der Standortzugriff hat sich geändert; die Trackaufzeichnung wurde beendet. Dein gespeicherter Track blieb erhalten. Aktiviere den Standortzugriff in den Einstellungen erneut, um wieder aufzuzeichnen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "recordingAccessChanged",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_track_recording_stopped_because_location_access__2405217a": {
     "en": "Track recording stopped because Location access is unavailable. Your saved track was preserved. Re-enable it in Settings.",
     "de": "Die Trackaufzeichnung wurde beendet, da kein Standortzugriff verfügbar ist. Dein gespeicherter Track blieb erhalten. Aktiviere den Zugriff in den Einstellungen erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "recordingAccessUnavailablePreserved",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_tacmap_needs_location_access_to_record_a_track_a_a651e8f4": {
     "en": "TacMap needs Location access to record a track. Allow access in Settings, then try again.",
     "de": "TacMap benötigt Standortzugriff, um einen Track aufzuzeichnen. Erlaube den Zugriff in den Einstellungen und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "recordingAccessNeeded",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_enable_live_location_ce184825": {
     "en": "Enable Live Location",
@@ -8223,7 +8425,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "liveLocationEnable",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_tacmap_requests_location_access_on_first_launch__581e58e5": {
     "en": "TacMap requests Location access on first launch. Tap to request it again if needed.",
@@ -8231,14 +8437,22 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "liveLocationFirstLaunch",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_centres_the_map_on_your_latest_location_cd51a85e": {
     "en": "Centres the map on your latest location.",
     "de": "Zentriert die Karte auf deinen zuletzt ermittelten Standort.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "liveLocationCentreHint",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_open_location_settings_4295919a": {
     "en": "Open Location Settings",
@@ -8246,7 +8460,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "liveLocationSettings",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_location_access_is_off_opens_settings_so_you_can_aa125240": {
     "en": "Location access is off. Opens Settings so you can enable it.",
@@ -8254,7 +8472,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "liveLocationDisabledHint",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_location_restricted_7b8c5d17": {
     "en": "Location Restricted",
@@ -8262,28 +8484,44 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "liveLocationRestricted",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_location_access_is_restricted_review_this_device_d66f331c": {
     "en": "Location access is restricted. Review this device's Location settings.",
     "de": "Der Standortzugriff ist eingeschränkt. Prüfe die Standorteinstellungen dieses Geräts.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "liveLocationRestrictedIosHint",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_location_settings_d165789b": {
     "en": "Location Settings",
     "de": "Standorteinstellungen",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "liveLocationSettingsTitle",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_review_location_access_in_settings_4adfc9dd": {
     "en": "Review Location access in Settings.",
     "de": "Prüfe den Standortzugriff in den Einstellungen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "liveLocationReviewHint",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_true_north_88b4e0aa": {
     "en": "true north",
@@ -8354,7 +8592,7 @@
   },
   "ui_mission_objects_mgrs_grid_lat_lon_or_place_name_25db9141": {
     "en": "Mission objects, MGRS, grid, lat/lon, or place name",
-    "de": "Missionsobjekte, MGRS, Gitter, Breiten-/Längengrad oder Ortsname",
+    "de": "Einsatzobjekte, MGRS, Gitter, Breiten-/Längengrad oder Ortsname",
     "platforms": [
       "ios"
     ]
@@ -8368,7 +8606,7 @@
   },
   "ui_mission_coordinates_58a4b744": {
     "en": "Mission & Coordinates",
-    "de": "Mission und Koordinaten",
+    "de": "Einsatz und Koordinaten",
     "platforms": [
       "ios"
     ]
@@ -8504,42 +8742,42 @@
   },
   "ui_the_saved_basemap_is_locked_or_unreadable_unlock_bbac8cff": {
     "en": "The saved basemap is locked or unreadable. Unlock mission data, then tap Retry. The current map remains active.",
-    "de": "Die gespeicherte Grundkarte ist gesperrt oder unlesbar. Entsperre die Missionsdaten und tippe auf „Erneut versuchen“. Die aktuelle Karte bleibt aktiv.",
+    "de": "Die gespeicherte Grundkarte ist gesperrt oder unlesbar. Entsperre die Einsatzdaten und tippe auf „Erneut versuchen“. Die aktuelle Karte bleibt aktiv.",
     "platforms": [
       "ios"
     ]
   },
   "ui_the_imported_map_could_not_be_deleted_securely_t_b4183ab3": {
     "en": "The imported map could not be deleted securely. The online map remains active and the saved entry was preserved where possible. Unlock mission data or free storage, then tap Retry. {1}",
-    "de": "Die importierte Karte konnte nicht sicher gelöscht werden. Die Online-Karte bleibt aktiv; der gespeicherte Eintrag wurde soweit möglich erhalten. Entsperre Missionsdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
+    "de": "Die importierte Karte konnte nicht sicher gelöscht werden. Die Online-Karte bleibt aktiv; der gespeicherte Eintrag wurde soweit möglich erhalten. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
     "platforms": [
       "ios"
     ]
   },
   "ui_the_unavailable_saved_map_entry_could_not_be_rem_d280da76": {
     "en": "The unavailable saved-map entry could not be removed. Unlock mission data or free storage, then tap Retry. {1}",
-    "de": "Der nicht verfügbare gespeicherte Karteneintrag konnte nicht entfernt werden. Entsperre Missionsdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
+    "de": "Der nicht verfügbare gespeicherte Karteneintrag konnte nicht entfernt werden. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
     "platforms": [
       "ios"
     ]
   },
   "ui_the_pdf_map_could_not_be_saved_for_relaunch_the__2518d178": {
     "en": "The PDF map could not be saved for relaunch. The previous map remains active. Unlock mission data or free storage, then tap Retry.",
-    "de": "Die PDF-Karte konnte nicht für den nächsten Start gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Missionsdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
+    "de": "Die PDF-Karte konnte nicht für den nächsten Start gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
     "platforms": [
       "ios"
     ]
   },
   "ui_the_basemap_choice_could_not_be_saved_the_previo_83f0c14a": {
     "en": "The basemap choice could not be saved. The previous map remains active. Unlock mission data or free storage, then tap Retry.",
-    "de": "Die Grundkartenauswahl konnte nicht gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Missionsdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
+    "de": "Die Grundkartenauswahl konnte nicht gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
     "platforms": [
       "ios"
     ]
   },
   "ui_map_storage_recovery_did_not_complete_keep_the_a_b8d9e1c8": {
     "en": "Map storage recovery did not complete. Keep the app open, unlock mission data or free storage, then tap Retry before closing the app.",
-    "de": "Die Wiederherstellung des Kartenspeichers wurde nicht abgeschlossen. Lass die App geöffnet, entsperre Missionsdaten oder schaffe Speicherplatz und tippe vor dem Schließen auf „Erneut versuchen“.",
+    "de": "Die Wiederherstellung des Kartenspeichers wurde nicht abgeschlossen. Lass die App geöffnet, entsperre Einsatzdaten oder schaffe Speicherplatz und tippe vor dem Schließen auf „Erneut versuchen“.",
     "platforms": [
       "ios"
     ]
@@ -8632,7 +8870,7 @@
   },
   "ui_the_authenticated_sync_record_did_not_contain_ex_36ad42e7": {
     "en": "The authenticated sync record did not contain exactly one valid mission object.",
-    "de": "Der authentifizierte Synchronisierungseintrag enthielt nicht genau ein gültiges Missionsobjekt.",
+    "de": "Der authentifizierte Synchronisierungseintrag enthielt nicht genau ein gültiges Einsatzobjekt.",
     "platforms": [
       "ios"
     ]
@@ -8712,7 +8950,7 @@
   },
   "ui_saved_unit_sync_metadata_could_not_be_migrated_t_83546d0d": {
     "en": "Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again.",
-    "de": "Gespeicherte Unit-Sync-Metadaten konnten nicht auf private Dateinamen umgestellt werden. Prüfe den verfügbaren Speicherplatz, entsperre die Missionsdaten und versuche es erneut.",
+    "de": "Gespeicherte Unit-Sync-Metadaten konnten nicht auf private Dateinamen umgestellt werden. Prüfe den verfügbaren Speicherplatz, entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
     ]
@@ -8869,21 +9107,21 @@
   },
   "ui_ask_the_sender_to_update_tacmap_and_send_the_mis_258bd4bf": {
     "en": "Ask the sender to update TacMap and send the mission object again before rejoining.",
-    "de": "Bitte den Absender, TacMap zu aktualisieren und das Missionsobjekt erneut zu senden, bevor du wieder beitrittst.",
+    "de": "Bitte den Absender, TacMap zu aktualisieren und das Einsatzobjekt erneut zu senden, bevor du wieder beitrittst.",
     "platforms": [
       "ios"
     ]
   },
   "ui_the_verified_update_remains_pending_unlock_missi_d13aecf2": {
     "en": "The verified update remains pending. Unlock mission data or free device storage, then rejoin Unit Sync to retry it.",
-    "de": "Die verifizierte Änderung bleibt ausstehend. Entsperre Missionsdaten oder schaffe Gerätespeicher und tritt Unit Sync erneut bei, um sie wieder zu versuchen.",
+    "de": "Die verifizierte Änderung bleibt ausstehend. Entsperre Einsatzdaten oder schaffe Gerätespeicher und tritt Unit Sync erneut bei, um sie wieder zu versuchen.",
     "platforms": [
       "ios"
     ]
   },
   "ui_unlock_mission_data_or_free_device_storage_then__20c288f2": {
     "en": "Unlock mission data or free device storage, then leave and rejoin Unit Sync so the relay can resend it.",
-    "de": "Entsperre Missionsdaten oder schaffe Gerätespeicher. Verlasse Unit Sync und tritt erneut bei, damit das Relay die Änderung erneut senden kann.",
+    "de": "Entsperre Einsatzdaten oder schaffe Gerätespeicher. Verlasse Unit Sync und tritt erneut bei, damit das Relay die Änderung erneut senden kann.",
     "platforms": [
       "ios"
     ]
@@ -9173,7 +9411,7 @@
   },
   "ui_mission_payload_content_is_end_to_end_encrypted__ab341ca9": {
     "en": "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.",
-    "de": "Missionsinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, Sitzungs-, Zeit-, Größen- und Verkehrsmetadaten.",
+    "de": "Einsatzinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, Sitzungs-, Zeit-, Größen- und Verkehrsmetadaten.",
     "platforms": [
       "ios"
     ]
@@ -9333,7 +9571,7 @@
   },
   "ui_export_all_mission_objects_e4853a29": {
     "en": "Export All Mission Objects",
-    "de": "Alle Missionsobjekte exportieren",
+    "de": "Alle Einsatzobjekte exportieren",
     "platforms": [
       "ios",
       "android"
@@ -9341,7 +9579,7 @@
   },
   "ui_no_imported_mission_objects_were_saved_1_21e007ca": {
     "en": "No imported mission objects were saved. {1}",
-    "de": "Es wurden keine importierten Missionsobjekte gespeichert. {1}",
+    "de": "Es wurden keine importierten Einsatzobjekte gespeichert. {1}",
     "platforms": [
       "ios"
     ]
@@ -9355,7 +9593,7 @@
   },
   "ui_no_imported_mission_objects_were_saved_3176accf": {
     "en": "No imported mission objects were saved.",
-    "de": "Es wurden keine importierten Missionsobjekte gespeichert.",
+    "de": "Es wurden keine importierten Einsatzobjekte gespeichert.",
     "platforms": [
       "ios"
     ]
@@ -9792,18 +10030,31 @@
     "de": "Wegpunkte sind gesperrt; die Änderung wurde nicht gespeichert.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "waypointsAreLockedAndTheChangeWasNotSaved",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": []
   },
   "ui_could_not_save_waypoints_to_disk_the_change_was__97475445": {
     "en": "Could not save waypoints to disk; the change was reverted: {1}",
     "de": "Wegpunkte konnten nicht gespeichert werden; die Änderung wurde zurückgenommen: {1}",
     "platforms": [
       "android"
+    ],
+    "accessor": "couldNotSaveWaypointsToDiskTheChangeWasReverted",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_fiduciaries_contain_invalid_or_unsafe_coordinate_fa77c540": {
     "en": "Fiduciaries contain invalid or unsafe coordinates",
-    "de": "Referenzpunkte enthalten ungültige oder unsichere Koordinaten",
+    "de": "Passpunkte enthalten ungültige oder unsichere Koordinaten",
     "platforms": [
       "android"
     ]
@@ -9869,13 +10120,26 @@
     "de": "Zeichnungen sind gesperrt; die Änderung wurde nicht gespeichert.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "drawingsAreLockedAndTheChangeWasNotSaved",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": []
   },
   "ui_could_not_save_drawings_to_disk_the_change_was_r_ac83ca6c": {
     "en": "Could not save drawings to disk; the change was reverted: {1}",
     "de": "Zeichnungen konnten nicht gespeichert werden; die Änderung wurde zurückgenommen: {1}",
     "platforms": [
       "android"
+    ],
+    "accessor": "couldNotSaveDrawingsToDiskTheChangeWasReverted",
+    "deferred": true,
+    "context": "Saved drawing/waypoint failure. Resolve after a language change; diagnostic detail is verbatim.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_centres_the_map_on_your_latest_precise_location_a4532c96": {
@@ -9883,28 +10147,44 @@
     "de": "Zentriert die Karte auf deinen zuletzt ermittelten genauen Standort.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "liveLocationCentrePreciseHint",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_enable_precise_location_177e9850": {
     "en": "Enable Precise Location",
     "de": "Genauen Standort aktivieren",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "liveLocationEnablePrecise",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_approximate_location_is_on_open_settings_to_allo_49d6e949": {
     "en": "Approximate location is on. Open Settings to allow Precise location.",
     "de": "Ungefährer Standort ist aktiviert. Öffne die Einstellungen, um den genauen Standort zu erlauben.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "liveLocationApproximateHint",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_location_access_is_restricted_by_this_device_rev_50e0726b": {
     "en": "Location access is restricted by this device. Review Location settings.",
     "de": "Dieses Gerät schränkt den Standortzugriff ein. Prüfe die Standorteinstellungen.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "liveLocationRestrictedAndroidHint",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_approximate_location_cannot_provide_tacmap_s_on__d5eea2e6": {
     "en": "Approximate location cannot provide TacMap's on-device GPS position. ",
@@ -9925,7 +10205,11 @@
     "de": "Erlaube den genauen Standort, um deine Live-Position auf der Karte anzuzeigen.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "liveLocationPreciseNeeded",
+    "deferred": true,
+    "context": "Live map permission control or iOS recording permission state. Preserve settings action and any saved-track guarantee.",
+    "parameters": []
   },
   "ui_approximate_location_cannot_provide_the_precise__81af3e77": {
     "en": "Approximate location cannot provide the precise GPS track TacMap records. ",
@@ -10321,7 +10605,7 @@
   },
   "ui_1_unlock_mission_data_or_free_device_storage_the_dbe9b576": {
     "en": "{1} Unlock mission data or free device storage, then tap Retry.",
-    "de": "{1} Entsperre Missionsdaten oder schaffe Gerätespeicher und tippe auf „Erneut versuchen“.",
+    "de": "{1} Entsperre Einsatzdaten oder schaffe Gerätespeicher und tippe auf „Erneut versuchen“.",
     "platforms": [
       "android"
     ]
@@ -10461,7 +10745,7 @@
   },
   "ui_mission_coordinates_6eb4bf82": {
     "en": "Mission & coordinates",
-    "de": "Mission und Koordinaten",
+    "de": "Einsatz und Koordinaten",
     "platforms": [
       "android"
     ]
@@ -10489,7 +10773,7 @@
   },
   "ui_mission_object_geojson_b01255b8": {
     "en": "mission-object GeoJSON",
-    "de": "Missionsobjekt-GeoJSON",
+    "de": "Einsatzobjekt-GeoJSON",
     "platforms": [
       "android"
     ]
@@ -10545,7 +10829,7 @@
   },
   "ui_the_document_import_journal_is_locked_unlock_mis_0f094532": {
     "en": "The document-import journal is locked. Unlock mission data and retry.",
-    "de": "Das Dokumentimport-Protokoll ist gesperrt. Entsperre Missionsdaten und versuche es erneut.",
+    "de": "Das Dokumentimport-Protokoll ist gesperrt. Entsperre Einsatzdaten und versuche es erneut.",
     "platforms": [
       "android"
     ]
@@ -10888,7 +11172,7 @@
   },
   "ui_protection_after_the_app_is_killed_nothing_can_r_dbde0aba": {
     "en": "protection. After the app is killed, nothing can read or write mission ",
-    "de": "Schutzes. Nach dem Beenden der App können Missionsdaten erst nach dem Entsperren gelesen oder geschrieben ",
+    "de": "Schutzes. Nach dem Beenden der App können Einsatzdaten erst nach dem Entsperren gelesen oder geschrieben ",
     "platforms": [
       "android"
     ]
@@ -10902,7 +11186,7 @@
   },
   "ui_your_device_lockscreen_can_invalidate_the_key_an_9be79568": {
     "en": "your device lockscreen can invalidate the key and make mission data ",
-    "de": "der Gerätesperre kann den Schlüssel ungültig und Missionsdaten ",
+    "de": "der Gerätesperre kann den Schlüssel ungültig und Einsatzdaten ",
     "platforms": [
       "android"
     ]
@@ -10965,7 +11249,7 @@
   },
   "ui_mission_data_was_not_saved_f3c99e39": {
     "en": "Mission data was not saved",
-    "de": "Missionsdaten wurden nicht gespeichert",
+    "de": "Einsatzdaten wurden nicht gespeichert",
     "platforms": [
       "android"
     ]
@@ -11014,7 +11298,7 @@
   },
   "ui_unlock_mission_data_to_use_tacmap_chat_3abca24f": {
     "en": "Unlock mission data to use TacMap Chat",
-    "de": "Entsperre Missionsdaten, um TacMap Chat zu verwenden",
+    "de": "Entsperre Einsatzdaten, um TacMap Chat zu verwenden",
     "platforms": [
       "android"
     ]
@@ -11126,14 +11410,14 @@
   },
   "ui_sync_signing_identity_is_locked_or_damaged_unloc_c9a19e3d": {
     "en": "Sync signing identity is locked or damaged. Unlock mission data, then try joining again.",
-    "de": "Die Signaturidentität der Synchronisierung ist gesperrt oder beschädigt. Entsperre Missionsdaten und versuche erneut beizutreten.",
+    "de": "Die Signaturidentität der Synchronisierung ist gesperrt oder beschädigt. Entsperre Einsatzdaten und versuche erneut beizutreten.",
     "platforms": [
       "android"
     ]
   },
   "ui_sync_identity_or_rollback_state_is_locked_or_dam_c8609c75": {
     "en": "Sync identity or rollback state is locked or damaged. Unlock mission data, then try joining again.",
-    "de": "Synchronisierungsidentität oder Rollback-Status sind gesperrt oder beschädigt. Entsperre Missionsdaten und versuche erneut beizutreten.",
+    "de": "Synchronisierungsidentität oder Rollback-Status sind gesperrt oder beschädigt. Entsperre Einsatzdaten und versuche erneut beizutreten.",
     "platforms": [
       "android"
     ]
@@ -11203,7 +11487,7 @@
   },
   "ui_check_available_storage_then_unlock_mission_data_f27226e6": {
     "en": "Check available storage, then unlock mission data and try again.",
-    "de": "Prüfe den verfügbaren Speicherplatz, entsperre Missionsdaten und versuche es erneut.",
+    "de": "Prüfe den verfügbaren Speicherplatz, entsperre Einsatzdaten und versuche es erneut.",
     "platforms": [
       "android"
     ]
@@ -11644,7 +11928,7 @@
   },
   "ui_mission_payload_content_is_end_to_end_encrypted__add50ee0": {
     "en": "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, ",
-    "de": "Missionsinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, ",
+    "de": "Einsatzinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, ",
     "platforms": [
       "android"
     ]
@@ -11707,7 +11991,7 @@
   },
   "ui_could_not_generate_1_check_the_mission_data_and__3578d75c": {
     "en": "Could not generate {1}. Check the mission data and try again.",
-    "de": "{1} konnte nicht erstellt werden. Prüfe die Missionsdaten und versuche es erneut.",
+    "de": "{1} konnte nicht erstellt werden. Prüfe die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "android"
     ]
@@ -11749,7 +12033,7 @@
   },
   "ui_the_import_retry_journal_is_locked_unlock_missio_5542e900": {
     "en": "The import retry journal is locked. Unlock mission data and retry.",
-    "de": "Das Import-Wiederholungsprotokoll ist gesperrt. Entsperre Missionsdaten und versuche es erneut.",
+    "de": "Das Import-Wiederholungsprotokoll ist gesperrt. Entsperre Einsatzdaten und versuche es erneut.",
     "platforms": [
       "android"
     ]
@@ -12297,7 +12581,7 @@
   },
   "settings_android_key_protection_help": {
     "en": "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.",
-    "de": "Aus: Wegpunkte, Zeichnungen und Tracks werden mit einem Schlüssel verschlüsselt, den der Keystore des Geräts dieser App automatisch bereitstellt. Kopierte App-Dateien enthalten nur verschlüsselte Daten. Auf einem kompromittierten Gerät kann jedoch Code, der als diese App ausgeführt wird, den Keystore zum Entschlüsseln auffordern.\n\nEin: Vor der Schlüsselnutzung verlangt der Android Keystore eine kürzlich erfolgte Bestätigung durch die Geräte-PIN, das Gerätepasswort oder eine andere Gerätesperre beziehungsweise durch starke Biometrie. Die Hardwareabsicherung ist geräteabhängig und wird von TacMap nicht geprüft; ein vollständig kompromittiertes System liegt daher außerhalb dieses Schutzes. Nach dem Beenden der App können bis zum Entsperren keine Missionsdaten gelesen oder geschrieben werden, auch nicht für die Trackaufzeichnung im Hintergrund. Wenn du die Gerätesperre entfernst, kann der Schlüssel ungültig und eine Wiederherstellung der Missionsdaten unmöglich werden.",
+    "de": "Aus: Wegpunkte, Zeichnungen und Tracks werden mit einem Schlüssel verschlüsselt, den der Keystore des Geräts dieser App automatisch bereitstellt. Kopierte App-Dateien enthalten nur verschlüsselte Daten. Auf einem kompromittierten Gerät kann jedoch Code, der als diese App ausgeführt wird, den Keystore zum Entschlüsseln auffordern.\n\nEin: Vor der Schlüsselnutzung verlangt der Android Keystore eine kürzlich erfolgte Bestätigung durch die Geräte-PIN, das Gerätepasswort oder eine andere Gerätesperre beziehungsweise durch starke Biometrie. Die Hardwareabsicherung ist geräteabhängig und wird von TacMap nicht geprüft; ein vollständig kompromittiertes System liegt daher außerhalb dieses Schutzes. Nach dem Beenden der App können bis zum Entsperren keine Einsatzdaten gelesen oder geschrieben werden, auch nicht für die Trackaufzeichnung im Hintergrund. Wenn du die Gerätesperre entfernst, kann der Schlüssel ungültig und eine Wiederherstellung der Einsatzdaten unmöglich werden.",
     "platforms": [
       "android"
     ],
@@ -12328,6 +12612,524 @@
     "accessor": "recordingActivationFailed",
     "deferred": true,
     "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "live_location_approximate_guidance": {
+    "en": "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.",
+    "de": "Der ungefähre Standort kann TacMaps GPS-Position auf diesem Gerät nicht liefern. Erlaube den genauen Standort und versuche es erneut.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "liveLocationApproximateGuidance",
+    "deferred": true,
+    "context": "Live location permission guidance or recording status. Never imply an active recording before it starts.",
+    "parameters": []
+  },
+  "recording_status_starting": {
+    "en": "STARTING",
+    "de": "WIRD GESTARTET",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "recordingStatusStarting",
+    "deferred": true,
+    "context": "Live location permission guidance or recording status. Never imply an active recording before it starts.",
+    "parameters": []
+  },
+  "recording_status_interrupted": {
+    "en": "INTERRUPTED",
+    "de": "UNTERBROCHEN",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "recordingStatusInterrupted",
+    "deferred": true,
+    "context": "Live location permission guidance or recording status. Never imply an active recording before it starts.",
+    "parameters": []
+  },
+  "recording_status_idle": {
+    "en": "IDLE",
+    "de": "INAKTIV",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "recordingStatusIdle",
+    "deferred": true,
+    "context": "Live location permission guidance or recording status. Never imply an active recording before it starts.",
+    "parameters": []
+  },
+  "relay_recovery_failed": {
+    "en": "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.",
+    "de": "Das gespeicherte Unit-Sync-Relay war unsicher oder veraltet. TacMap verwendet für diesen Lauf den sicheren Standard, konnte die gespeicherte Einstellung aber nicht korrigieren.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "relayRecoveryFailed",
+    "deferred": true,
+    "context": "Complete OpsecSettings message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "privacy_setting_save_failed": {
+    "en": "Could not save this privacy setting. The previous setting remains active; check available storage and try again.",
+    "de": "Diese Datenschutzeinstellung konnte nicht gespeichert werden. Die bisherige Einstellung bleibt aktiv. Prüfe den verfügbaren Speicherplatz und versuche es erneut.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "privacySettingSaveFailed",
+    "deferred": true,
+    "context": "Complete OpsecSettings message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "recording_notification_hidden": {
+    "en": "Recording can continue, but Android may hide its ongoing notification from the notification drawer. You can still find TacMap in Active apps.",
+    "de": "Die Aufzeichnung kann weiterlaufen, aber Android blendet ihre dauerhafte Benachrichtigung möglicherweise in der Benachrichtigungsübersicht aus. Du findest TacMap weiterhin unter „Aktive Apps“.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "recordingNotificationHidden",
+    "deferred": true,
+    "context": "Complete MainActivity message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "app_lock_data_damaged": {
+    "en": "App Lock data is damaged and cannot be verified. Clear TacMap's app data in Android Settings to recover.",
+    "de": "Daten der App-Sperre sind beschädigt und nicht überprüfbar. Lösche zur Wiederherstellung TacMaps App-Daten in den Android-Einstellungen.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "appLockDataDamaged",
+    "deferred": true,
+    "context": "Complete AppLockUi message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "app_lock_update_failed": {
+    "en": "App Lock storage could not be updated. The lock remains armed; enter your existing PIN.",
+    "de": "Der Speicher der App-Sperre konnte nicht aktualisiert werden. Die Sperre bleibt aktiv. Gib deine bisherige PIN ein.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "appLockUpdateFailed",
+    "deferred": true,
+    "context": "Complete AppLockUi message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "waypoints_quarantined": {
+    "en": "Saved waypoints could not be read and were set aside ({1}). Starting with no waypoints.",
+    "de": "Gespeicherte Wegpunkte konnten nicht gelesen werden und wurden separat gesichert ({1}). Die Karte startet ohne Wegpunkte.",
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "waypointsQuarantined",
+    "deferred": true,
+    "context": "Complete WaypointStore message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "drawings_quarantined": {
+    "en": "Saved drawings could not be read and were set aside ({1}). Starting with an empty map.",
+    "de": "Gespeicherte Zeichnungen konnten nicht gelesen werden und wurden separat gesichert ({1}). Die Karte startet ohne Zeichnungen.",
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "drawingsQuarantined",
+    "deferred": true,
+    "context": "Complete DrawingStore message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "online_basemaps_disabled": {
+    "en": "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.",
+    "de": "Online-Grundkarten sind deaktiviert. Importiere ein Offline-Kartenpaket oder aktiviere Online-Kartenkacheln unter „Einstellungen, Datenschutz und OPSEC“.",
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "onlineBasemapsDisabled",
+    "deferred": true,
+    "context": "Complete CustomMapScreen message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "pdf_rotation_unsupported": {
+    "en": "This PDF's first page is rotated {1}°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy.",
+    "de": "Die erste Seite dieser PDF ist um {1}° gedreht. TacMap kann gedrehte Seiten noch nicht sicher georeferenzieren. Entferne die Seitendrehung in einem PDF-Editor oder drucke sie in eine neue PDF-Datei und importiere diese Kopie.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRotationUnsupported",
+    "deferred": true,
+    "context": "Complete MapScreenHelpers message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "basemap_recovery_required": {
+    "en": "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.",
+    "de": "Die gespeicherten Grundkartendetails konnten nicht authentifiziert werden. Eine Wiederherstellungskopie und alle importierten Karten blieben erhalten. Tippe auf „Erneut versuchen“, um die gespeicherte Auswahl auf die Online-Karte zurückzusetzen, oder importiere/wähle eine Ersatzkarte.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "basemapRecoveryRequired",
+    "deferred": true,
+    "context": "Complete MapViewModel message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "weather_fetch_failed": {
+    "en": "Couldn't fetch conditions. If online lookups are off (Settings, Privacy & OPSEC), enable them; otherwise check your connection.",
+    "de": "Wetterdaten konnten nicht abgerufen werden. Falls Online-Abfragen unter „Einstellungen, Datenschutz und OPSEC“ deaktiviert sind, aktiviere sie. Prüfe andernfalls deine Verbindung.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "weatherFetchFailed",
+    "deferred": true,
+    "context": "Complete WeatherDialog message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "import_feature_summary": {
+    "en": "Imported {1} waypoint(s) and {2} drawing(s){3}",
+    "de": "Importierte Wegpunkte: {1}, Zeichnungen: {2}{3}",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "importFeatureSummary",
+    "deferred": true,
+    "context": "Complete GeoJsonImportHandler message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "waypoints",
+        "type": "string"
+      },
+      {
+        "name": "drawings",
+        "type": "string"
+      },
+      {
+        "name": "skipped",
+        "type": "string"
+      }
+    ]
+  },
+  "recording_discard_active": {
+    "en": "Recording will stop and the encrypted track log, including all {1} saved point(s), will be permanently deleted.",
+    "de": "Die Aufzeichnung wird gestoppt und das verschlüsselte Trackprotokoll einschließlich aller gespeicherten Punkte ({1}) dauerhaft gelöscht.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "recordingDiscardActive",
+    "deferred": true,
+    "context": "Complete MapScreen message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "recording_discard_saved": {
+    "en": "The encrypted track log and all {1} saved point(s) will be permanently deleted. Export GPX first if you need a copy.",
+    "de": "Das verschlüsselte Trackprotokoll und alle gespeicherten Punkte ({1}) werden dauerhaft gelöscht. Exportiere zuerst GPX, wenn du eine Kopie benötigst.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "recordingDiscardSaved",
+    "deferred": true,
+    "context": "Complete MapScreen message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "background_sync_disable_failed": {
+    "en": "Background Unit Sync stopped, but its OFF setting could not be saved. Check available storage and turn it off again in Privacy & OPSEC.",
+    "de": "Unit Sync im Hintergrund wurde beendet, aber die AUS-Einstellung konnte nicht gespeichert werden. Prüfe den verfügbaren Speicherplatz und schalte es unter Datenschutz und OPSEC erneut aus.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "backgroundSyncDisableFailed",
+    "deferred": true,
+    "context": "Complete UnitSyncRuntime message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "sync_metadata_migration_failed": {
+    "en": "Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again.",
+    "de": "Gespeicherte Unit-Sync-Metadaten konnten nicht auf private Dateinamen umgestellt werden. Prüfe den verfügbaren Speicherplatz, entsperre Einsatzdaten und versuche es erneut.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncMetadataMigrationFailed",
+    "deferred": true,
+    "context": "Complete SyncManager message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "sync_join_location_consent": {
+    "en": "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately {1} while the screen is off.",
+    "de": "Zum Beitritt aktiviert TacMap „Meinen Standort teilen“ und „Unit-Sync-Standort im Hintergrund“. Bei erlaubtem Standortzugriff wird deine verschlüsselte Position bei geöffneter App und ungefähr {1} bei ausgeschaltetem Bildschirm gesendet.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncJoinLocationConsent",
+    "deferred": true,
+    "context": "Complete SyncDialog message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "sync_code_too_short": {
+    "en": "Too short to be safe. Use at least {1} characters, or tap Generate.",
+    "de": "Für einen sicheren Code zu kurz. Verwende mindestens {1} Zeichen oder tippe auf „Erzeugen“.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncCodeTooShort",
+    "deferred": true,
+    "context": "Complete SyncDialog message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "sync_legacy_membership_help": {
+    "en": "Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions.",
+    "de": "Authentifizierte Online-Mitgliedschaft ist in älteren v2-Räumen nicht verfügbar. Stelle alle Geräte auf einen v3-Raum um, um vom Relay gemeldete signierte Sitzungen zu nutzen.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncLegacyMembershipHelp",
+    "deferred": true,
+    "context": "Complete SyncDialog message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "sync_liveness_caveat": {
+    "en": "Identity and session signatures are verified, but connection liveness is relay-attested; it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat above.",
+    "de": "Identitäts- und Sitzungssignaturen werden geprüft. Ob die Verbindung aktiv ist, bestätigt jedoch das Relay; dies ist kein kryptografischer Nachweis, dass ein Teilnehmer gerade online ist. Der obige Vorbehalt zu Replay/Rollback gilt weiterhin.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncLivenessCaveat",
+    "deferred": true,
+    "context": "Complete SyncDialog message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "sync_metadata_privacy": {
+    "en": "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.",
+    "de": "Einsatzinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, Sitzungs-, Zeit-, Größen- und Verkehrsmetadaten.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncMetadataPrivacy",
+    "deferred": true,
+    "context": "Complete SyncDialog message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": []
+  },
+  "trial_expired_details": {
+    "en": "Your {1}-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.",
+    "de": "Dein kostenloser Testzeitraum von {1} Tagen ist abgelaufen. Mit einem einmaligen Kauf kannst du TacMap weiter nutzen – Live-MGRS, GeoPDF-Karten, NATO-APP-6-Symbole und GeoJSON-Export.",
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "trialExpiredDetails",
+    "deferred": true,
+    "context": "Complete PaywallScreen message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "trial_remaining_details": {
+    "en": "You're on the free trial ({1} left). Unlock now for permanent access.",
+    "de": "Du nutzt den kostenlosen Test (noch {1}). Jetzt für dauerhaften Zugriff freischalten.",
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "trialRemainingDetails",
+    "deferred": true,
+    "context": "Complete PaywallScreen message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "legacy_layer_history_help": {
+    "en": "Some legacy layers have ambiguous default-layer history. Confirm each one as custom or default before renaming, recolouring, or deleting it.",
+    "de": "Bei einigen älteren Ebenen ist unklar, ob sie ursprünglich Standardebenen waren. Bestätige für jede Ebene, ob sie benutzerdefiniert oder eine Standardebene ist, bevor du sie umbenennst, umfärbst oder löschst.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "legacyLayerHistoryHelp",
+    "deferred": true,
+    "context": "Complete DrawingStore display message. Preserve user actions and interpolate the coordinate format label verbatim.",
+    "parameters": []
+  },
+  "coordinate_copy_hint": {
+    "en": "Tap to copy the displayed {1} coordinate. Long-press to drop a pin here.",
+    "de": "Tippen, um die angezeigte {1}-Koordinate zu kopieren. Lange drücken, um hier einen Marker zu setzen.",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "coordinateCopyHint",
+    "deferred": true,
+    "context": "Complete MGRSHeaderView display message. Preserve user actions and interpolate the coordinate format label verbatim.",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "new_layer_save_failed": {
+    "en": "Could not save new layer to disk: {1}",
+    "de": "Die neue Ebene konnte nicht gespeichert werden: {1}",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "newLayerSaveFailed",
+    "deferred": true,
+    "context": "Complete layer save failure, replacing a translated noun fragment. Diagnostic detail remains verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "layer_undo_save_failed": {
+    "en": "Could not save layer undo to disk: {1}",
+    "de": "Die Ebenenänderung konnte nicht rückgängig gemacht und gespeichert werden: {1}",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "layerUndoSaveFailed",
+    "deferred": true,
+    "context": "Complete layer save failure, replacing a translated noun fragment. Diagnostic detail remains verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "imported_layer_save_failed": {
+    "en": "Could not save imported layer to disk: {1}",
+    "de": "Die importierte Ebene konnte nicht gespeichert werden: {1}",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "importedLayerSaveFailed",
+    "deferred": true,
+    "context": "Complete layer save failure, replacing a translated noun fragment. Diagnostic detail remains verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "synced_layers_save_failed": {
+    "en": "Could not save synced layers to disk: {1}",
+    "de": "Die synchronisierten Ebenen konnten nicht gespeichert werden: {1}",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "syncedLayersSaveFailed",
+    "deferred": true,
+    "context": "Complete layer save failure, replacing a translated noun fragment. Diagnostic detail remains verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "layer_visibility_save_failed": {
+    "en": "Could not save layer visibility to disk: {1}",
+    "de": "Die Sichtbarkeit der Ebene konnte nicht gespeichert werden: {1}",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "layerVisibilitySaveFailed",
+    "deferred": true,
+    "context": "Complete layer save failure, replacing a translated noun fragment. Diagnostic detail remains verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "layer_details_save_failed": {
+    "en": "Could not save layer details to disk: {1}",
+    "de": "Die Ebenendetails konnten nicht gespeichert werden: {1}",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "layerDetailsSaveFailed",
+    "deferred": true,
+    "context": "Complete layer save failure, replacing a translated noun fragment. Diagnostic detail remains verbatim.",
     "parameters": [
       {
         "name": "detail",

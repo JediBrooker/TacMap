@@ -14,6 +14,57 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalizationTest {
+    @Test fun retainedLiveLocationControlsRefreshWithoutChangingActions() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        L10n.install(context)
+        val original = AppLanguage.selection
+        try {
+            AppLanguage.select(context, SupportedLanguage.ENGLISH)
+            val control = com.tacmap.models.LiveMapLocationPermissionPolicy.controlFor(
+                com.tacmap.models.LiveMapLocationState.Denied)
+            val guidance = com.tacmap.models.LiveMapLocationPermissionPolicy.guidanceFor(
+                com.tacmap.models.LocationAccess.ApproximateOnly)!!
+            assertEquals("Open Location Settings", control.title)
+            org.junit.Assert.assertTrue(guidance.message.contains("Allow Precise location"))
+            AppLanguage.select(context, SupportedLanguage.GERMAN)
+            assertEquals("Standorteinstellungen öffnen", control.title)
+            org.junit.Assert.assertTrue(guidance.message.contains("Erlaube den genauen Standort"))
+            assertEquals(com.tacmap.models.LiveMapLocationAction.OpenSettings, control.action)
+            assertEquals(com.tacmap.models.TrackRecordingSettingsTarget.AppPermissions, guidance.settingsTarget)
+            assertEquals(SupportedLanguage.GERMAN, AppLanguage.selections.value)
+        } finally { AppLanguage.select(context, original) }
+    }
+
+    @Test fun builtinLayerDisplayPreservesSerializedDataAndCustomNames() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        L10n.install(context)
+        val original = AppLanguage.selection
+        try {
+            AppLanguage.select(context, SupportedLanguage.ENGLISH)
+            val layer = com.tacmap.drawings.DrawingDocument.defaultLayer()
+            val custom = layer.copy(id = "custom")
+            val edited = layer.copy(name = "My team")
+            val before = kotlinx.serialization.json.Json.encodeToString(com.tacmap.drawings.DrawingLayer.serializer(), layer)
+            AppLanguage.select(context, SupportedLanguage.GERMAN)
+            assertEquals("Eigene Kräfte", layer.displayName)
+            assertEquals("Friendly", layer.name)
+            assertEquals("Friendly", custom.displayName)
+            assertEquals("My team", edited.displayName)
+            assertEquals(before, kotlinx.serialization.json.Json.encodeToString(com.tacmap.drawings.DrawingLayer.serializer(), layer))
+            val germanSeed = com.tacmap.drawings.DrawingDocument.defaultLayer()
+            assertEquals("Eigene Kräfte", germanSeed.name)
+            AppLanguage.select(context, SupportedLanguage.ENGLISH)
+            assertEquals("Friendly", germanSeed.displayName)
+            assertEquals("Eigene Kräfte", germanSeed.name)
+            for (count in listOf(0, 1, 2, 10000)) {
+                assertEquals("Send to $count " + if (count == 1) "unit" else "units", Messages.sendUnitsCount(count))
+            }
+            AppLanguage.select(context, SupportedLanguage.GERMAN)
+            assertEquals("An 2 Einheiten senden", Messages.sendUnitsCount(2))
+            assertEquals("2 Zeichnungen", Messages.drawingCount(2))
+        } finally { AppLanguage.select(context, original) }
+    }
+
     @Test fun retainedRecordingStatesRefreshWithoutChangingTransitions() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         L10n.install(context)

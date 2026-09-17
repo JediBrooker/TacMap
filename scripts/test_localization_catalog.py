@@ -129,7 +129,19 @@ class CatalogueTests(unittest.TestCase):
         self.assertTrue(any('Duplicate locale kotlinCase' in e for e in validate(data)))
 
     def test_existing_language_text_and_plurals_are_unchanged(self):
-        data = load(); generated = outputs(data=data)
+        data = load()
+        # Preserve the original migration baseline; only explicitly reviewed wording
+        # revisions may differ. This never rebaselines unrelated copy or protocol data.
+        revisions = json.loads((ROOT / 'testdata/localization/reviewed-wording-changes.json').read_text())
+        self.assertEqual(len({(e['id'], e['locale']) for e in revisions}), len(revisions))
+        for revision in revisions:
+            entry = data['catalog'][revision['id']]
+            tag = revision['locale']
+            self.assertTrue(revision['reason'])
+            self.assertEqual(entry[tag], revision['after'])
+            entry[tag] = revision['before']
+            data['reviews']['catalog'][revision['id']][tag] = review_record(source_value(entry), entry[tag], 'reviewed')
+        generated = outputs(data=data)
         golden = json.loads((ROOT / 'testdata/localization/legacy-display-hashes.json').read_text())
         for tag in ('en', 'de'):
             ios = generated[ROOT / f'ios/TacticalMaps/Resources/{tag}.lproj/Localizable.strings']

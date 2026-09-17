@@ -192,7 +192,7 @@ struct DrawingControlsCard: View {
     // MARK: Header - name + close
 
     private func header(for shape: DrawingShape) -> some View {
-        let layerName = drawingStore.layer(id: shape.layerID)?.name
+        let layerName = drawingStore.layer(id: shape.layerID)?.displayName
         return HStack(spacing: 10) {
             // filled tile showing the drawing colour at a glance
             ZStack {
@@ -362,7 +362,7 @@ struct DrawingControlsCard: View {
                     updated.layerID = layer.id
                     commit(updated, actionName: L10n.text("Move Drawing to Layer"))
                 } label: {
-                    Label("\(layer.name) (\(count))",
+                    Label("\(layer.displayName) (\(count))",
                           systemImage: layer.id == current?.id
                               ? "largecircle.fill.circle"
                               : "circle.fill")

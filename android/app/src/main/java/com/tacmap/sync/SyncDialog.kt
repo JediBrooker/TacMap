@@ -1,5 +1,9 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.DisplayFormat
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.content.Context
@@ -62,9 +66,7 @@ internal object UnitSyncJoinGate {
 }
 
 internal fun unitSyncJoinConsentMessage(interval: BackgroundUnitSyncInterval): String =
-    L10n.text("To join, TacMap will enable Share my location and Background Unit Sync location. ") +
-        L10n.text("When Location access is allowed, your encrypted position will be sent while the app ") +
-        L10n.text("is open and approximately %1\$s while the screen is off.", interval.displayName.lowercase())
+    Messages.syncJoinLocationConsent(interval.displayName.lowercase())
 
 /** Join / create a unit sync room and show connection status. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -255,8 +257,7 @@ fun SyncDialog(
                                     legacyConfirmed = true
                                     codeError = L10n.text("Legacy v2 has weaker rollback and identity protection. Tap again to confirm legacy join.")
                                 } else if (SyncCrypto.isJoinCodeTooWeak(code)) {
-                                    codeError = L10n.text("Too short to be safe. Use at least ") +
-                                        L10n.text("%1\$s characters, or tap Generate.", SyncCrypto.MIN_JOIN_CODE_LEN)
+                                    codeError = Messages.syncCodeTooShort(DisplayFormat.number((SyncCrypto.MIN_JOIN_CODE_LEN).toDouble(), 0))
                                 } else if (UnitSyncJoinGate.requiresConsent(
                                         roomCode = trimmedCode,
                                         shareLocation = shareLocation,
@@ -370,8 +371,7 @@ fun SyncDialog(
                         fontSize = 14.sp,
                     )
                     Text(
-                        L10n.text("Authenticated online membership is unavailable in legacy v2 rooms. ") +
-                            L10n.text("Upgrade every device to a v3 room for relay-reported signed sessions."),
+                        Messages.syncLegacyMembershipHelp(),
                         fontSize = 12.sp,
                         color = Color.Gray,
                     )
@@ -433,8 +433,7 @@ fun SyncDialog(
                         }
                     }
                     Text(
-                        L10n.text("Identity and session signatures are verified, but connection liveness is relay-attested; ") +
-                            L10n.text("it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat above."),
+                        Messages.syncLivenessCaveat(),
                         fontSize = 11.sp,
                         color = Color.Gray,
                     )
@@ -497,8 +496,7 @@ fun SyncDialog(
                 }
 
                 Text(
-                    L10n.text("Mission payload content is end-to-end encrypted. The relay still sees connection, routing, ") +
-                        L10n.text("session, timing, size, and traffic metadata."),
+                    Messages.syncMetadataPrivacy(),
                     fontSize = 11.sp,
                     color = Color.Gray
                 )

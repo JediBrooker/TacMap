@@ -1,5 +1,9 @@
 package com.tacmap.billing
 
+import com.tacmap.localization.DisplayFormat
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.background
@@ -94,12 +98,9 @@ fun PaywallScreen(
         Spacer(Modifier.height(14.dp))
         Text(
             if (expired)
-                L10n.text("Your %1\$s-day free trial is over. ", TrialManager.TRIAL_DAYS) +
-                    L10n.text("Make a one-time purchase to keep using TacMap — ") +
-                    L10n.text("live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.")
+                Messages.trialExpiredDetails(DisplayFormat.number((TrialManager.TRIAL_DAYS).toDouble(), 0))
             else
-                L10n.text("You're on the free trial (%1\$s left). ", L10n.quantity("day", trialDaysRemaining)) +
-                    L10n.text("Unlock now for permanent access."),
+                Messages.trialRemainingDetails(L10n.quantity("day", trialDaysRemaining)),
             color = Color(0xFFB8C4BC),
             fontSize = 14.sp,
             textAlign = TextAlign.Center,

@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DisplayFormat
+
 import com.tacmap.localization.Messages
 
 import com.tacmap.localization.L10n
@@ -237,8 +239,10 @@ internal fun MapScreen(
     val waypointCanRedo by waypointStore.canRedo.collectAsState()
     val waypointDataLocked by waypointStore.locked.collectAsState()
     val drawingDataLocked by drawingStore.locked.collectAsState()
-    val waypointStoreError by waypointStore.loadError.collectAsState()
-    val drawingStoreError by drawingStore.loadError.collectAsState()
+    val waypointStoreMessage by waypointStore.loadError.collectAsState()
+    val waypointStoreError = waypointStoreMessage?.text
+    val drawingStoreMessage by drawingStore.loadError.collectAsState()
+    val drawingStoreError = drawingStoreMessage?.text
     val canUndo = drawingCanUndo || waypointCanUndo
     val canRedo = drawingCanRedo || waypointCanRedo
     val lastLocation by vm.locationService.lastLocation.collectAsState()
@@ -1631,11 +1635,9 @@ internal fun MapScreen(
             text = {
                 Text(
                     if (isRecordingTrack) {
-                        L10n.text("Recording will stop and the encrypted track log, including all ") +
-                            L10n.text("%1\$s saved point(s), will be permanently deleted.", trackPoints.size)
+                        Messages.recordingDiscardActive(DisplayFormat.number((trackPoints.size).toDouble(), 0))
                     } else {
-                        L10n.text("The encrypted track log and all %1\$s saved point(s) ", trackPoints.size) +
-                            L10n.text("will be permanently deleted. Export GPX first if you need a copy.")
+                        Messages.recordingDiscardSaved(DisplayFormat.number((trackPoints.size).toDouble(), 0))
                     }
                 )
             },

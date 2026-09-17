@@ -33,7 +33,7 @@ class StoreDurabilityTest {
         assertTrue(store.waypoints.value.isEmpty())
         assertFalse(store.canUndo.value)
         assertNull(events.tryReceive().getOrNull())
-        assertTrue(store.loadError.value.orEmpty().contains("reverted"))
+        assertTrue(store.loadError.value?.text.orEmpty().contains("reverted"))
         events.cancel()
     }
 
@@ -118,7 +118,7 @@ class StoreDurabilityTest {
         assertEquals(before, store.document.value)
         assertFalse(store.canUndo.value)
         assertNull(events.tryReceive().getOrNull())
-        assertTrue(store.loadError.value.orEmpty().contains("reverted"))
+        assertTrue(store.loadError.value?.text.orEmpty().contains("reverted"))
         events.cancel()
     }
 

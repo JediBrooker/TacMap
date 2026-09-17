@@ -138,7 +138,7 @@ struct DrawingsPanel: View {
                 Button {
                     drawingStore.activeLayerID = layer.id
                 } label: {
-                    Label(layer.name,
+                    Label(layer.displayName,
                           systemImage: layer.id == active?.id
                               ? "largecircle.fill.circle"
                               : "circle.fill")
@@ -155,7 +155,7 @@ struct DrawingsPanel: View {
                     Text(L10n.text("LAYER"))
                         .font(.system(size: 9).weight(.bold))
                         .foregroundStyle(.white.opacity(0.5))
-                    Text(active?.name ?? "—")
+                    Text(active?.displayName ?? "—")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white)
                 }

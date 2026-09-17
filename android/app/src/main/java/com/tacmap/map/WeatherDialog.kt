@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.DisplayFormat
 
 import com.tacmap.localization.L10n
@@ -63,8 +65,7 @@ fun WeatherDialog(
                     }
                     reading == null -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            L10n.text("Couldn't fetch conditions. If online lookups are off ") +
-                                L10n.text("(Settings, Privacy & OPSEC), enable them; otherwise check your connection.")
+                            Messages.weatherFetchFailed()
                         )
                         TextButton(onClick = { attempt++ }) { Text(L10n.text("Retry")) }
                     }

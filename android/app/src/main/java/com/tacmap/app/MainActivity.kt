@@ -277,8 +277,7 @@ class MainActivity : ComponentActivity() {
                             title = { Text(L10n.text("Recording notification is off")) },
                             text = {
                                 Text(
-                                    L10n.text("Recording can continue, but Android may hide its ongoing notification ") +
-                                        L10n.text("from the notification drawer. You can still find TacMap in Active apps.")
+                                    Messages.recordingNotificationHidden()
                                 )
                             },
                             confirmButton = {

@@ -158,8 +158,7 @@ struct MGRSHeaderView: View {
             drop(coord, resolvedCoordinate.text)
         }
         .accessibilityHint(
-            L10n.text("Tap to copy the displayed %1$@ coordinate. ", resolvedCoordinate.format.label)
-                + L10n.text("Long-press to drop a pin here.")
+            Messages.coordinateCopyHint(resolvedCoordinate.format.label)
         )
     }
 

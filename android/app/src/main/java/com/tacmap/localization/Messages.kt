@@ -2,22 +2,78 @@
 package com.tacmap.localization
 
 object Messages {
+    fun appLockDataDamaged(): String =
+        L10n.message("id.app_lock_data_damaged", "App Lock data is damaged and cannot be verified. Clear TacMap's app data in Android Settings to recover.")
+    fun appLockDataDamagedMessage(): LocalizedMessage =
+        LocalizedMessage("id.app_lock_data_damaged", "App Lock data is damaged and cannot be verified. Clear TacMap's app data in Android Settings to recover.", listOf())
+    fun appLockUpdateFailed(): String =
+        L10n.message("id.app_lock_update_failed", "App Lock storage could not be updated. The lock remains armed; enter your existing PIN.")
+    fun appLockUpdateFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.app_lock_update_failed", "App Lock storage could not be updated. The lock remains armed; enter your existing PIN.", listOf())
+    fun backgroundSyncDisableFailed(): String =
+        L10n.message("id.background_sync_disable_failed", "Background Unit Sync stopped, but its OFF setting could not be saved. Check available storage and turn it off again in Privacy & OPSEC.")
+    fun backgroundSyncDisableFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.background_sync_disable_failed", "Background Unit Sync stopped, but its OFF setting could not be saved. Check available storage and turn it off again in Privacy & OPSEC.", listOf())
+    fun basemapRecoveryRequired(): String =
+        L10n.message("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.")
+    fun basemapRecoveryRequiredMessage(): LocalizedMessage =
+        LocalizedMessage("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.", listOf())
     fun chatRecipientHeading(): String =
         L10n.message("id.chat_recipient_heading", "RECIPIENT")
     fun acknowledge(): String =
         L10n.message("id.common_ok", "OK")
+    fun drawingsQuarantined(value: String): String =
+        L10n.message("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", value)
+    fun drawingsQuarantinedMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", listOf(value))
     fun importFailed(detail: String): String =
         L10n.message("id.import_failed", "Import failed: %1\$s", detail)
+    fun importFeatureSummary(waypoints: String, drawings: String, skipped: String): String =
+        L10n.message("id.import_feature_summary", "Imported %1\$s waypoint(s) and %2\$s drawing(s)%3\$s", waypoints, drawings, skipped)
+    fun importFeatureSummaryMessage(waypoints: String, drawings: String, skipped: String): LocalizedMessage =
+        LocalizedMessage("id.import_feature_summary", "Imported %1\$s waypoint(s) and %2\$s drawing(s)%3\$s", listOf(waypoints, drawings, skipped))
     fun decimalInputHint(): String =
         L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
+    fun liveLocationApproximateGuidance(): String =
+        L10n.message("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.")
+    fun liveLocationApproximateGuidanceMessage(): LocalizedMessage =
+        LocalizedMessage("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.", listOf())
+    fun onlineBasemapsDisabled(): String =
+        L10n.message("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
+    fun onlineBasemapsDisabledMessage(): LocalizedMessage =
+        LocalizedMessage("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", listOf())
+    fun pdfRotationUnsupported(value: String): String =
+        L10n.message("id.pdf_rotation_unsupported", "This PDF's first page is rotated %1\$s°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy.", value)
+    fun pdfRotationUnsupportedMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.pdf_rotation_unsupported", "This PDF's first page is rotated %1\$s°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy.", listOf(value))
+    fun privacySettingSaveFailed(): String =
+        L10n.message("id.privacy_setting_save_failed", "Could not save this privacy setting. The previous setting remains active; check available storage and try again.")
+    fun privacySettingSaveFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.privacy_setting_save_failed", "Could not save this privacy setting. The previous setting remains active; check available storage and try again.", listOf())
     fun recordingActivationFailed(detail: String): String =
         L10n.message("id.recording_activation_failed", "Could not activate background track recording: %1\$s", detail)
     fun recordingActivationFailedMessage(detail: String): LocalizedMessage =
         LocalizedMessage("id.recording_activation_failed", "Could not activate background track recording: %1\$s", listOf(detail))
+    fun recordingDiscardActive(value: String): String =
+        L10n.message("id.recording_discard_active", "Recording will stop and the encrypted track log, including all %1\$s saved point(s), will be permanently deleted.", value)
+    fun recordingDiscardActiveMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.recording_discard_active", "Recording will stop and the encrypted track log, including all %1\$s saved point(s), will be permanently deleted.", listOf(value))
+    fun recordingDiscardSaved(value: String): String =
+        L10n.message("id.recording_discard_saved", "The encrypted track log and all %1\$s saved point(s) will be permanently deleted. Export GPX first if you need a copy.", value)
+    fun recordingDiscardSavedMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.recording_discard_saved", "The encrypted track log and all %1\$s saved point(s) will be permanently deleted. Export GPX first if you need a copy.", listOf(value))
+    fun recordingNotificationHidden(): String =
+        L10n.message("id.recording_notification_hidden", "Recording can continue, but Android may hide its ongoing notification from the notification drawer. You can still find TacMap in Active apps.")
+    fun recordingNotificationHiddenMessage(): LocalizedMessage =
+        LocalizedMessage("id.recording_notification_hidden", "Recording can continue, but Android may hide its ongoing notification from the notification drawer. You can still find TacMap in Active apps.", listOf())
     fun recordingPreciseRequiredRetry(): String =
         L10n.message("id.recording_precise_required_retry", "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.")
     fun recordingPreciseRequiredRetryMessage(): LocalizedMessage =
         LocalizedMessage("id.recording_precise_required_retry", "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.", listOf())
+    fun relayRecoveryFailed(): String =
+        L10n.message("id.relay_recovery_failed", "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.")
+    fun relayRecoveryFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.relay_recovery_failed", "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.", listOf())
     fun androidKeyProtectionHelp(): String =
         L10n.message("id.settings_android_key_protection_help", "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.")
     fun headingHelp(): String =
@@ -32,10 +88,50 @@ object Messages {
         L10n.message("id.settings_online_basemaps_help", "Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. While on, Esri or OpenTopoMap can see the ground you are looking at from your IP. Turn this off for a fully offline posture.")
     fun onlineLookupsHelp(): String =
         L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.")
+    fun syncCodeTooShort(value: String): String =
+        L10n.message("id.sync_code_too_short", "Too short to be safe. Use at least %1\$s characters, or tap Generate.", value)
+    fun syncCodeTooShortMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.sync_code_too_short", "Too short to be safe. Use at least %1\$s characters, or tap Generate.", listOf(value))
+    fun syncJoinLocationConsent(value: String): String =
+        L10n.message("id.sync_join_location_consent", "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately %1\$s while the screen is off.", value)
+    fun syncJoinLocationConsentMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.sync_join_location_consent", "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately %1\$s while the screen is off.", listOf(value))
+    fun syncLegacyMembershipHelp(): String =
+        L10n.message("id.sync_legacy_membership_help", "Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions.")
+    fun syncLegacyMembershipHelpMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_legacy_membership_help", "Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions.", listOf())
+    fun syncLivenessCaveat(): String =
+        L10n.message("id.sync_liveness_caveat", "Identity and session signatures are verified, but connection liveness is relay-attested; it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat above.")
+    fun syncLivenessCaveatMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_liveness_caveat", "Identity and session signatures are verified, but connection liveness is relay-attested; it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat above.", listOf())
+    fun syncMetadataMigrationFailed(): String =
+        L10n.message("id.sync_metadata_migration_failed", "Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again.")
+    fun syncMetadataMigrationFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_metadata_migration_failed", "Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again.", listOf())
+    fun syncMetadataPrivacy(): String =
+        L10n.message("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.")
+    fun syncMetadataPrivacyMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.", listOf())
+    fun trialExpiredDetails(value: String): String =
+        L10n.message("id.trial_expired_details", "Your %1\$s-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", value)
+    fun trialExpiredDetailsMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.trial_expired_details", "Your %1\$s-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", listOf(value))
+    fun trialRemainingDetails(value: String): String =
+        L10n.message("id.trial_remaining_details", "You're on the free trial (%1\$s left). Unlock now for permanent access.", value)
+    fun trialRemainingDetailsMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.trial_remaining_details", "You're on the free trial (%1\$s left). Unlock now for permanent access.", listOf(value))
+    fun liveLocationPreciseNeeded(): String =
+        L10n.message("id.ui_allow_precise_location_to_show_your_live_positio_0adb7f1b", "Allow Precise location to show your live position on the map.")
+    fun liveLocationPreciseNeededMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_allow_precise_location_to_show_your_live_positio_0adb7f1b", "Allow Precise location to show your live position on the map.", listOf())
     fun recordingPreciseRequiredShort(): String =
         L10n.message("id.ui_approximate_location_cannot_provide_the_precise__fa2a6228", "Approximate location cannot provide the precise GPS track TacMap records.")
     fun recordingPreciseRequiredShortMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_approximate_location_cannot_provide_the_precise__fa2a6228", "Approximate location cannot provide the precise GPS track TacMap records.", listOf())
+    fun liveLocationApproximateHint(): String =
+        L10n.message("id.ui_approximate_location_is_on_open_settings_to_allo_49d6e949", "Approximate location is on. Open Settings to allow Precise location.")
+    fun liveLocationApproximateHintMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_approximate_location_is_on_open_settings_to_allo_49d6e949", "Approximate location is on. Open Settings to allow Precise location.", listOf())
     fun recordingActivationTimeout(): String =
         L10n.message("id.ui_background_recording_did_not_activate_in_time_tr_7f76c35b", "Background recording did not activate in time. Try starting it again.")
     fun recordingActivationTimeoutMessage(): LocalizedMessage =
@@ -44,6 +140,14 @@ object Messages {
         L10n.message("id.ui_background_recording_stopped_unexpectedly_your_s_4fb5f807", "Background recording stopped unexpectedly. Your saved track was preserved.")
     fun recordingServiceStoppedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_background_recording_stopped_unexpectedly_your_s_4fb5f807", "Background recording stopped unexpectedly. Your saved track was preserved.", listOf())
+    fun liveLocationCentre(): String =
+        L10n.message("id.ui_centre_on_my_location_82529ff7", "Centre on My Location")
+    fun liveLocationCentreMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_centre_on_my_location_82529ff7", "Centre on My Location", listOf())
+    fun liveLocationCentrePreciseHint(): String =
+        L10n.message("id.ui_centres_the_map_on_your_latest_precise_location_a4532c96", "Centres the map on your latest precise location.")
+    fun liveLocationCentrePreciseHintMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_centres_the_map_on_your_latest_precise_location_a4532c96", "Centres the map on your latest precise location.", listOf())
     fun trackDiscardFailed(detail: String): String =
         L10n.message("id.ui_could_not_discard_the_saved_track_1_01f1dcdf", "Could not discard the saved track: %1\$s", detail)
     fun trackDiscardFailedMessage(detail: String): LocalizedMessage =
@@ -56,6 +160,18 @@ object Messages {
         L10n.message("id.ui_could_not_read_the_saved_track_1_fd3205b4", "Could not read the saved track: %1\$s", detail)
     fun trackReadFailedMessage(detail: String): LocalizedMessage =
         LocalizedMessage("id.ui_could_not_read_the_saved_track_1_fd3205b4", "Could not read the saved track: %1\$s", listOf(detail))
+    fun couldNotSaveDrawingsToDisk(detail1: String): String =
+        L10n.message("id.ui_could_not_save_drawings_to_disk_1_165e4ac6", "Could not save drawings to disk: %1\$s", detail1)
+    fun couldNotSaveDrawingsToDiskMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_save_drawings_to_disk_1_165e4ac6", "Could not save drawings to disk: %1\$s", listOf(detail1))
+    fun couldNotSaveDrawingsToDiskTheChangeWasReverted(detail1: String): String =
+        L10n.message("id.ui_could_not_save_drawings_to_disk_the_change_was_r_ac83ca6c", "Could not save drawings to disk; the change was reverted: %1\$s", detail1)
+    fun couldNotSaveDrawingsToDiskTheChangeWasRevertedMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_save_drawings_to_disk_the_change_was_r_ac83ca6c", "Could not save drawings to disk; the change was reverted: %1\$s", listOf(detail1))
+    fun couldNotSaveWaypointsToDiskTheChangeWasReverted(detail1: String): String =
+        L10n.message("id.ui_could_not_save_waypoints_to_disk_the_change_was__97475445", "Could not save waypoints to disk; the change was reverted: %1\$s", detail1)
+    fun couldNotSaveWaypointsToDiskTheChangeWasRevertedMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_save_waypoints_to_disk_the_change_was__97475445", "Could not save waypoints to disk; the change was reverted: %1\$s", listOf(detail1))
     fun recordingBackgroundStartFailed(detail: String): String =
         L10n.message("id.ui_could_not_start_background_recording_1_cdb42e3d", "Could not start background recording: %1\$s", detail)
     fun recordingBackgroundStartFailedMessage(detail: String): LocalizedMessage =
@@ -68,6 +184,22 @@ object Messages {
         L10n.message("id.ui_could_not_verify_the_saved_track_before_recordin_74d65e13", "Could not verify the saved track before recording.")
     fun recordingVerifyFailedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_could_not_verify_the_saved_track_before_recordin_74d65e13", "Could not verify the saved track before recording.", listOf())
+    fun drawingsAreEncryptedAndLocked(detail1: String): String =
+        L10n.message("id.ui_drawings_are_encrypted_and_locked_1_45b3c976", "Drawings are encrypted and locked. %1\$s", detail1)
+    fun drawingsAreEncryptedAndLockedMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_drawings_are_encrypted_and_locked_1_45b3c976", "Drawings are encrypted and locked. %1\$s", listOf(detail1))
+    fun drawingsAreLockedAndTheChangeWasNotSaved(): String =
+        L10n.message("id.ui_drawings_are_locked_and_the_change_was_not_saved_2b37305f", "Drawings are locked and the change was not saved.")
+    fun drawingsAreLockedAndTheChangeWasNotSavedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_drawings_are_locked_and_the_change_was_not_saved_2b37305f", "Drawings are locked and the change was not saved.", listOf())
+    fun liveLocationEnable(): String =
+        L10n.message("id.ui_enable_live_location_ce184825", "Enable Live Location")
+    fun liveLocationEnableMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_enable_live_location_ce184825", "Enable Live Location", listOf())
+    fun liveLocationEnablePrecise(): String =
+        L10n.message("id.ui_enable_precise_location_177e9850", "Enable Precise Location")
+    fun liveLocationEnablePreciseMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_enable_precise_location_177e9850", "Enable Precise Location", listOf())
     fun recordingExistingTrack(): String =
         L10n.message("id.ui_export_or_discard_the_saved_track_before_startin_11ec4f4c", "Export or discard the saved track before starting a new recording.")
     fun recordingExistingTrackMessage(): LocalizedMessage =
@@ -88,10 +220,26 @@ object Messages {
         L10n.message("id.ui_location_access_became_unavailable_recording_sto_3c08130f", "Location access became unavailable; recording stopped.")
     fun recordingAccessUnavailableMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_location_access_became_unavailable_recording_sto_3c08130f", "Location access became unavailable; recording stopped.", listOf())
+    fun liveLocationDisabledHint(): String =
+        L10n.message("id.ui_location_access_is_off_opens_settings_so_you_can_aa125240", "Location access is off. Opens Settings so you can enable it.")
+    fun liveLocationDisabledHintMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_location_access_is_off_opens_settings_so_you_can_aa125240", "Location access is off. Opens Settings so you can enable it.", listOf())
+    fun liveLocationRestrictedAndroidHint(): String =
+        L10n.message("id.ui_location_access_is_restricted_by_this_device_rev_50e0726b", "Location access is restricted by this device. Review Location settings.")
+    fun liveLocationRestrictedAndroidHintMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_location_access_is_restricted_by_this_device_rev_50e0726b", "Location access is restricted by this device. Review Location settings.", listOf())
     fun recordingPermissionLost(): String =
         L10n.message("id.ui_location_permission_was_removed_recording_stoppe_4d281d01", "Location permission was removed; recording stopped.")
     fun recordingPermissionLostMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_location_permission_was_removed_recording_stoppe_4d281d01", "Location permission was removed; recording stopped.", listOf())
+    fun liveLocationRestricted(): String =
+        L10n.message("id.ui_location_restricted_7b8c5d17", "Location Restricted")
+    fun liveLocationRestrictedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_location_restricted_7b8c5d17", "Location Restricted", listOf())
+    fun liveLocationSettings(): String =
+        L10n.message("id.ui_open_location_settings_4295919a", "Open Location Settings")
+    fun liveLocationSettingsMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_open_location_settings_4295919a", "Open Location Settings", listOf())
     fun recordingPreciseRequired(): String =
         L10n.message("id.ui_precise_location_permission_is_required_to_recor_4e3a2e91", "Precise location permission is required to record a GPS track.")
     fun recordingPreciseRequiredMessage(): LocalizedMessage =
@@ -104,10 +252,16 @@ object Messages {
         L10n.message("id.ui_recording_stopped_because_its_session_key_was_un_6082de71", "Recording stopped because its session key was unavailable.")
     fun recordingSessionKeyUnavailableMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_recording_stopped_because_its_session_key_was_un_6082de71", "Recording stopped because its session key was unavailable.", listOf())
+    fun recoveryCopyFallback(): String =
+        L10n.message("id.ui_recovery_copy_6f7749ab", "recovery copy")
     fun trackStopBeforeDiscard(): String =
         L10n.message("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.")
     fun trackStopBeforeDiscardMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.", listOf())
+    fun liveLocationFirstLaunch(): String =
+        L10n.message("id.ui_tacmap_requests_location_access_on_first_launch__581e58e5", "TacMap requests Location access on first launch. Tap to request it again if needed.")
+    fun liveLocationFirstLaunchMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_tacmap_requests_location_access_on_first_launch__581e58e5", "TacMap requests Location access on first launch. Tap to request it again if needed.", listOf())
     fun recordingBuildPrerequisite(): String =
         L10n.message("id.ui_this_build_is_missing_an_android_foreground_loca_d9bda81b", "This build is missing an Android foreground-location service prerequisite.")
     fun recordingBuildPrerequisiteMessage(): LocalizedMessage =
@@ -132,6 +286,22 @@ object Messages {
         L10n.message("id.ui_waiting_for_the_recording_notification_choice_b6d01585", "Waiting for the recording notification choice…")
     fun recordingAwaitingNotificationMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_waiting_for_the_recording_notification_choice_b6d01585", "Waiting for the recording notification choice…", listOf())
+    fun waypointsAreEncryptedAndLocked(detail1: String): String =
+        L10n.message("id.ui_waypoints_are_encrypted_and_locked_1_93dedbe5", "Waypoints are encrypted and locked. %1\$s", detail1)
+    fun waypointsAreEncryptedAndLockedMessage(detail1: String): LocalizedMessage =
+        LocalizedMessage("id.ui_waypoints_are_encrypted_and_locked_1_93dedbe5", "Waypoints are encrypted and locked. %1\$s", listOf(detail1))
+    fun waypointsAreLockedAndTheChangeWasNotSaved(): String =
+        L10n.message("id.ui_waypoints_are_locked_and_the_change_was_not_save_f2b9af87", "Waypoints are locked and the change was not saved.")
+    fun waypointsAreLockedAndTheChangeWasNotSavedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_waypoints_are_locked_and_the_change_was_not_save_f2b9af87", "Waypoints are locked and the change was not saved.", listOf())
+    fun waypointsQuarantined(value: String): String =
+        L10n.message("id.waypoints_quarantined", "Saved waypoints could not be read and were set aside (%1\$s). Starting with no waypoints.", value)
+    fun waypointsQuarantinedMessage(value: String): LocalizedMessage =
+        LocalizedMessage("id.waypoints_quarantined", "Saved waypoints could not be read and were set aside (%1\$s). Starting with no waypoints.", listOf(value))
+    fun weatherFetchFailed(): String =
+        L10n.message("id.weather_fetch_failed", "Couldn't fetch conditions. If online lookups are off (Settings, Privacy & OPSEC), enable them; otherwise check your connection.")
+    fun weatherFetchFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.weather_fetch_failed", "Couldn't fetch conditions. If online lookups are off (Settings, Privacy & OPSEC), enable them; otherwise check your connection.", listOf())
     fun dayCount(count: Int): String = L10n.quantity("day", count)
     fun pointCount(count: Int): String = L10n.quantity("point", count)
     fun drawingCount(count: Int): String = L10n.quantity("drawing", count)

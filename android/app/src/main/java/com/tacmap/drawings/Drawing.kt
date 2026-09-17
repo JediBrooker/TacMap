@@ -57,7 +57,20 @@ data class DrawingLayer(
     val color: Int = DrawingDocument.FRIENDLY_LAYER_COLOR,
     @SerialName("is_visible") val isVisible: Boolean = true,
     @SerialName("created_at_epoch_ms") val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    /** Display-only: serialization and export continue using the saved name. */
+    val displayName: String
+        get() {
+            val key = when (id) {
+                DrawingDocument.DEFAULT_LAYER_ID -> "Friendly"
+                DrawingDocument.HOSTILE_LAYER_ID -> "Hostile"
+                DrawingDocument.UNKNOWN_LAYER_ID -> "Unknown"
+                DrawingDocument.CIVILIAN_LAYER_ID -> "Civilian"
+                else -> return name
+            }
+            return if (L10n.isCatalogValue(name, key)) L10n.text(key) else name
+        }
+}
 
 @Serializable
 data class DrawingFeature(

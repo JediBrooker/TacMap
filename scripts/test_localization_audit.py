@@ -11,9 +11,17 @@ class DisplayTextAuditTests(unittest.TestCase):
     def literals(self, code, platform='ios'):
         return [f['literal'] for f in scan(code, platform)]
 
+    def test_english_plural_suffix_inside_localized_argument_fails(self):
+        self.assertEqual(self.literals('Text(L10n.text("%1$s drawing%2$s", count, if (count == 1) "" else "s"))', 'android'), ['"s"'])
+        self.assertEqual(self.literals('Text(L10n.text("%1$@ point%2$@", count, count == 1 ? "" : "s"))'), ['"s"'])
+        self.assertEqual(self.literals('Text(Messages.drawingCount(count))', 'android'), [])
+
     def test_direct_labels_on_both_platforms(self):
         self.assertEqual(self.literals('Text("Save"); Button("Cancel", action: close)'), ['"Save"', '"Cancel"'])
         self.assertEqual(self.literals('Text(text = "Save"); Icon(contentDescription = "Close")', 'android'), ['"Save"', '"Close"'])
+
+    def test_recording_status_computed_property_is_display_copy(self):
+        self.assertEqual(self.literals('var statusTitle: String { switch state { case .starting: return "STARTING"; default: return "IDLE" } }'), ['"STARTING"', '"IDLE"'])
 
     def test_localized_values_and_identifiers_are_not_prose(self):
         source = 'Text(L10n.text("Save")); Text(userName); Image(systemName: "trash"); let key = "wire_value"'

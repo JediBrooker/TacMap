@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.annotation.SuppressLint
@@ -1219,8 +1221,7 @@ class SyncManager(
             return
         } catch (failure: Throwable) {
             val message =
-                L10n.text("Saved Unit Sync metadata could not be migrated to private filenames. ") +
-                    L10n.text("Check available storage, then unlock mission data and try again.")
+                Messages.syncMetadataMigrationFailed()
             _lastError.value = issueLifecycle.reportPersistentSecurity(
                 message,
                 activeConnectionGeneration,

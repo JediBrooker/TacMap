@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DisplayFormat
+
 import com.tacmap.localization.Messages
 
 import com.tacmap.localization.L10n
@@ -48,8 +50,7 @@ internal fun applyGeoJsonImportResult(
                 }
                 GeoJsonImportFeedback(
                     succeeded = true,
-                    message = L10n.text("Imported %1\$s waypoint(s) and ", parsed.waypoints.size) +
-                        L10n.text("%1\$s drawing(s)%2\$s", parsed.drawings.size, skipped),
+                    message = Messages.importFeatureSummary(DisplayFormat.number((parsed.waypoints.size).toDouble(), 0), DisplayFormat.number((parsed.drawings.size).toDouble(), 0), skipped),
                 )
             },
             onFailure = { failure ->

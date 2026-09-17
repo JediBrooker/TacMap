@@ -1,5 +1,9 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DisplayFormat
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.content.ClipData
@@ -330,9 +334,7 @@ private class AndroidTextExportDriver(
 internal class PdfImportRejectedException(message: String) : Exception(message)
 
 internal fun pdfRotationRejectionMessage(rotationDegrees: Int): String =
-    L10n.text("This PDF's first page is rotated %1\$s°. TacMap cannot safely ", rotationDegrees) +
-        L10n.text("georeference rotated pages yet. Flatten the page rotation in a PDF editor or ") +
-        L10n.text("print it to a new PDF, then import that copy.")
+    Messages.pdfRotationUnsupported(DisplayFormat.number((rotationDegrees).toDouble(), 0))
 
 internal fun pdfImportUserMessage(failure: Throwable): String = when {
     failure is PdfImportRejectedException -> failure.message ?: L10n.text("Unable to import PDF map.")

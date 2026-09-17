@@ -17,16 +17,17 @@ final class RecordingCoordinator: ObservableObject {
         case awaitingPermission
         case starting
         case recording
-        case interrupted(String)
+        case interrupted(LocalizedMessage)
     }
 
     struct Guidance: Identifiable, Equatable {
         let id = UUID()
-        let message: String
+        let pendingMessage: LocalizedMessage
+        var message: String { pendingMessage.text }
         let offersSettings: Bool
 
         static func == (lhs: Guidance, rhs: Guidance) -> Bool {
-            lhs.message == rhs.message && lhs.offersSettings == rhs.offersSettings
+            lhs.pendingMessage == rhs.pendingMessage && lhs.offersSettings == rhs.offersSettings
         }
     }
 
@@ -37,14 +38,14 @@ final class RecordingCoordinator: ObservableObject {
     private let initializeDurableRecording: () -> Bool
     private let stopRecording: () -> Void
     private let setBackgroundUpdates: (Bool) -> Void
-    private let recordingError: () -> String?
+    private let recordingError: () -> LocalizedMessage?
 
     init(
         requestAuthorization: @escaping () -> Void,
         initializeDurableRecording: @escaping () -> Bool,
         stopRecording: @escaping () -> Void,
         setBackgroundUpdates: @escaping (Bool) -> Void,
-        recordingError: @escaping () -> String?
+        recordingError: @escaping () -> LocalizedMessage?
     ) {
         self.requestAuthorization = requestAuthorization
         self.initializeDurableRecording = initializeDurableRecording
@@ -105,10 +106,10 @@ final class RecordingCoordinator: ObservableObject {
         }
     }
 
-    func recorderDidStopUnexpectedly(error: String?) {
+    func recorderDidStopUnexpectedly(error: LocalizedMessage?) {
         guard state == .recording else { return }
         setBackgroundUpdates(false)
-        let message = error ?? L10n.text("Track recording was interrupted. The saved track was preserved.")
+        let message = error ?? Messages.recordingInterruptedPreservedMessage()
         state = .interrupted(message)
     }
 
@@ -126,7 +127,7 @@ final class RecordingCoordinator: ObservableObject {
         guard initializeDurableRecording() else {
             setBackgroundUpdates(false)
             state = .interrupted(
-                recordingError() ?? L10n.text("Track recording could not start. No recording is active.")
+                recordingError() ?? Messages.recordingStartInactiveMessage()
             )
             return
         }
@@ -140,16 +141,16 @@ final class RecordingCoordinator: ObservableObject {
     private func interruptForPermissionLoss() {
         stopRecording()
         setBackgroundUpdates(false)
-        let message = L10n.text("Location access changed, so track recording stopped. Your saved track was preserved. Re-enable Location access in Settings to record again.")
+        let message = Messages.recordingAccessChangedMessage()
         state = .interrupted(message)
-        guidance = Guidance(message: message, offersSettings: true)
+        guidance = Guidance(pendingMessage: message, offersSettings: true)
     }
 
     private static func permissionGuidance(interrupted: Bool) -> Guidance {
         Guidance(
-            message: interrupted
-                ? L10n.text("Track recording stopped because Location access is unavailable. Your saved track was preserved. Re-enable it in Settings.")
-                : L10n.text("TacMap needs Location access to record a track. Allow access in Settings, then try again."),
+            pendingMessage: interrupted
+                ? Messages.recordingAccessUnavailablePreservedMessage()
+                : Messages.recordingAccessNeededMessage(),
             offersSettings: true
         )
     }
@@ -174,6 +175,7 @@ final class TrackRecorder: ObservableObject {
     /// recording that looks live but isn't hitting the disk is the worst
     /// possible failure for a field tool.
     @Published private var persistMessage: LocalizedMessage?
+    var pendingPersistError: LocalizedMessage? { persistMessage }
     var persistError: String? {
         get { persistMessage?.text }
         set { persistMessage = newValue.map(LocalizedMessage.literal) }

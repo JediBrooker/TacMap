@@ -1,5 +1,9 @@
 package com.tacmap.export
 
+import com.tacmap.localization.DisplayFormat
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import com.tacmap.drawings.DrawingFeature
@@ -51,7 +55,6 @@ internal fun commitExternalImport(
     return ExternalImportCommitResult(
         succeeded = true,
         partialCommit = false,
-        message = L10n.text("Imported %1\$s waypoint(s) and ", waypointCommitted.insertedCount) +
-            L10n.text("%1\$s drawing(s)%2\$s", drawingCommitted.insertedCount, skipped),
+        message = Messages.importFeatureSummary(DisplayFormat.number((waypointCommitted.insertedCount).toDouble(), 0), DisplayFormat.number((drawingCommitted.insertedCount).toDouble(), 0), skipped),
     )
 }

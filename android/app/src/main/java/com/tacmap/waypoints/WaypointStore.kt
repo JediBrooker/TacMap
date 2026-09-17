@@ -1,5 +1,9 @@
 package com.tacmap.waypoints
 
+import com.tacmap.localization.LocalizedMessage
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.content.Context
@@ -44,8 +48,8 @@ class WaypointStore private constructor(
     /** Non-null when on-disk waypoints file was unreadable and got quarantined,
      *  so UI can tell user their waypoints were preserved instead of just
      *  silently emptied. */
-    private val _loadError = MutableStateFlow<String?>(null)
-    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+    private val _loadError = MutableStateFlow<LocalizedMessage?>(null)
+    val loadError: StateFlow<LocalizedMessage?> = _loadError.asStateFlow()
 
     fun acknowledgeLoadError() { _loadError.value = null }
 
@@ -235,11 +239,10 @@ class WaypointStore private constructor(
             }
             is SafeStore.LoadResult.Empty -> Unit
             is SafeStore.LoadResult.Corrupt ->
-                _loadError.value = L10n.text("Saved waypoints could not be read and were set aside ") +
-                    L10n.text("(%1\$s). Starting with no waypoints.", r.quarantinedTo?.name ?: "recovery copy")
+                _loadError.value = Messages.waypointsQuarantinedMessage(r.quarantinedTo?.name ?: Messages.recoveryCopyFallback())
             is SafeStore.LoadResult.Locked -> {
                 _locked.value = true
-                _loadError.value = L10n.text("Waypoints are encrypted and locked. %1\$s", r.error.message)
+                _loadError.value = Messages.waypointsAreEncryptedAndLockedMessage((r.error.message).toString())
             }
         }
     }
@@ -248,14 +251,14 @@ class WaypointStore private constructor(
         // Refuse to write while locked. The file on disk is fine, we just
         // can't read it yet, and an empty list must never land on top of it.
         if (_locked.value) {
-            _loadError.value = L10n.text("Waypoints are locked and the change was not saved.")
+            _loadError.value = Messages.waypointsAreLockedAndTheChangeWasNotSavedMessage()
             return false
         }
         return runCatching { persistence.write(file, LABEL, json.encodeToString(candidate)) }
             .fold(
                 onSuccess = { true },
                 onFailure = {
-                    _loadError.value = L10n.text("Could not save waypoints to disk; the change was reverted: %1\$s", it.message)
+                    _loadError.value = Messages.couldNotSaveWaypointsToDiskTheChangeWasRevertedMessage((it.message).toString())
                     false
                 },
             )

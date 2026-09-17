@@ -1,5 +1,7 @@
 package com.tacmap.settings
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.annotation.SuppressLint
@@ -148,8 +150,7 @@ class OpsecSettings(context: Context) {
             )
             if (!repaired) {
                 _persistenceIssue.value =
-                    L10n.text("The saved Unit Sync relay was unsafe or obsolete. TacMap is using its ") +
-                        L10n.text("secure default for this run, but could not repair the saved setting.")
+                    Messages.relayRecoveryFailed()
             }
         }
     }
@@ -247,8 +248,7 @@ class OpsecSettings(context: Context) {
         _persistenceIssue.value = if (committed) {
             null
         } else {
-            L10n.text("Could not save this privacy setting. The previous setting remains active; ") +
-                L10n.text("check available storage and try again.")
+            Messages.privacySettingSaveFailed()
         }
         return committed
     }

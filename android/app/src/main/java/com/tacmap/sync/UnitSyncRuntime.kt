@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.Manifest
@@ -180,6 +182,10 @@ class UnitSyncRuntime(
     }
 
     @Synchronized
+    internal fun isServiceSessionAuthorized(generation: Long): Boolean =
+        authorizedServiceGeneration == generation && serviceStillEligible()
+
+    @Synchronized
     internal fun attachService(
         generation: Long,
         controller: ServiceController,
@@ -225,8 +231,7 @@ class UnitSyncRuntime(
         if (!persisted) {
             backgroundStopSuppressed = true
             manager?.reportBackgroundLocationIssue(
-                L10n.text("Background Unit Sync stopped, but its OFF setting could not be saved. ") +
-                    L10n.text("Check available storage and turn it off again in Privacy & OPSEC.")
+                Messages.backgroundSyncDisableFailed()
             )
         }
         invalidateAndStopService(revokeSession = true)

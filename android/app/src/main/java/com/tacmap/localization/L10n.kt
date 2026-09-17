@@ -16,6 +16,18 @@ object L10n {
         AppLanguage.install(context.applicationContext)
     }
 
+    /** Recognise built-in defaults across shipped languages without mutating stored names. */
+    fun isCatalogValue(value: String, key: String): Boolean {
+        if (value == key) return true
+        val context = application ?: return false
+        val id = localizedStringIds[key] ?: return false
+        return SupportedLanguage.entries.filter { it != SupportedLanguage.SYSTEM }.any { language ->
+            val configuration = android.content.res.Configuration(context.resources.configuration)
+            configuration.setLocale(Locale.forLanguageTag(language.tag))
+            context.createConfigurationContext(configuration).getString(id) == value
+        }
+    }
+
     fun text(key: String, vararg arguments: Any?): String {
         val context = application?.let(AppLanguage::localizedContext)
         val id = localizedStringIds[key]

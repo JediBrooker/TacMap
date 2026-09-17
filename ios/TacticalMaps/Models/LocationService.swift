@@ -11,9 +11,11 @@ enum LiveLocationPermissionPolicy {
     }
 
     struct Control: Equatable {
-        let title: String
+        let titleMessage: LocalizedMessage
+        var title: String { titleMessage.text }
         let systemImage: String
-        let guidance: String
+        let guidanceMessage: LocalizedMessage
+        var guidance: String { guidanceMessage.text }
         let action: Action
     }
 
@@ -29,37 +31,37 @@ enum LiveLocationPermissionPolicy {
         switch status {
         case .notDetermined:
             return Control(
-                title: L10n.text("Enable Live Location"),
+                titleMessage: Messages.liveLocationEnableMessage(),
                 systemImage: "location.circle",
-                guidance: L10n.text("TacMap requests Location access on first launch. Tap to request it again if needed."),
+                guidanceMessage: Messages.liveLocationFirstLaunchMessage(),
                 action: .requestPermission
             )
         case .authorizedAlways, .authorizedWhenInUse:
             return Control(
-                title: L10n.text("Centre on My Location"),
+                titleMessage: Messages.liveLocationCentreMessage(),
                 systemImage: "location.viewfinder",
-                guidance: L10n.text("Centres the map on your latest location."),
+                guidanceMessage: Messages.liveLocationCentreHintMessage(),
                 action: .centreOnLocation
             )
         case .denied:
             return Control(
-                title: L10n.text("Open Location Settings"),
+                titleMessage: Messages.liveLocationSettingsMessage(),
                 systemImage: "gearshape",
-                guidance: L10n.text("Location access is off. Opens Settings so you can enable it."),
+                guidanceMessage: Messages.liveLocationDisabledHintMessage(),
                 action: .openSettings
             )
         case .restricted:
             return Control(
-                title: L10n.text("Location Restricted"),
+                titleMessage: Messages.liveLocationRestrictedMessage(),
                 systemImage: "location.slash",
-                guidance: L10n.text("Location access is restricted. Review this device's Location settings."),
+                guidanceMessage: Messages.liveLocationRestrictedIosHintMessage(),
                 action: .openSettings
             )
         @unknown default:
             return Control(
-                title: L10n.text("Location Settings"),
+                titleMessage: Messages.liveLocationSettingsTitleMessage(),
                 systemImage: "gearshape",
-                guidance: L10n.text("Review Location access in Settings."),
+                guidanceMessage: Messages.liveLocationReviewHintMessage(),
                 action: .openSettings
             )
         }

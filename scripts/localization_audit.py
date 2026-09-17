@@ -35,7 +35,7 @@ DISPLAY_ARGS = {'text', 'title', 'message', 'hint', 'placeholder', 'label',
                 'displayName', 'contentDescription', 'accessibilityLabel',
                 'accessibilityHint', 'accessibilityValue', 'errorMessage',
                 'statusMessage', 'failureReason', 'recoverySuggestion'}
-DISPLAY_PROPERTIES = DISPLAY_ARGS | {'errorDescription', 'localizedDescription'}
+DISPLAY_PROPERTIES = DISPLAY_ARGS | {'errorDescription', 'localizedDescription', 'statusTitle'}
 
 
 @dataclass
@@ -181,7 +181,14 @@ def scan(source, platform, path='<fixture>'):
         localized = receiver == 'L10n' and name in ('text', 'quantity')
         localized |= name in ('NSLocalizedString', 'stringResource', 'pluralStringResource', 'getString', 'getQuantityString')
         localized |= name == 'String' and any(label == 'localized' for label, _, _ in arguments)
-        if localized: protected.append((i, matched[i]))
+        if localized:
+            protected.append((i, matched[i]))
+            # A translated noun must not receive an English plural suffix.
+            # Match tokens rather than comments or text inside the format string.
+            for _, a, b in arguments[1:]:
+                for k in range(a, b - 2):
+                    if tokens[k].value == '\"\"' and tokens[k + 1].value in ('else', ':') and tokens[k + 2].value in ('\"s\"', '\"es\"'):
+                        sinks.append(('cached.pluralSuffix', k + 2, k + 3))
         for index, (label, a, b) in enumerate(arguments):
             if (label in DISPLAY_ARGS or
                     (name in DISPLAY_CALLS and index == 0 and label in (None, 'verbatim')) or

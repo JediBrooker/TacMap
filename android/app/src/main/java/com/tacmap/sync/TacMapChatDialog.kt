@@ -329,7 +329,7 @@ fun TacMapChatDialog(
                 TextButton(onClick = {
                     confirmRoomSend = false
                     performSend()
-                }) { Text(L10n.text("Send to %1\$s unit%2\$s", recipients.size, if (recipients.size == 1) "" else "s")) }
+                }) { Text(Messages.sendUnitsCount(recipients.size)) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmRoomSend = false }) { Text(L10n.text("Cancel")) }

@@ -1,5 +1,6 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.layout.Arrangement
@@ -271,9 +272,9 @@ private fun DrawingLayerRow(layer: DrawingLayer, count: Int, onVisibleChange: (B
             Box(Modifier.size(18.dp).clip(CircleShape).background(Color(layer.color)))
             Spacer(Modifier.width(12.dp))
             Column {
-                Text(layer.name, fontSize = 15.sp)
+                Text(layer.displayName, fontSize = 15.sp)
                 Text(
-                    L10n.text("%1\$s drawing%2\$s", count, if (count == 1) "" else "s"),
+                    Messages.drawingCount(count),
                     fontSize = 11.sp,
                     color = Color(0xFF8A938A)
                 )
@@ -283,7 +284,7 @@ private fun DrawingLayerRow(layer: DrawingLayer, count: Int, onVisibleChange: (B
             checked = layer.isVisible,
             onCheckedChange = onVisibleChange,
             modifier = Modifier.semantics {
-                contentDescription = L10n.text("%1\$s layer visibility", layer.name)
+                contentDescription = L10n.text("%1\$s layer visibility", layer.displayName)
             },
         )
     }

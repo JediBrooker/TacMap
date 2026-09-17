@@ -4,7 +4,6 @@ import com.tacmap.localization.LocalizedMessage
 
 import com.tacmap.localization.Messages
 
-import com.tacmap.localization.L10n
 
 /** The location grant states Android can return when fine and coarse are requested together. */
 enum class LocationAccess {
@@ -22,9 +21,11 @@ object LocationAccessPolicy {
 }
 
 data class LiveMapLocationGuidance(
-    val message: String,
+    val pendingMessage: LocalizedMessage,
     val settingsTarget: TrackRecordingSettingsTarget,
-)
+) {
+    val message: String get() = pendingMessage.text
+}
 
 enum class LiveMapLocationState {
     NotRequested,
@@ -41,10 +42,13 @@ enum class LiveMapLocationAction {
 }
 
 data class LiveMapLocationControl(
-    val title: String,
-    val guidance: String,
+    val titleMessage: LocalizedMessage,
+    val guidanceMessage: LocalizedMessage,
     val action: LiveMapLocationAction,
-)
+) {
+    val title: String get() = titleMessage.text
+    val guidance: String get() = guidanceMessage.text
+}
 
 /** Permission copy for the live map, kept separate from the recording state machine. */
 object LiveMapLocationPermissionPolicy {
@@ -65,28 +69,28 @@ object LiveMapLocationPermissionPolicy {
 
     fun controlFor(state: LiveMapLocationState): LiveMapLocationControl = when (state) {
         LiveMapLocationState.NotRequested -> LiveMapLocationControl(
-            title = L10n.text("Enable Live Location"),
-            guidance = L10n.text("TacMap requests Location access on first launch. Tap to request it again if needed."),
+            titleMessage = Messages.liveLocationEnableMessage(),
+            guidanceMessage = Messages.liveLocationFirstLaunchMessage(),
             action = LiveMapLocationAction.RequestPermission,
         )
         LiveMapLocationState.Precise -> LiveMapLocationControl(
-            title = L10n.text("Centre on My Location"),
-            guidance = L10n.text("Centres the map on your latest precise location."),
+            titleMessage = Messages.liveLocationCentreMessage(),
+            guidanceMessage = Messages.liveLocationCentrePreciseHintMessage(),
             action = LiveMapLocationAction.CentreOnLocation,
         )
         LiveMapLocationState.ApproximateOnly -> LiveMapLocationControl(
-            title = L10n.text("Enable Precise Location"),
-            guidance = L10n.text("Approximate location is on. Open Settings to allow Precise location."),
+            titleMessage = Messages.liveLocationEnablePreciseMessage(),
+            guidanceMessage = Messages.liveLocationApproximateHintMessage(),
             action = LiveMapLocationAction.OpenSettings,
         )
         LiveMapLocationState.Denied -> LiveMapLocationControl(
-            title = L10n.text("Open Location Settings"),
-            guidance = L10n.text("Location access is off. Opens Settings so you can enable it."),
+            titleMessage = Messages.liveLocationSettingsMessage(),
+            guidanceMessage = Messages.liveLocationDisabledHintMessage(),
             action = LiveMapLocationAction.OpenSettings,
         )
         LiveMapLocationState.Restricted -> LiveMapLocationControl(
-            title = L10n.text("Location Restricted"),
-            guidance = L10n.text("Location access is restricted by this device. Review Location settings."),
+            titleMessage = Messages.liveLocationRestrictedMessage(),
+            guidanceMessage = Messages.liveLocationRestrictedAndroidHintMessage(),
             action = LiveMapLocationAction.OpenSettings,
         )
     }
@@ -94,12 +98,11 @@ object LiveMapLocationPermissionPolicy {
     fun guidanceFor(access: LocationAccess): LiveMapLocationGuidance? = when (access) {
         LocationAccess.Precise -> null
         LocationAccess.ApproximateOnly -> LiveMapLocationGuidance(
-            message = L10n.text("Approximate location cannot provide TacMap's on-device GPS position. ") +
-                L10n.text("Allow Precise location, then try again."),
+            pendingMessage = Messages.liveLocationApproximateGuidanceMessage(),
             settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
         )
         LocationAccess.Denied -> LiveMapLocationGuidance(
-            message = L10n.text("Allow Precise location to show your live position on the map."),
+            pendingMessage = Messages.liveLocationPreciseNeededMessage(),
             settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
         )
     }

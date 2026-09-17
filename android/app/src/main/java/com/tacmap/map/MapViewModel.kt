@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.app.Application
@@ -336,10 +338,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                             onlineBasemap(),
                             preferredBaseMap,
                         ),
-                        message = L10n.text("The saved basemap details could not be authenticated. ") +
-                            L10n.text("A recovery copy and all imported maps were preserved. ") +
-                            L10n.text("Tap Retry to reset the saved choice to the online map, ") +
-                            L10n.text("or import/select a replacement map."),
+                        message = Messages.basemapRecoveryRequired(),
                     )
                 }
             }

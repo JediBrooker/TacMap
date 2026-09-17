@@ -1,0 +1,338 @@
+[
+  {
+    "id": "ui_covers_the_map_with_your_position_whenever_the_a_2330284f",
+    "locale": "de",
+    "before": "Verdeckt die Karte mit deinem Standort, wenn die App nicht aktiv ist, damit sie nicht in der Vorschau des App-Umschalters erscheint.",
+    "after": "Verdeckt die Karte einschließlich deines Standorts, wenn die App nicht aktiv ist, damit sie nicht in der Vorschau des App-Umschalters erscheint.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_callsign_830a83cd",
+    "locale": "de",
+    "before": "Rufname",
+    "after": "Rufzeichen",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_this_deletes_the_app_private_pdf_or_mbtiles_copy_ca0a874e",
+    "locale": "de",
+    "before": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Missionsobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
+    "after": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Einsatzobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_drawings_are_locked_unlock_mission_data__7e1857f0",
+    "locale": "de",
+    "before": "Missionszeichnungen sind gesperrt. Entsperre die Missionsdaten und versuche es erneut.",
+    "after": "Einsatzzeichnungen sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_off_waypoints_drawings_and_tracks_are_encrypted__8b361e1a",
+    "locale": "de",
+    "before": "Aus: Wegpunkte, Zeichnungen und Tracks werden mit einem Schlüssel verschlüsselt, den der Schlüsselbund dieser App nach dem ersten Entsperren des Geräts automatisch freigibt. Der Schlüssel wird nicht auf andere Geräte übertragen, kann aber aus einem geschützten Backup auf demselben Gerät wiederhergestellt werden. Code, der auf einem kompromittierten Gerät als diese App läuft, kann den Schlüsselbund weiterhin um Entschlüsselung bitten.\n\nEin: Vor der Schlüsselnutzung verlangt der Schlüsselbund Face ID, Touch ID oder deinen Gerätecode. Dies erhöht den Schutz nach dem Beenden des Prozesses; ein vollständig kompromittiertes Gerät bleibt jedoch außerhalb der Schutzgarantie. Nach dem Beenden der App können Missionsdaten erst nach dem Entsperren gelesen oder geschrieben werden. Dies gilt auch für die Trackaufzeichnung im Hintergrund.",
+    "after": "Aus: Wegpunkte, Zeichnungen und Tracks werden mit einem Schlüssel verschlüsselt, den der Schlüsselbund dieser App nach dem ersten Entsperren des Geräts automatisch freigibt. Der Schlüssel wird nicht auf andere Geräte übertragen, kann aber aus einem geschützten Backup auf demselben Gerät wiederhergestellt werden. Code, der auf einem kompromittierten Gerät als diese App läuft, kann den Schlüsselbund weiterhin um Entschlüsselung bitten.\n\nEin: Vor der Schlüsselnutzung verlangt der Schlüsselbund Face ID, Touch ID oder deinen Gerätecode. Dies erhöht den Schutz nach dem Beenden des Prozesses; ein vollständig kompromittiertes Gerät bleibt jedoch außerhalb der Schutzgarantie. Nach dem Beenden der App können Einsatzdaten erst nach dem Entsperren gelesen oder geschrieben werden. Dies gilt auch für die Trackaufzeichnung im Hintergrund.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_object_not_saved_2650a23a",
+    "locale": "de",
+    "before": "Missionsobjekt nicht gespeichert",
+    "after": "Einsatzobjekt nicht gespeichert",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_unlock_mission_data_to_use_tacmap_chat_01a3669e",
+    "locale": "de",
+    "before": "Entsperre Missionsdaten, um TacMap Chat zu verwenden.",
+    "after": "Entsperre Einsatzdaten, um TacMap Chat zu verwenden.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_data_access_control_was_not_changed_beca_e902205b",
+    "locale": "de",
+    "before": "Der Zugriffsschutz für Missionsdaten wurde nicht geändert, da der bisherige Schlüsselplatz nicht sicher entfernt werden konnte. Versuche es erneut.",
+    "after": "Der Zugriffsschutz für Einsatzdaten wurde nicht geändert, da der bisherige Schlüsselplatz nicht sicher entfernt werden konnte. Versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_data_is_locked_unlock_it_before_importin_206b1e3a",
+    "locale": "de",
+    "before": "Missionsdaten sind gesperrt. Entsperre sie vor dem Import.",
+    "after": "Einsatzdaten sind gesperrt. Entsperre sie vor dem Import.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_default_mission_layers_cannot_be_renamed_recolou_c6bcfae4",
+    "locale": "de",
+    "before": "Standard-Missionsebenen können nicht umbenannt, umgefärbt oder gelöscht werden.",
+    "after": "Standard-Einsatzebenen können nicht umbenannt, umgefärbt oder gelöscht werden.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_1_are_locked_unlock_mission_data_then_tr_873d7f20",
+    "locale": "de",
+    "before": "Missionsdaten ({1}) sind gesperrt. Entsperre die Missionsdaten und versuche es erneut.",
+    "after": "Einsatzdaten ({1}) sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_could_not_save_mission_1_2_no_unsafe_layer_chang_4d0c4410",
+    "locale": "de",
+    "before": "Missionsdaten ({1}) konnten nicht gespeichert werden: {2}. Es wurde keine unsichere Ebenenänderung veröffentlicht. Versuche es erneut.",
+    "after": "Einsatzdaten ({1}) konnten nicht gespeichert werden: {2}. Es wurde keine unsichere Ebenenänderung veröffentlicht. Versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_waypoints_are_locked_unlock_mission_data_926e3d02",
+    "locale": "de",
+    "before": "Missionswegpunkte sind gesperrt. Entsperre die Missionsdaten und versuche es erneut.",
+    "after": "Einsatzwegpunkte sind gesperrt. Entsperre die Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_saved_map_library_is_locked_or_unreadable_un_d2580b62",
+    "locale": "de",
+    "before": "Die gespeicherte Kartenbibliothek ist gesperrt oder unlesbar. Entsperre die Missionsdaten und versuche es erneut.",
+    "after": "Die gespeicherte Kartenbibliothek ist gesperrt oder unlesbar. Entsperre die Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_saved_imported_map_details_are_locked_unlock_mis_1b506086",
+    "locale": "de",
+    "before": "Gespeicherte Angaben zur importierten Karte sind gesperrt. Entsperre die Missionsdaten, um sie wiederherzustellen.",
+    "after": "Gespeicherte Angaben zur importierten Karte sind gesperrt. Entsperre die Einsatzdaten, um sie wiederherzustellen.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_saved_imported_map_entry_could_not_be_upgrad_014ea51a",
+    "locale": "de",
+    "before": "Der gespeicherte Eintrag der importierten Karte konnte nicht sicher aktualisiert werden. Entsperre Missionsdaten oder schaffe Speicherplatz und versuche es erneut.",
+    "after": "Der gespeicherte Eintrag der importierten Karte konnte nicht sicher aktualisiert werden. Entsperre Einsatzdaten oder schaffe Speicherplatz und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_objects_mgrs_grid_lat_lon_or_place_name_25db9141",
+    "locale": "de",
+    "before": "Missionsobjekte, MGRS, Gitter, Breiten-/Längengrad oder Ortsname",
+    "after": "Einsatzobjekte, MGRS, Gitter, Breiten-/Längengrad oder Ortsname",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_coordinates_58a4b744",
+    "locale": "de",
+    "before": "Mission und Koordinaten",
+    "after": "Einsatz und Koordinaten",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_saved_basemap_is_locked_or_unreadable_unlock_bbac8cff",
+    "locale": "de",
+    "before": "Die gespeicherte Grundkarte ist gesperrt oder unlesbar. Entsperre die Missionsdaten und tippe auf „Erneut versuchen“. Die aktuelle Karte bleibt aktiv.",
+    "after": "Die gespeicherte Grundkarte ist gesperrt oder unlesbar. Entsperre die Einsatzdaten und tippe auf „Erneut versuchen“. Die aktuelle Karte bleibt aktiv.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_imported_map_could_not_be_deleted_securely_t_b4183ab3",
+    "locale": "de",
+    "before": "Die importierte Karte konnte nicht sicher gelöscht werden. Die Online-Karte bleibt aktiv; der gespeicherte Eintrag wurde soweit möglich erhalten. Entsperre Missionsdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
+    "after": "Die importierte Karte konnte nicht sicher gelöscht werden. Die Online-Karte bleibt aktiv; der gespeicherte Eintrag wurde soweit möglich erhalten. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_unavailable_saved_map_entry_could_not_be_rem_d280da76",
+    "locale": "de",
+    "before": "Der nicht verfügbare gespeicherte Karteneintrag konnte nicht entfernt werden. Entsperre Missionsdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
+    "after": "Der nicht verfügbare gespeicherte Karteneintrag konnte nicht entfernt werden. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“. {1}",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_pdf_map_could_not_be_saved_for_relaunch_the__2518d178",
+    "locale": "de",
+    "before": "Die PDF-Karte konnte nicht für den nächsten Start gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Missionsdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
+    "after": "Die PDF-Karte konnte nicht für den nächsten Start gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_basemap_choice_could_not_be_saved_the_previo_83f0c14a",
+    "locale": "de",
+    "before": "Die Grundkartenauswahl konnte nicht gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Missionsdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
+    "after": "Die Grundkartenauswahl konnte nicht gespeichert werden. Die bisherige Karte bleibt aktiv. Entsperre Einsatzdaten oder schaffe Speicherplatz und tippe auf „Erneut versuchen“.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_map_storage_recovery_did_not_complete_keep_the_a_b8d9e1c8",
+    "locale": "de",
+    "before": "Die Wiederherstellung des Kartenspeichers wurde nicht abgeschlossen. Lass die App geöffnet, entsperre Missionsdaten oder schaffe Speicherplatz und tippe vor dem Schließen auf „Erneut versuchen“.",
+    "after": "Die Wiederherstellung des Kartenspeichers wurde nicht abgeschlossen. Lass die App geöffnet, entsperre Einsatzdaten oder schaffe Speicherplatz und tippe vor dem Schließen auf „Erneut versuchen“.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_authenticated_sync_record_did_not_contain_ex_36ad42e7",
+    "locale": "de",
+    "before": "Der authentifizierte Synchronisierungseintrag enthielt nicht genau ein gültiges Missionsobjekt.",
+    "after": "Der authentifizierte Synchronisierungseintrag enthielt nicht genau ein gültiges Einsatzobjekt.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_saved_unit_sync_metadata_could_not_be_migrated_t_83546d0d",
+    "locale": "de",
+    "before": "Gespeicherte Unit-Sync-Metadaten konnten nicht auf private Dateinamen umgestellt werden. Prüfe den verfügbaren Speicherplatz, entsperre die Missionsdaten und versuche es erneut.",
+    "after": "Gespeicherte Unit-Sync-Metadaten konnten nicht auf private Dateinamen umgestellt werden. Prüfe den verfügbaren Speicherplatz, entsperre die Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_ask_the_sender_to_update_tacmap_and_send_the_mis_258bd4bf",
+    "locale": "de",
+    "before": "Bitte den Absender, TacMap zu aktualisieren und das Missionsobjekt erneut zu senden, bevor du wieder beitrittst.",
+    "after": "Bitte den Absender, TacMap zu aktualisieren und das Einsatzobjekt erneut zu senden, bevor du wieder beitrittst.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_verified_update_remains_pending_unlock_missi_d13aecf2",
+    "locale": "de",
+    "before": "Die verifizierte Änderung bleibt ausstehend. Entsperre Missionsdaten oder schaffe Gerätespeicher und tritt Unit Sync erneut bei, um sie wieder zu versuchen.",
+    "after": "Die verifizierte Änderung bleibt ausstehend. Entsperre Einsatzdaten oder schaffe Gerätespeicher und tritt Unit Sync erneut bei, um sie wieder zu versuchen.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_unlock_mission_data_or_free_device_storage_then__20c288f2",
+    "locale": "de",
+    "before": "Entsperre Missionsdaten oder schaffe Gerätespeicher. Verlasse Unit Sync und tritt erneut bei, damit das Relay die Änderung erneut senden kann.",
+    "after": "Entsperre Einsatzdaten oder schaffe Gerätespeicher. Verlasse Unit Sync und tritt erneut bei, damit das Relay die Änderung erneut senden kann.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_payload_content_is_end_to_end_encrypted__ab341ca9",
+    "locale": "de",
+    "before": "Missionsinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, Sitzungs-, Zeit-, Größen- und Verkehrsmetadaten.",
+    "after": "Einsatzinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, Sitzungs-, Zeit-, Größen- und Verkehrsmetadaten.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_export_all_mission_objects_e4853a29",
+    "locale": "de",
+    "before": "Alle Missionsobjekte exportieren",
+    "after": "Alle Einsatzobjekte exportieren",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_no_imported_mission_objects_were_saved_1_21e007ca",
+    "locale": "de",
+    "before": "Es wurden keine importierten Missionsobjekte gespeichert. {1}",
+    "after": "Es wurden keine importierten Einsatzobjekte gespeichert. {1}",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_no_imported_mission_objects_were_saved_3176accf",
+    "locale": "de",
+    "before": "Es wurden keine importierten Missionsobjekte gespeichert.",
+    "after": "Es wurden keine importierten Einsatzobjekte gespeichert.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_fiduciaries_contain_invalid_or_unsafe_coordinate_fa77c540",
+    "locale": "de",
+    "before": "Referenzpunkte enthalten ungültige oder unsichere Koordinaten",
+    "after": "Passpunkte enthalten ungültige oder unsichere Koordinaten",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_1_unlock_mission_data_or_free_device_storage_the_dbe9b576",
+    "locale": "de",
+    "before": "{1} Entsperre Missionsdaten oder schaffe Gerätespeicher und tippe auf „Erneut versuchen“.",
+    "after": "{1} Entsperre Einsatzdaten oder schaffe Gerätespeicher und tippe auf „Erneut versuchen“.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_coordinates_6eb4bf82",
+    "locale": "de",
+    "before": "Mission und Koordinaten",
+    "after": "Einsatz und Koordinaten",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_object_geojson_b01255b8",
+    "locale": "de",
+    "before": "Missionsobjekt-GeoJSON",
+    "after": "Einsatzobjekt-GeoJSON",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_document_import_journal_is_locked_unlock_mis_0f094532",
+    "locale": "de",
+    "before": "Das Dokumentimport-Protokoll ist gesperrt. Entsperre Missionsdaten und versuche es erneut.",
+    "after": "Das Dokumentimport-Protokoll ist gesperrt. Entsperre Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_protection_after_the_app_is_killed_nothing_can_r_dbde0aba",
+    "locale": "de",
+    "before": "Schutzes. Nach dem Beenden der App können Missionsdaten erst nach dem Entsperren gelesen oder geschrieben ",
+    "after": "Schutzes. Nach dem Beenden der App können Einsatzdaten erst nach dem Entsperren gelesen oder geschrieben ",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_your_device_lockscreen_can_invalidate_the_key_an_9be79568",
+    "locale": "de",
+    "before": "der Gerätesperre kann den Schlüssel ungültig und Missionsdaten ",
+    "after": "der Gerätesperre kann den Schlüssel ungültig und Einsatzdaten ",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_data_was_not_saved_f3c99e39",
+    "locale": "de",
+    "before": "Missionsdaten wurden nicht gespeichert",
+    "after": "Einsatzdaten wurden nicht gespeichert",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_unlock_mission_data_to_use_tacmap_chat_3abca24f",
+    "locale": "de",
+    "before": "Entsperre Missionsdaten, um TacMap Chat zu verwenden",
+    "after": "Entsperre Einsatzdaten, um TacMap Chat zu verwenden",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_sync_signing_identity_is_locked_or_damaged_unloc_c9a19e3d",
+    "locale": "de",
+    "before": "Die Signaturidentität der Synchronisierung ist gesperrt oder beschädigt. Entsperre Missionsdaten und versuche erneut beizutreten.",
+    "after": "Die Signaturidentität der Synchronisierung ist gesperrt oder beschädigt. Entsperre Einsatzdaten und versuche erneut beizutreten.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_sync_identity_or_rollback_state_is_locked_or_dam_c8609c75",
+    "locale": "de",
+    "before": "Synchronisierungsidentität oder Rollback-Status sind gesperrt oder beschädigt. Entsperre Missionsdaten und versuche erneut beizutreten.",
+    "after": "Synchronisierungsidentität oder Rollback-Status sind gesperrt oder beschädigt. Entsperre Einsatzdaten und versuche erneut beizutreten.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_check_available_storage_then_unlock_mission_data_f27226e6",
+    "locale": "de",
+    "before": "Prüfe den verfügbaren Speicherplatz, entsperre Missionsdaten und versuche es erneut.",
+    "after": "Prüfe den verfügbaren Speicherplatz, entsperre Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_mission_payload_content_is_end_to_end_encrypted__add50ee0",
+    "locale": "de",
+    "before": "Missionsinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, ",
+    "after": "Einsatzinhalte sind Ende-zu-Ende-verschlüsselt. Das Relay sieht weiterhin Verbindungs-, Weiterleitungs-, ",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_could_not_generate_1_check_the_mission_data_and__3578d75c",
+    "locale": "de",
+    "before": "{1} konnte nicht erstellt werden. Prüfe die Missionsdaten und versuche es erneut.",
+    "after": "{1} konnte nicht erstellt werden. Prüfe die Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "ui_the_import_retry_journal_is_locked_unlock_missio_5542e900",
+    "locale": "de",
+    "before": "Das Import-Wiederholungsprotokoll ist gesperrt. Entsperre Missionsdaten und versuche es erneut.",
+    "after": "Das Import-Wiederholungsprotokoll ist gesperrt. Entsperre Einsatzdaten und versuche es erneut.",
+    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  }
+]

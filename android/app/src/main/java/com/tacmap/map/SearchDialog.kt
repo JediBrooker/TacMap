@@ -423,7 +423,7 @@ internal fun searchOffline(
         DecimalCoordinate.NotCoordinate -> Unit
     }
 
-    val layerNames = layers.associate { it.id to it.name }
+    val layerNames = layers.associate { it.id to it.displayName }
     data class Ranked(val rank: Int, val createdAt: Long, val result: SearchResult)
     val ranked = buildList {
         waypoints.forEach { waypoint ->

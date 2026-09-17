@@ -46,7 +46,7 @@ struct DrawingsSheet: View {
                                 Circle()
                                     .fill(Color(hex: layer.defaultColorHex))
                                     .frame(width: 10, height: 10)
-                                Text("\(layer.name) (\(shapesInLayer.count))")
+                                Text("\(layer.displayName) (\(shapesInLayer.count))")
                                 if !layer.visible {
                                     Text(L10n.text("hidden"))
                                         .foregroundStyle(.secondary)
@@ -219,7 +219,7 @@ struct DrawingsSheet: View {
                     Circle()
                         .fill(Color(hex: layer.defaultColorHex))
                         .frame(width: 12, height: 12)
-                    Text(layer.name)
+                    Text(layer.displayName)
                 }
                 .tag(layer.id)
             }

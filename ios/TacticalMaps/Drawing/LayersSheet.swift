@@ -94,7 +94,7 @@ struct LayersSheet: View {
             } message: { layer in
                 let drawings = drawingStore.shapes(in: layer.id).count
                 let waypoints = waypointStore.waypoints.filter { $0.layerID == layer.id }.count
-                Text(L10n.text("%1$@ and %2$@ will move to Friendly before “%3$@” is removed.", L10n.quantity("drawing", drawings), L10n.quantity("waypoint", waypoints), layer.name))
+                Text(L10n.text("%1$@ and %2$@ will move to Friendly before “%3$@” is removed.", L10n.quantity("drawing", drawings), L10n.quantity("waypoint", waypoints), layer.displayName))
             }
             .alert(L10n.text("Offline tiles"),
                    isPresented: Binding(get: { tilingError != nil },
@@ -412,7 +412,7 @@ struct LayersSheet: View {
                 .frame(width: 18, height: 18)
                 .overlay(Circle().stroke(.secondary.opacity(0.4), lineWidth: 0.5))
             VStack(alignment: .leading, spacing: 2) {
-                Text(layer.name)
+                Text(layer.displayName)
                     .font(.callout)
                 Text(L10n.quantity("drawing", drawingStore.shapes(in: layer.id).count))
                     .font(.caption2)
@@ -435,7 +435,7 @@ struct LayersSheet: View {
                 }
             ))
             .labelsHidden()
-            .accessibilityLabel(L10n.text("%1$@ visibility", layer.name))
+            .accessibilityLabel(L10n.text("%1$@ visibility", layer.displayName))
             .accessibilityValue(layer.visible ? L10n.text("Visible") : L10n.text("Hidden"))
         }
         .contentShape(Rectangle())

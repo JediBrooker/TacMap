@@ -65,7 +65,7 @@ internal fun LayerSelectorButton(
             )
             Spacer(Modifier.size(6.dp))
             Text(
-                selectedLayer.name,
+                selectedLayer.displayName,
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -92,7 +92,7 @@ internal fun LayerSelectorButton(
                             LayerColorSwatch(color = layer.color, size = 14.dp)
                             Spacer(Modifier.size(8.dp))
                             Text(
-                                layer.name,
+                                layer.displayName,
                                 fontWeight = if (layer.id == selectedLayer.id) FontWeight.Bold else FontWeight.Normal
                             )
                         }

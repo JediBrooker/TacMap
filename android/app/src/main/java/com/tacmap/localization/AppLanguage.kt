@@ -6,23 +6,29 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** Observable copy preference: changing it does not recreate the map or Activity. */
 object AppLanguage {
     private const val PREFERENCES = "app_language"
     private const val KEY = "display_language"
+    private val changes = MutableStateFlow(SupportedLanguage.SYSTEM)
+    val selections = changes.asStateFlow()
     var selection by mutableStateOf(SupportedLanguage.SYSTEM)
         private set
 
     fun install(context: Context) {
         val tag = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getString(KEY, null)
         selection = SupportedLanguage.entries.firstOrNull { it.tag == tag } ?: SupportedLanguage.SYSTEM
+        changes.value = selection
     }
 
     fun select(context: Context, choice: SupportedLanguage): Boolean {
         if (!context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit().putString(KEY, choice.tag).commit()) return false
         selection = choice
+        changes.value = choice
         return true
     }
 

@@ -357,12 +357,12 @@ final class TrackRecorderSecurityTests: XCTestCase {
             initializeDurableRecording: { false },
             stopRecording: {},
             setBackgroundUpdates: { backgroundUpdates.append($0) },
-            recordingError: { "Disk unavailable" }
+            recordingError: { .literal("Disk unavailable") }
         )
 
         coordinator.start(authorization: .authorizedWhenInUse)
 
-        XCTAssertEqual(coordinator.state, .interrupted("Disk unavailable"))
+        XCTAssertEqual(coordinator.state, .interrupted(.literal("Disk unavailable")))
         XCTAssertEqual(backgroundUpdates, [false])
     }
 
@@ -377,7 +377,7 @@ final class TrackRecorderSecurityTests: XCTestCase {
             initializeDurableRecording: { recorder.start() },
             stopRecording: { recorder.stop() },
             setBackgroundUpdates: { backgroundUpdates.append($0) },
-            recordingError: { recorder.persistError }
+            recordingError: { recorder.pendingPersistError }
         )
 
         coordinator.start(authorization: .authorizedWhenInUse)
@@ -393,7 +393,7 @@ final class TrackRecorderSecurityTests: XCTestCase {
         guard case .interrupted(let message) = coordinator.state else {
             return XCTFail("revocation must publish an interrupted state")
         }
-        XCTAssertTrue(message.contains("preserved"))
+        XCTAssertTrue(message.text.contains("preserved"))
         XCTAssertEqual(coordinator.guidance?.offersSettings, true)
     }
 

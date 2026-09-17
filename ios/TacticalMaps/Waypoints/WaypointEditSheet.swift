@@ -653,7 +653,7 @@ struct SelectedSymbolEditSheet: View {
                 Section(L10n.text("Layer")) {
                     Picker(L10n.text("Layer"), selection: $draft.layerID) {
                         ForEach(drawingStore.layers) { layer in
-                            Text(layer.name).tag(layer.id)
+                            Text(layer.displayName).tag(layer.id)
                         }
                     }
                     .pickerStyle(.navigationLink)

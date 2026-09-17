@@ -152,7 +152,7 @@ fun DrawingLayersSheet(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         LayerColorSwatch(color = layer.color, size = 12.dp)
                                         Spacer(Modifier.size(6.dp))
-                                        Text(layer.name)
+                                        Text(layer.displayName)
                                     }
                                 },
                             )
@@ -271,7 +271,7 @@ fun DrawingLayersSheet(
                 items(features, key = { "feature:${it.id}" }) { feature ->
                     DrawingFeatureRow(
                         feature = feature,
-                        layerName = safeLayers.firstOrNull { it.id == feature.layerId }?.name,
+                        layerName = safeLayers.firstOrNull { it.id == feature.layerId }?.displayName,
                         isVisible = feature.layerId in visibleLayerIds,
                         onDelete = { attempt { onDeleteFeature(feature.id) } },
                     )
@@ -300,7 +300,7 @@ fun DrawingLayersSheet(
         val waypointCountLabel = L10n.text("All symbols and drawings on this layer will move to Friendly.")
         AlertDialog(
             onDismissRequest = { deletingLayer = null },
-            title = { Text(L10n.text("Delete %1\$s?", layer.name)) },
+            title = { Text(L10n.text("Delete %1\$s?", layer.displayName)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(waypointCountLabel)
@@ -418,23 +418,23 @@ private fun LayerRow(
             modifier = Modifier.padding(end = 10.dp)
         )
         Column(Modifier.weight(1f)) {
-            Text(layer.name, fontSize = 14.sp, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
+            Text(layer.displayName, fontSize = 14.sp, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
         }
         onEdit?.let { edit ->
             IconButton(onClick = edit) {
-                Icon(Icons.Default.Edit, contentDescription = L10n.text("Edit %1\$s layer", layer.name))
+                Icon(Icons.Default.Edit, contentDescription = L10n.text("Edit %1\$s layer", layer.displayName))
             }
         }
         onDelete?.let { delete ->
             IconButton(onClick = delete) {
-                Icon(Icons.Default.Delete, contentDescription = L10n.text("Delete %1\$s layer", layer.name))
+                Icon(Icons.Default.Delete, contentDescription = L10n.text("Delete %1\$s layer", layer.displayName))
             }
         }
         Switch(
             checked = layer.isVisible,
             onCheckedChange = onVisibleChange,
             modifier = Modifier.semantics {
-                contentDescription = L10n.text("%1\$s layer visibility", layer.name)
+                contentDescription = L10n.text("%1\$s layer visibility", layer.displayName)
             },
         )
     }

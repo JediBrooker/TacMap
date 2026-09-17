@@ -1,5 +1,14 @@
 package com.tacmap.sync
 
+import android.content.res.Configuration
+import com.tacmap.localization.AppLanguage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+
 import com.tacmap.localization.L10n
 
 import android.Manifest
@@ -41,6 +50,28 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
 
     private val runtime: UnitSyncRuntime
         get() = (application as TacticalApp).unitSyncRuntime
+
+    private val languageScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    override fun onCreate() {
+        super.onCreate()
+        languageScope.launch {
+            AppLanguage.selections.drop(1).collect { refreshNotificationLanguage() }
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        refreshNotificationLanguage()
+    }
+
+    /** Update the existing notification only; never start a session or touch GPS. */
+    private fun refreshNotificationLanguage() {
+        val generation = activeGeneration ?: return
+        if (!runtime.isServiceSessionAuthorized(generation)) return
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        runCatching { manager.notify(NOTIFICATION_ID, buildNotification(generation)) }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -114,6 +145,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
     }
 
     override fun onDestroy() {
+        languageScope.cancel()
         removeLocationListener()
         val generation = activeGeneration
         activeGeneration = null

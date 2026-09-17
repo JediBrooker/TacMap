@@ -2,6 +2,87 @@ import XCTest
 @testable import TacticalMaps
 
 final class LocalizationTests: XCTestCase {
+    func testRetainedPermissionGuidanceRefreshesWithoutRestartingRecording() {
+        let language = AppLanguage.shared
+        let original = language.selection
+        defer { language.select(original) }
+        language.select(.en)
+        var starts = 0
+        let coordinator = RecordingCoordinator(
+            requestAuthorization: {},
+            initializeDurableRecording: { starts += 1; return true },
+            stopRecording: {}, setBackgroundUpdates: { _ in }, recordingError: { nil }
+        )
+        coordinator.start(authorization: .denied)
+        let guidance = coordinator.guidance
+        let control = LiveLocationPermissionPolicy.control(for: .denied)
+        XCTAssertEqual(control.title, "Open Location Settings")
+        XCTAssertTrue(guidance?.message.contains("Allow access in Settings") == true)
+        language.select(.de)
+        XCTAssertEqual(control.title, "Standorteinstellungen öffnen")
+        XCTAssertTrue(guidance?.message.contains("Erlaube den Zugriff in den Einstellungen") == true)
+        XCTAssertEqual(coordinator.guidance, guidance)
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertEqual(starts, 0)
+        XCTAssertEqual(control.action, .openSettings)
+        XCTAssertEqual(Messages.recordingStatusStarting(), "WIRD GESTARTET")
+        XCTAssertEqual(Messages.recordingStatusInterrupted(), "UNTERBROCHEN")
+        XCTAssertEqual(Messages.recordingStatusIdle(), "INAKTIV")
+    }
+
+    func testStoreFailureChangesLanguageAndSuccessfulRetryClearsIt() throws {
+        let language = AppLanguage.shared
+        let original = language.selection
+        defer { language.select(original) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var failWrite = true
+        var writes = 0
+        let store = WaypointStore(storageURL: directory.appendingPathComponent("waypoints.json")) { _, _, _ in
+            writes += 1
+            if failWrite { throw NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "disk 100% / field.gpx"]) }
+        }
+        let waypoint = Waypoint(name: "User name bleibt", latitude: -33, longitude: 151)
+        language.select(.en)
+        XCTAssertThrowsError(try store.addDurably(waypoint))
+        XCTAssertTrue(store.loadError?.contains("Could not save new waypoint") == true)
+        language.select(.de)
+        XCTAssertTrue(store.loadError?.contains("disk 100% / field.gpx") == true)
+        XCTAssertFalse(store.loadError?.contains("Could not save new waypoint") == true)
+        XCTAssertTrue(store.waypoints.isEmpty)
+        XCTAssertEqual(writes, 1)
+        failWrite = false
+        XCTAssertTrue(try store.addDurably(waypoint))
+        XCTAssertNil(store.loadError)
+        XCTAssertEqual(store.waypoints, [waypoint])
+        XCTAssertEqual(writes, 2)
+    }
+
+    func testBuiltinLayerDisplayChangesWithoutMutatingSavedNames() throws {
+        let language = AppLanguage.shared
+        let original = language.selection
+        defer { language.select(original) }
+        language.select(.en)
+        let layer = DrawingLayer.seedDefaults[0]
+        let custom = DrawingLayer(name: "Friendly", defaultColorHex: "#123456")
+        let edited = DrawingLayer(id: DrawingLayer.legacyFallbackID, name: "My team", defaultColorHex: "#123456")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let before = try encoder.encode(layer)
+        language.select(.de)
+        XCTAssertEqual(layer.displayName, "Eigene Kräfte")
+        XCTAssertEqual(layer.name, "Friendly")
+        XCTAssertEqual(custom.displayName, "Friendly")
+        XCTAssertEqual(edited.displayName, "My team")
+        XCTAssertEqual(try encoder.encode(layer), before)
+        let germanSeed = DrawingLayer.seedDefaults[0]
+        XCTAssertEqual(germanSeed.name, "Eigene Kräfte")
+        language.select(.en)
+        XCTAssertEqual(germanSeed.displayName, "Friendly")
+        XCTAssertEqual(germanSeed.name, "Eigene Kräfte")
+    }
+
     func testLanguageChoicePersistsAndInvalidChoiceFallsBackToDevice() throws {
         let name = "LocalizationTests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

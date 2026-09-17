@@ -187,11 +187,8 @@ struct PaywallView: View {
 
     private var bodyText: String {
         if expired {
-            return L10n.text("Your %1$@-day free trial is over. Make a one-time ", TrialManager.trialDays)
-                + L10n.text("purchase to keep using TacMap — live MGRS, GeoPDF maps, ")
-                + L10n.text("NATO APP-6 symbology and GeoJSON export.")
+            return Messages.trialExpiredDetails(DisplayFormat.number(Double(TrialManager.trialDays), decimals: 0))
         }
-        return L10n.text("You're on the free trial (%1$@ left). ", L10n.quantity("day", trialDaysRemaining))
-            + L10n.text("Unlock now for permanent access.")
+        return Messages.trialRemainingDetails(L10n.quantity("day", trialDaysRemaining))
     }
 }

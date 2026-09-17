@@ -1,5 +1,9 @@
 package com.tacmap.drawings
 
+import com.tacmap.localization.LocalizedMessage
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.content.Context
@@ -40,8 +44,8 @@ class DrawingStore private constructor(
     /** Non-null when on-disk drawings file was unreadable and got quarantined.
      *  Surfaced by UI so user knows their drawings were preserved (not silently
      *  discarded) rather than thinking blank means "no data". */
-    private val _loadError = MutableStateFlow<String?>(null)
-    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+    private val _loadError = MutableStateFlow<LocalizedMessage?>(null)
+    val loadError: StateFlow<LocalizedMessage?> = _loadError.asStateFlow()
 
     fun acknowledgeLoadError() { _loadError.value = null }
 
@@ -410,25 +414,24 @@ class DrawingStore private constructor(
                 // Do NOT overwrite: unreadable file is preserved as
                 // drawings.json.corrupt-* and user is told. Otherwise the next
                 // edit would silently persist an empty doc over it.
-                _loadError.value = L10n.text("Saved drawings could not be read and were set aside ") +
-                    L10n.text("(%1\$s). Starting with an empty map.", r.quarantinedTo?.name ?: "recovery copy")
+                _loadError.value = Messages.drawingsQuarantinedMessage(r.quarantinedTo?.name ?: Messages.recoveryCopyFallback())
             is SafeStore.LoadResult.Locked -> {
                 _locked.value = true
-                _loadError.value = L10n.text("Drawings are encrypted and locked. %1\$s", r.error.message)
+                _loadError.value = Messages.drawingsAreEncryptedAndLockedMessage((r.error.message).toString())
             }
         }
     }
 
     private fun persistCandidate(candidate: DrawingDocument): Boolean {
         if (_locked.value) {
-            _loadError.value = L10n.text("Drawings are locked and the change was not saved.")
+            _loadError.value = Messages.drawingsAreLockedAndTheChangeWasNotSavedMessage()
             return false
         }
         return runCatching { persistence.write(file, LABEL, json.encodeToString(candidate)) }
             .fold(
                 onSuccess = { true },
                 onFailure = {
-                    _loadError.value = L10n.text("Could not save drawings to disk; the change was reverted: %1\$s", it.message)
+                    _loadError.value = Messages.couldNotSaveDrawingsToDiskTheChangeWasRevertedMessage((it.message).toString())
                     false
                 },
             )
@@ -480,7 +483,6 @@ class DrawingStore private constructor(
         val existingById = layers.associateBy { it.id }
         val defaults = DrawingDocument.defaultLayers().map { defaultLayer ->
             existingById[defaultLayer.id]?.copy(
-                name = defaultLayer.name,
                 color = defaultLayer.color
             ) ?: defaultLayer
         }

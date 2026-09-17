@@ -6,11 +6,83 @@ enum Messages {
     static func acknowledge() -> String {
         L10n.message("id.common_ok", fallback: "OK")
     }
+    static func coordinateCopyHint(_ value: String) -> String {
+        L10n.message("id.coordinate_copy_hint", fallback: "Tap to copy the displayed %1$@ coordinate. Long-press to drop a pin here.", value)
+    }
+    static func coordinateCopyHintMessage(_ value: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.coordinate_copy_hint", fallback: "Tap to copy the displayed %1$@ coordinate. Long-press to drop a pin here.", arguments: [value])
+    }
+    static func drawingsQuarantined(_ value: String) -> String {
+        L10n.message("id.drawings_quarantined", fallback: "Saved drawings could not be read and were set aside (%1$@). Starting with an empty map.", value)
+    }
+    static func drawingsQuarantinedMessage(_ value: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.drawings_quarantined", fallback: "Saved drawings could not be read and were set aside (%1$@). Starting with an empty map.", arguments: [value])
+    }
     static func importFailed(_ detail: String) -> String {
         L10n.message("id.import_failed", fallback: "Import failed: %1$@", detail)
     }
+    static func importedLayerSaveFailed(_ detail: String) -> String {
+        L10n.message("id.imported_layer_save_failed", fallback: "Could not save imported layer to disk: %1$@", detail)
+    }
+    static func importedLayerSaveFailedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.imported_layer_save_failed", fallback: "Could not save imported layer to disk: %1$@", arguments: [detail])
+    }
     static func decimalInputHint() -> String {
         L10n.message("id.input_decimal_hint", fallback: "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
+    }
+    static func layerDetailsSaveFailed(_ detail: String) -> String {
+        L10n.message("id.layer_details_save_failed", fallback: "Could not save layer details to disk: %1$@", detail)
+    }
+    static func layerDetailsSaveFailedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.layer_details_save_failed", fallback: "Could not save layer details to disk: %1$@", arguments: [detail])
+    }
+    static func layerUndoSaveFailed(_ detail: String) -> String {
+        L10n.message("id.layer_undo_save_failed", fallback: "Could not save layer undo to disk: %1$@", detail)
+    }
+    static func layerUndoSaveFailedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.layer_undo_save_failed", fallback: "Could not save layer undo to disk: %1$@", arguments: [detail])
+    }
+    static func layerVisibilitySaveFailed(_ detail: String) -> String {
+        L10n.message("id.layer_visibility_save_failed", fallback: "Could not save layer visibility to disk: %1$@", detail)
+    }
+    static func layerVisibilitySaveFailedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.layer_visibility_save_failed", fallback: "Could not save layer visibility to disk: %1$@", arguments: [detail])
+    }
+    static func legacyLayerHistoryHelp() -> String {
+        L10n.message("id.legacy_layer_history_help", fallback: "Some legacy layers have ambiguous default-layer history. Confirm each one as custom or default before renaming, recolouring, or deleting it.")
+    }
+    static func legacyLayerHistoryHelpMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.legacy_layer_history_help", fallback: "Some legacy layers have ambiguous default-layer history. Confirm each one as custom or default before renaming, recolouring, or deleting it.", arguments: [])
+    }
+    static func newLayerSaveFailed(_ detail: String) -> String {
+        L10n.message("id.new_layer_save_failed", fallback: "Could not save new layer to disk: %1$@", detail)
+    }
+    static func newLayerSaveFailedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.new_layer_save_failed", fallback: "Could not save new layer to disk: %1$@", arguments: [detail])
+    }
+    static func onlineBasemapsDisabled() -> String {
+        L10n.message("id.online_basemaps_disabled", fallback: "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
+    }
+    static func onlineBasemapsDisabledMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.online_basemaps_disabled", fallback: "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", arguments: [])
+    }
+    static func recordingStatusIdle() -> String {
+        L10n.message("id.recording_status_idle", fallback: "IDLE")
+    }
+    static func recordingStatusIdleMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.recording_status_idle", fallback: "IDLE", arguments: [])
+    }
+    static func recordingStatusInterrupted() -> String {
+        L10n.message("id.recording_status_interrupted", fallback: "INTERRUPTED")
+    }
+    static func recordingStatusInterruptedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.recording_status_interrupted", fallback: "INTERRUPTED", arguments: [])
+    }
+    static func recordingStatusStarting() -> String {
+        L10n.message("id.recording_status_starting", fallback: "STARTING")
+    }
+    static func recordingStatusStartingMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.recording_status_starting", fallback: "STARTING", arguments: [])
     }
     static func deviceLanguage() -> String {
         L10n.message("id.settings_language_device", fallback: "Device language")
@@ -21,11 +93,53 @@ enum Messages {
     static func settingsLanguageTitle() -> String {
         L10n.message("id.settings_language_title", fallback: "Language")
     }
+    static func syncedLayersSaveFailed(_ detail: String) -> String {
+        L10n.message("id.synced_layers_save_failed", fallback: "Could not save synced layers to disk: %1$@", detail)
+    }
+    static func syncedLayersSaveFailedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.synced_layers_save_failed", fallback: "Could not save synced layers to disk: %1$@", arguments: [detail])
+    }
+    static func trialExpiredDetails(_ value: String) -> String {
+        L10n.message("id.trial_expired_details", fallback: "Your %1$@-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", value)
+    }
+    static func trialExpiredDetailsMessage(_ value: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.trial_expired_details", fallback: "Your %1$@-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", arguments: [value])
+    }
+    static func trialRemainingDetails(_ value: String) -> String {
+        L10n.message("id.trial_remaining_details", fallback: "You're on the free trial (%1$@ left). Unlock now for permanent access.", value)
+    }
+    static func trialRemainingDetailsMessage(_ value: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.trial_remaining_details", fallback: "You're on the free trial (%1$@ left). Unlock now for permanent access.", arguments: [value])
+    }
     static func trackSavedExists() -> String {
         L10n.message("id.ui_a_saved_track_already_exists_export_or_discard_i_a1920160", fallback: "A saved track already exists. Export or discard it before starting a new recording.")
     }
     static func trackSavedExistsMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_a_saved_track_already_exists_export_or_discard_i_a1920160", fallback: "A saved track already exists. Export or discard it before starting a new recording.", arguments: [])
+    }
+    static func liveLocationCentre() -> String {
+        L10n.message("id.ui_centre_on_my_location_82529ff7", fallback: "Centre on My Location")
+    }
+    static func liveLocationCentreMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_centre_on_my_location_82529ff7", fallback: "Centre on My Location", arguments: [])
+    }
+    static func liveLocationCentreHint() -> String {
+        L10n.message("id.ui_centres_the_map_on_your_latest_location_cd51a85e", fallback: "Centres the map on your latest location.")
+    }
+    static func liveLocationCentreHintMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_centres_the_map_on_your_latest_location_cd51a85e", fallback: "Centres the map on your latest location.", arguments: [])
+    }
+    static func couldNotDeleteDrawingFromDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_delete_drawing_from_disk_1_2d322d02", fallback: "Could not delete drawing from disk: %1$@", detail1)
+    }
+    static func couldNotDeleteDrawingFromDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_delete_drawing_from_disk_1_2d322d02", fallback: "Could not delete drawing from disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotDeleteWaypointFromDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_delete_waypoint_from_disk_1_dec5b1a5", fallback: "Could not delete waypoint from disk: %1$@", detail1)
+    }
+    static func couldNotDeleteWaypointFromDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_delete_waypoint_from_disk_1_dec5b1a5", fallback: "Could not delete waypoint from disk: %1$@", arguments: [detail1])
     }
     static func trackReencryptFailed(_ detail: String) -> String {
         L10n.message("id.ui_could_not_encrypt_the_recovered_track_1_1986bd1a", fallback: "Could not encrypt the recovered track: %1$@", detail)
@@ -33,11 +147,158 @@ enum Messages {
     static func trackReencryptFailedMessage(_ detail: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_could_not_encrypt_the_recovered_track_1_1986bd1a", fallback: "Could not encrypt the recovered track: %1$@", arguments: [detail])
     }
+    static func couldNotRestoreDrawingToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_restore_drawing_to_disk_1_274affa0", fallback: "Could not restore drawing to disk: %1$@", detail1)
+    }
+    static func couldNotRestoreDrawingToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_restore_drawing_to_disk_1_274affa0", fallback: "Could not restore drawing to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotRestoreWaypointToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_restore_waypoint_to_disk_1_216a74a6", fallback: "Could not restore waypoint to disk: %1$@", detail1)
+    }
+    static func couldNotRestoreWaypointToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_restore_waypoint_to_disk_1_216a74a6", fallback: "Could not restore waypoint to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveToDisk(_ detail1: String, _ detail2: String) -> String {
+        L10n.message("id.ui_could_not_save_1_to_disk_2_f004a2f3", fallback: "Could not save %1$@ to disk: %2$@", detail1, detail2)
+    }
+    static func couldNotSaveToDiskMessage(_ detail1: String, _ detail2: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_1_to_disk_2_f004a2f3", fallback: "Could not save %1$@ to disk: %2$@", arguments: [detail1, detail2])
+    }
+    static func couldNotSaveDrawingChangeToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_drawing_change_to_disk_1_951dd3f4", fallback: "Could not save drawing change to disk: %1$@", detail1)
+    }
+    static func couldNotSaveDrawingChangeToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_drawing_change_to_disk_1_951dd3f4", fallback: "Could not save drawing change to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveDrawingsToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_drawings_to_disk_1_165e4ac6", fallback: "Could not save drawings to disk: %1$@", detail1)
+    }
+    static func couldNotSaveDrawingsToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_drawings_to_disk_1_165e4ac6", fallback: "Could not save drawings to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveImportedDrawingsToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_imported_drawings_to_disk_1_99572b5c", fallback: "Could not save imported drawings to disk: %1$@", detail1)
+    }
+    static func couldNotSaveImportedDrawingsToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_imported_drawings_to_disk_1_99572b5c", fallback: "Could not save imported drawings to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveImportedWaypointsToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_imported_waypoints_to_disk_1_2890a324", fallback: "Could not save imported waypoints to disk: %1$@", detail1)
+    }
+    static func couldNotSaveImportedWaypointsToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_imported_waypoints_to_disk_1_2890a324", fallback: "Could not save imported waypoints to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveNewDrawingToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_new_drawing_to_disk_1_bf6693d3", fallback: "Could not save new drawing to disk: %1$@", detail1)
+    }
+    static func couldNotSaveNewDrawingToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_new_drawing_to_disk_1_bf6693d3", fallback: "Could not save new drawing to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveNewWaypointToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_new_waypoint_to_disk_1_ea209d9a", fallback: "Could not save new waypoint to disk: %1$@", detail1)
+    }
+    static func couldNotSaveNewWaypointToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_new_waypoint_to_disk_1_ea209d9a", fallback: "Could not save new waypoint to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveReassignedDrawingsToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_reassigned_drawings_to_disk_1_3bf55716", fallback: "Could not save reassigned drawings to disk: %1$@", detail1)
+    }
+    static func couldNotSaveReassignedDrawingsToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_reassigned_drawings_to_disk_1_3bf55716", fallback: "Could not save reassigned drawings to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveReassignedWaypointsToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_reassigned_waypoints_to_disk_1_a62f01a5", fallback: "Could not save reassigned waypoints to disk: %1$@", detail1)
+    }
+    static func couldNotSaveReassignedWaypointsToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_reassigned_waypoints_to_disk_1_a62f01a5", fallback: "Could not save reassigned waypoints to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotSaveWaypointChangeToDisk(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_save_waypoint_change_to_disk_1_9ef95837", fallback: "Could not save waypoint change to disk: %1$@", detail1)
+    }
+    static func couldNotSaveWaypointChangeToDiskMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_waypoint_change_to_disk_1_9ef95837", fallback: "Could not save waypoint change to disk: %1$@", arguments: [detail1])
+    }
+    static func couldNotUndoImportedDrawings(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_undo_imported_drawings_1_a6e33832", fallback: "Could not undo imported drawings: %1$@", detail1)
+    }
+    static func couldNotUndoImportedDrawingsMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_undo_imported_drawings_1_a6e33832", fallback: "Could not undo imported drawings: %1$@", arguments: [detail1])
+    }
+    static func couldNotUndoImportedWaypoints(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_undo_imported_waypoints_1_de028282", fallback: "Could not undo imported waypoints: %1$@", detail1)
+    }
+    static func couldNotUndoImportedWaypointsMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_undo_imported_waypoints_1_de028282", fallback: "Could not undo imported waypoints: %1$@", arguments: [detail1])
+    }
+    static func couldNotUndoTheNewLayer(_ detail1: String) -> String {
+        L10n.message("id.ui_could_not_undo_the_new_layer_1_b0a380c6", fallback: "Could not undo the new layer: %1$@", detail1)
+    }
+    static func couldNotUndoTheNewLayerMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_undo_the_new_layer_1_b0a380c6", fallback: "Could not undo the new layer: %1$@", arguments: [detail1])
+    }
+    static func drawingsAreEncryptedAndLocked(_ detail1: String) -> String {
+        L10n.message("id.ui_drawings_are_encrypted_and_locked_1_45b3c976", fallback: "Drawings are encrypted and locked. %1$@", detail1)
+    }
+    static func drawingsAreEncryptedAndLockedMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_drawings_are_encrypted_and_locked_1_45b3c976", fallback: "Drawings are encrypted and locked. %1$@", arguments: [detail1])
+    }
+    static func liveLocationEnable() -> String {
+        L10n.message("id.ui_enable_live_location_ce184825", fallback: "Enable Live Location")
+    }
+    static func liveLocationEnableMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_enable_live_location_ce184825", fallback: "Enable Live Location", arguments: [])
+    }
+    static func recordingAccessChanged() -> String {
+        L10n.message("id.ui_location_access_changed_so_track_recording_stopp_5b2389dc", fallback: "Location access changed, so track recording stopped. Your saved track was preserved. Re-enable Location access in Settings to record again.")
+    }
+    static func recordingAccessChangedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_location_access_changed_so_track_recording_stopp_5b2389dc", fallback: "Location access changed, so track recording stopped. Your saved track was preserved. Re-enable Location access in Settings to record again.", arguments: [])
+    }
+    static func liveLocationDisabledHint() -> String {
+        L10n.message("id.ui_location_access_is_off_opens_settings_so_you_can_aa125240", fallback: "Location access is off. Opens Settings so you can enable it.")
+    }
+    static func liveLocationDisabledHintMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_location_access_is_off_opens_settings_so_you_can_aa125240", fallback: "Location access is off. Opens Settings so you can enable it.", arguments: [])
+    }
+    static func liveLocationRestrictedIosHint() -> String {
+        L10n.message("id.ui_location_access_is_restricted_review_this_device_d66f331c", fallback: "Location access is restricted. Review this device's Location settings.")
+    }
+    static func liveLocationRestrictedIosHintMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_location_access_is_restricted_review_this_device_d66f331c", fallback: "Location access is restricted. Review this device's Location settings.", arguments: [])
+    }
+    static func liveLocationRestricted() -> String {
+        L10n.message("id.ui_location_restricted_7b8c5d17", fallback: "Location Restricted")
+    }
+    static func liveLocationRestrictedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_location_restricted_7b8c5d17", fallback: "Location Restricted", arguments: [])
+    }
+    static func liveLocationSettingsTitle() -> String {
+        L10n.message("id.ui_location_settings_d165789b", fallback: "Location Settings")
+    }
+    static func liveLocationSettingsTitleMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_location_settings_d165789b", fallback: "Location Settings", arguments: [])
+    }
+    static func liveLocationSettings() -> String {
+        L10n.message("id.ui_open_location_settings_4295919a", fallback: "Open Location Settings")
+    }
+    static func liveLocationSettingsMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_open_location_settings_4295919a", fallback: "Open Location Settings", arguments: [])
+    }
     static func trackStartFailed(_ detail: String) -> String {
         L10n.message("id.ui_recording_did_not_start_1_8940e9cc", fallback: "Recording did not start: %1$@", detail)
     }
     static func trackStartFailedMessage(_ detail: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_recording_did_not_start_1_8940e9cc", fallback: "Recording did not start: %1$@", arguments: [detail])
+    }
+    static func recoveryCopyFallback() -> String {
+        L10n.message("id.ui_recovery_copy_6f7749ab", fallback: "recovery copy")
+    }
+    static func liveLocationReviewHint() -> String {
+        L10n.message("id.ui_review_location_access_in_settings_4adfc9dd", fallback: "Review Location access in Settings.")
+    }
+    static func liveLocationReviewHintMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_review_location_access_in_settings_4adfc9dd", fallback: "Review Location access in Settings.", arguments: [])
     }
     static func trackLegacyLineInvalid() -> String {
         L10n.message("id.ui_saved_legacy_track_contains_an_invalid_line_and__dfd76fd9", fallback: "Saved legacy track contains an invalid line and was preserved unchanged.")
@@ -75,11 +336,53 @@ enum Messages {
     static func trackTooLargeMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_saved_track_is_too_large_to_recover_safely_87b7d3da", fallback: "Saved track is too large to recover safely.", arguments: [])
     }
+    static func recordingAccessNeeded() -> String {
+        L10n.message("id.ui_tacmap_needs_location_access_to_record_a_track_a_a651e8f4", fallback: "TacMap needs Location access to record a track. Allow access in Settings, then try again.")
+    }
+    static func recordingAccessNeededMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_tacmap_needs_location_access_to_record_a_track_a_a651e8f4", fallback: "TacMap needs Location access to record a track. Allow access in Settings, then try again.", arguments: [])
+    }
+    static func liveLocationFirstLaunch() -> String {
+        L10n.message("id.ui_tacmap_requests_location_access_on_first_launch__581e58e5", fallback: "TacMap requests Location access on first launch. Tap to request it again if needed.")
+    }
+    static func liveLocationFirstLaunchMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_tacmap_requests_location_access_on_first_launch__581e58e5", fallback: "TacMap requests Location access on first launch. Tap to request it again if needed.", arguments: [])
+    }
+    static func recordingStartInactive() -> String {
+        L10n.message("id.ui_track_recording_could_not_start_no_recording_is__62bcfbe1", fallback: "Track recording could not start. No recording is active.")
+    }
+    static func recordingStartInactiveMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_track_recording_could_not_start_no_recording_is__62bcfbe1", fallback: "Track recording could not start. No recording is active.", arguments: [])
+    }
     static func trackWriteFailed() -> String {
         L10n.message("id.ui_track_recording_stopped_because_a_fix_could_not__28ce808b", fallback: "Track recording stopped because a fix could not be saved.")
     }
     static func trackWriteFailedMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_track_recording_stopped_because_a_fix_could_not__28ce808b", fallback: "Track recording stopped because a fix could not be saved.", arguments: [])
+    }
+    static func recordingAccessUnavailablePreserved() -> String {
+        L10n.message("id.ui_track_recording_stopped_because_location_access__2405217a", fallback: "Track recording stopped because Location access is unavailable. Your saved track was preserved. Re-enable it in Settings.")
+    }
+    static func recordingAccessUnavailablePreservedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_track_recording_stopped_because_location_access__2405217a", fallback: "Track recording stopped because Location access is unavailable. Your saved track was preserved. Re-enable it in Settings.", arguments: [])
+    }
+    static func recordingInterruptedPreserved() -> String {
+        L10n.message("id.ui_track_recording_was_interrupted_the_saved_track__d5e7016b", fallback: "Track recording was interrupted. The saved track was preserved.")
+    }
+    static func recordingInterruptedPreservedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_track_recording_was_interrupted_the_saved_track__d5e7016b", fallback: "Track recording was interrupted. The saved track was preserved.", arguments: [])
+    }
+    static func waypointsAreEncryptedAndLocked(_ detail1: String) -> String {
+        L10n.message("id.ui_waypoints_are_encrypted_and_locked_1_93dedbe5", fallback: "Waypoints are encrypted and locked. %1$@", detail1)
+    }
+    static func waypointsAreEncryptedAndLockedMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_waypoints_are_encrypted_and_locked_1_93dedbe5", fallback: "Waypoints are encrypted and locked. %1$@", arguments: [detail1])
+    }
+    static func waypointsQuarantined(_ value: String) -> String {
+        L10n.message("id.waypoints_quarantined", fallback: "Saved waypoints could not be read and were set aside (%1$@). Starting with no waypoints.", value)
+    }
+    static func waypointsQuarantinedMessage(_ value: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.waypoints_quarantined", fallback: "Saved waypoints could not be read and were set aside (%1$@). Starting with no waypoints.", arguments: [value])
     }
     static func dayCount(_ count: Int) -> String { L10n.quantity("day", count) }
     static func pointCount(_ count: Int) -> String { L10n.quantity("point", count) }

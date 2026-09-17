@@ -311,10 +311,10 @@ struct RecordingIndicator: View {
     private var statusTitle: String {
         switch state {
         case .awaitingPermission: return L10n.text("AWAITING LOCATION")
-        case .starting: return "STARTING"
+        case .starting: return Messages.recordingStatusStarting()
         case .recording: return L10n.text("REC")
-        case .interrupted: return "INTERRUPTED"
-        case .idle: return "IDLE"
+        case .interrupted: return Messages.recordingStatusInterrupted()
+        case .idle: return Messages.recordingStatusIdle()
         }
     }
 

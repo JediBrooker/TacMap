@@ -1,5 +1,7 @@
 package com.tacmap.app
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.layout.Arrangement
@@ -88,15 +90,13 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
             )
             if (corruptConfiguration || (storageError && !canAcceptPin)) {
                 Text(
-                    L10n.text("App Lock data is damaged and cannot be verified. Clear TacMap's app data ") +
-                        L10n.text("in Android Settings to recover."),
+                    Messages.appLockDataDamaged(),
                     color = Color(0xFFEF5350),
                     fontSize = 12.sp,
                 )
             } else if (storageError) {
                 Text(
-                    L10n.text("App Lock storage could not be updated. The lock remains armed; enter your ") +
-                        L10n.text("existing PIN."),
+                    Messages.appLockUpdateFailed(),
                     color = Color(0xFFFFB74D),
                     fontSize = 12.sp,
                 )

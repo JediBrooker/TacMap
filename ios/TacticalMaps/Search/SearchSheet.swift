@@ -132,7 +132,7 @@ enum OfflineSearchEngine {
     static func records(waypoints: [Waypoint],
                         drawings: [DrawingShape],
                         layers: [DrawingLayer]) -> [OfflineSearchRecord] {
-        let layerNames = Dictionary(uniqueKeysWithValues: layers.map { ($0.id, $0.name) })
+        let layerNames = Dictionary(uniqueKeysWithValues: layers.map { ($0.id, $0.displayName) })
         let waypointRecords = waypoints.map { waypoint in
             OfflineSearchRecord(
                 id: "waypoint:\(waypoint.id.uuidString.lowercased())",

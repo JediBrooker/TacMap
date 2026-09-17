@@ -77,7 +77,19 @@ final class WaypointStore: ObservableObject {
     /// Non-nil when waypoints file was unreadable (quarantined) or a save
     /// failed. Surfaced so user doesn't see an empty list and think they
     /// have no waypoints when really decode just blew up.
-    @Published var loadError: String?
+    // Message identity controls recovery; translated wording never controls state.
+    private static let saveErrorIDs: Set<String> = [
+        "id.ui_could_not_save_imported_waypoints_to_disk_1_2890a324",
+        "id.ui_could_not_save_new_waypoint_to_disk_1_ea209d9a",
+        "id.ui_could_not_save_reassigned_waypoints_to_disk_1_a62f01a5",
+        "id.ui_could_not_save_waypoint_change_to_disk_1_9ef95837",
+    ]
+
+    @Published private var pendingLoadError: LocalizedMessage?
+    var loadError: String? {
+        get { pendingLoadError?.text }
+        set { pendingLoadError = newValue.map(LocalizedMessage.literal) }
+    }
 
     /// Set by ContentView from `@Environment(\.undoManager)` after the view appears.
     weak var undoManager: UndoManager?
@@ -112,11 +124,11 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = L10n.text("Could not save new waypoint to disk: %1$@", error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveNewWaypointToDiskMessage(error.localizedDescription)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix(L10n.text("Could not save new waypoint")) == true { loadError = nil }
+        if pendingLoadError?.id == "id.ui_could_not_save_new_waypoint_to_disk_1_ea209d9a" { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.deleteDurably(waypoint)
         }
@@ -139,11 +151,11 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = L10n.text("Could not save waypoint change to disk: %1$@", error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveWaypointChangeToDiskMessage(error.localizedDescription)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix(L10n.text("Could not save waypoint change")) == true { loadError = nil }
+        if pendingLoadError?.id == "id.ui_could_not_save_waypoint_change_to_disk_1_9ef95837" { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.commitEdit(old, actionName: actionName)
         }
@@ -163,11 +175,11 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = L10n.text("Could not delete waypoint from disk: %1$@", error.localizedDescription)
+            pendingLoadError = Messages.couldNotDeleteWaypointFromDiskMessage(error.localizedDescription)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix(L10n.text("Could not delete waypoint")) == true { loadError = nil }
+        if pendingLoadError?.id == "id.ui_could_not_delete_waypoint_from_disk_1_dec5b1a5" { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.restoreDurably(removed, at: index)
         }
@@ -184,11 +196,11 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = L10n.text("Could not restore waypoint to disk: %1$@", error.localizedDescription)
+            pendingLoadError = Messages.couldNotRestoreWaypointToDiskMessage(error.localizedDescription)
             throw WaypointMutationError.persistenceFailed(error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix(L10n.text("Could not restore waypoint")) == true { loadError = nil }
+        if pendingLoadError?.id == "id.ui_could_not_restore_waypoint_to_disk_1_216a74a6" { loadError = nil }
         undoManager?.registerUndo(withTarget: self) { store in
             _ = try? store.deleteDurably(waypoint)
         }
@@ -212,11 +224,11 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = L10n.text("Could not save reassigned waypoints to disk: %1$@", error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveReassignedWaypointsToDiskMessage(error.localizedDescription)
             throw MissionLayerMutationError.persistenceFailed(store: "waypoints", underlying: error)
         }
         waypoints = candidate
-        if loadError?.hasPrefix(L10n.text("Could not save")) == true { loadError = nil }
+        if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
         return affected
     }
 
@@ -245,14 +257,14 @@ final class WaypointStore: ObservableObject {
         do {
             try write(candidate)
         } catch {
-            loadError = L10n.text("Could not save imported waypoints to disk: %1$@", error.localizedDescription)
+            pendingLoadError = Messages.couldNotSaveImportedWaypointsToDiskMessage(error.localizedDescription)
             throw BatchImportStoreError.persistenceFailed(error)
         }
 
         // Publish and register undo only after the candidate is durable. Sync's
         // model observers therefore cannot advertise data that failed to save.
         waypoints = candidate
-        if loadError?.hasPrefix(L10n.text("Could not save")) == true { loadError = nil }
+        if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
         let insertedIDs = Set(additions.map(\.id))
         undoManager?.registerUndo(withTarget: self) { store in
             store.removeImportedBatch(ids: insertedIDs, batchKey: batchKey)
@@ -273,7 +285,7 @@ final class WaypointStore: ObservableObject {
             }
             undoManager?.setActionName(L10n.text("Import Waypoints"))
         } catch {
-            loadError = L10n.text("Could not undo imported waypoints: %1$@", error.localizedDescription)
+            pendingLoadError = Messages.couldNotUndoImportedWaypointsMessage(error.localizedDescription)
         }
     }
 
@@ -307,11 +319,10 @@ final class WaypointStore: ObservableObject {
         case .corrupt(let quarantine, _):
             // Preserve the unreadable file rather than letting the next write
             // clobber it with a one-element list.
-            loadError = L10n.text("Saved waypoints could not be read and were set aside ")
-                + L10n.text("(%1$@). Starting with no waypoints.", quarantine?.lastPathComponent ?? "recovery copy")
+            pendingLoadError = Messages.waypointsQuarantinedMessage(quarantine?.lastPathComponent ?? Messages.recoveryCopyFallback())
         case .locked(let error):
             locked = true
-            loadError = L10n.text("Waypoints are encrypted and locked. %1$@", error.localizedDescription)
+            pendingLoadError = Messages.waypointsAreEncryptedAndLockedMessage(error.localizedDescription)
         }
     }
 

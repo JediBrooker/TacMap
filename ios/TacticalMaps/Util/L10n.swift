@@ -12,6 +12,13 @@ enum L10n {
         bundles[choice.rawValue] ?? .main
     }
 
+    /// Recognise catalogue-owned defaults without rewriting saved names or user labels.
+    static func isCatalogValue(_ value: String, for key: String) -> Bool {
+        value == key || bundles.values.contains {
+            $0.localizedString(forKey: key, value: key, table: nil) == value
+        }
+    }
+
     static func text(_ key: String, _ arguments: Any...) -> String {
         let language = AppLanguage.shared
         let format = bundle(for: language.selection).localizedString(forKey: key, value: key, table: nil)

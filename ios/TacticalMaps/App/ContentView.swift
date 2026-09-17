@@ -544,7 +544,7 @@ struct ContentView: View {
             initializeDurableRecording: { trackRecorder.start() },
             stopRecording: { trackRecorder.stop() },
             setBackgroundUpdates: { locationService.setBackgroundUpdates($0) },
-            recordingError: { trackRecorder.persistError }
+            recordingError: { trackRecorder.pendingPersistError }
         ))
     }
 
@@ -1087,7 +1087,7 @@ struct ContentView: View {
         .onChange(of: trackRecorder.isRecording) { active in
             if !active {
                 recordingCoordinator.recorderDidStopUnexpectedly(
-                    error: trackRecorder.persistError
+                    error: trackRecorder.pendingPersistError
                 )
             }
         }
@@ -1944,8 +1944,7 @@ private struct NoBasemapNotice: View {
     var body: some View {
         VStack(spacing: 6) {
             Text(L10n.text("No basemap")).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-            Text(L10n.text("Online basemaps are off. Import an offline map pack, or enable ")
-                 + L10n.text("online basemap tiles in Settings, Privacy & OPSEC."))
+            Text(Messages.onlineBasemapsDisabled())
                 .font(.system(size: 11))
                 .foregroundStyle(Color(white: 0.73))
                 .multilineTextAlignment(.center)
