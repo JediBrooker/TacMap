@@ -12,3 +12,5 @@ Field limits checked against primary documentation:
 - [Apple platform version information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information)
 - [Apple purchase information](https://developer.apple.com/help/app-store-connect/reference/in-app-purchases-and-subscriptions/in-app-purchase-information)
 - [Google Play app setup and listing](https://support.google.com/googleplay/android-developer/answer/9859152)
+
+App Store Connect uses the existing `en-AU` primary locale; the prepared `en-US` English copy maps to that locale. The German App Store title is `TacMap: Offline-Karten`, accepted by Apple after `TacMap` alone was rejected as unavailable for the added locale. The app’s own display name remains TacMap.
