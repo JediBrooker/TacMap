@@ -1,4 +1,4 @@
-# English and German localization
+# Shared app localisation
 
 Settings, Privacy & OPSEC → Language offers English, Deutsch, and Device language
 on both platforms. The choice is saved and updates app labels immediately without
@@ -11,8 +11,7 @@ system's language. No network translation service is used.
 `catalog.json` is the source for app-owned UI copy on both platforms. Each entry
 contains English, German, and the platforms where it is used. `{1}`, `{2}`, etc.
 are positional arguments; preserve the same arguments in each translation.
-`plurals.json` contains complete singular/plural phrases selected by the native
-platform plural rules. German copy uses informal “du”.
+`plurals.json` contains complete phrases in named native plural categories, selected by platform plural rules. German copy uses informal “du”.
 
 Run from the repository root:
 
@@ -63,10 +62,62 @@ VoiceOver/TalkBack, and counts 0, 1 and 2. Switch between English and German and
 confirm labels refresh while user-created names remain intact. Check an existing
 saved mission and a GeoJSON round-trip between differently configured devices.
 
-These changes are integrated with the 2.0.0/build 64 source at `1c023de`.
-Store listing copy, screenshots and store-managed product metadata are not changed.
-Device layout review and Android instrumentation tests remain release checks.
+Store listing copy, screenshots and store-managed product metadata are separate work.
 Signing material and machine-specific configuration remain ignored by Git.
+
+## Stable messages and language configuration
+
+`locales.json` is the supported-language manifest. It drives generated
+`SupportedLanguage` choices, native resource folders, Android locale configuration
+and the XcodeGen `Localizations.yml` include. Run XcodeGen after generation.
+`permissions.json` owns localised iOS permission descriptions.
+
+Each catalogue key is a stable resource ID; never regenerate it from revised
+English wording. Migrated entries declare `accessor`, `context` and optional
+`parameters` (named string arguments). Generated `Messages` accessors provide the
+same API on both platforms. All plural families also expose integer-count
+accessors. The six initial message families cover language settings, the chat
+recipient heading, acknowledgement and import errors.
+
+Legacy `L10n.text` calls continue through English aliases during incremental
+migration. For new copy use a meaningful stable ID and typed accessor. When two
+meanings share English wording, give them separate IDs and contexts; only one
+may own the legacy alias, so set `legacy: false` on the new meaning. Stable IDs,
+translation keys and formatted display text must never replace persisted or
+protocol identifiers.
+
+## Translation review
+
+`reviews.json` records fingerprints of source wording/context/parameters and
+translated wording. A change invalidates the corresponding review and fails CI.
+`baseline` records wording imported from build 66, not a fresh linguistic review;
+`reviewed` records an explicit review of the current text. Neither status certifies
+layout, accessibility or device behaviour.
+
+After reviewing a specific translation, record it explicitly:
+
+```sh
+python3 scripts/review_localizations.py --locale de --id import_failed
+python3 scripts/generate_localizations.py
+python3 scripts/check_localizations.py
+python3 -m unittest discover -s scripts -p 'test_localization*.py'
+```
+
+Use `--kind plurals` or `--kind permissions` for those catalogues. Do not refresh
+fingerprints just to silence a check. The tool records a decision; it cannot
+judge translation quality.
+
+To add a language, supply actual translations for every applicable message,
+permission and plural category, then add its manifest entry (tag, autonym, native
+folders, enum cases and required categories). Review the translations and record
+their fingerprints, regenerate resources, run XcodeGen and both native test
+suites, then complete the device/release review. No generator code edits are
+needed. The synthetic Arabic fixture tests six plural categories; it does not
+provide or enable Arabic translations. English remains the source/fallback.
+
+The legacy-display hash fixture in `testdata/localization` protects wording during
+this structural migration. An intentional future wording change requires a
+separate reviewed fixture update, not automatic regeneration to make tests pass.
 
 ## Coverage and prevention
 

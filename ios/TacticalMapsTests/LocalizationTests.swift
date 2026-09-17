@@ -32,6 +32,29 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(MarkerCatalog.teamColors[0].name, "Red")
     }
 
+    func testStableMessagesRefreshAndPreserveArguments() {
+        let language = AppLanguage.shared
+        let original = language.selection
+        defer { language.select(original) }
+        let detail = "100% – Karte {1} %@"
+        language.select(.de)
+        XCTAssertEqual(Messages.settingsLanguageTitle(), "Sprache")
+        XCTAssertEqual(Messages.importFailed(detail), "Import fehlgeschlagen: \(detail)")
+        XCTAssertEqual(Messages.pointCount(2), "2 Punkte")
+        language.select(.en)
+        XCTAssertEqual(Messages.settingsLanguageTitle(), "Language")
+        XCTAssertEqual(Messages.importFailed(detail), "Import failed: \(detail)")
+        XCTAssertEqual(Messages.pointCount(2), "2 points")
+    }
+
+    func testGeneratedLanguagesPreserveSavedChoiceValues() {
+        XCTAssertEqual(AppLanguage.Choice(rawValue: "system"), .system)
+        XCTAssertEqual(AppLanguage.Choice(rawValue: "en"), .en)
+        XCTAssertEqual(AppLanguage.Choice(rawValue: "de"), .de)
+        let bundled = Bundle.main.object(forInfoDictionaryKey: "CFBundleLocalizations") as? [String]
+        XCTAssertEqual(Set(bundled ?? []), Set(SupportedLanguage.resourceFolders.keys))
+    }
+
     private func resources(_ language: String) throws -> Bundle {
         let path = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj"))
         return try XCTUnwrap(Bundle(path: path))

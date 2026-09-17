@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "5356e314b717fd5f7f01d99355df12d5cabac43d",
+  "messages": {
+    "ios_en": "2e0d750465a62423aeae4f9f202370cd9df4c41f0d5bc90334a6051de2d68cb7",
+    "ios_de": "07f744b49ef61c83be40c5597f4557ed32ff88ce1e5e831d703bb34a095f1e32",
+    "android_en": "e431422e08e4a9485318c7ca39b414899e17c5bff5f1ad1a2f79927b3c3b8cc5",
+    "android_de": "1539094793db26114081bce6281ba1aac0a9c956532a4f859b254b630b71cf0c"
+  },
+  "plurals": {
+    "en": "a1bd882b55e15915a436eeedfc47ca70f8abc61945622c4ab4d1486727838761",
+    "de": "22796803a6c866cb95bbafce3e5493c570f26b2e23924cd190bbdc3c913df27d"
+  }
+}

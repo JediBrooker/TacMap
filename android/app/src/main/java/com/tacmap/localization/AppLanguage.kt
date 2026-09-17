@@ -9,26 +9,17 @@ import java.util.Locale
 
 /** Observable copy preference: changing it does not recreate the map or Activity. */
 object AppLanguage {
-    enum class Choice(val tag: String) {
-        SYSTEM("system"), ENGLISH("en"), GERMAN("de");
-        val label: String get() = when (this) {
-            SYSTEM -> L10n.text("Device language")
-            ENGLISH -> "English"
-            GERMAN -> "Deutsch"
-        }
-    }
-
     private const val PREFERENCES = "app_language"
     private const val KEY = "display_language"
-    var selection by mutableStateOf(Choice.SYSTEM)
+    var selection by mutableStateOf(SupportedLanguage.SYSTEM)
         private set
 
     fun install(context: Context) {
         val tag = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getString(KEY, null)
-        selection = Choice.entries.firstOrNull { it.tag == tag } ?: Choice.SYSTEM
+        selection = SupportedLanguage.entries.firstOrNull { it.tag == tag } ?: SupportedLanguage.SYSTEM
     }
 
-    fun select(context: Context, choice: Choice): Boolean {
+    fun select(context: Context, choice: SupportedLanguage): Boolean {
         if (!context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit().putString(KEY, choice.tag).commit()) return false
         selection = choice
@@ -37,7 +28,7 @@ object AppLanguage {
 
     fun localizedContext(context: Context): Context {
         val choice = selection // Compose tracks this read, including reads through L10n.
-        if (choice == Choice.SYSTEM) return context
+        if (choice == SupportedLanguage.SYSTEM) return context
         val configuration = Configuration(context.resources.configuration)
         configuration.setLocale(Locale.forLanguageTag(choice.tag))
         return context.createConfigurationContext(configuration)

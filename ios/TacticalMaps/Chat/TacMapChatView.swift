@@ -60,7 +60,7 @@ struct TacMapChatView: View {
                 get: { sendIssue != nil },
                 set: { if !$0 { sendIssue = nil } }
             )) {
-                Button(L10n.text("OK"), role: .cancel) { sendIssue = nil }
+                Button(Messages.acknowledge(), role: .cancel) { sendIssue = nil }
             } message: {
                 Text(sendIssue ?? L10n.text("The message was not sent."))
             }
@@ -146,7 +146,7 @@ struct TacMapChatView: View {
     @ViewBuilder
     private var recipientControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.text("RECIPIENT"))
+            Text(Messages.chatRecipientHeading())
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 

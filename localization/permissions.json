@@ -1,0 +1,10 @@
+{
+  "NSFaceIDUsageDescription": {
+    "en": "Face ID unlocks TacMap's locally encrypted mission data and optional app lock.",
+    "de": "Face ID entsperrt die lokal verschlüsselten Einsatzdaten von TacMap und die optionale App-Sperre."
+  },
+  "NSLocationWhenInUseUsageDescription": {
+    "en": "TacMap shows your live position and MGRS grid, records user-started GPX tracks in the background, and shares your encrypted position with joined Sync peers while the screen is off only when you enable Share my location and Background Unit Sync in OPSEC.",
+    "de": "TacMap zeigt deine Live-Position und MGRS-Koordinate an und zeichnet von dir gestartete GPX-Tracks im Hintergrund auf. Deine verschlüsselte Position wird bei ausgeschaltetem Bildschirm nur mit verbundenen Sync-Teilnehmern geteilt, wenn du unter OPSEC „Meinen Standort teilen“ und „Unit Sync im Hintergrund“ aktivierst."
+  }
+}

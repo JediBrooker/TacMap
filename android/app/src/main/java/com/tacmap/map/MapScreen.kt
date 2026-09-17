@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.Manifest
@@ -566,7 +568,7 @@ internal fun MapScreen(
             terminal = true
             val detail = failure.message?.takeIf { it.isNotBlank() }
                 ?: L10n.text("The selected document could not be imported")
-            Toast.makeText(context, L10n.text("Import failed: %1\$s", detail), Toast.LENGTH_LONG).show()
+            Toast.makeText(context, Messages.importFailed(detail), Toast.LENGTH_LONG).show()
         } finally {
             if (terminal) onCompleteDocumentImport(pending.token)
         }
@@ -1675,7 +1677,7 @@ internal fun MapScreen(
                             vm.trackRecorder.acknowledgePersistError()
                         }
                     }
-                ) { Text(if (recordingStateMessage != null) L10n.text("Retry") else L10n.text("OK")) }
+                ) { Text(if (recordingStateMessage != null) L10n.text("Retry") else Messages.acknowledge()) }
             },
             dismissButton = trackRecordingState.settingsTarget?.let { target ->
                 {
@@ -1728,7 +1730,7 @@ internal fun MapScreen(
                         if (waypointStoreError != null) waypointStore.acknowledgeLoadError()
                         else drawingStore.acknowledgeLoadError()
                     }
-                ) { Text(L10n.text("OK")) }
+                ) { Text(Messages.acknowledge()) }
             },
         )
     }

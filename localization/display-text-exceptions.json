@@ -232,22 +232,6 @@
     "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
   },
   {
-    "id": "e3db31bc5913dc2f",
-    "path": "ios/TacticalMaps/Util/AppLanguage.swift",
-    "sink": "property.label",
-    "literal": "\"English\"",
-    "occurrences": 1,
-    "reason": "Language autonym intentionally stays recognisable regardless of the current UI language."
-  },
-  {
-    "id": "09636d55301f8236",
-    "path": "ios/TacticalMaps/Util/AppLanguage.swift",
-    "sink": "property.label",
-    "literal": "\"Deutsch\"",
-    "occurrences": 1,
-    "reason": "Language autonym intentionally stays recognisable regardless of the current UI language."
-  },
-  {
     "id": "9bfb2d1cdefc85f8",
     "path": "ios/TacticalMaps/Waypoints/WaypointListSheet.swift",
     "sink": "Text",

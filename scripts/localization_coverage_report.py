@@ -21,17 +21,19 @@ def report(root=ROOT):
              '## Areas', '', '| Area | iOS components | Android components |', '| --- | ---: | ---: |']
     for area in sorted({entry['area'] for entry in inventory}):
         lines.append(f'| {area} | {counts[area, "ios"]} | {counts[area, "android"]} |')
-    lines += ['', '## Source components', '',
-              '| Platform | Area | Component | Localisation calls | Dynamic lookups | Literal exceptions | Review status |',
-              '| --- | --- | --- | ---: | ---: | ---: | --- |']
+    lines += ['', f'{sum("accessor" in e for e in catalog.values())} catalogue messages have typed accessors; all plural families also have typed count accessors. Legacy calls remain an incremental migration backlog.', '', '## Source components', '',
+              '| Platform | Area | Component | Legacy calls | Typed calls | Dynamic lookups | Literal exceptions | Review status |',
+              '| --- | --- | --- | ---: | ---: | ---: | ---: | --- |']
     for platform, relative, path in source_files(root):
         tokens = Lexer(path.read_text(), platform).tokens()
         lookups = [i for i in range(len(tokens) - 4)
                    if tokens[i].value == 'L10n' and tokens[i + 1].value == '.'
                    and tokens[i + 2].value in ('text', 'quantity') and tokens[i + 3].value == '(']
+        typed = sum(tokens[i].value == 'Messages' and tokens[i + 1].value == '.'
+                    and tokens[i + 3].value == '(' for i in range(len(tokens) - 3))
         dynamic = sum(tokens[i + 4].kind != 'string' for i in lookups)
         entry = rows[relative]
-        lines.append(f'| {platform} | {entry["area"]} | `{relative}` | {len(lookups)} | {dynamic} | {exceptions[relative]} | {entry["reviewStatus"]} |')
+        lines.append(f'| {platform} | {entry["area"]} | `{relative}` | {len(lookups)} | {typed} | {dynamic} | {exceptions[relative]} | {entry["reviewStatus"]} |')
     lines += ['', '## Additional surfaces requiring review', '',
               '| Surface | Current evidence | Remaining work |', '| --- | --- | --- |',
               '| Native permission text and locale declarations | English/German resources exist | Test first-run prompts and system/app language combinations |',

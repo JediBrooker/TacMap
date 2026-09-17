@@ -25,6 +25,16 @@ object L10n {
         return String.format(locale, format, *arguments.map { it.toString() }.toTypedArray())
     }
 
+    /** Stable-ID lookup used by generated accessors; display arguments are typed strings. */
+    fun message(id: String, fallback: String, vararg arguments: String): String {
+        val context = application?.let(AppLanguage::localizedContext)
+        val resource = localizedStringIds[id]
+        val format = if (context != null && resource != null) context.getString(resource) else fallback
+        if (arguments.isEmpty()) return format
+        val locale = context?.resources?.configuration?.locales?.get(0) ?: Locale.ENGLISH
+        return String.format(locale, format, *arguments)
+    }
+
     fun quantity(noun: String, count: Int): String {
         val context = application?.let(AppLanguage::localizedContext)
         val id = localizedPluralIds.getValue(noun)

@@ -304,14 +304,6 @@
       "ios"
     ]
   },
-  "ui_import_failed_1_e8db0ccc": {
-    "en": "Import failed: {1}",
-    "de": "Import fehlgeschlagen: {1}",
-    "platforms": [
-      "ios",
-      "android"
-    ]
-  },
   "ui_couldn_t_parse_this_file_as_geojson_1_266549d1": {
     "en": "Couldn't parse this file as GeoJSON: {1}",
     "de": "Diese Datei konnte nicht als GeoJSON gelesen werden: {1}",
@@ -11984,30 +11976,6 @@
       "android"
     ]
   },
-  "ui_language_a4fe6526": {
-    "en": "Language",
-    "de": "Sprache",
-    "platforms": [
-      "ios",
-      "android"
-    ]
-  },
-  "ui_device_language_1dd6611c": {
-    "en": "Device language",
-    "de": "Gerätesprache",
-    "platforms": [
-      "ios",
-      "android"
-    ]
-  },
-  "ui_could_not_save_the_language_setting_try_again_3217b525": {
-    "en": "Could not save the language setting. Try again.",
-    "de": "Die Spracheinstellung konnte nicht gespeichert werden. Versuche es erneut.",
-    "platforms": [
-      "ios",
-      "android"
-    ]
-  },
   "ui_recording_is_controlled_separately_bf1d9aae": {
     "en": "recording is controlled separately.",
     "de": "Die Trackaufzeichnung wird separat gesteuert.",
@@ -12030,13 +11998,65 @@
       "android"
     ]
   },
-  "ui_1c10f5ffc2bd": {
+  "import_failed": {
+    "en": "Import failed: {1}",
+    "de": "Import fehlgeschlagen: {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "accessor": "importFailed",
+    "context": "Import error prefix; detail is an already-formatted diagnostic, not a filename to translate.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "settings_language_title": {
+    "en": "Language",
+    "de": "Sprache",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "accessor": "settingsLanguageTitle",
+    "context": "Title of the app display-language preference.",
+    "parameters": []
+  },
+  "settings_language_device": {
+    "en": "Device language",
+    "de": "Gerätesprache",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "accessor": "deviceLanguage",
+    "context": "Choice that follows the system app/device language.",
+    "parameters": []
+  },
+  "settings_language_save_failed": {
+    "en": "Could not save the language setting. Try again.",
+    "de": "Die Spracheinstellung konnte nicht gespeichert werden. Versuche es erneut.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "accessor": "languageSaveFailed",
+    "context": "Language preference could not be saved to local storage.",
+    "parameters": []
+  },
+  "chat_recipient_heading": {
     "en": "RECIPIENT",
     "de": "EMPFÄNGER",
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "chatRecipientHeading",
+    "context": "Uppercase heading above the private chat recipient selector.",
+    "parameters": []
   },
   "common_ok": {
     "en": "OK",
@@ -12044,6 +12064,9 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "acknowledge",
+    "context": "Button acknowledging a message or dismissing an alert.",
+    "parameters": []
   }
 }

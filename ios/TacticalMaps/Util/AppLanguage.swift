@@ -3,17 +3,7 @@ import Combine
 
 /// Changes display copy without replacing the view tree or mission/recording state.
 final class AppLanguage: ObservableObject {
-    enum Choice: String, CaseIterable, Identifiable {
-        case system, en, de
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .system: return L10n.text("Device language")
-            case .en: return "English"
-            case .de: return "Deutsch"
-            }
-        }
-    }
+    typealias Choice = SupportedLanguage
 
     static let shared = AppLanguage()
     static let preferenceKey = "app.displayLanguage"

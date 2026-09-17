@@ -16,7 +16,13 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = {'ios': ('ios/TacticalMaps', '.swift'),
            'android': ('android/app/src/main/java/com/tacmap', '.kt')}
-GENERATED = {'android/app/src/main/java/com/tacmap/localization/LocalizedStringIds.kt'}
+GENERATED = {
+    'android/app/src/main/java/com/tacmap/localization/LocalizedStringIds.kt',
+    'android/app/src/main/java/com/tacmap/localization/Messages.kt',
+    'android/app/src/main/java/com/tacmap/localization/SupportedLanguage.kt',
+    'ios/TacticalMaps/Util/Messages.swift',
+    'ios/TacticalMaps/Util/SupportedLanguage.swift',
+}
 DISPLAY_CALLS = {'Text', 'Button', 'Label', 'Toggle', 'Picker', 'Section',
                  'TextField', 'SecureField', 'TextEditor', 'TextButton',
                  'navigationTitle', 'navigationSubtitle', 'accessibilityLabel',

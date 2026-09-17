@@ -36,7 +36,7 @@ jobs:
 
       - name: Validate English and German localizations
         run: |
-          python3 -m unittest discover -s scripts -p test_localization_audit.py
+          python3 -m unittest discover -s scripts -p 'test_localization*.py'
           python3 scripts/check_localizations.py
 
       - name: Require Xcode 26

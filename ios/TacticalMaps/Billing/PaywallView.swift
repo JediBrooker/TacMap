@@ -165,13 +165,13 @@ struct PaywallView: View {
                isPresented: Binding(get: { store.restoreOutcome != nil },
                                     set: { if !$0 { store.restoreOutcome = nil } }),
                presenting: store.restoreOutcome) { _ in
-            Button(L10n.text("OK"), role: .cancel) { store.restoreOutcome = nil }
+            Button(Messages.acknowledge(), role: .cancel) { store.restoreOutcome = nil }
         } message: { Text($0) }
         .alert(L10n.text("Redeem Offer Code"),
                isPresented: Binding(get: { store.redemptionOutcome != nil },
                                     set: { if !$0 { store.redemptionOutcome = nil } }),
                presenting: store.redemptionOutcome) { _ in
-            Button(L10n.text("OK"), role: .cancel) { store.redemptionOutcome = nil }
+            Button(Messages.acknowledge(), role: .cancel) { store.redemptionOutcome = nil }
         } message: { Text($0) }
     }
 

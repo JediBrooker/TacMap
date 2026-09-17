@@ -14,8 +14,8 @@ struct OpsecSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(L10n.text("Language")) {
-                    Picker(L10n.text("Language"), selection: Binding(
+                Section(Messages.settingsLanguageTitle()) {
+                    Picker(Messages.settingsLanguageTitle(), selection: Binding(
                         get: { appLanguage.selection },
                         set: { appLanguage.select($0) }
                     )) {

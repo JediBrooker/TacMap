@@ -850,7 +850,7 @@ struct ContentView: View {
             get: { missionMutationMessage != nil },
             set: { if !$0 { missionMutationMessage = nil } }
         )) {
-            Button(L10n.text("OK"), role: .cancel) { missionMutationMessage = nil }
+            Button(Messages.acknowledge(), role: .cancel) { missionMutationMessage = nil }
         } message: {
             Text(missionMutationMessage ?? L10n.text("The change could not be saved. Check available storage, then try again."))
         }
@@ -861,7 +861,7 @@ struct ContentView: View {
             if !trackRecorder.points.isEmpty || trackRecorder.recovered {
                 Button(L10n.text("Discard Saved Track"), role: .destructive) { trackRecorder.discard() }
             }
-            Button(L10n.text("OK"), role: .cancel) { trackRecorder.persistError = nil }
+            Button(Messages.acknowledge(), role: .cancel) { trackRecorder.persistError = nil }
         } message: {
             Text(trackRecorder.persistError ?? L10n.text("Track recording failed."))
         }
@@ -1205,7 +1205,7 @@ struct ContentView: View {
                     importMessage = nil
                 }
             } else {
-                Button(L10n.text("OK"), role: .cancel) { importMessage = nil }
+                Button(Messages.acknowledge(), role: .cancel) { importMessage = nil }
             }
         } message: { msg in
             Text(msg)
@@ -1708,7 +1708,7 @@ struct ContentView: View {
     private func handleGeoJSONImport(_ result: Result<[URL], Error>) {
         switch result {
         case .failure(let err):
-            importMessage = L10n.text("Import failed: %1$@", err.localizedDescription)
+            importMessage = Messages.importFailed(err.localizedDescription)
         case .success(let urls):
             guard let url = urls.first else { return }
             beginExternalImport(url: url, kind: .geoJSON, formatName: "GeoJSON")
@@ -1718,7 +1718,7 @@ struct ContentView: View {
     private func handleKMLImport(_ result: Result<[URL], Error>) {
         switch result {
         case .failure(let err):
-            importMessage = L10n.text("Import failed: %1$@", err.localizedDescription)
+            importMessage = Messages.importFailed(err.localizedDescription)
         case .success(let urls):
             guard let url = urls.first else { return }
             beginExternalImport(url: url, kind: .kml, formatName: "KML")
@@ -1834,7 +1834,7 @@ struct ContentView: View {
     private func handleImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure(let error) = result {
-                importMessage = L10n.text("Import failed: %1$@", error.localizedDescription)
+                importMessage = Messages.importFailed(error.localizedDescription)
             }
             return
         }
@@ -1881,7 +1881,7 @@ struct ContentView: View {
     private func handleMBTilesImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure(let error) = result {
-                importMessage = L10n.text("Import failed: %1$@", error.localizedDescription)
+                importMessage = Messages.importFailed(error.localizedDescription)
             }
             return
         }

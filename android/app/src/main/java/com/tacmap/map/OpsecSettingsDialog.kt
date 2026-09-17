@@ -1,5 +1,9 @@
 package com.tacmap.map
 
+import com.tacmap.localization.SupportedLanguage
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 import com.tacmap.localization.AppLanguage
 
@@ -124,9 +128,9 @@ fun OpsecSettingsDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(L10n.text("Language"), fontWeight = FontWeight.SemiBold)
+                Text(Messages.settingsLanguageTitle(), fontWeight = FontWeight.SemiBold)
                 Column(Modifier.selectableGroup()) {
-                    AppLanguage.Choice.entries.forEach { choice ->
+                    SupportedLanguage.entries.forEach { choice ->
                         Row(
                             modifier = Modifier.fillMaxWidth().selectable(
                                 selected = AppLanguage.selection == choice,
@@ -140,7 +144,7 @@ fun OpsecSettingsDialog(
                         }
                     }
                 }
-                if (languageError) Caption(L10n.text("Could not save the language setting. Try again."), Color(0xFFB00020))
+                if (languageError) Caption(Messages.languageSaveFailed(), Color(0xFFB00020))
                 persistenceIssue?.let { Caption(it, Color(0xFFB00020)) }
                 Text(L10n.text("Primary coordinate"), fontWeight = FontWeight.SemiBold)
                 CoordinateDisplayType.entries.forEach { type ->

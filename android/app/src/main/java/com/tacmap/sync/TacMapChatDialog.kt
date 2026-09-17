@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import androidx.compose.foundation.background
@@ -168,7 +170,7 @@ fun TacMapChatDialog(
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(L10n.text("RECIPIENT"), fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                        Text(Messages.chatRecipientHeading(), fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (roomScope) {
                                 Button(onClick = { roomScope = true }, modifier = Modifier.weight(1f)) {
@@ -340,7 +342,7 @@ fun TacMapChatDialog(
             title = { Text("TacMap Chat") },
             text = { Text(issue) },
             confirmButton = {
-                TextButton(onClick = { sendIssue = null }) { Text(L10n.text("OK")) }
+                TextButton(onClick = { sendIssue = null }) { Text(Messages.acknowledge()) }
             },
         )
     }

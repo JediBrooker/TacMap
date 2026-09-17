@@ -1,0 +1,30 @@
+{
+  "sourceLocale": "en",
+  "locales": [
+    {
+      "tag": "en",
+      "nativeName": "English",
+      "iosFolder": "en",
+      "androidFolder": "values",
+      "swiftCase": "en",
+      "kotlinCase": "ENGLISH",
+      "pluralCategories": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "tag": "de",
+      "nativeName": "Deutsch",
+      "iosFolder": "de",
+      "androidFolder": "values-de",
+      "swiftCase": "de",
+      "kotlinCase": "GERMAN",
+      "pluralCategories": [
+        "one",
+        "other"
+      ]
+    }
+  ],
+  "systemChoiceMessage": "settings_language_device"
+}

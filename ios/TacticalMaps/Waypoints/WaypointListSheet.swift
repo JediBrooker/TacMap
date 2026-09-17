@@ -102,7 +102,7 @@ struct WaypointListSheet: View {
                    isPresented: Binding(get: { errorMessage != nil },
                                         set: { if !$0 { errorMessage = nil } }),
                    presenting: errorMessage) { _ in
-                Button(L10n.text("OK"), role: .cancel) { errorMessage = nil }
+                Button(Messages.acknowledge(), role: .cancel) { errorMessage = nil }
             } message: { Text($0) }
         }
     }

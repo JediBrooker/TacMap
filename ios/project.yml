@@ -1,11 +1,12 @@
 name: TacticalMaps
+include:
+  - Localizations.yml
 options:
   bundleIdPrefix: com.tacticalmaps
   deploymentTarget:
     iOS: "16.3"
   createIntermediateGroups: true
   generateEmptyDirectories: true
-  developmentLanguage: en
 
 packages:
   # Vendored locally with a 4-line Xcode-26 compiler-inference fix in
@@ -35,7 +36,6 @@ targets:
       path: TacticalMaps/Resources/Info.plist
       properties:
         CFBundleDisplayName: TacMap
-        CFBundleLocalizations: [en, de]
         CFBundleShortVersionString: "2.0.1"
         CFBundleVersion: "66"
         # Esri Location Platform key + expiry. The $(ESRI_API_KEY) reference is

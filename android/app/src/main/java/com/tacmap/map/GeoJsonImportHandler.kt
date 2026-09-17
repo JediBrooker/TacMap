@@ -1,5 +1,7 @@
 package com.tacmap.map
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import com.tacmap.drawings.DrawingLayer
@@ -51,12 +53,12 @@ internal fun applyGeoJsonImportResult(
                 )
             },
             onFailure = { failure ->
-                GeoJsonImportFeedback(false, L10n.text("Import failed: %1\$s", failure.readableMessage()))
+                GeoJsonImportFeedback(false, Messages.importFailed(failure.readableMessage()))
             },
         )
     },
     onFailure = { failure ->
-        GeoJsonImportFeedback(false, L10n.text("Import failed: %1\$s", failure.readableMessage()))
+        GeoJsonImportFeedback(false, Messages.importFailed(failure.readableMessage()))
     },
 )
 
