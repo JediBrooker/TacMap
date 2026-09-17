@@ -28,13 +28,13 @@ enum GridMagnetic {
     /// Banner text for a G-M angle. Mils by default (NATO 6400/circle - what a
     /// compass dial and a fire mission actually read); tapping the banner flips
     /// it to degrees. e.g. "G-M 222 mils E" / "G-M 12.5°W".
-    static func label(degrees: Double, mils: Bool) -> String {
+    static func label(degrees: Double, mils: Bool, locale: Locale = DisplayFormat.currentLocale) -> String {
         let dir = degrees >= 0 ? "E" : "W"
         if mils {
             let m = Int((abs(degrees) * 6400.0 / 360.0).rounded())
             return L10n.text("G-M %1$@ mils %2$@", m, dir)
         } else {
-            return String(format: "G-M %.1f°%@", abs(degrees), dir)
+            return "G-M " + DisplayFormat.number(abs(degrees), decimals: 1, locale: locale) + "°" + dir
         }
     }
 }

@@ -11619,6 +11619,34 @@
         "translation": "d73ff9e0e07e8cf125df26cfa1f2ffde33295cff90f47f152ad151609606d971",
         "status": "reviewed"
       }
+    },
+    "settings_heading_help": {
+      "de": {
+        "source": "2c8fa9f59bb0a1dfd1bafc29a075d16d634b8e306bec0d2328aee76d21d50dc4",
+        "translation": "815a0e1f024b40eee5b0a2ca4cdc432bd7d9adc24af153b26774c0706b9738f4",
+        "status": "reviewed"
+      }
+    },
+    "settings_online_lookups_help": {
+      "de": {
+        "source": "bcd38442e45b28612f320c9fea35af29771311ba25f956f8838802804358916d",
+        "translation": "977616c1a6c591cb0539bf4e444e3b0e4769651f28efd1710628660d9f2cbf5d",
+        "status": "reviewed"
+      }
+    },
+    "settings_online_basemaps_help": {
+      "de": {
+        "source": "39b4c304077565ed0868ae831cc95a838a6289e1072f0ff6f1a8a0c07cfdd734",
+        "translation": "0831575ff0137772595cceb6fd43c8fdf0c930d262c04365a6fdc1e641670ac7",
+        "status": "reviewed"
+      }
+    },
+    "settings_android_key_protection_help": {
+      "de": {
+        "source": "f7f8cc75379e3f2a663e10ca8d705ce952c8dccfc183441190dfcfea86c64f65",
+        "translation": "aa7b387f4989f1616f38105f12628d5ab69840a0751eb8cb4bae281b783e16b6",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

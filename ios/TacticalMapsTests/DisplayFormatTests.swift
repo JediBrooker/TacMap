@@ -25,6 +25,25 @@ final class DisplayFormatTests: XCTestCase {
         XCTAssertEqual(DisplayFormat.number(.nan, decimals: 1, locale: de), "—")
     }
 
+    func testPercentSpacingAndDateZone() {
+        let de = Locale(identifier: "de_DE")
+        let en = Locale(identifier: "en_US")
+        XCTAssertEqual(DisplayFormat.percent(25, locale: de).replacingOccurrences(of: "\u{00a0}", with: " "), "25 %")
+        XCTAssertEqual(DisplayFormat.percent(25, locale: en), "25%")
+        XCTAssertEqual(DisplayFormat.percent(0, locale: en), "0%")
+        XCTAssertEqual(DisplayFormat.percent(100, locale: en), "100%")
+        let date = Date(timeIntervalSince1970: 0)
+        XCTAssertTrue(DisplayFormat.dateTime(date, locale: de, timeZone: TimeZone(secondsFromGMT: 0)!).contains("1970"))
+        XCTAssertTrue(DisplayFormat.dateTime(date, locale: de, timeZone: TimeZone(secondsFromGMT: -3600)!).contains("1969"))
+    }
+
+    func testGridMagneticDecimalsPreserveDirectionAndMils() {
+        let de = Locale(identifier: "de_DE")
+        XCTAssertEqual(GridMagnetic.label(degrees: -12.5, mils: false, locale: de), "G-M 12,5°W")
+        XCTAssertEqual(GridMagnetic.label(degrees: 12.5, mils: false, locale: Locale(identifier: "en_US")), "G-M 12.5°E")
+        XCTAssertTrue(GridMagnetic.label(degrees: 12.5, mils: true, locale: de).contains("222"))
+    }
+
     func testTimeUsesExplicitZoneWithoutChangingInstant() {
         let date = Date(timeIntervalSince1970: 0)
         let locale = Locale(identifier: "de_DE")

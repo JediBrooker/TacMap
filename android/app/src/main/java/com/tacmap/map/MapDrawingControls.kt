@@ -740,7 +740,7 @@ private fun DrawingOpacityButton(alpha: Int, onAlphaSelected: (Int) -> Unit) {
             .clickable { onAlphaSelected(choices[(closestIndex + 1) % choices.size]) },
         contentAlignment = Alignment.Center,
     ) {
-        Text("$percent%", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(DisplayFormat.percent(percent), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

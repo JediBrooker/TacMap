@@ -10,12 +10,20 @@ object Messages {
         L10n.message("id.import_failed", "Import failed: %1\$s", detail)
     fun decimalInputHint(): String =
         L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
+    fun androidKeyProtectionHelp(): String =
+        L10n.message("id.settings_android_key_protection_help", "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.")
+    fun headingHelp(): String =
+        L10n.message("id.settings_heading_help", "North Up starts north-facing and keeps two-finger rotation available. Heading Up uses the phone compass to keep your pointing direction at the top of the map. It uses true north when a recent location is available. The compass marks bearings T for true north, or M when it falls back to magnetic north, and ? while waiting for a valid reading.")
     fun deviceLanguage(): String =
         L10n.message("id.settings_language_device", "Device language")
     fun languageSaveFailed(): String =
         L10n.message("id.settings_language_save_failed", "Could not save the language setting. Try again.")
     fun settingsLanguageTitle(): String =
         L10n.message("id.settings_language_title", "Language")
+    fun onlineBasemapsHelp(): String =
+        L10n.message("id.settings_online_basemaps_help", "Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. While on, Esri or OpenTopoMap can see the ground you are looking at from your IP. Turn this off for a fully offline posture.")
+    fun onlineLookupsHelp(): String =
+        L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.")
     fun dayCount(count: Int): String = L10n.quantity("day", count)
     fun pointCount(count: Int): String = L10n.quantity("point", count)
     fun drawingCount(count: Int): String = L10n.quantity("drawing", count)

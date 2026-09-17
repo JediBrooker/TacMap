@@ -23,6 +23,25 @@ waypoint/header elevations and chat timestamps now use it.
 The explicit locale/time-zone arguments are useful for deterministic tests. Callers
 normally omit them to follow the app preference and device region/time zone.
 
+## Percentages, angles and drawing dates
+
+Opacity labels use native percentage formatting with their existing integer rounding;
+German spacing before the percent sign follows the platform locale. Accessibility
+phrases that already spell out “percent” remain catalogue-backed. Grid-magnetic
+angles use localised decimal numbers while preserving E/W direction markers and
+NATO mil conversion. These are display-only changes.
+
+The iOS drawing list now formats creation dates through the shared medium-date /
+short-time helper, using the selected language, device region and current time zone.
+Both platform helpers are tested across a time-zone boundary that changes the year.
+Android currently has no corresponding date label in that drawing list.
+
+Four Android settings explanations (map orientation, online lookups, online basemaps
+and Keystore protection) now have complete typed messages and reviewed German
+paragraphs. Their full English text exactly matches the earlier concatenated text.
+Platform-specific protection details remain separate from iOS wording. Legacy fragment
+resources remain during the incremental migration so other callers are not removed.
+
 ## Editor and scalar-input migration
 
 Symbol width/height displays and drawing scale controls now use `DisplayFormat`,

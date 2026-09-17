@@ -225,7 +225,7 @@ struct DrawToolbar: View {
                     Button {
                         session.fillOpacity = opacity
                     } label: {
-                        Label("\(Int(opacity * 100))%",
+                        Label(DisplayFormat.percent(Int(opacity * 100)),
                               systemImage: abs(session.fillOpacity - opacity) < 0.001
                                   ? "checkmark.circle.fill"
                                   : "circle")

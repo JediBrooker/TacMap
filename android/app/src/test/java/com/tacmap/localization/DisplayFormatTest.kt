@@ -45,6 +45,21 @@ class DisplayFormatTest {
         }
     }
 
+    @Test fun percentSpacingAndDateZone() {
+        assertEquals("25 %", DisplayFormat.percent(25, Locale.GERMANY).replace('\u00a0', ' '))
+        assertEquals("25%", DisplayFormat.percent(25, Locale.US))
+        assertEquals("0%", DisplayFormat.percent(0, Locale.US))
+        assertEquals("100%", DisplayFormat.percent(100, Locale.US))
+        org.junit.Assert.assertTrue(DisplayFormat.dateTime(Date(0), Locale.GERMANY, TimeZone.getTimeZone("UTC")).contains("1970"))
+        org.junit.Assert.assertTrue(DisplayFormat.dateTime(Date(0), Locale.GERMANY, TimeZone.getTimeZone("GMT-01:00")).contains("1969"))
+    }
+
+    @Test fun gridMagneticDecimalsPreserveDirectionAndMils() {
+        assertEquals("G-M 12,5°W", com.tacmap.map.formatGridMagnetic(-12.5, false, Locale.GERMANY))
+        assertEquals("G-M 12.5°E", com.tacmap.map.formatGridMagnetic(12.5, false, Locale.US))
+        org.junit.Assert.assertTrue(com.tacmap.map.formatGridMagnetic(12.5, true, Locale.GERMANY).contains("222"))
+    }
+
     @Test fun timeUsesExplicitZoneWithoutChangingInstant() {
         val date = Date(0)
         assertEquals("00:00", DisplayFormat.time(date, Locale.GERMANY, TimeZone.getTimeZone("UTC")))

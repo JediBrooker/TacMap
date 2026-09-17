@@ -150,7 +150,7 @@ struct DrawingsSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(shape.name ?? shape.kind.displayName)
                     .font(.callout)
-                Text(L10n.quantity("point", shape.coordinates.count) + " · " + shape.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text(L10n.quantity("point", shape.coordinates.count) + " · " + DisplayFormat.dateTime(shape.createdAt))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

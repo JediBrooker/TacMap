@@ -169,11 +169,7 @@ fun OpsecSettingsDialog(
                 }
                 Caption(
                     if (headingAvailable) {
-                        L10n.text("North Up starts north-facing and keeps two-finger rotation available. ") +
-                            L10n.text("Heading Up uses the phone compass to keep your pointing direction ") +
-                            L10n.text("at the top of the map. It uses true north when a recent location is ") +
-                            L10n.text("available. The compass marks bearings T for true north, or M when ") +
-                            L10n.text("it falls back to magnetic north, and ? while waiting for a valid reading.")
+                        Messages.headingHelp()
                     } else {
                         L10n.text("Heading Up is unavailable because this device does not report compass headings.")
                     }
@@ -235,35 +231,17 @@ fun OpsecSettingsDialog(
 
                 SettingRow(online, { opsec.setOnlineLookups(it) }, L10n.text("Online place, terrain & weather lookups"))
                 Caption(
-                    L10n.text("Off by default. When you turn this on, place-name ") +
-                        L10n.text("search may use the device's geocoder. Elevation and weather send the ") +
-                        L10n.text("map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain ") +
-                        L10n.text("heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering ") +
-                        L10n.text("the visible map area. Turn this off when you need a fully ") +
-                        L10n.text("offline/OPSEC posture.")
+                    Messages.onlineLookupsHelp()
                 )
 
                 SettingRow(onlineBasemaps, { opsec.setOnlineBasemaps(it) }, L10n.text("Online basemap tiles"))
                 Caption(
-                    L10n.text("Off by default. While off the ") +
-                        L10n.text("map only draws imported offline maps, and no tile request leaves the ") +
-                        L10n.text("device. While on, Esri or OpenTopoMap can see the ground you are ") +
-                        L10n.text("looking at from your IP. Turn this off for a fully offline posture.")
+                    Messages.onlineBasemapsHelp()
                 )
 
                 SettingRow(authBound, { requestAuthBound(it) }, L10n.text("Require unlock to decrypt mission data"))
                 Caption(
-                    L10n.text("Off: waypoints, drawings and tracks are encrypted with a key the device ") +
-                        L10n.text("Keystore releases to this app automatically. Copied app files contain ") +
-                        L10n.text("ciphertext, but code running as this app on a compromised device may ask ") +
-                        L10n.text("the Keystore to decrypt.\n\n") +
-                        L10n.text("On: Android Keystore requires a recent device credential or strong ") +
-                        L10n.text("biometric before key use. Hardware backing varies by device and TacMap ") +
-                        L10n.text("does not verify it, so a fully compromised system remains outside this ") +
-                        L10n.text("protection. After the app is killed, nothing can read or write mission ") +
-                        L10n.text("data until you unlock, including background track recording. Removing ") +
-                        L10n.text("your device lockscreen can invalidate the key and make mission data ") +
-                        L10n.text("unrecoverable.")
+                    Messages.androidKeyProtectionHelp()
                 )
                 keyError?.let { Caption(L10n.text("Could not change key protection: %1\$s", it), Color(0xFFB00020)) }
             }

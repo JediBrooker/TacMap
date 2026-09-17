@@ -299,7 +299,7 @@ struct DrawingControlsCard: View {
                         updated.style.setFillOpacity(opacity)
                         commit(updated, actionName: L10n.text("Change Fill Opacity"))
                     } label: {
-                        Label("\(Int(opacity * 100))%",
+                        Label(DisplayFormat.percent(Int(opacity * 100)),
                               systemImage: abs(shape.style.fillOpacity - opacity) < 0.001
                                   ? "checkmark.circle.fill"
                                   : "circle")
@@ -420,7 +420,7 @@ struct DrawingControlsCard: View {
         sliderRow(
             icon: "circle.lefthalf.filled",
             title: L10n.text("Fill opacity"),
-            valueLabel: "\(Int((shape.style.fillOpacity * 100).rounded()))%",
+            valueLabel: DisplayFormat.percent(Int((shape.style.fillOpacity * 100).rounded())),
             value: shape.style.fillOpacity,
             range: 0...1,
             step: 0.05,

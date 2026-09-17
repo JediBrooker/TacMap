@@ -37,6 +37,24 @@ enum DisplayFormat {
         return number(squareMetres / 1_000_000, decimals: 2, locale: locale) + " km²"
     }
 
+    static func percent(_ wholePercent: Int, locale: Locale = currentLocale) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .percent
+        formatter.usesGroupingSeparator = false
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: Double(wholePercent) / 100)) ?? "—"
+    }
+
+    static func dateTime(_ date: Date, locale: Locale = currentLocale, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
     static func time(_ date: Date, locale: Locale = currentLocale, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale

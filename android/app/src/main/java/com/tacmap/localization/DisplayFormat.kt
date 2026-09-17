@@ -41,6 +41,17 @@ object DisplayFormat {
         else -> number(squareMetres / 1_000_000, 2, locale) + " km²"
     }
 
+    fun percent(wholePercent: Int, locale: Locale = currentLocale): String =
+        NumberFormat.getPercentInstance(locale).apply {
+            isGroupingUsed = false
+            maximumFractionDigits = 0
+        }.format(wholePercent / 100.0)
+
+    fun dateTime(date: Date, locale: Locale = currentLocale, timeZone: TimeZone = TimeZone.getDefault()): String =
+        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale).apply {
+            this.timeZone = timeZone
+        }.format(date)
+
     fun time(date: Date, locale: Locale = currentLocale, timeZone: TimeZone = TimeZone.getDefault()): String =
         DateFormat.getTimeInstance(DateFormat.SHORT, locale).apply { this.timeZone = timeZone }.format(date)
 }

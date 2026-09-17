@@ -12080,5 +12080,49 @@
     "accessor": "decimalInputHint",
     "context": "Help below a scalar elevation input. A dot always means a decimal, and the selected regional decimal separator is also accepted. Grouping is prohibited.",
     "parameters": []
+  },
+  "settings_heading_help": {
+    "en": "North Up starts north-facing and keeps two-finger rotation available. Heading Up uses the phone compass to keep your pointing direction at the top of the map. It uses true north when a recent location is available. The compass marks bearings T for true north, or M when it falls back to magnetic north, and ? while waiting for a valid reading.",
+    "de": "Norden oben beginnt mit einer nach Norden ausgerichteten Karte; du kannst sie weiterhin mit zwei Fingern drehen. Blickrichtung oben nutzt den Kompass des Smartphones, um deine Blickrichtung am oberen Kartenrand zu halten. Wenn ein aktueller Standort verfügbar ist, wird geografisch Nord verwendet. Der Kompass kennzeichnet Peilungen mit T für geografisch Nord, mit M beim Rückgriff auf magnetisch Nord und mit ? solange noch kein gültiger Messwert vorliegt.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "headingHelp",
+    "context": "Complete Android settings explanation. Preserve all privacy/security limitations, provider names and numeric precision.",
+    "parameters": []
+  },
+  "settings_online_lookups_help": {
+    "en": "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.",
+    "de": "Standardmäßig aus. Wenn aktiviert, kann die Ortsnamensuche den Geocoder des Geräts verwenden. Für Höhe und Wetter wird die Koordinate der Kartenmitte (auf etwa 110 m vergröbert) an Open-Meteo gesendet. Die Gelände-Heatmap sendet ein Raster aus 24 × 24 Koordinaten (auf etwa 11 m vergröbert), das den sichtbaren Kartenausschnitt abdeckt. Schalte diese Option für einen vollständig offline betriebenen Einsatz unter OPSEC-Gesichtspunkten aus.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "onlineLookupsHelp",
+    "context": "Complete Android settings explanation. Preserve all privacy/security limitations, provider names and numeric precision.",
+    "parameters": []
+  },
+  "settings_online_basemaps_help": {
+    "en": "Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. While on, Esri or OpenTopoMap can see the ground you are looking at from your IP. Turn this off for a fully offline posture.",
+    "de": "Standardmäßig aus. Solange die Option ausgeschaltet ist, zeigt die Karte nur importierte Offline-Karten an; keine Kachelanfrage verlässt das Gerät. Wenn aktiviert, können Esri oder OpenTopoMap anhand deiner IP-Adresse erkennen, welchen Kartenausschnitt du betrachtest. Schalte diese Option für einen vollständig offline betriebenen Einsatz aus.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "onlineBasemapsHelp",
+    "context": "Complete Android settings explanation. Preserve all privacy/security limitations, provider names and numeric precision.",
+    "parameters": []
+  },
+  "settings_android_key_protection_help": {
+    "en": "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.",
+    "de": "Aus: Wegpunkte, Zeichnungen und Tracks werden mit einem Schlüssel verschlüsselt, den der Keystore des Geräts dieser App automatisch bereitstellt. Kopierte App-Dateien enthalten nur verschlüsselte Daten. Auf einem kompromittierten Gerät kann jedoch Code, der als diese App ausgeführt wird, den Keystore zum Entschlüsseln auffordern.\n\nEin: Vor der Schlüsselnutzung verlangt der Android Keystore eine kürzlich erfolgte Bestätigung durch die Geräte-PIN, das Gerätepasswort oder eine andere Gerätesperre beziehungsweise durch starke Biometrie. Die Hardwareabsicherung ist geräteabhängig und wird von TacMap nicht geprüft; ein vollständig kompromittiertes System liegt daher außerhalb dieses Schutzes. Nach dem Beenden der App können bis zum Entsperren keine Missionsdaten gelesen oder geschrieben werden, auch nicht für die Trackaufzeichnung im Hintergrund. Wenn du die Gerätesperre entfernst, kann der Schlüssel ungültig und eine Wiederherstellung der Missionsdaten unmöglich werden.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "androidKeyProtectionHelp",
+    "context": "Complete Android settings explanation. Preserve all privacy/security limitations, provider names and numeric precision.",
+    "parameters": []
   }
 }

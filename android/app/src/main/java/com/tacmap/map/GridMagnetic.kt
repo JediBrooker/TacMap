@@ -1,5 +1,8 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DisplayFormat
+import java.util.Locale
+
 import android.hardware.GeomagneticField
 import kotlin.math.abs
 import kotlin.math.atan
@@ -43,12 +46,12 @@ fun gridMagneticDegrees(lat: Double?, lon: Double?, altitudeMetres: Double? = nu
  * compass dial and a fire mission actually read); tapping the banner flips it
  * to degrees. E/W suffix. e.g. "G-M 222 mils E" or "G-M 12.5°E".
  */
-fun formatGridMagnetic(degrees: Double, mils: Boolean): String {
+fun formatGridMagnetic(degrees: Double, mils: Boolean, locale: Locale = DisplayFormat.currentLocale): String {
     val dir = if (degrees >= 0) "E" else "W"
     return if (mils) {
         val m = (abs(degrees) * 6400.0 / 360.0).roundToInt()
         com.tacmap.localization.L10n.text("G-M %1\$s mils %2\$s", m, dir)
     } else {
-        "G-M %.1f°%s".format(abs(degrees), dir)
+        "G-M " + DisplayFormat.number(abs(degrees), 1, locale) + "°" + dir
     }
 }

@@ -46,7 +46,7 @@ The compatibility bridge deliberately remains. Migrating every legacy call and r
 
 ## Milestone 3: first formatting batch
 
-Shared presentation formatters now cover measurements, weather numbers, elevations and chat times on both platforms. Explicit app language keeps the device region; time formatting keeps the device time zone. Units and measurement thresholds stay the same. Tests cover German/English decimals, Swiss German, mixed language/region, thresholds, time zones and preserving an active iOS measurement while changing language. See [FORMATTING.md](FORMATTING.md) for policy and the remaining migration/lifecycle work. The next editor batch migrates symbol/drawing sizes and accessibility values, and adds a strict locale-aware elevation parser with visible input guidance. Phase 3 is still in progress.
+Shared presentation formatters now cover measurements, weather numbers, elevations and chat times on both platforms. Explicit app language keeps the device region; time formatting keeps the device time zone. Units and measurement thresholds stay the same. Tests cover German/English decimals, Swiss German, mixed language/region, thresholds, time zones and preserving an active iOS measurement while changing language. See [FORMATTING.md](FORMATTING.md) for policy and the remaining migration/lifecycle work. The next editor batch migrates symbol/drawing sizes and accessibility values, and adds a strict locale-aware elevation parser with visible input guidance. A further batch covers native percentage formatting, grid-magnetic decimal angles and drawing creation dates, and replaces four fragmented Android settings explanations with complete messages. Phase 3 is still in progress.
 
 ## Next milestones and measured backlog
 
