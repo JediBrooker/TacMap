@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tacmap.export.MissionObjectExport
 
 /// One bottom sheet that gathers every file import/export action, so the main
 /// hamburger menu stays short. The launchers/share intents live in MapScreen;
@@ -66,20 +67,20 @@ fun ImportExportSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
             )
-            sectionLabel("IMPORT")
-            sheetRow(Icons.Default.PictureAsPdf, "PDF Map", onImportPdf)
-            sheetRow(Icons.Default.Map, "Offline Tiles", onImportTiles)
-            sheetRow(Icons.Default.FileDownload, "GeoJSON", onImportGeoJson)
-            sheetRow(Icons.Default.FileDownload, "KML / KMZ", onImportKml)
+            SectionLabel("IMPORT")
+            SheetRow(Icons.Default.PictureAsPdf, "PDF Map", onImportPdf)
+            SheetRow(Icons.Default.Map, "Offline Tiles", onImportTiles)
+            SheetRow(Icons.Default.FileDownload, "GeoJSON", onImportGeoJson)
+            SheetRow(Icons.Default.FileDownload, "KML / KMZ", onImportKml)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            sectionLabel("EXPORT")
-            sheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson)
-            sheetRow(Icons.Default.Timeline, "GPX Track", onExportGpx)
-            sheetRow(Icons.Default.SelectAll, "Export All Data", onExportAllData)
+            SectionLabel("EXPORT")
+            SheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson)
+            SheetRow(Icons.Default.Timeline, "GPX Track", onExportGpx)
+            SheetRow(Icons.Default.SelectAll, MissionObjectExport.ACTION_TITLE, onExportAllData)
             if (hasSavedTrack) {
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                sectionLabel("SAVED TRACK")
-                sheetRow(
+                SectionLabel("SAVED TRACK")
+                SheetRow(
                     Icons.Default.DeleteForever,
                     if (isRecordingTrack) "Stop & Discard Current Track" else "Discard Saved Track",
                     onDiscardTrack,
@@ -90,7 +91,7 @@ fun ImportExportSheet(
 }
 
 @Composable
-private fun sectionLabel(text: String) {
+private fun SectionLabel(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelSmall,
@@ -100,7 +101,7 @@ private fun sectionLabel(text: String) {
 }
 
 @Composable
-private fun sheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

@@ -2,10 +2,15 @@ package com.tacmap.map
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,13 +31,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,11 +54,19 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.mgrs.MgrsFormatter
+
+private data class PendingDrawingSheetMutation(
+    val message: String,
+    val retry: () -> DrawingMutationUiResult,
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -65,11 +81,30 @@ fun DrawingLayersSheet(
     onPlacePoint: () -> Unit,
     onStartDraft: (DrawingGeometry) -> Unit,
     onStartFreeDraw: () -> Unit,
-    onLayerVisibilityChange: (String, Boolean) -> Unit,
-    onAddLayer: (String) -> Unit,
-    onDeleteFeature: (String) -> Unit
+    onLayerVisibilityChange: (String, Boolean) -> DrawingMutationUiResult,
+    onAddLayer: (String) -> Boolean,
+    onUpdateLayer: (String, String, Int) -> Boolean,
+    onDeleteLayer: (String) -> Boolean,
+    onDeleteFeature: (String) -> DrawingMutationUiResult
 ) {
     var newLayerName by remember { mutableStateOf("") }
+    var editingLayer by remember { mutableStateOf<DrawingLayer?>(null) }
+    var deletingLayer by remember { mutableStateOf<DrawingLayer?>(null) }
+    var layerMutationError by remember { mutableStateOf<String?>(null) }
+    var pendingDrawingMutation by remember {
+        mutableStateOf<PendingDrawingSheetMutation?>(null)
+    }
+    fun attempt(retry: () -> DrawingMutationUiResult): DrawingMutationUiResult {
+        val result = retry()
+        pendingDrawingMutation = when (result) {
+            DrawingMutationUiResult.Saved -> null
+            is DrawingMutationUiResult.Failed -> PendingDrawingSheetMutation(
+                message = result.message,
+                retry = retry,
+            )
+        }
+        return result
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val safeLayers = layers.ifEmpty { DrawingDocument.defaultLayers() }
     val activeLayer = safeLayers.firstOrNull { it.id == activeLayerId } ?: safeLayers.first()
@@ -80,129 +115,226 @@ fun DrawingLayersSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-            Text("Drawings", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text(
-                MgrsFormatter.format(crosshairLat, crosshairLng),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
-            )
-
-            Text("Active Layer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(top = 6.dp, bottom = 12.dp)
-            ) {
-                safeLayers.forEach { layer ->
-                    FilterChip(
-                        selected = layer.id == activeLayer.id,
-                        onClick = { onActiveLayerChange(layer.id) },
-                        label = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                LayerColorSwatch(color = layer.color, size = 12.dp)
-                                Spacer(Modifier.size(6.dp))
-                                Text(layer.name)
-                            }
-                        }
+        // One bounded lazy container owns all vertical scrolling. Keeping the
+        // header, layer actions, and feature rows in the same container makes
+        // every action reachable in landscape and at large font scales without
+        // illegal same-axis nested scrolling.
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+        ) {
+            item(key = "header") {
+                Column {
+                    Text("Drawings", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        MgrsFormatter.format(crosshairLat, crosshairLng),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 12.dp),
                     )
                 }
             }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ElevatedButton(onClick = onPlacePoint, modifier = Modifier.weight(1f)) {
-                    DrawingTypeIcon(DrawingGeometry.POINT)
-                    Spacer(Modifier.size(6.dp))
-                    Text("Point")
-                }
-                ElevatedButton(
-                    onClick = { onStartDraft(DrawingGeometry.LINE) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    DrawingTypeIcon(DrawingGeometry.LINE)
-                    Spacer(Modifier.size(6.dp))
-                    Text("Line Tool")
-                }
-                ElevatedButton(
-                    onClick = { onStartDraft(DrawingGeometry.POLYGON) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    DrawingTypeIcon(DrawingGeometry.POLYGON)
-                    Spacer(Modifier.size(6.dp))
-                    Text("Area")
+            item(key = "active-layer") {
+                Column {
+                    Text("Active Layer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
+                    ) {
+                        safeLayers.forEach { layer ->
+                            FilterChip(
+                                selected = layer.id == activeLayer.id,
+                                onClick = { onActiveLayerChange(layer.id) },
+                                label = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        LayerColorSwatch(color = layer.color, size = 12.dp)
+                                        Spacer(Modifier.size(6.dp))
+                                        Text(layer.name)
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             }
-            ElevatedButton(
-                onClick = onStartFreeDraw,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                FreeDrawIcon()
-                Spacer(Modifier.size(6.dp))
-                Text("Free Draw")
+            item(key = "drawing-tools") {
+                Column {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ElevatedButton(onClick = onPlacePoint, modifier = Modifier.weight(1f)) {
+                            DrawingTypeIcon(DrawingGeometry.POINT)
+                            Spacer(Modifier.size(6.dp))
+                            Text("Point")
+                        }
+                        ElevatedButton(
+                            onClick = { onStartDraft(DrawingGeometry.LINE) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            DrawingTypeIcon(DrawingGeometry.LINE)
+                            Spacer(Modifier.size(6.dp))
+                            Text("Line Tool")
+                        }
+                        ElevatedButton(
+                            onClick = { onStartDraft(DrawingGeometry.POLYGON) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            DrawingTypeIcon(DrawingGeometry.POLYGON)
+                            Spacer(Modifier.size(6.dp))
+                            Text("Area")
+                        }
+                    }
+                    ElevatedButton(onClick = onStartFreeDraw, modifier = Modifier.fillMaxWidth()) {
+                        FreeDrawIcon()
+                        Spacer(Modifier.size(6.dp))
+                        Text("Free Draw")
+                    }
+                    Text(
+                        "After selecting a tool, tap the map to place points. Free Draw: drag to sketch freely — lifts to finish.",
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
+                    )
+                    Text("Layers", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
-
-            Text(
-                "After selecting a tool, tap the map to place points. Free Draw: drag to sketch freely — lifts to finish.",
-                fontSize = 11.sp,
-                modifier = Modifier.padding(top = 8.dp, bottom = 14.dp)
-            )
-
-            Text("Layers", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            safeLayers.forEach { layer ->
+            items(safeLayers, key = { "layer:${it.id}" }) { layer ->
                 LayerRow(
                     layer = layer,
                     isActive = layer.id == activeLayer.id,
                     onTap = { onActiveLayerChange(layer.id) },
-                    onVisibleChange = { onLayerVisibilityChange(layer.id, it) }
+                    onVisibleChange = { visible ->
+                        attempt { onLayerVisibilityChange(layer.id, visible) }
+                    },
+                    onEdit = if (layer.id in DrawingDocument.DEFAULT_LAYER_IDS) null else {
+                        {
+                            layerMutationError = null
+                            editingLayer = layer
+                        }
+                    },
+                    onDelete = if (layer.id in DrawingDocument.DEFAULT_LAYER_IDS) null else {
+                        {
+                            layerMutationError = null
+                            deletingLayer = layer
+                        }
+                    },
                 )
             }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(top = 8.dp)
-            ) {
-                OutlinedTextField(
-                    value = newLayerName,
-                    onValueChange = { newLayerName = it },
-                    singleLine = true,
-                    label = { Text("Layer name") },
-                    modifier = Modifier.weight(1f)
-                )
-                Button(onClick = {
-                    onAddLayer(newLayerName)
-                    newLayerName = ""
-                }) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(Modifier.size(6.dp))
-                    Text("Add")
-                }
-            }
-
-            Text(
-                "Features (${visibleFeatures.size}/${features.size})",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
-            )
-            if (features.isEmpty()) {
-                Text("No drawings yet.", fontSize = 12.sp, modifier = Modifier.padding(bottom = 24.dp))
-            } else {
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 260.dp).padding(bottom = 24.dp)
+            item(key = "add-layer") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 8.dp),
                 ) {
-                    items(features, key = { it.id }) { feature ->
-                        DrawingFeatureRow(
-                            feature = feature,
-                            layerName = safeLayers.firstOrNull { it.id == feature.layerId }?.name,
-                            isVisible = feature.layerId in visibleLayerIds,
-                            onDelete = { onDeleteFeature(feature.id) }
-                        )
+                    OutlinedTextField(
+                        value = newLayerName,
+                        onValueChange = { newLayerName = it },
+                        singleLine = true,
+                        label = { Text("Layer name") },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(onClick = {
+                        if (onAddLayer(newLayerName)) {
+                            newLayerName = ""
+                            layerMutationError = null
+                        } else {
+                            layerMutationError = "The layer could not be saved. Check the name and try again."
+                        }
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text("Add")
                     }
                 }
+                layerMutationError?.let { error ->
+                    Text(
+                        error,
+                        color = Color(0xFFD32F2F),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+            item(key = "features-heading") {
+                Text(
+                    "Features (${visibleFeatures.size}/${features.size})",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+                )
+            }
+            if (features.isEmpty()) {
+                item(key = "empty-features") {
+                    Text("No drawings yet.", fontSize = 12.sp, modifier = Modifier.padding(bottom = 24.dp))
+                }
+            } else {
+                items(features, key = { "feature:${it.id}" }) { feature ->
+                    DrawingFeatureRow(
+                        feature = feature,
+                        layerName = safeLayers.firstOrNull { it.id == feature.layerId }?.name,
+                        isVisible = feature.layerId in visibleLayerIds,
+                        onDelete = { attempt { onDeleteFeature(feature.id) } },
+                    )
+                }
+                item(key = "feature-bottom-space") { Spacer(Modifier.size(24.dp)) }
             }
         }
+    }
+
+    editingLayer?.let { layer ->
+        LayerEditDialog(
+            layer = layer,
+            onDismiss = { editingLayer = null },
+            onSave = { name, color ->
+                onUpdateLayer(layer.id, name, color).also { saved ->
+                    if (saved) {
+                        editingLayer = null
+                        layerMutationError = null
+                    }
+                }
+            },
+        )
+    }
+
+    deletingLayer?.let { layer ->
+        val waypointCountLabel = "All symbols and drawings on this layer will move to Friendly."
+        AlertDialog(
+            onDismissRequest = { deletingLayer = null },
+            title = { Text("Delete ${layer.name}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(waypointCountLabel)
+                    layerMutationError?.let { error ->
+                        Text(error, color = Color(0xFFD32F2F), fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (onDeleteLayer(layer.id)) {
+                        deletingLayer = null
+                        layerMutationError = null
+                    } else {
+                        layerMutationError = "The layer remains. Any symbols already moved to Friendly are safe; retry to finish."
+                    }
+                }) { Text("Delete layer", color = Color(0xFFD32F2F)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingLayer = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    pendingDrawingMutation?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingDrawingMutation = null },
+            title = { Text("Drawing change not saved") },
+            text = { Text(pending.message) },
+            confirmButton = {
+                TextButton(onClick = { attempt(pending.retry) }) { Text("Retry") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDrawingMutation = null }) { Text("Not now") }
+            },
+        )
     }
 }
 
@@ -266,11 +398,14 @@ private fun LayerRow(
     layer: DrawingLayer,
     isActive: Boolean,
     onTap: () -> Unit,
-    onVisibleChange: (Boolean) -> Unit
+    onVisibleChange: (Boolean) -> Unit,
+    onEdit: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clickable { onTap() }
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -283,9 +418,99 @@ private fun LayerRow(
         Column(Modifier.weight(1f)) {
             Text(layer.name, fontSize = 14.sp, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
         }
-        Switch(checked = layer.isVisible, onCheckedChange = onVisibleChange)
+        onEdit?.let { edit ->
+            IconButton(onClick = edit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit ${layer.name} layer")
+            }
+        }
+        onDelete?.let { delete ->
+            IconButton(onClick = delete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete ${layer.name} layer")
+            }
+        }
+        Switch(
+            checked = layer.isVisible,
+            onCheckedChange = onVisibleChange,
+            modifier = Modifier.semantics {
+                contentDescription = "${layer.name} layer visibility"
+            },
+        )
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LayerEditDialog(
+    layer: DrawingLayer,
+    onDismiss: () -> Unit,
+    onSave: (String, Int) -> Boolean,
+) {
+    var name by remember(layer.id) { mutableStateOf(layer.name) }
+    var color by remember(layer.id) { mutableIntStateOf(layer.color) }
+    var saveError by remember(layer.id) { mutableStateOf<String?>(null) }
+    val colors = (DrawingDocument.CUSTOM_LAYER_COLORS + layer.color).distinct()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit drawing layer") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Layer name") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Layer colour", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    colors.forEach { candidate ->
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .semantics(mergeDescendants = true) {
+                                    contentDescription = layerColorAccessibilityLabel(candidate)
+                                }
+                                .selectable(
+                                    selected = candidate == color,
+                                    role = Role.RadioButton,
+                                    onClick = { color = candidate },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            LayerColorSwatch(
+                                color = candidate,
+                                size = if (candidate == color) 30.dp else 24.dp,
+                            )
+                        }
+                    }
+                }
+                saveError?.let { error ->
+                    Text(error, color = Color(0xFFD32F2F), fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    if (!onSave(name.trim(), color)) {
+                        saveError = "The layer could not be saved. Your previous name and colour remain active."
+                    }
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+internal fun layerColorAccessibilityLabel(color: Int): String =
+    "Layer colour #${(color and 0xFFFFFF).toString(16).uppercase().padStart(6, '0')}"
 
 @Composable
 private fun DrawingFeatureRow(
@@ -307,7 +532,7 @@ private fun DrawingFeatureRow(
             )
         }
         IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = null)
+            Icon(Icons.Default.Delete, contentDescription = "Delete ${feature.name} drawing")
         }
     }
 }

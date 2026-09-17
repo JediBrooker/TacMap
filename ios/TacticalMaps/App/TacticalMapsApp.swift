@@ -6,8 +6,17 @@ struct TacticalMapsApp: App {
     private let trial = TrialManager()
 
     init() {
+#if DEBUG && targetEnvironment(simulator)
+        // A UI test opts into resetting only its sealed Unit Sync identity.
+        // Keeping this ahead of DataKey installation lets the first join create
+        // clean signing material while leaving the simulator and mission DEK intact.
+        _ = SyncManager.resetSigningIdentityForSimulatorUITestIfRequested()
+#endif
         // Has to come before any store is constructed - they all seal through it.
         DataKey.install()
+        // Share-sheet completion cannot run after process death. Remove expired
+        // plaintext exports before presenting any mission UI.
+        _ = ExportFileSecurity.purgeStaleArtifactsOnLaunch()
         // Local-only crash capture (no telemetry). Field crashes shouldn't be silent.
         CrashReporter.install()
         // Start the trial clock on first launch.
@@ -66,9 +75,13 @@ private struct RootGate: View {
                     .transition(.opacity)
             }
         }
+        .task {
+            await store.start()
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 now = Date()
+                Task { await store.appDidBecomeActive() }
             }
             if phase != .active && DataKey.isAuthBound {
                 // TrackRecorder owns a deliberately scoped copy only while an
@@ -82,10 +95,29 @@ private struct RootGate: View {
         }
         .onAppear {
             if locked && DataKey.isAuthBound { DataKey.lockKey() }
+            NotificationCenter.default.post(
+                name: AppLock.stateChanged,
+                object: NSNumber(value: locked)
+            )
         }
         .onChange(of: locked) { isLocked in
             if isLocked && DataKey.isAuthBound { DataKey.lockKey() }
+            NotificationCenter.default.post(
+                name: AppLock.stateChanged,
+                object: NSNumber(value: isLocked)
+            )
         }
+        .alert("App Store",
+               isPresented: Binding(get: { store.storeIssue != nil },
+                                    set: { if !$0 { store.storeIssue = nil } }),
+               presenting: store.storeIssue) { issue in
+            if issue.retryable {
+                Button("Check Again") {
+                    Task { await store.checkEntitlementAgain() }
+                }
+            }
+            Button("Dismiss", role: .cancel) { store.storeIssue = nil }
+        } message: { Text($0.message) }
     }
 }
 

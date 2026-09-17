@@ -1,6 +1,56 @@
 import UIKit
 import CoreLocation
 
+/// Candidate state for a direct-manipulation waypoint drag. Gesture changes
+/// remain here (and in the transient screen-position cache) until `commit`
+/// performs the single durable store mutation at the end of the gesture.
+struct WaypointGesturePreview {
+    let original: Waypoint
+    private(set) var candidate: Waypoint
+
+    init(_ waypoint: Waypoint) {
+        original = waypoint
+        candidate = waypoint
+    }
+
+    mutating func move(to coordinate: CLLocationCoordinate2D) {
+        candidate.latitude = coordinate.latitude
+        candidate.longitude = coordinate.longitude
+    }
+
+    @discardableResult
+    func commit(to store: WaypointStore) throws -> Bool {
+        try store.commitEdit(candidate, actionName: "Move Waypoint")
+    }
+}
+
+/// In-memory candidate for a whole-drawing drag. Repeated `.changed` events
+/// update only this preview; the store sees at most one write when the gesture
+/// ends successfully.
+struct DrawingGesturePreview {
+    let original: DrawingShape
+    private(set) var candidate: DrawingShape
+
+    init(_ shape: DrawingShape) {
+        original = shape
+        candidate = shape
+    }
+
+    mutating func translate(latitudeDelta: Double, longitudeDelta: Double) {
+        candidate.coordinates = candidate.coordinates.map {
+            Coordinate2D(
+                latitude: $0.latitude + latitudeDelta,
+                longitude: $0.longitude + longitudeDelta
+            )
+        }
+    }
+
+    @discardableResult
+    func commit(to store: DrawingStore) throws -> Bool {
+        try store.commitEdit(candidate, actionName: "Move Drawing")
+    }
+}
+
 /// The drawing / editing gesture layer for the MapKit-free renderer. Attaches
 /// tap + long-press + pan recognisers to a `TileMapView` and reproduces what the
 /// MKMapView coordinator's gestures did: tap to select / add a draw or measure
@@ -18,11 +68,20 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
     weak var measureSession: MeasureSession?
     weak var calibration: CalibrationSession?
     weak var handlesView: VertexHandlesOverlayView?
+    weak var presenceView: PresenceOverlayView?
 
     /// Screen tap -> PDF user point, for placing calibration fiduciaries.
     var pdfScreenTapToPDFPoint: ((CGPoint) -> CGPoint?)?
     /// Push fiduciary markers into the PDF overlay after a calibration tap.
     var refreshCalibrationMarkers: (() -> Void)?
+    /// Renders a transient whole-drawing candidate without publishing it from
+    /// the store. Passing nil restores the latest durable renderer snapshot.
+    var showDrawingPreview: ((DrawingShape?) -> Void)?
+    /// Routed to ContentView's existing "Mission Object Not Saved" alert.
+    var onMutationError: ((String) -> Void)?
+    /// A remote Unit Sync marker was tapped. Kept on the parent recognizer so
+    /// marker views never steal map pan/pinch gestures.
+    var onPresenceTap: ((String) -> Void)?
 
     // Refreshed every updateUIView.
     var graphicsLocked = false
@@ -33,8 +92,10 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
 
     // Drag state.
     private var draggingHandleIndex: Int?
-    private var draggingWaypointID: UUID?
-    private var draggingDrawingID: UUID?
+    private var waypointDrag: WaypointGesturePreview?
+    private var waypointDragOriginalScreenPoint: CGPoint?
+    private var drawingDrag: DrawingGesturePreview?
+    private var drawingDragHandles: [EditHandle]?
     private var lastDragCoord: CLLocationCoordinate2D?
     private var pressedRealHandleIndex: Int?
     private var pressMoved = false
@@ -85,8 +146,27 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
         if drawingSession?.isDrawing == true, let c = coord(pt) {
             if let autoCommit = drawingSession?.addPoint(c), autoCommit,
                let shape = drawingSession?.finish() {
-                drawingStore?.add(shape)
+                guard let drawingStore else { return }
+                do {
+                    _ = try drawingStore.addDurably(shape)
+                } catch {
+                    reportMutationFailure(
+                        "The drawing was not added.", error: error,
+                        recovery: "Check available storage, then draw it again."
+                    )
+                }
             }
+            return
+        }
+
+        // Presence renders above local mission graphics, so its visible marker
+        // wins an ordinary tap. Graphics lock protects edits; it does not turn
+        // off communication with an authenticated remote unit.
+        if let peerID = presenceView?.peerID(at: pt) {
+            mapVM?.selectedWaypointID = nil
+            mapVM?.selectedDrawingID = nil
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onPresenceTap?(peerID)
             return
         }
 
@@ -98,12 +178,16 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
         }
 
         // Midpoint "+" tap inserts a new vertex there.
-        if let mid = midpointHandleHitTest(at: pt),
-           var shape = drawingStore?.shapes.first(where: { $0.id == mid.shapeID }) {
+        if let mid = midpointHandleHitTest(at: pt), let drawingStore,
+           var shape = drawingStore.shapes.first(where: { $0.id == mid.shapeID }) {
             shape.insertEffectiveVertex(Coordinate2D(latitude: mid.lat, longitude: mid.lon),
                                         at: mid.vertexIndex)
-            drawingStore?.update(shape)
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            do {
+                _ = try drawingStore.commitEdit(shape, actionName: "Insert Drawing Vertex")
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } catch {
+                reportMutationFailure("The new drawing vertex was not saved.", error: error)
+            }
             return
         }
 
@@ -145,14 +229,17 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
             }
             guard drawingSession?.isDrawing != true,
                   calibration?.isCalibrating != true else { return }
-            if let wpID = waypointHitTest(at: pt) {
-                draggingWaypointID = wpID
+            if let wpID = waypointHitTest(at: pt),
+               let waypoint = waypointStore?.waypoints.first(where: { $0.id == wpID }) {
+                waypointDrag = WaypointGesturePreview(waypoint)
+                waypointDragOriginalScreenPoint = mapVM?.waypointScreenPositions[wpID]
                 view.setBrowseGesturesEnabled(false)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 return
             }
             if let hit = drawingHitTest(at: pt) {
-                draggingDrawingID = hit.id
+                drawingDrag = DrawingGesturePreview(hit)
+                drawingDragHandles = handles
                 lastDragCoord = coord(pt)
                 view.setBrowseGesturesEnabled(false)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -161,52 +248,101 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
         case .changed:
             pressMoved = true
             if pressedRealHandleIndex != nil { return } // pan drives handle move
-            if let wpID = draggingWaypointID,
-               let wp = waypointStore?.waypoints.first(where: { $0.id == wpID }),
-               let c = coord(pt) {
-                // Move the bubble instantly by publishing its new screen pos
-                // synchronously, then persist - same trick the bubble's own
-                // drag uses so it doesn't snap back on the async re-publish.
-                mapVM?.waypointScreenPositions[wpID] = pt
-                var updated = wp
-                updated.latitude = c.latitude
-                updated.longitude = c.longitude
-                waypointStore?.update(updated)
+            if waypointDrag != nil, let c = coord(pt) {
+                waypointDrag?.move(to: c)
+                if let id = waypointDrag?.original.id {
+                    // Screen-position publication is a transient visual preview,
+                    // not mission-model publication. The durable model changes
+                    // exactly once in the end-state branch below.
+                    mapVM?.waypointScreenPositions[id] = pt
+                }
                 return
             }
-            if let id = draggingDrawingID, let start = lastDragCoord,
-               var shape = drawingStore?.shapes.first(where: { $0.id == id }),
-               let current = coord(pt) {
+            if drawingDrag != nil, let start = lastDragCoord, let current = coord(pt) {
                 let dLat = current.latitude - start.latitude
                 let dLon = current.longitude - start.longitude
-                shape.coordinates = shape.coordinates.map {
-                    Coordinate2D(latitude: $0.latitude + dLat, longitude: $0.longitude + dLon)
+                drawingDrag?.translate(latitudeDelta: dLat, longitudeDelta: dLon)
+                if let candidate = drawingDrag?.candidate {
+                    showDrawingPreview?(candidate)
+                    drawingDragHandles = drawingDragHandles?.map { handle in
+                        guard handle.shapeID == candidate.id else { return handle }
+                        return EditHandle(
+                            shapeID: handle.shapeID,
+                            vertexIndex: handle.vertexIndex,
+                            isMidpoint: handle.isMidpoint,
+                            lat: handle.lat + dLat,
+                            lon: handle.lon + dLon
+                        )
+                    }
+                    if let previewHandles = drawingDragHandles {
+                        handlesView?.update(handles: previewHandles)
+                    }
                 }
-                drawingStore?.update(shape)
                 lastDragCoord = current
             }
 
         case .ended, .cancelled, .failed:
             defer {
                 pressedRealHandleIndex = nil
-                if draggingDrawingID != nil || draggingWaypointID != nil {
+                if drawingDrag != nil || waypointDrag != nil {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
-                draggingDrawingID = nil
-                draggingWaypointID = nil
+                drawingDrag = nil
+                drawingDragHandles = nil
+                waypointDrag = nil
+                waypointDragOriginalScreenPoint = nil
                 lastDragCoord = nil
                 view.setBrowseGesturesEnabled(true)
             }
             // Hold-with-no-movement on a real vertex handle deletes it.
             if let idx = pressedRealHandleIndex, g.state == .ended, !pressMoved {
                 let h = handles[idx]
-                if var shape = drawingStore?.shapes.first(where: { $0.id == h.shapeID }) {
+                if let drawingStore,
+                   var shape = drawingStore.shapes.first(where: { $0.id == h.shapeID }) {
                     if shape.removeEffectiveVertex(at: h.vertexIndex) {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        drawingStore?.update(shape)
+                        do {
+                            _ = try drawingStore.commitEdit(shape, actionName: "Delete Drawing Vertex")
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        } catch {
+                            reportMutationFailure("The drawing vertex was not deleted.", error: error)
+                        }
                     } else {
                         UINotificationFeedbackGenerator().notificationOccurred(.warning)
                     }
+                }
+                return
+            }
+
+            if let preview = waypointDrag {
+                if g.state == .ended, preview.candidate != preview.original,
+                   let waypointStore {
+                    do {
+                        _ = try preview.commit(to: waypointStore)
+                    } catch {
+                        restoreWaypointPreview(preview)
+                        reportMutationFailure("The waypoint move was not saved.", error: error)
+                    }
+                } else {
+                    restoreWaypointPreview(preview)
+                }
+            }
+
+            if let preview = drawingDrag {
+                if g.state == .ended, preview.candidate != preview.original,
+                   let drawingStore {
+                    do {
+                        _ = try preview.commit(to: drawingStore)
+                        // Keep the in-memory candidate visible until the
+                        // @Published durable snapshot reaches SwiftUI.
+                        DispatchQueue.main.async { [weak self] in
+                            self?.showDrawingPreview?(nil)
+                        }
+                    } catch {
+                        restoreDrawingPreview()
+                        reportMutationFailure("The drawing move was not saved.", error: error)
+                    }
+                } else {
+                    restoreDrawingPreview()
                 }
             }
 
@@ -238,20 +374,51 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                 view.setBrowseGesturesEnabled(true)
             }
             guard pan.state == .ended, let idx = draggingHandleIndex,
-                  handles.indices.contains(idx), let c = coord(pt) else { return }
+                  handles.indices.contains(idx), let c = coord(pt) else {
+                handlesView?.update(handles: handles)
+                return
+            }
             let h = handles[idx]
-            guard var shape = drawingStore?.shapes.first(where: { $0.id == h.shapeID }) else { return }
+            guard let drawingStore,
+                  var shape = drawingStore.shapes.first(where: { $0.id == h.shapeID }) else {
+                handlesView?.update(handles: handles)
+                return
+            }
             let newCoord = Coordinate2D(latitude: c.latitude, longitude: c.longitude)
             if h.isMidpoint {
                 shape.insertEffectiveVertex(newCoord, at: h.vertexIndex)
             } else {
                 shape.setEffectiveVertex(h.vertexIndex, to: newCoord)
             }
-            drawingStore?.update(shape)
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            do {
+                _ = try drawingStore.commitEdit(shape, actionName: "Move Drawing Vertex")
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } catch {
+                handlesView?.update(handles: handles)
+                reportMutationFailure("The drawing vertex move was not saved.", error: error)
+            }
         default:
             break
         }
+    }
+
+    private func restoreWaypointPreview(_ preview: WaypointGesturePreview) {
+        let point = waypointDragOriginalScreenPoint ?? screen(preview.original.coordinate)
+        if let point {
+            mapVM?.waypointScreenPositions[preview.original.id] = point
+        }
+    }
+
+    private func restoreDrawingPreview() {
+        showDrawingPreview?(nil)
+        handlesView?.update(handles: handles)
+    }
+
+    private func reportMutationFailure(_ summary: String,
+                                       error: Error,
+                                       recovery: String = "Check available storage, then try again.") {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        onMutationError?("\(summary) \(error.localizedDescription) \(recovery)")
     }
 
     // MARK: - Gesture delegate

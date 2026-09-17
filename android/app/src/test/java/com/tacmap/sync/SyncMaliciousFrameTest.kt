@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.longOrNull
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -89,5 +90,109 @@ class SyncMaliciousFrameTest {
                 // expected for invalid JSON — the point is no uncaught throw
             }
         }
+    }
+
+    @Test
+    fun unicodeCeilingUsesUtf8WireBytesRatherThanCharacterCount() {
+        val emoji = "😀".repeat(SyncInboundFramePolicy.MAX_FRAME_BYTES / 4 + 1)
+        assertTrue(emoji.length < SyncInboundFramePolicy.MAX_FRAME_BYTES)
+        assertTrue(emoji.toByteArray(Charsets.UTF_8).size > SyncInboundFramePolicy.MAX_FRAME_BYTES)
+        assertEquals(
+            SyncInboundFrameDecision.Reject(SyncInboundFrameRejection.OVERSIZED),
+            SyncInboundFramePolicy.inspectText(emoji),
+        )
+    }
+
+    @Test
+    fun binaryFramesAreRejectedBeforeParsingAndSizeStillWins() {
+        assertEquals(
+            SyncInboundFrameDecision.Reject(SyncInboundFrameRejection.BINARY),
+            SyncInboundFramePolicy.inspectBinary(12),
+        )
+        assertEquals(
+            SyncInboundFrameDecision.Reject(SyncInboundFrameRejection.OVERSIZED),
+            SyncInboundFramePolicy.inspectBinary(SyncInboundFramePolicy.MAX_FRAME_BYTES + 1),
+        )
+    }
+
+    @Test
+    fun hostileFrameClaimsOnlyOneClosePerSocketGeneration() {
+        val gate = SyncInboundFrameCloseGate()
+        assertTrue(gate.claimClose(41L))
+        assertFalse(gate.claimClose(41L))
+        assertTrue(gate.claimClose(42L))
+    }
+
+    @Test
+    fun liveReceiveBudgetCountsEveryPreParseFrameAndResetsByWindow() {
+        val budget = SyncLiveReceiveBudget()
+        repeat(SyncLiveReceiveBudget.MAX_FRAMES) {
+            assertTrue(
+                budget.admit(
+                    7L,
+                    byteCount = 1,
+                    newPhase = SyncLiveReceiveBudget.Phase.LIVE,
+                    nowMs = 100L,
+                )
+            )
+        }
+        assertFalse(
+            budget.admit(
+                7L,
+                byteCount = 1,
+                newPhase = SyncLiveReceiveBudget.Phase.LIVE,
+                nowMs = 100L,
+            )
+        )
+        assertTrue(
+            budget.admit(
+                7L,
+                byteCount = SyncLiveReceiveBudget.MAX_BYTES,
+                newPhase = SyncLiveReceiveBudget.Phase.LIVE,
+                nowMs = 10_100L,
+            )
+        )
+        assertFalse(
+            budget.admit(
+                7L,
+                byteCount = 1,
+                newPhase = SyncLiveReceiveBudget.Phase.LIVE,
+                nowMs = 10_100L,
+            )
+        )
+        assertTrue(
+            budget.admit(
+                8L,
+                byteCount = 1,
+                newPhase = SyncLiveReceiveBudget.Phase.LIVE,
+                nowMs = 10_100L,
+            )
+        )
+    }
+
+    @Test
+    fun initialReceiveBudgetCountsMalformedFramesThenResetsForLivePhase() {
+        val budget = SyncLiveReceiveBudget()
+        assertTrue(
+            budget.admit(
+                9L,
+                byteCount = SyncLiveReceiveBudget.MAX_INITIAL_BYTES,
+                newPhase = SyncLiveReceiveBudget.Phase.INITIAL,
+                nowMs = 1L,
+            )
+        )
+        assertFalse(
+            budget.admit(9L, 1, SyncLiveReceiveBudget.Phase.INITIAL, nowMs = 2L)
+        )
+        assertTrue(budget.admit(9L, 1, SyncLiveReceiveBudget.Phase.LIVE, nowMs = 2L))
+    }
+
+    @Test
+    fun veryLargeAsciiIsRejectedByCharacterGuard() {
+        val huge = "A".repeat(SyncInboundFramePolicy.MAX_FRAME_BYTES * 4)
+        assertEquals(
+            SyncInboundFrameDecision.Reject(SyncInboundFrameRejection.OVERSIZED),
+            SyncInboundFramePolicy.inspectText(huge),
+        )
     }
 }

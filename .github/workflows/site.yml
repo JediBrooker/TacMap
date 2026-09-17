@@ -1,0 +1,65 @@
+name: Website
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'README.md'
+      - 'docs/THREAT_MODEL.md'
+      - 'docs/PRIVACY_POLICY.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/site.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'README.md'
+      - 'docs/THREAT_MODEL.md'
+      - 'docs/PRIVACY_POLICY.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Generate, test, and bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify generated site is committed
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build:site
+          git diff --exit-code -- \
+            site/public/privacy.html \
+            site/public/threat-model.html \
+            site/src/security-policy.mjs
+
+      - name: Run security and content tests
+        run: node --test site/test/*.test.mjs
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Bundle Worker without deploying
+        run: npm exec --no -- wrangler deploy --dry-run --config site/wrangler.jsonc

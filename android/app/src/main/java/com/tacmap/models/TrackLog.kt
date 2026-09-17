@@ -37,10 +37,13 @@ object TrackLog {
     data class Recovered(val points: List<TrackPoint>, val hadLegacyLines: Boolean)
 
     /** Append one point and force it to stable storage before returning. */
-    fun append(file: File, point: TrackPoint) {
-        SafeStore.markSealedOnlyAuthenticated(LABEL)
+    fun append(file: File, point: TrackPoint, recordingKey: ByteArray) {
+        require(recordingKey.size == 32) { "Track recording key must be 256 bits" }
+        if (!marker(file).exists()) {
+            throw java.io.IOException("Track log was not durably prepared")
+        }
         val line = SealedEnvelope.sealLine(
-            SafeStore.keyProvider.key(),
+            recordingKey,
             json.encodeToString(TrackPoint.serializer(), point).toByteArray(Charsets.UTF_8),
             LABEL
         )

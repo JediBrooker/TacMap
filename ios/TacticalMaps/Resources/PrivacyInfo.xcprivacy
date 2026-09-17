@@ -4,13 +4,25 @@
 <dict>
 	<!--
 	  TacMap does not track users and shows no ads. Location is used on-device
-	  for the live MGRS read-out, GPX track recording, and map centring. It is
-	  NOT transmitted off-device by default. When the user explicitly enables
-	  "Online terrain & weather lookups" (off by default), the queried
-	  coordinate — coarsened to ~110 m — is sent to Open-Meteo to fetch
-	  elevation/weather; that transmission is declared below.
+	  for the live MGRS read-out, map centring, and user-started GPX track
+	  recording (including while that recording continues in the background).
+	  Exact live position is sent, encrypted, only while the user has joined
+	  Sync and explicitly enabled
+	  "Share my location"; joined peers can decrypt that presence. When the user
+	  explicitly enables "Online place, terrain &amp; weather lookups" (off on a
+		  fresh install), elevation and weather send the queried map-centre coordinate
+		  (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24
+		  coordinate grid (coarsened to ~11 m) covering the visible map area. The
+		  setting can be disabled for an offline posture.
+	  The precise-location declaration below conservatively covers opt-in Sync
+	  presence; neither track recording nor the live read-out uploads a track.
+	  TacMap Chat sends user-authored text/reports to a room or selected live
+	  unit, so Apple's in-app private-messaging guidance requires the
+	  Emails-or-Text-Messages declaration even though message content is sealed
+	  end-to-end and the developer does not operate an identity/account service.
 
-	  Required-reason API: the app uses UserDefaults for settings/preferences.
+	  Required-reason APIs: app-container and user-selected file metadata,
+	  system uptime for elapsed-time watchdogs, and app-only UserDefaults.
 	-->
 	<key>NSPrivacyTracking</key>
 	<false/>
@@ -30,9 +42,38 @@
 				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
 			</array>
 		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeEmailsOrTextMessages</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+				<string>3B52.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
+			</array>
+		</dict>
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>

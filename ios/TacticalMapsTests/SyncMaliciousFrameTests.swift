@@ -70,10 +70,77 @@ final class SyncMaliciousFrameTests: XCTestCase {
     }
 
     func testFrameCeilingRejectsOversized() {
-        // a frame > 1 MiB must be rejected before parsing
-        let huge = String(repeating: "A", count: 1_048_577)
-        XCTAssertTrue(huge.utf8.count > 1_048_576)
-        // SyncManager checks text.utf8.count <= maxFrameBytes before parsing;
-        // we just verify the ceiling constant is correct and the check would fire
+        let huge = String(repeating: "A", count: SyncInboundFramePolicy.maxFrameBytes + 1)
+        XCTAssertEqual(SyncInboundFramePolicy.inspect(text: huge), .reject(.oversized))
+    }
+
+    func testUnicodeCeilingUsesUTF8WireBytesRatherThanCharacterCount() {
+        let emoji = String(
+            repeating: "😀",
+            count: SyncInboundFramePolicy.maxFrameBytes / 4 + 1
+        )
+        XCTAssertLessThan(emoji.count, SyncInboundFramePolicy.maxFrameBytes)
+        XCTAssertGreaterThan(emoji.utf8.count, SyncInboundFramePolicy.maxFrameBytes)
+        XCTAssertEqual(SyncInboundFramePolicy.inspect(text: emoji), .reject(.oversized))
+    }
+
+    func testBinaryIsBoundedBeforeDecodeAndInvalidUTF8Closes() {
+        let oversized = Data(repeating: 0xff, count: SyncInboundFramePolicy.maxFrameBytes + 1)
+        XCTAssertEqual(SyncInboundFramePolicy.inspect(data: oversized), .reject(.oversized))
+        XCTAssertEqual(
+            SyncInboundFramePolicy.inspect(data: Data([0xc3, 0x28])),
+            .reject(.invalidUTF8)
+        )
+        let valid = Data(#"{"t":"hello"}"#.utf8)
+        XCTAssertEqual(
+            SyncInboundFramePolicy.inspect(data: valid),
+            .accept(text: #"{"t":"hello"}"#, data: valid)
+        )
+    }
+
+    func testHostileFrameClaimsOnlyOneClosePerSocketGeneration() {
+        let gate = SyncInboundFrameCloseGate()
+        XCTAssertTrue(gate.claimClose(generation: 41))
+        XCTAssertFalse(gate.claimClose(generation: 41))
+        XCTAssertTrue(gate.claimClose(generation: 42))
+    }
+
+    func testLiveReceiveBudgetCountsEveryPreParseFrameAndResetsByWindow() {
+        let budget = SyncLiveReceiveBudget()
+        for _ in 0..<SyncLiveReceiveBudget.maxFrames {
+            XCTAssertTrue(budget.admit(generation: 7, byteCount: 1, phase: .live, now: 100))
+        }
+        XCTAssertFalse(budget.admit(generation: 7, byteCount: 1, phase: .live, now: 100))
+        XCTAssertTrue(
+            budget.admit(
+                generation: 7,
+                byteCount: SyncLiveReceiveBudget.maxBytes,
+                phase: .live,
+                now: 110
+            )
+        )
+        XCTAssertFalse(budget.admit(generation: 7, byteCount: 1, phase: .live, now: 110))
+        XCTAssertTrue(budget.admit(generation: 8, byteCount: 1, phase: .live, now: 110))
+    }
+
+    func testInitialReceiveBudgetCountsMalformedFramesThenResetsForLivePhase() {
+        let budget = SyncLiveReceiveBudget()
+        XCTAssertTrue(
+            budget.admit(
+                generation: 9,
+                byteCount: SyncLiveReceiveBudget.maxInitialBytes,
+                phase: .initial,
+                now: 1
+            )
+        )
+        XCTAssertFalse(
+            budget.admit(generation: 9, byteCount: 1, phase: .initial, now: 2)
+        )
+        XCTAssertTrue(budget.admit(generation: 9, byteCount: 1, phase: .live, now: 2))
+    }
+
+    func testVeryLargeAsciiIsRejectedBeforeDataDuplicationContract() {
+        let huge = String(repeating: "A", count: SyncInboundFramePolicy.maxFrameBytes * 4)
+        XCTAssertEqual(SyncInboundFramePolicy.inspect(text: huge), .reject(.oversized))
     }
 }

@@ -8,6 +8,153 @@ struct TrackPoint {
     let time: Date
 }
 
+/// Truthful UI state for the user-started recording workflow. Permission
+/// prompts and durable log preparation are intentionally distinct from an
+/// active recording, so neither can accidentally display `REC`.
+final class RecordingCoordinator: ObservableObject {
+    enum State: Equatable {
+        case idle
+        case awaitingPermission
+        case starting
+        case recording
+        case interrupted(String)
+    }
+
+    struct Guidance: Identifiable, Equatable {
+        let id = UUID()
+        let message: String
+        let offersSettings: Bool
+
+        static func == (lhs: Guidance, rhs: Guidance) -> Bool {
+            lhs.message == rhs.message && lhs.offersSettings == rhs.offersSettings
+        }
+    }
+
+    @Published private(set) var state: State = .idle
+    @Published var guidance: Guidance?
+
+    private let requestAuthorization: () -> Void
+    private let initializeDurableRecording: () -> Bool
+    private let stopRecording: () -> Void
+    private let setBackgroundUpdates: (Bool) -> Void
+    private let recordingError: () -> String?
+
+    init(
+        requestAuthorization: @escaping () -> Void,
+        initializeDurableRecording: @escaping () -> Bool,
+        stopRecording: @escaping () -> Void,
+        setBackgroundUpdates: @escaping (Bool) -> Void,
+        recordingError: @escaping () -> String?
+    ) {
+        self.requestAuthorization = requestAuthorization
+        self.initializeDurableRecording = initializeDurableRecording
+        self.stopRecording = stopRecording
+        self.setBackgroundUpdates = setBackgroundUpdates
+        self.recordingError = recordingError
+    }
+
+    func toggle(authorization: CLAuthorizationStatus) {
+        switch state {
+        case .recording, .awaitingPermission:
+            stop()
+        case .starting:
+            break
+        case .idle, .interrupted:
+            start(authorization: authorization)
+        }
+    }
+
+    func start(authorization: CLAuthorizationStatus) {
+        guard state != .recording, state != .starting else { return }
+        guidance = nil
+        switch authorization {
+        case .notDetermined:
+            guard state != .awaitingPermission else { return }
+            state = .awaitingPermission
+            requestAuthorization()
+        case .authorizedAlways, .authorizedWhenInUse:
+            beginDurableStart()
+        case .denied, .restricted:
+            state = .idle
+            guidance = Self.permissionGuidance(interrupted: false)
+        @unknown default:
+            state = .idle
+            guidance = Self.permissionGuidance(interrupted: false)
+        }
+    }
+
+    func authorizationChanged(_ authorization: CLAuthorizationStatus) {
+        switch authorization {
+        case .authorizedAlways, .authorizedWhenInUse:
+            if state == .awaitingPermission { beginDurableStart() }
+        case .denied, .restricted:
+            if state == .recording || state == .starting {
+                interruptForPermissionLoss()
+            } else if state == .awaitingPermission {
+                state = .idle
+                guidance = Self.permissionGuidance(interrupted: false)
+            }
+        case .notDetermined:
+            if state == .recording || state == .starting {
+                interruptForPermissionLoss()
+            }
+        @unknown default:
+            if state == .recording || state == .starting {
+                interruptForPermissionLoss()
+            }
+        }
+    }
+
+    func recorderDidStopUnexpectedly(error: String?) {
+        guard state == .recording else { return }
+        setBackgroundUpdates(false)
+        let message = error ?? "Track recording was interrupted. The saved track was preserved."
+        state = .interrupted(message)
+    }
+
+    func stop() {
+        let wasActive = state == .recording || state == .starting
+        if wasActive { stopRecording() }
+        setBackgroundUpdates(false)
+        state = .idle
+        guidance = nil
+    }
+
+    private func beginDurableStart() {
+        guard state != .recording, state != .starting else { return }
+        state = .starting
+        guard initializeDurableRecording() else {
+            setBackgroundUpdates(false)
+            state = .interrupted(
+                recordingError() ?? "Track recording could not start. No recording is active."
+            )
+            return
+        }
+        // TrackRecorder has created and fsync'd the log and captured its scoped
+        // key at this point. Only now enable the conditional background mode
+        // and publish the state from which the UI renders `REC`.
+        setBackgroundUpdates(true)
+        state = .recording
+    }
+
+    private func interruptForPermissionLoss() {
+        stopRecording()
+        setBackgroundUpdates(false)
+        let message = "Location access changed, so track recording stopped. Your saved track was preserved. Re-enable Location access in Settings to record again."
+        state = .interrupted(message)
+        guidance = Guidance(message: message, offersSettings: true)
+    }
+
+    private static func permissionGuidance(interrupted: Bool) -> Guidance {
+        Guidance(
+            message: interrupted
+                ? "Track recording stopped because Location access is unavailable. Your saved track was preserved. Re-enable it in Settings."
+                : "TacMap needs Location access to record a track. Allow access in Settings, then try again.",
+            offersSettings: true
+        )
+    }
+}
+
 /// Accumulates GPS fixes into a track while recording. Fed by ContentView from
 /// `LocationService.lastLocation`. Foreground + background (background only
 /// while recording, via `LocationService.setBackgroundUpdates`).
@@ -41,9 +188,17 @@ final class TrackRecorder: ObservableObject {
     /// interrupting the already-authorised background recording.
     private var recordingKey: Data?
 
+#if DEBUG
+    /// Boolean-only test seam for scoped-key lifetime. Key material never
+    /// crosses this boundary.
+    var hasScopedRecordingKeyForTesting: Bool { recordingKey != nil }
+#endif
+
     private let fileURL: URL
     private let attributeReader: (String) throws -> [FileAttributeKey: Any]
     private let textReader: (URL) throws -> String
+    private let requiresSealedPolicy: (String, Data) throws -> Bool
+    private let markSealedPolicy: (String, Data) throws -> Void
 
     private static func defaultFileURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,
@@ -67,11 +222,19 @@ final class TrackRecorder: ObservableObject {
         },
         textReader: @escaping (URL) throws -> String = {
             try String(contentsOf: $0, encoding: .utf8)
+        },
+        requiresSealedPolicy: @escaping (String, Data) throws -> Bool = {
+            try SealedMigrationPolicy.requiresSealed($0, key: $1)
+        },
+        markSealedPolicy: @escaping (String, Data) throws -> Void = {
+            try SealedMigrationPolicy.markSealed($0, key: $1)
         }
     ) {
         self.fileURL = fileURL ?? Self.defaultFileURL()
         self.attributeReader = attributeReader
         self.textReader = textReader
+        self.requiresSealedPolicy = requiresSealedPolicy
+        self.markSealedPolicy = markSealedPolicy
         recover()
     }
 
@@ -96,7 +259,7 @@ final class TrackRecorder: ObservableObject {
                 // silently become size zero and overwrite unknown bytes.
                 guard Self.isNoSuchFile(error) else { throw error }
             }
-            try SealedMigrationPolicy.markSealed(policyID, key: key)
+            try markSealedPolicy(policyID, key)
             // Establish and fsync the durable log before telling the UI or
             // CLLocationManager that recording has begun.
             try Data().write(to: fileURL,
@@ -248,8 +411,21 @@ final class TrackRecorder: ObservableObject {
 
         let decoder = JSONDecoder()
         let legacyMarker = FileManager.default.fileExists(atPath: legacyMarkerURL.path)
-        if legacyMarker { try? SealedMigrationPolicy.markSealed(policyID, key: key) }
-        let sealedOnly = (try? SealedMigrationPolicy.requiresSealed(policyID, key: key)) ?? true
+        if legacyMarker {
+            do {
+                try markSealedPolicy(policyID, key)
+            } catch {
+                markRecoveryUnavailable(error)
+                return
+            }
+        }
+        let sealedOnly: Bool
+        do {
+            sealedOnly = try requiresSealedPolicy(policyID, key)
+        } catch {
+            markRecoveryUnavailable(error)
+            return
+        }
         if sealedOnly && text.split(separator: "\n").contains(where: {
             !SealedEnvelope.isSealedLine(String($0))
         }) {
@@ -282,27 +458,37 @@ final class TrackRecorder: ObservableObject {
                               elevation: sp.ele,
                               time: Date(timeIntervalSince1970: sp.t))
         }
-        if !restored.isEmpty {
-            points = restored
-            recovered = true
-        }
         if sawLegacyLine {
             if invalidLegacyLine {
                 persistError = "Saved legacy track contains an invalid line and was preserved unchanged."
+                return
             } else {
-                reseal(restored)
+                guard reseal(restored, key: key) else { return }
             }
         } else if !text.isEmpty {
-            try? SealedMigrationPolicy.markSealed(policyID, key: key)
+            do {
+                // Existing ciphertext from a build predating the authenticated
+                // policy is not observable until the durable downgrade fence
+                // exists. A policy-store failure leaves the log untouched and
+                // retryable instead of silently accepting later plaintext.
+                try markSealedPolicy(policyID, key)
+            } catch {
+                markRecoveryUnavailable(error)
+                return
+            }
             if legacyMarker { try? FileManager.default.removeItem(at: legacyMarkerURL) }
+        }
+        if !restored.isEmpty {
+            points = restored
+            recovered = true
         }
     }
 
     /// Rewrite a plaintext log from an older build with every line sealed. Goes
     /// via atomic write so a crash halfway can't leave us half a track.
-    private func reseal(_ points: [TrackPoint]) {
+    @discardableResult
+    private func reseal(_ points: [TrackPoint], key: Data) -> Bool {
         do {
-            let key = try SafeStore.keyProvider()
             let encoder = JSONEncoder()
             var out = Data()
             for point in points {
@@ -315,10 +501,18 @@ final class TrackRecorder: ObservableObject {
                                                          label: Self.label)
                 out.append(contentsOf: Array((sealed + "\n").utf8))
             }
+            // Fence first. If the subsequent atomic replacement fails, the
+            // intact plaintext is deliberately no longer accepted on relaunch.
+            try markSealedPolicy(policyID, key)
             try out.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-            try SealedMigrationPolicy.markSealed(policyID, key: key)
+            if FileManager.default.fileExists(atPath: legacyMarkerURL.path) {
+                try? FileManager.default.removeItem(at: legacyMarkerURL)
+            }
+            return true
         } catch {
+            requiresUnlock = true
             persistError = "Could not encrypt the recovered track: \(error.localizedDescription)"
+            return false
         }
     }
 

@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 data class PdfPageInfo(
     val pageWidth: Int,
@@ -25,12 +26,42 @@ data class RenderedPdfPage(
     val info: PdfPageInfo
 )
 
+internal data class PdfRenderSize(val width: Int, val height: Int) {
+    val byteCount: Long get() = width.toLong() * height.toLong() * ARGB_BYTES_PER_PIXEL
+
+    private companion object {
+        const val ARGB_BYTES_PER_PIXEL = 4L
+    }
+}
+
+/**
+ * Keep the first-page preview within a predictable ARGB allocation without
+ * inflating a small page into a much larger bitmap. PDF vectors remain sharp
+ * when baked into MBTiles; this preview only backs the live ground overlay.
+ */
+internal fun boundedPdfRenderSize(
+    pageWidth: Int,
+    pageHeight: Int,
+    maxDimension: Int = 4096,
+    maxBytes: Long = 32L * 1024L * 1024L,
+): PdfRenderSize {
+    require(pageWidth > 0 && pageHeight > 0) { "PDF page dimensions must be positive." }
+    require(maxDimension > 0 && maxBytes >= 4L) { "PDF render limits must be positive." }
+    val maxPixels = maxBytes / 4L
+    val dimensionScale = maxDimension.toDouble() / max(pageWidth, pageHeight).toDouble()
+    val memoryScale = sqrt(maxPixels.toDouble() / (pageWidth.toLong() * pageHeight.toLong()).toDouble())
+    val scale = minOf(1.0, dimensionScale, memoryScale)
+    return PdfRenderSize(
+        width = (pageWidth * scale).toInt().coerceAtLeast(1),
+        height = (pageHeight * scale).toInt().coerceAtLeast(1),
+    )
+}
+
 object PdfPageRenderer {
-    // Bumped from the original 2048 b/c the bitmap gets stretched across
-    // the map's ground overlay and any zoom past per-pixel shows as blur.
-    // 4096 gives enough resolution for a few extra zoom steps while
-    // staying under the 64MB (4096*4096*4 ~ 64MB) ARGB limit.
     private const val MAX_RENDER_DIMENSION_PX = 4096
+    private const val MAX_RENDER_BYTES = 32L * 1024L * 1024L
+    private const val MAX_REGION_DIMENSION_PX = 2048
+    private const val MAX_REGION_BYTES = 16L * 1024L * 1024L
 
     fun firstPageInfo(context: Context, uri: Uri): PdfPageInfo =
         openDescriptor(context, uri).use { descriptor ->
@@ -45,14 +76,21 @@ object PdfPageRenderer {
         openDescriptor(context, uri).use { descriptor ->
             PdfRenderer(descriptor).use { renderer ->
                 renderer.openPage(0).use { page ->
-                    val maxPageDimension = max(page.width, page.height).coerceAtLeast(1)
-                    val scale = MAX_RENDER_DIMENSION_PX.toDouble() / maxPageDimension.toDouble()
-                    val width = (page.width * scale).roundToInt().coerceAtLeast(1)
-                    val height = (page.height * scale).roundToInt().coerceAtLeast(1)
-                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    bitmap.eraseColor(Color.WHITE)
-                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    RenderedPdfPage(bitmap, PdfPageInfo(page.width, page.height))
+                    val size = boundedPdfRenderSize(
+                        pageWidth = page.width,
+                        pageHeight = page.height,
+                        maxDimension = MAX_RENDER_DIMENSION_PX,
+                        maxBytes = MAX_RENDER_BYTES,
+                    )
+                    val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
+                    try {
+                        bitmap.eraseColor(Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        RenderedPdfPage(bitmap, PdfPageInfo(page.width, page.height))
+                    } catch (failure: Throwable) {
+                        bitmap.recycle()
+                        throw failure
+                    }
                 }
             }
         }
@@ -70,32 +108,37 @@ object PdfPageRenderer {
                     require(pageRect.width() > 0f && pageRect.height() > 0f) {
                         "PDF render region must have positive size."
                     }
-
+                    requireBoundedOutput(outputWidth, outputHeight)
                     val bitmap = Bitmap.createBitmap(
-                        outputWidth.coerceAtLeast(1),
-                        outputHeight.coerceAtLeast(1),
+                        outputWidth,
+                        outputHeight,
                         Bitmap.Config.ARGB_8888
                     )
-                    bitmap.eraseColor(Color.WHITE)
-                    // Map the requested region onto the whole tile. Region can
-                    // extend past page edge for tiles that straddle the sheet
-                    // boundary. PdfRenderer only paints where page content exists
-                    // so off-page margins stay white and on-page content keeps
-                    // correct scale, no edge-tile stretching.
-                    val matrix = Matrix().apply {
-                        setRectToRect(
-                            pageRect,
-                            RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat()),
-                            Matrix.ScaleToFit.FILL
+                    try {
+                        bitmap.eraseColor(Color.WHITE)
+                        // Map the requested region onto the whole tile. Region can
+                        // extend past page edge for tiles that straddle the sheet
+                        // boundary. PdfRenderer only paints where page content exists
+                        // so off-page margins stay white and on-page content keeps
+                        // correct scale, no edge-tile stretching.
+                        val matrix = Matrix().apply {
+                            setRectToRect(
+                                pageRect,
+                                RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat()),
+                                Matrix.ScaleToFit.FILL
+                            )
+                        }
+                        page.render(
+                            bitmap,
+                            Rect(0, 0, bitmap.width, bitmap.height),
+                            matrix,
+                            PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
                         )
+                        bitmap
+                    } catch (failure: Throwable) {
+                        bitmap.recycle()
+                        throw failure
                     }
-                    page.render(
-                        bitmap,
-                        Rect(0, 0, bitmap.width, bitmap.height),
-                        matrix,
-                        PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
-                    )
-                    bitmap
                 }
             }
         }
@@ -124,31 +167,47 @@ object PdfPageRenderer {
     ): Bitmap =
         openDescriptor(context, uri).use { descriptor ->
             PdfRenderer(descriptor).use { renderer ->
+                requireBoundedOutput(outputWidth, outputHeight)
                 val bitmap = Bitmap.createBitmap(
-                    outputWidth.coerceAtLeast(1),
-                    outputHeight.coerceAtLeast(1),
+                    outputWidth,
+                    outputHeight,
                     Bitmap.Config.ARGB_8888
                 )
-                bitmap.eraseColor(Color.WHITE)
-                for (s in strips) {
-                    if (s.pageRect.width() <= 0f || s.pageRect.height() <= 0f) continue
-                    if (s.dest.width() <= 0f || s.dest.height() <= 0f) continue
-                    val matrix = Matrix().apply {
-                        setRectToRect(s.pageRect, s.dest, Matrix.ScaleToFit.FILL)
+                try {
+                    bitmap.eraseColor(Color.WHITE)
+                    for (s in strips) {
+                        if (s.pageRect.width() <= 0f || s.pageRect.height() <= 0f) continue
+                        if (s.dest.width() <= 0f || s.dest.height() <= 0f) continue
+                        val matrix = Matrix().apply {
+                            setRectToRect(s.pageRect, s.dest, Matrix.ScaleToFit.FILL)
+                        }
+                        val clip = Rect(
+                            s.dest.left.roundToInt().coerceIn(0, outputWidth),
+                            s.dest.top.roundToInt().coerceIn(0, outputHeight),
+                            s.dest.right.roundToInt().coerceIn(0, outputWidth),
+                            s.dest.bottom.roundToInt().coerceIn(0, outputHeight)
+                        )
+                        if (clip.width() <= 0 || clip.height() <= 0) continue
+                        renderer.openPage(0).use { page ->
+                            page.render(bitmap, clip, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        }
                     }
-                    val clip = Rect(
-                        s.dest.left.roundToInt(),
-                        s.dest.top.roundToInt(),
-                        s.dest.right.roundToInt(),
-                        s.dest.bottom.roundToInt()
-                    )
-                    renderer.openPage(0).use { page ->
-                        page.render(bitmap, clip, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    }
+                    bitmap
+                } catch (failure: Throwable) {
+                    bitmap.recycle()
+                    throw failure
                 }
-                bitmap
             }
         }
+
+    private fun requireBoundedOutput(outputWidth: Int, outputHeight: Int) {
+        require(outputWidth in 1..MAX_REGION_DIMENSION_PX && outputHeight in 1..MAX_REGION_DIMENSION_PX) {
+            "PDF render output dimensions are outside the supported range."
+        }
+        require(outputWidth.toLong() * outputHeight.toLong() * 4L <= MAX_REGION_BYTES) {
+            "PDF render output exceeds the supported memory limit."
+        }
+    }
 
     private fun openDescriptor(context: Context, uri: Uri): ParcelFileDescriptor {
         if (uri.scheme == "file") {

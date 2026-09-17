@@ -24,12 +24,28 @@ final class DrawingDecorationsOverlayView: UIView {
             var coord: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
         }
         struct Label: Equatable {
+            let sourceID: UUID?
             let lat: Double; let lon: Double; let text: String
             var coord: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
+
+            init(sourceID: UUID? = nil, lat: Double, lon: Double, text: String) {
+                self.sourceID = sourceID
+                self.lat = lat
+                self.lon = lon
+                self.text = text
+            }
         }
         struct Pin: Equatable {
+            let sourceID: UUID?
             let lat: Double; let lon: Double; let colorHex: String
             var coord: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
+
+            init(sourceID: UUID? = nil, lat: Double, lon: Double, colorHex: String) {
+                self.sourceID = sourceID
+                self.lat = lat
+                self.lon = lon
+                self.colorHex = colorHex
+            }
         }
     }
 
@@ -175,5 +191,32 @@ final class DrawingDecorationsOverlayView: UIView {
             ]
             (text as NSString).draw(at: CGPoint(x: padH, y: padV), withAttributes: textAttrs)
         }
+    }
+}
+
+extension DrawingDecorationsOverlayView.Model {
+    /// Moves point pins and name anchors with the renderer's transient drawing
+    /// candidate while leaving the durable decoration snapshot untouched.
+    func replacingDrawingPreview(_ preview: DrawingShape) -> Self {
+        var candidate = self
+        if preview.kind == .point, let coordinate = preview.clEffectiveCoordinates.first {
+            candidate.pins = pins.map { pin in
+                guard pin.sourceID == preview.id else { return pin }
+                return .init(sourceID: preview.id,
+                             lat: coordinate.latitude,
+                             lon: coordinate.longitude,
+                             colorHex: pin.colorHex)
+            }
+        }
+        if let anchor = preview.labelAnchor {
+            candidate.labels = labels.map { label in
+                guard label.sourceID == preview.id else { return label }
+                return .init(sourceID: preview.id,
+                             lat: anchor.latitude,
+                             lon: anchor.longitude,
+                             text: label.text)
+            }
+        }
+        return candidate
     }
 }

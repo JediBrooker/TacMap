@@ -26,13 +26,16 @@ data class AffineTransform2D(
         Wgs84Coordinate(d * x + e * y + f, a * x + b * y + c)
 
     fun inverted(): AffineTransform2D? {
+        if (!hasFiniteCoefficients()) return null
         val det = a * e - b * d
         // Scale-invariant singularity check: |det| / (||row1||*||row2||) gives
         // the sine of the angle between basis vectors [0,1]. The old absolute
         // 1e-12 threshold on `det` (roughly degrees^2/pixel^2, ~1e-10 at fine
         // scale) was falsely rejecting valid high-zoom calibrations.
         val rowScale = hypot(a, b) * hypot(d, e)
-        if (rowScale <= 0.0 || abs(det) <= 1e-9 * rowScale) return null
+        if (!det.isFinite() || !rowScale.isFinite() ||
+            rowScale <= 0.0 || abs(det) <= 1e-9 * rowScale
+        ) return null
         val inv = 1.0 / det
         val ia =  e * inv
         val ib = -b * inv
@@ -41,13 +44,38 @@ data class AffineTransform2D(
         return AffineTransform2D(
             a = ia, b = ib, c = -(ia * c + ib * f),
             d = id, e = ie, f = -(id * c + ie * f)
-        )
+        ).takeIf { it.hasFiniteCoefficients() }
     }
 }
 
+/**
+ * PDF 2.0 permits a page dimension up to 14,400 default user units and a
+ * /UserUnit multiplier up to 75,000 (1.08e9 effective units). Anything beyond
+ * this cannot be a standards-compliant page coordinate and is rejected before
+ * covariance/normal-equation products can overflow.
+ */
+internal const val MAX_SAFE_PDF_COORDINATE = 1_100_000_000.0
+
+internal fun AffineTransform2D.hasFiniteCoefficients(): Boolean =
+    a.isFinite() && b.isFinite() && c.isFinite() &&
+        d.isFinite() && e.isFinite() && f.isFinite()
+
+internal fun Fiduciary.isSafeAffineInput(): Boolean =
+    pdfX.isFinite() && pdfY.isFinite() &&
+        abs(pdfX) <= MAX_SAFE_PDF_COORDINATE &&
+        abs(pdfY) <= MAX_SAFE_PDF_COORDINATE &&
+        latitude.isFinite() && longitude.isFinite() &&
+        latitude in -90.0..90.0 && longitude in -180.0..180.0
+
+internal fun Wgs84Coordinate.isValidEarthCoordinate(): Boolean =
+    latitude.isFinite() && longitude.isFinite() &&
+        latitude in -90.0..90.0 && longitude in -180.0..180.0
+
 sealed class AffineFitError(message: String) : Throwable(message) {
     data object TooFewFiduciaries : AffineFitError("Need at least 3 fiduciaries")
+    data object InvalidInput       : AffineFitError("Fiduciaries contain invalid or unsafe coordinates")
     data object Degenerate         : AffineFitError("Fiduciaries are colinear or coincident")
+    data object InvalidResult      : AffineFitError("Affine fit produced an invalid result")
 }
 
 data class AffineFitResult(
@@ -72,6 +100,7 @@ object AffineFitter {
 
     fun fit(fids: List<Fiduciary>): AffineFitResult {
         if (fids.size < 3) throw AffineFitError.TooFewFiduciaries
+        if (fids.any { !it.isSafeAffineInput() }) throw AffineFitError.InvalidInput
         // Bail if control points are colinear (or nearly so) - the affine's
         // perpendicular direction is unconstrained and it'll extrapolate
         // wildly. You'd get a wrong map that still fits the fiduciaries.
@@ -80,13 +109,22 @@ object AffineFitter {
         val (a, b, c) = lsq(fids.map { Triple(it.pdfX, it.pdfY, it.longitude) })
         val (d, e, f) = lsq(fids.map { Triple(it.pdfX, it.pdfY, it.latitude) })
         val t = AffineTransform2D(a, b, c, d, e, f)
+        if (!t.hasFiniteCoefficients() || t.inverted() == null) {
+            throw AffineFitError.InvalidResult
+        }
 
         var sumSq = 0.0
         for (fid in fids) {
             val predicted = t.apply(fid.pdfX, fid.pdfY)
-            sumSq += squareMetres(predicted, fid.wgs84)
+            if (!predicted.isValidEarthCoordinate()) throw AffineFitError.InvalidResult
+            val residual = squareMetres(predicted, fid.wgs84)
+            if (!residual.isFinite()) throw AffineFitError.InvalidResult
+            sumSq += residual
+            if (!sumSq.isFinite()) throw AffineFitError.InvalidResult
         }
-        return AffineFitResult(t, sqrt(sumSq / fids.size), crossValidated = fids.size >= 4)
+        val rms = sqrt(sumSq / fids.size)
+        if (!rms.isFinite()) throw AffineFitError.InvalidResult
+        return AffineFitResult(t, rms, crossValidated = fids.size >= 4)
     }
 
     /** Checks if fiduciaries are coincident or near-colinear. Uses ratio
@@ -134,7 +172,7 @@ object AffineFitter {
 
     private fun solve3x3(m: Array<DoubleArray>, r: DoubleArray): Triple<Double, Double, Double>? {
         val det = det3(m)
-        if (abs(det) < 1e-12) return null
+        if (!det.isFinite() || abs(det) < 1e-12) return null
         val mx = arrayOf(
             doubleArrayOf(r[0], m[0][1], m[0][2]),
             doubleArrayOf(r[1], m[1][1], m[1][2]),
@@ -150,7 +188,8 @@ object AffineFitter {
             doubleArrayOf(m[1][0], m[1][1], r[1]),
             doubleArrayOf(m[2][0], m[2][1], r[2])
         )
-        return Triple(det3(mx) / det, det3(my) / det, det3(mz) / det)
+        val result = Triple(det3(mx) / det, det3(my) / det, det3(mz) / det)
+        return result.takeIf { (x, y, z) -> x.isFinite() && y.isFinite() && z.isFinite() }
     }
 
     private fun det3(m: Array<DoubleArray>): Double =

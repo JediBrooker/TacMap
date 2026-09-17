@@ -29,6 +29,11 @@ cross-platform requirements are specified in
     count toward record and byte quotas, so they reach late joiners without
     enabling unbounded storage.
 
+Human-friendly room names are client-local display metadata. They are not part
+of the join code or derived room ID, are not sent in relay URLs, headers, or wire
+frames, and are not stored or synchronized by the relay. Devices sharing a join
+code may therefore use different local names for the same cryptographic room.
+
 ## Legacy v2 wire protocol (JSON over WebSocket)
 
 Client → server:
@@ -111,7 +116,10 @@ follows:
   "function": "INFANTRY",
   "isHQ": false,
   "pub": "<32-byte base64url>",
-  "sig": "<64-byte Ed25519 base64url>"
+  "sig": "<64-byte Ed25519 base64url>",
+  "prv": 1,
+  "pr": "<standard base64 of exact {\"ttl\":seconds} bytes>",
+  "prsig": "<64-byte Ed25519 base64url>"
 }
 ```
 
@@ -121,6 +129,16 @@ sender for the presence payload. The signed preimage's `payloadHash` is
 `SHA-256(decodeBase64(p))`; a receiver MUST hash those bytes directly and MUST
 NOT parse and reserialize them before verification. After verification, current
 clients parse those authenticated bytes as the authoritative presence value.
+
+`prv` / `pr` / `prsig` are an optional backwards-compatible retention
+advertisement. If any one is present, all three must validate. `prv` is `1`;
+`pr` contains exact JSON bytes with only an integer `ttl` from 45 through 3900
+seconds. `prsig` signs the normal v3 preimage using domain `0x03`, the same
+actor/session/counter, kind `loc-retention`, and
+`SHA-256(decodeBase64(pr))`. A receiver extends a marker beyond 45 seconds only
+after this signature verifies and only while the exact authenticated session
+remains active. Missing fields retain legacy 45-second behavior; malformed or
+invalidly signed fields reject the frame.
 
 The flat `lat` through `isHQ` fields duplicate the payload for compatibility
 with legacy v3 clients. `pub` and `sig` remain in the encrypted inner envelope;
@@ -132,6 +150,81 @@ Active-session metadata is not durable. A newly connected or reconnecting v3
 observer first receives its durable `snapshot-begin` / `snapshot` /
 `snapshot-end` fence, then each currently connected peer's latest signed
 `hello`, immediately followed by that peer's current `loc` when one exists.
+
+### TacMap Chat v1 (v3 live extension)
+
+TacMap Chat is enabled only after a verified v3 `hello-ack`. Each socket then
+advertises one fresh, memory-only X25519 public key:
+
+```json
+{"t":"chat-key","cv":1,"by":"<actorId>","sd":"<session>",
+ "kx":"<raw-32 base64url>","kid":"<raw-32 base64url>",
+ "sig":"<Ed25519 base64url>"}
+```
+
+The relay checks the exact keys, canonical encodings, room/actor/session-bound
+`kid`, and signed v3 actor proof before replying:
+
+```json
+{"t":"chat-key-ack","cv":1,"by":"<actorId>","sd":"<session>","kid":"<key ID>"}
+```
+
+Clients keep Chat unavailable until that exact acknowledgement. An identical
+advert retry is acknowledged idempotently; a different key on the same socket
+gets `chat-key-nack` with `key_already_announced`. Other key-advert failures use
+`invalid` or `invalid_signature`.
+
+An **Entire room** message has these exact outer keys:
+
+```json
+{"t":"chat","cv":1,"scope":"room","by":"<sender actor>",
+ "sd":"<sender session>","vs":"<counterHex16>:<sender actor>",
+ "mid":"<raw-16 base64url>","fromKid":"<sender key ID>",
+ "ct":"<padded standard base64>","sig":"<Ed25519 base64url>"}
+```
+
+A **Selected unit** message uses `scope:"direct"` and adds the required exact
+recipient tuple:
+
+```json
+{"to":"<recipient actor>","toSd":"<recipient session>",
+ "toKid":"<recipient key ID>"}
+```
+
+Room frames must omit the recipient fields; direct frames must include all
+three. `cv`, scope, room, sender/session/counter/message/key IDs, and the direct
+recipient tuple form one binary header bound into both AES-GCM associated data
+and the sender's Ed25519 signature. Entire-room payloads use a
+domain-separated room chat key and remain readable by all join-code holders.
+Selected-unit payloads use X25519 + HKDF-SHA256 between the two exact live
+sessions, so the relay and other room members cannot decrypt them.
+
+The relay verifies the sender signature before advancing its independent Chat
+counter. It forwards room frames only to currently connected, Chat-capable v3
+sockets, and direct frames only to the exact live `(to,toSd,toKid)` socket. It
+never writes a Chat key or frame to Durable Object storage or snapshot pages,
+and it never broadens an offline direct target to the room.
+
+Successful handling returns the frame-bound acknowledgement below; direct
+acknowledgements also echo `to`, `toSd`, and `toKid`:
+
+```json
+{"t":"chat-ack","cv":1,"by":"<sender actor>","sd":"<sender session>",
+ "vs":"<chat stamp>","mid":"<message ID>","scope":"room",
+ "fromKid":"<sender key ID>"}
+```
+
+This is only an untrusted relay transport acknowledgement: the UI may call it
+**Routed** or **Sent to room**, never delivered or read. TacMap Chat v1 supports
+only encrypted `text` and `report` payloads and has no endpoint receipts or
+offline mailbox. Failures use `chat-nack` with `invalid`, `invalid_signature`,
+`session_unavailable`, `recipient_offline`, or `counter_rejected`, plus a
+bounded `retry` boolean.
+
+The normative key-ID, signature preimage, binary header, AAD, KDF, ciphertext,
+counter, storage, and UI rules are in
+[`ADR-004`](../docs/security/ADR-004-tacmap-chat-v1.md). Byte-exact Android,
+iOS, and relay vectors are in [`testdata/tacmap_chat_v1.json`](../testdata/tacmap_chat_v1.json).
 
 ## Legacy v2 end-to-end encryption (client responsibility)
 
@@ -178,17 +271,29 @@ Documented so the trade-offs are explicit rather than surprising:
   code** re-keys the room — do it on suspected compromise or personnel change.
   A future increment could layer per-epoch ratcheting keyed off a rotation
   counter without changing the relay.
-- **`ping` wakes the Durable Object.** A protocol-level `ping` costs one DO
-  wake + `pong`. Clients rely on the WebSocket transport's own keepalive where
-  possible and only send protocol pings when needed; the per-socket rate limit
-  bounds the cost of a client that pings aggressively.
+- **Inbound resource ceilings.** The relay caps each WebSocket frame at 1 MiB
+  and each socket at 200 frames / 4 MiB per rolling 10-second window, including
+  malformed and unknown frames. A protocol `ping` must be exactly
+  `{\"t\":\"ping\"}`; padded pings are ignored. Both clients also cap messages
+  at 1 MiB and process them serially. Android rejects an oversized declared
+  frame before allocating its payload, disables compression and redirects,
+  caps fragmented messages at 128 frames, and bounds every raw data/control
+  frame during a bounded 512-frame initial-snapshot allowance. iOS configures
+  the native WebSocket task's maximum message size and rejects redirects; its
+  public API handles Ping/Pong internally, so individual control frames cannot
+  be included in the app-level budget. Clients rely on transport keepalive
+  where possible, because a valid protocol ping still wakes the Durable Object
+  and costs a `pong`.
 
 ## Deployed instance
 
 Live relay: **`wss://tacmap-sync.christianbrooker.workers.dev/room/<roomId>`**
 for legacy v2 and
-**`wss://tacmap-sync.christianbrooker.workers.dev/v3/room/<roomId>`** for v3
-(health: `https://tacmap-sync.christianbrooker.workers.dev/health` → `ok`).
+**`wss://tacmap-sync.christianbrooker.workers.dev/v3/room/<roomId>`** for v3.
+The health endpoint returns `ok` with a no-store
+`X-TacMap-Relay-Release` header. A release is not deployment-verified until
+that header matches `RELAY_RELEASE_ID` in `src/index.ts`; an `ok` body alone is
+only a liveness check.
 
 Verified end-to-end against the deployed Durable Object (two-client WebSocket
 test): snapshot-on-connect, peer broadcast with the opaque `ct` preserved, no

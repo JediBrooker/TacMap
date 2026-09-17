@@ -20,11 +20,12 @@ struct HamburgerMenu: View {
     let onImportKML:     () -> Void
     let onExport:        () -> Void
     /// GPX track recording state + actions.
-    let isRecordingTrack: Bool
+    let recordingState: RecordingCoordinator.State
     let trackPointCount: Int
     let onToggleTrackRecording: () -> Void
     let onExportGPX:     () -> Void
     let onExportAll:     () -> Void
+    let onChat:          () -> Void
     let onSync:          () -> Void
     let onAppLock:       () -> Void
     let onOpsec:         () -> Void
@@ -75,12 +76,11 @@ struct HamburgerMenu: View {
                         // sheet's NavigationStack (no sheet-over-sheet races).
                         navRow("Import / Export…", systemImage: "square.and.arrow.up.on.square")
                         divider
-                        row(isRecordingTrack
-                            ? "Stop Track Recording (\(trackPointCount) pts)"
-                            : "Start Track Recording",
-                            systemImage: isRecordingTrack ? "stop.circle.fill" : "record.circle")
+                        row(recordingMenuTitle,
+                            systemImage: recordingMenuIcon)
                             { close(onToggleTrackRecording) }
                         divider
+                        row("TacMap Chat…", systemImage: "bubble.left.and.bubble.right.fill") { close(onChat) }
                         row("Unit Sync…", systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
                         row("App Lock…", systemImage: "lock.shield")               { close(onAppLock) }
                         row("Settings, Privacy & OPSEC", systemImage: "eye.slash.fill") { close(onOpsec) }
@@ -112,6 +112,34 @@ struct HamburgerMenu: View {
         let action = pendingAction
         pendingAction = nil
         action?()
+    }
+
+    private var recordingMenuTitle: String {
+        switch recordingState {
+        case .idle:
+            return "Start Track Recording"
+        case .awaitingPermission:
+            return "Cancel Track Recording Start"
+        case .starting:
+            return "Starting Track Recording…"
+        case .recording:
+            return "Stop Track Recording (\(trackPointCount) pts)"
+        case .interrupted:
+            return "Retry Track Recording"
+        }
+    }
+
+    private var recordingMenuIcon: String {
+        switch recordingState {
+        case .recording:
+            return "stop.circle.fill"
+        case .awaitingPermission, .starting:
+            return "hourglass.circle"
+        case .interrupted:
+            return "exclamationmark.circle"
+        case .idle:
+            return "record.circle"
+        }
     }
 
     @ViewBuilder
@@ -180,7 +208,7 @@ struct HamburgerMenu: View {
                 divider
                 sectionHeader("Export")
                 row("GeoJSON…", systemImage: "square.and.arrow.up")           { close(onExport) }
-                row("Export All Data…", systemImage: "square.and.arrow.up.on.square") { close(onExportAll) }
+                row("\(MissionObjectExport.actionTitle)…", systemImage: "square.and.arrow.up.on.square") { close(onExportAll) }
                 row("GPX Track…", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                     { close(onExportGPX) }
             }
@@ -224,9 +252,10 @@ struct HamburgerMenu: View {
     }
 }
 
-/// Red "REC" pill while GPX track is recording. Dot pulses, tapping
-/// stops the recording. Menu can also start/stop it.
+/// Truthful GPX workflow pill. Only the `.recording` state renders the red,
+/// pulsing `REC`; permission and durable-start states use distinct copy.
 struct RecordingIndicator: View {
+    let state: RecordingCoordinator.State
     let pointCount: Int
     let onStop: () -> Void
     @State private var pulse = false
@@ -234,30 +263,84 @@ struct RecordingIndicator: View {
     var body: some View {
         Button(action: onStop) {
             HStack(spacing: 7) {
-                Circle()
-                    .fill(.white)
-                    .frame(width: 9, height: 9)
-                    .opacity(pulse ? 0.25 : 1.0)
-                Text("REC")
+                Image(systemName: statusIcon)
+                    .font(.system(size: 11, weight: .bold))
+                    .opacity(isRecording && pulse ? 0.25 : 1.0)
+                Text(statusTitle)
                     .font(.system(size: 12, weight: .bold))
                     .tracking(1)
                     .foregroundStyle(.white)
-                Text("· \(pointCount) pt\(pointCount == 1 ? "" : "s")")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.85))
+                if isRecording {
+                    Text("· \(pointCount) pt\(pointCount == 1 ? "" : "s")")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Color(red: 0.84, green: 0.18, blue: 0.18).opacity(0.95), in: Capsule())
+            .background(statusColor.opacity(0.95), in: Capsule())
             .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Recording track — \(pointCount) points. Tap to stop.")
+        .accessibilityLabel(accessibilityText)
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
+            updatePulse(isRecording)
+        }
+        .onChange(of: isRecording) { active in
+            updatePulse(active)
+        }
+    }
+
+    private func updatePulse(_ active: Bool) {
+        guard active else {
+            pulse = false
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+            pulse = true
+        }
+    }
+
+    private var isRecording: Bool { state == .recording }
+
+    private var statusTitle: String {
+        switch state {
+        case .awaitingPermission: return "AWAITING LOCATION"
+        case .starting: return "STARTING"
+        case .recording: return "REC"
+        case .interrupted: return "INTERRUPTED"
+        case .idle: return "IDLE"
+        }
+    }
+
+    private var statusIcon: String {
+        switch state {
+        case .awaitingPermission, .starting: return "hourglass"
+        case .recording: return "circle.fill"
+        case .interrupted: return "exclamationmark.triangle.fill"
+        case .idle: return "circle"
+        }
+    }
+
+    private var statusColor: Color {
+        isRecording
+            ? Color(red: 0.84, green: 0.18, blue: 0.18)
+            : Color(red: 0.82, green: 0.45, blue: 0.08)
+    }
+
+    private var accessibilityText: String {
+        switch state {
+        case .awaitingPermission:
+            return "Track recording awaiting Location permission. Tap to cancel."
+        case .starting:
+            return "Track recording is starting."
+        case .recording:
+            return "Recording track — \(pointCount) points. Tap to stop."
+        case .interrupted:
+            return "Track recording interrupted. Tap to dismiss."
+        case .idle:
+            return "Track recording idle."
         }
     }
 }
@@ -310,6 +393,56 @@ struct UnitLabelsToggle: View {
     }
 }
 
+/// Direct map entry to TacMap Chat while a secure Unit Sync room is active.
+/// Only the aggregate unread count leaves the sealed chat store; message IDs,
+/// conversation metadata and plaintext remain private to that store.
+struct TacMapChatShortcutButton: View {
+    @ObservedObject var store: TacMapChatStore
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "bubble.left.and.bubble.right.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .background(Color.black.opacity(0.80), in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                .foregroundStyle(.white)
+                .contentShape(Circle())
+                .overlay(alignment: .topTrailing) {
+                    if store.unreadMessageCount > 0 {
+                        Text(store.unreadMessageCount > 99
+                             ? "99+" : "\(store.unreadMessageCount)")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 18, minHeight: 18)
+                            .background(Color.red, in: Capsule())
+                            .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                            .offset(x: 7, y: -7)
+                            .accessibilityHidden(true)
+                    }
+                }
+                // Preserve the 40-point visual used by the Android HUD while
+                // meeting Apple's 44-point minimum interactive target.
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("TacMap Chat")
+        .accessibilityValue(unreadAccessibilityValue)
+        .accessibilityHint("Opens encrypted chat for this Unit Sync room")
+        .animation(.easeInOut(duration: 0.16), value: store.unreadMessageCount)
+    }
+
+    private var unreadAccessibilityValue: String {
+        let count = store.unreadMessageCount
+        guard count > 0 else { return "No unread messages" }
+        return "\(count) unread message\(count == 1 ? "" : "s")"
+    }
+}
+
 /// One-tap entry to the symbol builder at the current map crosshair. Lives in
 /// the top-left HUD rail so adding a symbol no longer requires opening the
 /// hamburger menu and then the full symbology list first.
@@ -337,10 +470,14 @@ struct QuickAddSymbolButton: View {
 struct CompassChip: View {
     /// Map heading in degrees (0 = north-up, 90 = east-up).
     let heading: Double
+    let orientationMode: MapOrientationMode
+    let headingAvailable: Bool
+    let northReference: HeadingNorthReference?
     /// Triggered when the user taps the chip.
     let onTap: () -> Void
 
     private let size: CGFloat = 56
+    private let northDialSize: CGFloat = 34
 
     /// NATO mils, 6400 per circle. N=0000 E=1600 S=3200 W=4800.
     /// Wraps via modulo so 6400 displays as 0000.
@@ -348,15 +485,53 @@ struct CompassChip: View {
         MapHeading.milsString(for: heading)
     }
 
+    private var referenceSuffix: String {
+        guard orientationMode == .headingUp else { return "T" }
+        return northReference?.displaySuffix ?? "?"
+    }
+
+    private var referenceAccessibilityLabel: String {
+        guard orientationMode == .headingUp else { return "true north" }
+        return northReference?.accessibilityLabel ?? "north reference pending"
+    }
+
+    private var activeStrokeColor: Color {
+        northReference == .magneticNorth ? .orange : .blue
+    }
+
+    private var tapHint: String {
+        switch MapHeading.compassTapAction(
+            headingUpEnabled: orientationMode == .headingUp,
+            currentHeading: heading,
+            headingAvailable: headingAvailable
+        ) {
+        case .resetNorth:
+            return "Resets the map to north"
+        case .enableHeadingUp:
+            return "Switches to Heading Up using the phone compass"
+        case .disableHeadingUp:
+            return "Switches to North Up and resets the map to north"
+        case .headingUnavailable:
+            return "Heading Up is unavailable on this device"
+        }
+    }
+
     var body: some View {
         Button(action: onTap) {
             ZStack {
                 Circle().fill(.black.opacity(0.82))
                     .frame(width: size, height: size)
-                Circle().stroke(.white.opacity(0.14), lineWidth: 1)
+                Circle().stroke(
+                    orientationMode == .headingUp
+                        ? activeStrokeColor.opacity(0.95)
+                        : Color.white.opacity(0.14),
+                    lineWidth: orientationMode == .headingUp ? 2 : 1
+                )
                     .frame(width: size, height: size)
 
-                // ----- Rotating N marker (orbits the compass centre) -----
+                // ----- Rotating N marker (orbits the upper compass face) -----
+                // Keep this dial above the separator so south-facing headings
+                // cannot collide with the static mils readout.
                 // Triangle tick at the top edge.
                 VStack(spacing: 0) {
                     Image(systemName: "triangle.fill")
@@ -365,8 +540,9 @@ struct CompassChip: View {
                         .padding(.top, 3)
                     Spacer()
                 }
-                .frame(width: size, height: size)
+                .frame(width: northDialSize, height: northDialSize)
                 .rotationEffect(.degrees(-heading))
+                .offset(y: -(size - northDialSize) / 2)
 
                 // Letter N below the triangle, also rotates.
                 VStack(spacing: 0) {
@@ -376,13 +552,14 @@ struct CompassChip: View {
                         .foregroundStyle(.white)
                     Spacer()
                 }
-                .frame(width: size, height: size)
+                .frame(width: northDialSize, height: northDialSize)
                 .rotationEffect(.degrees(-heading))
+                .offset(y: -(size - northDialSize) / 2)
 
                 // ----- Static mils readout (always upright, easy to read) -----
                 VStack(spacing: 0) {
                     Spacer()
-                    Text(milsString)
+                    Text("\(milsString)\(referenceSuffix)")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Color(red: 0.55, green: 0.95, blue: 0.55))
                         .padding(.bottom, 5)
@@ -398,9 +575,9 @@ struct CompassChip: View {
             .frame(width: size, height: size)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Map heading \(milsString) mils")
-        .accessibilityHint(heading == 0
-            ? "Map already north-up"
-            : "Tap to reset to north (currently \(Int(heading))°)")
+        .accessibilityLabel(
+            "\(orientationMode.label), map heading \(milsString) mils, \(referenceAccessibilityLabel)"
+        )
+        .accessibilityHint(tapHint)
     }
 }

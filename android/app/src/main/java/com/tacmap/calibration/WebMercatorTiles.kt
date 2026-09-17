@@ -75,6 +75,8 @@ object WebMercatorTiles {
     }
 
     data class TileRange(val z: Int, val minX: Int, val maxX: Int, val minY: Int, val maxY: Int) {
-        val count: Int get() = (maxX - minX + 1).coerceAtLeast(0) * (maxY - minY + 1).coerceAtLeast(0)
+        val count: Long get() =
+            (maxX - minX + 1).coerceAtLeast(0).toLong() *
+                (maxY - minY + 1).coerceAtLeast(0).toLong()
     }
 }

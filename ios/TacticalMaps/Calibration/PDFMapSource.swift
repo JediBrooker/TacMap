@@ -21,6 +21,9 @@ final class PDFMapSource: MapSource {
     private(set) var calibration: Calibration?
     let url: URL
     private(set) var bounds: GeoPDFReader.Bounds?
+    /// SHA-256 identity of the imported bytes. Import workers provide this
+    /// off-main; restored legacy sessions may fill it while validating disk.
+    let contentKey: String?
 
     /// PDF-page rect actually rasterised into cachedImage. Mirrors
     /// bounds?.pdfCropRect when set, else the media box.
@@ -30,6 +33,7 @@ final class PDFMapSource: MapSource {
     private(set) var fiduciaries: [Fiduciary]?
 
     private var cachedImage: UIImage?
+    private let cachedImageLock = NSLock()
 
     /// Affine (PDF user-space -> WGS84) used to place the page on the map with
     /// true rotation + scale instead of stretching to lat/lon box. Manual
@@ -42,8 +46,11 @@ final class PDFMapSource: MapSource {
 
     init(url: URL,
          bounds: GeoPDFReader.Bounds?,
-         fromGeoPDF: Bool = false) {
+         fromGeoPDF: Bool = false,
+         preflightMediaBox: CGRect? = nil,
+         contentKey: String? = nil) {
         self.url = url
+        self.contentKey = contentKey
         self.displayName = url.deletingPathExtension().lastPathComponent
         self.bounds = bounds
         self.kind = fromGeoPDF ? .geoPDF : .calibratedPDF
@@ -57,7 +64,7 @@ final class PDFMapSource: MapSource {
             self.coverage = nil
         }
         self.calibration = nil
-        self.pdfRenderRect = bounds?.pdfCropRect ?? Self.mediaBox(for: url)
+        self.pdfRenderRect = bounds?.pdfCropRect ?? preflightMediaBox ?? Self.mediaBox(for: url)
     }
 
     private static func mediaBox(for url: URL) -> CGRect {
@@ -70,16 +77,28 @@ final class PDFMapSource: MapSource {
     /// The rasterised page if already rendered, nil if not yet. Does NOT
     /// trigger a blocking rasterisation. Lets the overlay sync render off
     /// main thread and attach the page when its ready.
-    var cachedRenderedImage: UIImage? { cachedImage }
+    var cachedRenderedImage: UIImage? {
+        cachedImageLock.lock()
+        defer { cachedImageLock.unlock() }
+        return cachedImage
+    }
 
     /// Cached PDF rasterisation, cropped to LGIDict Neatline if known.
     /// Heavy (decodes page to bitmap) - call off main thread on first use;
     /// subsequent calls just return the cache.
     func renderedImage() -> UIImage? {
-        if let cached = cachedImage { return cached }
+        cachedImageLock.lock()
+        if let cached = cachedImage {
+            cachedImageLock.unlock()
+            return cached
+        }
+        cachedImageLock.unlock()
         guard let img = PDFRasteriser.render(url: url,
                                               cropRect: bounds?.pdfCropRect)
         else { return nil }
+        cachedImageLock.lock()
+        defer { cachedImageLock.unlock() }
+        if let cached = cachedImage { return cached }
         cachedImage = img
         return img
     }
@@ -89,9 +108,21 @@ final class PDFMapSource: MapSource {
     /// new bounds take effect (overlay view caches bounds at init).
     func applyCalibration(transform: AffineTransform2D,
                           fiduciaries: [Fiduciary]) {
+        guard fiduciaries.count >= 3,
+              fiduciaries.allSatisfy(isSafeAffineInput),
+              transform.hasFiniteCoefficients,
+              transform.inverted() != nil else { return }
         // Apply the affine to the 4 corners of the rendered rect to derive
         // axis-aligned geographic bounds.
         let r = pdfRenderRect
+        let rectValues = [Double(r.minX), Double(r.minY),
+                          Double(r.maxX), Double(r.maxY),
+                          Double(r.width), Double(r.height)]
+        guard rectValues.allSatisfy(\.isFinite),
+              r.width > 0, r.height > 0,
+              rectValues.allSatisfy({ abs($0) <= maximumSafePDFCoordinateMagnitude }) else {
+            return
+        }
         let corners = [
             CGPoint(x: r.minX, y: r.minY),
             CGPoint(x: r.maxX, y: r.minY),
@@ -99,10 +130,12 @@ final class PDFMapSource: MapSource {
             CGPoint(x: r.minX, y: r.maxY)
         ]
         let geo = corners.map { transform.apply($0) }
+        guard geo.allSatisfy(isValidEarthCoordinate) else { return }
         let lats = geo.map { $0.latitude }
         let lons = geo.map { $0.longitude }
         guard let minLat = lats.min(), let maxLat = lats.max(),
-              let minLon = lons.min(), let maxLon = lons.max() else { return }
+              let minLon = lons.min(), let maxLon = lons.max(),
+              minLat < maxLat, minLon < maxLon else { return }
 
         self.bounds = GeoPDFReader.Bounds(
             southWest: CLLocationCoordinate2D(latitude: minLat, longitude: minLon),

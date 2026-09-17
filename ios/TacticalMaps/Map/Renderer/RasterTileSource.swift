@@ -53,7 +53,10 @@ final class OnlineRasterTileSource: RasterTileSource {
         self.style = style
     }
 
-    private static let session: URLSession = {
+    /// Retained independently of URLSession so redirect policy remains explicit
+    /// and directly testable for this AO-bearing transport.
+    static let redirectDelegate = AOBearingRequestSessionDelegate()
+    static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         // Coordinates in tile URLs are operationally sensitive. Keep useful
         // caching in RAM only; never leave an AO trail in the disk URL cache.
@@ -65,7 +68,11 @@ final class OnlineRasterTileSource: RasterTileSource {
         config.timeoutIntervalForRequest = 10
         config.timeoutIntervalForResource = 20
         config.httpMaximumConnectionsPerHost = 2
-        return URLSession(configuration: config)
+        return URLSession(
+            configuration: config,
+            delegate: OnlineRasterTileSource.redirectDelegate,
+            delegateQueue: nil
+        )
     }()
 
     private final class Request: RasterTileRequest {
@@ -102,7 +109,7 @@ final class OnlineRasterTileSource: RasterTileSource {
 
     private static var userAgent: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-        return "TacMap/\(version) (iOS; https://tacticalmaps.app)"
+        return "TacMap/\(version) (iOS; https://tacmap.app)"
     }
 
     /// Stable sharding: the same tile always uses the same documented host,

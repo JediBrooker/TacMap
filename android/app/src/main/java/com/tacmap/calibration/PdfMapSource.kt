@@ -5,12 +5,9 @@ import java.util.UUID
 import kotlin.math.cos
 
 /**
- * PDF-backed map source. GeoPDF tags are read via PDFBox/iText (future work); for
- * non-GeoPDF, the user drops 3+ fiduciaries and we fit an affine.
- *
- * TODO:
- *  - Parse OGC GeoPDF / Adobe "LGIDict" dictionaries.
- *  - For large rasters, sidecar tile pyramid via GDAL.
+ * PDF-backed map source. [GeoPdfParser] resolves supported geospatial metadata;
+ * otherwise the user supplies 3+ fiduciaries and the importer fits an affine.
+ * Large pages are rendered through the app's bounded on-device tile pipeline.
  */
 class PdfMapSource(
     val uri: Uri,
@@ -24,18 +21,10 @@ class PdfMapSource(
 
     fun calibrated(transform: AffineTransform2D, fiduciaries: List<Fiduciary>): PdfMapSource {
         val info = pageInfo ?: return this
-        val corners = listOf(
-            transform.apply(0.0, 0.0),
-            transform.apply(info.pageWidth.toDouble(), 0.0),
-            transform.apply(info.pageWidth.toDouble(), info.pageHeight.toDouble()),
-            transform.apply(0.0, info.pageHeight.toDouble())
-        )
-        val lats = corners.map { it.latitude }
-        val lons = corners.map { it.longitude }
-        val bounds = Wgs84Bounds(
-            southwest = Wgs84Coordinate(lats.min(), lons.min()),
-            northeast = Wgs84Coordinate(lats.max(), lons.max())
-        )
+        if (fiduciaries.size < 3 || fiduciaries.any { !it.isSafeAffineInput() } ||
+            !transform.hasFiniteCoefficients() || transform.inverted() == null
+        ) return this
+        val bounds = calibratedPdfBounds(transform, info) ?: return this
         return PdfMapSource(
             uri = uri,
             displayName = displayName,
@@ -81,4 +70,36 @@ class PdfMapSource(
             )
         }
     }
+}
+
+/** Final fail-closed boundary before an affine becomes live map state. */
+internal fun calibratedPdfBounds(
+    transform: AffineTransform2D,
+    pageInfo: PdfPageInfo,
+): Wgs84Bounds? {
+    val width = pageInfo.pageWidth.toDouble()
+    val height = pageInfo.pageHeight.toDouble()
+    if (!width.isFinite() || !height.isFinite() ||
+        width <= 0.0 || height <= 0.0 ||
+        width > MAX_SAFE_PDF_COORDINATE || height > MAX_SAFE_PDF_COORDINATE ||
+        !transform.hasFiniteCoefficients() || transform.inverted() == null
+    ) return null
+    val corners = listOf(
+        transform.apply(0.0, 0.0),
+        transform.apply(width, 0.0),
+        transform.apply(width, height),
+        transform.apply(0.0, height),
+    )
+    if (corners.any { !it.isValidEarthCoordinate() }) return null
+    val lats = corners.map { it.latitude }
+    val lons = corners.map { it.longitude }
+    val minLat = lats.min()
+    val maxLat = lats.max()
+    val minLon = lons.min()
+    val maxLon = lons.max()
+    if (minLat >= maxLat || minLon >= maxLon) return null
+    return Wgs84Bounds(
+        southwest = Wgs84Coordinate(minLat, minLon),
+        northeast = Wgs84Coordinate(maxLat, maxLon),
+    )
 }

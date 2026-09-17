@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "description": "One offline-first search contract for SwiftUI and Compose. Coordinate parsing and mission-object matching never use the network. Online place lookup is an opt-in trailing section only.",
+  "anchor": {
+    "latitude": -33.8568,
+    "longitude": 151.2153,
+    "mgrsPrefix": "56HLH"
+  },
+  "layers": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "Operations"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "Logistics"
+    }
+  ],
+  "waypoints": [
+    {
+      "id": "10000000-0000-0000-0000-000000000001",
+      "createdOrder": 1,
+      "name": "Alpha",
+      "notes": "Medical aid and casualty collection point",
+      "kindDisplayName": "Medical",
+      "categoryDisplayName": "Military Unit (APP-6C)",
+      "layerId": "00000000-0000-0000-0000-000000000001",
+      "latitude": -33.8568,
+      "longitude": 151.2153
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000002",
+      "createdOrder": 2,
+      "name": "Bravo Checkpoint",
+      "notes": "Alpha reserve position",
+      "kindDisplayName": "Checkpoint",
+      "categoryDisplayName": "Field Marker",
+      "layerId": "00000000-0000-0000-0000-000000000002",
+      "latitude": -33.86,
+      "longitude": 151.22
+    }
+  ],
+  "drawings": [
+    {
+      "id": "20000000-0000-0000-0000-000000000001",
+      "createdOrder": 3,
+      "name": "Alpha Route",
+      "notes": "Primary vehicle approach",
+      "geometryDisplayName": "Line",
+      "layerId": "00000000-0000-0000-0000-000000000001",
+      "centreLatitude": -33.858,
+      "centreLongitude": 151.217
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000002",
+      "createdOrder": 4,
+      "name": "Holding Area",
+      "notes": "Vehicle hide",
+      "geometryDisplayName": "Polygon",
+      "layerId": "00000000-0000-0000-0000-000000000002",
+      "centreLatitude": -33.862,
+      "centreLongitude": 151.225
+    }
+  ],
+  "ranking": [
+    "coordinate",
+    "exactName",
+    "prefixName",
+    "containsName",
+    "notes",
+    "kindOrGeometry",
+    "layerName",
+    "createdOrder"
+  ],
+  "queries": [
+    {
+      "caseKey": "full_mgrs",
+      "query": "56HLH 34900 52288",
+      "expectedResultIds": ["coordinate:mgrs"],
+      "expectedCoordinate": { "latitude": -33.8568, "longitude": 151.2153, "toleranceDegrees": 0.001 },
+      "networkRequests": 0
+    },
+    {
+      "caseKey": "partial_mgrs",
+      "query": "34900 52288",
+      "expectedResultIds": ["coordinate:partial-mgrs"],
+      "expectedCoordinate": { "latitude": -33.8568, "longitude": 151.2153, "toleranceDegrees": 0.001 },
+      "networkRequests": 0
+    },
+    {
+      "caseKey": "decimal_lat_lon",
+      "query": "-33.8568, 151.2153",
+      "expectedResultIds": ["coordinate:lat-lon"],
+      "expectedCoordinate": { "latitude": -33.8568, "longitude": 151.2153, "toleranceDegrees": 0.000001 },
+      "networkRequests": 0
+    },
+    {
+      "caseKey": "invalid_latitude",
+      "query": "91, 151.2153",
+      "expectedResultIds": [],
+      "expectedStatus": "Latitude must be between -90 and 90, and longitude between -180 and 180.",
+      "networkRequests": 0
+    },
+    {
+      "caseKey": "name_ranking",
+      "query": "Alpha",
+      "expectedResultIds": [
+        "waypoint:10000000-0000-0000-0000-000000000001",
+        "drawing:20000000-0000-0000-0000-000000000001",
+        "waypoint:10000000-0000-0000-0000-000000000002"
+      ],
+      "networkRequests": 0
+    },
+    {
+      "caseKey": "notes",
+      "query": "casualty",
+      "expectedResultIds": ["waypoint:10000000-0000-0000-0000-000000000001"],
+      "networkRequests": 0
+    },
+    {
+      "caseKey": "kind",
+      "query": "checkpoint",
+      "expectedResultIds": ["waypoint:10000000-0000-0000-0000-000000000002"],
+      "networkRequests": 0
+    },
+    {
+      "caseKey": "drawing_geometry",
+      "query": "polygon",
+      "expectedResultIds": ["drawing:20000000-0000-0000-0000-000000000002"],
+      "networkRequests": 0
+    },
+    {
+      "caseKey": "layer",
+      "query": "operations",
+      "expectedResultIds": [
+        "waypoint:10000000-0000-0000-0000-000000000001",
+        "drawing:20000000-0000-0000-0000-000000000001"
+      ],
+      "networkRequests": 0
+    }
+  ],
+  "places": {
+    "sectionOrder": "afterOfflineResults",
+    "minimumQueryLength": 2,
+    "requiresExplicitOnlineLookupsSetting": true,
+    "disabledStatus": "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work.",
+    "offlineStatus": "Place search unavailable offline — MGRS, grid and lat/lon still work."
+  },
+  "coordinateEgress": {
+    "mustStayOffline": [
+      "56HLH 34900 52288",
+      "56HLH 3490 52288",
+      "34900 52288",
+      "12 3456",
+      "-33.8568, 151.2153",
+      "91, north",
+      "12, longitude unknown",
+      "33 south, 151 east",
+      "12 34 56",
+      ".5, 1",
+      "1e2, 2",
+      "56HLH NORTH",
+      "56 H L H NORTH",
+      "56HLH REPORT",
+      "AAB NORTH",
+      "33S 151E",
+      "33 SOUTH 151 EAST",
+      "151E 33S"
+    ],
+    "eligiblePlaceProse": [
+      "Route 1885",
+      "56 North Street",
+      "33 South Road",
+      "18 North Avenue",
+      "12 South Street"
+    ]
+  },
+  "selection": {
+    "coordinate": "centreMap",
+    "waypoint": "centreMapAndHighlightWaypoint",
+    "drawing": "centreMapAndHighlightDrawing"
+  }
+}

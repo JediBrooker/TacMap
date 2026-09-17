@@ -16,7 +16,6 @@ import java.io.ByteArrayInputStream
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
-import java.util.UUID
 import java.util.zip.ZipInputStream
 import javax.xml.XMLConstants
 import javax.xml.parsers.SAXParserFactory
@@ -27,6 +26,11 @@ object KmlImporter {
 
     private const val DEFAULT_STROKE = 0xFFFFA000.toInt()
     private const val DEFAULT_FILL = 0x33FFA000
+    /** KML has no app-specific persisted pixel-width schema. New external
+     * imports use the shared portable 3 dp/pt default; no-density parser calls
+     * retain the legacy Android 8 px behavior for compatibility. */
+    private const val PORTABLE_DEFAULT_STROKE_WIDTH_DP = 3f
+    private const val LEGACY_DEFAULT_STROKE_WIDTH_PX = 8f
     private const val MAX_INPUT_BYTES = 8 * 1024 * 1024
     private const val MAX_ZIP_ENTRIES = 128
     private const val MAX_FEATURES = 10_000
@@ -38,27 +42,40 @@ object KmlImporter {
     fun parseStream(
         input: InputStream,
         existingLayers: List<DrawingLayer>,
-        fallbackLayerId: String
+        fallbackLayerId: String,
+        density: Float? = null,
     ): GeoJsonImporter.Result {
+        val storedStrokeWidth = density?.takeIf { it.isFinite() && it > 0f }
+            ?.let { PORTABLE_DEFAULT_STROKE_WIDTH_DP * it }
+            ?: LEGACY_DEFAULT_STROKE_WIDTH_PX
         val bounded = BufferedInputStream(LimitInputStream(input, MAX_INPUT_BYTES.toLong(), "KML/KMZ exceeds 8 MiB"))
         bounded.mark(4)
         val a = bounded.read()
         val b = bounded.read()
         bounded.reset()
-        return if (a == 0x50 && b == 0x4B) parseKmz(bounded, existingLayers, fallbackLayerId)
-        else parseXml(bounded, existingLayers, fallbackLayerId)
+        return if (a == 0x50 && b == 0x4B) parseKmz(bounded, existingLayers, fallbackLayerId, storedStrokeWidth)
+        else parseXml(bounded, existingLayers, fallbackLayerId, storedStrokeWidth)
     }
 
-    fun parse(kml: String, existingLayers: List<DrawingLayer>, fallbackLayerId: String): GeoJsonImporter.Result {
+    fun parse(
+        kml: String,
+        existingLayers: List<DrawingLayer>,
+        fallbackLayerId: String,
+        density: Float? = null,
+    ): GeoJsonImporter.Result {
         val bytes = kml.toByteArray(Charsets.UTF_8)
         if (bytes.size > MAX_INPUT_BYTES) throw ImportException("KML exceeds 8 MiB")
-        return parseXml(ByteArrayInputStream(bytes), existingLayers, fallbackLayerId)
+        val storedStrokeWidth = density?.takeIf { it.isFinite() && it > 0f }
+            ?.let { PORTABLE_DEFAULT_STROKE_WIDTH_DP * it }
+            ?: LEGACY_DEFAULT_STROKE_WIDTH_PX
+        return parseXml(ByteArrayInputStream(bytes), existingLayers, fallbackLayerId, storedStrokeWidth)
     }
 
     private fun parseKmz(
         input: InputStream,
         existingLayers: List<DrawingLayer>,
-        fallbackLayerId: String
+        fallbackLayerId: String,
+        storedStrokeWidth: Float,
     ): GeoJsonImporter.Result {
         ZipInputStream(input).use { zip ->
             var count = 0
@@ -73,7 +90,7 @@ object KmlImporter {
                 if (remaining <= 0) throw ImportException("KMZ expands beyond 8 MiB")
                 val limitedEntry = LimitInputStream(zip, remaining, "KMZ expands beyond 8 MiB", closeDelegate = false)
                 if (!entry.isDirectory && entry.name.endsWith(".kml", ignoreCase = true)) {
-                    return parseXml(limitedEntry, existingLayers, fallbackLayerId)
+                    return parseXml(limitedEntry, existingLayers, fallbackLayerId, storedStrokeWidth)
                 }
                 val buffer = ByteArray(16 * 1024)
                 while (true) {
@@ -90,9 +107,10 @@ object KmlImporter {
     private fun parseXml(
         input: InputStream,
         existingLayers: List<DrawingLayer>,
-        fallbackLayerId: String
+        fallbackLayerId: String,
+        storedStrokeWidth: Float,
     ): GeoJsonImporter.Result {
-        val handler = Handler(existingLayers, fallbackLayerId)
+        val handler = Handler(existingLayers, fallbackLayerId, storedStrokeWidth)
         try {
             val factory = SAXParserFactory.newInstance().apply {
                 isNamespaceAware = true
@@ -117,11 +135,17 @@ object KmlImporter {
         return handler.result()
     }
 
-    private class Handler(existingLayers: List<DrawingLayer>, private val fallback: String) : DefaultHandler() {
+    private class Handler(
+        existingLayers: List<DrawingLayer>,
+        private val fallback: String,
+        private val storedStrokeWidth: Float,
+    ) : DefaultHandler() {
         private data class Container(val depth: Int, var layerId: String)
         private data class Placemark(
             val depth: Int,
             val layerId: String,
+            val caseKey: String,
+            val sourceId: String?,
             var name: String = "",
             var notes: String? = null,
             var geometry: String? = null,
@@ -134,6 +158,8 @@ object KmlImporter {
         private val newLayers = mutableListOf<DrawingLayer>()
         private val waypoints = mutableListOf<Waypoint>()
         private val drawings = mutableListOf<DrawingFeature>()
+        private val identityOrder = mutableListOf<ParsedExternalImportIdentity>()
+        private val layerIdentityOrder = mutableListOf<ParsedExternalImportLayerIdentity>()
         private val containers = ArrayDeque<Container>()
         private var placemark: Placemark? = null
         private var depth = 0
@@ -157,7 +183,12 @@ object KmlImporter {
                 "Document", "Folder" -> containers.addLast(Container(depth, containers.lastOrNull()?.layerId ?: fallback))
                 "Placemark" -> {
                     if (++features > MAX_FEATURES) throw ImportException("KML contains too many features")
-                    placemark = Placemark(depth, containers.lastOrNull()?.layerId ?: fallback)
+                    placemark = Placemark(
+                        depth = depth,
+                        layerId = containers.lastOrNull()?.layerId ?: fallback,
+                        caseKey = "placemark-${features - 1}",
+                        sourceId = attributes?.getValue("id"),
+                    )
                 }
                 "Point", "LineString", "Polygon" -> placemark?.let {
                     if (it.geometry == null) { it.geometry = tag; it.geometryDepth = depth }
@@ -205,14 +236,31 @@ object KmlImporter {
 
         fun result(): GeoJsonImporter.Result {
             if (!rootSeen) throw ImportException("Empty KML document")
-            return GeoJsonImporter.Result(waypoints, drawings, newLayers)
+            return GeoJsonImporter.Result(
+                waypoints = waypoints,
+                drawings = drawings,
+                newLayers = newLayers,
+                identityOrder = identityOrder,
+                layerIdentityOrder = layerIdentityOrder,
+            )
         }
 
         private fun resolveLayer(name: String): String {
             layersByName[name]?.let { return it.id }
-            val layer = DrawingLayer(id = UUID.randomUUID().toString(), name = name, color = DrawingDocument.FRIENDLY_LAYER_COLOR)
+            val index = newLayers.size
+            // Parser-local only. The external import journal replaces this
+            // placeholder with a persisted UUID before any store is touched.
+            val layer = DrawingLayer(
+                id = "__kml_import_layer_$index",
+                name = name,
+                color = DrawingDocument.FRIENDLY_LAYER_COLOR,
+            )
             layersByName[name] = layer
             newLayers += layer
+            layerIdentityOrder += ParsedExternalImportLayerIdentity(
+                caseKey = "kml-layer-$index",
+                indexInNewLayers = index,
+            )
             return layer.id
         }
 
@@ -220,26 +268,56 @@ object KmlImporter {
             val raw = p.coordinates ?: return
             val tuples = parseCoordinates(raw)
             if (tuples.isEmpty()) return
-            val id = UUID.randomUUID().toString()
+            // Preserve the KML Placemark id (including missing/invalid values).
+            // The external-only resolver assigns a UUID after parsing.
+            val id = p.sourceId.orEmpty()
             when (p.geometry) {
-                "Point" -> waypoints += Waypoint(
-                    id = id, name = p.name.ifBlank { "Imported" }, notes = p.notes,
-                    latitude = tuples[0].first.latitude, longitude = tuples[0].first.longitude,
-                    elevationMetres = tuples[0].second, kind = WaypointKind.Generic,
-                    rotation = 0.0, scaleX = 1.0, scaleY = 1.0, layerId = p.layerId
-                )
-                "LineString" -> if (tuples.size >= 2) drawings += drawing(id, p, DrawingGeometry.LINE, tuples.map { it.first })
+                "Point" -> {
+                    val index = waypoints.size
+                    waypoints += Waypoint(
+                        id = id, name = p.name.ifBlank { "Imported" }, notes = p.notes,
+                        latitude = tuples[0].first.latitude, longitude = tuples[0].first.longitude,
+                        elevationMetres = tuples[0].second, kind = WaypointKind.Generic,
+                        rotation = 0.0, scaleX = 1.0, scaleY = 1.0, layerId = p.layerId
+                    )
+                    identityOrder += ParsedExternalImportIdentity(
+                        caseKey = p.caseKey,
+                        kind = ExternalImportObjectKind.WAYPOINT,
+                        indexInKind = index,
+                        sourceId = p.sourceId,
+                    )
+                }
+                "LineString" -> if (tuples.size >= 2) {
+                    val index = drawings.size
+                    drawings += drawing(id, p, DrawingGeometry.LINE, tuples.map { it.first })
+                    identityOrder += ParsedExternalImportIdentity(
+                        caseKey = p.caseKey,
+                        kind = ExternalImportObjectKind.DRAWING,
+                        indexInKind = index,
+                        sourceId = p.sourceId,
+                    )
+                }
                 "Polygon" -> {
                     val pts = tuples.map { it.first }.toMutableList()
                     if (pts.size >= 2 && pts.first() == pts.last()) pts.removeAt(pts.lastIndex)
-                    if (pts.size >= 3) drawings += drawing(id, p, DrawingGeometry.POLYGON, pts)
+                    if (pts.size >= 3) {
+                        val index = drawings.size
+                        drawings += drawing(id, p, DrawingGeometry.POLYGON, pts)
+                        identityOrder += ParsedExternalImportIdentity(
+                            caseKey = p.caseKey,
+                            kind = ExternalImportObjectKind.DRAWING,
+                            indexInKind = index,
+                            sourceId = p.sourceId,
+                        )
+                    }
                 }
             }
         }
 
         private fun drawing(id: String, p: Placemark, geometry: DrawingGeometry, points: List<DrawingPoint>) =
             DrawingFeature(id = id, name = p.name, geometry = geometry, points = points, layerId = p.layerId,
-                strokeColor = DEFAULT_STROKE, fillColor = DEFAULT_FILL, strokeWidth = 8f,
+                strokeColor = DEFAULT_STROKE, fillColor = DEFAULT_FILL,
+                strokeWidth = storedStrokeWidth,
                 strokeStyle = DrawingStrokeStyle.SOLID)
 
         private fun parseCoordinates(raw: String): List<Pair<DrawingPoint, Double?>> {

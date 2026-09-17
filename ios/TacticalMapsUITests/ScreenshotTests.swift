@@ -5,20 +5,21 @@ import XCTest
 /// Runs the real app, grants location, drops a friendly unit + hostile
 /// unit + Assembly Area task at the crosshair (panning between each so
 /// they don't stack), then visits symbol builder, drawings panel and
-/// About screen. Each snap is attched to the test result and
-/// scripts/ios_screenshots.sh extracts them from the .xcresult.
+/// About screen. Each snap is attached to the test result for extraction with
+/// `xcrun xcresulttool export attachments`.
 ///
 /// Location is set at device level by the wrapper script
 /// (xcrun simctl location set) so the basemap shows Shoalwater Bay.
 final class ScreenshotTests: XCTestCase {
     private var app: XCUIApplication!
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    private static let screenshotRoomEnvironmentKey = "TACMAP_SCREENSHOT_ROOM_CODE"
 
     override func setUpWithError() throws {
-        continueAfterFailure = true
+        continueAfterFailure = false
         app = XCUIApplication()
-        // Force online basemaps + lookups on for the shots (OPSEC defaults them
-        // off, which would render a dark basemap). Read by OpsecSettings.init.
+        // Force online basemaps + lookups on for the shots regardless of state
+        // persisted by an earlier UI-test run. Read by OpsecSettings.init.
         // EXCEPT the GeoPDF slide: it wants the imported PDF sheet as the basemap,
         // and an online satellite layer would render on top of it.
         if name.contains("GeoPdf") {
@@ -33,6 +34,40 @@ final class ScreenshotTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// A connected marketing capture is opt-in. Normal UI regression runs omit
+    /// this environment value and therefore never contact the Unit Sync relay.
+    /// Capture orchestration must generate a fresh v3 room for every run and
+    /// pass the same value to any peer/situation seeding process.
+    private func runScopedScreenshotRoomCode() -> String? {
+        guard let raw = ProcessInfo.processInfo.environment[
+            Self.screenshotRoomEnvironmentKey
+        ]?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        guard raw.hasPrefix("3:") else {
+            XCTFail("\(Self.screenshotRoomEnvironmentKey) must be a fresh v3 room beginning with '3:'")
+            return nil
+        }
+        return raw
+    }
+
+    @discardableResult
+    private func joinScreenshotRoom(_ roomCode: String, waitSeconds: UInt32) -> Bool {
+        let codeField = app.textFields.firstMatch
+        guard codeField.waitForExistence(timeout: 6) else {
+            XCTFail("Unit Sync join-code field is missing")
+            return false
+        }
+        codeField.tap()
+        codeField.typeText(roomCode)
+        guard requireTapContaining("Join") else { return false }
+        if app.buttons["Enable & Join"].waitForExistence(timeout: 2) {
+            app.buttons["Enable & Join"].tap()
+        }
+        sleep(waitSeconds)
+        return true
+    }
 
     private func allowLocationIfNeeded() {
         for label in ["Allow While Using App", "Allow Once"] {
@@ -52,10 +87,54 @@ final class ScreenshotTests: XCTestCase {
     private func tap(_ label: String, timeout: TimeInterval = 10) -> Bool {
         let b = app.buttons[label]
         guard b.waitForExistence(timeout: timeout) else {
-            NSLog("[shots] button not found: \(label)")
+            XCTFail("Required screenshot control is missing: \(label)")
+            return false
+        }
+        guard b.isHittable else {
+            XCTFail("Required screenshot control is not hittable: \(label)")
             return false
         }
         b.tap()
+        return true
+    }
+
+    @discardableResult
+    private func requireTapContaining(_ text: String, timeout: TimeInterval = 10) -> Bool {
+        let b = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", text)
+        ).firstMatch
+        guard b.waitForExistence(timeout: timeout) else {
+            XCTFail("Required screenshot control containing '\(text)' is missing")
+            return false
+        }
+        guard b.isHittable else {
+            XCTFail("Required screenshot control containing '\(text)' is not hittable")
+            return false
+        }
+        b.tap()
+        return true
+    }
+
+    @discardableResult
+    private func tapSymbolKind(_ name: String, timeout: TimeInterval = 6) -> Bool {
+        tap("\(name) symbol kind", timeout: timeout)
+    }
+
+    /// The add row is below every saved symbol. A populated persisted test map
+    /// therefore has to scroll the lazy List before XCTest can query the button.
+    @discardableResult
+    private func tapAddAtCrosshair() -> Bool {
+        let button = app.buttons["Add at Crosshair"]
+        var remainingScrolls = 24
+        while !(button.exists && button.isHittable), remainingScrolls > 0 {
+            app.swipeUp()
+            remainingScrolls -= 1
+        }
+        guard button.exists, button.isHittable else {
+            XCTFail("Required screenshot control is missing after scrolling the Symbology list: Add at Crosshair")
+            return false
+        }
+        button.tap()
         return true
     }
 
@@ -77,16 +156,40 @@ final class ScreenshotTests: XCTestCase {
     private func addSymbol(configure: () -> Void) {
         openMenu()
         guard tap("Symbology") else { return }
-        guard tap("Add at Crosshair") else { return }
+        guard tapAddAtCrosshair() else { return }
         sleep(1)
         configure()
-        _ = tap("Save")
+        guard tap("Save") else { return }
         sleep(1)
-        _ = tap("Done")           // dismiss the Symbology list back to the map
+        guard tap("Done") else { return } // dismiss the Symbology list back to the map
         sleep(1)
     }
 
     // MARK: - The capture run
+
+    /// A symbol edit must register with the map's visible undo manager, and both
+    /// directions must update immediately. This guards the screenshot workflows
+    /// against accidentally exercising controls that only look interactive.
+    func testUndoRedoAfterSymbolCreation() {
+        addSymbol { }
+
+        let undo = app.buttons["Undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "Undo control did not appear after adding a symbol")
+        XCTAssertTrue(undo.isEnabled, "Undo control is disabled after adding a symbol")
+        undo.tap()
+
+        let redo = app.buttons["Redo"]
+        XCTAssertTrue(redo.waitForExistence(timeout: 5), "Redo control did not appear after undoing the symbol")
+        XCTAssertTrue(redo.isEnabled, "Redo control is disabled after undoing the symbol")
+        redo.tap()
+
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "Undo control disappeared after redoing the symbol")
+        XCTAssertTrue(undo.isEnabled, "Undo control is disabled after redoing the symbol")
+        undo.tap() // Leave the persistent map in its original state.
+
+        XCTAssertTrue(redo.waitForExistence(timeout: 5), "Redo control did not return after cleanup undo")
+        XCTAssertTrue(redo.isEnabled, "Redo control is disabled after cleanup undo")
+    }
 
     func testCaptureScreenshots() {
         // 1) Hero - live MGRS HUD over the basemap.
@@ -96,7 +199,7 @@ final class ScreenshotTests: XCTestCase {
         //    Grab the APP-6 builder shot while this sheet is open.
         openMenu()
         _ = tap("Symbology")
-        _ = tap("Add at Crosshair")
+        _ = tapAddAtCrosshair()
         sleep(1)
         snap("02-symbol-builder")   // WaypointEditSheet: affiliation/echelon/function + live preview
         _ = tap("Save")
@@ -107,7 +210,7 @@ final class ScreenshotTests: XCTestCase {
         // 3) Hostile unit - change Affiliation to Hostile (red diamond).
         panMap(dx: 0.16, dy: -0.12)
         addSymbol {
-            if tap("Affiliation", timeout: 6) {
+            if requireTapContaining("Affiliation", timeout: 6) {
                 sleep(1)
                 // Menu-style picker: pick the Hostile row.
                 _ = tap("Hostile", timeout: 6)
@@ -118,7 +221,7 @@ final class ScreenshotTests: XCTestCase {
         // 4) Assembly Area task graphic.
         panMap(dx: -0.18, dy: 0.14)
         addSymbol {
-            _ = tap("Tasks", timeout: 6)   // segmented control -> control measure (Assembly Area default)
+            _ = tapSymbolKind("Tasks") // segmented control -> control measure (Assembly Area default)
             sleep(1)
         }
 
@@ -187,8 +290,8 @@ final class ScreenshotTests: XCTestCase {
         sleep(1)
     }
 
-    /// One run that captures the full 1.1.0 marketing set. Every step is
-    /// best-effort (guarded), so a single missing control can't abort the rest.
+    /// One run that captures the current marketing set. Required UI controls
+    /// are asserted so a stale marketing path cannot produce false-green shots.
     func testCaptureMarketing() {
         // 01 - live HUD: MGRS + UTM + mils compass over the basemap.
         snap("m01-hud")
@@ -200,17 +303,14 @@ final class ScreenshotTests: XCTestCase {
         _ = tap("Close")
         sleep(1)
 
-        // 03 - Unit Sync (the flagship): join a room so it shows Connected.
+        // 03 - Unit Sync. Regression runs capture the deterministic offline
+        // disclosure state. Release capture orchestration may opt into a fresh,
+        // run-scoped room through TACMAP_SCREENSHOT_ROOM_CODE.
         openMenu()
         _ = tapContaining("Unit Sync")
         sleep(2)
-        let codeField = app.textFields.firstMatch
-        if codeField.waitForExistence(timeout: 6) {
-            codeField.tap(); sleep(1)
-            codeField.typeText("WOLFPACKSHOOT26")
-            sleep(1)
-            _ = tapContaining("Join")     // "Join / create room"
-            sleep(18)                       // WebSocket handshake to the live relay
+        if let roomCode = runScopedScreenshotRoomCode() {
+            _ = joinScreenshotRoom(roomCode, waitSeconds: 18)
         }
         snap("m03-unit-sync")
         dismissSheet()
@@ -239,7 +339,7 @@ final class ScreenshotTests: XCTestCase {
         // 07 - APP-6 symbol builder with live preview.
         openMenu()
         _ = tap("Symbology")
-        _ = tap("Add at Crosshair")
+        _ = tapAddAtCrosshair()
         sleep(1)
         snap("m07-symbol-builder")
         _ = tap("Save")
@@ -250,15 +350,25 @@ final class ScreenshotTests: XCTestCase {
         // 08 - a second hostile unit + assembly-area, for a populated map.
         panMap(dx: 0.16, dy: -0.12)
         addSymbol {
-            if tap("Affiliation", timeout: 6) { sleep(1); _ = tap("Hostile", timeout: 6); sleep(1) }
+            if requireTapContaining("Affiliation", timeout: 6) {
+                sleep(1); _ = tap("Hostile", timeout: 6); sleep(1)
+            }
         }
         panMap(dx: -0.18, dy: 0.14)
-        addSymbol { _ = tap("Tasks", timeout: 6); sleep(1) }
+        addSymbol { _ = tapSymbolKind("Tasks"); sleep(1) }
         panMap(dx: 0.02, dy: -0.02)
         sleep(2)
         snap("m08-symbols")
 
         // 09 - GPX recording: the live REC indicator on the map.
+        // Symbol creation leaves the most recent object selected. Close its
+        // bottom editor before capturing so the slide actually demonstrates
+        // recording rather than hiding the map behind unrelated controls.
+        let closeSymbolEditor = app.buttons["Close symbol editor"]
+        if closeSymbolEditor.exists && closeSymbolEditor.isHittable {
+            closeSymbolEditor.tap()
+            sleep(1)
+        }
         openMenu()
         _ = tapContaining("Start Track Recording")
         sleep(2)
@@ -272,28 +382,24 @@ final class ScreenshotTests: XCTestCase {
         dismissSheet()
     }
 
-    // Hero shot: join the unit-sync room that the host script
+    // Hero shot: join the fresh, run-scoped room that the host script
     // (scripts/sync_push_situation.mjs) pre-populated with a NATO APP-6
     // company-attack overlay. Snapshot shows the shared picture and the
     // on-screen Unit Sync indicator goes Connected - symbology (the #1
     // feature) + live encrypted sync in one frame.
-    func testCaptureHero() {
+    func testCaptureHero() throws {
+        guard let roomCode = runScopedScreenshotRoomCode() else {
+            throw XCTSkip("Set TACMAP_SCREENSHOT_ROOM_CODE to a fresh v3 room for a connected hero capture")
+        }
         openMenu()
         _ = tapContaining("Unit Sync")
         sleep(2)
-        let codeField = app.textFields.firstMatch
-        if codeField.waitForExistence(timeout: 6) {
-            codeField.tap(); sleep(1)
-            codeField.typeText("WOLFPACKSHOOT26")
-            sleep(1)
-            _ = tapContaining("Join")
-            sleep(20)               // connect + snapshot + render the situation
-        }
+        _ = joinScreenshotRoom(roomCode, waitSeconds: 20)
         dismissSheet()
         sleep(2)
 
-        // Turn on map labels (stay on the default Apple Satellite basemap, which
-        // loads reliably, graphics are bright/white so they read on it).
+        // The screenshot launch environment explicitly enables the Esri
+        // Satellite source; turn on labels while remaining on that source.
         openMenu()
         _ = tap("Layers and Labels")
         sleep(2)
@@ -357,98 +463,124 @@ final class ScreenshotTests: XCTestCase {
 
     // Place a Search & Rescue marker at the crosshair. Menu > Symbology > Add
     // at Crosshair > Markers segment > Set: Search & Rescue > [Symbol] > Save.
-    // The Type segment defaults to Military and the Set to Airsoft, so both get
-    // switched every call. `symbol` is best-effort (Set snaps to Point Last Seen).
-    // Only taps a matching button if it actually exists AND is hittable, so a
-    // covered/off-screen control degrades gracefully instead of failing the run.
-    @discardableResult
-    private func softTap(containing text: String, timeout: TimeInterval = 3) -> Bool {
-        let b = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
-        guard b.waitForExistence(timeout: timeout), b.isHittable else { return false }
-        b.tap(); return true
-    }
-
+    // Every prerequisite is asserted: a renamed or unreachable control must fail
+    // the screenshot instead of silently saving the default military symbol.
     private func addSARMarker(symbol: String? = nil) {
         openMenu()
         guard tap("Symbology") else { return }
-        guard tap("Add at Crosshair") else { return }
+        guard tapAddAtCrosshair() else { return }
         sleep(1)
-        _ = tap("Markers")                       // Type segment
+        guard tapSymbolKind("Markers") else { return }
         sleep(1)
         // The Set row shows its current value "Airsoft / Milsim"; open it + pick SAR.
-        if softTap(containing: "Airsoft", timeout: 4) {
-            sleep(1); _ = softTap(containing: "Search & Rescue"); sleep(1)
-        }
-        // Optional specific symbol (Set defaults to Point Last Seen). The Symbol
-        // row is a navigationLink picker - tap it (its label BEGINS WITH the
-        // title "Symbol", which avoids matching the name field that also shows
-        // the symbol name), pick from the pushed list, else back out. All guarded
-        // so a fiddly picker degrades to the default instead of failing/sticking.
+        guard requireTapContaining("Airsoft", timeout: 4) else { return }
+        sleep(1)
+        guard requireTapContaining("Search & Rescue") else { return }
+        sleep(1)
+
+        // The Symbol row is a navigationLink picker. When a specific symbol is
+        // requested, materialise it by scrolling and require that exact choice.
         if let symbol = symbol {
             let symRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Symbol")).firstMatch
-            if symRow.waitForExistence(timeout: 3), symRow.isHittable {
-                symRow.tap(); sleep(1)
-                if !softTap(containing: symbol, timeout: 4) {
-                    // Not found/hittable in the list - back out so we don't stick.
-                    let back = app.navigationBars.buttons.firstMatch
-                    if back.exists, back.isHittable { back.tap() }
-                }
-                sleep(1)
+            guard symRow.waitForExistence(timeout: 3), symRow.isHittable else {
+                XCTFail("Required Search & Rescue Symbol picker is missing")
+                return
             }
+            symRow.tap()
+            sleep(1)
+
+            // Use the picker's exact catalogue label. A persisted marker on the
+            // map has the same name followed by its coordinate, so a contains
+            // query can resolve that obscured map annotation instead of the
+            // visible picker row and produce a misleading non-hittable result.
+            let pickerLabel: String
+            switch symbol {
+            case "Last Known Position":
+                pickerLabel = "Last Known Position (LKP)"
+            case "Initial Planning Point":
+                pickerLabel = "Initial Planning Point (IPP)"
+            default:
+                pickerLabel = symbol
+            }
+            let option = app.buttons[pickerLabel]
+            var remainingScrolls = 8
+            while !(option.exists && option.isHittable), remainingScrolls > 0 {
+                app.swipeUp()
+                remainingScrolls -= 1
+            }
+            guard option.waitForExistence(timeout: 2), option.isHittable else {
+                XCTFail("Required Search & Rescue symbol is missing: \(symbol)")
+                return
+            }
+            option.tap()
+            sleep(1)
         }
-        _ = tap("Save"); sleep(1)
-        _ = tap("Done"); sleep(1)
+        guard tap("Save") else { return }
+        sleep(1)
+        guard tap("Done") else { return }
+        sleep(1)
+    }
+
+    private func descendant(containing text: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
+    }
+
+    /// Select the host-seeded fixture from Files and require the imported-map
+    /// control to become reachable. Because TacMap deliberately disables iOS
+    /// file sharing, the wrapper seeds USGS_SF_North.pdf at the root of the
+    /// simulator's On My iPhone File Provider, not the app-private Documents.
+    private func importSeededGeoPDF() {
+        openMenu()
+        guard requireTapContaining("Import / Export") else { return }
+        sleep(2)
+        guard requireTapContaining("PDF Map") else { return }
+        sleep(3)
+
+        let file = descendant(containing: "USGS_SF_North")
+        if !file.waitForExistence(timeout: 4) {
+            let browse = app.buttons.matching(
+                NSPredicate(format: "label ==[c] %@", "Browse")
+            ).firstMatch
+            guard browse.waitForExistence(timeout: 4), browse.isHittable else {
+                XCTFail("Files Browse control is missing while selecting the seeded GeoPDF")
+                return
+            }
+            browse.tap()
+            sleep(1)
+
+            let location = descendant(containing: "On My i")
+            guard location.waitForExistence(timeout: 5), location.isHittable else {
+                XCTFail("Files is missing its On My iPhone/iPad location")
+                return
+            }
+            location.tap()
+            sleep(1)
+        }
+
+        guard file.waitForExistence(timeout: 8), file.isHittable else {
+            XCTFail("Seeded fixture USGS_SF_North.pdf is missing from On My iPhone")
+            return
+        }
+        file.tap()
+
+        let importedMapButton = app.buttons["Map"]
+        guard importedMapButton.waitForExistence(timeout: 45), importedMapButton.isHittable else {
+            XCTFail("USGS_SF_North.pdf was selected but did not become the active imported map")
+            return
+        }
     }
 
     // Capture the GeoPDF-import hero: import a US Topo GeoPDF (pre-copied
-    // into the app's Documents so it shows in Files under On My iPhone >
-    // TacMap) then overlay the re-centred NATO situation. Device location
+    // into Files so it shows at the root of On My iPhone) then overlay the
+    // re-centred NATO situation. Device location
     // is set to the PDF/situation centre so Centre on My Location frames it.
     func testCaptureGeoPdf() {
         sleep(2)
-        // 1) import the GeoPDF. "PDF Map…" lives inside the Import / Export
-        //    sub-page (navRow), so open that first.
-        openMenu()
-        _ = tapContaining("Import / Export")
-        sleep(2)
-        _ = tapContaining("PDF Map")
-        sleep(3)
-
-        // The document picker opens at its remembered location. The seeded GeoPDF
-        // lives in the app's own Documents → surfaced under "On My iPhone/iPad ›
-        // TacMap". Navigate there if the file isn't already on screen.
-        func fileQuery() -> XCUIElement {
-            // The georeferenced USGS SF North US Topo (FortIrwin has no georef and
-            // lands at the camera fallback). Seeded into the app's Documents.
-            app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS[c] %@", "USGS_SF_North")).firstMatch
-        }
-        func tapFirst(containing text: String, timeout: TimeInterval = 5) -> Bool {
-            let e = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
-            guard e.waitForExistence(timeout: timeout) else { return false }
-            e.tap(); return true
-        }
-        if !fileQuery().waitForExistence(timeout: 4) {
-            // iPhone: bottom tab "Browse" → Locations list (there can be more than
-            // one "Browse" element in Files, so take the first hittable one). iPad:
-            // the sidebar is already shown, so this is best-effort.
-            let browse = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Browse")).firstMatch
-            if browse.waitForExistence(timeout: 4), browse.isHittable { browse.tap(); sleep(1) }
-            // "On My iPhone" / "On My iPad" → TacMap (the app's Documents container)
-            _ = tapFirst(containing: "On My i"); sleep(1)
-            let folder = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label MATCHES[c] %@", "TacMap")).firstMatch
-            if folder.waitForExistence(timeout: 5), folder.isHittable { folder.tap() }
-            sleep(1)
-        }
-        let file = fileQuery()
-        if file.waitForExistence(timeout: 8) { file.tap() }
-        sleep(9)                       // import + georeference + persist + fly to PDF
-        dismissSheet()
+        importSeededGeoPDF()
         // Centre on device location (= PDF centre). With an offline map loaded the
         // single button splits into "My Location" / "Map", so match either.
-        _ = tapContaining("My Location")
+        guard requireTapContaining("My Location") else { return }
         sleep(4)
         // Zoom out so more of the imported sheet is in frame (was street-level
         // before). Pinch keeps the PDF centred; don't recentre after or it snaps
@@ -497,7 +629,10 @@ final class ScreenshotTests: XCTestCase {
     // ============================================================
 
     // Preview 1 - build the tactical picture, then share it live over Unit Sync.
-    func testPreview1TacticalSync() {
+    func testPreview1TacticalSync() throws {
+        guard let roomCode = runScopedScreenshotRoomCode() else {
+            throw XCTSkip("Set TACMAP_SCREENSHOT_ROOM_CODE to a fresh v3 room for the Sync preview")
+        }
         sleep(1)
         // Sync-first: join the room and a full company situation streams in over
         // the E2E-encrypted channel. That IS the story - no slow manual symbol
@@ -505,14 +640,7 @@ final class ScreenshotTests: XCTestCase {
         openMenu()
         _ = tapContaining("Unit Sync")
         sleep(2)
-        let f = app.textFields.firstMatch
-        if f.waitForExistence(timeout: 6) {
-            f.tap(); sleep(1)
-            f.typeText("WOLFPACKSHOOT26")
-            sleep(1)
-            _ = tapContaining("Join")
-            sleep(13)                                                   // connect + snapshot + render
-        }
+        _ = joinScreenshotRoom(roomCode, waitSeconds: 13)
         dismissSheet()
         sleep(2)
         // Labels on so the shared units/tasks read, then explore the picture.
@@ -533,28 +661,8 @@ final class ScreenshotTests: XCTestCase {
     // Name contains "GeoPdf" so setUp uses the offline basemap (the imported sheet).
     func testPreview2GeoPdf() {
         sleep(2)
-        openMenu()
-        _ = tapContaining("Import / Export")
-        sleep(2)
-        _ = tapContaining("PDF Map")
-        sleep(3)
-        func find(_ text: String) -> XCUIElement {
-            app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
-        }
-        if !find("USGS_SF_North").waitForExistence(timeout: 4) {
-            let browse = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Browse")).firstMatch
-            if browse.waitForExistence(timeout: 4), browse.isHittable { browse.tap(); sleep(1) }
-            let loc = find("On My i"); if loc.waitForExistence(timeout: 5) { loc.tap(); sleep(1) }
-            let folder = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label MATCHES[c] %@", "TacMap")).firstMatch
-            if folder.waitForExistence(timeout: 5), folder.isHittable { folder.tap(); sleep(1) }
-        }
-        let file = find("USGS_SF_North")
-        if file.waitForExistence(timeout: 8) { file.tap() }
-        sleep(9)                                                        // import + georeference + fly to sheet
-        dismissSheet()
-        _ = tapContaining("My Location")
+        importSeededGeoPDF()
+        guard requireTapContaining("My Location") else { return }
         sleep(3)
         // Slowly explore the georeferenced sheet, aligned to the MGRS grid.
         app.pinch(withScale: 0.55, velocity: -1.2); sleep(2)

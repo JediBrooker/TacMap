@@ -7,6 +7,7 @@ import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.EsriKey
 import com.tacmap.calibration.MBTilesStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +51,22 @@ object OnlineTileHealth {
     fun failed() {
         if (failures.incrementAndGet() >= 8) _temporarilyUnavailable.value = true
     }
+}
+
+/** User/navigation cancellation is not evidence that the tile provider failed. */
+internal fun shouldRecordOnlineTileFailure(
+    callCancelled: Boolean,
+    requestStillWanted: Boolean,
+): Boolean = !callCancelled && requestStillWanted
+
+internal suspend fun <T> loadTileOrNullPreservingCancellation(
+    load: suspend () -> T,
+): T? = try {
+    load()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
 }
 
 private const val MAX_ENCODED_TILE_BYTES = 4 * 1024 * 1024
@@ -107,41 +124,63 @@ class OnlineRasterTileSource(private val style: BasemapStyle) : TileSource {
     override suspend fun loadTile(tile: TileIndex): Bitmap? {
         val url = tileUrl(tile) ?: return null
         return suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(Request.Builder().url(url)
-                .header("User-Agent", "TacMap/${BuildConfig.VERSION_NAME} (Android; https://tacticalmaps.app)")
+            val call = transportClient.newCall(Request.Builder().url(url)
+                .header("User-Agent", "TacMap/${BuildConfig.VERSION_NAME} (Android; https://tacmap.app)")
                 .build())
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
+                    if (!shouldRecordOnlineTileFailure(call.isCanceled(), continuation.isActive)) return
                     android.util.Log.w("TacMapTiles", "Basemap request failed (${e.javaClass.simpleName})")
                     OnlineTileHealth.failed()
                     if (continuation.isActive) continuation.resume(null)
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    val bitmap = response.use { resp ->
-                        if (!resp.isSuccessful) {
-                            android.util.Log.w("TacMapTiles", "Basemap request failed (HTTP ${resp.code})")
-                            OnlineTileHealth.failed()
-                            return@use null
-                        }
-                        val body = resp.body ?: return@use null
-                        if (body.contentLength() > MAX_ENCODED_TILE_BYTES) return@use null
-                        val input = body.byteStream()
-                        val out = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(16 * 1024)
-                        var total = 0
-                        while (true) {
-                            val n = input.read(buffer)
-                            if (n < 0) break
-                            total += n
-                            if (total > MAX_ENCODED_TILE_BYTES) return@use null
-                            out.write(buffer, 0, n)
-                        }
-                        val bytes = out.toByteArray()
-                        decodeBoundedTile(bytes)?.also { OnlineTileHealth.succeeded() }
+                    if (!continuation.isActive) {
+                        response.close()
+                        return
                     }
-                    if (continuation.isActive) continuation.resume(bitmap)
+                    val bitmap = try {
+                        response.use { resp ->
+                            if (!resp.isSuccessful) {
+                                if (shouldRecordOnlineTileFailure(call.isCanceled(), continuation.isActive)) {
+                                    android.util.Log.w("TacMapTiles", "Basemap request failed (HTTP ${resp.code})")
+                                    OnlineTileHealth.failed()
+                                }
+                                return@use null
+                            }
+                            val body = resp.body ?: return@use null
+                            if (body.contentLength() > MAX_ENCODED_TILE_BYTES) return@use null
+                            val input = body.byteStream()
+                            val out = java.io.ByteArrayOutputStream()
+                            val buffer = ByteArray(16 * 1024)
+                            var total = 0
+                            while (true) {
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                total += n
+                                if (total > MAX_ENCODED_TILE_BYTES) return@use null
+                                out.write(buffer, 0, n)
+                            }
+                            val bytes = out.toByteArray()
+                            decodeBoundedTile(bytes)?.also { OnlineTileHealth.succeeded() }
+                        }
+                    } catch (error: IOException) {
+                        if (shouldRecordOnlineTileFailure(call.isCanceled(), continuation.isActive)) {
+                            android.util.Log.w(
+                                "TacMapTiles",
+                                "Basemap response failed (${error.javaClass.simpleName})",
+                            )
+                            OnlineTileHealth.failed()
+                        }
+                        null
+                    }
+                    if (continuation.isActive) {
+                        continuation.resume(bitmap)
+                    } else if (bitmap != null && !bitmap.isRecycled) {
+                        bitmap.recycle()
+                    }
                 }
             })
         }
@@ -155,9 +194,17 @@ class OnlineRasterTileSource(private val style: BasemapStyle) : TileSource {
         // Shared bounded pool: tile bursts reuse connections without flooding a
         // volunteer provider. OkHttp honours server cache headers in memory at
         // the decoded-tile layer; no disk cache records the viewed AO.
-        private val client = OkHttpClient.Builder()
+        /**
+         * Tile coordinates are AO-bearing. Refuse every redirect so a basemap
+         * provider cannot move a request (or its token/path) to an unlisted host.
+         * Internal visibility lets the transport policy be asserted without
+         * issuing a network request.
+         */
+        internal val transportClient = OkHttpClient.Builder()
             .dispatcher(dispatcher)
             .retryOnConnectionFailure(true)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .addInterceptor { chain ->
                 var response = chain.proceed(chain.request())
                 var retry = 0
@@ -179,13 +226,29 @@ class OnlineRasterTileSource(private val style: BasemapStyle) : TileSource {
 /** Offline MBTiles raster pyramid, read locally with zero network. */
 class OfflineRasterTileSource(
     private val store: MBTilesStore,
-    override val maxZoom: Int = 22
+    override val minZoom: Int,
+    override val maxZoom: Int,
 ) : TileSource {
-    override val minZoom = 0
     override val tileSizePx = 256
 
-    override suspend fun loadTile(tile: TileIndex): Bitmap? = withContext(Dispatchers.IO) {
-        val data = store.tileData(tile.z, tile.x, tile.y) ?: return@withContext null
-        decodeBoundedTile(data)
+    override suspend fun loadTile(tile: TileIndex): Bitmap? {
+        // BitmapFactory itself is not cancellable. Keep a reference outside the
+        // dispatcher hop so prompt cancellation cannot discard a newly-decoded
+        // bitmap before the caller gets ownership of it.
+        var decoded: Bitmap? = null
+        return try {
+            val delivered = withContext(Dispatchers.IO) {
+                val data = store.tileData(tile.z, tile.x, tile.y) ?: return@withContext null
+                decodeBoundedTile(data).also { decoded = it }
+            }
+            decoded = null
+            delivered
+        } catch (cancelled: CancellationException) {
+            decoded?.takeUnless(Bitmap::isRecycled)?.recycle()
+            throw cancelled
+        } catch (failure: Exception) {
+            decoded?.takeUnless(Bitmap::isRecycled)?.recycle()
+            throw failure
+        }
     }
 }

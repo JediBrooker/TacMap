@@ -18,12 +18,34 @@ final class LayerPersistenceTests: XCTestCase {
         XCTAssertTrue(privacy.waitForExistence(timeout: 5), "Privacy & OPSEC menu row missing")
         privacy.tap()
 
-        XCTAssertTrue(app.switches["Online basemap tiles"].waitForExistence(timeout: 5),
-                      "Privacy & OPSEC screen did not open")
+        let settingsNavigation = app.navigationBars["Settings, Privacy & OPSEC"]
+        guard settingsNavigation.waitForExistence(timeout: 5) else {
+            XCTFail("Privacy & OPSEC screen did not open")
+            return
+        }
+
+        for label in [
+            "Online place, terrain & weather lookups",
+            "Online basemap tiles"
+        ] {
+            let setting = app.switches[label]
+            var remainingScrolls = 8
+            while !(setting.exists && setting.isHittable), remainingScrolls > 0 {
+                app.swipeUp()
+                remainingScrolls -= 1
+            }
+            XCTAssertTrue(
+                setting.waitForExistence(timeout: 2),
+                "Privacy & OPSEC is missing the \(label) switch"
+            )
+            XCTAssertTrue(setting.isHittable, "The \(label) switch is not reachable")
+        }
     }
 
     func testFreshInstallCanPersistSigningIdentity() {
         let app = XCUIApplication()
+        let resetEnvironmentKey = "TACMAP_UITEST_RESET_SIGNING_IDENTITY"
+        app.launchEnvironment[resetEnvironmentKey] = "1"
         app.launch()
         XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 10))
 
@@ -38,6 +60,7 @@ final class LayerPersistenceTests: XCTestCase {
         // A cold process relaunch drops DataKey's in-memory cache. The existing
         // device-bound DEK and sealed signing seed must both be reacquired.
         app.terminate()
+        app.launchEnvironment.removeValue(forKey: resetEnvironmentKey)
         app.launch()
         XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 10))
         join(app, code: "3:probe-relaunch-identity-20260712")
@@ -53,6 +76,10 @@ final class LayerPersistenceTests: XCTestCase {
         field.tap()
         field.typeText(code)
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Join / create room")).firstMatch.tap()
+        let enableAndJoin = app.buttons["Enable & Join"]
+        if enableAndJoin.waitForExistence(timeout: 2) {
+            enableAndJoin.tap()
+        }
         XCTAssertTrue(app.staticTexts[code].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Signing identity is locked or unavailable. Unlock the device and try again."].exists)
         app.buttons["Done"].tap()

@@ -150,6 +150,43 @@ data class DrawingFeature(
         )
     }
 
+    /**
+     * Translates the whole rendered feature so its natural map anchor lands on
+     * the crosshair. Raw vertices move by the same delta, preserving rotation,
+     * scale and the shape's internal geometry.
+     */
+    fun movedToCrosshair(latitude: Double, longitude: Double): DrawingFeature {
+        val rendered = effectivePoints
+        if (rendered.isEmpty()) return this
+        val anchor = when (geometry) {
+            DrawingGeometry.POINT -> rendered.first()
+            DrawingGeometry.LINE -> {
+                if (rendered.size < 2) return this
+                val mid = rendered.size / 2
+                val a = rendered[mid - 1]
+                val b = rendered[mid]
+                DrawingPoint(
+                    latitude = (a.latitude + b.latitude) / 2.0,
+                    longitude = (a.longitude + b.longitude) / 2.0,
+                )
+            }
+            DrawingGeometry.POLYGON -> DrawingPoint(
+                latitude = rendered.sumOf { it.latitude } / rendered.size,
+                longitude = rendered.sumOf { it.longitude } / rendered.size,
+            )
+        }
+        val latitudeDelta = latitude - anchor.latitude
+        val longitudeDelta = normalizeDrawingLongitude(longitude - anchor.longitude)
+        return copy(
+            points = points.map { point ->
+                point.copy(
+                    latitude = (point.latitude + latitudeDelta).coerceIn(-90.0, 90.0),
+                    longitude = normalizeDrawingLongitude(point.longitude + longitudeDelta),
+                )
+            }
+        )
+    }
+
     // Anchor point for name-label on the map. Centroid for polygons,
     // mid-segment for polylines, single coordinate for points.
     // Null if no usable coordinates.
@@ -176,6 +213,9 @@ data class DrawingFeature(
             }
         }
 }
+
+private fun normalizeDrawingLongitude(value: Double): Double =
+    ((value + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
 
 @Serializable
 data class DrawingDocument(

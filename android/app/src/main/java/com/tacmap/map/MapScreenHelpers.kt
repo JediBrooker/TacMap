@@ -11,6 +11,7 @@ import androidx.core.content.FileProvider
 import com.tacmap.calibration.AffineFitter
 import com.tacmap.calibration.GeoPdfParser
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
+import com.tacmap.calibration.MBTilesStore
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.calibration.PdfSessionStore
@@ -18,8 +19,19 @@ import com.tacmap.calibration.Wgs84Coordinate
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingPoint
+import com.tacmap.drawings.DrawingStrokeStyle
+import com.tacmap.export.EXPORT_ARTIFACT_RETENTION_MS
+import com.tacmap.export.ExportArtifact
+import com.tacmap.export.ExportArtifactWorkspace
+import com.tacmap.export.ExportPipelineDriver
 import com.tacmap.export.GeoJsonExporter
+import com.tacmap.export.MissionObjectExport
+import com.tacmap.export.executeExportPipeline
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import android.os.Handler
 import android.os.Looper
 
@@ -54,7 +66,11 @@ internal fun PdfMapSource.pdfPointFor(latitude: Double, longitude: Double): Pend
 
 internal object DrawingDefaults {
     val DEFAULT_COLOR: Int = 0xFFFFA000.toInt()
-    const val STROKE_WIDTH: Float = 8f
+    /** Portable width shared with iOS and interchange formats. */
+    const val STROKE_WIDTH_DP: Float = 3f
+
+    fun rendererStrokeWidth(density: Float): Float =
+        STROKE_WIDTH_DP * density.coerceAtLeast(0f)
     val COLORS = listOf(
         DEFAULT_COLOR,
         0xFFE53935.toInt(),
@@ -70,6 +86,32 @@ internal object DrawingDefaults {
         0xFFFFFFFF.toInt()
     )
 }
+
+/**
+ * Single production creation path for map-authored drawings. Android's
+ * renderer stores pixels, while the cross-platform authoring contract is 3dp.
+ * Importers have their own wire conversion path; every locally created draft
+ * and committed feature goes through this factory.
+ */
+internal fun newMapDrawingFeature(
+    name: String,
+    geometry: DrawingGeometry,
+    points: List<DrawingPoint>,
+    layerId: String,
+    strokeColor: Int,
+    fillColor: Int,
+    strokeStyle: DrawingStrokeStyle,
+    density: Float,
+): DrawingFeature = DrawingFeature(
+    name = name,
+    geometry = geometry,
+    points = points,
+    layerId = layerId,
+    strokeColor = strokeColor,
+    fillColor = fillColor,
+    strokeWidth = DrawingDefaults.rendererStrokeWidth(density),
+    strokeStyle = strokeStyle,
+)
 
 internal fun Int.withAlpha(alpha: Int): Int =
     (this and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
@@ -105,38 +147,29 @@ internal fun DrawingPoint.isSameLocation(other: DrawingPoint): Boolean =
     kotlin.math.abs(latitude - other.latitude) < 0.0000001 &&
         kotlin.math.abs(longitude - other.longitude) < 0.0000001
 
-internal fun shareGeoJson(
+internal suspend fun shareGeoJson(
     context: Context,
     waypoints: List<com.tacmap.waypoints.Waypoint>,
     drawings: List<DrawingFeature>,
     layers: List<com.tacmap.drawings.DrawingLayer>
 ) {
-    val geoJson = GeoJsonExporter.export(waypoints, drawings, layers)
-    val exportFile = prepareExportFile(context, "TacMap.geojson")
-    exportFile.writeText(geoJson)
-    val exportUri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        exportFile
-    )
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/geo+json"
-        putExtra(Intent.EXTRA_SUBJECT, exportFile.name)
-        putExtra(Intent.EXTRA_TITLE, exportFile.name)
-        putExtra(Intent.EXTRA_STREAM, exportUri)
-        clipData = ClipData.newUri(context.contentResolver, exportFile.name, exportUri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    runCatching {
-        context.startActivity(Intent.createChooser(intent, "Export GeoJSON"))
-        scheduleExportCleanup(exportFile)
-    }.onFailure {
-        runCatching { exportFile.delete() }
-        Toast.makeText(context, "No app available to export GeoJSON.", Toast.LENGTH_SHORT).show()
+    shareTextExport(
+        context = context,
+        exportLabel = "GeoJSON",
+        fileName = "TacMap.geojson",
+        mimeType = "application/geo+json",
+        chooserTitle = "Export GeoJSON",
+    ) {
+        GeoJsonExporter.export(
+            waypoints,
+            drawings,
+            layers,
+            density = context.resources.displayMetrics.density,
+        )
     }
 }
 
-internal fun shareGpx(
+internal suspend fun shareGpx(
     context: Context,
     points: List<com.tacmap.models.TrackPoint>
 ) {
@@ -144,102 +177,215 @@ internal fun shareGpx(
         Toast.makeText(context, "No track recorded yet.", Toast.LENGTH_SHORT).show()
         return
     }
-    val gpx = com.tacmap.export.GpxExporter.export(points)
-    val exportFile = prepareExportFile(context, "TacMap-track.gpx")
-    exportFile.writeText(gpx)
-    val exportUri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        exportFile
-    )
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/gpx+xml"
-        putExtra(Intent.EXTRA_SUBJECT, exportFile.name)
-        putExtra(Intent.EXTRA_TITLE, exportFile.name)
-        putExtra(Intent.EXTRA_STREAM, exportUri)
-        clipData = ClipData.newUri(context.contentResolver, exportFile.name, exportUri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    runCatching {
-        context.startActivity(Intent.createChooser(intent, "Export GPX"))
-        scheduleExportCleanup(exportFile)
-    }.onFailure {
-        runCatching { exportFile.delete() }
-        Toast.makeText(context, "No app available to export GPX.", Toast.LENGTH_SHORT).show()
-    }
+    shareTextExport(
+        context = context,
+        exportLabel = "GPX track",
+        fileName = "TacMap-track.gpx",
+        mimeType = "application/gpx+xml",
+        chooserTitle = "Export GPX",
+    ) { com.tacmap.export.GpxExporter.export(points) }
 }
 
-/** Export all waypoints + drawings as GeoJSON and share via Intent. */
-internal fun exportAllData(
+/** Export all mission objects + their layer metadata as GeoJSON. Tracks stay in GPX. */
+internal suspend fun exportAllMissionObjects(
     context: Context,
     waypoints: List<com.tacmap.waypoints.Waypoint>,
     drawings: List<DrawingFeature>,
     layers: List<com.tacmap.drawings.DrawingLayer>
 ) {
-    if (waypoints.isEmpty() && drawings.isEmpty()) {
+    if (!MissionObjectExport.hasExportableContent(waypoints, drawings, layers)) {
         Toast.makeText(context, "Nothing to export.", Toast.LENGTH_SHORT).show()
         return
     }
-    val geoJson = GeoJsonExporter.export(waypoints, drawings, layers)
-    val exportFile = prepareExportFile(context, "TacMap-AllData.geojson")
-    exportFile.writeText(geoJson)
-    val exportUri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        exportFile
-    )
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/geo+json"
-        putExtra(Intent.EXTRA_SUBJECT, exportFile.name)
-        putExtra(Intent.EXTRA_TITLE, exportFile.name)
-        putExtra(Intent.EXTRA_STREAM, exportUri)
-        clipData = ClipData.newUri(context.contentResolver, exportFile.name, exportUri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    runCatching {
-        context.startActivity(Intent.createChooser(intent, "Export All Data"))
-        scheduleExportCleanup(exportFile)
-    }.onFailure {
-        runCatching { exportFile.delete() }
-        Toast.makeText(context, "No app available to share the export.", Toast.LENGTH_SHORT).show()
+    shareTextExport(
+        context = context,
+        exportLabel = "mission-object GeoJSON",
+        fileName = MissionObjectExport.FILE_NAME,
+        mimeType = "application/geo+json",
+        chooserTitle = MissionObjectExport.SHARE_TITLE,
+    ) {
+        MissionObjectExport.geoJson(
+            waypoints = waypoints,
+            drawings = drawings,
+            layers = layers,
+            density = context.resources.displayMetrics.density,
+        )
     }
 }
 
 internal fun cleanupExportArtifacts(context: Context) {
-    File(context.cacheDir, "exports").listFiles()?.forEach { runCatching { it.delete() } }
+    ExportArtifactWorkspace(File(context.cacheDir, "exports")).cleanupStaleArtifacts()
 }
 
-private fun prepareExportFile(context: Context, name: String): File {
-    cleanupExportArtifacts(context)
-    return File(File(context.cacheDir, "exports").apply { mkdirs() }, name)
+private suspend fun shareTextExport(
+    context: Context,
+    exportLabel: String,
+    fileName: String,
+    mimeType: String,
+    chooserTitle: String,
+    generate: () -> String,
+) {
+    val outcome = executeExportPipeline(
+        exportLabel = exportLabel,
+        driver = AndroidTextExportDriver(
+            context = context,
+            fileName = fileName,
+            mimeType = mimeType,
+            chooserTitle = chooserTitle,
+            generate = generate,
+        ),
+    )
+    if (!outcome.succeeded) {
+        Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
+    }
 }
 
-private fun scheduleExportCleanup(file: File) {
-    Handler(Looper.getMainLooper()).postDelayed({ runCatching { file.delete() } }, 15 * 60 * 1000L)
+private class AndroidTextExportDriver(
+    private val context: Context,
+    private val fileName: String,
+    private val mimeType: String,
+    private val chooserTitle: String,
+    private val generate: () -> String,
+) : ExportPipelineDriver<Uri> {
+    private val appContext = context.applicationContext
+    private val workspace = ExportArtifactWorkspace(File(appContext.cacheDir, "exports"))
+    private var grantedUri: Uri? = null
+
+    override fun cleanupStaleArtifacts() = workspace.cleanupStaleArtifacts()
+
+    override fun generateContent(): String = generate()
+
+    override fun prepareArtifact(): ExportArtifact = workspace.prepareArtifact(fileName)
+
+    override fun writeArtifact(artifact: ExportArtifact, content: String) {
+        FileOutputStream(artifact.partialFile).use { output ->
+            output.write(content.toByteArray(Charsets.UTF_8))
+            output.flush()
+            output.fd.sync()
+        }
+        try {
+            Files.move(
+                artifact.partialFile.toPath(),
+                artifact.finalFile.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(
+                artifact.partialFile.toPath(),
+                artifact.finalFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
+    }
+
+    override fun createShareToken(artifact: ExportArtifact): Uri =
+        FileProvider.getUriForFile(
+            appContext,
+            "${appContext.packageName}.fileprovider",
+            artifact.finalFile,
+        ).also { grantedUri = it }
+
+    override fun scheduleCleanup(artifact: ExportArtifact) {
+        // Only immutable locals and applicationContext cross the delay; never
+        // retain the Activity for the 15-minute cleanup window.
+        val cleanupContext = appContext
+        val cleanupWorkspace = workspace
+        val generationArtifact = artifact
+        val uriToRevoke = grantedUri
+        check(
+            Handler(Looper.getMainLooper()).postDelayed({
+                runCatching { cleanupWorkspace.cleanupArtifact(generationArtifact) }
+                uriToRevoke?.let { uri ->
+                    runCatching {
+                        cleanupContext.revokeUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                }
+            }, EXPORT_ARTIFACT_RETENTION_MS)
+        ) { "Could not schedule temporary-file cleanup" }
+    }
+
+    override fun launchShare(artifact: ExportArtifact, token: Uri) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_SUBJECT, chooserTitle)
+            putExtra(Intent.EXTRA_TITLE, chooserTitle)
+            putExtra(Intent.EXTRA_STREAM, token)
+            clipData = ClipData.newUri(context.contentResolver, artifact.finalFile.name, token)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, chooserTitle))
+    }
+
+    override fun cleanupFailedArtifact(artifact: ExportArtifact?) {
+        artifact?.let(workspace::cleanupArtifact)
+        grantedUri?.let { uri ->
+            appContext.revokeUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+}
+
+internal class PdfImportRejectedException(message: String) : Exception(message)
+
+internal fun pdfRotationRejectionMessage(rotationDegrees: Int): String =
+    "This PDF's first page is rotated $rotationDegrees°. TacMap cannot safely " +
+        "georeference rotated pages yet. Flatten the page rotation in a PDF editor or " +
+        "print it to a new PDF, then import that copy."
+
+internal fun pdfImportUserMessage(failure: Throwable): String = when {
+    failure is PdfImportRejectedException -> failure.message ?: "Unable to import PDF map."
+    generateSequence(failure as Throwable?) { it.cause }
+        .any { it.message == "Import exceeds the supported size limit" } ->
+        "This PDF is larger than TacMap's 256 MB import limit."
+    else -> "TacMap could not read the first page. The PDF may be invalid or password-protected."
+}
+
+internal fun preflightPdfImport(context: Context, file: File): com.tacmap.calibration.PdfPageInfo {
+    val fileUri = Uri.fromFile(file)
+    val pageInfo = try {
+        PdfPageRenderer.firstPageInfo(context.applicationContext, fileUri)
+    } catch (_: Exception) {
+        throw PdfImportRejectedException(
+            "TacMap could not read the first page. The PDF may be invalid or password-protected."
+        )
+    }
+    val rotation = GeoPdfParser.pageRotation(context.applicationContext, fileUri)
+        ?: throw PdfImportRejectedException(
+            "TacMap could not safely inspect this PDF's page rotation. Flatten or print it to a new PDF, then import that copy."
+        )
+    if (rotation != 0) throw PdfImportRejectedException(pdfRotationRejectionMessage(rotation))
+    return pageInfo
 }
 
 internal fun importPdfMapSource(
     context: Context,
     sourceUri: Uri,
     cameraLat: Double,
-    cameraLng: Double
+    cameraLng: Double,
+    operationKey: String,
+    copyJournal: DocumentImportCopyStateStore,
 ): PdfMapSource {
+    val appContext = context.applicationContext
     val displayName = context.displayNameFor(sourceUri)
-    val pdfDir = File(context.filesDir, "pdf_maps").apply { mkdirs() }
-    val dest = File(pdfDir, uniquePdfFileName(displayName))
-
-    context.contentResolver.openInputStream(sourceUri).use { input ->
-        requireNotNull(input) { "Unable to open selected PDF" }
-        try {
-            dest.outputStream().use { output -> input.copyToBounded(output, MAX_PDF_IMPORT_BYTES) }
-        } catch (e: Throwable) {
-            dest.delete()
-            throw e
-        }
-    }
+    val pdfDir = File(appContext.filesDir, "pdf_maps")
+    val dest = IdempotentDocumentCopy(
+        destinationDir = pdfDir,
+        extension = "pdf",
+        maxBytes = MAX_PDF_IMPORT_BYTES,
+        stateStore = copyJournal,
+        openSource = {
+            requireNotNull(appContext.contentResolver.openInputStream(sourceUri)) {
+                "Unable to open selected PDF"
+            }
+        },
+        validate = { file ->
+            preflightPdfImport(appContext, file)
+            true
+        },
+    ).execute(operationKey)
 
     val fileUri = Uri.fromFile(dest)
-    val pageInfo = PdfPageRenderer.firstPageInfo(context, fileUri)
+    val pageInfo = preflightPdfImport(appContext, dest)
     val baseName = displayName.removeSuffix(".pdf").removeSuffix(".PDF")
     val base = PdfMapSource.imported(
         uri = fileUri,
@@ -255,7 +401,7 @@ internal fun importPdfMapSource(
     // That's exactly what stranded the sheet at wrong longitude after the
     // GeoPDF viewport fix. Auto correspondences leave MGRS blank, manual
     // ones don't - thats how we tell them apart.
-    PdfSessionStore(context).calibration(dest, baseName)
+    PdfSessionStore(appContext).calibration(dest)
         ?.takeIf { saved -> saved.fids.any { it.mgrs.isNotBlank() } }
         ?.let { saved -> return base.calibrated(saved.transform, saved.fids) }
 
@@ -265,7 +411,7 @@ internal fun importPdfMapSource(
     /// with correct rotation+scale, no user calibration needed. If
     /// no georef found, leave it uncalibrated and user can drop
     /// fiduciaries manually.
-    val geo = GeoPdfParser.parse(context, fileUri) ?: return base
+    val geo = GeoPdfParser.parse(appContext, fileUri) ?: return base
     val fiducials = geo.correspondences.map { it.toFiduciary() }
     val fit = runCatching { AffineFitter.fit(fiducials) }.getOrNull() ?: return base
     Log.i("GeoPdfImport", "auto-parsed ${fiducials.size} correspondences")
@@ -282,48 +428,35 @@ internal fun Context.displayNameFor(uri: Uri): String {
     return uri.lastPathSegment?.substringAfterLast('/') ?: "Imported Map.pdf"
 }
 
-internal fun uniquePdfFileName(displayName: String): String {
-    val base = displayName.substringBeforeLast('.', displayName)
-        .replace(Regex("[^A-Za-z0-9._-]+"), "_")
-        .trim('_')
-        .ifBlank { "Imported_Map" }
-    return "${System.currentTimeMillis()}_$base.pdf"
-}
-
 /** Copy picked .mbtiles into files dir (SQLite needs a real path, not a
  *  content Uri) and open as an offline-tile basemap. */
-internal fun importMBTilesMapSource(context: Context, sourceUri: Uri): OfflineTileMapSourceAndroid? {
-    val displayName = context.displayNameFor(sourceUri)
-    val dir = File(context.filesDir, "mbtiles").apply { mkdirs() }
-    val base = displayName.substringBeforeLast('.', displayName)
-        .replace(Regex("[^A-Za-z0-9._-]+"), "_")
-        .trim('_')
-        .ifBlank { "Offline_Tiles" }
-    val dest = File(dir, "${System.currentTimeMillis()}_$base.mbtiles")
-    context.contentResolver.openInputStream(sourceUri).use { input ->
-        requireNotNull(input) { "Unable to open selected MBTiles" }
-        try {
-            dest.outputStream().use { output -> input.copyToBounded(output, MAX_MBTILES_IMPORT_BYTES) }
-        } catch (e: Throwable) {
-            dest.delete()
-            throw e
-        }
-    }
+internal fun importMBTilesMapSource(
+    context: Context,
+    sourceUri: Uri,
+    operationKey: String,
+    copyJournal: DocumentImportCopyStateStore,
+): OfflineTileMapSourceAndroid? {
+    val appContext = context.applicationContext
+    val dir = File(appContext.filesDir, "mbtiles")
+    val dest = IdempotentDocumentCopy(
+        destinationDir = dir,
+        extension = "mbtiles",
+        maxBytes = MAX_MBTILES_IMPORT_BYTES,
+        stateStore = copyJournal,
+        openSource = {
+            requireNotNull(appContext.contentResolver.openInputStream(sourceUri)) {
+                "Unable to open selected MBTiles"
+            }
+        },
+        validate = { file ->
+            MBTilesStore.open(file.path)?.let { store ->
+                store.close()
+                true
+            } ?: false
+        },
+    ).execute(operationKey)
     return OfflineTileMapSourceAndroid.open(dest.path)
 }
 
 private const val MAX_PDF_IMPORT_BYTES = 256L * 1024 * 1024
 private const val MAX_MBTILES_IMPORT_BYTES = 4L * 1024 * 1024 * 1024
-
-private fun java.io.InputStream.copyToBounded(output: java.io.OutputStream, maxBytes: Long) {
-    val buffer = ByteArray(64 * 1024)
-    var total = 0L
-    while (true) {
-        val n = read(buffer)
-        if (n < 0) break
-        total += n
-        require(total <= maxBytes) { "Import exceeds the supported size limit" }
-        output.write(buffer, 0, n)
-    }
-    output.flush()
-}

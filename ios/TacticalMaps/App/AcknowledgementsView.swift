@@ -86,7 +86,7 @@ struct AcknowledgementsView: View {
                 }
 
                 Section {
-                    Text("TacMap respects your privacy. We collect no telemetry. Location and elevation lookups stay on your device or are anonymised in flight.")
+                    Text("TacMap adds no analytics or remote crash telemetry. Optional online basemaps and lookups are off on a fresh install; if you enable them, the provider receives your IP plus the requested tile area, place query, or lookup coordinate. Unit Sync payload content is end-to-end encrypted, while its relay still sees routing and traffic metadata.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

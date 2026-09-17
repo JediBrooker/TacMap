@@ -33,6 +33,9 @@ struct DrawingLayer: Identifiable, Codable, Hashable {
     /// multi-layer just get shoved onto this fallback layer. Using a
     /// constant so the migration is repeatable and doesn't create dupes.
     static let legacyFallbackID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    static let hostileDefaultID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+    static let unknownDefaultID = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
+    static let civilianDefaultID = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
 
     /// Default layers on fresh install, listed in UI order. Colours are
     /// loosely APP-6C affiliation palette but bumped to read on satellite.
@@ -40,11 +43,14 @@ struct DrawingLayer: Identifiable, Codable, Hashable {
         DrawingLayer(id: legacyFallbackID,
                      name: "Friendly",
                      defaultColorHex: "#4DA6FF"),
-        DrawingLayer(name: "Hostile",
+        DrawingLayer(id: hostileDefaultID,
+                     name: "Hostile",
                      defaultColorHex: "#E63946"),
-        DrawingLayer(name: "Unknown",
+        DrawingLayer(id: unknownDefaultID,
+                     name: "Unknown",
                      defaultColorHex: "#FFB000"),
-        DrawingLayer(name: "Civilian",
+        DrawingLayer(id: civilianDefaultID,
+                     name: "Civilian",
                      defaultColorHex: "#2A9D8F"),
     ]
 }

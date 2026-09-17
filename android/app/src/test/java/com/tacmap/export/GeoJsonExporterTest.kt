@@ -10,6 +10,7 @@ import com.tacmap.waypoints.TaskColor
 import com.tacmap.waypoints.MarkerSet
 import com.tacmap.waypoints.MarkerSymbol
 import com.tacmap.waypoints.MilitarySymbolSpec
+import com.tacmap.waypoints.ReinforcementStatus
 import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
 import com.tacmap.waypoints.SymbolFunction
@@ -154,6 +155,9 @@ class GeoJsonExporterTest {
                     isHeadquarters = true
                 )
             ),
+            higherFormation = "BG-Waratah",
+            uniqueIdentifier = "I11",
+            reinforcementStatus = ReinforcementStatus.REINFORCED,
             layerId = layer.id
         )
         val control = Waypoint(
@@ -188,6 +192,9 @@ class GeoJsonExporterTest {
         assertEquals(SymbolEchelon.BATTALION_REGIMENT, importedMilitaryKind.spec.echelon)
         assertEquals(SymbolFunction.AIR_DEFENCE, importedMilitaryKind.spec.function)
         assertTrue(importedMilitaryKind.spec.isHeadquarters)
+        assertEquals("BG-Waratah", importedMilitary.higherFormation)
+        assertEquals("I11", importedMilitary.uniqueIdentifier)
+        assertEquals(ReinforcementStatus.REINFORCED, importedMilitary.reinforcementStatus)
 
         val importedControl = result.waypoints.first { it.id == "tcm-1" }
         val importedControlKind = importedControl.kind as WaypointKind.ControlMeasure
@@ -196,6 +203,40 @@ class GeoJsonExporterTest {
         assertEquals(42.0, importedControl.rotation, 1e-9)
         assertEquals(2.5, importedControl.scaleX, 1e-9)
         assertEquals(0.75, importedControl.scaleY, 1e-9)
+    }
+
+    @Test
+    fun amplifierPropertiesAreMilitaryOnlyAndFieldFAlwaysHasStableValue() {
+        val military = Waypoint(
+            id = "mil-amplifiers",
+            name = "Alpha",
+            latitude = -33.8,
+            longitude = 151.2,
+            kind = WaypointKind.Military(),
+            reinforcementStatus = ReinforcementStatus.NONE,
+        )
+        val generic = Waypoint(
+            id = "generic-amplifiers",
+            name = "Pin",
+            latitude = -33.9,
+            longitude = 151.3,
+            higherFormation = "must-not-export",
+            uniqueIdentifier = "must-not-export",
+            reinforcementStatus = ReinforcementStatus.REDUCED,
+        )
+
+        val features = Json.parseToJsonElement(GeoJsonExporter.export(listOf(military, generic)))
+            .jsonObject.getValue("features").jsonArray
+        val militaryProperties = features[0].jsonObject.getValue("properties").jsonObject
+        val genericProperties = features[1].jsonObject.getValue("properties").jsonObject
+
+        assertEquals(
+            "none",
+            militaryProperties.getValue("tacticalmaps:reinforcement_status").jsonPrimitive.content,
+        )
+        assertTrue("tacticalmaps:higher_formation" !in genericProperties)
+        assertTrue("tacticalmaps:unique_identifier" !in genericProperties)
+        assertTrue("tacticalmaps:reinforcement_status" !in genericProperties)
     }
 
     @Test

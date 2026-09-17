@@ -7,6 +7,107 @@ import Foundation
 /// implicit polygon ring closure.
 final class GeoJSONExporterTests: XCTestCase {
 
+    func testUnitAmplifiersRoundTripThroughProductionGeoJSONKeys() throws {
+        let unit = Waypoint(
+            name: "I11",
+            latitude: -33.8688,
+            longitude: 151.2093,
+            kind: .military(.init(
+                affiliation: .friend,
+                echelon: .platoon,
+                function: .infantry)),
+            higherFormation: "BG-Waratah",
+            uniqueIdentifier: "I11",
+            reinforcementStatus: .reduced
+        )
+        let payload = try GeoJSONExporter.export(waypoints: [unit])
+        let root = try parse(payload)
+        let feature = try XCTUnwrap((root["features"] as? [[String: Any]])?.first)
+        let properties = try XCTUnwrap(feature["properties"] as? [String: Any])
+        XCTAssertEqual(properties["tacticalmaps:higher_formation"] as? String,
+                       "BG-Waratah")
+        XCTAssertEqual(properties["tacticalmaps:unique_identifier"] as? String,
+                       "I11")
+        XCTAssertEqual(properties["tacticalmaps:reinforcement_status"] as? String,
+                       "reduced")
+
+        let imported = try GeoJSONImporter.parse(
+            Data(payload.utf8),
+            existingLayers: DrawingLayer.seedDefaults,
+            fallbackLayerID: DrawingLayer.legacyFallbackID)
+        let restored = try XCTUnwrap(imported.waypoints.first)
+        XCTAssertEqual(restored.higherFormation, "BG-Waratah")
+        XCTAssertEqual(restored.uniqueIdentifier, "I11")
+        XCTAssertEqual(restored.reinforcementStatus, .reduced)
+    }
+
+    func testMissionObjectActionUsesTruthfulTitleAndKeepsTrackInSeparateGPX() throws {
+        XCTAssertEqual(MissionObjectExport.actionTitle, "Export All Mission Objects")
+        XCTAssertEqual(MissionObjectExport.shareTitle, MissionObjectExport.actionTitle)
+        XCTAssertEqual(MissionObjectExport.fileNamePrefix, "TacMap-MissionObjects")
+
+        let layer = DrawingLayer(name: "Operations", defaultColorHex: "#123456")
+        let emptyLayer = DrawingLayer(name: "Unused", defaultColorHex: "#ABCDEF")
+        let waypoint = Waypoint(
+            name: "Observation post",
+            latitude: -33.8,
+            longitude: 151.2,
+            layerID: layer.id
+        )
+        let drawing = DrawingShape(
+            name: "Boundary",
+            kind: .polyline,
+            coordinates: [
+                Coordinate2D(latitude: -33.81, longitude: 151.21),
+                Coordinate2D(latitude: -33.82, longitude: 151.22),
+            ],
+            layerID: layer.id
+        )
+        let payload = try MissionObjectExport.geoJSON(
+            waypoints: [waypoint],
+            drawings: [drawing],
+            layers: [layer, emptyLayer]
+        )
+
+        let root = try parse(payload)
+        let features = try XCTUnwrap(root["features"] as? [[String: Any]])
+        XCTAssertEqual(features.count, 2)
+        let sources = Set(features.compactMap {
+            ($0["properties"] as? [String: Any])?["source"] as? String
+        })
+        XCTAssertEqual(sources, Set(["symbol", "drawing"]))
+        for feature in features {
+            let properties = try XCTUnwrap(feature["properties"] as? [String: Any])
+            XCTAssertEqual(properties["layer_id"] as? String, layer.id.uuidString.lowercased())
+            XCTAssertEqual(properties["layer_name"] as? String, layer.name)
+            XCTAssertEqual(properties["tacticalmaps:layer_color"] as? String,
+                           layer.defaultColorHex)
+        }
+        let layerCatalog = try XCTUnwrap(root["tacticalmaps:layers"] as? [[String: Any]])
+        XCTAssertEqual(layerCatalog.count, 2)
+        XCTAssertEqual(
+            Set(layerCatalog.compactMap { $0["id"] as? String }),
+            Set([layer.id.uuidString.lowercased(), emptyLayer.id.uuidString.lowercased()])
+        )
+        let emptyLayerRecord = try XCTUnwrap(layerCatalog.first {
+            ($0["id"] as? String) == emptyLayer.id.uuidString.lowercased()
+        })
+        XCTAssertEqual(emptyLayerRecord["color"] as? String, "#ABCDEF")
+        XCTAssertFalse(payload.localizedCaseInsensitiveContains("trkpt"))
+        XCTAssertFalse(payload.localizedCaseInsensitiveContains("track point"))
+
+        let route = TrackPoint(
+            coordinate: .init(latitude: -35.123456, longitude: 149.654321),
+            elevation: 620,
+            time: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let separateTrackPayload = GPXExporter.export(points: [route])
+        XCTAssertTrue(separateTrackPayload.contains("<trkpt"))
+        XCTAssertTrue(separateTrackPayload.contains("-35.123456"))
+        XCTAssertFalse(payload.contains("-35.123456"))
+        XCTAssertFalse(payload.contains("149.654321"))
+    }
+
     func testEmitProductionWaypointInteropFixture() throws {
         let waypoint = Waypoint(
             id: UUID(uuidString: "71D0F3D2-7D33-4AF4-A593-D4CB70FB808D")!,
@@ -59,7 +160,7 @@ final class GeoJSONExporterTests: XCTestCase {
         }
 
         let store = WaypointStore()
-        store.add(imported.waypoints[0])
+        _ = try store.addDurably(imported.waypoints[0])
         XCTAssertEqual(store.waypoints.count, 1)
         XCTAssertEqual(store.waypoints.first?.name, "Android Alpha")
         XCTAssertTrue(SealedEnvelope.isSealedFile(try Data(contentsOf: storeURL)))

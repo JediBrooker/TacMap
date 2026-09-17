@@ -93,6 +93,11 @@ actor ElevationService {
         self.staleFallbackMetres = staleFallbackMetres
     }
 
+    func cancelInFlight() {
+        inFlight?.cancel()
+        inFlight = nil
+    }
+
     /// Fetch elevation reading. nil = genuinely unknown (no network
     /// and nothing close enough in cache).
     func reading(for coordinate: CLLocationCoordinate2D) async -> ElevationReading? {
@@ -128,8 +133,8 @@ actor ElevationService {
             do {
                 request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
                 let (data, response) = try await NetworkSession.data(for: request, maximumBytes: 64 * 1024)
-                if Task.isCancelled { return nil }
-                guard let http = response as? HTTPURLResponse,
+                guard OpsecSettings.shared.onlineLookups, !Task.isCancelled,
+                      let http = response as? HTTPURLResponse,
                       (200...299).contains(http.statusCode) else { return nil }
                 let decoded = try JSONDecoder().decode(Response.self, from: data)
                 return decoded.elevation.first
@@ -140,11 +145,13 @@ actor ElevationService {
         inFlight = task
 
         if let value = await task.value {
+            guard OpsecSettings.shared.onlineLookups, !Task.isCancelled else { return nil }
             cache.insert(coordinate, metres: value)
             return ElevationReading(metres: value, isStale: false)
         }
 
         // Network failed, fall back to nearest cached height.
+        guard OpsecSettings.shared.onlineLookups, !Task.isCancelled else { return nil }
         if let near = cache.nearest(to: coordinate, within: staleFallbackMetres) {
             return ElevationReading(metres: near, isStale: true)
         }

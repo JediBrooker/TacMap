@@ -8,8 +8,8 @@
       "internalID" : "B2C3D4E5-0000-0000-0000-000000000001",
       "localizations" : [
         {
-          "description" : "Permanently unlock TacticalMaps after the free trial.",
-          "displayName" : "TacticalMaps — Full Version",
+          "description" : "Permanently unlock TacMap after the free trial.",
+          "displayName" : "TacMap — Full Version",
           "locale" : "en_US"
         }
       ],

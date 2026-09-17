@@ -39,6 +39,9 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
     var lockoutMs by remember { mutableLongStateOf(appLock.lockoutRemainingMs()) }
+    val corruptConfiguration = appLock.isCorrupt
+    val storageError = appLock.hasStorageError
+    val canAcceptPin = appLock.canAcceptPin
 
     // tick lockout countdown to zero
     LaunchedEffect(Unit) {
@@ -60,7 +63,7 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
             Text("TacMap Locked", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             OutlinedTextField(
                 value = pin,
-                enabled = !lockedOut,
+                enabled = !lockedOut && !corruptConfiguration && (!storageError || canAcceptPin),
                 onValueChange = { v ->
                     val digits = v.filter { it.isDigit() }.take(4)
                     pin = digits
@@ -81,7 +84,21 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
             )
-            if (lockedOut) {
+            if (corruptConfiguration || (storageError && !canAcceptPin)) {
+                Text(
+                    "App Lock data is damaged and cannot be verified. Clear TacMap's app data " +
+                        "in Android Settings to recover.",
+                    color = Color(0xFFEF5350),
+                    fontSize = 12.sp,
+                )
+            } else if (storageError) {
+                Text(
+                    "App Lock storage could not be updated. The lock remains armed; enter your " +
+                        "existing PIN.",
+                    color = Color(0xFFFFB74D),
+                    fontSize = 12.sp,
+                )
+            } else if (lockedOut) {
                 Text(
                     "Too many attempts. Try again in ${ceil(lockoutMs / 1000.0).toInt()}s",
                     color = Color(0xFFFFB74D), fontSize = 12.sp
@@ -167,6 +184,8 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                                     message = "PIN changed."
                                 }
                                 appLock.lockoutRemainingMs() > 0 -> message = "Too many attempts. Try again shortly."
+                                appLock.hasStorageError -> message =
+                                    "PIN change could not be saved. The existing PIN remains active."
                                 else -> message = "Current PIN is incorrect."
                             }
                         }
@@ -179,7 +198,9 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                                 currentPin = ""; newPin = ""; confirmPin = ""
                                 message = "App Lock disabled."
                             } else {
-                                message = if (appLock.lockoutRemainingMs() > 0)
+                                message = if (appLock.hasStorageError) {
+                                    "App Lock could not be disabled and remains active."
+                                } else if (appLock.lockoutRemainingMs() > 0)
                                     "Too many attempts. Try again shortly."
                                 else "Current PIN is incorrect."
                             }
@@ -205,11 +226,12 @@ fun AppLockSetupDialog(appLock: AppLock, onDismiss: () -> Unit) {
                     TextButton(
                         enabled = newPin.length == 4 && confirmPin.length == 4,
                         onClick = {
-                            if (newPin == confirmPin) {
-                                appLock.setPin(newPin)
+                            if (newPin == confirmPin && appLock.setPin(newPin)) {
                                 enabled = true
                                 newPin = ""; confirmPin = ""
                                 message = "App Lock enabled. TacMap locks when backgrounded."
+                            } else if (newPin == confirmPin) {
+                                message = "App Lock could not be saved. Try again."
                             } else {
                                 message = "PINs don't match."
                             }

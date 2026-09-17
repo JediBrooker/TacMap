@@ -69,7 +69,7 @@ final class SyncReplayState {
     private var sessionDomains: [String: String] = [:]
 
     let roomId: String
-    private let fileURL: URL?
+    private let containerURL: URL?
     private let persistenceWriter: PersistenceWriter
 
     init(
@@ -80,14 +80,8 @@ final class SyncReplayState {
         }
     ) {
         self.roomId = roomId
+        self.containerURL = containerURL
         self.persistenceWriter = persistenceWriter
-        if let container = containerURL {
-            let dir = container.appendingPathComponent("sync_replay", isDirectory: true)
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            fileURL = dir.appendingPathComponent("\(roomId).json")
-        } else {
-            fileURL = nil
-        }
     }
 
     func canAccept(_ wireObjectId: String, _ incoming: VersionStamp, enforceWindow: Bool = true) -> Bool {
@@ -166,11 +160,21 @@ final class SyncReplayState {
         do { try persist(); return true } catch { restore(old); throw error }
     }
 
-    func reserveHelloEpoch(actorId: String) throws -> String {
+    /// Atomically pin the room-bound local signing key and reserve its next
+    /// hello epoch. A cold restart must never observe an epoch without the
+    /// actor record required to authenticate it.
+    func reserveHelloEpoch(actorId: String, pubkey: String) throws -> String {
+        guard localActorBindingIsValid(actorId: actorId, pubkey: pubkey) else {
+            throw ReplayError.invalidState
+        }
+        guard actorKeyIsAcceptable(actorId, pubkey: pubkey) else {
+            throw ReplayError.actorKeyMismatch
+        }
         let current = helloEpochs[actorId].flatMap { UInt64($0, radix: 16) } ?? 0
         guard current < UInt64.max else { throw ReplayError.counterExhausted }
         let next = String(format: "%016llx", current + 1)
         let old = snapshot()
+        actors[actorId] = pubkey
         helloEpochs[actorId] = next
         do { try persist(); return next } catch { restore(old); throw error }
     }
@@ -303,7 +307,29 @@ final class SyncReplayState {
 
     @discardableResult
     func load() -> Bool {
-        guard let url = fileURL else { return true }
+        load(repairingLocalActor: nil)
+    }
+
+    /// Production load supplies the current local room-scoped identity so a
+    /// narrowly identified state written by the former epoch-only reservation
+    /// bug can be repaired before the manager connects.
+    @discardableResult
+    func load(localActorId: String, publicKey: String) -> Bool {
+        load(repairingLocalActor: (actorId: localActorId, publicKey: publicKey))
+    }
+
+    private func load(repairingLocalActor localActor: (actorId: String, publicKey: String)?) -> Bool {
+        if let localActor,
+           !localActorBindingIsValid(actorId: localActor.actorId, pubkey: localActor.publicKey) {
+            return false
+        }
+        let url: URL
+        do {
+            guard let resolved = try resolvedFileURL() else { return true }
+            url = resolved
+        } catch {
+            return false
+        }
         let result = SafeStore.read(url, label: storeLabel) { data -> [String: Any] in
             guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw ReplayError.invalidState
@@ -314,7 +340,22 @@ final class SyncReplayState {
         case .empty:
             return true
         case .loaded(let dict):
-            return decode(dict)
+            let old = snapshot()
+            if decode(dict) {
+                guard let localActor else { return true }
+                if let pinned = actors[localActor.actorId], pinned != localActor.publicKey {
+                    restore(old)
+                    return false
+                }
+                return true
+            }
+            restore(old)
+            guard let localActor else { return false }
+            return repairOrphanedLocalHelloEpoch(
+                dict,
+                actorId: localActor.actorId,
+                publicKey: localActor.publicKey
+            )
         case .locked, .corrupt:
             return false
         }
@@ -326,7 +367,7 @@ final class SyncReplayState {
         stamps.removeAll(); tombstones.removeAll(); contentHashes.removeAll(); actors.removeAll(); helloEpochs.removeAll()
         pendingModelApplications.removeAll()
         presenceSeq.removeAll(); sessionDomains.removeAll()
-        if let url = fileURL {
+        if let url = try? resolvedFileURL() {
             try? FileManager.default.removeItem(at: url)
             try? FileManager.default.removeItem(at: url.appendingPathExtension("sealed-only"))
         }
@@ -445,9 +486,93 @@ final class SyncReplayState {
     private var storeLabel: String { "sync/room/\(roomId)" }
 
     private func persist() throws {
-        guard let url = fileURL else { return }
+        guard let url = try resolvedFileURL() else { return }
         let data = try serialize()
         try persistenceWriter(data, url, storeLabel)
+    }
+
+    private func resolvedFileURL() throws -> URL? {
+        guard let containerURL else { return nil }
+        let directory = containerURL.appendingPathComponent("sync_replay", isDirectory: true)
+        let dataKey = try SafeStore.keyProvider()
+        // Resolve only this room. Global unlock migration still scans and
+        // reports inactive-room failures independently.
+        return try SyncLocalStore.resolveFile(
+            directory: directory,
+            roomId: roomId,
+            domain: .replay,
+            dataKey: dataKey
+        )
+    }
+
+    /// Full semantic validation used before a historical plaintext replay
+    /// document is re-sealed during filename migration.
+    static func validateLegacyPlaintextForMigration(_ data: Data, roomId: String) throws {
+        guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              SyncReplayState(roomId: roomId).decode(dict) else {
+            throw ReplayError.invalidState
+        }
+    }
+
+    private func localActorBindingIsValid(actorId: String, pubkey: String) -> Bool {
+        guard let roomIdRaw = SyncIdentity.decodeCanonical32(roomId) else { return false }
+        return SyncIdentity.actorBindingIsValid(
+            actorId: actorId,
+            publicKey: pubkey,
+            roomIdRaw: roomIdRaw
+        )
+    }
+
+    /// Repair only the exact shape emitted by the former local reservation
+    /// bug: one orphan epoch, owned by the supplied room-derived local actor,
+    /// in the current actor-record representation. Any remote/multiple orphan,
+    /// malformed record, key mismatch or failed durable rewrite remains fatal.
+    private func repairOrphanedLocalHelloEpoch(
+        _ dict: [String: Any],
+        actorId: String,
+        publicKey: String
+    ) -> Bool {
+        guard localActorBindingIsValid(actorId: actorId, pubkey: publicKey),
+              let epochs = dict["helloEpochs"] as? [String: String],
+              var actorRecords = dict["actors"] as? [String: [String: Any]] else {
+            return false
+        }
+        let orphanActors = Set(epochs.keys.filter { actorRecords[$0] == nil })
+        guard orphanActors == Set([actorId]), actorRecords[actorId] == nil else { return false }
+
+        // Prove that the orphan epoch is the document's only defect. The old
+        // reservation bug could write that epoch without its actor pin, but it
+        // could not legitimately write any session, presence, mutation or
+        // pending-model state for the unpinned actor. Removing only the epoch
+        // must therefore make the original document strictly decodable before
+        // we are allowed to inject the missing actor record.
+        var probe = dict
+        var probeEpochs = epochs
+        guard probeEpochs.removeValue(forKey: actorId) != nil else { return false }
+        probe["helloEpochs"] = probeEpochs
+        let orphanEpochIsSoleDefect: Bool = {
+            let beforeProbe = snapshot()
+            defer { restore(beforeProbe) }
+            return decode(probe)
+        }()
+        guard orphanEpochIsSoleDefect else { return false }
+
+        actorRecords[actorId] = ["pubkey": publicKey, "confirmed": true]
+        var repaired = dict
+        repaired["actors"] = actorRecords
+
+        let old = snapshot()
+        guard decode(repaired), actors[actorId] == publicKey else {
+            restore(old)
+            return false
+        }
+        do {
+            try persist()
+            return true
+        } catch {
+            restore(old)
+            return false
+        }
     }
 
     private func serialize() throws -> Data {

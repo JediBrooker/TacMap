@@ -26,16 +26,23 @@ internal fun InputStream.readBounded(limit: Int): ByteArray {
     return out.toByteArray()
 }
 
-private val lookupHttpClient = OkHttpClient.Builder()
+/**
+ * AO-bearing lookup requests must stay on the exact provider origin selected by
+ * the app. A provider-controlled redirect must not create an undeclared network
+ * egress path or forward coordinate query parameters to another host.
+ */
+internal val coordinateLookupHttpClient: OkHttpClient = OkHttpClient.Builder()
     .connectTimeout(8, TimeUnit.SECONDS)
     .readTimeout(8, TimeUnit.SECONDS)
+    .followRedirects(false)
+    .followSslRedirects(false)
     .build()
 
 /** Cancellable, size-bounded HTTPS GET used by coordinate lookup services. */
 internal suspend fun boundedHttpsGet(url: String, limit: Int): String? {
     if (!url.startsWith("https://")) return null
     return suspendCancellableCoroutine { continuation ->
-        val call = lookupHttpClient.newCall(Request.Builder().url(url).build())
+        val call = coordinateLookupHttpClient.newCall(Request.Builder().url(url).build())
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {

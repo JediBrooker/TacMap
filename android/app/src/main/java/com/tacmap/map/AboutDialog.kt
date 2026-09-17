@@ -37,6 +37,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
                 Text("Terrain: OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors", fontSize = 12.sp)
                 Text("Elevation / weather: Open-Meteo · Copernicus DEM (CC BY 4.0)", fontSize = 12.sp)
                 Text("APP-6C symbols: spatialillusions/milsymbol", fontSize = 12.sp)
+                Text("Unit Sync transport: Java-WebSocket + SLF4J (MIT; notices bundled)", fontSize = 12.sp)
                 Text("PDF maps and overlays stay on this device unless exported.", fontSize = 12.sp)
 
                 crashReport?.let { report ->

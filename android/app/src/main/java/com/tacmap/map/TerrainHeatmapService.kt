@@ -19,7 +19,12 @@ import java.util.Locale
  * Returned bitmap is upscaled + alpha-blended for a smooth semi-transparent
  * overlay when stretched across the region.
  */
-class TerrainHeatmapService {
+class TerrainHeatmapService(
+    private val onlineLookupsEnabled: () -> Boolean = {
+        OpsecSettings.shared?.onlineLookups?.value == true
+    },
+    private val fetchBody: suspend (url: String, limit: Int) -> String? = ::boundedHttpsGet,
+) {
 
     @Serializable
     private data class Response(val elevation: List<Double> = emptyList())
@@ -31,7 +36,7 @@ class TerrainHeatmapService {
     suspend fun generate(bounds: Wgs84Bounds, grid: Int = 24): Bitmap? = withContext(Dispatchers.IO) {
         // OPSEC: sampling the DEM sends coordinates to Open-Meteo,
         // only proceed if user opted into online lookups.
-        if (OpsecSettings.shared?.onlineLookups?.value != true) return@withContext null
+        if (!onlineLookupsEnabled()) return@withContext null
         val south = bounds.southwest.latitude
         val north = bounds.northeast.latitude
         val west = bounds.southwest.longitude
@@ -60,20 +65,25 @@ class TerrainHeatmapService {
             // If user panned away or toggled heatmap off, bail early
             // instead of finishing every batch.
             ensureActive()
+            if (!onlineLookupsEnabled()) return@withContext null
             val end = minOf(i + 100, elev.size)   // Open-Meteo: <=100 points/request
             // Coarsen to ~11 m before egress: more precision is useless for
             // this 24x24 visualisation and needlessly fingerprints the AO.
             val latStr = (i until end).joinToString(",") { String.format(Locale.US, "%.4f", lat[it]) }
             val lonStr = (i until end).joinToString(",") { String.format(Locale.US, "%.4f", lon[it]) }
-            val body = fetch(
-                "https://api.open-meteo.com/v1/elevation?latitude=$latStr&longitude=$lonStr"
+            val body = fetchBody(
+                "https://api.open-meteo.com/v1/elevation?latitude=$latStr&longitude=$lonStr",
+                MAX_RESPONSE_BYTES,
             ) ?: return@withContext null
+            ensureActive()
+            if (!onlineLookupsEnabled()) return@withContext null
             val parsed = runCatching { json.decodeFromString<Response>(body) }.getOrNull()
                 ?: return@withContext null
             for (k in parsed.elevation.indices) if (i + k < elev.size) elev[i + k] = parsed.elevation[k]
             i = end
         }
 
+        if (!onlineLookupsEnabled()) return@withContext null
         val valid = elev.filter { !it.isNaN() }
         if (valid.isEmpty()) return@withContext null
         val min = valid.min()
@@ -100,8 +110,6 @@ class TerrainHeatmapService {
         val rgb = Color.HSVToColor(floatArrayOf(hue, 0.85f, 0.95f)) and 0x00FFFFFF
         return (0x73 shl 24) or rgb   // 0x73 ≈ 45% alpha
     }
-
-    private suspend fun fetch(url: String): String? = boundedHttpsGet(url, MAX_RESPONSE_BYTES)
 
     private companion object { const val MAX_RESPONSE_BYTES = 1024 * 1024 }
 }

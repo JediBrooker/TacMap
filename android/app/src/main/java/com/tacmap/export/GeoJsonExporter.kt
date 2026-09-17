@@ -4,10 +4,13 @@ import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.drawings.DrawingPoint
+import com.tacmap.waypoints.HIGHER_FORMATION_MAX_CODE_POINTS
 import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
+import com.tacmap.waypoints.UNIQUE_IDENTIFIER_MAX_CODE_POINTS
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
+import com.tacmap.waypoints.normalizedUnitAmplifier
 import kotlinx.serialization.json.*
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -83,6 +86,20 @@ object GeoJsonExporter {
                     put("tacticalmaps:echelon", kind.spec.echelon.exportValue)
                     put("tacticalmaps:function", kind.spec.function.assetName)
                     if (kind.spec.isHeadquarters) put("tacticalmaps:is_hq", true)
+                    normalizedUnitAmplifier(
+                        wp.higherFormation,
+                        HIGHER_FORMATION_MAX_CODE_POINTS,
+                    )?.let { put("tacticalmaps:higher_formation", it) }
+                    normalizedUnitAmplifier(
+                        wp.uniqueIdentifier,
+                        UNIQUE_IDENTIFIER_MAX_CODE_POINTS,
+                    )?.let { put("tacticalmaps:unique_identifier", it) }
+                    // Always emit Field F for military objects so Android/iOS
+                    // fixed-point re-export cannot churn on absent-vs-none.
+                    put(
+                        "tacticalmaps:reinforcement_status",
+                        wp.reinforcementStatus.name.lowercase(),
+                    )
                 }
                 is WaypointKind.ControlMeasure -> {
                     put("tacticalmaps:tcm_name", kind.measure.displayName)

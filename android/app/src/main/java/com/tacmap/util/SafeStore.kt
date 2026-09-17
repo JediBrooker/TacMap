@@ -40,7 +40,8 @@ import java.nio.file.StandardCopyOption
  */
 object SafeStore {
 
-    /** Supplies the at-rest key. Production wires [DataKey]; tests swap in a fixed key. */
+    /** Supplies a caller-owned at-rest key copy. Production wires [DataKey];
+     * tests must likewise return a fresh array when the caller may zero it. */
     fun interface KeyProvider { fun key(): ByteArray }
 
     @Volatile

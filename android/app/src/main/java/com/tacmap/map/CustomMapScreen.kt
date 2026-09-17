@@ -18,6 +18,8 @@ import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
+import com.tacmap.calibration.Wgs84Bounds
+import com.tacmap.calibration.Wgs84Coordinate
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
@@ -37,12 +39,15 @@ import com.tacmap.map.render.TileSource
 import com.tacmap.map.render.UserLocationCanvas
 import com.tacmap.map.render.WaypointLabelsLayer
 import com.tacmap.map.render.WaypointSymbolsLayer
+import com.tacmap.map.render.UnitAmplifierLabelsLayer
 import com.tacmap.sync.PresencePeer
 import com.tacmap.waypoints.Waypoint
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
+import kotlin.math.hypot
 
 /**
  * The map surface for the whole app. The basemap renders through the custom
@@ -68,26 +73,33 @@ fun CustomMapScreen(
     mgrsGridVisible: Boolean = false,
     terrainHeatmapVisible: Boolean = false,
     unitLabelsVisible: Boolean = true,
+    unitAmplifiersVisible: Boolean = true,
     taskLabelsVisible: Boolean = true,
     drawingLabelsVisible: Boolean = true,
+    symbologyVisible: Boolean = true,
+    drawingsVisible: Boolean = true,
     userLocationVisible: Boolean = true,
     peers: Map<String, PresencePeer> = emptyMap(),
     selectedDrawingId: String? = null,
-    selectedWaypointId: String? = null,
     myLat: Double? = null,
     myLon: Double? = null,
     myAccuracyMetres: Float = 0f,
     onlineBasemapsEnabled: Boolean = false,
+    onlineLookupsEnabled: Boolean = false,
+    initialCameraState: MapViewportState? = null,
     pendingTarget: Triple<Double, Double, Float>? = null,
     resetNorthRequests: Flow<Unit>? = null,
+    headingUpEnabled: Boolean = false,
+    deviceHeadingDegrees: Flow<Double?>,
     onConsumePendingTarget: () -> Unit = {},
-    onCameraIdle: (lat: Double, lng: Double, byUser: Boolean) -> Unit = { _, _, _ -> },
+    onCameraIdle: (camera: MapCamera, byUser: Boolean) -> Unit = { _, _ -> },
     onBearingChanged: (Double) -> Unit = {},
     onMarkerTap: (Waypoint) -> Unit = {},
     onWaypointMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit = { _, _, _ -> },
     onDrawingTap: (lat: Double, lng: Double) -> Unit = { _, _ -> },
     onCalibrationTap: (lat: Double, lng: Double) -> Unit = { _, _ -> },
     onDrawingFeatureTap: (String) -> Unit = {},
+    onPresencePeerTap: (PresencePeer) -> Unit = {},
     onVertexMoved: (featureId: String, vertexIndex: Int, lat: Double, lng: Double) -> Unit = { _, _, _, _ -> },
     onVertexInserted: (featureId: String, atIndex: Int, lat: Double, lng: Double) -> Unit = { _, _, _, _ -> },
     onVertexDeleted: (featureId: String, vertexIndex: Int) -> Unit = { _, _ -> },
@@ -95,8 +107,12 @@ fun CustomMapScreen(
     onMapTap: () -> Unit = {}
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current.density
-    var camera by remember {
-        mutableStateOf(MapCamera(0.0, 0.0, 2.0, 0.0, 0.0, 0.0))
+    val cameraEntry = remember {
+        MapCameraLifecyclePolicy.enter(initialCameraState, pendingTarget)
+    }
+    var camera by remember { mutableStateOf(cameraEntry.camera) }
+    var cameraPublicationReady by remember {
+        mutableStateOf(cameraEntry.publicationReady)
     }
     var browsing by remember { mutableStateOf(false) }
 
@@ -113,50 +129,90 @@ fun CustomMapScreen(
 
     LaunchedEffect(pendingTarget) {
         pendingTarget?.let { (lat, lng, zoom) ->
-            camera = camera.copy(centerLat = lat, centerLon = lng, zoom = zoom.toDouble())
+            cameraPublicationReady = false
+            val applied = MapCameraLifecyclePolicy.cameraForTarget(
+                current = camera,
+                target = Triple(lat, lng, zoom),
+            )
+            if (applied != null) camera = applied
             browsing = false
             onConsumePendingTarget()
+            cameraPublicationReady = applied != null || cameraEntry.publicationReady
         }
     }
     LaunchedEffect(resetNorthRequests) {
         resetNorthRequests?.collect { camera = camera.copy(headingDegrees = 0.0) }
     }
-    LaunchedEffect(camera.centerLat, camera.centerLon, camera.zoom, camera.headingDegrees) {
+    LaunchedEffect(headingUpEnabled, deviceHeadingDegrees) {
+        if (headingUpEnabled) {
+            deviceHeadingDegrees.collect { heading ->
+                if (heading != null && heading.isFinite()) {
+                    camera = camera.copy(headingDegrees = normalizedHeadingDegrees(heading))
+                }
+            }
+        }
+    }
+    LaunchedEffect(
+        camera.centerLat,
+        camera.centerLon,
+        camera.zoom,
+        cameraPublicationReady,
+    ) {
+        if (!MapCameraLifecyclePolicy.canPublish(cameraPublicationReady, camera)) {
+            return@LaunchedEffect
+        }
         // Publish the live crosshair immediately. Move-to-crosshair and quick
         // add previously read a centre delayed by 200 ms, so a fast action
         // after panning could reuse the old coordinate and look like a no-op.
-        // Heading participates too so a rotate-only gesture settles browsing.
-        onCameraIdle(camera.centerLat, camera.centerLon, browsing)
+        onCameraIdle(camera, browsing)
         delay(200)
         browsing = false
     }
-    LaunchedEffect(camera.headingDegrees) { onBearingChanged(camera.headingDegrees) }
+    LaunchedEffect(camera.headingDegrees) {
+        onBearingChanged(camera.headingDegrees)
+        // A manual rotate-only gesture has no centre/zoom change to settle it.
+        // Automatic compass samples must not keep restarting this delay.
+        if (!headingUpEnabled && browsing &&
+            MapCameraLifecyclePolicy.canPublish(cameraPublicationReady, camera)
+        ) {
+            onCameraIdle(camera, true)
+            delay(200)
+            browsing = false
+        }
+    }
 
     // Terrain heatmap: sample the visible-region DEM once the camera settles and
-    // draw a coloured overlay across it. The fetch self-gates on the online-lookups
-    // OPSEC toggle inside the service, so nothing leaves the device unless opted in.
+    // draw a coloured overlay across it. Including the OPSEC gate in the effect
+    // key cancels its request immediately when the user turns online lookups off;
+    // the service repeats the same check at every network boundary as defence in depth.
     val heatmapService = remember { com.tacmap.map.TerrainHeatmapService() }
     var heatmap by remember { mutableStateOf<Pair<android.graphics.Bitmap, com.tacmap.calibration.Wgs84Bounds>?>(null) }
-    LaunchedEffect(terrainHeatmapVisible, camera.centerLat, camera.centerLon, camera.zoom, camera.headingDegrees) {
-        if (!terrainHeatmapVisible || camera.viewportWidth <= 0.0) { heatmap = null; return@LaunchedEffect }
+    val heatmapViewportRadius = hypot(camera.viewportWidth, camera.viewportHeight) / 2.0
+    LaunchedEffect(
+        terrainHeatmapVisible,
+        onlineLookupsEnabled,
+        cameraPublicationReady,
+        camera.centerLat,
+        camera.centerLon,
+        camera.zoom,
+        heatmapViewportRadius,
+    ) {
+        if (!terrainHeatmapVisible || !onlineLookupsEnabled ||
+            !MapCameraLifecyclePolicy.canPublish(cameraPublicationReady, camera) ||
+            camera.viewportWidth <= 0.0 || camera.viewportHeight <= 0.0
+        ) {
+            heatmap = null
+            return@LaunchedEffect
+        }
         delay(500) // debounce; a new camera cancels this
-        val w = camera.viewportWidth; val h = camera.viewportHeight
-        val cs = listOf(
-            camera.coordinate(0.0, 0.0), camera.coordinate(w, 0.0),
-            camera.coordinate(w, h), camera.coordinate(0.0, h)
-        )
-        val lats = cs.map { it.first }; val lons = cs.map { it.second }
-        val wb = com.tacmap.calibration.Wgs84Bounds(
-            com.tacmap.calibration.Wgs84Coordinate(lats.min(), lons.min()),
-            com.tacmap.calibration.Wgs84Coordinate(lats.max(), lons.max())
-        )
+        val wb = orientationInvariantHeatmapBounds(camera)
         heatmapService.generate(wb)?.let { bmp -> heatmap = bmp to wb }
     }
 
     val visibleLayerIds = drawingLayers.ifEmpty { DrawingDocument.defaultLayers() }
         .filter { it.isVisible }.map { it.id }.toSet()
-    val visibleDrawings = drawings.filter { it.layerId in visibleLayerIds }
-    val visibleWaypoints = if (drawingLayers.isEmpty()) waypoints
+    val visibleDrawings = if (drawingsVisible) drawings.filter { it.layerId in visibleLayerIds } else emptyList()
+    val visibleWaypoints = if (!symbologyVisible) emptyList() else if (drawingLayers.isEmpty()) waypoints
         else waypoints.filter { it.layerId in visibleLayerIds }
     val selectedDrawing = visibleDrawings.firstOrNull {
         it.id == selectedDrawingId &&
@@ -193,7 +249,7 @@ fun CustomMapScreen(
 
         val projection = remember(camera, density) { MapProjection(camera, density) }
         DrawingsCanvas(
-            features = visibleDrawings, draft = draftDrawing,
+            features = visibleDrawings, draft = draftDrawing.takeIf { drawingsVisible },
             selectedId = selectedDrawingId, projection = projection
         )
         WaypointSymbolsLayer(waypoints = visibleWaypoints, camera = camera, density = density)
@@ -210,6 +266,9 @@ fun CustomMapScreen(
 
         // Labels above the symbols.
         WaypointLabelsLayer(visibleWaypoints, camera, density, unitLabelsVisible, taskLabelsVisible)
+        if (unitAmplifiersVisible) {
+            UnitAmplifierLabelsLayer(visibleWaypoints, camera, density)
+        }
         if (drawingLabelsVisible && !freeDrawActive) {
             DrawingLabelsLayer(visibleDrawings, camera, density)
         }
@@ -228,7 +287,7 @@ fun CustomMapScreen(
         )
         if (!drawingInputEnabled && !calibrationInputEnabled && !freeDrawActive) {
             MapItemTouchOverlayCustom(
-                waypoints = visibleWaypoints, drawings = visibleDrawings,
+                waypoints = visibleWaypoints, drawings = visibleDrawings, peers = peers,
                 camera = camera, density = density,
                 drawingInputEnabled = false, calibrationInputEnabled = false,
                 locked = graphicsLocked,
@@ -236,10 +295,15 @@ fun CustomMapScreen(
                 onWaypointTap = onMarkerTap,
                 onWaypointMoved = onWaypointMoved,
                 onDrawingTap = onDrawingFeatureTap,
+                onPresencePeerTap = onPresencePeerTap,
                 onDrawingMoved = onShapeMoved,
                 minZoom = source?.minZoom?.toDouble() ?: 2.0,
                 maxZoom = source?.maxZoom?.toDouble() ?: 22.0,
-                onCameraChange = { camera = it },
+                rotationEnabled = !headingUpEnabled,
+                onCameraChange = {
+                    camera = it
+                    cameraPublicationReady = true
+                },
                 onMapGestureStart = { browsing = true },
                 onEmptyTap = onMapTap
             )
@@ -258,7 +322,28 @@ fun CustomMapScreen(
     }
 }
 
-/** Fresh install, online basemaps gated off, no offline pack: draw nothing but
+/** North-up square around the viewport half-diagonal. It contains the visible
+ * map at every heading, so compass updates can reuse one heatmap sample. */
+internal fun orientationInvariantHeatmapBounds(camera: MapCamera): Wgs84Bounds {
+    val radius = hypot(camera.viewportWidth, camera.viewportHeight) / 2.0
+    val centreX = camera.viewportWidth / 2.0
+    val centreY = camera.viewportHeight / 2.0
+    val northUp = camera.copy(headingDegrees = 0.0)
+    val coordinates = listOf(
+        northUp.coordinate(centreX - radius, centreY - radius),
+        northUp.coordinate(centreX + radius, centreY - radius),
+        northUp.coordinate(centreX + radius, centreY + radius),
+        northUp.coordinate(centreX - radius, centreY + radius),
+    )
+    val latitudes = coordinates.map { it.first }
+    val longitudes = coordinates.map { it.second }
+    return Wgs84Bounds(
+        Wgs84Coordinate(latitudes.min(), longitudes.min()),
+        Wgs84Coordinate(latitudes.max(), longitudes.max()),
+    )
+}
+
+/** When online basemaps are gated off with no offline pack, draw nothing but
  *  say why, so a blank map reads as a deliberate OPSEC posture not a bug. */
 @Composable
 private fun NoBasemapNoticeCustom(modifier: Modifier = Modifier) {

@@ -22,7 +22,11 @@ struct DrawToolbar: View {
                     .frame(width: 30, height: 30)
                     .background(Color(red: 1, green: 0.65, blue: 0.18), in: Circle())
 
-                colorSwatchMenu
+                strokeColorSwatchMenu
+
+                if kind == .polygon {
+                    fillStyleMenu
+                }
 
                 strokeStyleToggle
 
@@ -170,7 +174,7 @@ struct DrawToolbar: View {
     }
 
     /// Colour swatch circle, opens the 12-colour palette menu on tap.
-    private var colorSwatchMenu: some View {
+    private var strokeColorSwatchMenu: some View {
         Menu {
             ForEach(DrawingPalette.swatches) { swatch in
                 Button {
@@ -192,8 +196,54 @@ struct DrawToolbar: View {
                     .stroke(.white.opacity(0.85), lineWidth: 1.5)
                     .frame(width: 22, height: 22)
             }
-            .accessibilityLabel("Drawing colour")
+            .accessibilityLabel("Stroke colour")
             .accessibilityValue(DrawingPalette.swatch(forHex: session.strokeColorHex)?.name ?? session.strokeColorHex)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Polygon fill has its own hue and opacity. Keeping these in one compact
+    /// menu avoids widening the drawing HUD while still exposing both controls.
+    private var fillStyleMenu: some View {
+        Menu {
+            Section("Fill colour") {
+                ForEach(DrawingPalette.swatches) { swatch in
+                    Button {
+                        session.fillColorHex = swatch.hex
+                    } label: {
+                        Label(swatch.name,
+                              systemImage: session.fillColorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
+                                  ? "largecircle.fill.circle"
+                                  : "circle.fill")
+                    }
+                    .tint(swatch.color)
+                }
+            }
+            Section("Fill opacity") {
+                ForEach([0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0], id: \.self) { opacity in
+                    Button {
+                        session.fillOpacity = opacity
+                    } label: {
+                        Label("\(Int(opacity * 100))%",
+                              systemImage: abs(session.fillOpacity - opacity) < 0.001
+                                  ? "checkmark.circle.fill"
+                                  : "circle")
+                    }
+                }
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color(hex: session.fillColorHex).opacity(session.fillOpacity))
+                Circle().stroke(.white.opacity(0.85), lineWidth: 1.5)
+                Image(systemName: "paintbrush.pointed.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 1)
+            }
+            .frame(width: 34, height: 34)
+            .accessibilityLabel("Fill style")
+            .accessibilityValue("\(DrawingPalette.swatch(forHex: session.fillColorHex)?.name ?? session.fillColorHex), \(Int(session.fillOpacity * 100)) percent")
         }
         .buttonStyle(.plain)
     }

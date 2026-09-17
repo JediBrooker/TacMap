@@ -140,6 +140,66 @@ enum SafeStore {
         try SealedMigrationPolicy.markSealed(policyID(url, label), key: key)
     }
 
+    /// Transfer the authenticated sealed-only downgrade barrier before a
+    /// same-store path migration. The new path is fenced first, so a crash or
+    /// concurrent file replacement between rename and read cannot make a store
+    /// that was already ciphertext-only accept plaintext again.
+    static func prepareSealedPathMigration(
+        from source: URL,
+        to destination: URL,
+        label: String,
+        key: Data
+    ) throws {
+        let fm = FileManager.default
+        let markerExists = fm.fileExists(atPath: legacyMarkerURL(for: source).path)
+        let sourceRequiresSealed = try SealedMigrationPolicy.requiresSealed(
+            policyID(source, label),
+            key: key
+        )
+        var sourceHasSealedMagic = false
+        if fm.fileExists(atPath: source.path) {
+            let handle = try FileHandle(forReadingFrom: source)
+            defer { try? handle.close() }
+            let prefix = try handle.read(upToCount: SealedEnvelope.magicSize) ?? Data()
+            sourceHasSealedMagic = SealedEnvelope.isSealedFile(prefix)
+        }
+        if markerExists || sourceRequiresSealed || sourceHasSealedMagic {
+            try SealedMigrationPolicy.markSealed(policyID(destination, label), key: key)
+        }
+    }
+
+    /// Validate and seal a known pre-encryption store without quarantining or
+    /// renaming its only copy on failure. This is used by the cold-upgrade
+    /// scanner before it removes a room identifier from a replay filename.
+    @discardableResult
+    static func resealValidatedLegacyPlaintext(
+        at url: URL,
+        label: String,
+        key: Data,
+        validate: (Data) throws -> Void
+    ) throws -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return false }
+        var raw = try Data(contentsOf: url)
+        defer { raw.resetBytes(in: raw.startIndex..<raw.endIndex) }
+        guard !SealedEnvelope.isSealedFile(raw) else { return false }
+
+        let markerExists = fm.fileExists(atPath: legacyMarkerURL(for: url).path)
+        if markerExists {
+            try SealedMigrationPolicy.markSealed(policyID(url, label), key: key)
+        }
+        guard !markerExists,
+              !(try SealedMigrationPolicy.requiresSealed(policyID(url, label), key: key)) else {
+            throw SealError()
+        }
+
+        try validate(raw)
+        let sealed = try SealedEnvelope.sealFile(key: key, plaintext: raw, label: label)
+        try writeSealed(sealed, to: url)
+        try SealedMigrationPolicy.markSealed(policyID(url, label), key: key)
+        return true
+    }
+
     static func read<T>(_ url: URL, label: String, decode: (Data) throws -> T) -> Load<T> {
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else { return .empty }

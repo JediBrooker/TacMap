@@ -7,13 +7,14 @@
 [![iOS Build](https://github.com/JediBrooker/TacMap/actions/workflows/ios.yml/badge.svg)](https://github.com/JediBrooker/TacMap/actions/workflows/ios.yml)
 [![Android Build](https://github.com/JediBrooker/TacMap/actions/workflows/android.yml/badge.svg)](https://github.com/JediBrooker/TacMap/actions/workflows/android.yml)
 
-Field-navigation prototype: tactical-style map with live MGRS, APP-6 symbology,
+Offline-first field navigation with live MGRS, APP-6 symbology,
 GeoPDF/calibrated-PDF basemaps, drawing overlays round-tripped as GeoJSON, and
 fiduciary calibration for any PDF that lacks proper georeferencing. iOS (SwiftUI
-+ MapKit) and Android (Kotlin + Compose + Google Maps) ship from one repository.
++ custom raster renderer) and Android (Kotlin + Compose + custom raster renderer)
+ship from one repository.
 
 > The app's **display name is TacMap**. The Xcode project, Gradle modules,
-> bundle id (`com.tacticalmaps.app`) and package (`com.tacticalmaps`) keep the
+> bundle id (`com.tacticalmaps.app`) and Android application id (`com.tacmap`) keep the
 > original **TacticalMaps** name for continuity, so the build commands below
 > still reference `TacticalMaps`.
 
@@ -57,15 +58,18 @@ quadrangle (public domain) rendered live over the satellite. Run
 - **Live MGRS** in a tactical-green monospace at the top, spaced as
   `56HLH 13225 37516`. Header flips between **Your Location** (GPS fix) and
   **Map Centre** (when you pan away) automatically.
-- **WGS84 lat/lon** + **elevation** (metres above sea level) live at the
-  crosshair, fetched from Open-Meteo's Copernicus DEM (≈30 m global resolution)
-  on a 400 ms debounce so we don't hammer the network during a pan.
-- **NATO mils compass** (6400 per circle). The N marker rotates with the map
-  so it always points to true north; the 4-digit mils readout in the lower
-  half stays static. Tap to snap back to north-up.
-- **Centre-pivot rotation** — the default `MKMapView` rotation drags the
-  centre around with your fingers. Ours overrides it so the map spins in
-  place around the screen centre.
+- **WGS84 lat/lon** at the crosshair, plus **elevation** (metres above sea
+  level) from Open-Meteo's Copernicus DEM (≈30 m global resolution). Online
+  lookups are off on a fresh install, can be enabled independently, and the
+  request is debounced while panning.
+- **North-reference compass** in degrees or NATO mils (6400 per circle), clearly
+  labelled for true, magnetic, or grid north. The N marker stays clear of the
+  readout while pointing to the selected reference. In **North Up**, one tap
+  first resets a rotated map and a second tap enables **Heading Up**; tapping
+  again returns to North Up.
+- **Centre-pivot rotation** — the custom renderers spin the map in place around
+  the screen centre on both platforms. Heading Up instead follows the phone's
+  compass automatically as you turn.
 
 ### Symbology, drawing & waypoints
 
@@ -99,9 +103,9 @@ quadrangle (public domain) rendered live over the satellite. Run
 
 ### GeoPDF basemap
 
-- Import any **GeoPDF** via the Files app. The PDF replaces the satellite
-  basemap and stays anchored to its true geographic bounds when you pan / zoom
-  / rotate.
+- Import any **GeoPDF** through the system document picker. The private app copy
+  replaces the online basemap and stays anchored to its true geographic bounds
+  when you pan / zoom / rotate.
 - **LGIDict parser** handles the OGC GeoPDF format used by ADF, AUSLIG, USGS,
   and most government topo PDFs:
   - Multi-entry LGIDicts (picks the one with `/Description (Layers)`)
@@ -113,21 +117,27 @@ quadrangle (public domain) rendered live over the satellite. Run
 - **Fiduciary calibration UI** for any PDF without proper metadata — tap
   3 known features on the PDF, enter their MGRS, and `AffineFitter` solves
   a least-squares affine to re-derive bounds. Shows RMS residual in metres
-  so you know how trustworthy the fit is.
+  to help you judge whether the fit is suitable for the task.
+- **Background route recording** stores each accepted fix in an encrypted track
+  log and exports the route separately as standard GPX. **Export All Mission
+  Objects** creates GeoJSON for waypoints, symbols, drawings, and layers.
 
 ### Offline raster basemap (MBTiles)
 
 - Sideload a **`.mbtiles`** raster pyramid (e.g. `gdal_translate` +
 `gdal2tiles.py` of any GeoPDF / raster) and the app serves it through a tile
-overlay with **no network** — the real offline-field path, and the
-ToS-compliant alternative to caching Apple/Google's own tiles. Import via
+overlay with **no network** — the real offline-field path. Import via
 **☰ → Import Offline Tiles**; the bounds metadata frames the camera, and the
 Layers sheet lets you unload it. iOS + Android.
 
 ### Search
 
-- **Place name / address** via `MKLocalSearch`, biased toward the current
-  camera area.
+- **Waypoints and drawings** by name, notes, type, or layer, ranked locally and
+  deterministically.
+- **Place name / address** is optional and uses Apple's place-search service on
+  iOS or the device's platform geocoder on Android. Online lookups are off on
+  a fresh install, can be enabled independently, and provider results
+  follow local results.
 - **Full MGRS** — type `56HLH 13225 37516`, jump straight there.
 - **Partial grid** — type just **4 / 6 / 8 / 10 figures** (e.g. `1885`) and
   we resolve against your current GZD + 100km square prefix, then drop
@@ -135,6 +145,24 @@ Layers sheet lets you unload it. iOS + Android.
   precision respectively).
 - Crash-safe: regex pre-validates MGRS shape before calling NGA's parser
   (which used to `fatalError` on partial input).
+- Privacy-safe: coordinate-shaped input (including malformed or out-of-range
+  text) is handled on-device and never forwarded to a place provider.
+
+### Unit Sync & TacMap Chat
+
+- **End-to-end encrypted Unit Sync** shares presence, symbols, drawings, and
+  other mission objects between current iOS and Android devices in the same v3
+  room. The relay routes ciphertext but still sees the metadata documented in
+  the threat model.
+- **TacMap Chat** sends encrypted text or reports either to the entire room or
+  to one selected live unit, with a direct map shortcut and unread indicator.
+  Chat v1 is live-only: **Routed** means relay-accepted, not delivered or read.
+- **Stable presence** uses signed sessions, bounded reconnect backoff,
+  implausible-GPS rejection, retained last-known markers, and explicit leave
+  handling so transient relay loss does not make units teleport or vanish.
+- **Optional screen-off presence** is separately off by default on both
+  platforms and uses a visible system location indicator/foreground-service
+  notification at the selected best-effort cadence.
 
 ---
 
@@ -149,7 +177,7 @@ Layers sheet lets you unload it. iOS + Android.
 ├── android/                        Kotlin + Compose, Gradle
 ├── docs/
 │   ├── ARCHITECTURE.md             shared design notes
-│   ├── PRIVACY_POLICY.md           public privacy policy (host this)
+│   ├── PRIVACY_POLICY.md           source for tacmap.app/privacy
 │   ├── APPSTORE_CHECKLIST.md       submission checklist
 │   └── screenshots/                README hero images
 ├── scripts/
@@ -178,6 +206,23 @@ open TacticalMaps.xcodeproj
 First build resolves Swift packages (mgrs is vendored, but pure-Swift deps
 still download). Pick an iPhone simulator and press ▶.
 
+For repeatable command-line installs, pin one existing standard iPhone once and
+reuse it for every update:
+
+```bash
+cd ios
+./scripts/install_simulator.sh --device <EXISTING_IPHONE_SIMULATOR_UDID>
+
+# Every later build/install uses that same simulator.
+./scripts/install_simulator.sh
+```
+
+The installer never creates, clones, erases, or deletes simulators, and it
+installs over the existing app so local data is preserved. It also rejects
+linker-only builds. Do not pass `CODE_SIGNING_ALLOWED=NO` when building the app
+for Simulator: that produces an incompletely signed bundle and causes TacMap's
+Keychain-backed entitlement, app-lock, and sync identity writes to fail.
+
 **Generate the App Store icon** (if you tweak the design in
 `scripts/generate_icon.swift`):
 
@@ -194,20 +239,19 @@ swift scripts/generate_icon.swift
 brew install --cask android-studio android-commandlinetools
 open -a "Android Studio"   # Run the first-launch SDK wizard + create an AVD
 
-# 2. Get a Google Maps API key
-#    https://developers.google.com/maps/documentation/android-sdk/get-api-key
-#    Enable "Maps SDK for Android" on the project. Restrict the key by
-#    Android package (com.tacticalmaps) + debug + release SHA-1.
-#    Add the key to android/local.properties (gitignored):
-#       MAPS_API_KEY=AIza…
-#    (Falls back to the MAPS_API_KEY env var if the property is unset.)
+# 2. Optional: configure an Esri key for the Esri raster styles
+#    Add it to android/local.properties (gitignored):
+#       ESRI_API_KEY=...
+#    (Falls back to the ESRI_API_KEY Gradle property or environment variable.)
 
 # 3. Open in Studio
 open -a "Android Studio" android
 ```
 
-Without an API key the map will render as a grey grid + watermark, but every
-other UI element still works.
+No key is required for offline PDF/GeoPDF and MBTiles use. Online basemaps are
+off on a fresh install and can be enabled in Privacy & OPSEC settings. An empty
+Esri key disables the Esri styles; the OpenTopoMap style remains subject to its
+provider availability.
 
 ---
 
@@ -217,12 +261,20 @@ Pure-logic unit tests run on both platforms and gate CI:
 
 ```bash
 # iOS — XCTest (affine fit, MGRS, GeoJSON geometry, MBTiles, map geometry, …)
-cd ios && xcodegen generate
-xcodebuild test -scheme TacticalMaps -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+export IOS_SIMULATOR_UDID='<existing-iPhone-simulator-UDID>'
+(
+  cd ios
+  xcodegen generate
+  xcodebuild test -scheme TacticalMaps \
+    -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID"
+)
 
 # Android — JVM unit tests (no emulator needed)
-cd android && ./gradlew testDebugUnitTest
+./android/gradlew -p android testDebugUnitTest
 ```
+
+Select the iOS UDID from `xcrun simctl list devices available` and keep reusing
+that simulator. These commands do not create, clone, erase, or delete one.
 
 Cross-platform invariants (the affine solve, MGRS formatting, GeoJSON geometry)
 are pinned by shared golden vectors in [`testdata/`](testdata/) that **both**
@@ -246,19 +298,14 @@ Full design + math in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - **Wave 2 projections** — Lambert Conformal Conic (French IGN, Canadian
   NRCan, US state plane), arbitrary-central-meridian TM (UK OSGB36, NZ NZTM),
   non-WGS84 datum shifts.
-- **Per-PDF fiduciary library** — the *active* calibrated PDF's fiduciaries +
-  affine already persist across launches (`PDFSessionStore`). A keyed library so
-  switching between several PDFs remembers each one's calibration is still TODO.
+- **Saved basemap library** — calibration can be recovered for an imported map;
+  a richer multi-map library and management UI remain planned.
 - **Datum shift** — calibration now lets you flag the sheet's datum (WGS84 /
   GDA94 / GDA2020) and shifts fiduciaries to WGS84 via the ICSM Helmert; Lambert
   Conformal Conic + arbitrary-TM datum work remains (see Wave 2 above).
-- **Route logging** — the iOS `UIBackgroundModes: [location]` declaration is
-  in place; logger UI + GPX export TBD.
 - **iCloud sync** for waypoints + drawings.
-- **Android feature parity** — drawing, search, waypoints + APP-6 symbols,
-  GeoPDF import & fiduciary calibration, GeoJSON import/export, KML/KMZ import,
-  the offline MBTiles basemap, and the live DEM elevation readout in the HUD are
-  all wired on Android now.
+- **Encrypted mission packages** for transferring mission objects and related
+  assets as one authenticated bundle.
 
 ---
 
@@ -267,36 +314,55 @@ Full design + math in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 The iOS build is App-Store-ready in terms of assets:
 
 - 1024×1024 icon, launch screen, acknowledgements view all in place
-- Privacy policy at [`docs/PRIVACY_POLICY.md`](docs/PRIVACY_POLICY.md)
+- Public privacy policy at <https://tacmap.app/privacy>, generated from
+  [`docs/PRIVACY_POLICY.md`](docs/PRIVACY_POLICY.md)
 - Step-by-step submission checklist at
   [`docs/APPSTORE_CHECKLIST.md`](docs/APPSTORE_CHECKLIST.md)
 
-An iOS build has gone out via **TestFlight**; it has not been submitted for
-App Store review yet. If you do, see the checklist for the Apple-side steps
-(Developer Program enrolment, name reservation, screenshots, TestFlight).
+Store availability, agreements, declarations, and review state are controlled
+in App Store Connect and Google Play Console rather than this repository. Use
+the checklists before every submission; their unchecked items are deliberately
+human-owned release gates.
 
 ---
 
 ## Privacy
 
-No accounts, no analytics, no advertising IDs, no data collection by us. What
-differs per platform is the SDKs each app links and the hosts it talks to:
+No TacMap accounts, ads, behavioural analytics, advertising IDs, or
+developer-operated telemetry. Both platforms use the same custom raster map
+engine. Online tiles (Esri/OpenTopoMap), online lookups (Open-Meteo and the
+platform place provider), and Unit Sync are separate opt-in paths; all are off
+by default. Coordinate/grid search remains on-device. StoreKit or Play Billing
+can still reconcile the one-time unlock at launch/foreground and handles normal
+store metadata without mission or location payloads.
 
-- **iOS** — Apple Maps (basemap tiles + place search), Open-Meteo
-  (elevation/weather), and the optional end-to-end-encrypted sync relay if a
-  unit turns it on. No third-party analytics SDKs.
-- **Android** — Google Maps SDK + Play Services Location (basemap + GPS),
-  Google Play Billing and Block Store (one-time unlock purchase / trial stamp),
-  Open-Meteo (elevation/weather), and the optional sync relay. These are
-  Google/first-party SDKs, not analytics or ad SDKs.
+Mission objects, calibration metadata, and track logs are encrypted in
+app-private storage. Imported PDF/MBTiles bytes remain in their original format
+inside app-private, OS-protected storage. Unit Sync content is end-to-end
+encrypted, but its relay can see routing/session/IP/timing/size metadata and
+also handles the room-admission token plus clear envelope, actor/session,
+acknowledgement, and control fields. It reports — rather than independently
+proves — session liveness. See the full
+[`privacy policy`](https://tacmap.app/privacy) and
+[`threat model`](docs/THREAT_MODEL.md).
 
-Elevation/weather lookups send the queried coordinate to Open-Meteo over
-HTTPS — see the OPSEC note in [`docs/PRIVACY_POLICY.md`](docs/PRIVACY_POLICY.md),
-kept in lockstep with this section.
+On iOS and Android, a separate default-off OPSEC control can continue v3
+location presence with the screen locked at a best-effort one, five, fifteen,
+thirty, or sixty-minute cadence. iOS uses the foreground-started Core Location
+session and system indicator; Android uses a location foreground service and
+ongoing notification without requesting `ACCESS_BACKGROUND_LOCATION`. Joining a
+v3 room while either location control is off pauses for explicit consent;
+**Enable & Join** turns on both controls, while Cancel does not join.
+The system background-location indicator remains visible; foreground return
+reconnects and verifies a fresh Sync snapshot. Android-originated screen-off
+presence runs only inside TacMap's dedicated, user-visible location foreground
+service; it stops when the room or either location-sharing control is disabled.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Includes vendored NGA `mgrs-ios` (MIT)
-with a small Snyder UTM patch for Xcode 26 compatibility.
+MIT — see [LICENSE](LICENSE). Includes vendored NGA `mgrs-ios` (MIT) with a
+small Snyder UTM patch for Xcode 26 compatibility. Android's additional bundled
+notices, including Java-WebSocket and SLF4J, are in
+`android/app/src/main/assets/THIRD_PARTY_NOTICES.txt`.

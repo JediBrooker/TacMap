@@ -2,6 +2,45 @@ import Foundation
 import CoreLocation
 import SwiftUI
 
+/// Field F on a military unit symbol. Raw values are shared with Android and
+/// GeoJSON so Unit Sync can round-trip the selection without a wire change.
+enum ReinforcementStatus: String, Codable, Hashable, CaseIterable {
+    case none
+    case reinforced
+    case reduced
+
+    var displayName: String {
+        switch self {
+        case .none:       return "None"
+        case .reinforced: return "Reinforced (+)"
+        case .reduced:    return "Reduced (-)"
+        }
+    }
+
+    /// FM 1-02.2 Table 2-5 / Figure 2-6 render the sign in parentheses.
+    var amplifierText: String? {
+        switch self {
+        case .none:       return nil
+        case .reinforced: return "(+)"
+        case .reduced:    return "(-)"
+        }
+    }
+}
+
+/// FM 1-02.2 field limits. Keeping normalization at the model boundary also
+/// caps imported/synced labels before UIKit attempts to render them.
+enum UnitAmplifierText {
+    static let higherFormationMaxLength = 21
+    static let uniqueIdentifierMaxLength = 30
+
+    static func normalized(_ value: String?, maximumLength: Int) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.unicodeScalars.prefix(maximumLength))
+    }
+}
+
 /// User-placed point of interest. Stored as WGS84 lat/lon doubles (matches
 /// GeoJSON export and Android model). The computed `coordinate` just wraps
 /// it for CoreLocation/MapKit.
@@ -28,6 +67,12 @@ struct Waypoint: Identifiable, Codable, Hashable {
     /// the black line-art glyph. Default is black, others follow
     /// APP-6 affiliation palette. Ignored for units + generic markers.
     var taskColor: TaskColor
+    /// FM 1-02.2 amplifier field M (bottom-right). Unit-only.
+    var higherFormation: String?
+    /// FM 1-02.2 amplifier field T (bottom-left). Unit-only.
+    var uniqueIdentifier: String?
+    /// FM 1-02.2 amplifier field F (upper-right). Unit-only.
+    var reinforcementStatus: ReinforcementStatus
     /// Which layer this waypoint sits on. Shared model with DrawingShape,
     /// so toggling a layer hides both drawings and waypoints.
     /// Back-compat: old saves without layerID get legacyFallbackID
@@ -46,6 +91,9 @@ struct Waypoint: Identifiable, Codable, Hashable {
          scaleX: Double = 1.0,
          scaleY: Double = 1.0,
          taskColor: TaskColor = .black,
+         higherFormation: String? = nil,
+         uniqueIdentifier: String? = nil,
+         reinforcementStatus: ReinforcementStatus = .none,
          layerID: UUID = DrawingLayer.legacyFallbackID,
          createdAt: Date = .now) {
         self.id = id
@@ -59,6 +107,17 @@ struct Waypoint: Identifiable, Codable, Hashable {
         self.scaleX = scaleX
         self.scaleY = scaleY
         self.taskColor = taskColor
+        if kind.militarySpec != nil {
+            self.higherFormation = UnitAmplifierText.normalized(
+                higherFormation, maximumLength: UnitAmplifierText.higherFormationMaxLength)
+            self.uniqueIdentifier = UnitAmplifierText.normalized(
+                uniqueIdentifier, maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength)
+            self.reinforcementStatus = reinforcementStatus
+        } else {
+            self.higherFormation = nil
+            self.uniqueIdentifier = nil
+            self.reinforcementStatus = .none
+        }
         self.layerID = layerID
         self.createdAt = createdAt
     }
@@ -74,12 +133,18 @@ struct Waypoint: Identifiable, Codable, Hashable {
          scaleX: Double = 1.0,
          scaleY: Double = 1.0,
          taskColor: TaskColor = .black,
+         higherFormation: String? = nil,
+         uniqueIdentifier: String? = nil,
+         reinforcementStatus: ReinforcementStatus = .none,
          layerID: UUID = DrawingLayer.legacyFallbackID,
          createdAt: Date = .now) {
         self.init(id: id, name: name, notes: notes,
                   latitude: coordinate.latitude, longitude: coordinate.longitude,
                   elevation: elevation, kind: kind, rotation: rotation,
                   scaleX: scaleX, scaleY: scaleY, taskColor: taskColor,
+                  higherFormation: higherFormation,
+                  uniqueIdentifier: uniqueIdentifier,
+                  reinforcementStatus: reinforcementStatus,
                   layerID: layerID, createdAt: createdAt)
     }
 
@@ -99,7 +164,9 @@ struct Waypoint: Identifiable, Codable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, notes, latitude, longitude, elevation, kind,
-             rotation, scale, scaleX, scaleY, taskColor, layerID, createdAt
+             rotation, scale, scaleX, scaleY, taskColor,
+             higherFormation, uniqueIdentifier, reinforcementStatus,
+             layerID, createdAt
     }
 
     init(from decoder: Decoder) throws {
@@ -121,6 +188,21 @@ struct Waypoint: Identifiable, Codable, Hashable {
         self.scaleY = try c.decodeIfPresent(Double.self, forKey: .scaleY)
             ?? legacyScale ?? 1.0
         self.taskColor = try c.decodeIfPresent(TaskColor.self, forKey: .taskColor) ?? .black
+        if kind.militarySpec != nil {
+            self.higherFormation = UnitAmplifierText.normalized(
+                try c.decodeIfPresent(String.self, forKey: .higherFormation),
+                maximumLength: UnitAmplifierText.higherFormationMaxLength)
+            self.uniqueIdentifier = UnitAmplifierText.normalized(
+                try c.decodeIfPresent(String.self, forKey: .uniqueIdentifier),
+                maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength)
+            self.reinforcementStatus = (try c.decodeIfPresent(
+                String.self, forKey: .reinforcementStatus))
+                .flatMap(ReinforcementStatus.init(rawValue:)) ?? .none
+        } else {
+            self.higherFormation = nil
+            self.uniqueIdentifier = nil
+            self.reinforcementStatus = .none
+        }
         self.layerID = try c.decodeIfPresent(UUID.self, forKey: .layerID)
             ?? DrawingLayer.legacyFallbackID
         self.createdAt = try c.decode(Date.self, forKey: .createdAt)
@@ -139,8 +221,39 @@ struct Waypoint: Identifiable, Codable, Hashable {
         try c.encode(scaleX, forKey: .scaleX)
         try c.encode(scaleY, forKey: .scaleY)
         try c.encode(taskColor, forKey: .taskColor)
+        if kind.militarySpec != nil {
+            try c.encodeIfPresent(UnitAmplifierText.normalized(
+                higherFormation, maximumLength: UnitAmplifierText.higherFormationMaxLength),
+                forKey: .higherFormation)
+            try c.encodeIfPresent(UnitAmplifierText.normalized(
+                uniqueIdentifier, maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength),
+                forKey: .uniqueIdentifier)
+            try c.encode(reinforcementStatus, forKey: .reinforcementStatus)
+        }
         try c.encode(layerID, forKey: .layerID)
         try c.encode(createdAt, forKey: .createdAt)
+    }
+}
+
+/// Testable render contract used by the overlay. Existing waypoint name labels
+/// are deliberately absent: these are the three independent unit amplifiers.
+struct UnitAmplifierPresentation: Equatable {
+    let higherFormation: String?
+    let uniqueIdentifier: String?
+    let reinforcementText: String?
+
+    init?(waypoint: Waypoint, visible: Bool) {
+        guard visible, waypoint.kind.militarySpec != nil else { return nil }
+        higherFormation = UnitAmplifierText.normalized(
+            waypoint.higherFormation,
+            maximumLength: UnitAmplifierText.higherFormationMaxLength)
+        uniqueIdentifier = UnitAmplifierText.normalized(
+            waypoint.uniqueIdentifier,
+            maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength)
+        reinforcementText = waypoint.reinforcementStatus.amplifierText
+        guard higherFormation != nil || uniqueIdentifier != nil || reinforcementText != nil else {
+            return nil
+        }
     }
 }
 

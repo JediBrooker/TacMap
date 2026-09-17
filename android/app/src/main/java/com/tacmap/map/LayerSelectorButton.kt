@@ -35,10 +35,10 @@ import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingLayer
 
 @Composable
-fun LayerSelectorButton(
+internal fun LayerSelectorButton(
     layers: List<DrawingLayer>,
     selectedLayerId: String,
-    onLayerSelected: (String) -> Unit,
+    onLayerSelected: (String) -> DrawingMutationUiResult,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -96,8 +96,8 @@ fun LayerSelectorButton(
                         }
                     },
                     onClick = {
-                        onLayerSelected(layer.id)
-                        expanded = false
+                        val result = onLayerSelected(layer.id)
+                        if (result.shouldCloseTransientUi) expanded = false
                     }
                 )
             }

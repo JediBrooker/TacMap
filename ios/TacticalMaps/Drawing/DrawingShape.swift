@@ -153,6 +153,28 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         }
     }
 
+    /// Translates the complete shape so its rendered label/selection anchor is
+    /// at the crosshair. The raw vertices all receive the same delta, preserving
+    /// rotation, scale, and internal geometry for every drawing kind.
+    func moved(to target: CLLocationCoordinate2D) -> DrawingShape {
+        guard let anchor = labelAnchor else { return self }
+        let latitudeDelta = target.latitude - anchor.latitude
+        let longitudeDelta = Self.normalizedLongitude(target.longitude - anchor.longitude)
+        var moved = self
+        moved.coordinates = coordinates.map { coordinate in
+            Coordinate2D(
+                latitude: min(max(coordinate.latitude + latitudeDelta, -90), 90),
+                longitude: Self.normalizedLongitude(coordinate.longitude + longitudeDelta)
+            )
+        }
+        return moved
+    }
+
+    private static func normalizedLongitude(_ value: Double) -> Double {
+        let wrapped = (value + 180).truncatingRemainder(dividingBy: 360)
+        return (wrapped < 0 ? wrapped + 360 : wrapped) - 180
+    }
+
     // backward compat: old drawings.json has no layerID / rotation /
     // scaleX / scaleY. Decode with sensible defaults.
     private enum CodingKeys: String, CodingKey {
@@ -262,5 +284,19 @@ struct DrawingStyle: Codable, Hashable {
     var lineGraphic: LineGraphic? = nil
 
     static let `default` = DrawingStyle()
+
+    /// Production style controls call these seams so stroke, fill hue, and
+    /// fill opacity cannot accidentally overwrite one another.
+    mutating func setStrokeHue(_ hex: String) {
+        strokeColorHex = hex
+    }
+
+    mutating func setFillHue(_ hex: String) {
+        fillColorHex = hex
+    }
+
+    mutating func setFillOpacity(_ opacity: Double) {
+        fillOpacity = min(max(opacity.isFinite ? opacity : 0.2, 0), 1)
+    }
 
 }

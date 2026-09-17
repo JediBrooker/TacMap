@@ -20,114 +20,120 @@ struct PaywallView: View {
     var body: some View {
         ZStack {
             background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                Spacer()
+            ScrollView {
+                VStack(spacing: 0) {
+                    Text("TacMap")
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(green)
 
-                Text("TacMap")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(green)
-
-                Text(expired ? "Your free trial has ended" : "Unlock the full version")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 10)
-
-                Text(bodyText)
-                    .font(.subheadline)
-                    .foregroundStyle(Color(white: 0.74))
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 14)
-                    .padding(.horizontal, 28)
-
-                switch store.loadState {
-                case .failed, .unavailable:
-                    Text(store.loadState == .failed
-                         ? "Couldn't load purchase options. Check your connection and try again."
-                         : "Purchase options are offline until you ask to connect to the App Store.")
-                        .font(.subheadline)
-                        .foregroundStyle(orange)
+                    Text(expired ? "Your free trial has ended" : "Unlock the full version")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
-                        .padding(.top, 24)
-                        .padding(.horizontal, 28)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 10)
 
-                    Button {
-                        Task { await store.loadProduct() }
-                    } label: {
-                        Text(store.loadState == .failed ? "Try Again" : "Load purchase options")
-                            .font(.system(size: 16, weight: .bold))
+                    Text(bodyText)
+                        .font(.subheadline)
+                        .foregroundStyle(Color(white: 0.74))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 14)
+
+                    switch store.loadState {
+                    case .failed, .unavailable:
+                        Text(store.loadState == .failed
+                             ? "Couldn't load purchase options. Check your connection and try again."
+                             : "The App Store didn't return the TacMap unlock. Try again or restore an existing purchase.")
+                            .font(.subheadline)
+                            .foregroundStyle(orange)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 24)
+
+                        Button {
+                            Task { await store.loadProduct() }
+                        } label: {
+                            Text("Try Again")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 15)
+                                .background(green, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .foregroundStyle(.black)
+                        }
+                        .disabled(store.commerceOperationActive)
+                        .padding(.top, 16)
+
+                    case .loading, .loaded:
+                        Button {
+                            Task { await store.purchase() }
+                        } label: {
+                            Group {
+                                if store.purchasing || store.loadState == .loading {
+                                    ProgressView().tint(.black)
+                                } else {
+                                    Text(buttonTitle)
+                                        .font(.headline)
+                                        .multilineTextAlignment(.center)
+                                }
+                            }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
-                            .background(green, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .foregroundStyle(.black)
-                    }
-                    .padding(.top, 16)
-                    .padding(.horizontal, 28)
-
-                case .loading, .loaded:
-                    Button {
-                        Task { await store.purchase() }
-                    } label: {
-                        Group {
-                            if store.purchasing || store.loadState == .loading {
-                                ProgressView().tint(.black)
-                            } else {
-                                Text(buttonTitle)
-                                    .font(.system(size: 16, weight: .bold))
-                            }
+                            .background(purchaseEnabled ? green : Color(white: 0.22),
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .foregroundStyle(purchaseEnabled ? .black : Color(white: 0.5))
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(store.loadState != .loaded ? Color(white: 0.22) : green,
-                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .foregroundStyle(store.loadState != .loaded ? Color(white: 0.5) : .black)
+                        .disabled(!purchaseEnabled)
+                        .padding(.top, 28)
                     }
-                    .disabled(store.loadState != .loaded || store.purchasing)
-                    .padding(.top, 28)
-                    .padding(.horizontal, 28)
-                }
 
-                Button(action: onRestore) {
-                    if store.restoring {
-                        ProgressView().tint(orange)
-                    } else {
-                        Text("Restore purchase")
-                            .font(.subheadline)
-                            .foregroundStyle(orange)
+                    Button(action: onRestore) {
+                        if store.restoring {
+                            ProgressView().tint(orange)
+                        } else {
+                            Text("Restore purchase")
+                                .font(.subheadline)
+                                .foregroundStyle(orange)
+                        }
                     }
-                }
-                .disabled(store.restoring)
-                .padding(.top, 10)
+                    .disabled(store.commerceOperationActive)
+                    .padding(.top, 10)
 
-                Button {
-                    Task { await store.redeemOfferCode() }
-                } label: {
-                    if store.redeeming {
-                        ProgressView().tint(orange)
-                    } else {
-                        Text("Redeem TacMap offer code")
-                            .font(.subheadline)
-                            .foregroundStyle(orange)
+                    Button {
+                        Task { await store.redeemOfferCode() }
+                    } label: {
+                        if store.redeeming {
+                            ProgressView().tint(orange)
+                        } else {
+                            Text("Redeem TacMap offer code")
+                                .font(.subheadline)
+                                .foregroundStyle(orange)
+                        }
                     }
+                    .disabled(store.commerceOperationActive)
+                    .padding(.top, 6)
+
+                    Text("One-time purchase. No subscription.")
+                        .font(.caption)
+                        .foregroundStyle(Color(white: 0.48))
+                        .padding(.top, 18)
+
+                    if store.isSandbox {
+                        Text("Test build (Sandbox) — purchases are free; you won't be charged.")
+                            .font(.caption2)
+                            .foregroundStyle(green.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 6)
+                    }
+
+                    Spacer(minLength: 0)
                 }
-                .disabled(store.redeeming)
-                .padding(.top, 6)
-
-                Text("One-time purchase. No subscription.")
-                    .font(.caption)
-                    .foregroundStyle(Color(white: 0.48))
-                    .padding(.top, 18)
-
-                if store.isSandbox {
-                    Text("Test build (Sandbox) — purchases are free; you won't be charged.")
-                        .font(.caption2)
-                        .foregroundStyle(green.opacity(0.9))
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 6)
-                        .padding(.horizontal, 28)
-                }
-
-                Spacer()
+                .frame(maxWidth: 560)
+                .padding(.horizontal, 28)
+                .padding(.top, onClose == nil ? 36 : 64)
+                .padding(.bottom, 36)
+                .frame(maxWidth: .infinity)
             }
 
             if let onClose {
@@ -140,6 +146,7 @@ struct PaywallView: View {
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(Color(white: 0.6))
                         }
+                        .accessibilityLabel("Close unlock screen")
                         .padding()
                     }
                     Spacer()
@@ -148,7 +155,10 @@ struct PaywallView: View {
         }
         .preferredColorScheme(.dark)
         .task {
-            await store.start()
+            await store.loadProduct()
+        }
+        .onDisappear {
+            store.cancelProductLoad()
         }
         .alert("Restore Purchase",
                isPresented: Binding(get: { store.restoreOutcome != nil },
@@ -165,8 +175,13 @@ struct PaywallView: View {
     }
 
     private var buttonTitle: String {
+        if store.purchasePending { return "Awaiting approval…" }
         if let price = store.priceText { return "Unlock Full Version  ·  \(price)" }
         return "Loading price…"
+    }
+
+    private var purchaseEnabled: Bool {
+        store.loadState == .loaded && !store.commerceOperationActive
     }
 
     private var bodyText: String {

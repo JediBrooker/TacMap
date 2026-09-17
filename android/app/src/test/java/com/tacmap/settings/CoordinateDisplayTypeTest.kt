@@ -15,4 +15,12 @@ class CoordinateDisplayTypeTest {
             assertEquals(type, CoordinateDisplayType.fromPersisted(type.name))
         }
     }
+
+    @Test fun mapOrientationDefaultsNorthUpAndRoundTrips() {
+        assertEquals(MapOrientationMode.NORTH_UP, MapOrientationMode.fromPersisted(null))
+        assertEquals(MapOrientationMode.NORTH_UP, MapOrientationMode.fromPersisted("unknown"))
+        MapOrientationMode.entries.forEach { mode ->
+            assertEquals(mode, MapOrientationMode.fromPersisted(mode.name))
+        }
+    }
 }

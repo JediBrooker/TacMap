@@ -5,9 +5,10 @@ import Security
 /// high-water mark). Generic-password items survive app deletion which is the
 /// whole point - reinstall sees the same trial clock.
 ///
-/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` keeps items device-bound
-/// (won't migrate via iCloud Keychain or encrypted backup), matches the
-/// Android Block Store config.
+/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` keeps items device-bound:
+/// they do not sync through iCloud Keychain or restore onto a different device.
+/// Apple can restore a protected backup to the same device, so `ThisDeviceOnly`
+/// must not be described as "never present in a backup."
 enum KeychainStore {
     private static let service = "com.tacticalmaps.app.entitlement"
 

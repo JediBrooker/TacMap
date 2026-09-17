@@ -52,6 +52,7 @@ fun WaypointListSheet(
     onFlyTo: (lat: Double, lng: Double) -> Unit
 ) {
     var pendingEditor by remember { mutableStateOf<SymbolEditorMode?>(null) }
+    var creationError by remember { mutableStateOf<String?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -98,21 +99,21 @@ fun WaypointListSheet(
                 label = "Military Unit",
                 icon = Icons.Default.Security,
                 modifier = Modifier.padding(horizontal = 20.dp),
-                onClick = { pendingEditor = SymbolEditorMode.MILITARY }
+                onClick = { creationError = null; pendingEditor = SymbolEditorMode.MILITARY }
             )
             Spacer(Modifier.size(8.dp))
             AddSymbolButton(
                 label = "Tactical Task",
                 icon = Icons.Default.Flag,
                 modifier = Modifier.padding(horizontal = 20.dp),
-                onClick = { pendingEditor = SymbolEditorMode.TASK }
+                onClick = { creationError = null; pendingEditor = SymbolEditorMode.TASK }
             )
             Spacer(Modifier.size(8.dp))
             AddSymbolButton(
                 label = "Marker (Airsoft / SAR / POI)",
                 icon = Icons.Default.Place,
                 modifier = Modifier.padding(horizontal = 20.dp),
-                onClick = { pendingEditor = SymbolEditorMode.MARKER }
+                onClick = { creationError = null; pendingEditor = SymbolEditorMode.MARKER }
             )
             Text(
                 "New symbols are placed at the current map centre.",
@@ -141,17 +142,27 @@ fun WaypointListSheet(
                 SymbolEditorMode.MARKER -> "New Marker"
             },
             actionLabel = "Place",
-            onDismiss = { pendingEditor = null },
-            onConfirm = { name, kind ->
-                store.add(Waypoint(
+            submissionError = creationError,
+            onDismiss = { creationError = null; pendingEditor = null },
+            onConfirm = { name, kind, higherFormation, uniqueIdentifier, reinforcementStatus ->
+                val waypoint = Waypoint(
                     name = name,
                     latitude = crosshairLat,
                     longitude = crosshairLng,
                     kind = kind,
+                    higherFormation = higherFormation,
+                    uniqueIdentifier = uniqueIdentifier,
+                    reinforcementStatus = reinforcementStatus,
                     layerId = activeLayerId
-                ))
-                pendingEditor = null
-                onDismiss()
+                )
+                when (val result = persistNewSymbol(waypoint) { store.add(it) }) {
+                    is DurableSymbolCreation.Saved -> {
+                        creationError = null
+                        pendingEditor = null
+                        onDismiss()
+                    }
+                    is DurableSymbolCreation.Failed -> creationError = result.message
+                }
             }
         )
     }

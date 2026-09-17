@@ -2,19 +2,424 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
-/// Handles place name / address / POI search (MKLocalSearch), full MGRS coords
-/// like `56HLH 13225 37516` (spaces optional), and partial grid refs - just
-/// type 4/6/8/10 digits and they get resolved against whatever GZD the camera
-/// is sitting in. e.g. at Holsworthy typing `1885` hits 56HLH 18 85 (~1 km sq).
+struct OfflineSearchRecord {
+    enum Target {
+        case waypoint(UUID)
+        case drawing(UUID)
+    }
+
+    let id: String
+    let target: Target
+    let name: String
+    let notes: String?
+    let typeTerms: [String]
+    let layerName: String
+    let coordinate: CLLocationCoordinate2D
+    let createdOrder: Int64
+}
+
+struct SearchResult: Identifiable {
+    enum Kind {
+        case mgrs
+        case partialMGRS
+        case latitudeLongitude
+        case waypoint
+        case drawing
+        case place
+    }
+
+    enum Target {
+        case coordinate
+        case waypoint(UUID)
+        case drawing(UUID)
+    }
+
+    let id: String
+    let title: String
+    let subtitle: String
+    let coordinate: CLLocationCoordinate2D
+    let kind: Kind
+    let target: Target
+}
+
+struct OfflineSearchOutput {
+    let results: [SearchResult]
+    let statusMessage: String?
+    /// Coordinate-shaped input is fully handled on-device, including range
+    /// errors. The online place-search coordinator uses this production value
+    /// to guarantee that coordinate text never reaches MapKit's provider.
+    let recognizedCoordinateInput: Bool
+
+    init(results: [SearchResult],
+         statusMessage: String?,
+         recognizedCoordinateInput: Bool = false) {
+        self.results = results
+        self.statusMessage = statusMessage
+        self.recognizedCoordinateInput = recognizedCoordinateInput
+    }
+}
+
+enum OnlinePlaceLookupDecision: Equatable {
+    case skipShortOrBlank
+    case skipCoordinate
+    case disabled
+    case requestProvider
+}
+
+struct OnlinePlaceLookupOutcome {
+    let results: [SearchResult]
+    let statusMessage: String?
+}
+
+/// The one production decision point between offline search and MapKit. Tests
+/// inject a provider spy through `perform`, so the no-egress guarantee covers
+/// the same orchestration path the SwiftUI sheet uses rather than fixture data.
+enum OnlinePlaceLookup {
+    static let disabledStatus =
+        "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work."
+    static let unavailableStatus =
+        "Place search unavailable offline — MGRS, grid and lat/lon still work."
+
+    static func decision(rawQuery: String,
+                         offlineOutput: OfflineSearchOutput,
+                         onlineLookups: Bool) -> OnlinePlaceLookupDecision {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 2 else { return .skipShortOrBlank }
+        guard !offlineOutput.recognizedCoordinateInput else { return .skipCoordinate }
+        guard onlineLookups else { return .disabled }
+        return .requestProvider
+    }
+
+    static func perform(
+        rawQuery: String,
+        offlineOutput: OfflineSearchOutput,
+        onlineLookups: Bool,
+        provider: () async throws -> [SearchResult]
+    ) async throws -> OnlinePlaceLookupOutcome {
+        switch decision(rawQuery: rawQuery,
+                        offlineOutput: offlineOutput,
+                        onlineLookups: onlineLookups) {
+        case .skipShortOrBlank, .skipCoordinate:
+            return OnlinePlaceLookupOutcome(results: [], statusMessage: nil)
+        case .disabled:
+            return OnlinePlaceLookupOutcome(results: [], statusMessage: disabledStatus)
+        case .requestProvider:
+            do {
+                let results = try await provider()
+                let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                let status = results.isEmpty && offlineOutput.results.isEmpty
+                    ? "No matches for “\(trimmed)”."
+                    : nil
+                return OnlinePlaceLookupOutcome(results: results, statusMessage: status)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                return OnlinePlaceLookupOutcome(results: [], statusMessage: unavailableStatus)
+            }
+        }
+    }
+}
+
+/// Pure, deterministic, offline-only mission search. Online providers are
+/// deliberately absent from this type and are appended by SearchSheet.
+enum OfflineSearchEngine {
+    static let coordinateRangeMessage =
+        "Latitude must be between -90 and 90, and longitude between -180 and 180."
+
+    static func records(waypoints: [Waypoint],
+                        drawings: [DrawingShape],
+                        layers: [DrawingLayer]) -> [OfflineSearchRecord] {
+        let layerNames = Dictionary(uniqueKeysWithValues: layers.map { ($0.id, $0.name) })
+        let waypointRecords = waypoints.map { waypoint in
+            OfflineSearchRecord(
+                id: "waypoint:\(waypoint.id.uuidString.lowercased())",
+                target: .waypoint(waypoint.id),
+                name: waypoint.name,
+                notes: waypoint.notes,
+                typeTerms: [waypoint.kind.displayName, waypoint.kind.categoryDisplayName],
+                layerName: layerNames[waypoint.layerID] ?? "",
+                coordinate: waypoint.coordinate,
+                createdOrder: order(for: waypoint.createdAt)
+            )
+        }
+        let drawingRecords = drawings.compactMap { drawing -> OfflineSearchRecord? in
+            guard let coordinate = drawing.labelAnchor else { return nil }
+            return OfflineSearchRecord(
+                id: "drawing:\(drawing.id.uuidString.lowercased())",
+                target: .drawing(drawing.id),
+                name: drawing.name ?? drawing.kind.displayName,
+                notes: drawing.notes,
+                typeTerms: [drawing.kind.displayName],
+                layerName: layerNames[drawing.layerID] ?? "",
+                coordinate: coordinate,
+                createdOrder: order(for: drawing.createdAt)
+            )
+        }
+        return waypointRecords + drawingRecords
+    }
+
+    static func search(_ rawQuery: String,
+                       anchor: CLLocationCoordinate2D,
+                       records: [OfflineSearchRecord]) -> OfflineSearchOutput {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            let recent = records.sorted {
+                if $0.createdOrder != $1.createdOrder { return $0.createdOrder > $1.createdOrder }
+                return $0.id < $1.id
+            }.prefix(8).map { result(for: $0) }
+            return OfflineSearchOutput(results: recent, statusMessage: nil)
+        }
+
+        let compact = query.uppercased().filter { !$0.isWhitespace }
+
+        if compact.rangeOfCharacter(from: .letters) != nil,
+           let resolved = try? MGRSFormatter.resolveGridReference(compact, relativeTo: anchor) {
+            let result = SearchResult(
+                id: "coordinate:mgrs",
+                title: resolved.formattedReference,
+                subtitle: latLonString(resolved.coordinate),
+                coordinate: resolved.coordinate,
+                kind: .mgrs,
+                target: .coordinate
+            )
+            return OfflineSearchOutput(
+                results: [result], statusMessage: nil, recognizedCoordinateInput: true)
+        } else if compact.rangeOfCharacter(from: .letters) != nil,
+                  let coordinate = MGRSFormatter.coordinate(from: compact) {
+            let result = SearchResult(
+                id: "coordinate:mgrs",
+                title: MGRSFormatter.formatted(compact),
+                subtitle: latLonString(coordinate),
+                coordinate: coordinate,
+                kind: .mgrs,
+                target: .coordinate
+            )
+            return OfflineSearchOutput(
+                results: [result], statusMessage: nil, recognizedCoordinateInput: true)
+        } else if let partial = partialMGRSResult(query, anchor: anchor) {
+            return OfflineSearchOutput(
+                results: [partial], statusMessage: nil, recognizedCoordinateInput: true)
+        } else {
+            switch decimalCoordinate(query) {
+            case .valid(let coordinate):
+                let result = SearchResult(
+                    id: "coordinate:lat-lon",
+                    title: "Latitude / Longitude",
+                    subtitle: String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude),
+                    coordinate: coordinate,
+                    kind: .latitudeLongitude,
+                    target: .coordinate
+                )
+                return OfflineSearchOutput(
+                    results: [result], statusMessage: nil, recognizedCoordinateInput: true)
+            case .outOfRange:
+                return OfflineSearchOutput(
+                    results: [], statusMessage: coordinateRangeMessage,
+                    recognizedCoordinateInput: true)
+            case .notCoordinate:
+                break
+            }
+        }
+
+        let needle = normalized(query)
+        let ranked = records.compactMap { record -> (Int, OfflineSearchRecord)? in
+            guard let rank = rank(record, needle: needle) else { return nil }
+            return (rank, record)
+        }.sorted {
+            if $0.0 != $1.0 { return $0.0 < $1.0 }
+            if $0.1.createdOrder != $1.1.createdOrder {
+                return $0.1.createdOrder < $1.1.createdOrder
+            }
+            return $0.1.id < $1.1.id
+        }
+
+        let localResults = ranked.map { _, record in result(for: record) }
+
+        return OfflineSearchOutput(
+            results: Array(localResults.prefix(20)),
+            statusMessage: nil,
+            recognizedCoordinateInput: looksCoordinateShaped(query)
+        )
+    }
+
+    private static func order(for date: Date) -> Int64 {
+        Int64((date.timeIntervalSince1970 * 1_000).rounded())
+    }
+
+    private static func result(for record: OfflineSearchRecord) -> SearchResult {
+        switch record.target {
+        case .waypoint(let id):
+            return SearchResult(
+                id: record.id,
+                title: record.name,
+                subtitle: record.typeTerms.first ?? "Waypoint",
+                coordinate: record.coordinate,
+                kind: .waypoint,
+                target: .waypoint(id)
+            )
+        case .drawing(let id):
+            return SearchResult(
+                id: record.id,
+                title: record.name,
+                subtitle: record.typeTerms.first ?? "Drawing",
+                coordinate: record.coordinate,
+                kind: .drawing,
+                target: .drawing(id)
+            )
+        }
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    private static func rank(_ record: OfflineSearchRecord, needle: String) -> Int? {
+        let name = normalized(record.name)
+        if name == needle { return 0 }
+        if name.hasPrefix(needle) { return 1 }
+        if name.contains(needle) { return 2 }
+        if normalized(record.notes ?? "").contains(needle) { return 3 }
+        if record.typeTerms.contains(where: { normalized($0).contains(needle) }) { return 4 }
+        if normalized(record.layerName).contains(needle) { return 5 }
+        return nil
+    }
+
+    private enum DecimalCoordinate {
+        case valid(CLLocationCoordinate2D)
+        case outOfRange
+        case notCoordinate
+    }
+
+    private static func decimalCoordinate(_ raw: String) -> DecimalCoordinate {
+        let pattern = #"^\s*([-+]?\d+(?:\.\d+)?)\s*(?:,|\s)\s*([-+]?\d+(?:\.\d+)?)\s*$"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: raw,
+                range: NSRange(raw.startIndex..., in: raw)
+              ),
+              let latitudeRange = Range(match.range(at: 1), in: raw),
+              let longitudeRange = Range(match.range(at: 2), in: raw),
+              let latitude = Double(raw[latitudeRange]),
+              let longitude = Double(raw[longitudeRange]),
+              latitude.isFinite, longitude.isFinite else {
+            return .notCoordinate
+        }
+        guard (-90...90).contains(latitude), (-180...180).contains(longitude) else {
+            return .outOfRange
+        }
+        return .valid(CLLocationCoordinate2D(latitude: latitude, longitude: longitude))
+    }
+
+    private static func partialMGRSResult(_ raw: String,
+                                          anchor: CLLocationCoordinate2D) -> SearchResult? {
+        let components = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: { $0.isWhitespace })
+        guard (1...2).contains(components.count),
+              components.allSatisfy({ part in
+                  part.unicodeScalars.allSatisfy { $0.value >= 48 && $0.value <= 57 }
+              }),
+              components.count != 2 || components[0].count == components[1].count else { return nil }
+        let digits = components.joined()
+        guard let resolved = try? MGRSFormatter.resolveGridReference(
+            digits, relativeTo: anchor) else { return nil }
+        let size = resolved.squareSizeMetres >= 1_000
+            ? "\(resolved.squareSizeMetres / 1_000) km"
+            : "\(resolved.squareSizeMetres) m"
+        return SearchResult(
+            id: "coordinate:partial-mgrs",
+            title: resolved.formattedReference,
+            subtitle: "Centre of \(size) grid square (relative to local grid)",
+            coordinate: resolved.coordinate,
+            kind: .partialMGRS,
+            target: .coordinate
+        )
+    }
+
+    /// Conservative privacy classifier for malformed coordinate input. Valid
+    /// coordinates return earlier; this catches numeric/grid-shaped typos so
+    /// they still cannot fall through to an online place provider. Requiring a
+    /// coordinate-shaped prefix avoids the former `Route 1885` false positive.
+    private static func looksCoordinateShaped(_ raw: String) -> Bool {
+        let query = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !query.isEmpty else { return false }
+
+        // Once a query starts with a complete MGRS/UPS grid-zone + square
+        // family, keep even malformed trailing tokens offline. For example,
+        // `56HLH NORTH` is clearly intended as a coordinate correction, not a
+        // place-name request. Spacing within the prefix is accepted so pasted
+        // radio traffic such as `56 H L H NORTH` receives the same treatment.
+        // UPS has no numeric zone, so require a boundary after its band +
+        // two-letter square before accepting a malformed tail. Without that
+        // boundary, ordinary words such as `ALPHA` look like `ALP` + `HA`.
+        let mgrsPattern = #"^(?:\d{1,2}\s*[C-HJ-NP-X]\s*[A-HJ-NP-Z]\s*[A-HJ-NP-Z][\sA-Z0-9+\-]*|[ABYZ]\s*[A-HJ-NP-Z]\s*[A-HJ-NP-Z](?:[\s0-9+\-][\sA-Z0-9+\-]*)?)$"#
+        if query.range(of: mgrsPattern, options: .regularExpression) != nil { return true }
+
+        // Direction-suffixed latitude/longitude pairs are coordinate-shaped
+        // even when the strict decimal parser cannot accept them. Anchoring
+        // the whole query avoids suppressing prose such as "Route 33S to 151E".
+        let number = #"[+\-]?(?:\d+(?:\.\d+)?|\.\d+)"#
+        let latitudeDirection = #"(?:NORTH|SOUTH|N|S)"#
+        let longitudeDirection = #"(?:EAST|WEST|E|W)"#
+        let separator = #"\s*(?:,|;|/)?\s*"#
+        let hemispherePatterns = [
+            #"^\#(number)\s*°?\s*\#(latitudeDirection)\#(separator)\#(number)\s*°?\s*\#(longitudeDirection)$"#,
+            #"^\#(number)\s*°?\s*\#(longitudeDirection)\#(separator)\#(number)\s*°?\s*\#(latitudeDirection)$"#,
+            #"^\#(latitudeDirection)\s*\#(number)\#(separator)\#(longitudeDirection)\s*\#(number)$"#,
+            #"^\#(longitudeDirection)\s*\#(number)\#(separator)\#(latitudeDirection)\s*\#(number)$"#,
+        ]
+        if hemispherePatterns.contains(where: {
+            query.range(of: $0, options: .regularExpression) != nil
+        }) { return true }
+
+        let numericCharacters = CharacterSet(charactersIn: "+-.,0123456789")
+            .union(.whitespacesAndNewlines)
+        if query.unicodeScalars.allSatisfy({ numericCharacters.contains($0) }),
+           query.unicodeScalars.contains(where: CharacterSet.decimalDigits.contains) {
+            return true
+        }
+
+        if query.contains(",") {
+            let first = query.split(separator: ",", omittingEmptySubsequences: false).first?
+                .trimmingCharacters(in: .whitespaces) ?? ""
+            if first.first?.isNumber == true || first.first == "+" || first.first == "-" {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func latLonString(_ coordinate: CLLocationCoordinate2D) -> String {
+        String(format: "%.5f° %@, %.5f° %@",
+               abs(coordinate.latitude), coordinate.latitude >= 0 ? "N" : "S",
+               abs(coordinate.longitude), coordinate.longitude >= 0 ? "E" : "W")
+    }
+}
+
 struct SearchSheet: View {
     @ObservedObject var mapVM: MapViewModel
+    @ObservedObject var waypointStore: WaypointStore
+    @ObservedObject var drawingStore: DrawingStore
+    @ObservedObject private var opsec = OpsecSettings.shared
     @Environment(\.dismiss) private var dismiss
 
-    @State private var query: String = ""
+    @State private var query = ""
     @State private var places: [SearchResult] = []
-    @State private var inferredCoordinates: [SearchResult] = []
-    @State private var isSearching: Bool = false
-    @State private var statusMessage: String? = nil
+    @State private var isSearching = false
+    @State private var placeStatus: String?
+
+    private var offlineOutput: OfflineSearchOutput {
+        OfflineSearchEngine.search(
+            query,
+            anchor: mapVM.cameraCentre,
+            records: OfflineSearchEngine.records(
+                waypoints: waypointStore.waypoints,
+                drawings: drawingStore.shapes,
+                layers: drawingStore.layers
+            )
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -23,14 +428,12 @@ struct SearchSheet: View {
                     .padding(.horizontal)
                     .padding(.top, 6)
                     .padding(.bottom, 4)
-
-                Text("Place name, address, full MGRS, or 4/6/8/10-figure grid")
+                Text("Mission objects, MGRS, grid, lat/lon, or place name")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
                     .padding(.bottom, 6)
-
                 resultsList
             }
             .navigationTitle("Search")
@@ -38,21 +441,15 @@ struct SearchSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
-            // .task(id:) is basically a built-in debouncer - reruns when `query`
-            // changes, auto-cancels the previous one. No manual timers or
-            // @State race conditions. Fixed the v10 crash.
-            .task(id: query) {
-                await runSearch(for: query)
+            .task(id: SearchTaskKey(query: query, onlinePlaces: opsec.onlineLookups)) {
+                await updatePlaces(for: query)
             }
         }
     }
 
-    // MARK: - Sub-views
-
     private var searchField: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search", text: $query)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
@@ -60,13 +457,12 @@ struct SearchSheet: View {
                 Button {
                     query = ""
                     places = []
-                    inferredCoordinates = []
-                    statusMessage = nil
+                    placeStatus = nil
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(8)
@@ -76,38 +472,33 @@ struct SearchSheet: View {
     @ViewBuilder
     private var resultsList: some View {
         List {
-            if !inferredCoordinates.isEmpty {
-                Section("Grid Reference") {
-                    ForEach(inferredCoordinates) { row($0) }
+            if !offlineOutput.results.isEmpty {
+                Section("Mission & Coordinates") {
+                    ForEach(offlineOutput.results) { row($0) }
                 }
             }
             if isSearching {
-                Section { HStack { ProgressView(); Text("Searching…").foregroundStyle(.secondary) } }
-            }
-            if !places.isEmpty {
                 Section("Places") {
-                    ForEach(places) { row($0) }
+                    HStack { ProgressView(); Text("Searching…").foregroundStyle(.secondary) }
                 }
+            } else if !places.isEmpty {
+                Section("Places") { ForEach(places) { row($0) } }
             }
-            if let msg = statusMessage,
-               places.isEmpty,
-               inferredCoordinates.isEmpty,
-               !isSearching {
-                Section { Text(msg).foregroundStyle(.secondary) }
+            if let message = offlineOutput.statusMessage ?? placeStatus,
+               !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section { Text(message).foregroundStyle(.secondary) }
             }
         }
         .listStyle(.insetGrouped)
     }
 
-    @ViewBuilder
     private func row(_ result: SearchResult) -> some View {
         Button {
-            flyTo(result.coordinate)
-            dismiss()
+            select(result)
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: result.kind == .mgrs ? "scope" : "mappin.circle.fill")
-                    .foregroundStyle(result.kind == .mgrs ? Color.green : Color.blue)
+                Image(systemName: icon(for: result.kind))
+                    .foregroundStyle(colour(for: result.kind))
                     .font(.title3)
                     .frame(width: 28)
                 VStack(alignment: .leading, spacing: 2) {
@@ -115,9 +506,7 @@ struct SearchSheet: View {
                         .foregroundStyle(.primary)
                         .font(.callout.weight(.semibold))
                     if !result.subtitle.isEmpty {
-                        Text(result.subtitle)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                        Text(result.subtitle).foregroundStyle(.secondary).font(.caption)
                     }
                 }
                 Spacer()
@@ -130,234 +519,127 @@ struct SearchSheet: View {
         }
     }
 
-    // MARK: - Search pipeline
-
-    /// Main entry point from `.task(id: query)`. Does MGRS detection
-    /// synchronously then kicks off a debounced MKLocalSearch.
-    private func runSearch(for raw: String) async {
+    private func updatePlaces(for raw: String) async {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Recompute MGRS interpretations immediately on every keystroke.
-        let coordResults = inferCoordinateResults(from: trimmed)
         await MainActor.run {
-            inferredCoordinates = coordResults
-            statusMessage = nil
-            if trimmed.isEmpty { places = [] }
+            places = []
+            placeStatus = nil
+            isSearching = false
         }
-
-        guard trimmed.count >= 2 else {
-            await MainActor.run { isSearching = false }
-            return
+        let offline = OfflineSearchEngine.search(
+            trimmed,
+            anchor: mapVM.cameraCentre,
+            records: OfflineSearchEngine.records(
+                waypoints: waypointStore.waypoints,
+                drawings: drawingStore.shapes,
+                layers: drawingStore.layers
+            )
+        )
+        let decision = OnlinePlaceLookup.decision(
+            rawQuery: trimmed,
+            offlineOutput: offline,
+            onlineLookups: opsec.onlineLookups
+        )
+        if decision == .requestProvider {
+            do { try await Task.sleep(nanoseconds: 350_000_000) } catch { return }
+            guard !Task.isCancelled else { return }
+            await MainActor.run { isSearching = true }
         }
-
-        // Debounce 350ms before hitting the network. .task(id:) cancels this
-        // automatically when the user keeps typing.
+        let centre = mapVM.cameraCentre
         do {
-            try await Task.sleep(nanoseconds: 350_000_000)
-        } catch {
-            return  // cancelled
-        }
-        if Task.isCancelled { return }
-
-        // MKLocalSearch sends the query to Apple's map servers. Gate it behind
-        // the online-lookups OPSEC toggle so nothing leaves the device by
-        // default. The coordinate/MGRS results above are all offline.
-        guard OpsecSettings.shared.onlineLookups else {
+            let outcome = try await OnlinePlaceLookup.perform(
+                rawQuery: trimmed,
+                offlineOutput: offline,
+                onlineLookups: opsec.onlineLookups,
+                provider: { try await searchPlaces(query: trimmed, centre: centre) }
+            )
+            guard !Task.isCancelled else { return }
             await MainActor.run {
-                places = []
+                places = outcome.results
+                placeStatus = outcome.statusMessage
                 isSearching = false
-                if inferredCoordinates.isEmpty {
-                    statusMessage = "Place-name search is off. Enable online lookups in Settings, Privacy & OPSEC. MGRS, grid and lat/lon still work."
-                }
             }
-            return
+        } catch is CancellationError {
+            await MainActor.run { isSearching = false }
+        } catch {
+            // Provider failures are mapped to an actionable status by the
+            // coordinator; cancellation is the only expected thrown error.
+            await MainActor.run { isSearching = false }
         }
-
-        await runPlaceSearch(for: trimmed)
     }
 
-    private func runPlaceSearch(for trimmed: String) async {
-        await MainActor.run { isSearching = true }
-
-        let req = MKLocalSearch.Request()
-        req.naturalLanguageQuery = trimmed
-        let centre = mapVM.cameraCentre
+    private func searchPlaces(query: String,
+                              centre: CLLocationCoordinate2D) async throws -> [SearchResult] {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = query
         if centre.latitude != 0 || centre.longitude != 0 {
-            req.region = MKCoordinateRegion(
+            request.region = MKCoordinateRegion(
                 center: centre,
                 latitudinalMeters: 200_000,
                 longitudinalMeters: 200_000
             )
         }
-        req.resultTypes = [.pointOfInterest, .address]
-
-        do {
-            let response = try await MKLocalSearch(request: req).start()
-            if Task.isCancelled { return }
-            let mapped = response.mapItems.prefix(20).map { item -> SearchResult in
-                SearchResult(
-                    title: item.name ?? "Unknown",
-                    subtitle: addressLine(item),
-                    coordinate: item.placemark.coordinate,
-                    kind: .place
-                )
-            }
-            await MainActor.run {
-                places = Array(mapped)
-                isSearching = false
-                if places.isEmpty && inferredCoordinates.isEmpty {
-                    statusMessage = "No matches for \u{201C}\(trimmed)\u{201D}."
-                }
-            }
-        } catch {
-            // Superseded by newer query or cancelled, bail out silently
-            // instead of flashing "Search failed: cancelled".
-            if Task.isCancelled || error is CancellationError { return }
-            await MainActor.run {
-                isSearching = false
-                places = []
-                let ns = error as NSError
-                // MKError.unknown for cancelled or no-results, stay silent.
-                if ns.domain != MKError.errorDomain || ns.code > 0 {
-                    statusMessage = "Search failed: \(error.localizedDescription)"
-                }
-            }
+        request.resultTypes = [.pointOfInterest, .address]
+        let response = try await MKLocalSearch(request: request).start()
+        return response.mapItems.prefix(20).enumerated().map { index, item in
+            SearchResult(
+                id: "place:\(index):\(item.placemark.coordinate.latitude),\(item.placemark.coordinate.longitude)",
+                title: item.name ?? "Unknown",
+                subtitle: addressLine(item),
+                coordinate: item.placemark.coordinate,
+                kind: .place,
+                target: .coordinate
+            )
         }
     }
 
-    // MARK: - MGRS interpretation
-
-    /// Returns candidate coords for the query, most-specific first.
-    /// Tries a full MGRS parse then partial-grid interpretation.
-    private func inferCoordinateResults(from raw: String) -> [SearchResult] {
-        guard !raw.isEmpty else { return [] }
-        var out: [SearchResult] = []
-
-        // 1) Full MGRS - needs the GZD prefix to parse.
-        let compact = raw.uppercased().filter { !$0.isWhitespace }
-        if let coord = MGRSFormatter.coordinate(from: compact) {
-            out.append(SearchResult(
-                title:    MGRSFormatter.formatted(compact),
-                subtitle: latLonString(coord),
-                coordinate: coord,
-                kind: .mgrs
-            ))
+    private func select(_ result: SearchResult) {
+        mapVM.cameraRequests.send(MKCoordinateRegion(
+            center: result.coordinate,
+            latitudinalMeters: 2_500,
+            longitudinalMeters: 2_500
+        ))
+        switch result.target {
+        case .coordinate:
+            break
+        case .waypoint(let id):
+            mapVM.selectedDrawingID = nil
+            mapVM.selectedWaypointID = id
+        case .drawing(let id):
+            mapVM.selectedWaypointID = nil
+            mapVM.selectedDrawingID = id
         }
-
-        // 2) Partial grid: 4 / 6 / 8 / 10 digits, resolved against the camera centre.
-        if let partial = partialGridResult(raw) {
-            out.append(partial)
-        }
-
-        return out
+        dismiss()
     }
 
-    /// User types just the digits (e.g. "1885" or "188 850") and we tack on
-    /// the camera’s current GZD + 100km square ID to build a full MGRS,
-    /// then return the centre of the implied square (1km/100m/10m/1m).
-    private func partialGridResult(_ raw: String) -> SearchResult? {
-        let digits = raw.filter { $0.isNumber }
-        guard [4, 6, 8, 10].contains(digits.count) else { return nil }
-
-        let anchor = mapVM.cameraCentre
-        guard anchor.latitude != 0 || anchor.longitude != 0 else { return nil }
-
-        // "56HLH" / "9VCD" - the GZD letters + 100km square.
-        let fullMGRS = MGRSFormatter.string(from: anchor, spaced: false)
-        guard let prefix = extractGZDPrefix(fullMGRS) else { return nil }
-
-        let half = digits.count / 2
-        let easting  = String(digits.prefix(half))
-        let northing = String(digits.suffix(half))
-        let synthesized = "\(prefix)\(easting)\(northing)"
-
-        guard let sw = MGRSFormatter.coordinate(from: synthesized) else { return nil }
-        let centre = centreOfSquare(sw: sw, eastNorthDigits: half)
-
-        let squareSize: String = {
-            switch half {
-            case 2: return "1 km"
-            case 3: return "100 m"
-            case 4: return "10 m"
-            case 5: return "1 m"
-            default: return ""
-            }
-        }()
-        return SearchResult(
-            title:    "\(prefix) \(easting) \(northing)",
-            subtitle: "Centre of \(squareSize) grid square (relative to \(prefix))",
-            coordinate: centre,
-            kind: .mgrs
-        )
-    }
-
-    private func extractGZDPrefix(_ mgrs: String) -> String? {
-        // UTM zones: <1–2 digits><band letter><2 square letters>
-        let utm = #"^(\d{1,2}[A-Z][A-Z]{2})"#
-        // UPS polar: <A|B|Y|Z><2 square letters>
-        let ups = #"^([ABYZ][A-Z]{2})"#
-        for p in [utm, ups] {
-            if let rx = try? NSRegularExpression(pattern: p),
-               let m = rx.firstMatch(in: mgrs, range: NSRange(mgrs.startIndex..., in: mgrs)),
-               let r = Range(m.range(at: 1), in: mgrs) {
-                return String(mgrs[r])
-            }
+    private func icon(for kind: SearchResult.Kind) -> String {
+        switch kind {
+        case .mgrs, .partialMGRS, .latitudeLongitude: return "scope"
+        case .waypoint: return "mappin.circle.fill"
+        case .drawing: return "scribble.variable"
+        case .place: return "map.fill"
         }
-        return nil
     }
 
-    /// MGRS decodes to the SW corner of the precision square. Nudge by half
-    /// a square so the pin lands in the middle, which is the conventional
-    /// “grid ref points here” behaviour for nav.
-    private func centreOfSquare(sw: CLLocationCoordinate2D, eastNorthDigits half: Int) -> CLLocationCoordinate2D {
-        let halfMetres: Double = {
-            switch half {
-            case 2: return 500    // half of 1 km
-            case 3: return 50     // half of 100 m
-            case 4: return 5      // half of 10 m
-            case 5: return 0.5    // half of 1 m
-            default: return 0
-            }
-        }()
-        let dLat = halfMetres / 111_320.0
-        let dLon = halfMetres / (111_320.0 * max(0.01, cos(sw.latitude * .pi / 180)))
-        return CLLocationCoordinate2D(
-            latitude:  sw.latitude  + dLat,
-            longitude: sw.longitude + dLon
-        )
+    private func colour(for kind: SearchResult.Kind) -> Color {
+        switch kind {
+        case .mgrs, .partialMGRS, .latitudeLongitude: return .green
+        case .waypoint: return .orange
+        case .drawing: return .purple
+        case .place: return .blue
+        }
     }
 
     private func addressLine(_ item: MKMapItem) -> String {
-        let p = item.placemark
-        let parts = [p.thoroughfare, p.locality, p.administrativeArea, p.country].compactMap { $0 }
-        return parts.joined(separator: ", ")
+        let placemark = item.placemark
+        return [placemark.thoroughfare, placemark.locality,
+                placemark.administrativeArea, placemark.country]
+            .compactMap { $0 }
+            .joined(separator: ", ")
     }
 
-    private func latLonString(_ c: CLLocationCoordinate2D) -> String {
-        String(format: "%.5f° %@, %.5f° %@",
-               abs(c.latitude),  c.latitude  >= 0 ? "N" : "S",
-               abs(c.longitude), c.longitude >= 0 ? "E" : "W")
+    private struct SearchTaskKey: Hashable {
+        let query: String
+        let onlinePlaces: Bool
     }
-
-    private func flyTo(_ coord: CLLocationCoordinate2D) {
-        let region = MKCoordinateRegion(
-            center: coord,
-            latitudinalMeters: 2500,
-            longitudinalMeters: 2500
-        )
-        mapVM.cameraRequests.send(region)
-    }
-}
-
-/// Search result row model.
-struct SearchResult: Identifiable, Hashable {
-    enum Kind: Hashable { case mgrs, place }
-    let id: UUID = UUID()
-    let title: String
-    let subtitle: String
-    let coordinate: CLLocationCoordinate2D
-    let kind: Kind
-
-    static func == (l: SearchResult, r: SearchResult) -> Bool { l.id == r.id }
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }

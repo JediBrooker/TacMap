@@ -25,13 +25,15 @@ struct AffineTransform2D: Hashable, Codable {
     /// Invert the transform (screen-pixel to PDF-point lookups). Returns nil if
     /// the matrix is singular.
     func inverted() -> AffineTransform2D? {
+        guard hasFiniteCoefficients else { return nil }
         let det = a * e - b * d
         // Scale-invariant singularity test: |det| / (||row1||*||row2||) is the sine
         // of the angle between the two basis vectors in [0,1]. An absolute 1e-12
         // on `det` (approx degrees^2/pixel^2, ~1e-10 at fine scale) falsely rejected
         // valid high-zoom calibrations as singular.
         let rowScale = hypot(a, b) * hypot(d, e)
-        guard rowScale > 0, abs(det) > 1e-9 * rowScale else { return nil }
+        guard det.isFinite, rowScale.isFinite,
+              rowScale > 0, abs(det) > 1e-9 * rowScale else { return nil }
         let invDet = 1 / det
         // Inverse of [[a b][d e]] applied to translation
         let ia =  e * invDet
@@ -40,13 +42,41 @@ struct AffineTransform2D: Hashable, Codable {
         let ie =  a * invDet
         let ic = -(ia * c + ib * f)
         let `if` = -(id * c + ie * f)
-        return AffineTransform2D(a: ia, b: ib, c: ic, d: id, e: ie, f: `if`)
+        let result = AffineTransform2D(a: ia, b: ib, c: ic, d: id, e: ie, f: `if`)
+        return result.hasFiniteCoefficients ? result : nil
     }
+
+    var hasFiniteCoefficients: Bool {
+        [a, b, c, d, e, f].allSatisfy(\.isFinite)
+    }
+}
+
+/// PDF 2.0 permits 14,400 default user units per page dimension and a maximum
+/// /UserUnit multiplier of 75,000 (1.08e9 effective units). Values beyond this
+/// cannot be standards-compliant page coordinates and would overflow the
+/// covariance/normal-equation products used by the fit.
+let maximumSafePDFCoordinateMagnitude = 1_100_000_000.0
+
+func isSafeAffineInput(_ fiduciary: Fiduciary) -> Bool {
+    fiduciary.pdfX.isFinite && fiduciary.pdfY.isFinite
+        && abs(fiduciary.pdfX) <= maximumSafePDFCoordinateMagnitude
+        && abs(fiduciary.pdfY) <= maximumSafePDFCoordinateMagnitude
+        && fiduciary.latitude.isFinite && fiduciary.longitude.isFinite
+        && (-90.0...90.0).contains(fiduciary.latitude)
+        && (-180.0...180.0).contains(fiduciary.longitude)
+}
+
+func isValidEarthCoordinate(_ coordinate: CLLocationCoordinate2D) -> Bool {
+    coordinate.latitude.isFinite && coordinate.longitude.isFinite
+        && (-90.0...90.0).contains(coordinate.latitude)
+        && (-180.0...180.0).contains(coordinate.longitude)
 }
 
 enum AffineFitError: Error {
     case tooFewFiduciaries(minimum: Int)
+    case invalidInput
     case degenerate     // points are colinear or coincident
+    case invalidResult
 }
 
 /// Least-squares fit of an affine transform from N>=3 fiduciaries.
@@ -71,6 +101,9 @@ enum AffineFitter {
         guard fiduciaries.count >= 3 else {
             throw AffineFitError.tooFewFiduciaries(minimum: 3)
         }
+        guard fiduciaries.allSatisfy(isSafeAffineInput) else {
+            throw AffineFitError.invalidInput
+        }
         // Bail if control points are coincident or colinear - the affine's
         // perpendicular direction is unconstrained and extrapolates wildly.
         guard !isDegenerate(fiduciaries) else { throw AffineFitError.degenerate }
@@ -79,14 +112,24 @@ enum AffineFitter {
         let (a, b, c) = try lsq(points: fiduciaries.map { ($0.pdfX, $0.pdfY, $0.longitude) })
         let (d, e, f) = try lsq(points: fiduciaries.map { ($0.pdfX, $0.pdfY, $0.latitude)  })
         let t = AffineTransform2D(a: a, b: b, c: c, d: d, e: e, f: f)
+        guard t.hasFiniteCoefficients, t.inverted() != nil else {
+            throw AffineFitError.invalidResult
+        }
 
         // Residual in metres (great-circle distance between predicted and known).
         var sumSq = 0.0
         for fid in fiduciaries {
             let predicted = t.apply(fid.pdfPoint)
-            sumSq += squareDistanceMetres(predicted, fid.wgs84)
+            guard isValidEarthCoordinate(predicted) else {
+                throw AffineFitError.invalidResult
+            }
+            let residual = squareDistanceMetres(predicted, fid.wgs84)
+            guard residual.isFinite else { throw AffineFitError.invalidResult }
+            sumSq += residual
+            guard sumSq.isFinite else { throw AffineFitError.invalidResult }
         }
         let rms = sqrt(sumSq / Double(fiduciaries.count))
+        guard rms.isFinite else { throw AffineFitError.invalidResult }
         return Result(transform: t, rmsMetres: rms, crossValidated: fiduciaries.count >= 4)
     }
 
@@ -136,11 +179,12 @@ enum AffineFitter {
     /// Cramer's rule for a 3x3 system. Returns nil if singular.
     private static func solve3x3(_ m: [[Double]], _ r: [Double]) -> [Double]? {
         let det = det3(m)
-        guard abs(det) > 1e-12 else { return nil }
+        guard det.isFinite, abs(det) > 1e-12 else { return nil }
         let mx = [[r[0], m[0][1], m[0][2]], [r[1], m[1][1], m[1][2]], [r[2], m[2][1], m[2][2]]]
         let my = [[m[0][0], r[0], m[0][2]], [m[1][0], r[1], m[1][2]], [m[2][0], r[2], m[2][2]]]
         let mz = [[m[0][0], m[0][1], r[0]], [m[1][0], m[1][1], r[1]], [m[2][0], m[2][1], r[2]]]
-        return [det3(mx) / det, det3(my) / det, det3(mz) / det]
+        let result = [det3(mx) / det, det3(my) / det, det3(mz) / det]
+        return result.allSatisfy(\.isFinite) ? result : nil
     }
 
     private static func det3(_ m: [[Double]]) -> Double {

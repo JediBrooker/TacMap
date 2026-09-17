@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
@@ -21,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,27 +39,39 @@ private val HudOrange = Color(0xFFF2A24A)
 
 /**
  * Full-screen paywall. Shows after trial lapses if user hasn't purchased.
- * Blocks the app untill they buy or restore.
+ * Blocks the app until they buy or restore.
  *
- * @param priceText localized price from Play (e.g. "$5.00"), null while loading.
+ * The same loading/error/retry contract is used for both hard and soft gates.
+ * Product loading begins only while this screen is actually composed.
+ *
  * @param trialDaysRemaining >0 = trial still running (soft prompt),
  *        0 = expired (hard gate).
  */
 @Composable
 fun PaywallScreen(
-    priceText: String?,
+    billingState: BillingUiState,
     trialDaysRemaining: Int,
+    onLoadProduct: () -> Unit,
     onUnlock: () -> Unit,
     onRestore: () -> Unit,
+    onRetry: () -> Unit,
     onRedeem: () -> Unit,
     onClose: (() -> Unit)? = null,
 ) {
     val expired = trialDaysRemaining <= 0
+    val busy = billingState.phase == BillingPhase.Restoring ||
+        billingState.phase == BillingPhase.Purchasing
+
+    LaunchedEffect(Unit) { onLoadProduct() }
+
     Box(modifier = Modifier.fillMaxSize().background(Background)) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 28.dp),
+            .verticalScroll(rememberScrollState())
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 28.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -90,7 +106,7 @@ fun PaywallScreen(
         Spacer(Modifier.height(28.dp))
         Button(
             onClick = onUnlock,
-            enabled = priceText != null,
+            enabled = billingState.purchaseEnabled,
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = HudGreen,
@@ -102,17 +118,51 @@ fun PaywallScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                priceText?.let { "Unlock Full Version  ·  $it" } ?: "Loading price…",
+                when (billingState.phase) {
+                    BillingPhase.Connecting -> "Connecting to Google Play…"
+                    BillingPhase.LoadingProduct, BillingPhase.Idle -> "Loading price…"
+                    BillingPhase.Restoring -> "Restoring purchase…"
+                    BillingPhase.Purchasing -> "Opening Google Play…"
+                    BillingPhase.Pending -> "Payment pending"
+                    BillingPhase.Ready, BillingPhase.Error -> billingState.priceText
+                        ?.let { "Unlock Full Version  ·  $it" }
+                        ?: "Unlock unavailable"
+                },
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
         Spacer(Modifier.height(6.dp))
-        TextButton(onClick = onRestore) {
-            Text("Restore purchase", color = HudOrange, fontSize = 14.sp)
+        billingState.message?.let { message ->
+            Text(
+                message,
+                color = if (
+                    billingState.phase == BillingPhase.Error ||
+                    billingState.phase == BillingPhase.Pending
+                ) HudOrange else Color(0xFFB8C4BC),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 12.dp),
+            )
         }
-        TextButton(onClick = onRedeem) {
-            Text("Redeem code on Google Play", color = HudOrange, fontSize = 14.sp)
+        if (billingState.retryable) {
+            TextButton(onClick = onRetry) {
+                Text("Retry Google Play", color = HudGreen, fontSize = 14.sp)
+            }
+        }
+        TextButton(onClick = onRestore, enabled = !busy) {
+            Text(
+                if (billingState.phase == BillingPhase.Restoring) "Restoring…" else "Restore purchase",
+                color = if (busy) Color(0xFF7A867E) else HudOrange,
+                fontSize = 14.sp,
+            )
+        }
+        TextButton(onClick = onRedeem, enabled = !busy) {
+            Text(
+                "Redeem code on Google Play",
+                color = if (busy) Color(0xFF7A867E) else HudOrange,
+                fontSize = 14.sp,
+            )
         }
         Spacer(Modifier.height(20.dp))
         Text(

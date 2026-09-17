@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -45,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,6 +62,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.drawings.DrawingFeature
@@ -71,25 +77,55 @@ import com.tacmap.drawings.DrawingStrokeStyle
 // The three composables MapScreen calls directly are `internal`; the leaf
 // widgets they compose stay `private` to this file. Behaviour is unchanged.
 
+private data class PendingDrawingControlMutation(
+    val message: String,
+    val retry: () -> DrawingMutationUiResult,
+    val onSaved: () -> Unit,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun DrawingFeatureEditBar(
     feature: DrawingFeature,
     layers: List<DrawingLayer>,
-    onFeatureChange: (DrawingFeature) -> Unit,
-    onFeatureChangeDraft: (DrawingFeature) -> Unit = onFeatureChange,
-    onDelete: () -> Unit,
+    onFeatureChange: (DrawingFeature) -> DrawingMutationUiResult,
+    onFeatureChangeDraft: (DrawingFeature) -> Boolean,
+    onMoveToCrosshair: () -> DrawingMutationUiResult,
+    onDelete: () -> DrawingMutationUiResult,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var colorMenuOpen by remember { mutableStateOf(false) }
+    var fillColorMenuOpen by remember { mutableStateOf(false) }
     var lineGraphicMenuOpen by remember { mutableStateOf(false) }
     var nameDialogOpen by remember { mutableStateOf(false) }
+    var pendingMutation by remember(feature.id) {
+        mutableStateOf<PendingDrawingControlMutation?>(null)
+    }
+    fun attempt(
+        onSaved: () -> Unit = {},
+        retry: () -> DrawingMutationUiResult,
+    ): DrawingMutationUiResult {
+        val result = retry()
+        pendingMutation = when (result) {
+            DrawingMutationUiResult.Saved -> {
+                onSaved()
+                null
+            }
+            is DrawingMutationUiResult.Failed -> PendingDrawingControlMutation(
+                message = result.message,
+                retry = retry,
+                onSaved = onSaved,
+            )
+        }
+        return result
+    }
     // Rotation / W / H sliders take up most of the card's vertical
     // space and aren't needed for every edit, so they hide behind a
     // "Transform" toggle by default. Points don't get the toggle
     // (they have no transform to apply).
     var showTransforms by remember(feature.id) { mutableStateOf(false) }
+    var showEditor by remember(feature.id) { mutableStateOf(false) }
     val hasTransforms = feature.geometry != DrawingGeometry.POINT
 
     Column(
@@ -153,42 +189,69 @@ internal fun DrawingFeatureEditBar(
             }
         }
 
-        if (hasTransforms && showTransforms) {
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = { showEditor = !showEditor },
+                modifier = Modifier.weight(1f).height(48.dp),
+            ) {
+                Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text("Edit drawing", maxLines = 1)
+            }
+            Button(
+                onClick = { attempt(retry = onMoveToCrosshair) },
+                modifier = Modifier.weight(1f).height(48.dp),
+            ) {
+                Icon(Icons.Default.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text("Move to crosshair", maxLines = 1, fontSize = 12.sp)
+            }
+        }
+
+        if (showEditor && hasTransforms && showTransforms) {
             CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
                 DrawingTransformSliderRow(
                     icon = Icons.AutoMirrored.Filled.RotateRight,
+                    label = "Rotation",
                     value = normalizedDrawingDegrees(feature.rotationDegrees).toFloat(),
                     valueLabel = "${normalizedDrawingDegrees(feature.rotationDegrees).toInt()}°",
                     range = 0f..360f,
                     onChange = { onFeatureChangeDraft(feature.copy(rotationDegrees = it.toDouble())) },
-                    onCommit = { onFeatureChange(feature.copy(rotationDegrees = it.toDouble())) },
-                    onReset = { onFeatureChange(feature.copy(rotationDegrees = 0.0)) }
+                    onCommit = { attempt { onFeatureChange(feature.copy(rotationDegrees = it.toDouble())) } },
+                    onReset = { attempt { onFeatureChange(feature.copy(rotationDegrees = 0.0)) } }
                 )
                 DrawingTransformSliderRow(
                     icon = Icons.Default.SwapHoriz,
+                    label = "Width scale",
                     value = feature.scaleX.toFloat().coerceIn(0.15f, 6f),
                     valueLabel = "%.2fx".format(feature.scaleX),
                     range = 0.15f..6f,
                     onChange = { onFeatureChangeDraft(feature.copy(scaleX = it.toDouble())) },
-                    onCommit = { onFeatureChange(feature.copy(scaleX = it.toDouble())) },
-                    onReset = { onFeatureChange(feature.copy(scaleX = 1.0)) }
+                    onCommit = { attempt { onFeatureChange(feature.copy(scaleX = it.toDouble())) } },
+                    onReset = { attempt { onFeatureChange(feature.copy(scaleX = 1.0)) } }
                 )
                 DrawingTransformSliderRow(
                     icon = Icons.Default.SwapVert,
+                    label = "Height scale",
                     value = feature.scaleY.toFloat().coerceIn(0.15f, 6f),
                     valueLabel = "%.2fx".format(feature.scaleY),
                     range = 0.15f..6f,
                     onChange = { onFeatureChangeDraft(feature.copy(scaleY = it.toDouble())) },
-                    onCommit = { onFeatureChange(feature.copy(scaleY = it.toDouble())) },
-                    onReset = { onFeatureChange(feature.copy(scaleY = 1.0)) }
+                    onCommit = { attempt { onFeatureChange(feature.copy(scaleY = it.toDouble())) } },
+                    onReset = { attempt { onFeatureChange(feature.copy(scaleY = 1.0)) } }
                 )
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (showEditor) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box {
                 DrawingColorSelectButton(
                     color = feature.strokeColor,
+                    contentDescription = "Stroke colour",
                     onClick = { colorMenuOpen = true }
                 )
                 DrawingColorMenu(
@@ -196,20 +259,48 @@ internal fun DrawingFeatureEditBar(
                     selectedColor = feature.strokeColor,
                     onDismiss = { colorMenuOpen = false },
                     onColorSelected = { color ->
-                        onFeatureChange(
-                            feature.copy(
-                                strokeColor = color,
-                                fillColor = color.withAlpha(0x33)
-                            )
+                        attempt(
+                            retry = { onFeatureChange(feature.copy(strokeColor = color)) },
+                            onSaved = { colorMenuOpen = false },
                         )
-                        colorMenuOpen = false
                     }
+                )
+            }
+            if (feature.geometry == DrawingGeometry.POLYGON) {
+                Box {
+                    DrawingColorSelectButton(
+                        color = feature.fillColor,
+                        contentDescription = "Fill colour",
+                        onClick = { fillColorMenuOpen = true },
+                    )
+                    DrawingColorMenu(
+                        expanded = fillColorMenuOpen,
+                        selectedColor = feature.fillColor or 0xFF000000.toInt(),
+                        onDismiss = { fillColorMenuOpen = false },
+                        onColorSelected = { color ->
+                            val alpha = (feature.fillColor ushr 24) and 0xFF
+                            attempt(
+                                retry = {
+                                    onFeatureChange(feature.copy(fillColor = color.withAlpha(alpha)))
+                                },
+                                onSaved = { fillColorMenuOpen = false },
+                            )
+                        },
+                    )
+                }
+                DrawingOpacityButton(
+                    alpha = (feature.fillColor ushr 24) and 0xFF,
+                    onAlphaSelected = { alpha ->
+                        attempt {
+                            onFeatureChange(feature.copy(fillColor = feature.fillColor.withAlpha(alpha)))
+                        }
+                    },
                 )
             }
             DrawingStyleButton(
                 strokeStyle = feature.strokeStyle,
                 onClick = {
-                    onFeatureChange(feature.copy(strokeStyle = feature.strokeStyle.next()))
+                    attempt { onFeatureChange(feature.copy(strokeStyle = feature.strokeStyle.next())) }
                 }
             )
             // Tactical line-graphic picker (line features only).
@@ -219,7 +310,7 @@ internal fun DrawingFeatureEditBar(
                         feature.lineGraphic != com.tacmap.drawings.LineGraphic.PLAIN
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(Color.White.copy(alpha = if (active) 0.22f else 0.10f))
                             .clickable { lineGraphicMenuOpen = true },
@@ -241,8 +332,10 @@ internal fun DrawingFeatureEditBar(
                                 text = { Text(g.displayName) },
                                 onClick = {
                                     val v = if (g == com.tacmap.drawings.LineGraphic.PLAIN) null else g
-                                    onFeatureChange(feature.copy(lineGraphic = v))
-                                    lineGraphicMenuOpen = false
+                                    attempt(
+                                        retry = { onFeatureChange(feature.copy(lineGraphic = v)) },
+                                        onSaved = { lineGraphicMenuOpen = false },
+                                    )
                                 }
                             )
                         }
@@ -252,7 +345,7 @@ internal fun DrawingFeatureEditBar(
             if (hasTransforms) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
                         .background(
                             Color.White.copy(alpha = if (showTransforms) 0.22f else 0.10f)
@@ -272,13 +365,13 @@ internal fun DrawingFeatureEditBar(
                 layers = layers,
                 selectedLayerId = feature.layerId,
                 onLayerSelected = { layerId ->
-                    onFeatureChange(feature.copy(layerId = layerId))
+                    attempt { onFeatureChange(feature.copy(layerId = layerId)) }
                 },
                 modifier = Modifier.weight(1f)
             )
             Button(
-                onClick = onDelete,
-                modifier = Modifier.height(36.dp),
+                onClick = { attempt(retry = onDelete) },
+                modifier = Modifier.height(48.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFE53935),
                     contentColor = Color.White
@@ -297,9 +390,29 @@ internal fun DrawingFeatureEditBar(
             name = feature.name,
             onNameChange = { name ->
                 val cleanName = name.trim().ifBlank { feature.name }
-                onFeatureChange(feature.copy(name = cleanName))
+                attempt(
+                    retry = { onFeatureChange(feature.copy(name = cleanName)) },
+                    onSaved = { nameDialogOpen = false },
+                ).saved
             },
             onDismiss = { nameDialogOpen = false }
+        )
+    }
+    pendingMutation?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingMutation = null },
+            title = { Text("Drawing change not saved") },
+            text = { Text(pending.message) },
+            confirmButton = {
+                TextButton(onClick = {
+                    attempt(onSaved = pending.onSaved, retry = pending.retry)
+                }) {
+                    Text("Retry")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMutation = null }) { Text("Not now") }
+            },
         )
     }
 }
@@ -307,6 +420,7 @@ internal fun DrawingFeatureEditBar(
 @Composable
 private fun DrawingTransformSliderRow(
     icon: ImageVector,
+    label: String,
     value: Float,
     valueLabel: String,
     range: ClosedFloatingPointRange<Float>,
@@ -314,9 +428,9 @@ private fun DrawingTransformSliderRow(
     onCommit: (Float) -> Unit = onChange,
     onReset: () -> Unit
 ) {
-    var latestValue by remember(value) { mutableStateOf(value) }
+    var latestValue by remember(value) { mutableFloatStateOf(value) }
     Row(
-        modifier = Modifier.height(30.dp),
+        modifier = Modifier.heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -341,7 +455,11 @@ private fun DrawingTransformSliderRow(
             valueRange = range,
             modifier = Modifier
                 .weight(1f)
-                .height(24.dp),
+                .heightIn(min = 48.dp)
+                .semantics {
+                    contentDescription = label
+                    stateDescription = valueLabel
+                },
             colors = SliderDefaults.colors(
                 thumbColor = Color.White,
                 activeTrackColor = Color(0xFF1E9BFF),
@@ -357,7 +475,7 @@ private fun DrawingTransformSliderRow(
         )
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(Color(0xFF315D70))
                 .clickable(onClick = onReset),
@@ -365,7 +483,7 @@ private fun DrawingTransformSliderRow(
         ) {
             Icon(
                 Icons.Default.Refresh,
-                contentDescription = "Reset",
+                contentDescription = "Reset $label",
                 tint = Color.White,
                 modifier = Modifier.size(16.dp)
             )
@@ -438,13 +556,13 @@ internal fun DrawingDraftBar(
         IconButton(
             onClick = onCancel,
             modifier = Modifier
-                .size(38.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(Color(0xFF202020))
         ) {
             Icon(
                 Icons.Default.Close,
-                contentDescription = null,
+                contentDescription = "Cancel drawing",
                 tint = Color.White,
                 modifier = Modifier.size(20.dp)
             )
@@ -453,7 +571,7 @@ internal fun DrawingDraftBar(
             onClick = onFinish,
             enabled = canFinish,
             shape = CircleShape,
-            modifier = Modifier.height(38.dp),
+            modifier = Modifier.height(48.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(0xFFFFA000),
                 contentColor = Color.Black,
@@ -472,7 +590,10 @@ internal fun DrawingDraftBar(
     if (nameDialogOpen) {
         DrawingNameDialog(
             name = drawingName,
-            onNameChange = onDrawingNameChange,
+            onNameChange = {
+                onDrawingNameChange(it)
+                true
+            },
             onDismiss = { nameDialogOpen = false }
         )
     }
@@ -482,7 +603,7 @@ internal fun DrawingDraftBar(
 private fun DrawingNameButton(name: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .height(38.dp)
+            .height(48.dp)
             .widthIn(min = 56.dp, max = 78.dp)
             .clip(CircleShape)
             .background(Color(0xFF202020))
@@ -504,7 +625,7 @@ private fun DrawingNameButton(name: String, onClick: () -> Unit) {
 @Composable
 private fun DrawingNameDialog(
     name: String,
-    onNameChange: (String) -> Unit,
+    onNameChange: (String) -> Boolean,
     onDismiss: () -> Unit
 ) {
     var editedName by remember(name) { mutableStateOf(name) }
@@ -521,8 +642,7 @@ private fun DrawingNameDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    onNameChange(editedName)
-                    onDismiss()
+                    if (onNameChange(editedName)) onDismiss()
                 }
             ) {
                 Text("Done")
@@ -575,12 +695,17 @@ private fun DrawingToolChip(geometry: DrawingGeometry) {
 }
 
 @Composable
-private fun DrawingColorSelectButton(color: Int, onClick: () -> Unit) {
+private fun DrawingColorSelectButton(
+    color: Int,
+    contentDescription: String = "Drawing colour",
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
-            .size(38.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .background(Color(0xFF202020))
+            .semantics { this.contentDescription = contentDescription }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -591,6 +716,27 @@ private fun DrawingColorSelectButton(color: Int, onClick: () -> Unit) {
                 .background(Color(color))
                 .border(1.dp, Color.White.copy(alpha = 0.85f), CircleShape)
         )
+    }
+}
+
+@Composable
+private fun DrawingOpacityButton(alpha: Int, onAlphaSelected: (Int) -> Unit) {
+    val choices = listOf(0x33, 0x66, 0x99, 0xCC)
+    val closestIndex = choices.indices.minByOrNull { kotlin.math.abs(choices[it] - alpha) } ?: 0
+    val percent = (alpha * 100f / 255f).toInt()
+    Box(
+        modifier = Modifier
+            .size(width = 56.dp, height = 48.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF202020))
+            .semantics {
+                contentDescription = "Fill opacity"
+                stateDescription = "$percent percent"
+            }
+            .clickable { onAlphaSelected(choices[(closestIndex + 1) % choices.size]) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("$percent%", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -628,7 +774,7 @@ private fun DrawingStyleButton(
 ) {
     Box(
         modifier = Modifier
-            .size(width = 46.dp, height = 38.dp)
+            .size(width = 54.dp, height = 48.dp)
             .clip(CircleShape)
             .background(Color(0xFF202020))
             .clickable(onClick = onClick),
@@ -671,7 +817,7 @@ private fun DrawingColorSwatch(
 ) {
     Box(
         modifier = Modifier
-            .size(30.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .background(Color(color))
             .border(
@@ -694,11 +840,18 @@ internal fun CentrePill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     label: String = "Centre on My Location",
-    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.GpsFixed
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.GpsFixed,
+    guidance: String? = null,
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(40.dp),
+        modifier = modifier
+            .height(48.dp)
+            .then(
+                if (guidance == null) Modifier else Modifier.semantics {
+                    stateDescription = guidance
+                }
+            ),
         colors = ButtonDefaults.buttonColors(containerColor = Color(0xCC000000)),
         shape = CircleShape,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)

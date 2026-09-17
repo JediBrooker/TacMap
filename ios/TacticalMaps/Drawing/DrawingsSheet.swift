@@ -11,6 +11,7 @@ struct DrawingsSheet: View {
     @State private var pendingDelete: DrawingShape? = nil
     @State private var renamingShape: DrawingShape? = nil
     @State private var renameDraft: String = ""
+    @State private var mutationError: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -69,8 +70,13 @@ struct DrawingsSheet: View {
                                         set: { if !$0 { pendingDelete = nil } }),
                    presenting: pendingDelete) { shape in
                 Button("Delete", role: .destructive) {
-                    drawingStore.remove(shape)
-                    pendingDelete = nil
+                    do {
+                        _ = try drawingStore.deleteDurably(shape)
+                        pendingDelete = nil
+                    } catch {
+                        pendingDelete = nil
+                        mutationError = "\(error.localizedDescription) Check available storage, then try again."
+                    }
                 }
                 Button("Cancel", role: .cancel) { pendingDelete = nil }
             } message: { shape in
@@ -85,10 +91,23 @@ struct DrawingsSheet: View {
                     var updated = shape
                     let trimmed = renameDraft.trimmingCharacters(in: .whitespaces)
                     updated.name = trimmed.isEmpty ? nil : trimmed
-                    drawingStore.update(updated)
-                    renamingShape = nil
+                    do {
+                        _ = try drawingStore.commitEdit(updated, actionName: "Rename Drawing")
+                        renamingShape = nil
+                    } catch {
+                        renamingShape = nil
+                        mutationError = "\(error.localizedDescription) Check available storage, then try again."
+                    }
                 }
                 Button("Cancel", role: .cancel) { renamingShape = nil }
+            }
+            .alert("Drawing Not Saved", isPresented: Binding(
+                get: { mutationError != nil },
+                set: { if !$0 { mutationError = nil } }
+            )) {
+                Button("OK", role: .cancel) { mutationError = nil }
+            } message: {
+                Text(mutationError ?? "The drawing change could not be saved. Check available storage, then try again.")
             }
         }
     }

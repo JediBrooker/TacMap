@@ -10,6 +10,35 @@ import Grid
 /// we split them up here.
 enum MGRSFormatter {
 
+    struct ResolvedGridReference {
+        let coordinate: CLLocationCoordinate2D
+        let formattedReference: String
+        /// Total numeric figures (easting + northing): 4, 6, 8, or 10.
+        let figureCount: Int
+        let squareSizeMetres: Int
+        let usedLocalContext: Bool
+    }
+
+    enum GridReferenceError: LocalizedError, Equatable {
+        case empty
+        case unsupportedPrecision
+        case invalidReference
+        case unavailableLocalContext
+
+        var errorDescription: String? {
+            switch self {
+            case .empty:
+                return "Enter an MGRS grid reference."
+            case .unsupportedPrecision:
+                return "Use a 4, 6, 8, or 10-figure grid reference."
+            case .invalidReference:
+                return "Enter a valid full MGRS reference or a local 4, 6, 8, or 10-figure grid."
+            case .unavailableLocalContext:
+                return "A local MGRS grid context is unavailable at this symbol's location. Enter a full MGRS reference."
+            }
+        }
+    }
+
     /// 1m precision (5+5 digits).
     static let defaultPrecision: GridType = .METER
 
@@ -49,11 +78,155 @@ enum MGRSFormatter {
     /// so the library only ever sees right-shaped strings.
     static func coordinate(from mgrs: String) -> CLLocationCoordinate2D? {
         let compact = mgrs
-            .replacingOccurrences(of: " ", with: "")
+            .filter { !$0.isWhitespace }
             .uppercased()
         guard looksLikeMGRS(compact) else { return nil }
+        let isBarePrefix = compact.range(
+            of: #"^(?:0?[1-9]|[1-5][0-9]|60)[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-V]$"#,
+            options: .regularExpression
+        ) != nil
+        guard isSafeUTMMGRS(compact) || (isBarePrefix && isSafeUTMMGRS(compact + "0000")) else {
+            // The vendored parser implements UTM MGRS only. Reject UPS and
+            // parser-incompatible rows here instead of allowing fatalError.
+            return nil
+        }
         let point = MGRS.parse(compact).toPoint()
         return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+    }
+
+    /// Resolve the field shorthand used over radio (for example `1234`) or a
+    /// complete MGRS value. Numeric-only input inherits the grid-zone and 100 km
+    /// square from `anchor`; no provider or network API participates.
+    ///
+    /// NGA's parser returns the south-west corner for reduced precision. We
+    /// convert through UTM and add half the indicated cell size so all supported
+    /// precisions resolve to the centre of their 1 km / 100 m / 10 m / 1 m cell.
+    static func resolveGridReference(
+        _ raw: String,
+        relativeTo anchor: CLLocationCoordinate2D
+    ) throws -> ResolvedGridReference {
+        let compact = raw.uppercased().filter { !$0.isWhitespace }
+        guard !compact.isEmpty else { throw GridReferenceError.empty }
+
+        let allowedFigureCounts = [4, 6, 8, 10]
+        let prefix: String
+        let figures: String
+        let usedLocalContext: Bool
+
+        if isASCIIDigits(compact) {
+            guard allowedFigureCounts.contains(compact.count) else {
+                throw GridReferenceError.unsupportedPrecision
+            }
+            guard let localPrefix = safeUTMPrefix(for: anchor) else {
+                throw GridReferenceError.unavailableLocalContext
+            }
+            prefix = localPrefix
+            figures = compact
+            usedLocalContext = true
+        } else {
+            guard let parts = fullGridParts(compact),
+                  allowedFigureCounts.contains(parts.figures.count) else {
+                if compact.rangeOfCharacter(from: .decimalDigits) != nil,
+                   compact.rangeOfCharacter(from: .letters) != nil {
+                    throw GridReferenceError.unsupportedPrecision
+                }
+                throw GridReferenceError.invalidReference
+            }
+            prefix = parts.prefix
+            figures = parts.figures
+            usedLocalContext = false
+        }
+
+        let half = figures.count / 2
+        let easting = String(figures.prefix(half))
+        let northing = String(figures.suffix(half))
+        let compactReference = prefix + easting + northing
+        guard isSafeUTMMGRS(compactReference) else {
+            throw GridReferenceError.invalidReference
+        }
+
+        let southWestUTM = MGRS.parse(compactReference).toUTM()
+        let squareSize = Int(pow(10.0, Double(5 - half)))
+        let rawCentre = UTM(
+            southWestUTM.zone,
+            southWestUTM.hemisphere,
+            southWestUTM.easting + Double(squareSize) / 2,
+            southWestUTM.northing + Double(squareSize) / 2
+        ).toCoordinate()
+        guard rawCentre.latitude.isFinite, rawCentre.longitude.isFinite else {
+            throw GridReferenceError.invalidReference
+        }
+        let longitude = ((rawCentre.longitude + 180)
+            .truncatingRemainder(dividingBy: 360) + 360)
+            .truncatingRemainder(dividingBy: 360) - 180
+        let centre = CLLocationCoordinate2D(
+            latitude: rawCentre.latitude,
+            longitude: longitude
+        )
+        // A valid boundary cell may centre just beyond the nominal -80...84
+        // MGRS generation band. Accept the finite WGS84 point; only shorthand
+        // context derivation itself requires an in-range anchor.
+        guard CLLocationCoordinate2DIsValid(centre),
+              (-90...90).contains(centre.latitude) else {
+            throw GridReferenceError.invalidReference
+        }
+
+        return ResolvedGridReference(
+            coordinate: centre,
+            formattedReference: "\(prefix) \(easting) \(northing)",
+            figureCount: figures.count,
+            squareSizeMetres: squareSize,
+            usedLocalContext: usedLocalContext
+        )
+    }
+
+    private static func safeUTMPrefix(for coordinate: CLLocationCoordinate2D) -> String? {
+        guard CLLocationCoordinate2DIsValid(coordinate),
+              (-80...84).contains(coordinate.latitude) else { return nil }
+        let compact = string(from: coordinate, spaced: false)
+        let pattern = #"^((?:0?[1-9]|[1-5][0-9]|60)[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-V])"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: compact, range: NSRange(compact.startIndex..., in: compact)),
+              let range = Range(match.range(at: 1), in: compact) else { return nil }
+        let prefix = String(compact[range])
+        return isSafeUTMMGRS(prefix + "0000") ? prefix : nil
+    }
+
+    private static func fullGridParts(_ compact: String) -> (prefix: String, figures: String)? {
+        let pattern = #"^((?:0?[1-9]|[1-5][0-9]|60)[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-V])([0-9]+)$"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: compact, range: NSRange(compact.startIndex..., in: compact)),
+              let prefixRange = Range(match.range(at: 1), in: compact),
+              let figureRange = Range(match.range(at: 2), in: compact) else { return nil }
+        return (String(compact[prefixRange]), String(compact[figureRange]))
+    }
+
+    /// A crash-safe gate matching the vendored parser's actual UTM support.
+    /// In particular the row is A-V (excluding I/O), and the column must be in
+    /// the repeating zone-specific set.
+    private static func isSafeUTMMGRS(_ compact: String) -> Bool {
+        guard compact.unicodeScalars.allSatisfy({ $0.value <= 127 }),
+              let parts = fullGridParts(compact),
+              let zoneEnd = parts.prefix.firstIndex(where: { $0.isLetter }),
+              let zone = Int(parts.prefix[..<zoneEnd]),
+              let column = parts.prefix.dropFirst(parts.prefix.distance(from: parts.prefix.startIndex,
+                                                                          to: zoneEnd) + 1).first
+        else { return false }
+        let columns: String
+        switch zone % 3 {
+        case 1: columns = "ABCDEFGH"
+        case 2: columns = "JKLMNPQR"
+        default: columns = "STUVWXYZ"
+        }
+        return columns.contains(column) && MGRS.isMGRS(compact)
+    }
+
+    private static func isASCIIDigits(_ value: String) -> Bool {
+        !value.isEmpty && value.unicodeScalars.allSatisfy {
+            $0.value >= 48 && $0.value <= 57
+        }
     }
 
     /// True only for strings that match a full MGRS shape: zone (1-2 digits)
@@ -68,8 +241,8 @@ enum MGRSFormatter {
         // and bands A/B/Y/Z, which NGA's non-throwing parser just
         // fatalErrors on. Square letters also exclude I/O; easting/northing
         // group is optional (bare 100km square is a valid location).
-        let utm = #"^(0?[1-9]|[1-5]\d|60)[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-Z](\d{2}|\d{4}|\d{6}|\d{8}|\d{10})?$"#
-        let ups = #"^[ABYZ][A-HJ-NP-Z][A-HJ-NP-Z](\d{2}|\d{4}|\d{6}|\d{8}|\d{10})?$"#
+        let utm = #"^(0?[1-9]|[1-5][0-9]|60)[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-Z]([0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8}|[0-9]{10})?$"#
+        let ups = #"^[ABYZ][A-HJ-NP-Z][A-HJ-NP-Z]([0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8}|[0-9]{10})?$"#
         for pattern in [utm, ups] {
             guard let rx = try? NSRegularExpression(pattern: pattern) else { continue }
             let range = NSRange(s.startIndex..., in: s)

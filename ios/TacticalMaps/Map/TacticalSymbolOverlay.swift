@@ -41,10 +41,9 @@ struct TacticalSymbolOverlay: UIViewRepresentable {
             zoomScale: mapVM.zoomScaleFactor,
             visible: visibility.waypointsVisible,
             unitLabelsVisible: visibility.unitLabelsVisible,
+            unitAmplifiersVisible: visibility.unitAmplifiersVisible,
             taskLabelsVisible: visibility.taskLabelsVisible,
-            selectedID: mapVM.selectedWaypointID,
-            store: waypointStore,
-            mapVM: mapVM
+            selectedID: mapVM.selectedWaypointID
         )
     }
 }
@@ -57,6 +56,7 @@ final class OverlayContainerView: UIView {
     /// Name labels (translucent pill under each bubble). Toggled off
     /// via the Layers sheet "Unit Labels" switch.
     private var labelViews: [UUID: UILabel] = [:]
+    private var amplifierViews: [UUID: UnitAmplifierLabelsView] = [:]
 
     /// Purely visual - never claim any touch. Tap/long-press selection
     /// is dispatched from MapContainerView's own gesture recognisers
@@ -76,10 +76,9 @@ final class OverlayContainerView: UIView {
                 zoomScale: CGFloat,
                 visible: Bool,
                 unitLabelsVisible: Bool,
+                unitAmplifiersVisible: Bool,
                 taskLabelsVisible: Bool,
-                selectedID: UUID?,
-                store: WaypointStore,
-                mapVM: MapViewModel) {
+                selectedID: UUID?) {
         let liveIDs: Set<UUID> = visible
             ? Set(waypoints.map { $0.id })
             : []
@@ -103,6 +102,17 @@ final class OverlayContainerView: UIView {
             lbl.removeFromSuperview()
             labelViews.removeValue(forKey: id)
         }
+        let amplifierIDs: Set<UUID> = visible
+            ? Set(waypoints.compactMap { waypoint in
+                UnitAmplifierPresentation(
+                    waypoint: waypoint, visible: unitAmplifiersVisible) == nil
+                    ? nil : waypoint.id
+            })
+            : []
+        for (id, view) in amplifierViews where !amplifierIDs.contains(id) {
+            view.removeFromSuperview()
+            amplifierViews.removeValue(forKey: id)
+        }
         guard visible else { return }
 
         for wp in waypoints {
@@ -116,19 +126,11 @@ final class OverlayContainerView: UIView {
             )
             let isSelected = (wp.id == selectedID)
             if let existing = bubbleViews[wp.id] {
-                // CRITICAL: don't update frame while dragging. Otherwise
-                // unrelated re-renders (location ticks etc.) reset the
-                // bubble to its pre-drag screen point mid-drag and the
-                // user sees it snap back to the origin.
-                if !existing.isDragging {
-                    existing.frame = frame
-                }
-                existing.update(waypoint: wp, store: store, mapVM: mapVM)
+                existing.frame = frame
+                existing.update(waypoint: wp)
                 existing.setSelected(isSelected)
             } else {
-                let bub = BubbleView(waypoint: wp,
-                                     store: store,
-                                     mapVM: mapVM)
+                let bub = BubbleView(waypoint: wp)
                 bub.frame = frame
                 bub.setSelected(isSelected)
                 addSubview(bub)
@@ -181,6 +183,23 @@ final class OverlayContainerView: UIView {
                     labelViews[wp.id] = label
                 }
             }
+
+            if let presentation = UnitAmplifierPresentation(
+                waypoint: wp, visible: unitAmplifiersVisible) {
+                let amplifierView = amplifierViews[wp.id] ?? UnitAmplifierLabelsView()
+                amplifierView.configure(
+                    presentation: presentation,
+                    symbolSize: size
+                )
+                amplifierView.bounds = CGRect(
+                    origin: .zero,
+                    size: UnitAmplifierLabelsView.canvasSize
+                )
+                amplifierView.center = pos
+                if amplifierView.superview == nil { addSubview(amplifierView) }
+                bringSubviewToFront(amplifierView)
+                amplifierViews[wp.id] = amplifierView
+            }
         }
     }
 
@@ -220,6 +239,135 @@ final class OverlayContainerView: UIView {
     }
 }
 
+/// FM 1-02.2 unit amplifier layout, kept separate from the existing waypoint
+/// name pill. Field F is upper-right, T bottom-left, and M bottom-right.
+final class UnitAmplifierLabelsView: UIView {
+    static let canvasSize = CGSize(width: 350, height: 100)
+
+    private let fieldF = UnitAmplifierLabelsView.makeLabel(alignment: .left)
+    private let fieldT = UnitAmplifierLabelsView.makeLabel(alignment: .right)
+    private let fieldM = UnitAmplifierLabelsView.makeLabel(alignment: .left)
+    private var symbolSize = CGSize(width: 44, height: 44)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+        isUserInteractionEnabled = false
+        clipsToBounds = false
+        addSubview(fieldF)
+        addSubview(fieldT)
+        addSubview(fieldM)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func configure(presentation: UnitAmplifierPresentation, symbolSize: CGSize) {
+        self.symbolSize = symbolSize
+        Self.set(presentation.reinforcementText, on: fieldF)
+        Self.set(presentation.uniqueIdentifier, on: fieldT)
+        Self.set(presentation.higherFormation, on: fieldM)
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let centreX = bounds.midX
+        let centreY = bounds.midY
+        let symbolHalfWidth = symbolSize.width / 2
+        let symbolHalfHeight = symbolSize.height / 2
+        let sideWidth: CGFloat = 145
+        let gap: CGFloat = 5
+        let fieldFSize = fittedSize(for: fieldF, maximumWidth: 55)
+        let fieldTSize = fittedSize(for: fieldT, maximumWidth: sideWidth)
+        let fieldMSize = fittedSize(for: fieldM, maximumWidth: sideWidth)
+
+        fieldF.frame = CGRect(
+            x: centreX + symbolHalfWidth + gap,
+            y: centreY - symbolHalfHeight - 3,
+            width: fieldFSize.width,
+            height: fieldFSize.height
+        )
+        fieldT.frame = CGRect(
+            x: centreX - symbolHalfWidth - gap - fieldTSize.width,
+            y: centreY + symbolHalfHeight - fieldTSize.height + 3,
+            width: fieldTSize.width,
+            height: fieldTSize.height
+        )
+        fieldM.frame = CGRect(
+            x: centreX + symbolHalfWidth + gap,
+            y: centreY + symbolHalfHeight - fieldMSize.height + 3,
+            width: fieldMSize.width,
+            height: fieldMSize.height
+        )
+    }
+
+    private func fittedSize(for label: UILabel, maximumWidth: CGFloat) -> CGSize {
+        guard !label.isHidden else { return .zero }
+        let size = label.sizeThatFits(
+            CGSize(width: maximumWidth, height: .greatestFiniteMagnitude))
+        return CGSize(width: min(ceil(size.width), maximumWidth),
+                      height: ceil(size.height))
+    }
+
+    private static func makeLabel(alignment: NSTextAlignment) -> CompactAmplifierLabel {
+        // Match Android's high-contrast chip treatment, but deliberately omit
+        // its extra vertical inset so the background hugs the glyphs more
+        // tightly on the smaller iOS unit symbol.
+        let label = CompactAmplifierLabel(
+            contentInsets: UIEdgeInsets(top: 0, left: 3, bottom: 0, right: 3))
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.72)
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 10, weight: .bold)
+        label.textAlignment = alignment
+        label.numberOfLines = 1
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.65
+        label.layer.cornerRadius = 3
+        label.layer.cornerCurve = .continuous
+        label.layer.masksToBounds = true
+        label.isUserInteractionEnabled = false
+        return label
+    }
+
+    private static func set(_ text: String?, on label: UILabel) {
+        guard let text, !text.isEmpty else {
+            label.text = nil
+            label.isHidden = true
+            return
+        }
+        label.text = text
+        label.isHidden = false
+    }
+}
+
+/// UILabel with explicit content insets. UIKit's stock label has no padding,
+/// while placing it in a separate container would complicate the three edge
+/// anchors above.
+private final class CompactAmplifierLabel: UILabel {
+    private let contentInsets: UIEdgeInsets
+
+    init(contentInsets: UIEdgeInsets) {
+        self.contentInsets = contentInsets
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: contentInsets))
+    }
+
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        let contentSize = CGSize(
+            width: max(0, size.width - contentInsets.left - contentInsets.right),
+            height: max(0, size.height - contentInsets.top - contentInsets.bottom))
+        let fitted = super.sizeThatFits(contentSize)
+        return CGSize(width: fitted.width + contentInsets.left + contentInsets.right,
+                      height: fitted.height + contentInsets.top + contentInsets.bottom)
+    }
+}
+
 /// Single waypoint view. Pure UIKit - UIImageView for glyph, CALayer
 /// shadow for white halo, tap to select, long-press to drag.
 ///
@@ -228,21 +376,11 @@ final class OverlayContainerView: UIView {
 /// of e.g. Assembly Area bbox pass through to map).
 final class BubbleView: UIView {
     private(set) var waypoint: Waypoint
-    private weak var store: WaypointStore?
-    private weak var mapVM: MapViewModel?
 
     private let imageView = UIImageView()
-    private var dragStartScreenPoint: CGPoint?
-    /// True while user is dragging. Container skips frame updates
-    /// when this is set, otherwise unrelated @Published re-renders
-    /// would snap us back to the pre-drag screen point and basically
-    /// cancel the drag mid-gesture.
-    private(set) var isDragging: Bool = false
 
-    init(waypoint: Waypoint, store: WaypointStore, mapVM: MapViewModel) {
+    init(waypoint: Waypoint) {
         self.waypoint = waypoint
-        self.store = store
-        self.mapVM = mapVM
         super.init(frame: .zero)
 
         backgroundColor = .clear
@@ -280,13 +418,11 @@ final class BubbleView: UIView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func update(waypoint: Waypoint, store: WaypointStore, mapVM: MapViewModel) {
+    func update(waypoint: Waypoint) {
         let kindChanged = waypoint.kind != self.waypoint.kind
         let rotationChanged = waypoint.rotation != self.waypoint.rotation
         let colorChanged = waypoint.taskColor != self.waypoint.taskColor
         self.waypoint = waypoint
-        self.store = store
-        self.mapVM = mapVM
         if kindChanged || rotationChanged || colorChanged {
             refreshImage()
         }
@@ -377,97 +513,11 @@ final class BubbleView: UIView {
         return img
     }
 
-    // MARK: - Gestures
-
-    @objc private func handleTap() {
-        mapVM?.selectedWaypointID = waypoint.id
-    }
-
-    /// Used by MapContainerView tap handler to check if a tap hits the
-    /// visible symbol (alpha mask for control measures) or just the
-    /// frame rect (military/generic always return true).
-    func containsVisiblePoint(_ point: CGPoint) -> Bool {
-        guard bounds.contains(point) else { return false }
-        guard case .controlMeasure(let measure) = waypoint.kind else {
-            return true
-        }
-        let normalized = CGPoint(
-            x: point.x / max(bounds.width,  1),
-            y: point.y / max(bounds.height, 1)
-        )
-        return TacticalControlMeasureAlphaMask.containsInVisibleBounds(
-            measure: measure,
-            rotation: waypoint.rotation,
-            normalizedPoint: normalized
-        )
-    }
-
-    @objc private func handlePress(_ recognizer: UILongPressGestureRecognizer) {
-        guard let mapVM = mapVM,
-              let store = store,
-              let originalPos = mapVM.waypointScreenPositions[waypoint.id]
-        else { return }
-
-        // Recognizer location is in our coord space, convert to
-        // screen-space for mapVM.screenToCoordinate.
-        let local = recognizer.location(in: self)
-        let containerSpace = convert(local, to: superview)
-
-        switch recognizer.state {
-        case .began:
-            isDragging = true
-            dragStartScreenPoint = containerSpace
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            // "I'm holding this" feedback - scale up slightly.
-            UIView.animate(withDuration: 0.12) {
-                self.imageView.transform = CGAffineTransform(scaleX: 1.08, y: 1.08)
-            }
-        case .changed:
-            // Move bubble live during drag. Container skips our frame
-            // updates while isDragging so we don't get reset.
-            guard let start = dragStartScreenPoint else { return }
-            let dx = containerSpace.x - start.x
-            let dy = containerSpace.y - start.y
-            let centre = CGPoint(x: originalPos.x + dx,
-                                 y: originalPos.y + dy)
-            let size = bounds.size
-            frame = CGRect(
-                x: centre.x - size.width  / 2,
-                y: centre.y - size.height / 2,
-                width:  size.width,
-                height: size.height
-            )
-        case .ended, .cancelled, .failed:
-            defer {
-                isDragging = false
-                dragStartScreenPoint = nil
-                UIView.animate(withDuration: 0.12) {
-                    self.imageView.transform = .identity
-                }
-            }
-            guard recognizer.state == .ended,
-                  let convert = mapVM.screenToCoordinate else { return }
-            let centre = CGPoint(x: frame.midX, y: frame.midY)
-            let newCoord = convert(centre)
-            // Set cached screen pos SYNCHRONOUSLY before store.update
-            // fires @Published. Without this the SwiftUI re-render
-            // reads stale waypointScreenPositions (async publish hasn't
-            // run yet) and snaps the bubble back to pre-drag point,
-            // then jumps to the correct spot a frame later. Ugly.
-            mapVM.waypointScreenPositions[waypoint.id] = centre
-            var updated = waypoint
-            updated.latitude  = newCoord.latitude
-            updated.longitude = newCoord.longitude
-            store.update(updated)
-        default:
-            break
-        }
-    }
 }
 
 /// Per-symbol visible-bounds cache. For each (measure, rotation) we
 /// render into a small alpha-only bitmap and compute the tight bbox of
-/// visible pixels (normalized 0..1). BubbleView uses this for hit
+/// visible pixels (normalized 0..1). MapEditingController uses this for hit
 /// testing so taps match the visible shape, not the SVG's square viewBox.
 ///
 /// For outline-only shapes (e.g. AA's empty circle) the bbox of the

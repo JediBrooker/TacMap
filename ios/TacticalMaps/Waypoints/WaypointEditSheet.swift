@@ -1,13 +1,175 @@
 import SwiftUI
 import CoreLocation
 
-/// Edit (or create) a waypoint. Tapping a row in WaypointListSheet opens
-/// this. Rename, change category + APP-6C symbol, edit notes/elevation,
-/// or delete.
-struct WaypointEditSheet: View {
+struct SymbolEditDraft: Equatable {
+    static let fieldOrder = [
+        "name", "kind", "notes", "elevationMetres", "layerId", "taskColor",
+        "higherFormation", "uniqueIdentifier", "reinforcementStatus", "mgrs",
+        "rotationDegrees", "scaleX", "scaleY", "delete",
+    ]
+    static let elevationValidationError = "Enter a valid elevation in metres."
+
+    var name: String
+    var kind: WaypointKind
+    var notes: String
+    var elevationText: String
+    var layerID: UUID
+    var taskColor: TaskColor
+    var rotationDegrees: Double
+    var scaleX: Double
+    var scaleY: Double
+    var higherFormation: String
+    var uniqueIdentifier: String
+    var reinforcementStatus: ReinforcementStatus
+    private(set) var latitude: Double
+    private(set) var longitude: Double
+    private(set) var isMoveStaged: Bool
+
+    init(waypoint: Waypoint) {
+        name = waypoint.name
+        kind = waypoint.kind
+        notes = waypoint.notes ?? ""
+        elevationText = waypoint.elevation.map { String($0) } ?? ""
+        layerID = waypoint.layerID
+        taskColor = waypoint.taskColor
+        rotationDegrees = waypoint.rotation
+        scaleX = waypoint.scaleX
+        scaleY = waypoint.scaleY
+        higherFormation = waypoint.higherFormation ?? ""
+        uniqueIdentifier = waypoint.uniqueIdentifier ?? ""
+        reinforcementStatus = waypoint.reinforcementStatus
+        latitude = waypoint.latitude
+        longitude = waypoint.longitude
+        isMoveStaged = false
+    }
+
+    enum ValidationError: LocalizedError, Equatable {
+        case invalidElevation
+        var errorDescription: String? { SymbolEditDraft.elevationValidationError }
+    }
+
+    func applying(to waypoint: Waypoint,
+                  availableLayerIDs: Set<UUID>,
+                  fallbackLayerID: UUID) throws -> Waypoint {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedElevation = elevationText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let elevation: Double?
+        if trimmedElevation.isEmpty {
+            elevation = nil
+        } else if let parsed = Double(trimmedElevation), parsed.isFinite {
+            elevation = parsed
+        } else {
+            throw ValidationError.invalidElevation
+        }
+
+        var updated = waypoint
+        updated.name = trimmedName.isEmpty ? kind.displayName : trimmedName
+        updated.kind = kind
+        updated.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+        updated.elevation = elevation
+        updated.layerID = availableLayerIDs.contains(layerID) ? layerID : fallbackLayerID
+        if isMoveStaged {
+            updated.latitude = latitude
+            updated.longitude = longitude
+        }
+        if kind.controlMeasure != nil {
+            let finiteRotation = rotationDegrees.isFinite ? rotationDegrees : 0
+            let remainder = finiteRotation.truncatingRemainder(dividingBy: 360)
+            updated.rotation = remainder < 0 ? remainder + 360 : remainder
+            updated.scaleX = Self.clampedScale(scaleX)
+            updated.scaleY = Self.clampedScale(scaleY)
+            updated.taskColor = taskColor
+        } else {
+            updated.rotation = 0
+            updated.scaleX = 1
+            updated.scaleY = 1
+            updated.taskColor = .black
+        }
+        if kind.militarySpec != nil {
+            updated.higherFormation = UnitAmplifierText.normalized(
+                higherFormation,
+                maximumLength: UnitAmplifierText.higherFormationMaxLength)
+            updated.uniqueIdentifier = UnitAmplifierText.normalized(
+                uniqueIdentifier,
+                maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength)
+            updated.reinforcementStatus = reinforcementStatus
+        } else {
+            updated.higherFormation = nil
+            updated.uniqueIdentifier = nil
+            updated.reinforcementStatus = .none
+        }
+        return updated
+    }
+
+    mutating func stageMove(to coordinate: CLLocationCoordinate2D) {
+        latitude = coordinate.latitude
+        longitude = coordinate.longitude
+        isMoveStaged = true
+    }
+
+    mutating func discardStagedMove() {
+        isMoveStaged = false
+    }
+
+    var stagedCoordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+
+    mutating func resetRotation() { rotationDegrees = 0 }
+    mutating func resetWidth() { scaleX = 1 }
+    mutating func resetHeight() { scaleY = 1 }
+
+    func hasStagedMove(from waypoint: Waypoint) -> Bool {
+        isMoveStaged && (latitude != waypoint.latitude || longitude != waypoint.longitude)
+    }
+
+    private static func clampedScale(_ value: Double) -> Double {
+        guard value.isFinite else { return 1 }
+        return min(max(value, 0.1), 20)
+    }
+}
+
+/// Shared labels and target-size contract used by the production SwiftUI
+/// controls and by fast unit tests when a hosted accessibility tree is absent.
+enum SymbolEditorAccessibility {
+    static let minimumTargetPoints: CGFloat = 44
+    static let closeLabel = "Close symbol editor"
+    static let moveLabel = "Move symbol to crosshair"
+    static let deleteLabel = "Delete symbol"
+    static let rotationLabel = "Rotation"
+    static let widthLabel = "Width scale"
+    static let heightLabel = "Height scale"
+    static let resetRotationLabel = "Reset rotation"
+    static let resetWidthLabel = "Reset width scale"
+    static let resetHeightLabel = "Reset height scale"
+    static let requiredLabels = [closeLabel, moveLabel, deleteLabel,
+                                 rotationLabel, widthLabel, heightLabel]
+
+    static let markerSwatches: [(name: String, hex: String)] =
+        MarkerCatalog.teamColors + [(name: "Slate", hex: "#8A93A6"),
+                                    (name: "Black", hex: "#111417")]
+
+    static func markerLabel(for hex: String) -> String {
+        let name = markerSwatches.first {
+            $0.hex.caseInsensitiveCompare(hex) == .orderedSame
+        }?.name ?? hex
+        return "Marker colour, \(name)"
+    }
+}
+
+/// Immutable option sources and stable enum IDs keep long selection lists from
+/// being replaced when an observed store publishes while the user is scrolling.
+enum SymbolPickerOptions {
+    static let echelons = SymbolEchelon.allCases
+    static let functions = SymbolFunction.allCases
+    static let controlMeasures = TacticalControlMeasure.pickerEntries
+}
+
+/// Builder for a brand-new symbol. Existing symbols always use the
+/// transactional `SelectedSymbolEditSheet` below.
+struct WaypointCreationSheet: View {
     @ObservedObject var waypointStore: WaypointStore
-    /// nil = creating a new waypoint at defaultCoordinate.
-    let original: Waypoint?
     let defaultCoordinate: CLLocationCoordinate2D
     let defaultLayerID: UUID
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +181,9 @@ struct WaypointEditSheet: View {
     @State private var echelon:     SymbolEchelon     = .platoon
     @State private var function:    SymbolFunction    = .infantry
     @State private var isHeadquarters: Bool            = false
+    @State private var higherFormation: String          = ""
+    @State private var uniqueIdentifier: String         = ""
+    @State private var reinforcementStatus: ReinforcementStatus = .none
     // Control measure
     @State private var control:     TacticalControlMeasure = .assemblyArea
     @State private var rotation:    Double                 = 0
@@ -30,49 +195,19 @@ struct WaypointEditSheet: View {
     @State private var markerColorHex: String    = "#3B7BE0"
     @State private var notes: String = ""
     @State private var elevationText: String = ""
-    @State private var showDeleteConfirm = false
+    @State private var errorMessage: String?
 
     init(waypointStore: WaypointStore,
-         original: Waypoint? = nil,
          defaultCoordinate: CLLocationCoordinate2D = .init(latitude: 0, longitude: 0),
          defaultScale: Double = 1.0,
          defaultLayerID: UUID = DrawingLayer.legacyFallbackID) {
         self.waypointStore = waypointStore
-        self.original = original
         self.defaultCoordinate = defaultCoordinate
         self.defaultLayerID = defaultLayerID
-        if let wp = original {
-            _name          = State(initialValue: wp.name)
-            _notes         = State(initialValue: wp.notes ?? "")
-            _elevationText = State(initialValue: wp.elevation.map { String(Int($0)) } ?? "")
-            _rotation      = State(initialValue: wp.rotation)
-            _scaleX        = State(initialValue: wp.scaleX)
-            _scaleY        = State(initialValue: wp.scaleY)
-            switch wp.kind {
-            case .generic:
-                _category = State(initialValue: .generic)
-            case .military(let spec):
-                _category       = State(initialValue: .military)
-                _affiliation    = State(initialValue: spec.affiliation)
-                _echelon        = State(initialValue: spec.echelon)
-                _function       = State(initialValue: spec.function)
-                _isHeadquarters = State(initialValue: spec.isHeadquarters)
-            case .controlMeasure(let m):
-                _category = State(initialValue: .controlMeasure)
-                _control  = State(initialValue: m)
-            case .marker(let mk):
-                _category       = State(initialValue: .marker)
-                _markerSet      = State(initialValue: mk.set)
-                _markerSymbolID = State(initialValue: mk.symbolID)
-                _markerColorHex = State(initialValue: mk.colorHex)
-            }
-        } else {
-            // New control measure: start at zoom-appropriate scale on
-            // both axes so symbol enters square at roughly 10% of
-            // screen height at current zoom.
-            _scaleX = State(initialValue: defaultScale)
-            _scaleY = State(initialValue: defaultScale)
-        }
+        // New control measure: start at zoom-appropriate scale on both axes
+        // so the symbol enters square at roughly 10% of screen height.
+        _scaleX = State(initialValue: defaultScale)
+        _scaleY = State(initialValue: defaultScale)
     }
 
     var body: some View {
@@ -127,24 +262,33 @@ struct WaypointEditSheet: View {
                                 Text(a.displayName).tag(a)
                             }
                         }
-                        // Echelon (7) and Function (~30) use
-                        // navigationLink to push a scrollable list.
-                        // Popup menu scroll is wonky in iOS 26
-                        // simulator and fiddly on device for long
-                        // lists.
-                        Picker("Echelon", selection: $echelon) {
-                            ForEach(SymbolEchelon.allCases, id: \.self) { e in
-                                Text(e.displayName).tag(e)
-                            }
-                        }
-                        .pickerStyle(.navigationLink)
-                        Picker("Function / Branch", selection: $function) {
-                            ForEach(SymbolFunction.allCases, id: \.self) { f in
-                                Text(f.displayName).tag(f)
-                            }
-                        }
-                        .pickerStyle(.navigationLink)
+                        StableNavigationSelection(
+                            title: "Echelon",
+                            stableID: "create-unit-echelon",
+                            options: SymbolPickerOptions.echelons,
+                            selection: $echelon,
+                            optionTitle: { $0.displayName }
+                        )
+                        StableNavigationSelection(
+                            title: "Function / Branch",
+                            stableID: "create-unit-function",
+                            options: SymbolPickerOptions.functions,
+                            selection: $function,
+                            optionTitle: { $0.displayName }
+                        )
                         Toggle("Headquarters", isOn: $isHeadquarters)
+                    }
+                    Section {
+                        UnitAmplifierFields(
+                            higherFormation: $higherFormation,
+                            uniqueIdentifier: $uniqueIdentifier,
+                            reinforcementStatus: $reinforcementStatus
+                        )
+                    } header: {
+                        Text("Unit Amplifiers")
+                    } footer: {
+                        Text("M: higher formation (bottom-right). T: unit callsign / unique identifier (bottom-left). F: reinforced or reduced (upper-right).")
+                            .font(.caption2)
                     }
 
                 case .marker:
@@ -180,17 +324,13 @@ struct WaypointEditSheet: View {
 
                 case .controlMeasure:
                     Section("Tactical Task / Control Measure") {
-                        // navigationLink pushes a scrollable list.
-                        // Default popup has too many items and the
-                        // in-menu scroll silently swallows mouse
-                        // events in iOS 26 sim, kinda fiddly to
-                        // flick on device too.
-                        Picker("Measure", selection: $control) {
-                            ForEach(TacticalControlMeasure.pickerEntries, id: \.self) { m in
-                                Text(m.displayName).tag(m)
-                            }
-                        }
-                        .pickerStyle(.navigationLink)
+                        StableNavigationSelection(
+                            title: "Measure",
+                            stableID: "create-task-measure",
+                            options: SymbolPickerOptions.controlMeasures,
+                            selection: $control,
+                            optionTitle: { $0.displayName }
+                        )
                     }
                     Section {
                         VStack(alignment: .leading, spacing: 4) {
@@ -202,15 +342,22 @@ struct WaypointEditSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                             Slider(value: $rotation, in: 0...360, step: 1)
+                                .accessibilityLabel(SymbolEditorAccessibility.rotationLabel)
+                                .accessibilityValue("\(Int(rotation.rounded()))°")
+                                .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
                             HStack {
                                 Button("Reset") { rotation = 0 }
                                     .buttonStyle(.bordered)
-                                    .controlSize(.small)
+                                    .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
+                                           minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+                                    .accessibilityLabel(SymbolEditorAccessibility.resetRotationLabel)
                                 Spacer()
                                 ForEach([0, 90, 180, 270], id: \.self) { deg in
                                     Button("\(deg)°") { rotation = Double(deg) }
                                         .buttonStyle(.bordered)
-                                        .controlSize(.small)
+                                        .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
+                                               minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+                                        .accessibilityLabel("Set rotation to \(deg) degrees")
                                 }
                             }
                         }
@@ -230,9 +377,14 @@ struct WaypointEditSheet: View {
                                         .foregroundStyle(.secondary)
                                     Button("Reset") { scaleX = 1.0 }
                                         .buttonStyle(.bordered)
-                                        .controlSize(.small)
+                                        .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
+                                               minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+                                        .accessibilityLabel(SymbolEditorAccessibility.resetWidthLabel)
                                 }
                                 Slider(value: $scaleX, in: 0.1...20.0, step: 0.1)
+                                    .accessibilityLabel(SymbolEditorAccessibility.widthLabel)
+                                    .accessibilityValue(String(format: "%.1f×", scaleX))
+                                    .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
                             }
                             // Height
                             VStack(alignment: .leading, spacing: 4) {
@@ -244,9 +396,14 @@ struct WaypointEditSheet: View {
                                         .foregroundStyle(.secondary)
                                     Button("Reset") { scaleY = 1.0 }
                                         .buttonStyle(.bordered)
-                                        .controlSize(.small)
+                                        .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
+                                               minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+                                        .accessibilityLabel(SymbolEditorAccessibility.resetHeightLabel)
                                 }
                                 Slider(value: $scaleY, in: 0.1...20.0, step: 0.1)
+                                    .accessibilityLabel(SymbolEditorAccessibility.heightLabel)
+                                    .accessibilityValue(String(format: "%.1f×", scaleY))
+                                    .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
                             }
                             // Quick uniform-scale presets, applied to both
                             // axes (clobbers any aspect-ratio stretch).
@@ -262,7 +419,9 @@ struct WaypointEditSheet: View {
                                         scaleX = s; scaleY = s
                                     }
                                     .buttonStyle(.bordered)
-                                    .controlSize(.small)
+                                    .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
+                                           minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+                                    .accessibilityLabel(String(format: "Set width and height to %g times", s))
                                 }
                             }
                         }
@@ -291,21 +450,12 @@ struct WaypointEditSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 } header: { Text("Position") } footer: {
-                    Text("Editing a waypoint's coordinate is not supported in v1.0 — delete and re-add at the new location.")
+                    Text("The new symbol will be placed at the current map crosshair.")
                         .font(.caption2)
                 }
 
-                if original != nil {
-                    Section {
-                        Button(role: .destructive) {
-                            showDeleteConfirm = true
-                        } label: {
-                            Label("Delete symbol", systemImage: "trash")
-                        }
-                    }
-                }
             }
-            .navigationTitle(original == nil ? "New Symbol" : "Edit Symbol")
+            .navigationTitle("New Symbol")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -316,19 +466,12 @@ struct WaypointEditSheet: View {
                         .bold()
                 }
             }
-            .alert("Delete symbol?",
-                   isPresented: $showDeleteConfirm) {
-                Button("Delete", role: .destructive) {
-                    if let wp = original { waypointStore.remove(wp) }
-                    dismiss()
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                let label = name.trimmingCharacters(in: .whitespaces).isEmpty
-                    ? (original?.name ?? currentKind.displayName)
-                    : name
-                Text("This will permanently remove “\(label)”.")
-            }
+            .alert("Could Not Save Symbol",
+                   isPresented: Binding(get: { errorMessage != nil },
+                                        set: { if !$0 { errorMessage = nil } }),
+                   presenting: errorMessage) { _ in
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: { Text($0) }
         }
         // Block swipe-to-dismiss. This is an edit form, accidental
         // swipe shouldn't silently nuke the user's changes.
@@ -372,13 +515,22 @@ struct WaypointEditSheet: View {
     }
 
     private var locationCoordinate: CLLocationCoordinate2D {
-        original?.coordinate ?? defaultCoordinate
+        defaultCoordinate
     }
 
     private func save() {
         let trimmedName  = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parsedElevation = Double(elevationText.trimmingCharacters(in: .whitespaces))
+        let trimmedElevation = elevationText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedElevation: Double?
+        if trimmedElevation.isEmpty {
+            parsedElevation = nil
+        } else if let parsed = Double(trimmedElevation), parsed.isFinite {
+            parsedElevation = parsed
+        } else {
+            errorMessage = SymbolEditDraft.elevationValidationError
+            return
+        }
 
         // Auto-fill name from kind's displayName when blank so user
         // can just drop a waypoint without typing a label. e.g.
@@ -393,31 +545,503 @@ struct WaypointEditSheet: View {
         let persistedScaleX   = category == .controlMeasure ? scaleX   : 1.0
         let persistedScaleY   = category == .controlMeasure ? scaleY   : 1.0
 
-        if let existing = original {
-            var updated = existing
-            updated.name      = resolvedName
-            updated.kind      = currentKind
-            updated.notes     = trimmedNotes.isEmpty ? nil : trimmedNotes
-            updated.elevation = parsedElevation
-            updated.rotation  = persistedRotation
-            updated.scaleX    = persistedScaleX
-            updated.scaleY    = persistedScaleY
-            waypointStore.update(updated)
-        } else {
-            let new = Waypoint(
-                name:      resolvedName,
-                notes:     trimmedNotes.isEmpty ? nil : trimmedNotes,
-                coordinate: defaultCoordinate,
-                elevation: parsedElevation,
-                kind:      currentKind,
-                rotation:  persistedRotation,
-                scaleX:    persistedScaleX,
-                scaleY:    persistedScaleY,
-                layerID:   defaultLayerID
-            )
-            waypointStore.add(new)
+        let new = Waypoint(
+            name:      resolvedName,
+            notes:     trimmedNotes.isEmpty ? nil : trimmedNotes,
+            coordinate: defaultCoordinate,
+            elevation: parsedElevation,
+            kind:      currentKind,
+            rotation:  persistedRotation,
+            scaleX:    persistedScaleX,
+            scaleY:    persistedScaleY,
+            higherFormation: category == .military ? higherFormation : nil,
+            uniqueIdentifier: category == .military ? uniqueIdentifier : nil,
+            reinforcementStatus: category == .military ? reinforcementStatus : .none,
+            layerID:   defaultLayerID
+        )
+        do {
+            _ = try waypointStore.addDurably(new)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
-        dismiss()
+    }
+}
+
+/// Transactional editor used by every existing-symbol entry point. Map moves
+/// live on the selected-symbol quick-action card; Save and confirmed Delete
+/// each perform one durable-before-publish store mutation.
+struct SelectedSymbolEditSheet: View {
+    @ObservedObject var waypointStore: WaypointStore
+    @ObservedObject var drawingStore: DrawingStore
+    let waypoint: Waypoint
+    let onDeleted: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: SymbolEditDraft
+    @State private var category: KindCategory
+    @State private var errorMessage: String?
+    @State private var showDeleteConfirmation = false
+    @State private var mgrsInput: String
+    @State private var lastAppliedMGRSInput: String
+    @State private var mgrsError: String?
+    @State private var mgrsMoveExplicitlyApplied = false
+    private let initialMGRSInput: String
+
+    init(waypointStore: WaypointStore,
+         drawingStore: DrawingStore,
+         waypoint: Waypoint,
+         onDeleted: @escaping () -> Void = {}) {
+        self.waypointStore = waypointStore
+        self.drawingStore = drawingStore
+        self.waypoint = waypoint
+        self.onDeleted = onDeleted
+        let grid = MGRSFormatter.string(from: waypoint.coordinate)
+        initialMGRSInput = grid
+        _draft = State(initialValue: SymbolEditDraft(waypoint: waypoint))
+        _category = State(initialValue: Self.category(for: waypoint.kind))
+        _mgrsInput = State(initialValue: grid)
+        _lastAppliedMGRSInput = State(initialValue: grid)
+        _mgrsError = State(initialValue: nil)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField(draft.kind.displayName, text: $draft.name)
+                        .autocorrectionDisabled()
+                        .frame(minHeight: 44)
+                }
+
+                kindSections
+
+                if draft.kind.militarySpec != nil {
+                    Section {
+                        UnitAmplifierFields(
+                            higherFormation: $draft.higherFormation,
+                            uniqueIdentifier: $draft.uniqueIdentifier,
+                            reinforcementStatus: $draft.reinforcementStatus
+                        )
+                    } header: {
+                        Text("Unit Amplifiers")
+                    } footer: {
+                        Text("Separate from Unit Labels. M is bottom-right, T is bottom-left, and F is upper-right.")
+                            .font(.caption2)
+                    }
+                }
+
+                mgrsLocationSection
+
+                Section("Notes") {
+                    TextField("Optional", text: $draft.notes, axis: .vertical)
+                        .lineLimit(3...6)
+                        .frame(minHeight: 44)
+                }
+
+                Section("Elevation (metres)") {
+                    TextField("Optional — leave blank for none", text: $draft.elevationText)
+                        .keyboardType(.numbersAndPunctuation)
+                        .frame(minHeight: 44)
+                }
+
+                Section("Layer") {
+                    Picker("Layer", selection: $draft.layerID) {
+                        ForEach(drawingStore.layers) { layer in
+                            Text(layer.name).tag(layer.id)
+                        }
+                    }
+                    .pickerStyle(.navigationLink)
+                    .frame(minHeight: 44)
+                }
+
+                if draft.kind.controlMeasure != nil {
+                    taskColourSection
+                    controlValueSection(
+                        title: "Rotation",
+                        value: $draft.rotationDegrees,
+                        range: 0...359,
+                        step: 1,
+                        valueText: "\(Int(draft.rotationDegrees.rounded()))°",
+                        accessibilityLabel: SymbolEditorAccessibility.rotationLabel,
+                        resetLabel: SymbolEditorAccessibility.resetRotationLabel,
+                        reset: { draft.resetRotation() }
+                    )
+                    controlValueSection(
+                        title: "Width Scale",
+                        value: $draft.scaleX,
+                        range: 0.1...20,
+                        step: 0.1,
+                        valueText: String(format: "%.1f×", draft.scaleX),
+                        accessibilityLabel: SymbolEditorAccessibility.widthLabel,
+                        resetLabel: SymbolEditorAccessibility.resetWidthLabel,
+                        reset: { draft.resetWidth() }
+                    )
+                    controlValueSection(
+                        title: "Height Scale",
+                        value: $draft.scaleY,
+                        range: 0.1...20,
+                        step: 0.1,
+                        valueText: String(format: "%.1f×", draft.scaleY),
+                        accessibilityLabel: SymbolEditorAccessibility.heightLabel,
+                        resetLabel: SymbolEditorAccessibility.resetHeightLabel,
+                        reset: { draft.resetHeight() }
+                    )
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("Delete symbol", systemImage: "trash")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .accessibilityLabel(SymbolEditorAccessibility.deleteLabel)
+                }
+            }
+            .navigationTitle("Edit Symbol")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 64, minHeight: 44)
+                        .accessibilityLabel(SymbolEditorAccessibility.closeLabel)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save", action: save)
+                        .bold()
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+            }
+            .alert("Symbol Change Failed",
+                   isPresented: Binding(get: { errorMessage != nil },
+                                        set: { if !$0 { errorMessage = nil } }),
+                   presenting: errorMessage) { _ in
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: { Text($0) }
+            .confirmationDialog(
+                "Delete “\(waypoint.name)”?",
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete symbol", role: .destructive, action: deleteSymbol)
+                Button("Cancel", role: .cancel) { }
+            }
+        }
+        .interactiveDismissDisabled()
+        .padSheetSizing()
+    }
+
+    @ViewBuilder
+    private var kindSections: some View {
+        Section("Kind") {
+            KindCategorySegmentedPicker(selection: Binding(
+                get: { category },
+                set: { selectCategory($0) }
+            ))
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+
+            HStack {
+                Spacer()
+                WaypointKindIcon(kind: draft.kind,
+                                 size: 64,
+                                 rotation: draft.kind.controlMeasure == nil ? 0 : draft.rotationDegrees,
+                                 taskColor: draft.taskColor)
+                    .frame(width: 100, height: 100)
+                Spacer()
+            }
+            .listRowBackground(Color.white)
+
+            switch draft.kind {
+            case .generic:
+                EmptyView()
+            case .military(let spec):
+                militaryPickers(spec)
+            case .controlMeasure(let measure):
+                StableNavigationSelection(
+                    title: "Measure",
+                    stableID: "edit-task-measure",
+                    options: SymbolPickerOptions.controlMeasures,
+                    selection: Binding(
+                        get: { draft.kind.controlMeasure ?? measure },
+                        set: { draft.kind = .controlMeasure($0) }
+                    ),
+                    optionTitle: { $0.displayName }
+                )
+            case .marker(let marker):
+                markerPickers(marker)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func militaryPickers(_ spec: MilitarySymbolSpec) -> some View {
+        Picker("Affiliation", selection: Binding(
+            get: { spec.affiliation },
+            set: { draft.kind = .military(.init(affiliation: $0,
+                                                 echelon: spec.echelon,
+                                                 function: spec.function,
+                                                 isHeadquarters: spec.isHeadquarters)) }
+        )) {
+            ForEach(SymbolAffiliation.allCases, id: \.self) { Text($0.displayName).tag($0) }
+        }
+        StableNavigationSelection(
+            title: "Echelon",
+            stableID: "edit-unit-echelon",
+            options: SymbolPickerOptions.echelons,
+            selection: Binding(
+                get: { draft.kind.militarySpec?.echelon ?? spec.echelon },
+                set: { newEchelon in
+                    guard let current = draft.kind.militarySpec else { return }
+                    draft.kind = .military(.init(
+                        affiliation: current.affiliation,
+                        echelon: newEchelon,
+                        function: current.function,
+                        isHeadquarters: current.isHeadquarters))
+                }
+            ),
+            optionTitle: { $0.displayName }
+        )
+        StableNavigationSelection(
+            title: "Function / Branch",
+            stableID: "edit-unit-function",
+            options: SymbolPickerOptions.functions,
+            selection: Binding(
+                get: { draft.kind.militarySpec?.function ?? spec.function },
+                set: { newFunction in
+                    guard let current = draft.kind.militarySpec else { return }
+                    draft.kind = .military(.init(
+                        affiliation: current.affiliation,
+                        echelon: current.echelon,
+                        function: newFunction,
+                        isHeadquarters: current.isHeadquarters))
+                }
+            ),
+            optionTitle: { $0.displayName }
+        )
+        Toggle("Headquarters", isOn: Binding(
+            get: { spec.isHeadquarters },
+            set: { draft.kind = .military(.init(affiliation: spec.affiliation,
+                                                 echelon: spec.echelon,
+                                                 function: spec.function,
+                                                 isHeadquarters: $0)) }
+        ))
+    }
+
+    @ViewBuilder
+    private func markerPickers(_ marker: MarkerSymbol) -> some View {
+        Picker("Set", selection: Binding(
+            get: { marker.set },
+            set: { newSet in
+                let first = MarkerCatalog.entries(for: newSet)[0]
+                draft.kind = .marker(.init(set: newSet,
+                                           symbolID: first.id,
+                                           colorHex: first.defaultColorHex))
+            }
+        )) {
+            ForEach(MarkerSet.allCases, id: \.self) { Text($0.displayName).tag($0) }
+        }
+        Picker("Symbol", selection: Binding(
+            get: { marker.symbolID },
+            set: { draft.kind = .marker(.init(set: marker.set,
+                                               symbolID: $0,
+                                               colorHex: MarkerCatalog.entry(set: marker.set, id: $0).defaultColorHex)) }
+        )) {
+            ForEach(MarkerCatalog.entries(for: marker.set), id: \.id) {
+                Label($0.name, systemImage: $0.sfSymbol).tag($0.id)
+            }
+        }
+        .pickerStyle(.navigationLink)
+        MarkerColorSwatches(selection: Binding(
+            get: { marker.colorHex },
+            set: { draft.kind = .marker(.init(set: marker.set,
+                                               symbolID: marker.symbolID,
+                                               colorHex: $0)) }
+        ))
+    }
+
+    private var taskColourSection: some View {
+        Section("Task Colour") {
+            HStack(spacing: 8) {
+                ForEach(TaskColor.allCases, id: \.self) { colour in
+                    Button {
+                        draft.taskColor = colour
+                    } label: {
+                        Circle()
+                            .fill(colour.color)
+                            .frame(width: 32, height: 32)
+                            .overlay(Circle().stroke(.primary,
+                                                     lineWidth: draft.taskColor == colour ? 3 : 0))
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(colour.label)
+                    .accessibilityValue(draft.taskColor == colour ? "Selected" : "Not selected")
+                    .accessibilityAddTraits(draft.taskColor == colour ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    private var mgrsLocationSection: some View {
+        Section {
+            TextField("1234 or 56HLH 1234 5678", text: $mgrsInput)
+                .keyboardType(.asciiCapable)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .font(.body.monospaced())
+                .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+                .onChange(of: mgrsInput) { _ in mgrsError = nil }
+                .onSubmit { _ = applyMGRSMove() }
+
+            Button {
+                _ = applyMGRSMove()
+            } label: {
+                Label("Set MGRS Location", systemImage: "scope")
+                    .frame(maxWidth: .infinity,
+                           minHeight: SymbolEditorAccessibility.minimumTargetPoints,
+                           alignment: .leading)
+            }
+
+            if draft.hasStagedMove(from: waypoint) {
+                Text("Will move to \(MGRSFormatter.string(from: draft.stagedCoordinate)) when saved.")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            if let mgrsError {
+                Text(mgrsError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("Location (MGRS)")
+        } footer: {
+            Text("Enter a full MGRS reference or a local 4, 6, 8, or 10-figure grid. TacMap uses this symbol's current grid square for numeric shorthand and centres the selected square offline.")
+                .font(.caption2)
+        }
+    }
+
+    private func controlValueSection(title: String,
+                                     value: Binding<Double>,
+                                     range: ClosedRange<Double>,
+                                     step: Double,
+                                     valueText: String,
+                                     accessibilityLabel: String,
+                                     resetLabel: String,
+                                     reset: @escaping () -> Void) -> some View {
+        Section(title) {
+            VStack(alignment: .leading) {
+                HStack {
+                    Text(accessibilityLabel)
+                    Spacer()
+                    Text(valueText).monospacedDigit().foregroundStyle(.secondary)
+                    Button(action: reset) {
+                        Label("Reset", systemImage: "arrow.counterclockwise")
+                            .frame(minWidth: SymbolEditorAccessibility.minimumTargetPoints,
+                                   minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel(resetLabel)
+                }
+                Slider(value: value, in: range, step: step)
+                    .accessibilityLabel(accessibilityLabel)
+                    .accessibilityValue(valueText)
+                    .frame(minHeight: 44)
+            }
+        }
+    }
+
+    private func selectCategory(_ newCategory: KindCategory) {
+        category = newCategory
+        switch newCategory {
+        case .generic:
+            draft.kind = .generic
+        case .military:
+            draft.kind = .military(.init(affiliation: .friend,
+                                          echelon: .platoon,
+                                          function: .infantry,
+                                          isHeadquarters: false))
+        case .controlMeasure:
+            draft.kind = .controlMeasure(.assemblyArea)
+        case .marker:
+            let first = MarkerCatalog.entries(for: .airsoft)[0]
+            draft.kind = .marker(.init(set: .airsoft,
+                                       symbolID: first.id,
+                                       colorHex: first.defaultColorHex))
+        }
+    }
+
+    private func save() {
+        do {
+            let entered = normalizedMGRSInput(mgrsInput)
+            let initiallyShown = normalizedMGRSInput(initialMGRSInput)
+            if entered == initiallyShown && !mgrsMoveExplicitlyApplied {
+                draft.discardStagedMove()
+            } else if entered != normalizedMGRSInput(lastAppliedMGRSInput),
+                      !applyMGRSMove() {
+                return
+            }
+            guard let current = waypointStore.waypoints.first(where: { $0.id == waypoint.id }) else {
+                throw WaypointMutationError.missing
+            }
+            let updated = try draft.applying(
+                to: current,
+                availableLayerIDs: Set(drawingStore.layers.map(\.id)),
+                fallbackLayerID: fallbackLayerID
+            )
+            _ = try waypointStore.commitEdit(updated)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    private func applyMGRSMove() -> Bool {
+        do {
+            let resolved = try MGRSFormatter.resolveGridReference(
+                mgrsInput, relativeTo: draft.stagedCoordinate)
+            draft.stageMove(to: resolved.coordinate)
+            mgrsInput = resolved.formattedReference
+            lastAppliedMGRSInput = resolved.formattedReference
+            mgrsMoveExplicitlyApplied = true
+            mgrsError = nil
+            return true
+        } catch {
+            mgrsError = error.localizedDescription
+            return false
+        }
+    }
+
+    private func normalizedMGRSInput(_ value: String) -> String {
+        value.uppercased().filter { !$0.isWhitespace }
+    }
+
+    private func deleteSymbol() {
+        do {
+            _ = try waypointStore.deleteDurably(waypoint)
+            dismiss()
+            onDeleted()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private var fallbackLayerID: UUID {
+        drawingStore.layers.first(where: { $0.id == DrawingLayer.legacyFallbackID })?.id
+            ?? drawingStore.layers.first?.id
+            ?? DrawingLayer.legacyFallbackID
+    }
+
+    private static func category(for kind: WaypointKind) -> KindCategory {
+        switch kind {
+        case .generic: return .generic
+        case .military: return .military
+        case .controlMeasure: return .controlMeasure
+        case .marker: return .marker
+        }
     }
 }
 
@@ -435,30 +1059,144 @@ private enum KindCategory: String, CaseIterable, Hashable {
     }
 }
 
+/// A stable replacement for long `Picker(.menu/.navigationLink)` controls.
+/// SwiftUI's internal picker destination is recreated when an observed parent
+/// publishes, which resets its List scroll offset on iOS. This link and its
+/// immutable option IDs remain the same across those redraws.
+private struct StableNavigationSelection<Option: Hashable>: View {
+    let title: String
+    let stableID: String
+    let options: [Option]
+    @Binding var selection: Option
+    let optionTitle: (Option) -> String
+
+    var body: some View {
+        NavigationLink {
+            StableOptionList(
+                title: title,
+                options: options,
+                selection: $selection,
+                optionTitle: optionTitle
+            )
+            .id(stableID)
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(optionTitle(selection))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .id(stableID)
+    }
+}
+
+private struct StableOptionList<Option: Hashable>: View {
+    let title: String
+    let options: [Option]
+    @Binding var selection: Option
+    let optionTitle: (Option) -> String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            ForEach(options, id: \.self) { option in
+                Button {
+                    selection = option
+                    dismiss()
+                } label: {
+                    HStack {
+                        Text(optionTitle(option))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if option == selection {
+                            Image(systemName: "checkmark")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .id(option)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct UnitAmplifierFields: View {
+    @Binding var higherFormation: String
+    @Binding var uniqueIdentifier: String
+    @Binding var reinforcementStatus: ReinforcementStatus
+
+    var body: some View {
+        TextField("Higher formation (M)", text: bounded(
+            $higherFormation, maximumLength: UnitAmplifierText.higherFormationMaxLength))
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.characters)
+            .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+
+        TextField("Unique identifier / callsign (T)", text: bounded(
+            $uniqueIdentifier, maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength))
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.characters)
+            .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+
+        Picker("Reinforcement (F)", selection: $reinforcementStatus) {
+            ForEach(ReinforcementStatus.allCases, id: \.self) { status in
+                Text(status.displayName).tag(status)
+            }
+        }
+        .pickerStyle(.menu)
+        .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+    }
+
+    private func bounded(_ binding: Binding<String>, maximumLength: Int) -> Binding<String> {
+        Binding(
+            get: { binding.wrappedValue },
+            set: {
+                binding.wrappedValue = String(
+                    $0.unicodeScalars.prefix(maximumLength))
+            }
+        )
+    }
+}
+
 /// Preset colour swatches for markers (the airsoft team colours plus a couple
 /// of neutrals), with the current pick ringed.
 private struct MarkerColorSwatches: View {
     @Binding var selection: String
 
-    private let swatches: [String] = MarkerCatalog.teamColors.map(\.hex) + ["#8A93A6", "#111417"]
-
     var body: some View {
-        HStack(spacing: 12) {
-            ForEach(swatches, id: \.self) { hex in
-                Circle()
-                    .fill(Color(UIColor(hex: hex)))
-                    .frame(width: 30, height: 30)
-                    .overlay(
-                        Circle().stroke(Color.primary,
-                                        lineWidth: selection.caseInsensitiveCompare(hex) == .orderedSame ? 3 : 0)
-                    )
-                    .overlay(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1))
-                    .onTapGesture { selection = hex }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(SymbolEditorAccessibility.markerSwatches, id: \.hex) { swatch in
+                    let isSelected = selection.caseInsensitiveCompare(swatch.hex) == .orderedSame
+                    Button {
+                        selection = swatch.hex
+                    } label: {
+                        Circle()
+                            .fill(Color(UIColor(hex: swatch.hex)))
+                            .frame(width: 32, height: 32)
+                            .overlay(Circle().stroke(Color.primary,
+                                                     lineWidth: isSelected ? 3 : 0))
+                            .overlay(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1))
+                            .frame(width: SymbolEditorAccessibility.minimumTargetPoints,
+                                   height: SymbolEditorAccessibility.minimumTargetPoints)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(SymbolEditorAccessibility.markerLabel(for: swatch.hex))
+                    .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
             }
-            Spacer()
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .frame(minHeight: SymbolEditorAccessibility.minimumTargetPoints)
+        .padding(.vertical, 4)
     }
 }
 
@@ -478,8 +1216,8 @@ private struct KindCategorySegmentedPicker: View {
                 } label: {
                     Text(kind.displayName)
                         .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity,
+                               minHeight: SymbolEditorAccessibility.minimumTargetPoints)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(selection == kind
@@ -492,6 +1230,9 @@ private struct KindCategorySegmentedPicker: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(kind.displayName) symbol kind")
+                .accessibilityValue(selection == kind ? "Selected" : "Not selected")
+                .accessibilityAddTraits(selection == kind ? .isSelected : [])
             }
         }
         .padding(4)

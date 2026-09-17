@@ -21,8 +21,8 @@ protocol MapSource: AnyObject {
     /// Region the source can show. nil for satellite (unbounded).
     var coverage: MKCoordinateRegion? { get }
 
-    /// Calibration state. nil for AppleSatellite, .parsed for GeoPDF,
-    /// .fiduciaries(...) for hand-calibrated PDFs.
+    /// Manual calibration state. GeoPDF placement is carried by the parsed
+    /// bounds/placement affine; hand-calibrated PDFs retain their fiduciaries.
     var calibration: Calibration? { get }
 }
 
@@ -30,8 +30,6 @@ enum MapSourceKind: String, Codable { case onlineRaster, geoPDF, calibratedPDF, 
 
 /// Calibration metadata for a PDF source.
 enum Calibration {
-    /// GeoPDF self-describes via OGC / Adobe Geospatial extensions.
-    case parsed(crs: String, transform: AffineTransform2D)
     /// User placed N>=3 fiduciaries, we fit a best-effort affine transform.
     case fiduciaries([Fiduciary], transform: AffineTransform2D)
 }

@@ -116,6 +116,12 @@ by `p` in the encrypted presence envelope defined below. Receivers hash those
 decoded bytes directly; parsing and reserializing them before verification is
 forbidden.
 
+The optional backwards-compatible **presence retention advertisement** also
+uses domain=0x03 and the same actor/session/counter, but kind is
+UTF-8("loc-retention") and payloadHash is the SHA-256 of the exact `pr` bytes
+described below. The distinct kind prevents either signature from being reused
+as the other.
+
 For **hello**: domain=0x04, `counterHex` is the actor's positive monotonic
 session epoch, objectIdLen=0, objectIdBytes=empty, kind=UTF-8("hello"), and
 payloadHash=SHA-256(raw 32-byte Ed25519 public key). The hello epoch is a
@@ -168,7 +174,9 @@ For `loc`, opening `ct` with the presence AAD produces this inner envelope:
   "lat": 0.0, "lon": 0.0, "heading": 0.0, "speed": 0.0,
   "callsign": "", "affiliation": "UNKNOWN", "echelon": "TEAM",
   "function": "INFANTRY", "isHQ": false,
-  "pub": "<base64url pubkey>", "sig": "<base64url Ed25519 signature>"
+  "pub": "<base64url pubkey>", "sig": "<base64url Ed25519 signature>",
+  "prv": 1, "pr": "<standard-base64 exact {\"ttl\":seconds} bytes>",
+  "prsig": "<base64url Ed25519 signature>"
 }
 ```
 
@@ -179,6 +187,15 @@ the receiver parses those same bytes for the displayed presence. The flat
 presence fields are duplicates retained for legacy-v3 compatibility; senders
 include them during migration. `pub` and `sig` remain encrypted. The inner
 `pub` MUST equal the outer `pub`, which is independently bound to `by`.
+
+The `prv` / `pr` / `prsig` trio is optional for compatibility. When any field
+is present, all MUST validate: `prv` is exactly `1`; `pr` is canonical standard
+Base64 containing a JSON object with only integer `ttl` in the inclusive range
+45...3900 seconds; and `prsig` verifies the `loc-retention` preimage above.
+Absent fields mean a 45-second lifetime. Updated receivers may retain the
+last-known marker for the signed lifetime only while the exact `by` + `sd`
+session remains active, capped at 3900 seconds. Partial, malformed, or invalidly
+signed retention metadata rejects the entire location frame.
 
 The `"hello"` message is sent immediately after validating `snapshot-end`. The
 client increments and persists its per-actor hello epoch before signing or

@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "description": "Shared selected-symbol quick-edit contract. Presentation remains platform-native, while field order, normalization, mutation semantics, and accessibility outcomes match.",
+  "fieldOrder": [
+    "name",
+    "kind",
+    "notes",
+    "elevationMetres",
+    "layerId",
+    "taskColor",
+    "higherFormation",
+    "uniqueIdentifier",
+    "reinforcementStatus",
+    "mgrs",
+    "rotationDegrees",
+    "scaleX",
+    "scaleY",
+    "delete"
+  ],
+  "initialWaypoint": {
+    "id": "30000000-0000-0000-0000-000000000001",
+    "name": "Axis Red",
+    "notes": "Original notes",
+    "elevationMetres": 84.0,
+    "kindCategory": "controlMeasure",
+    "kindDisplayName": "Axis of Advance",
+    "layerId": "00000000-0000-0000-0000-000000000001",
+    "taskColor": "red",
+    "rotationDegrees": 90.0,
+    "scaleX": 2.0,
+    "scaleY": 3.0,
+    "latitude": -33.8568,
+    "longitude": 151.2153
+  },
+  "normalization": {
+    "name": "trimWhitespaceAndNewlines; when empty use the selected kind display name",
+    "notes": "trimWhitespaceAndNewlines; when empty store null",
+    "elevationMetres": "trim; blank stores null; otherwise require a finite decimal number and block save with the same validation error",
+    "elevationValidationError": "Enter a valid elevation in metres.",
+    "unitAmplifiers": {
+      "lengthUnit": "unicodeScalar",
+      "higherFormationMaximum": 21,
+      "uniqueIdentifierMaximum": 30,
+      "nonBmpBoundaryCase": {
+        "input": "👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦",
+        "expectedHigherFormation": "👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦"
+      }
+    },
+    "rotationDegrees": "normalize into the half-open range 0..<360",
+    "scaleX": { "minimum": 0.1, "maximum": 20.0, "default": 1.0 },
+    "scaleY": { "minimum": 0.1, "maximum": 20.0, "default": 1.0 },
+    "nonControlMeasureReset": {
+      "rotationDegrees": 0.0,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "taskColor": "black"
+    }
+  },
+  "draftCases": [
+    {
+      "caseKey": "trim_and_parse",
+      "input": {
+        "name": "  Aid Point  ",
+        "notes": "  Treat then evacuate\n",
+        "elevationText": " 125.5 "
+      },
+      "expected": {
+        "name": "Aid Point",
+        "notes": "Treat then evacuate",
+        "elevationMetres": 125.5
+      }
+    },
+    {
+      "caseKey": "blank_optional_fields",
+      "input": { "name": "  ", "notes": "\n ", "elevationText": " " },
+      "selectedKindDisplayName": "Axis of Advance",
+      "expected": { "name": "Axis of Advance", "notes": null, "elevationMetres": null }
+    },
+    {
+      "caseKey": "invalid_elevation",
+      "input": { "elevationText": "high" },
+      "expectedError": "Enter a valid elevation in metres.",
+      "expectedStoreMutations": 0
+    },
+    {
+      "caseKey": "control_bounds",
+      "input": { "rotationDegrees": 725.0, "scaleX": 0.01, "scaleY": 25.0 },
+      "expected": { "rotationDegrees": 5.0, "scaleX": 0.1, "scaleY": 20.0 }
+    },
+    {
+      "caseKey": "change_to_non_control",
+      "input": { "kindCategory": "generic" },
+      "expected": { "rotationDegrees": 0.0, "scaleX": 1.0, "scaleY": 1.0, "taskColor": "black" }
+    }
+  ],
+  "mutationContract": {
+    "preview": "inMemoryOnly",
+    "save": "oneDurableMutationThenPublishUndoAndSync",
+    "cancel": "revertPreviewAndPublishNothing",
+    "moveToCrosshair": "changeLatitudeLongitudeOnlyThenOneDurableMutation",
+    "delete": "requireConfirmationThenOneDurableMutation",
+    "missingSelectedLayerAtSave": "useThePlatformDefaultFallbackLayer"
+  },
+  "accessibility": {
+    "iosMinimumTargetPoints": 44,
+    "androidMinimumTargetDp": 48,
+    "requiredLabels": [
+      "Close symbol editor",
+      "Move symbol to crosshair",
+      "Delete symbol",
+      "Rotation",
+      "Width scale",
+      "Height scale"
+    ],
+    "slidersExposeCurrentValue": true,
+    "progressDoesNotReplaceAccessibleActionName": true
+  }
+}

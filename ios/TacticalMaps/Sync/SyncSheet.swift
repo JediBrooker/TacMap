@@ -2,15 +2,42 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+enum UnitSyncJoinGate {
+    static func requiresConsent(
+        roomCode: String,
+        shareLocation: Bool,
+        backgroundLocation: Bool
+    ) -> Bool {
+        roomCode.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("3:")
+            && (!shareLocation || !backgroundLocation)
+    }
+}
+
+private struct PendingUnitSyncJoin: Identifiable {
+    let id = UUID()
+    let code: String
+    let roomName: String
+}
+
 /// Join / create a unit sync room and show connection status.
 struct SyncSheet: View {
     @ObservedObject var manager: SyncManager
+    let onOpenChat: (TacMapChatRoute) -> Void
+    @ObservedObject private var opsec = OpsecSettings.shared
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
+    @State private var roomName = ""
     @State private var codeError: String?
     @State private var legacyConfirmed = false
     @State private var roomCodeCopied = false
     @State private var copyFeedbackToken = UUID()
+    @State private var pendingJoin: PendingUnitSyncJoin?
+
+    init(manager: SyncManager,
+         onOpenChat: @escaping (TacMapChatRoute) -> Void = { _ in }) {
+        self.manager = manager
+        self.onOpenChat = onOpenChat
+    }
 
     var body: some View {
         NavigationStack {
@@ -22,8 +49,26 @@ struct SyncSheet: View {
                     }
                 }
 
+                if let error = manager.lastError {
+                    Section("Sync needs attention") {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                        Button("Dismiss error") { manager.acknowledgeLastError() }
+                    }
+                }
+
                 if let room = manager.room {
-                    Section("Room") {
+                    Section {
+                        TextField("Room name", text: Binding(
+                            get: { roomName },
+                            set: {
+                                roomName = manager.boundedRoomName($0)
+                                manager.updateRoomName(roomName)
+                            }
+                        ))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.words)
                         Button {
                             copyRoomCode(room)
                         } label: {
@@ -54,18 +99,27 @@ struct SyncSheet: View {
                         } label: {
                             Label("Leave room", systemImage: "xmark.circle")
                         }
+                    } header: {
+                        Text(manager.roomName ?? "Room")
+                    } footer: {
+                        Text("The room name is encrypted on this device only. It is never sent to the relay or included in the join code.")
+                            .font(.caption2)
                     }
 
                     // Identity section, only visible while connected to a room.
                     Section("Your Identity") {
                         TextField("Callsign", text: Binding(
                             get: { manager.presenceConfig.callsign },
-                            set: { manager.presenceConfig.callsign = manager.boundedCallsign($0) }
+                            set: {
+                                var updated = manager.presenceConfig
+                                updated.callsign = manager.boundedCallsign($0)
+                                _ = manager.updatePresenceConfig(updated)
+                            }
                         ))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.characters)
 
-                        Picker("Affiliation", selection: $manager.presenceConfig.affiliation) {
+                        Picker("Affiliation", selection: presenceBinding(\.affiliation)) {
                             Text("Friendly").tag("friend")
                             Text("Hostile").tag("hostile")
                             Text("Neutral").tag("neutral")
@@ -73,7 +127,7 @@ struct SyncSheet: View {
                         }
                         .pickerStyle(.menu)
 
-                        Picker("Echelon", selection: $manager.presenceConfig.echelon) {
+                        Picker("Echelon", selection: presenceBinding(\.echelon)) {
                             Text("Team / Crew").tag("team")
                             Text("Section").tag("section")
                             Text("Platoon").tag("platoon")
@@ -84,54 +138,29 @@ struct SyncSheet: View {
                         }
                         .pickerStyle(.menu)
 
-                        Picker("Function", selection: $manager.presenceConfig.function) {
-                            Text("Infantry").tag("infantry")
-                            Text("Armour").tag("armour")
-                            Text("Artillery").tag("artillery")
-                            Text("Cavalry").tag("cavalry")
-                            Text("Engineer").tag("engineer")
-                            Text("Signals").tag("signal")
-                            Text("Medical").tag("medical")
-                            Text("Reconnaissance").tag("recce")
-                            Text("Mechanised Infantry").tag("mechInfantry")
-                            Text("Motorised Infantry").tag("motorisedInfantry")
-                            Text("Anti-Tank").tag("antiTank")
-                            Text("Air Defence").tag("airDefence")
-                            Text("Aviation (Rotary)").tag("aviation")
-                            Text("Aviation (Fixed-Wing)").tag("aviationFixed")
-                            Text("Mortar").tag("mortar")
-                            Text("CBRN Defence").tag("cbrn")
-                            Text("Electronic Warfare").tag("electronicWarfare")
-                            Text("Special Forces").tag("specialForces")
-                            Text("Military Police").tag("militaryPolice")
-                            Text("Supply").tag("logistics")
-                            Text("Maintenance").tag("maintenance")
-                            Text("Transportation").tag("transportation")
-                            Text("Combat Service Support").tag("css")
+                        Picker("Function", selection: presenceBinding(\.function)) {
+                            ForEach(PresenceConfig.functionChoices, id: \.self) { function in
+                                Text(function.displayName).tag(function.rawValue)
+                            }
                         }
                         .pickerStyle(.menu)
 
-                        Toggle("Headquarters", isOn: $manager.presenceConfig.isHQ)
+                        Toggle("Headquarters", isOn: presenceBinding(\.isHQ))
 
-                        Toggle("Share my location", isOn: $manager.presenceConfig.shareLocation)
+                        Toggle("Share my location", isOn: presenceBinding(\.shareLocation))
+                        Text("Screen-off sharing is controlled separately in Settings, Privacy & OPSEC.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
 
-                    if !manager.peers.isEmpty {
-                        Section("Members Online (\(manager.peers.count))") {
-                            ForEach(Array(manager.peers.values).sorted(by: { $0.callsign < $1.callsign })) { peer in
-                                HStack {
-                                    Text(peer.callsign.isEmpty ? peer.clientId.prefix(8) + "..." : peer.callsign)
-                                        .font(.body)
-                                    Spacer()
-                                    Text(peer.affiliation.capitalized)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
                 } else {
-                    Section("Join a unit room") {
+                    Section {
+                        TextField("Room name (this device)", text: Binding(
+                            get: { roomName },
+                            set: { roomName = manager.boundedRoomName($0) }
+                        ))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.words)
                         TextField("Unit join code", text: $code)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
@@ -144,17 +173,7 @@ struct SyncSheet: View {
                             Label("Generate strong code", systemImage: "wand.and.stars")
                         }
                         Button {
-                            let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !trimmed.hasPrefix("3:") && !trimmed.hasPrefix("2:") {
-                                codeError = "Codes must start with 3:. Enter 2: only for an intentional legacy room."
-                            } else if trimmed.hasPrefix("2:") && !legacyConfirmed {
-                                legacyConfirmed = true
-                                codeError = "Legacy v2 has weaker rollback and identity protection. Tap again to confirm."
-                            } else if SyncCrypto.isJoinCodeTooWeak(code) {
-                                codeError = "Too short to be safe. Use at least \(SyncCrypto.minJoinCodeLength) characters, or tap Generate."
-                            } else {
-                                manager.join(code)
-                            }
+                            attemptJoin()
                         } label: {
                             Label("Join / create room", systemImage: "antenna.radiowaves.left.and.right")
                         }
@@ -166,14 +185,67 @@ struct SyncSheet: View {
                             Text("LEGACY ROOM: weaker replay, identity, and metadata protections.")
                                 .font(.caption.bold()).foregroundStyle(.red)
                         }
-                        if let error = manager.lastError {
-                            Text(error).font(.caption).foregroundStyle(.red)
+                    } header: {
+                        Text("Join or create a unit room")
+                    } footer: {
+                        Text("Room names are local, encrypted display labels. Other members can use their own name for the same code.")
+                            .font(.caption2)
+                    }
+                }
+
+                if manager.room?.hasPrefix("2:") == true {
+                    Section("Legacy v2 room membership") {
+                        Text("Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Section("Relay-reported sessions (\(manager.onlineMembers.count))") {
+                        if manager.onlineMembers.isEmpty {
+                            Text(manager.status == .connected
+                                 ? "No other sessions currently reported by the relay"
+                                 : "Join a v3 room to see relay-reported signed sessions")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(manager.onlineMembers.values.sorted {
+                                if $0.displayName.localizedCaseInsensitiveCompare($1.displayName) != .orderedSame {
+                                    return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+                                }
+                                return $0.clientId < $1.clientId
+                            }) { member in
+                                memberEntry(member)
+                            }
+                        }
+                        Text("Identity and session signatures are verified, but connection liveness is relay-attested; it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat below.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Shared map locations (\(manager.peers.count))") {
+                    if manager.peers.isEmpty {
+                        Text(manager.status == .connected
+                             ? "No map locations received"
+                             : "Map locations appear while connected")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(manager.peers.values.sorted {
+                            let left = $0.callsign.isEmpty ? "Unnamed location" : $0.callsign
+                            let right = $1.callsign.isEmpty ? "Unnamed location" : $1.callsign
+                            if left.localizedCaseInsensitiveCompare(right) != .orderedSame {
+                                return left.localizedCaseInsensitiveCompare(right) == .orderedAscending
+                            }
+                            return $0.clientId < $1.clientId
+                        }) { peer in
+                            peerEntry(peer)
                         }
                     }
                 }
 
                 Section {
-                    Text("Everyone who enters the same code shares a live, end-to-end-encrypted map. The relay only ever sees ciphertext.")
+                    Text("Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("Replay protection only rejects signed sessions at or below epochs this device has already stored. Detecting an obsolete but previously unseen higher session requires external verification.")
@@ -184,7 +256,80 @@ struct SyncSheet: View {
             .navigationTitle("Unit Sync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .onAppear {
+                if manager.room != nil { roomName = manager.roomName ?? "" }
+            }
+            .onChange(of: manager.room) { activeRoom in
+                if activeRoom != nil { roomName = manager.roomName ?? roomName }
+            }
+            .alert(item: $pendingJoin) { pending in
+                Alert(
+                    title: Text("Enable location sharing?"),
+                    message: Text(joinConsentMessage),
+                    primaryButton: .default(Text("Enable & Join")) {
+                        guard opsec.setBackgroundUnitSyncLocation(true) else {
+                            codeError = opsec.persistenceIssue
+                                ?? "Could not save Background Unit Sync consent."
+                            pendingJoin = nil
+                            return
+                        }
+                        var updated = manager.presenceConfig
+                        updated.shareLocation = true
+                        guard manager.updatePresenceConfig(updated) else {
+                            _ = opsec.setBackgroundUnitSyncLocation(false)
+                            codeError = manager.lastError
+                                ?? "Could not save location-sharing consent."
+                            pendingJoin = nil
+                            return
+                        }
+                        manager.join(pending.code, roomName: pending.roomName)
+                        pendingJoin = nil
+                    },
+                    secondaryButton: .cancel {
+                        pendingJoin = nil
+                    }
+                )
+            }
         }
+    }
+
+    private func attemptJoin() {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.hasPrefix("3:") && !trimmed.hasPrefix("2:") {
+            codeError = "Codes must start with 3:. Enter 2: only for an intentional legacy room."
+        } else if trimmed.hasPrefix("2:") && !legacyConfirmed {
+            legacyConfirmed = true
+            codeError = "Legacy v2 has weaker rollback and identity protection. Tap again to confirm."
+        } else if SyncCrypto.isJoinCodeTooWeak(code) {
+            codeError = "Too short to be safe. Use at least \(SyncCrypto.minJoinCodeLength) characters, or tap Generate."
+        } else if UnitSyncJoinGate.requiresConsent(
+            roomCode: trimmed,
+            shareLocation: manager.presenceConfig.shareLocation,
+            backgroundLocation: opsec.backgroundUnitSyncLocation
+        ) {
+            codeError = nil
+            pendingJoin = PendingUnitSyncJoin(code: trimmed, roomName: roomName)
+        } else {
+            manager.join(trimmed, roomName: roomName)
+        }
+    }
+
+    private var joinConsentMessage: String {
+        let cadence = opsec.backgroundUnitSyncInterval.label.lowercased()
+        return "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately \(cadence) while the screen is off."
+    }
+
+    private func presenceBinding<Value>(
+        _ keyPath: WritableKeyPath<PresenceConfig, Value>
+    ) -> Binding<Value> {
+        Binding(
+            get: { manager.presenceConfig[keyPath: keyPath] },
+            set: { value in
+                var updated = manager.presenceConfig
+                updated[keyPath: keyPath] = value
+                _ = manager.updatePresenceConfig(updated)
+            }
+        )
     }
 
     private var statusText: String {
@@ -202,6 +347,85 @@ struct SyncSheet: View {
         case .snapshotting: return .orange
         case .connecting: return .orange
         case .offline:    return .gray
+        }
+    }
+
+    private func memberDetail(_ member: OnlineMember) -> String {
+        let function = member.function.flatMap { SymbolFunction(rawValue: $0)?.displayName } ?? member.function
+        let values = [member.affiliation?.capitalized, function, member.echelon?.capitalized]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        return values.isEmpty ? "Location sharing off" : values.joined(separator: " • ")
+    }
+
+    private func peerDetail(_ peer: PresencePeer) -> String {
+        let function = SymbolFunction(rawValue: peer.function)?.displayName ?? peer.function
+        return [peer.affiliation.capitalized, function, peer.echelon.capitalized]
+            .filter { !$0.isEmpty }
+            .joined(separator: " • ")
+    }
+
+    @ViewBuilder
+    private func memberEntry(_ member: OnlineMember) -> some View {
+        if let recipient = manager.chatRecipients[member.clientId] {
+            Button {
+                onOpenChat(.direct(recipient))
+            } label: {
+                HStack {
+                    memberLabel(member, fingerprint: recipient.shortFingerprint)
+                    Spacer()
+                    Image(systemName: "bubble.left.fill")
+                        .foregroundStyle(.blue)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Message \(recipient.displayLabel)")
+            .accessibilityHint("Opens an end-to-end encrypted selected-unit chat")
+        } else {
+            memberLabel(member, fingerprint: String(member.clientId.suffix(6)).uppercased())
+        }
+    }
+
+    private func memberLabel(_ member: OnlineMember, fingerprint: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(member.displayName) · \(fingerprint)")
+                .font(.body.weight(.semibold))
+            Text(memberDetail(member))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func peerEntry(_ peer: PresencePeer) -> some View {
+        if let recipient = manager.chatRecipients[peer.clientId] {
+            Button {
+                onOpenChat(.direct(recipient))
+            } label: {
+                HStack {
+                    peerLabel(peer, fingerprint: recipient.shortFingerprint)
+                    Spacer()
+                    Image(systemName: "bubble.left.fill")
+                        .foregroundStyle(.blue)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Message \(recipient.displayLabel)")
+            .accessibilityHint("Opens an end-to-end encrypted selected-unit chat")
+        } else {
+            peerLabel(peer, fingerprint: String(peer.clientId.suffix(6)).uppercased())
+        }
+    }
+
+    private func peerLabel(_ peer: PresencePeer, fingerprint: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(peer.callsign.isEmpty ? "Unnamed location" : peer.callsign) · \(fingerprint)")
+                .font(.body.weight(.semibold))
+            Text("Last map position • \(peerDetail(peer))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

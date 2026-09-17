@@ -19,6 +19,9 @@
     <uses-feature
         android:name="android.hardware.location.gps"
         android:required="false" />
+    <uses-feature
+        android:name="android.hardware.sensor.compass"
+        android:required="false" />
 
     <application
         android:name=".app.TacticalApp"
@@ -55,6 +58,11 @@
 
         <service
             android:name="com.tacmap.models.TrackRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <service
+            android:name="com.tacmap.sync.BackgroundUnitSyncLocationService"
             android:exported="false"
             android:foregroundServiceType="location" />
     </application>

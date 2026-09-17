@@ -6,12 +6,14 @@ import MapKit
 /// and symbolise it.
 struct WaypointListSheet: View {
     @ObservedObject var waypointStore: WaypointStore
+    @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var mapVM: MapViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var editing: Waypoint? = nil
     @State private var creatingAt: CLLocationCoordinate2D? = nil
     @State private var pendingDelete: Waypoint? = nil
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -63,14 +65,18 @@ struct WaypointListSheet: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
             .sheet(item: $editing) { wp in
-                WaypointEditSheet(waypointStore: waypointStore, original: wp)
+                SelectedSymbolEditSheet(
+                    waypointStore: waypointStore,
+                    drawingStore: drawingStore,
+                    waypoint: wp
+                )
             }
             .sheet(item: $creatingAt) { coord in
-                WaypointEditSheet(
+                WaypointCreationSheet(
                     waypointStore: waypointStore,
-                    original: nil,
                     defaultCoordinate: coord,
-                    defaultScale: mapVM.defaultControlMeasureScale
+                    defaultScale: mapVM.defaultControlMeasureScale,
+                    defaultLayerID: drawingStore.activeLayerID ?? DrawingLayer.legacyFallbackID
                 )
             }
             .confirmationDialog(
@@ -80,9 +86,23 @@ struct WaypointListSheet: View {
                 titleVisibility: .visible,
                 presenting: pendingDelete
             ) { wp in
-                Button("Delete", role: .destructive) { waypointStore.remove(wp); pendingDelete = nil }
+                Button("Delete", role: .destructive) {
+                    do {
+                        _ = try waypointStore.deleteDurably(wp)
+                        pendingDelete = nil
+                    } catch {
+                        pendingDelete = nil
+                        errorMessage = error.localizedDescription
+                    }
+                }
                 Button("Cancel", role: .cancel) { pendingDelete = nil }
             }
+            .alert("Could Not Delete Symbol",
+                   isPresented: Binding(get: { errorMessage != nil },
+                                        set: { if !$0 { errorMessage = nil } }),
+                   presenting: errorMessage) { _ in
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: { Text($0) }
         }
     }
 

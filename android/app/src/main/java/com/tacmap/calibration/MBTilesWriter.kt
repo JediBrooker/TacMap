@@ -5,6 +5,17 @@ import android.database.sqlite.SQLiteDatabase
 import java.io.File
 import java.util.Locale
 
+internal fun deleteMBTilesSidecars(file: File) {
+    listOf("-journal", "-wal", "-shm").forEach { suffix ->
+        runCatching { File(file.path + suffix).delete() }
+    }
+}
+
+internal fun deleteMBTilesArtifacts(file: File) {
+    runCatching { file.delete() }
+    deleteMBTilesSidecars(file)
+}
+
 /**
  * Writes an MBTiles file (OSGeo spec): SQLite DB with `metadata` key/value
  * table and `tiles` table of raster blobs. Write-side companion to
@@ -29,7 +40,8 @@ class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
     ) {
         fun put(key: String, value: String) {
             if (db.insert("metadata", null, ContentValues().apply {
-                    put("name", key); put("value", value)
+                    this.put("name", key)
+                    this.put("value", value)
                 }) == -1L) hadError = true
         }
         put("name", name)
@@ -69,21 +81,28 @@ class MBTilesWriter private constructor(private val db: SQLiteDatabase) {
 
     companion object {
         /** Create (clobbers existing) an MBTiles file at [path]. */
-        fun create(path: String): MBTilesWriter? = try {
-            File(path).delete()
-            val db = SQLiteDatabase.openOrCreateDatabase(path, null)
-            db.execSQL("CREATE TABLE metadata (name TEXT, value TEXT)")
-            db.execSQL(
-                "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, " +
-                    "tile_row INTEGER, tile_data BLOB)"
-            )
-            db.execSQL(
-                "CREATE UNIQUE INDEX tile_index ON tiles " +
-                    "(zoom_level, tile_column, tile_row)"
-            )
-            MBTilesWriter(db)
-        } catch (_: Throwable) {
-            null
+        fun create(path: String): MBTilesWriter? {
+            val file = File(path)
+            file.delete()
+            var db: SQLiteDatabase? = null
+            return try {
+                val opened = SQLiteDatabase.openOrCreateDatabase(path, null)
+                db = opened
+                opened.execSQL("CREATE TABLE metadata (name TEXT, value TEXT)")
+                opened.execSQL(
+                    "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, " +
+                        "tile_row INTEGER, tile_data BLOB)"
+                )
+                opened.execSQL(
+                    "CREATE UNIQUE INDEX tile_index ON tiles " +
+                        "(zoom_level, tile_column, tile_row)"
+                )
+                MBTilesWriter(opened)
+            } catch (_: Throwable) {
+                runCatching { db?.close() }
+                deleteMBTilesArtifacts(file)
+                null
+            }
         }
     }
 }

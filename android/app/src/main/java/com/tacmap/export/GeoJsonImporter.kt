@@ -6,15 +6,19 @@ import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.drawings.DrawingPoint
 import com.tacmap.drawings.DrawingStrokeStyle
+import com.tacmap.waypoints.HIGHER_FORMATION_MAX_CODE_POINTS
 import com.tacmap.waypoints.MarkerSet
 import com.tacmap.waypoints.MarkerSymbol
 import com.tacmap.waypoints.MilitarySymbolSpec
+import com.tacmap.waypoints.ReinforcementStatus
 import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
 import com.tacmap.waypoints.SymbolFunction
 import com.tacmap.waypoints.TacticalControlMeasure
+import com.tacmap.waypoints.UNIQUE_IDENTIFIER_MAX_CODE_POINTS
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
+import com.tacmap.waypoints.normalizedUnitAmplifier
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -25,7 +29,6 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.util.UUID
 import java.io.InputStream
 import kotlin.math.roundToInt
 
@@ -49,7 +52,11 @@ object GeoJsonImporter {
         val drawings:  List<DrawingFeature>,
         val newLayers: List<DrawingLayer>,
         /** features skipped b/c of non-finite / out-of-range coordinates */
-        val invalidSkipped: Int = 0
+        val invalidSkipped: Int = 0,
+        /** Input order + raw IDs for the external-only identity resolver. */
+        val identityOrder: List<ParsedExternalImportIdentity> = emptyList(),
+        /** KML-only newly-created layer identities, stable across a retry. */
+        val layerIdentityOrder: List<ParsedExternalImportLayerIdentity> = emptyList(),
     )
 
     private fun validLonLat(lon: Double, lat: Double): Boolean =
@@ -118,10 +125,11 @@ object GeoJsonImporter {
         val newLayers = mutableListOf<DrawingLayer>()
         val waypoints = mutableListOf<Waypoint>()
         val drawings  = mutableListOf<DrawingFeature>()
+        val identityOrder = mutableListOf<ParsedExternalImportIdentity>()
         var invalidSkipped = 0
         var coordinateCount = 0
 
-        for (raw in features) {
+        for ((featureIndex, raw) in features.withIndex()) {
             if (System.nanoTime() > deadline) throw ImportException("GeoJSON import exceeded time limit")
             val feat = (raw as? JsonObject) ?: continue
             val geometry = feat["geometry"] as? JsonObject ?: continue
@@ -134,7 +142,12 @@ object GeoJsonImporter {
             // can't drop a feature at NaN or off the globe
             if (!geometryValid(geometry)) { invalidSkipped++; continue }
             val props = (feat["properties"] as? JsonObject) ?: JsonObject(emptyMap())
-            val featureId = feat["id"]?.jsonPrimitive?.contentOrNull ?: UUID.randomUUID().toString()
+            // Preserve exactly what was parsed. Missing/malformed IDs stay
+            // missing/malformed here: authenticated Sync uses this parser and
+            // must never receive a locally reminted identity. Only the explicit
+            // external-import resolver is allowed to assign a new UUID.
+            val sourceId = feat["id"]?.jsonPrimitive?.contentOrNull
+            val featureId = sourceId.orEmpty()
 
             val layerId = resolveLayerId(props, layersById, newLayers, fallbackLayerId)
 
@@ -148,15 +161,33 @@ object GeoJsonImporter {
 
             when {
                 isDrawing || (!isWaypoint && geomType != "Point") -> {
-                    parseDrawing(featureId, geometry, geomType, props, layerId, density)?.let { drawings += it }
+                    parseDrawing(featureId, geometry, geomType, props, layerId, density)?.let {
+                        val index = drawings.size
+                        drawings += it
+                        identityOrder += ParsedExternalImportIdentity(
+                            caseKey = "feature-$featureIndex",
+                            kind = ExternalImportObjectKind.DRAWING,
+                            indexInKind = index,
+                            sourceId = sourceId,
+                        )
+                    }
                 }
                 geomType == "Point" -> {
-                    parseWaypoint(featureId, geometry, props, category, layerId)?.let { waypoints += it }
+                    parseWaypoint(featureId, geometry, props, category, layerId)?.let {
+                        val index = waypoints.size
+                        waypoints += it
+                        identityOrder += ParsedExternalImportIdentity(
+                            caseKey = "feature-$featureIndex",
+                            kind = ExternalImportObjectKind.WAYPOINT,
+                            indexInKind = index,
+                            sourceId = sourceId,
+                        )
+                    }
                 }
             }
         }
         return Result(waypoints = waypoints, drawings = drawings, newLayers = newLayers,
-            invalidSkipped = invalidSkipped)
+            invalidSkipped = invalidSkipped, identityOrder = identityOrder)
     }
 
     private fun preflight(input: String) {
@@ -387,6 +418,27 @@ object GeoJsonImporter {
         val taskColor = props["tacticalmaps:task_color"]?.jsonPrimitive?.contentOrNull
             ?.let { token -> com.tacmap.waypoints.TaskColor.entries.firstOrNull { it.name.equals(token, ignoreCase = true) } }
             ?: com.tacmap.waypoints.TaskColor.BLACK
+        val isMilitary = kind is WaypointKind.Military
+        val higherFormation = if (isMilitary) {
+            normalizedUnitAmplifier(
+                props["tacticalmaps:higher_formation"]?.jsonPrimitive?.contentOrNull,
+                HIGHER_FORMATION_MAX_CODE_POINTS,
+            )
+        } else null
+        val uniqueIdentifier = if (isMilitary) {
+            normalizedUnitAmplifier(
+                props["tacticalmaps:unique_identifier"]?.jsonPrimitive?.contentOrNull,
+                UNIQUE_IDENTIFIER_MAX_CODE_POINTS,
+            )
+        } else null
+        val reinforcementStatus = if (isMilitary) {
+            props["tacticalmaps:reinforcement_status"]?.jsonPrimitive?.contentOrNull
+                ?.let { raw ->
+                    ReinforcementStatus.entries.firstOrNull {
+                        it.name.equals(raw, ignoreCase = true)
+                    }
+                } ?: ReinforcementStatus.NONE
+        } else ReinforcementStatus.NONE
         return Waypoint(
             id = featureId,
             name = name,
@@ -399,6 +451,9 @@ object GeoJsonImporter {
             scaleX = scaleX,
             scaleY = scaleY,
             taskColor = taskColor,
+            higherFormation = higherFormation,
+            uniqueIdentifier = uniqueIdentifier,
+            reinforcementStatus = reinforcementStatus,
             layerId = layerId,
             createdAt = parseCreatedAt(props) ?: System.currentTimeMillis()
         )

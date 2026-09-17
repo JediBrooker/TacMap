@@ -1,12 +1,20 @@
 # TacMap security remediation plan
 
-Status: **Proposed**
+Status: **Implemented for the 2.0.0 engineering scope; external release gates remain**
 
 Audit baseline: `c270190ceaafa9e27f2e13fe9dc0266cab5eab69`
 
 Scope: Android, iOS, the hosted/self-hosted sync relay, build pipeline, and security/privacy documentation.
 
-This is the canonical plan for the findings from the July 2026 security review. It groups symptoms by architectural root cause, sequences changes that must roll out together, and gives each phase a testable exit condition. It is a plan only; its presence does not mean a finding is fixed.
+This is the historical execution plan for the findings from the July 2026
+security review. Its Android, iOS, relay, import, storage, privacy, and automated
+verification work is incorporated into the 2.0.0 release candidate. The open
+items are release-owner actions that engineering cannot truthfully self-certify:
+physical-device acceptance, Apple export-compliance confirmation, store-console
+privacy answers, and deployment/verification of the public website and relay.
+The current security claims live in `THREAT_MODEL.md` and the ADRs under
+`docs/security/`; this file preserves the rationale and testable exit conditions
+that produced them.
 
 ## Outcomes
 
@@ -360,7 +368,11 @@ Implement ADR-003. The preferred dark-by-default result is:
    - iOS replaces `NSLog`/unstructured `print` with `Logger`, static event names, and explicit privacy. Coordinates should normally not be logged even with redaction.
 2. Android creates each export in a dedicated cache directory, purges abandoned exports on launch/before export, keeps the narrow `FileProvider`, and schedules short-TTL cleanup while accounting for the lack of a reliable receiver-finished callback.
 3. iOS writes exports atomically with complete file protection, removes them through `UIActivityViewController.completionWithItemsHandler` on completion/dismissal, and purges stale TacMap export directories at launch.
-4. Android marks MGRS clips with `ClipDescription.EXTRA_IS_SENSITIVE` and clears only its own still-current clip after the ratified TTL.
+4. Android marks MGRS and room-code clips as sensitive, gives each clip a random
+   non-secret token, and requests exact-token clearing after the ratified TTL.
+   Android may deny clipboard access while the App is unfocused or the device is
+   locked, so background expiry is best-effort and is retried on the next focused
+   foreground. An ordinary replacement clipboard entry is never cleared.
 5. iOS uses `UIPasteboard.setItems` with `.localOnly=true` and `.expirationDate`.
 
 ### 6D. Documentation reconciliation

@@ -34,8 +34,8 @@ targets:
       path: TacticalMaps/Resources/Info.plist
       properties:
         CFBundleDisplayName: TacMap
-        CFBundleShortVersionString: "1.2.2"
-        CFBundleVersion: "60"
+        CFBundleShortVersionString: "2.0.0"
+        CFBundleVersion: "64"
         # Esri Location Platform key + expiry. The $(ESRI_API_KEY) reference is
         # substituted from Secrets.xcconfig during Xcode's plist processing at
         # build time (xcodegen writes it here verbatim). Not a secret - it ships
@@ -60,14 +60,12 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSFaceIDUsageDescription: "Face ID unlocks TacMap's locally encrypted mission data and optional app lock."
-        NSLocationWhenInUseUsageDescription: TacMap shows your live position on the map, reads it as an MGRS grid reference, and records GPX patrol tracks.
-        # Background location is declared for GPX track recording — the
-        # persistent-location feature guideline 2.5.4 requires before
-        # UIBackgroundModes:[location] is acceptable. We stay on
-        # When-In-Use authorization and only flip
-        # allowsBackgroundLocationUpdates ON while a track is recording
-        # (TrackRecorder start/stop), so there's no background access
-        # outside an explicit user-started recording.
+        NSLocationWhenInUseUsageDescription: TacMap shows your live position and MGRS grid, records user-started GPX tracks in the background, and shares your encrypted position with joined Sync peers while the screen is off only when you enable Share my location and Background Unit Sync in OPSEC.
+        # Background location supports an explicitly started GPX recording and
+        # separately opted-in screen-off Unit Sync presence. Both are visible,
+        # persistent-location features. We stay on When-In-Use authorization,
+        # show the system indicator, and use independent runtime leases so no
+        # background access remains after both features stop.
         UIBackgroundModes:
           - location
         ITSAppUsesNonExemptEncryption: false
@@ -94,20 +92,24 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: Apple Distribution
           PROVISIONING_PROFILE_SPECIFIER: TacticalMaps
+    preBuildScripts:
+      - name: Require secure simulator signing
+        basedOnDependencyAnalysis: false
+        script: |
+          if [[ "$PLATFORM_NAME" == *simulator* && "$CODE_SIGNING_ALLOWED" != "YES" ]]; then
+            echo "error: TacMap simulator builds must be normally signed; CODE_SIGNING_ALLOWED=NO breaks Keychain-backed entitlement, app-lock, and sync identity storage." >&2
+            echo "error: Use scripts/install_simulator.sh to build and install on the pinned existing simulator." >&2
+            exit 1
+          fi
     dependencies:
       - package: mgrs-ios
         product: MGRS
     scheme:
+      storeKitConfiguration: TacticalMaps.storekit
       testTargets:
         - TacticalMapsTests
         - TacticalMapsUITests
       gatherCoverageData: true
-      # Local IAP testing without App Store Connect — purchases resolve
-      # against this config. Production uses the real ASC product.
-      run:
-        storeKitConfiguration: TacticalMaps.storekit
-      test:
-        storeKitConfiguration: TacticalMaps.storekit
 
   TacticalMapsTests:
     type: bundle.unit-test

@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -26,15 +27,20 @@ import androidx.compose.ui.unit.sp
 /** Weather + UAV flight-safety widget. Fetches current conditions from
  *  Open-Meteo and shows green/amber/red drone safety assessment. */
 @Composable
-fun WeatherDialog(lat: Double, lng: Double, onDismiss: () -> Unit) {
+fun WeatherDialog(
+    lat: Double,
+    lng: Double,
+    onlineLookupsEnabled: Boolean,
+    onDismiss: () -> Unit,
+) {
     var reading by remember { mutableStateOf<WeatherReading?>(null) }
     var loading by remember { mutableStateOf(true) }
-    var attempt by remember { mutableStateOf(0) }
+    var attempt by remember { mutableIntStateOf(0) }
     val service = remember { WeatherService() }
 
-    LaunchedEffect(lat, lng, attempt) {
+    LaunchedEffect(lat, lng, attempt, onlineLookupsEnabled) {
         loading = true
-        reading = service.reading(lat, lng)
+        reading = if (onlineLookupsEnabled) service.reading(lat, lng) else null
         loading = false
     }
 

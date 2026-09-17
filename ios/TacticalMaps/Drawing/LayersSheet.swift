@@ -5,6 +5,7 @@ struct LayersSheet: View {
     @ObservedObject var visibility: LayerVisibility
     @ObservedObject var mapVM: MapViewModel
     @ObservedObject var drawingStore: DrawingStore
+    @ObservedObject var waypointStore: WaypointStore
     /// Called when user wants to calibrate the current PDF. ContentView
     /// dismisses this sheet and kicks off CalibrationSession.
     var onCalibrate: () -> Void = {}
@@ -12,13 +13,17 @@ struct LayersSheet: View {
 
     @State private var showingNewLayerSheet = false
     @State private var pendingDeleteLayer: DrawingLayer? = nil
-    @State private var renamingLayer: DrawingLayer? = nil
+    @State private var editingLayer: DrawingLayer? = nil
     @State private var tilingProgress: PDFTiler.Progress? = nil
     @State private var tilingTask: Task<Void, Never>? = nil
     @State private var tilingError: String? = nil
+    @State private var layerDeleteError: String? = nil
+    @State private var layerMutationError: String? = nil
     /// Persisted imported map that's not currently active, so user can
     /// switch back after picking an online basemap.
-    @State private var restorablePDF: PDFMapSource? = nil
+    @State private var restorableImportedMap: MapSource? = nil
+    @State private var retainedMapError: String? = nil
+    @State private var confirmingImportedMapDeletion = false
 
     var body: some View {
         NavigationStack {
@@ -33,91 +38,21 @@ struct LayersSheet: View {
 
                 Section("Labels") {
                     Toggle("Unit Labels",    isOn: $visibility.unitLabelsVisible)
+                    Toggle("Unit Amplifiers", isOn: $visibility.unitAmplifiersVisible)
                     Toggle("Task Labels",    isOn: $visibility.taskLabelsVisible)
                     Toggle("Drawing Labels", isOn: $visibility.drawingLabelsVisible)
                 }
 
                 drawingLayersSection
 
-                Section("Imported Map") {
-                    if let pdfSource = mapVM.mapSource as? PDFMapSource {
-                        Toggle(isOn: $visibility.pdfOverlayVisible) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(pdfSource.displayName).font(.callout)
-                                Text(pdfSource.bounds == nil
-                                     ? "No georeferencing — using map-centre fallback"
-                                     : (pdfSource.kind == .geoPDF
-                                        ? "Georeferenced (GeoPDF LGIDict)"
-                                        : "Manually placed bounds"))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Button {
-                            dismiss()
-                            onCalibrate()
-                        } label: {
-                            Label("Calibrate with fiduciaries…", systemImage: "scope")
-                        }
-                        if let fids = pdfSource.fiduciaries, !fids.isEmpty {
-                            Text("Currently calibrated with \(fids.count) fiduciaries")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        if let p = tilingProgress {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ProgressView(value: p.total > 0 ? Double(p.done) / Double(p.total) : 0)
-                                Text(p.total > 0 ? "Generating offline tiles — \(p.done)/\(p.total)" : "Preparing…")
-                                    .font(.caption2).foregroundStyle(.secondary)
-                                Button(role: .cancel) { tilingTask?.cancel() } label: {
-                                    Label("Cancel", systemImage: "xmark.circle")
-                                }
-                                .font(.caption)
-                            }
-                        } else {
-                            Button {
-                                generateTiles(from: pdfSource)
-                            } label: {
-                                Label("Generate Offline Tiles…", systemImage: "square.stack.3d.down.right")
-                            }
-                            Text("Bakes this calibrated map into an offline tile set on-device — no desktop tools.")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        Button(role: .destructive) {
-                            mapVM.mapSource = OnlineRasterBasemapSource.makeDefault()
-                            // also nuke the persisted entry, otherwise the PDF
-                            // the user just unloaded comes back on next launch
-                            PDFSessionStore.clear()
-                        } label: {
-                            Label("Unload PDF", systemImage: "xmark.circle")
-                        }
-                    } else if let tileSource = mapVM.mapSource as? OfflineTileMapSource {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(tileSource.displayName).font(.callout)
-                            Text("Offline MBTiles raster — no network needed")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        Button(role: .destructive) {
-                            mapVM.mapSource = OnlineRasterBasemapSource.makeDefault()
-                        } label: {
-                            Label("Unload offline tiles", systemImage: "xmark.circle")
-                        }
-                    } else {
-                        Label("None loaded", systemImage: "doc")
-                            .foregroundStyle(.secondary)
-                        Text("Import a PDF/GeoPDF via ☰ → Import PDF Map, or an MBTiles raster via ☰ → Import Offline Tiles.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                importedMapSection
 
                 basemapSection
             }
             .onAppear {
                 // Offer a "switch back" to a persisted imported map that isn't
                 // the current source.
-                if !(mapVM.mapSource is PDFMapSource) { restorablePDF = PDFSessionStore.load() }
+                refreshRetainedMap()
             }
             .navigationTitle("Layers and Labels")
             .toolbar {
@@ -127,7 +62,16 @@ struct LayersSheet: View {
             }
             .sheet(isPresented: $showingNewLayerSheet) {
                 NewLayerSheet { name, hex in
-                    _ = drawingStore.addLayer(name: name, defaultColorHex: hex)
+                    _ = try drawingStore.addLayer(name: name, defaultColorHex: hex)
+                }
+            }
+            .sheet(item: $editingLayer) { layer in
+                EditLayerSheet(layer: layer) { name, hex in
+                    try drawingStore.updateLayer(
+                        layer,
+                        name: name,
+                        defaultColorHex: hex
+                    )
                 }
             }
             .alert("Delete layer?",
@@ -135,23 +79,21 @@ struct LayersSheet: View {
                                         set: { if !$0 { pendingDeleteLayer = nil } }),
                    presenting: pendingDeleteLayer) { layer in
                 Button("Delete", role: .destructive) {
-                    drawingStore.removeLayer(layer)
+                    do {
+                        _ = try drawingStore.removeLayer(
+                            layer,
+                            reassigningWaypointsIn: waypointStore
+                        )
+                    } catch {
+                        layerDeleteError = error.localizedDescription
+                    }
                     pendingDeleteLayer = nil
                 }
                 Button("Cancel", role: .cancel) { pendingDeleteLayer = nil }
             } message: { layer in
-                let n = drawingStore.shapes(in: layer.id).count
-                Text("This will permanently remove “\(layer.name)” and \(n) drawing\(n == 1 ? "" : "s") on it.")
-            }
-            .alert("Rename layer",
-                   isPresented: Binding(get: { renamingLayer != nil },
-                                        set: { if !$0 { renamingLayer = nil } }),
-                   presenting: renamingLayer) { layer in
-                RenameLayerAlert(initialName: layer.name) { newName in
-                    drawingStore.renameLayer(layer, to: newName)
-                    renamingLayer = nil
-                }
-                Button("Cancel", role: .cancel) { renamingLayer = nil }
+                let drawings = drawingStore.shapes(in: layer.id).count
+                let waypoints = waypointStore.waypoints.filter { $0.layerID == layer.id }.count
+                Text("\(drawings) drawing\(drawings == 1 ? "" : "s") and \(waypoints) waypoint\(waypoints == 1 ? "" : "s") will move to Friendly before “\(layer.name)” is removed.")
             }
             .alert("Offline tiles",
                    isPresented: Binding(get: { tilingError != nil },
@@ -159,6 +101,39 @@ struct LayersSheet: View {
                    presenting: tilingError) { _ in
                 Button("OK", role: .cancel) { tilingError = nil }
             } message: { msg in Text(msg) }
+            .alert("Layer change not saved",
+                   isPresented: Binding(get: { layerMutationError != nil },
+                                        set: { if !$0 { layerMutationError = nil } }),
+                   presenting: layerMutationError) { _ in
+                Button("OK", role: .cancel) { layerMutationError = nil }
+            } message: { msg in Text(msg) }
+            .alert("Delete imported map from this device?",
+                   isPresented: $confirmingImportedMapDeletion) {
+                Button("Delete Map", role: .destructive) { deleteRetainedImportedMap() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.")
+            }
+            .background(
+                EmptyView()
+                    .alert("Map change not saved",
+                           isPresented: Binding(
+                            get: { mapVM.mapSelectionPersistenceIssue != nil },
+                            set: { if !$0 { mapVM.dismissMapSelectionPersistenceIssue() } }
+                           ),
+                           presenting: mapVM.mapSelectionPersistenceIssue) { _ in
+                        Button("Retry") {
+                            if mapVM.retryMapSelectionPersistence() {
+                                refreshRetainedMap()
+                            }
+                        }
+                        Button("Not Now", role: .cancel) {
+                            mapVM.dismissMapSelectionPersistenceIssue()
+                        }
+                    } message: { issue in
+                        Text(issue.message)
+                    }
+            )
         }
     }
 
@@ -176,9 +151,10 @@ struct LayersSheet: View {
                 tilingTask = nil
                 if cancelled { return } // user cancelled, bail out
                 if let url, let source = OfflineTileMapSource(url: url) {
-                    mapVM.mapSource = source
-                    PDFSessionStore.clear()
-                    dismiss()
+                    if mapVM.selectMapSource(source) {
+                        refreshRetainedMap()
+                        dismiss()
+                    }
                 } else {
                     // don't fail silently, the bake didn't produce a usable set
                     tilingError = "Couldn't generate offline tiles. Check that the device has free storage and try again."
@@ -190,6 +166,108 @@ struct LayersSheet: View {
     /// Pulled out b/c the outer body was hitting SwiftUI's type-checker
     /// complexity limit.
     @ViewBuilder
+    private var importedMapSection: some View {
+        Section("Imported Map") {
+            if let pdfSource = mapVM.mapSource as? PDFMapSource {
+                Toggle(isOn: $visibility.pdfOverlayVisible) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(pdfSource.displayName).font(.callout)
+                        Text(pdfSource.bounds == nil
+                             ? "No georeferencing — using map-centre fallback"
+                             : (pdfSource.kind == .geoPDF
+                                ? "Georeferenced (GeoPDF LGIDict)"
+                                : "Manually placed bounds"))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Button {
+                    dismiss()
+                    onCalibrate()
+                } label: {
+                    Label("Calibrate with fiduciaries…", systemImage: "scope")
+                }
+                if let fids = pdfSource.fiduciaries, !fids.isEmpty {
+                    Text("Currently calibrated with \(fids.count) fiduciaries")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let p = tilingProgress {
+                    let progressValue: Double = p.total > 0
+                        ? Double(p.done) / Double(p.total)
+                        : 0
+                    VStack(alignment: .leading, spacing: 6) {
+                        ProgressView(value: progressValue)
+                        Text(p.total > 0 ? "Generating offline tiles — \(p.done)/\(p.total)" : "Preparing…")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Button(role: .cancel) { tilingTask?.cancel() } label: {
+                            Label("Cancel", systemImage: "xmark.circle")
+                        }
+                        .font(.caption)
+                    }
+                } else {
+                    Button {
+                        generateTiles(from: pdfSource)
+                    } label: {
+                        Label("Generate Offline Tiles…", systemImage: "square.stack.3d.down.right")
+                    }
+                    Text("Bakes this calibrated map into an offline tile set on-device — no desktop tools.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Button {
+                    if mapVM.selectMapSource(OnlineRasterBasemapSource.makeDefault()) {
+                        refreshRetainedMap()
+                    }
+                } label: {
+                    Label("Switch to Online Basemap", systemImage: "globe")
+                }
+                Button(role: .destructive) {
+                    confirmingImportedMapDeletion = true
+                } label: {
+                    Label("Delete PDF Map…", systemImage: "trash")
+                }
+            } else if let tileSource = mapVM.mapSource as? OfflineTileMapSource {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tileSource.displayName).font(.callout)
+                    Text("Offline MBTiles raster — no network needed")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    if mapVM.selectMapSource(OnlineRasterBasemapSource.makeDefault()) {
+                        refreshRetainedMap()
+                    }
+                } label: {
+                    Label("Switch to Online Basemap", systemImage: "globe")
+                }
+                Button(role: .destructive) {
+                    confirmingImportedMapDeletion = true
+                } label: {
+                    Label("Delete Offline Map…", systemImage: "trash")
+                }
+            } else if let stored = restorableImportedMap {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(stored.displayName).font(.callout)
+                    Text("Saved locally and available from the Basemap section below")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Button(role: .destructive) {
+                    confirmingImportedMapDeletion = true
+                } label: {
+                    Label("Delete Saved Imported Map…", systemImage: "trash")
+                }
+            } else {
+                Label("None loaded", systemImage: "doc")
+                    .foregroundStyle(.secondary)
+                Text("Import a PDF/GeoPDF via ☰ → Import PDF Map, or an MBTiles raster via ☰ → Import Offline Tiles.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
     private var basemapSection: some View {
         Section("Basemap") {
             let importedActive = mapVM.mapSource is PDFMapSource
@@ -197,7 +275,7 @@ struct LayersSheet: View {
             // Switching basemap just changes the shown layer, doesn't
             // clobber the imported map's session anymore. Imported map
             // stays re-loadable and restores on next launch. Use
-            // "Unload" above to actually nuke it.
+            // The explicit delete action above removes the retained file.
             // Four online basemaps. Keyed styles (all but OSM Topo) need the
             // ArcGIS key baked in at build time; no key -> hide them rather than
             // offer a basemap that would render blank.
@@ -207,13 +285,26 @@ struct LayersSheet: View {
                 basemapRow(title: style.displayName,
                            systemImage: basemapIcon(style),
                            isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == style) {
-                    mapVM.mapSource = OnlineRasterBasemapSource(style)
+                    if mapVM.selectOnlineBasemap(style) { refreshRetainedMap() }
                 }
             }
-            if !importedActive, let stored = restorablePDF {
+            if !importedActive, let stored = restorableImportedMap {
                 let title = "Imported map (" + stored.displayName + ")"
-                basemapRow(title: title, systemImage: "doc.viewfinder", isActive: false) {
-                    mapVM.mapSource = stored
+                let icon = stored is OfflineTileMapSource ? "square.stack.3d.up" : "doc.viewfinder"
+                basemapRow(title: title, systemImage: icon, isActive: false) {
+                    if mapVM.restoreRetainedMap(stored) { refreshRetainedMap() }
+                }
+            }
+            if !importedActive, let retainedMapError {
+                Label("Saved imported map unavailable", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                Text(retainedMapError)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Button("Remove Saved Map Entry") {
+                    if mapVM.removeUnavailableRetainedMapEntry() {
+                        refreshRetainedMap()
+                    }
                 }
             }
             if importedActive {
@@ -221,6 +312,39 @@ struct LayersSheet: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private func refreshRetainedMap() {
+        // The current source already represents the retained imported map. Do
+        // not open a second SQLite connection merely to build a hidden return
+        // row while MBTiles is active.
+        if mapVM.mapSource is PDFMapSource || mapVM.mapSource is OfflineTileMapSource {
+            restorableImportedMap = nil
+            retainedMapError = nil
+            return
+        }
+        switch mapVM.restoreRetainedMapSelection() {
+        case .noRetainedMap:
+            restorableImportedMap = nil
+            retainedMapError = nil
+        case .restored(let source):
+            restorableImportedMap = source
+            retainedMapError = nil
+        case .unavailable(let message):
+            restorableImportedMap = nil
+            retainedMapError = message
+        }
+    }
+
+    private func deleteRetainedImportedMap() {
+        let source = (mapVM.mapSource is PDFMapSource || mapVM.mapSource is OfflineTileMapSource)
+            ? mapVM.mapSource
+            : restorableImportedMap
+        guard let source else { return }
+        if mapVM.deleteRetainedImportedMap(source) {
+            restorableImportedMap = nil
+            refreshRetainedMap()
         }
     }
 
@@ -268,9 +392,15 @@ struct LayersSheet: View {
         } header: {
             Text("Drawing Layers")
         } footer: {
-            Text("Toggle to hide a layer without deleting it. Delete removes the layer and every drawing on it.")
+            Text("Toggle to hide a layer. Deleting a custom layer moves its waypoints and drawings to Friendly first. Default layers are always preserved.")
                 .font(.caption2)
         }
+        .alert("Layer not deleted",
+               isPresented: Binding(get: { layerDeleteError != nil },
+                                    set: { if !$0 { layerDeleteError = nil } }),
+               presenting: layerDeleteError) { _ in
+            Button("OK", role: .cancel) { layerDeleteError = nil }
+        } message: { msg in Text(msg) }
     }
 
     @ViewBuilder
@@ -286,11 +416,22 @@ struct LayersSheet: View {
                 Text("\(drawingStore.shapes(in: layer.id).count) drawing\(drawingStore.shapes(in: layer.id).count == 1 ? "" : "s")")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                if drawingStore.needsLegacyProtectionReview(layer) {
+                    Text("Legacy layer — classify before editing or deleting")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
             }
             Spacer()
             Toggle("", isOn: Binding(
                 get: { layer.visible },
-                set: { drawingStore.setLayerVisible(layer, $0) }
+                set: { visible in
+                    do {
+                        try drawingStore.setLayerVisible(layer, visible)
+                    } catch {
+                        layerMutationError = error.localizedDescription
+                    }
+                }
             ))
             .labelsHidden()
             .accessibilityLabel("\(layer.name) visibility")
@@ -298,40 +439,61 @@ struct LayersSheet: View {
         }
         .contentShape(Rectangle())
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) {
-                pendingDeleteLayer = layer
-            } label: {
-                Label("Delete", systemImage: "trash")
+            if !drawingStore.isProtectedDefaultLayer(layer),
+               !drawingStore.needsLegacyProtectionReview(layer) {
+                Button(role: .destructive) {
+                    pendingDeleteLayer = layer
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
-            Button {
-                renamingLayer = layer
-            } label: {
-                Label("Rename", systemImage: "pencil")
+            if !drawingStore.isProtectedDefaultLayer(layer),
+               !drawingStore.needsLegacyProtectionReview(layer) {
+                Button {
+                    editingLayer = layer
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .tint(.indigo)
             }
-            .tint(.indigo)
         }
         .contextMenu {
-            Button {
-                renamingLayer = layer
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            Menu {
-                ForEach(DrawingPalette.swatches) { swatch in
-                    Button {
-                        drawingStore.updateLayerColor(layer, to: swatch.hex)
-                    } label: {
-                        Label(swatch.name, systemImage: "circle.fill")
+            if drawingStore.needsLegacyProtectionReview(layer) {
+                Button {
+                    do {
+                        try drawingStore.resolveLegacyProtectionReview(
+                            layer,
+                            asProtectedDefault: false
+                        )
+                    } catch {
+                        layerMutationError = error.localizedDescription
                     }
-                    .tint(swatch.color)
+                } label: {
+                    Label("Confirm as Custom Layer", systemImage: "checkmark.shield")
                 }
-            } label: {
-                Label("Change colour…", systemImage: "paintpalette")
-            }
-            Button(role: .destructive) {
-                pendingDeleteLayer = layer
-            } label: {
-                Label("Delete layer", systemImage: "trash")
+                Button {
+                    do {
+                        try drawingStore.resolveLegacyProtectionReview(
+                            layer,
+                            asProtectedDefault: true
+                        )
+                    } catch {
+                        layerMutationError = error.localizedDescription
+                    }
+                } label: {
+                    Label("Keep as Default Layer", systemImage: "lock.shield")
+                }
+            } else if !drawingStore.isProtectedDefaultLayer(layer) {
+                Button {
+                    editingLayer = layer
+                } label: {
+                    Label("Edit name and colour", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    pendingDeleteLayer = layer
+                } label: {
+                    Label("Delete layer", systemImage: "trash")
+                }
             }
         }
     }
@@ -339,10 +501,11 @@ struct LayersSheet: View {
 
 /// Asks for a name + colour for a new drawing layer.
 private struct NewLayerSheet: View {
-    let onCreate: (String, String) -> Void
+    let onCreate: (String, String) throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name: String = ""
     @State private var hex: String  = DrawingPalette.swatches[0].hex
+    @State private var saveError: String?
 
     var body: some View {
         NavigationStack {
@@ -369,8 +532,14 @@ private struct NewLayerSheet: View {
                                     }
                                 }
                             }
+                            .frame(minWidth: 44, minHeight: 44)
                             .buttonStyle(.plain)
                             .accessibilityLabel(swatch.name)
+                            .accessibilityAddTraits(
+                                swatch.hex.caseInsensitiveCompare(hex) == .orderedSame
+                                    ? .isSelected
+                                    : []
+                            )
                         }
                     }
                     .padding(.vertical, 4)
@@ -385,34 +554,104 @@ private struct NewLayerSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Create") {
                         let trimmed = name.trimmingCharacters(in: .whitespaces)
-                        onCreate(trimmed.isEmpty ? "Layer" : trimmed, hex)
-                        dismiss()
+                        do {
+                            try onCreate(trimmed, hex)
+                            dismiss()
+                        } catch {
+                            saveError = error.localizedDescription
+                        }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Layer not created",
+                   isPresented: Binding(get: { saveError != nil },
+                                        set: { if !$0 { saveError = nil } }),
+                   presenting: saveError) { _ in
+                Button("OK", role: .cancel) { saveError = nil }
+            } message: { message in Text(message) }
         }
     }
 }
 
-/// Injects a TextField + OK button into a SwiftUI .alert. Kinda hacky
-/// but beats pulling in a whole second sheet just for rename.
-private struct RenameLayerAlert: View {
-    let initialName: String
-    let onRename: (String) -> Void
-    @State private var text: String = ""
+/// Edits a custom layer's name and colour as one durable transaction.
+private struct EditLayerSheet: View {
+    let layer: DrawingLayer
+    let onSave: (String, String) throws -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var hex: String
+    @State private var saveError: String?
 
-    init(initialName: String, onRename: @escaping (String) -> Void) {
-        self.initialName = initialName
-        self.onRename = onRename
-        _text = State(initialValue: initialName)
+    init(layer: DrawingLayer,
+         onSave: @escaping (String, String) throws -> Void) {
+        self.layer = layer
+        self.onSave = onSave
+        _name = State(initialValue: layer.name)
+        _hex = State(initialValue: layer.defaultColorHex)
     }
 
     var body: some View {
-        TextField("Layer name", text: $text)
-        Button("Save") {
-            let trimmed = text.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty { onRename(trimmed) }
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("Layer name", text: $name)
+                        .autocorrectionDisabled()
+                }
+                Section("Colour") {
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 6),
+                        spacing: 12
+                    ) {
+                        ForEach(DrawingPalette.swatches) { swatch in
+                            let selected = swatch.hex.caseInsensitiveCompare(hex) == .orderedSame
+                            Button {
+                                hex = swatch.hex
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(swatch.color)
+                                        .frame(width: 36, height: 36)
+                                    if selected {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.white)
+                                            .font(.headline.weight(.bold))
+                                    }
+                                }
+                                .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(swatch.name)
+                            .accessibilityAddTraits(selected ? .isSelected : [])
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Edit Layer")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        do {
+                            try onSave(name, hex)
+                            dismiss()
+                        } catch {
+                            saveError = error.localizedDescription
+                        }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .alert("Layer not saved",
+                   isPresented: Binding(get: { saveError != nil },
+                                        set: { if !$0 { saveError = nil } }),
+                   presenting: saveError) { _ in
+                Button("OK", role: .cancel) { saveError = nil }
+            } message: { message in Text(message) }
         }
     }
 }

@@ -3,6 +3,91 @@ import MapKit
 import PDFKit
 import CoreLocation
 
+struct PDFRasterSize: Equatable {
+    let width: Int
+    let height: Int
+    var byteCount: Int64 { Int64(width) * Int64(height) * 4 }
+}
+
+/// A UIView placement that maps an image's local top/right/down basis onto the
+/// corresponding projected PDF-page basis. Keeping the full two-dimensional
+/// basis is important: a valid PDF -> WGS84 affine can contain shear, and
+/// reducing it to width/height plus one rotation angle moves every point away
+/// from its calibrated ground position.
+struct PDFAffineOverlayPlacement: Equatable {
+    let boundsSize: CGSize
+    let center: CGPoint
+    let transform: CGAffineTransform
+}
+
+func pdfAffineOverlayPlacement(
+    topLeft: CGPoint,
+    topRight: CGPoint,
+    bottomLeft: CGPoint,
+    bottomRight: CGPoint
+) -> PDFAffineOverlayPlacement? {
+    let points = [topLeft, topRight, bottomLeft, bottomRight]
+    guard points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return nil }
+
+    let right = CGVector(dx: topRight.x - topLeft.x, dy: topRight.y - topLeft.y)
+    let down = CGVector(dx: bottomLeft.x - topLeft.x, dy: bottomLeft.y - topLeft.y)
+    let width = hypot(right.dx, right.dy)
+    let height = hypot(down.dx, down.dy)
+    guard width >= 1, height >= 1, width.isFinite, height.isFinite else { return nil }
+
+    let transform = CGAffineTransform(
+        a: right.dx / width,
+        b: right.dy / width,
+        c: down.dx / height,
+        d: down.dy / height,
+        tx: 0,
+        ty: 0
+    )
+    let determinant = transform.a * transform.d - transform.b * transform.c
+    // Reject a collapsed or effectively colinear screen projection. The
+    // scale-normalised determinant is the sine of the angle between the two
+    // page axes, so this threshold is independent of zoom.
+    guard transform.a.isFinite, transform.b.isFinite,
+          transform.c.isFinite, transform.d.isFinite,
+          determinant.isFinite,
+          abs(determinant) > 1e-9 else { return nil }
+
+    let center = CGPoint(
+        x: points.reduce(0) { $0 + $1.x } / CGFloat(points.count),
+        y: points.reduce(0) { $0 + $1.y } / CGFloat(points.count)
+    )
+    guard center.x.isFinite, center.y.isFinite else { return nil }
+    return PDFAffineOverlayPlacement(
+        boundsSize: CGSize(width: width, height: height),
+        center: center,
+        transform: transform
+    )
+}
+
+/// Preserve native dimensions for small sheets while bounding the actual
+/// scale-1 ARGB allocation for hostile or unusually tall pages.
+func boundedPDFRasterSize(
+    width: Double,
+    height: Double,
+    maxDimension: Int = 4096,
+    maxBytes: Int64 = 32 * 1024 * 1024
+) -> PDFRasterSize? {
+    guard width.isFinite, height.isFinite,
+          width > 0, height > 0,
+          maxDimension > 0, maxBytes >= 4 else { return nil }
+    let area = width * height
+    guard area.isFinite, area > 0 else { return nil }
+    let maxPixels = Double(maxBytes / 4)
+    let dimensionScale = Double(maxDimension) / max(width, height)
+    let memoryScale = sqrt(maxPixels / area)
+    let scale = min(1, dimensionScale, memoryScale)
+    guard scale.isFinite, scale > 0 else { return nil }
+    return PDFRasterSize(
+        width: max(1, Int((width * scale).rounded(.down))),
+        height: max(1, Int((height * scale).rounded(.down)))
+    )
+}
+
 /// Rasterises a PDF's first page once and exposes result as a UIImage.
 /// Used by PDFImageOverlayView to draw the PDF directly into map view's
 /// subview hierarchy. Sidesteps iOS 26 MapKit's broken MKOverlay /
@@ -16,18 +101,29 @@ enum PDFRasteriser {
     ///   marginalia and render only the map content.
     static func render(url: URL,
                        cropRect: CGRect? = nil,
-                       maxPixelWidth: CGFloat = 2048) -> UIImage? {
+                       maxPixelDimension: Int = 4096,
+                       maxBytes: Int64 = 32 * 1024 * 1024) -> UIImage? {
         guard let doc  = PDFDocument(url: url),
               let page = doc.page(at: 0) else { return nil }
         let pageRect = page.bounds(for: .mediaBox)
         let renderRect = cropRect ?? pageRect
-        guard renderRect.width > 0, renderRect.height > 0 else { return nil }
+        guard let rasterSize = boundedPDFRasterSize(
+            width: Double(renderRect.width),
+            height: Double(renderRect.height),
+            maxDimension: maxPixelDimension,
+            maxBytes: maxBytes
+        ) else { return nil }
+        let imageSize = CGSize(width: rasterSize.width, height: rasterSize.height)
+        let scale = min(
+            1,
+            CGFloat(rasterSize.width) / renderRect.width,
+            CGFloat(rasterSize.height) / renderRect.height
+        )
 
-        let scale = min(1, maxPixelWidth / renderRect.width)
-        let imageSize = CGSize(width:  renderRect.width  * scale,
-                                height: renderRect.height * scale)
-
-        let renderer = UIGraphicsImageRenderer(size: imageSize)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: imageSize, format: format)
         return renderer.image { ctx in
             UIColor.white.setFill()
             ctx.fill(CGRect(origin: .zero, size: imageSize))
@@ -164,19 +260,17 @@ final class PDFImageOverlayView: UIImageView {
         let pBL = project(t.apply(CGPoint(x: r.minX, y: r.minY)))
         let pBR = project(t.apply(CGPoint(x: r.maxX, y: r.minY)))
 
-        let width  = hypot(pTR.x - pTL.x, pTR.y - pTL.y)
-        let height = hypot(pBL.x - pTL.x, pBL.y - pTL.y)
-        let angle  = atan2(pTR.y - pTL.y, pTR.x - pTL.x)
-        guard width >= 1, height >= 1,
-              width.isFinite, height.isFinite, angle.isFinite else { return false }
-
-        let centre = CGPoint(x: (pTL.x + pTR.x + pBL.x + pBR.x) / 4,
-                             y: (pTL.y + pTR.y + pBL.y + pBR.y) / 4)
+        guard let placement = pdfAffineOverlayPlacement(
+            topLeft: pTL,
+            topRight: pTR,
+            bottomLeft: pBL,
+            bottomRight: pBR
+        ) else { return false }
         self.isHidden = false
         self.transform = .identity
-        self.bounds = CGRect(x: 0, y: 0, width: width, height: height)
-        self.center = centre
-        self.transform = CGAffineTransform(rotationAngle: angle)
+        self.bounds = CGRect(origin: .zero, size: placement.boundsSize)
+        self.center = placement.center
+        self.transform = placement.transform
         return true
     }
 

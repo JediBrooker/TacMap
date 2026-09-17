@@ -1,6 +1,35 @@
 import Foundation
 import Combine
 
+struct DrawingBatchImportCommit: Equatable {
+    let insertedLayerCount: Int
+    let insertedDrawingCount: Int
+    let skippedExistingDrawingCount: Int
+}
+
+struct LayerDeletionCommit: Equatable {
+    let reassignedWaypointCount: Int
+    let reassignedDrawingCount: Int
+    let fallbackLayerID: UUID
+}
+
+enum DrawingMutationError: LocalizedError {
+    case locked
+    case missing
+    case persistenceFailed(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .locked:
+            return "Mission drawings are locked. Unlock mission data, then try again."
+        case .missing:
+            return "That drawing no longer exists. Close its controls and try again."
+        case .persistenceFailed(let error):
+            return "The drawing change could not be saved: \(error.localizedDescription)"
+        }
+    }
+}
+
 /// Persistent store for drawings, grouped into layers.
 ///
 /// Schema lives at Application Support/drawings.json as
@@ -33,7 +62,7 @@ final class DrawingStore: ObservableObject {
 
     /// Schema version. Bump when on-disk format changes so old files
     /// migrate instead of looking like corruption.
-    private static let currentSchema = 1
+    private static let currentSchema = 3
 
     /// Bound in as AEAD associated data.
     private static let label = "drawings.json"
@@ -42,22 +71,43 @@ final class DrawingStore: ObservableObject {
     /// appears. Weak so we don't extend the window's lifetime.
     weak var undoManager: UndoManager?
 
-    private let url: URL = {
+    typealias PersistenceWriter = (Data, URL, String) throws -> Void
+
+    private static let defaultURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                             in: .userDomainMask).first!
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("drawings.json")
     }()
+    private let url: URL
+    private let persistenceWriter: PersistenceWriter
+    private var protectedDefaultLayerIDs: Set<UUID> = []
+    private var unresolvedLegacyLayerIDs: Set<UUID> = []
+    private var protectionBasis: DefaultLayerProtectionProvenance.Basis = .deterministicIDs
 
-    init() { load() }
+    init(storageURL: URL? = nil,
+         persistenceWriter: @escaping PersistenceWriter = { data, url, label in
+             try SafeStore.write(data, to: url, label: label)
+         }) {
+        self.url = storageURL ?? Self.defaultURL
+        self.persistenceWriter = persistenceWriter
+        load()
+    }
 
     // MARK: - Layer CRUD
 
-    func addLayer(name: String, defaultColorHex: String) -> DrawingLayer {
-        let layer = DrawingLayer(name: name, defaultColorHex: defaultColorHex)
-        layers.append(layer)
-        if activeLayerID == nil { activeLayerID = layer.id }
-        persist()
+    func addLayer(name: String, defaultColorHex: String) throws -> DrawingLayer {
+        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { throw MissionLayerMutationError.invalidName }
+        guard Self.isValidHexColor(defaultColorHex) else {
+            throw MissionLayerMutationError.invalidColor
+        }
+        let layer = DrawingLayer(name: cleanName, defaultColorHex: defaultColorHex.uppercased())
+        let candidateLayers = layers + [layer]
+        let candidateActive = activeLayerID ?? layer.id
+        try commitLayerCandidate(candidateLayers, activeLayerID: candidateActive,
+                                 failureContext: "new layer")
         undoManager?.registerUndo(withTarget: self) { s in s.removeLayerUndo(layer) }
         undoManager?.setActionName("Add Layer")
         return layer
@@ -67,55 +117,170 @@ final class DrawingStore: ObservableObject {
     /// Not exposed as public API - don't want to accidentally skip the
     /// shape-deletion logic in removeLayer.
     private func removeLayerUndo(_ layer: DrawingLayer) {
-        layers.removeAll { $0.id == layer.id }
-        if activeLayerID == layer.id {
-            activeLayerID = layers.first(where: { $0.visible })?.id ?? layers.first?.id
+        let candidateLayers = layers.filter { $0.id != layer.id }
+        let candidateActive = activeLayerID == layer.id
+            ? (candidateLayers.first(where: { $0.visible })?.id ?? candidateLayers.first?.id)
+            : activeLayerID
+        do {
+            try commitLayerCandidate(candidateLayers, activeLayerID: candidateActive,
+                                     failureContext: "layer undo")
+            undoManager?.registerUndo(withTarget: self) { [layer] s in
+                _ = try? s.addLayerVerbatim(layer)
+                s.undoManager?.setActionName("Add Layer")
+            }
+            undoManager?.setActionName("Add Layer")
+        } catch {
+            loadError = "Could not undo the new layer: \(error.localizedDescription)"
         }
-        persist()
-        undoManager?.registerUndo(withTarget: self) { [layer] s in
-            s.layers.append(layer)
-            if s.activeLayerID == nil { s.activeLayerID = layer.id }
-            s.persist()
-            s.undoManager?.setActionName("Add Layer")
-        }
-        undoManager?.setActionName("Add Layer")
     }
 
     /// Insert layer as-is. Used by GeoJSON import so drawings referencing
     /// the imported layer id don't become orphaned.
-    func addLayerVerbatim(_ layer: DrawingLayer) {
-        guard !layers.contains(where: { $0.id == layer.id }) else { return }
-        layers.append(layer)
-        if activeLayerID == nil { activeLayerID = layer.id }
-        persist()
+    @discardableResult
+    func addLayerVerbatim(_ layer: DrawingLayer) throws -> Bool {
+        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard !layers.contains(where: { $0.id == layer.id }) else { return false }
+        let candidateLayers = layers + [layer]
+        try commitLayerCandidate(candidateLayers,
+                                 activeLayerID: activeLayerID ?? layer.id,
+                                 failureContext: "imported layer")
+        return true
     }
 
-    /// Remove a layer along with every shape on it.
-    func removeLayer(_ layer: DrawingLayer) {
-        layers.removeAll { $0.id == layer.id }
-        shapes.removeAll { $0.layerID == layer.id }
-        if activeLayerID == layer.id {
-            activeLayerID = layers.first(where: { $0.visible })?.id ?? layers.first?.id
+    /// Adds any missing authenticated/imported layer identities in one durable
+    /// write. Existing IDs are retained verbatim so a retried remote model apply
+    /// is idempotent and cannot publish a layer that failed to reach disk.
+    @discardableResult
+    func addLayersVerbatimDurably(_ incoming: [DrawingLayer]) throws -> Int {
+        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        var occupied = Set(layers.map(\.id))
+        let additions = incoming.filter { occupied.insert($0.id).inserted }
+        guard !additions.isEmpty else { return 0 }
+        let candidateLayers = layers + additions
+        try commitLayerCandidate(candidateLayers,
+                                 activeLayerID: activeLayerID ?? candidateLayers.first?.id,
+                                 failureContext: "synced layers")
+        return additions.count
+    }
+
+    func isProtectedDefaultLayer(_ layer: DrawingLayer) -> Bool {
+        protectedDefaultLayerIDs.contains(layer.id)
+    }
+
+    func needsLegacyProtectionReview(_ layer: DrawingLayer) -> Bool {
+        unresolvedLegacyLayerIDs.contains(layer.id)
+    }
+
+    /// Resolves an intentionally-conservative schema-v1 migration. The old
+    /// document did not persist default IDs, so an ambiguous layer stays
+    /// non-destructively locked until the user explicitly classifies it.
+    func resolveLegacyProtectionReview(_ layer: DrawingLayer,
+                                       asProtectedDefault: Bool) throws {
+        guard unresolvedLegacyLayerIDs.contains(layer.id) else { return }
+        var candidateUnresolved = unresolvedLegacyLayerIDs
+        candidateUnresolved.remove(layer.id)
+        var candidateProtected = protectedDefaultLayerIDs
+        if asProtectedDefault { candidateProtected.insert(layer.id) }
+        try write(layers: layers,
+                  shapes: shapes,
+                  activeLayerID: activeLayerID,
+                  protectedDefaultLayerIDs: candidateProtected,
+                  unresolvedLegacyLayerIDs: candidateUnresolved,
+                  protectionBasis: protectionBasis)
+        unresolvedLegacyLayerIDs = candidateUnresolved
+        protectedDefaultLayerIDs = candidateProtected
+        clearLayerSaveError()
+    }
+
+    /// Deletes only a custom layer. Waypoints are made durable first, then the
+    /// drawing document reassigns shapes and removes the layer in one write.
+    /// If the second store fails, the layer remains and retry is idempotent.
+    @discardableResult
+    func removeLayer(_ layer: DrawingLayer,
+                     reassigningWaypointsIn waypointStore: WaypointStore) throws -> LayerDeletionCommit {
+        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard layers.contains(where: { $0.id == layer.id }) else {
+            throw MissionLayerMutationError.layerMissing
         }
-        persist()
+        guard !isProtectedDefaultLayer(layer) else {
+            throw MissionLayerMutationError.protectedDefault
+        }
+        guard !needsLegacyProtectionReview(layer) else {
+            throw MissionLayerMutationError.legacyProtectionReview
+        }
+        let fallbackID = DrawingLayer.legacyFallbackID
+        guard fallbackID != layer.id,
+              layers.contains(where: { $0.id == fallbackID }) else {
+            throw MissionLayerMutationError.fallbackMissing
+        }
+
+        let waypointCount = try waypointStore.reassignLayer(from: layer.id, to: fallbackID)
+        let drawingCount = shapes.filter { $0.layerID == layer.id }.count
+        let candidateLayers = layers.filter { $0.id != layer.id }
+        let candidateShapes = shapes.map { shape -> DrawingShape in
+            guard shape.layerID == layer.id else { return shape }
+            var moved = shape
+            moved.layerID = fallbackID
+            return moved
+        }
+        let candidateActive = activeLayerID == layer.id
+            ? fallbackID
+            : activeLayerID
+        do {
+            try write(layers: candidateLayers,
+                      shapes: candidateShapes,
+                      activeLayerID: candidateActive)
+        } catch {
+            loadError = "Could not save reassigned drawings to disk: \(error.localizedDescription)"
+            throw MissionLayerMutationError.persistenceFailed(store: "drawings", underlying: error)
+        }
+        layers = candidateLayers
+        shapes = candidateShapes
+        activeLayerID = candidateActive
+        if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+        return LayerDeletionCommit(reassignedWaypointCount: waypointCount,
+                                   reassignedDrawingCount: drawingCount,
+                                   fallbackLayerID: fallbackID)
     }
 
-    func setLayerVisible(_ layer: DrawingLayer, _ visible: Bool) {
-        guard let idx = layers.firstIndex(where: { $0.id == layer.id }) else { return }
-        layers[idx].visible = visible
-        persist()
+    func setLayerVisible(_ layer: DrawingLayer, _ visible: Bool) throws {
+        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard let idx = layers.firstIndex(where: { $0.id == layer.id }) else {
+            throw MissionLayerMutationError.layerMissing
+        }
+        guard layers[idx].visible != visible else { return }
+        var candidate = layers
+        candidate[idx].visible = visible
+        try commitLayerCandidate(candidate, activeLayerID: activeLayerID,
+                                 failureContext: "layer visibility")
     }
 
-    func renameLayer(_ layer: DrawingLayer, to newName: String) {
-        guard let idx = layers.firstIndex(where: { $0.id == layer.id }) else { return }
-        layers[idx].name = newName
-        persist()
-    }
-
-    func updateLayerColor(_ layer: DrawingLayer, to hex: String) {
-        guard let idx = layers.firstIndex(where: { $0.id == layer.id }) else { return }
-        layers[idx].defaultColorHex = hex
-        persist()
+    /// Renames and recolours in one candidate document and one durable write.
+    /// Defaults are immutable; visibility remains independently editable.
+    func updateLayer(_ layer: DrawingLayer,
+                     name: String,
+                     defaultColorHex: String) throws {
+        guard !locked else { throw MissionLayerMutationError.locked(store: "drawings") }
+        guard let idx = layers.firstIndex(where: { $0.id == layer.id }) else {
+            throw MissionLayerMutationError.layerMissing
+        }
+        guard !isProtectedDefaultLayer(layer) else {
+            throw MissionLayerMutationError.protectedDefault
+        }
+        guard !needsLegacyProtectionReview(layer) else {
+            throw MissionLayerMutationError.legacyProtectionReview
+        }
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { throw MissionLayerMutationError.invalidName }
+        guard Self.isValidHexColor(defaultColorHex) else {
+            throw MissionLayerMutationError.invalidColor
+        }
+        var candidate = layers
+        candidate[idx].name = cleanName
+        candidate[idx].defaultColorHex = defaultColorHex.uppercased()
+        guard candidate[idx] != layers[idx] else { return }
+        try commitLayerCandidate(candidate, activeLayerID: activeLayerID,
+                                 failureContext: "layer details")
     }
 
     func layer(id: UUID) -> DrawingLayer? {
@@ -135,45 +300,185 @@ final class DrawingStore: ObservableObject {
 
     // MARK: - Shape CRUD
 
-    func add(_ shape: DrawingShape) {
-        shapes.append(shape)
-        persist()
-        undoManager?.registerUndo(withTarget: self) { s in s.remove(shape) }
+    /// Persists a new drawing before publishing it to UI or Sync observers.
+    /// Duplicate IDs are a no-op so a retried presentation cannot duplicate it.
+    @discardableResult
+    func addDurably(_ shape: DrawingShape) throws -> Bool {
+        guard !locked else { throw DrawingMutationError.locked }
+        guard !shapes.contains(where: { $0.id == shape.id }) else { return false }
+        let candidate = shapes + [shape]
+        do {
+            try write(layers: layers,
+                      shapes: candidate,
+                      activeLayerID: activeLayerID)
+        } catch {
+            loadError = "Could not save new drawing to disk: \(error.localizedDescription)"
+            throw DrawingMutationError.persistenceFailed(error)
+        }
+        shapes = candidate
+        if loadError?.hasPrefix("Could not save new drawing") == true { loadError = nil }
+        undoManager?.registerUndo(withTarget: self) { store in
+            _ = try? store.deleteDurably(shape)
+        }
         undoManager?.setActionName("Add Drawing")
+        return true
     }
 
-    func update(_ shape: DrawingShape) {
-        guard let idx = shapes.firstIndex(where: { $0.id == shape.id }) else { return }
-        let old = shapes[idx]
-        shapes[idx] = shape
-        persist()
-        undoManager?.registerUndo(withTarget: self) { s in s.update(old) }
-        undoManager?.setActionName("Edit Drawing")
+    /// Persists an edited candidate before publishing it to UI or Sync.
+    /// Returns false for an unchanged candidate and performs no write.
+    @discardableResult
+    func commitEdit(_ shape: DrawingShape,
+                    actionName: String = "Edit Drawing") throws -> Bool {
+        guard !locked else { throw DrawingMutationError.locked }
+        guard let index = shapes.firstIndex(where: { $0.id == shape.id }) else {
+            throw DrawingMutationError.missing
+        }
+        let old = shapes[index]
+        guard old != shape else { return false }
+        var candidate = shapes
+        candidate[index] = shape
+        do {
+            try write(layers: layers,
+                      shapes: candidate,
+                      activeLayerID: activeLayerID)
+        } catch {
+            loadError = "Could not save drawing change to disk: \(error.localizedDescription)"
+            throw DrawingMutationError.persistenceFailed(error)
+        }
+        shapes = candidate
+        if loadError?.hasPrefix("Could not save drawing change") == true { loadError = nil }
+        undoManager?.registerUndo(withTarget: self) { store in
+            _ = try? store.commitEdit(old, actionName: actionName)
+        }
+        undoManager?.setActionName(actionName)
+        return true
     }
 
-    func remove(_ shape: DrawingShape) {
-        guard let idx = shapes.firstIndex(where: { $0.id == shape.id }) else { return }
-        let removed = shapes.remove(at: idx)
-        persist()
-        undoManager?.registerUndo(withTarget: self) { s in s.insertShape(removed, at: idx) }
+    /// Persists a confirmed deletion before publishing it to UI or Sync.
+    @discardableResult
+    func deleteDurably(_ shape: DrawingShape) throws -> Bool {
+        guard !locked else { throw DrawingMutationError.locked }
+        guard let index = shapes.firstIndex(where: { $0.id == shape.id }) else {
+            throw DrawingMutationError.missing
+        }
+        var candidate = shapes
+        let removed = candidate.remove(at: index)
+        do {
+            try write(layers: layers,
+                      shapes: candidate,
+                      activeLayerID: activeLayerID)
+        } catch {
+            loadError = "Could not delete drawing from disk: \(error.localizedDescription)"
+            throw DrawingMutationError.persistenceFailed(error)
+        }
+        shapes = candidate
+        if loadError?.hasPrefix("Could not delete drawing") == true { loadError = nil }
+        undoManager?.registerUndo(withTarget: self) { store in
+            _ = try? store.restoreDurably(removed, at: index)
+        }
         undoManager?.setActionName("Delete Drawing")
+        return true
     }
 
-    /// Inserts shape at index (undo of remove) and registers the redo
-    /// so undo/redo cycle stays complete.
-    private func insertShape(_ shape: DrawingShape, at idx: Int) {
-        shapes.insert(shape, at: min(idx, shapes.count))
-        persist()
-        undoManager?.registerUndo(withTarget: self) { s in s.remove(shape) }
+    @discardableResult
+    private func restoreDurably(_ shape: DrawingShape, at index: Int) throws -> Bool {
+        guard !locked else { throw DrawingMutationError.locked }
+        guard !shapes.contains(where: { $0.id == shape.id }) else { return false }
+        var candidate = shapes
+        candidate.insert(shape, at: min(index, candidate.count))
+        do {
+            try write(layers: layers,
+                      shapes: candidate,
+                      activeLayerID: activeLayerID)
+        } catch {
+            loadError = "Could not restore drawing to disk: \(error.localizedDescription)"
+            throw DrawingMutationError.persistenceFailed(error)
+        }
+        shapes = candidate
+        if loadError?.hasPrefix("Could not restore drawing") == true { loadError = nil }
+        undoManager?.registerUndo(withTarget: self) { store in
+            _ = try? store.deleteDurably(shape)
+        }
         undoManager?.setActionName("Delete Drawing")
+        return true
     }
 
-    func removeAll() {
-        shapes.removeAll()
-        persist()
+    /// Commits imported layers and drawings as one candidate document and one
+    /// durable write. Existing drawing IDs are skipped for retry idempotence;
+    /// imported layer IDs and every shape's layer reference are left untouched.
+    @discardableResult
+    func importBatch(layers importedLayers: [DrawingLayer],
+                     drawings importedShapes: [DrawingShape],
+                     batchKey: String) throws -> DrawingBatchImportCommit {
+        guard !locked else { throw BatchImportStoreError.locked }
+
+        var layerIDs = Set(layers.map(\.id))
+        var layersToInsert: [DrawingLayer] = []
+        for layer in importedLayers where layerIDs.insert(layer.id).inserted {
+            layersToInsert.append(layer)
+        }
+
+        var shapeIDs = Set(shapes.map(\.id))
+        var shapesToInsert: [DrawingShape] = []
+        var skipped = 0
+        for shape in importedShapes {
+            if shapeIDs.insert(shape.id).inserted {
+                shapesToInsert.append(shape)
+            } else {
+                skipped += 1
+            }
+        }
+        guard !layersToInsert.isEmpty || !shapesToInsert.isEmpty else {
+            return DrawingBatchImportCommit(insertedLayerCount: 0,
+                                            insertedDrawingCount: 0,
+                                            skippedExistingDrawingCount: skipped)
+        }
+
+        let candidateLayers = layers + layersToInsert
+        let candidateShapes = shapes + shapesToInsert
+        let candidateActiveLayerID = activeLayerID ?? candidateLayers.first?.id
+        do {
+            try write(layers: candidateLayers,
+                      shapes: candidateShapes,
+                      activeLayerID: candidateActiveLayerID)
+        } catch {
+            loadError = "Could not save imported drawings to disk: \(error.localizedDescription)"
+            throw BatchImportStoreError.persistenceFailed(error)
+        }
+
+        layers = candidateLayers
+        shapes = candidateShapes
+        activeLayerID = candidateActiveLayerID
+        if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+        let insertedLayerIDs = Set(layersToInsert.map(\.id))
+        let insertedShapeIDs = Set(shapesToInsert.map(\.id))
+        undoManager?.registerUndo(withTarget: self) { store in
+            store.removeImportedBatch(layerIDs: insertedLayerIDs,
+                                      shapeIDs: insertedShapeIDs,
+                                      batchKey: batchKey)
+        }
+        undoManager?.setActionName("Import Drawings")
+        return DrawingBatchImportCommit(insertedLayerCount: layersToInsert.count,
+                                        insertedDrawingCount: shapesToInsert.count,
+                                        skippedExistingDrawingCount: skipped)
     }
 
     // MARK: - Persistence
+
+    /// Versioned, durable evidence for which layers are app-owned defaults.
+    /// Mutable labels and colours are deliberately absent from this contract.
+    private struct DefaultLayerProtectionProvenance: Codable, Equatable {
+        enum Basis: String, Codable {
+            case deterministicIDs
+            case legacySeedCohort
+            case ambiguousLegacy
+        }
+
+        let contractVersion: Int
+        let basis: Basis
+        let protectedIDs: [UUID]
+        let unresolvedIDs: [UUID]
+    }
 
     private struct Persisted: Codable {
         /// nil = written before schema versioning, treat as v1. Has to be
@@ -183,6 +488,41 @@ final class DrawingStore: ObservableObject {
         var layers: [DrawingLayer]
         var shapes: [DrawingShape]
         var activeLayerID: UUID?
+        var protectedDefaultLayerIDs: [UUID]?
+        var defaultLayerProtection: DefaultLayerProtectionProvenance?
+    }
+
+    private func removeImportedBatch(layerIDs: Set<UUID>,
+                                     shapeIDs: Set<UUID>,
+                                     batchKey: String) {
+        let removedShapes = shapes.filter { shapeIDs.contains($0.id) }
+        let remainingShapes = shapes.filter { !shapeIDs.contains($0.id) }
+        // Do not orphan later edits that reused an imported layer.
+        let removableLayerIDs = layerIDs.filter { id in
+            !remainingShapes.contains(where: { $0.layerID == id })
+        }
+        let removedLayers = layers.filter { removableLayerIDs.contains($0.id) }
+        guard !removedShapes.isEmpty || !removedLayers.isEmpty else { return }
+        let remainingLayers = layers.filter { !removableLayerIDs.contains($0.id) }
+        let candidateActive = remainingLayers.contains(where: { $0.id == activeLayerID })
+            ? activeLayerID
+            : remainingLayers.first?.id
+        do {
+            try write(layers: remainingLayers,
+                      shapes: remainingShapes,
+                      activeLayerID: candidateActive)
+            layers = remainingLayers
+            shapes = remainingShapes
+            activeLayerID = candidateActive
+            undoManager?.registerUndo(withTarget: self) { store in
+                _ = try? store.importBatch(layers: removedLayers,
+                                           drawings: removedShapes,
+                                           batchKey: batchKey)
+            }
+            undoManager?.setActionName("Import Drawings")
+        } catch {
+            loadError = "Could not undo imported drawings: \(error.localizedDescription)"
+        }
     }
 
     /// Try decoding as current schema, fall back to legacy flat
@@ -190,8 +530,16 @@ final class DrawingStore: ObservableObject {
     /// quarantines instead of silently discarding.
     private static func decodeAny(_ data: Data) throws -> (Persisted, migrated: Bool) {
         let dec = JSONDecoder()
-        if let payload = try? dec.decode(Persisted.self, from: data) {
-            return (payload, false)
+        if var payload = try? dec.decode(Persisted.self, from: data) {
+            let needsMigration = payload.schemaVersion != currentSchema
+                || payload.defaultLayerProtection?.contractVersion != 1
+            if needsMigration {
+                let provenance = protectionProvenance(for: payload.layers)
+                payload.schemaVersion = currentSchema
+                payload.defaultLayerProtection = provenance
+                payload.protectedDefaultLayerIDs = provenance.protectedIDs
+            }
+            return (payload, needsMigration)
         }
         let legacyShapes = try dec.decode([DrawingShape].self, from: data)
         let migrated = Persisted(
@@ -202,7 +550,9 @@ final class DrawingStore: ObservableObject {
                 s.layerID = DrawingLayer.legacyFallbackID
                 return s
             },
-            activeLayerID: DrawingLayer.seedDefaults.first?.id
+            activeLayerID: DrawingLayer.seedDefaults.first?.id,
+            protectedDefaultLayerIDs: DrawingLayer.seedDefaults.map(\.id),
+            defaultLayerProtection: protectionProvenance(for: DrawingLayer.seedDefaults)
         )
         return (migrated, true)
     }
@@ -214,8 +564,18 @@ final class DrawingStore: ObservableObject {
             layers = payload.layers
             shapes = payload.shapes
             activeLayerID = payload.activeLayerID ?? layers.first?.id
+            let provenance = payload.defaultLayerProtection
+                ?? Self.protectionProvenance(for: layers)
+            protectedDefaultLayerIDs = Set(provenance.protectedIDs)
+            unresolvedLegacyLayerIDs = Set(provenance.unresolvedIDs)
+            protectionBasis = provenance.basis
             ensureSeedLayers()
-            if migrated { persist() } // upgrade the on-disk format once
+            if migrated { persist() } // one-time provenance upgrade
+            if !unresolvedLegacyLayerIDs.isEmpty,
+               loadError == nil {
+                loadError = "Some legacy layers have ambiguous default-layer history. "
+                    + "Confirm each one as custom or default before renaming, recolouring, or deleting it."
+            }
         case .empty:
             seedFreshInstall()
         case .corrupt(let quarantine, _):
@@ -234,6 +594,9 @@ final class DrawingStore: ObservableObject {
             layers = DrawingLayer.seedDefaults
             shapes = []
             activeLayerID = layers.first?.id
+            protectedDefaultLayerIDs = Set(layers.map(\.id))
+            unresolvedLegacyLayerIDs = []
+            protectionBasis = .deterministicIDs
         }
     }
 
@@ -243,6 +606,9 @@ final class DrawingStore: ObservableObject {
         layers = DrawingLayer.seedDefaults
         shapes = []
         activeLayerID = layers.first?.id
+        protectedDefaultLayerIDs = Set(layers.map(\.id))
+        unresolvedLegacyLayerIDs = []
+        protectionBasis = .deterministicIDs
         persist()
     }
 
@@ -252,26 +618,128 @@ final class DrawingStore: ObservableObject {
         if layers.isEmpty {
             layers = DrawingLayer.seedDefaults
             activeLayerID = layers.first?.id
+            protectedDefaultLayerIDs = Set(layers.map(\.id))
+            unresolvedLegacyLayerIDs = []
+            protectionBasis = .deterministicIDs
         }
         if activeLayerID == nil || layer(id: activeLayerID!) == nil {
             activeLayerID = layers.first?.id
         }
     }
 
+    /// Schema-v1 used random IDs for Hostile/Unknown/Civilian. Their durable
+    /// provenance is structural: the original four defaults were inserted as
+    /// the first, single creation-time cohort, led by the immutable Friendly
+    /// fallback ID. Names and colours may have changed and are never evidence.
+    ///
+    /// If deletion/reordering makes that evidence ambiguous, only deterministic
+    /// IDs are confirmed and all other pre-migration IDs require an explicit
+    /// user classification before destructive metadata edits.
+    private static func protectionProvenance(for layers: [DrawingLayer])
+        -> DefaultLayerProtectionProvenance {
+        let stableIDs = Set(DrawingLayer.seedDefaults.map(\.id))
+        let presentStable = Set(layers.map(\.id)).intersection(stableIDs)
+        if presentStable.count == stableIDs.count {
+            return DefaultLayerProtectionProvenance(
+                contractVersion: 1,
+                basis: .deterministicIDs,
+                protectedIDs: presentStable.sorted(by: uuidSort),
+                unresolvedIDs: []
+            )
+        }
+
+        if layers.count >= 4,
+           layers[0].id == DrawingLayer.legacyFallbackID {
+            let cohort = Array(layers.prefix(4))
+            let ids = cohort.map(\.id)
+            let times = cohort.map(\.createdAt.timeIntervalSinceReferenceDate)
+            let span = (times.max() ?? 0) - (times.min() ?? 0)
+            let randomHistoricalIDs = Set(ids.dropFirst()).isDisjoint(
+                with: stableIDs.subtracting(Set([DrawingLayer.legacyFallbackID]))
+            )
+            if Set(ids).count == 4, span >= 0, span <= 2,
+               randomHistoricalIDs {
+                return DefaultLayerProtectionProvenance(
+                    contractVersion: 1,
+                    basis: .legacySeedCohort,
+                    protectedIDs: ids.sorted(by: uuidSort),
+                    unresolvedIDs: []
+                )
+            }
+        }
+
+        let unresolved = Set(layers.map(\.id)).subtracting(presentStable)
+        return DefaultLayerProtectionProvenance(
+            contractVersion: 1,
+            basis: .ambiguousLegacy,
+            protectedIDs: presentStable.sorted(by: uuidSort),
+            unresolvedIDs: unresolved.sorted(by: uuidSort)
+        )
+    }
+
+    private static func uuidSort(_ lhs: UUID, _ rhs: UUID) -> Bool {
+        lhs.uuidString < rhs.uuidString
+    }
+
+    private static func isValidHexColor(_ value: String) -> Bool {
+        guard value.count == 7, value.first == "#" else { return false }
+        return value.dropFirst().allSatisfy { $0.isHexDigit }
+    }
+
+    private func commitLayerCandidate(_ candidateLayers: [DrawingLayer],
+                                      activeLayerID candidateActive: UUID?,
+                                      failureContext: String) throws {
+        do {
+            try write(layers: candidateLayers,
+                      shapes: shapes,
+                      activeLayerID: candidateActive)
+        } catch {
+            loadError = "Could not save \(failureContext) to disk: \(error.localizedDescription)"
+            throw MissionLayerMutationError.persistenceFailed(store: "drawings", underlying: error)
+        }
+        layers = candidateLayers
+        activeLayerID = candidateActive
+        clearLayerSaveError()
+    }
+
+    private func clearLayerSaveError() {
+        if loadError?.hasPrefix("Could not save") == true { loadError = nil }
+    }
+
     private func persist() {
         guard !locked else { return }
         do {
-            let payload = Persisted(schemaVersion: Self.currentSchema,
-                                    layers: layers,
-                                    shapes: shapes,
-                                    activeLayerID: activeLayerID)
-            let data = try JSONEncoder().encode(payload)
-            try SafeStore.write(data, to: url, label: Self.label)
+            try write(layers: layers, shapes: shapes, activeLayerID: activeLayerID)
             if loadError?.hasPrefix("Could not save") == true { loadError = nil }
         } catch {
             // don't swallow this, user is editing but nothing is hitting disk
             print("[DrawingStore] persist failed")
             loadError = "Could not save drawings to disk: \(error.localizedDescription)"
         }
+    }
+
+    private func write(layers: [DrawingLayer],
+                       shapes: [DrawingShape],
+                       activeLayerID: UUID?,
+                       protectedDefaultLayerIDs candidateProtected: Set<UUID>? = nil,
+                       unresolvedLegacyLayerIDs candidateUnresolved: Set<UUID>? = nil,
+                       protectionBasis candidateBasis: DefaultLayerProtectionProvenance.Basis? = nil) throws {
+        let protected = candidateProtected ?? protectedDefaultLayerIDs
+        let unresolved = candidateUnresolved ?? unresolvedLegacyLayerIDs
+        let basis = candidateBasis ?? protectionBasis
+        let provenance = DefaultLayerProtectionProvenance(
+            contractVersion: 1,
+            basis: basis,
+            protectedIDs: protected.sorted(by: Self.uuidSort),
+            unresolvedIDs: unresolved.sorted(by: Self.uuidSort)
+        )
+        let payload = Persisted(schemaVersion: Self.currentSchema,
+                                layers: layers,
+                                shapes: shapes,
+                                activeLayerID: activeLayerID,
+                                protectedDefaultLayerIDs: provenance.protectedIDs,
+                                defaultLayerProtection: provenance)
+        let data = try JSONEncoder().encode(payload)
+        try persistenceWriter(data, url, Self.label)
     }
 }

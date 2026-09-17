@@ -14,6 +14,7 @@ enum DrawingVectorShapes {
             for shape in drawings
             where shape.kind == .polyline || shape.kind == .polygon || shape.kind == .freedraw {
                 vectors.append(PDFVectorShape(
+                    sourceID: shape.id,
                     coords: shape.clEffectiveCoordinates,
                     isPolygon: shape.kind == .polygon,
                     style: shape.style,
@@ -42,5 +43,26 @@ enum DrawingVectorShapes {
                 inProgress: true))
         }
         return vectors
+    }
+
+    /// Replaces one durable vector with an in-memory gesture candidate while
+    /// retaining the renderer's current visibility/session/measurement set.
+    static func replacingDrawingPreview(_ preview: DrawingShape,
+                                        in vectors: [PDFVectorShape]) -> [PDFVectorShape] {
+        guard preview.kind == .polyline || preview.kind == .polygon || preview.kind == .freedraw,
+              vectors.contains(where: { $0.sourceID == preview.id }) else {
+            return vectors
+        }
+        return vectors.map { vector in
+            guard vector.sourceID == preview.id else { return vector }
+            return PDFVectorShape(
+                sourceID: preview.id,
+                coords: preview.clEffectiveCoordinates,
+                isPolygon: preview.kind == .polygon,
+                style: preview.style,
+                isSelected: vector.isSelected,
+                inProgress: false
+            )
+        }
     }
 }

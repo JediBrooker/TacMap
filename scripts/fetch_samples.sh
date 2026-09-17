@@ -32,7 +32,8 @@ fi
 
 echo
 echo "To push into the running iPhone simulator:"
-echo "  APP_CONTAINER=\$(xcrun simctl get_app_container 'iPhone 17 Pro' com.tacticalmaps.app data)"
-echo "  cp samples/USGS_SF_North.pdf \"\$APP_CONTAINER/Documents/\""
+echo "  SIMULATOR_UDID=<the existing simulator UDID>"
+echo "  FILES_GROUP=\$(xcrun simctl get_app_container \"\$SIMULATOR_UDID\" com.apple.DocumentsApp groups | awk '\$1 == \"group.com.apple.FileProvider.LocalStorage\" { print \$2 }')"
+echo "  cp samples/USGS_SF_North.pdf \"\$FILES_GROUP/File Provider Storage/\""
 echo
-echo "Then in the app:  ☰ → Import PDF Map → On My iPhone → TacticalMaps → USGS_SF_North.pdf"
+echo "Then in the app:  ☰ → Import / Export… → PDF Map… → On My iPhone → USGS_SF_North.pdf"

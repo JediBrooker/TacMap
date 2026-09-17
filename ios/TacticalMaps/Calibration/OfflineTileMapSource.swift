@@ -15,8 +15,7 @@ final class OfflineTileMapSource: MapSource {
     let url: URL
     let store: MBTilesStore
 
-    init?(url: URL) {
-        guard let store = MBTilesStore(url: url) else { return nil }
+    private init(url: URL, store: MBTilesStore) {
         self.url = url
         self.store = store
         self.displayName = store.metadata.name
@@ -36,6 +35,20 @@ final class OfflineTileMapSource: MapSource {
         }
     }
 
+    convenience init?(url: URL) {
+        guard let store = MBTilesStore(url: url) else { return nil }
+        self.init(url: url, store: store)
+    }
+
+    /// Builds the UI/map wrapper from metadata validated by the detached
+    /// import worker. No file open or SQLite query occurs in this initializer.
+    convenience init(prevalidatedURL url: URL, metadata: MBTilesStore.Metadata) {
+        self.init(url: url,
+                  store: MBTilesStore(prevalidatedURL: url, metadata: metadata))
+    }
+
     /// Fresh overlay for map to add. Coordinator owns the lifecycle.
     func makeOverlay() -> MBTilesTileOverlay { MBTilesTileOverlay(store: store) }
+
+    func closeForDeletion() { store.closeForDeletion() }
 }

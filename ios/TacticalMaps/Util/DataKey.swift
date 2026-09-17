@@ -2,6 +2,90 @@ import Foundation
 import Security
 import LocalAuthentication
 
+/// Small transaction kernel shared by live access-control rotation and its
+/// cold-start recovery path. AUTH upgrades commit only after the prior DEVICE
+/// slot is verified absent. DEVICE transitions commit their honest weaker mode
+/// first, then remove the redundant stronger slot on a best-effort basis.
+enum DataKeyRotationFinalizer {
+    enum Outcome: Equatable { case committed, rolledBack, pending, unrecoverable }
+
+    static func finish(
+        targetAuthBound: Bool,
+        deletePrevious: () -> Bool,
+        commitTargetMetadata: () -> Bool,
+        rollbackMetadata: () -> Bool,
+        deleteReplacement: () -> Bool
+    ) -> Outcome {
+        // Moving to DEVICE mode intentionally creates the weaker slot. Once it
+        // has been verified, publish that honest mode first; a leftover AUTH
+        // slot is redundant but cannot weaken DEVICE-mode protection.
+        if !targetAuthBound {
+            guard commitTargetMetadata() else {
+                // Pending metadata cannot be finalized. Remove the newly weak
+                // DEVICE copy before restoring an AUTH claim. If deletion is
+                // unverifiable, leave the transaction pending so callers
+                // conservatively report DEVICE rather than overclaim.
+                guard deleteReplacement() else { return .unrecoverable }
+                return rollbackMetadata() ? .rolledBack : .pending
+            }
+            _ = deletePrevious()
+            return .committed
+        }
+
+        // Moving to AUTH mode is different: never publish the stronger claim
+        // while the old DEVICE-readable copy remains queryable.
+        if deletePrevious() {
+            return commitTargetMetadata() ? .committed : .pending
+        }
+        let metadataRolledBack = rollbackMetadata()
+        guard metadataRolledBack else {
+            // Metadata still names the replacement. Keep both slots and the
+            // pending marker; deleting the replacement here could leave a
+            // stronger claim pointing at a missing item while DEVICE survives.
+            return .pending
+        }
+        let replacementDeleted = deleteReplacement()
+        return replacementDeleted ? .rolledBack : .unrecoverable
+    }
+}
+
+enum DataKeyReportedMode {
+    static func isAuthBound(
+        metadataAuthBound: Bool?,
+        transitionPending: Bool,
+        legacyFallback: Bool
+    ) -> Bool {
+        // Either transition direction has a DEVICE-readable slot until the
+        // transaction is finalized or safely rolled back. Never display the
+        // stronger AUTH claim while metadata says cleanup is incomplete.
+        if transitionPending { return false }
+        return metadataAuthBound ?? legacyFallback
+    }
+}
+
+enum DataKeyLegacyRecovery {
+    struct Plan: Equatable {
+        let activeAccount: String
+        let authBound: Bool
+    }
+
+    static func plan(
+        accounts: [String],
+        savedAccount: String?,
+        legacyAuthBound _: Bool,
+        isAvailable: (String) -> Bool
+    ) -> Plan? {
+        let selected = savedAccount.flatMap { candidate in
+            accounts.contains(candidate) && isAvailable(candidate) ? candidate : nil
+        } ?? accounts.first(where: isAvailable)
+        guard let selected else { return nil }
+        // A mutable legacy preference cannot prove the Keychain ACL. Reporting
+        // DEVICE is conservative and forces any future AUTH claim through the
+        // checked two-slot transaction above.
+        return Plan(activeAccount: selected, authBound: false)
+    }
+}
+
 /// The at-rest data-encryption key (DEK) for mission data, and where it lives.
 ///
 /// Android wraps a DEK under a non-exportable Keystore KEK. On iOS the Keychain
@@ -21,10 +105,11 @@ import LocalAuthentication
 ///
 ///  - DEVICE mode (default). `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
 ///    Readable by this app any time after the first unlock since boot, with no
-///    prompt. `ThisDeviceOnly` keeps it out of iCloud Keychain and encrypted
-///    backups. So this defeats offline attacks - a filesystem image, a backup,
-///    a seized locked handset, a binned device - and it does NOT defeat a live
-///    jailbreak attacker with code exec as this app.
+///    prompt. `ThisDeviceOnly` keeps it out of iCloud Keychain and prevents a
+///    protected backup from restoring the item onto a different device; Apple
+///    can restore it back to the same device. The class blocks ordinary
+///    cross-device backup migration, but it does NOT defeat a live jailbreak
+///    attacker with code execution as this app after first unlock.
 ///
 ///  - AUTH mode (opt-in). Adds a `SecAccessControl` with `.userPresence`, so
 ///    reading the item makes the Secure Enclave demand Face ID / Touch ID /
@@ -51,6 +136,12 @@ enum DataKey {
         }
     }
 
+    struct RotationCleanupError: LocalizedError {
+        var errorDescription: String? {
+            "Mission-data access control was not changed because the previous key slot could not be removed securely. Try again."
+        }
+    }
+
     private static let service = "com.tacmap.datakey"
     private static let accounts = ["dek.v1", "dek.v1.slot2"]
     private static let activeAccountDefaultsKey = "datakey.activeAccount.v2"
@@ -65,7 +156,15 @@ enum DataKey {
 
     /// True when the DEK needs a user auth before it can be read.
     static var isAuthBound: Bool {
-        UserDefaults.standard.bool(forKey: modeDefaultsKey)
+        let metadata = loadMetadata()
+        let unresolvedAlternate = metadata?.authBound == true && accounts.contains {
+            $0 != metadata?.activeAccount && itemState($0) != .missing
+        }
+        return DataKeyReportedMode.isAuthBound(
+            metadataAuthBound: metadata?.authBound,
+            transitionPending: metadata?.pendingDeletionAccount != nil || unresolvedAlternate,
+            legacyFallback: false
+        )
     }
 
     /// True when a store can read/write right now without prompting.
@@ -80,30 +179,120 @@ enum DataKey {
         lock.lock(); defer { lock.unlock() }
         if let metadata = loadMetadata() {
             guard accounts.contains(metadata.activeAccount) else { return }
-            UserDefaults.standard.set(metadata.activeAccount, forKey: activeAccountDefaultsKey)
-            UserDefaults.standard.set(metadata.authBound, forKey: modeDefaultsKey)
-            UserDefaults.standard.set(true, forKey: installedDefaultsKey)
-            // Complete cleanup if a prior rotation crashed after committing
-            // metadata but before removing the old slot.
-            if itemState(metadata.activeAccount) != .missing {
-                accounts.filter { $0 != metadata.activeAccount }.forEach { delete(account: $0) }
+            if let previous = metadata.pendingDeletionAccount,
+               accounts.contains(previous), previous != metadata.activeAccount {
+                let prior = Metadata(
+                    activeAccount: previous,
+                    authBound: !metadata.authBound
+                )
+
+                // If the replacement disappeared but the authoritative prior
+                // slot survived, finish the rollback before allowing reads.
+                // This is the inverse of the normal crash point (prior already
+                // gone, replacement present), which the finalizer commits.
+                if itemState(metadata.activeAccount) == .missing {
+                    guard itemState(previous) != .missing,
+                          storeMetadata(prior) else {
+                        cached = nil
+                        return
+                    }
+                    publishMetadataDefaults(prior)
+                    return
+                }
+                let final = Metadata(
+                    activeAccount: metadata.activeAccount,
+                    authBound: metadata.authBound
+                )
+                switch DataKeyRotationFinalizer.finish(
+                    targetAuthBound: metadata.authBound,
+                    deletePrevious: { deleteChecked(account: previous) },
+                    commitTargetMetadata: { storeMetadata(final) },
+                    rollbackMetadata: { storeMetadata(prior) },
+                    deleteReplacement: { deleteChecked(account: metadata.activeAccount) }
+                ) {
+                case .committed:
+                    publishMetadataDefaults(final)
+                case .rolledBack:
+                    publishMetadataDefaults(prior)
+                case .pending:
+                    if !metadata.authBound { publishMetadataDefaults(final) }
+                    cached = nil
+                case .unrecoverable:
+                    publishMetadataDefaults(metadata.authBound ? prior : final)
+                    cached = nil
+                }
+                return
             }
+            guard itemState(metadata.activeAccount) != .missing else { return }
+
+            // Clean up a pre-transaction orphan. Historical AUTH metadata plus
+            // a surviving alternate slot may be the old DEVICE copy from a
+            // build that did not verify deletion; if it cannot be removed,
+            // roll back the claim to the weaker (honest) mode.
+            if let stale = accounts.first(where: {
+                $0 != metadata.activeAccount && itemState($0) != .missing
+            }) {
+                if metadata.authBound {
+                    let prior = Metadata(activeAccount: stale, authBound: false)
+                    let pending = Metadata(
+                        activeAccount: metadata.activeAccount,
+                        authBound: true,
+                        pendingDeletionAccount: stale
+                    )
+                    guard storeMetadata(pending) else {
+                        cached = nil
+                        return
+                    }
+                    switch DataKeyRotationFinalizer.finish(
+                        targetAuthBound: true,
+                        deletePrevious: { deleteChecked(account: stale) },
+                        commitTargetMetadata: { storeMetadata(metadata) },
+                        rollbackMetadata: { storeMetadata(prior) },
+                        deleteReplacement: { deleteChecked(account: metadata.activeAccount) }
+                    ) {
+                    case .committed:
+                        break
+                    case .rolledBack:
+                        publishMetadataDefaults(prior)
+                        return
+                    case .pending:
+                        cached = nil
+                        return
+                    case .unrecoverable:
+                        publishMetadataDefaults(prior)
+                        cached = nil
+                        return
+                    }
+                } else {
+                    _ = deleteChecked(account: stale)
+                }
+            }
+            publishMetadataDefaults(metadata)
             return
         }
         let states = accounts.map(itemState)
         if states.contains(.present) || states.contains(.inaccessible) {
-            let selected = accounts.first(where: { itemState($0) != .missing }) ?? accounts[0]
+            let saved = UserDefaults.standard.string(forKey: activeAccountDefaultsKey)
+            guard let recovery = DataKeyLegacyRecovery.plan(
+                accounts: accounts,
+                savedAccount: saved,
+                legacyAuthBound: UserDefaults.standard.bool(forKey: modeDefaultsKey),
+                isAvailable: { itemState($0) != .missing }
+            ) else { return }
+            let selected = recovery.activeAccount
             // Never claim that a legacy item is auth-bound when its metadata is
             // gone: merely attaching an LAContext does not add an ACL to an
-            // existing device-bound item. Unknown legacy state is displayed as
-            // device-bound; toggling the setting performs a real two-slot ACL
-            // rotation. An actually auth-bound legacy item still enforces its own
-            // Keychain ACL when read.
-            let authBound = UserDefaults.standard.object(forKey: modeDefaultsKey) != nil
-                && UserDefaults.standard.bool(forKey: modeDefaultsKey)
-            _ = storeMetadata(Metadata(activeAccount: selected, authBound: authBound))
-            UserDefaults.standard.set(selected, forKey: activeAccountDefaultsKey)
-            UserDefaults.standard.set(true, forKey: installedDefaultsKey)
+            // existing device-bound item. Prefer the old durable slot pointer,
+            // but classify an unproven legacy ACL conservatively as DEVICE.
+            // The user can then perform a fresh, checked DEVICE -> AUTH rotation.
+            // Do not select or delete a slot until an actual 32-byte DEK read
+            // proves it. An AUTH slot may be inaccessible without a prompt and
+            // a saved slot may be corrupt while the alternate remains valid.
+            // key() completes metadata recovery after that user-initiated read.
+            publishMetadataDefaults(Metadata(
+                activeAccount: selected,
+                authBound: recovery.authBound
+            ))
             return
         }
         // Once a key has existed, absence is data loss, not a fresh install.
@@ -116,7 +305,7 @@ enum DataKey {
         let account = accounts[0]
         if store(dek, account: account, authBound: false) {
             guard storeMetadata(Metadata(activeAccount: account, authBound: false)) else {
-                delete(account: account)
+                _ = deleteChecked(account: account)
                 return
             }
             UserDefaults.standard.set(account, forKey: activeAccountDefaultsKey)
@@ -131,7 +320,18 @@ enum DataKey {
     static func key() throws -> Data {
         lock.lock(); defer { lock.unlock() }
         if let cached { return cached }
-        let dek = try load()
+        let resolved = try loadResolved()
+        let dek = resolved.key
+        if loadMetadata() == nil {
+            let recovered = Metadata(activeAccount: resolved.account, authBound: false)
+            if storeMetadata(recovered) {
+                publishMetadataDefaults(recovered)
+            } else {
+                // Preserve every slot and keep the public claim conservative;
+                // a later read/startup can retry the metadata commit.
+                publishMetadataDefaults(recovered)
+            }
+        }
         cached = dek
         return dek
     }
@@ -148,7 +348,8 @@ enum DataKey {
     /// Files are untouched. Reads the current DEK first, which in AUTH mode
     /// means the user gets prompted.
     static func setAuthBound(_ enabled: Bool) throws {
-        guard enabled != isAuthBound else { return }
+        let oldAuthBound = isAuthBound
+        guard enabled != oldAuthBound else { return }
         let dek = try key()
         lock.lock(); defer { lock.unlock() }
         let oldAccount = activeAccount
@@ -156,7 +357,9 @@ enum DataKey {
 
         // Two-slot rotation: the readable old item remains authoritative until
         // the replacement has been added and independently read back.
-        delete(account: newAccount)
+        guard deleteChecked(account: newAccount) else {
+            throw RotationCleanupError()
+        }
         guard store(dek, account: newAccount, authBound: enabled) else {
             throw UnrecoverableError(status: errSecIO)
         }
@@ -164,29 +367,77 @@ enum DataKey {
             let verified = try load(account: newAccount, authBound: enabled)
             guard verified == dek else { throw UnrecoverableError(status: errSecDecode) }
         } catch {
-            delete(account: newAccount)
+            _ = deleteChecked(account: newAccount)
             throw error
         }
-        guard storeMetadata(Metadata(activeAccount: newAccount, authBound: enabled)) else {
-            delete(account: newAccount)
+        let pending = Metadata(
+            activeAccount: newAccount,
+            authBound: enabled,
+            pendingDeletionAccount: oldAccount
+        )
+        guard storeMetadata(pending) else {
+            _ = deleteChecked(account: newAccount)
             throw UnrecoverableError(status: errSecIO)
         }
-        UserDefaults.standard.set(newAccount, forKey: activeAccountDefaultsKey)
-        UserDefaults.standard.set(enabled, forKey: modeDefaultsKey)
-        UserDefaults.standard.set(true, forKey: installedDefaultsKey)
-        cached = dek
-        // Metadata now durably selects the new slot, so the old ACL can no
-        // longer become a downgrade path after settings loss/reinstall.
-        delete(account: oldAccount)
+        let prior = Metadata(activeAccount: oldAccount, authBound: oldAuthBound)
+        let final = Metadata(activeAccount: newAccount, authBound: enabled)
+        switch DataKeyRotationFinalizer.finish(
+            targetAuthBound: enabled,
+            deletePrevious: { deleteChecked(account: oldAccount) },
+            commitTargetMetadata: { storeMetadata(final) },
+            rollbackMetadata: { storeMetadata(prior) },
+            deleteReplacement: { deleteChecked(account: newAccount) }
+        ) {
+        case .committed:
+            publishMetadataDefaults(final)
+            cached = dek
+        case .rolledBack:
+            publishMetadataDefaults(prior)
+            cached = dek
+            throw RotationCleanupError()
+        case .pending:
+            if !enabled { publishMetadataDefaults(final) }
+            cached = nil
+            throw UnrecoverableError(status: errSecIO)
+        case .unrecoverable:
+            publishMetadataDefaults(enabled ? prior : final)
+            cached = nil
+            throw UnrecoverableError(status: errSecIO)
+        }
     }
 
     // MARK: - Keychain
 
     private enum ItemState: Equatable { case missing, present, inaccessible }
 
-    private struct Metadata: Codable {
+    private struct Metadata: Codable, Equatable {
         let activeAccount: String
         let authBound: Bool
+        let pendingDeletionAccount: String?
+
+        init(
+            activeAccount: String,
+            authBound: Bool,
+            pendingDeletionAccount: String? = nil
+        ) {
+            self.activeAccount = activeAccount
+            self.authBound = authBound
+            self.pendingDeletionAccount = pendingDeletionAccount
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case activeAccount, authBound, pendingDeletionAccount
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            activeAccount = try container.decode(String.self, forKey: .activeAccount)
+            authBound = try container.decode(Bool.self, forKey: .authBound)
+            pendingDeletionAccount = try container.decodeIfPresent(
+                String.self,
+                forKey: .pendingDeletionAccount
+            )
+        }
     }
 
     private static var activeAccount: String {
@@ -236,14 +487,28 @@ enum DataKey {
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
-    private static func load() throws -> Data {
+    private static func loadResolved() throws -> (key: Data, account: String) {
+        let metadata = loadMetadata()
+        if metadata?.pendingDeletionAccount != nil {
+            throw UnrecoverableError(status: errSecNotAvailable)
+        }
+        let selectedAccount = metadata?.activeAccount ?? activeAccount
+        let selectedAuthBound = metadata?.authBound
+            ?? false
         do {
-            return try load(account: activeAccount, authBound: isAuthBound)
-        } catch let error as UnrecoverableError where error.status == errSecItemNotFound && loadMetadata() == nil {
-            // A crash between writing the second slot and flipping the pointer,
-            // or legacy settings loss, may leave the other valid slot present.
-            if let fallback = accounts.first(where: { $0 != activeAccount && itemState($0) != .missing }) {
-                return try load(account: fallback, authBound: isAuthBound)
+            return (try load(account: selectedAccount, authBound: selectedAuthBound), selectedAccount)
+        } catch let error as UnrecoverableError where metadata == nil {
+            // Metadata-less upgrades keep both candidates until a real read
+            // proves one. If the saved slot is missing/corrupt, try the other;
+            // a user-cancelled AUTH prompt is LockedError and never falls back.
+            for fallback in accounts where fallback != selectedAccount && itemState(fallback) != .missing {
+                do {
+                    return (try load(account: fallback, authBound: false), fallback)
+                } catch is LockedError {
+                    throw LockedError()
+                } catch {
+                    continue
+                }
             }
             throw error
         }
@@ -273,8 +538,10 @@ enum DataKey {
         }
     }
 
-    private static func delete(account: String) {
-        SecItemDelete(baseQuery(account: account) as CFDictionary)
+    private static func deleteChecked(account: String) -> Bool {
+        let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { return false }
+        return itemState(account) == .missing
     }
 
     private static func loadMetadata() -> Metadata? {
@@ -298,6 +565,12 @@ enum DataKey {
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             status = SecItemAdd(add as CFDictionary, nil)
         }
-        return status == errSecSuccess
+        return status == errSecSuccess && loadMetadata() == metadata
+    }
+
+    private static func publishMetadataDefaults(_ metadata: Metadata) {
+        UserDefaults.standard.set(metadata.activeAccount, forKey: activeAccountDefaultsKey)
+        UserDefaults.standard.set(metadata.authBound, forKey: modeDefaultsKey)
+        UserDefaults.standard.set(true, forKey: installedDefaultsKey)
     }
 }

@@ -43,7 +43,7 @@ enum PDFTiler {
         let dir = appSupport.appendingPathComponent("offline_tiles", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
                                                   attributes: [.protectionKey: FileProtectionType.complete])
-        let outURL = dir.appendingPathComponent("tacmap-\(Int(Date().timeIntervalSince1970)).mbtiles")
+        let outURL = dir.appendingPathComponent("tacmap-\(UUID().uuidString).mbtiles")
         // Bake into a .partial temp and only publish to real path on full
         // success. An interrupted run can't leave a truncated file that later
         // loads as a "valid" but incomplete basemap.
@@ -63,7 +63,7 @@ enum PDFTiler {
             // Honour cancellation (Cancel button) - stop and clean up temp.
             if Task.isCancelled {
                 writer.close()
-                try? FileManager.default.removeItem(at: tmpURL)
+                removeMBTilesArtifacts(at: tmpURL)
                 return nil
             }
             let r = range(z)
@@ -71,6 +71,11 @@ enum PDFTiler {
             writer.begin()
             for tx in r.minX...r.maxX {
                 for ty in r.minY...r.maxY {
+                    if Task.isCancelled {
+                        writer.close()
+                        removeMBTilesArtifacts(at: tmpURL)
+                        return nil
+                    }
                     let box = WebMercatorTiles.tileBounds(z, tx, ty)
                     if pdfRect(inverse: inverse, box: box, mediaBox: mediaBox) != nil,
                        let data = renderTile(imageRenderer, page: page,
@@ -90,18 +95,36 @@ enum PDFTiler {
         // A tile/metadata write failed mid-bake (e.g. disk full). Don't pass a
         // half-baked file off as a complete basemap.
         guard !writer.hadError else {
-            try? FileManager.default.removeItem(at: tmpURL)
+            removeMBTilesArtifacts(at: tmpURL)
             return nil
         }
         // Atomic publish.
         do {
-            try? FileManager.default.removeItem(at: outURL)
+            removeMBTilesSidecars(at: tmpURL)
             try FileManager.default.moveItem(at: tmpURL, to: outURL)
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                ofItemAtPath: outURL.path
+            )
         } catch {
-            try? FileManager.default.removeItem(at: tmpURL)
+            removeMBTilesArtifacts(at: tmpURL)
+            removeMBTilesArtifacts(at: outURL)
             return nil
         }
         return outURL
+    }
+
+    private static func removeMBTilesSidecars(at file: URL) {
+        for suffix in ["-wal", "-shm", "-journal"] {
+            try? FileManager.default.removeItem(
+                at: URL(fileURLWithPath: file.path + suffix, isDirectory: false)
+            )
+        }
+    }
+
+    private static func removeMBTilesArtifacts(at file: URL) {
+        try? FileManager.default.removeItem(at: file)
+        removeMBTilesSidecars(at: file)
     }
 
     /// Map a tile's WGS84 box to a PDF user-space rect (y-up). Only used as

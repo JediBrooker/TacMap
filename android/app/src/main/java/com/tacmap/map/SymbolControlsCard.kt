@@ -1,31 +1,27 @@
 package com.tacmap.map
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.GpsFixed
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Slider
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,15 +39,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.drawings.DrawingLayer
-import com.tacmap.waypoints.TaskColor
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.WaypointStore
 
 /**
- * Floating controls card for a tapped waypoint. Phase 2 adds the
- * Android-side APP-6C controls plus tactical task rotation and W/H
- * scale controls.
+ * Compact launcher for the selected-symbol editor. Moving is an immediate,
+ * durable quick action; all field edits and deletion remain transactional in
+ * [SelectedSymbolEditorDialog].
  */
 @Composable
 fun SymbolControlsCard(
@@ -60,12 +55,15 @@ fun SymbolControlsCard(
     crosshairTargetLat: Double,
     crosshairTargetLng: Double,
     store: WaypointStore,
-    onMovedToCrosshair: (Waypoint) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    var editMode by remember(waypoint.id) { mutableStateOf<SymbolEditorMode?>(null) }
+    var showEditor by remember(waypoint.id) { mutableStateOf(false) }
+    var moveFailed by remember(waypoint.id) { mutableStateOf(false) }
+
+    fun moveToCrosshair(): Boolean = store.update(
+        waypoint.copy(latitude = crosshairTargetLat, longitude = crosshairTargetLng)
+    ).also { saved -> moveFailed = !saved }
 
     Column(
         modifier = modifier
@@ -78,83 +76,56 @@ fun SymbolControlsCard(
         Header(
             waypoint = waypoint,
             onDismiss = onDismiss,
-            onTitleClick = when (waypoint.kind) {
-                WaypointKind.Generic -> null
-                is WaypointKind.Military -> { { editMode = SymbolEditorMode.MILITARY } }
-                is WaypointKind.ControlMeasure -> { { editMode = SymbolEditorMode.TASK } }
-                is WaypointKind.Marker -> { { editMode = SymbolEditorMode.MARKER } }
-            }
+            onTitleClick = { showEditor = true },
         )
 
-        when (waypoint.kind) {
-            WaypointKind.Generic -> Unit
-            is WaypointKind.ControlMeasure -> ControlMeasureControls(
-                waypoint = waypoint,
-                onWaypointChange = store::update,
-                onWaypointChangeDraft = store::updateNoUndo
-            )
-            is WaypointKind.Military -> Unit
-            is WaypointKind.Marker -> Unit
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = { showEditor = true },
+                modifier = Modifier.weight(1f).height(48.dp),
+            ) {
+                Text("Edit symbol", maxLines = 1)
+            }
+            OutlinedButton(
+                onClick = { moveToCrosshair() },
+                modifier = Modifier.weight(1f).height(48.dp),
+            ) {
+                Icon(Icons.Default.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text("Move to crosshair", maxLines = 1, fontSize = 12.sp)
+            }
         }
 
-        LayerSelectorButton(
-            layers = layers,
-            selectedLayerId = waypoint.layerId,
-            onLayerSelected = { layerId ->
-                store.update(waypoint.copy(layerId = layerId))
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        ActionRow(
-            waypoint = waypoint,
-            crosshairTargetLat = crosshairTargetLat,
-            crosshairTargetLng = crosshairTargetLng,
-            store = store,
-            onMovedToCrosshair = onMovedToCrosshair,
-            onDelete = { showDeleteConfirm = true }
-        )
     }
 
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete symbol?") },
-            text = { Text("This will permanently remove \"${waypoint.name}\".") },
-            confirmButton = {
-                TextButton(onClick = {
-                    store.remove(waypoint)
-                    showDeleteConfirm = false
-                    onDismiss()
-                }) {
-                    Text("Delete", color = Color(0xFFFF3B30))
+    if (showEditor) {
+        SelectedSymbolEditorDialog(
+            waypoint = waypoint,
+            layers = layers,
+            onSave = store::update,
+            onDelete = {
+                store.remove(waypoint).also { removed ->
+                    if (removed) onDismiss()
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
-            }
+            onDismiss = { showEditor = false },
         )
     }
 
-    editMode?.let { mode ->
-        SymbolEditorDialog(
-            mode = mode,
-            initialKind = waypoint.kind,
-            initialName = waypoint.name,
-            crosshairLat = null,
-            crosshairLng = null,
-            title = when (mode) {
-                SymbolEditorMode.MILITARY -> "Change Military Unit"
-                SymbolEditorMode.TASK -> "Change Tactical Task"
-                SymbolEditorMode.MARKER -> "Change Marker"
+    if (moveFailed) {
+        AlertDialog(
+            onDismissRequest = { moveFailed = false },
+            title = { Text("Symbol not moved") },
+            text = { Text("The new position could not be saved. The symbol is still at its previous position.") },
+            confirmButton = {
+                TextButton(onClick = { moveToCrosshair() }) { Text("Retry") }
             },
-            actionLabel = "Save",
-            fullScreen = mode != SymbolEditorMode.TASK,
-            onDismiss = { editMode = null },
-            onConfirm = { name, kind ->
-                store.update(waypoint.copy(name = name, kind = kind))
-                editMode = null
-            }
+            dismissButton = {
+                TextButton(onClick = { moveFailed = false }) { Text("Cancel") }
+            },
         )
     }
 }
@@ -184,6 +155,7 @@ private fun Header(
         Column(
             modifier = Modifier
                 .weight(1f)
+                .heightIn(min = 48.dp)
                 .then(if (onTitleClick != null) Modifier.clickable { onTitleClick() } else Modifier)
         ) {
             Text(
@@ -202,173 +174,12 @@ private fun Header(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+        IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(
                 Icons.Default.Close,
-                contentDescription = "Close symbol controls",
+                contentDescription = "Close symbol editor",
                 tint = Color.White.copy(alpha = 0.6f)
             )
-        }
-    }
-}
-
-/// Five-swatch colour picker for the task graphic. Black is the default;
-/// the others follow the APP-6 affiliation palette (blue = friendly,
-/// red = hostile, green = neutral, yellow = unknown). Mirrors iOS's
-/// SymbolControlsCard colour row.
-@Composable
-private fun ColorRow(
-    selected: TaskColor,
-    onSelect: (TaskColor) -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            "Colour",
-            color = Color.White.copy(alpha = 0.72f),
-            fontSize = 12.sp,
-            modifier = Modifier.weight(0.75f)
-        )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(2.45f)
-        ) {
-            TaskColor.entries.forEach { tc ->
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(Color(tc.argb))
-                        // White hairline so black/dark swatches read on the
-                        // dark card; accent ring marks the current selection.
-                        .border(
-                            width = if (tc == selected) 3.dp else 1.dp,
-                            color = if (tc == selected) Color(0xFF0A84FF) else Color.White.copy(alpha = 0.7f),
-                            shape = CircleShape
-                        )
-                        .clickable { onSelect(tc) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ControlMeasureControls(
-    waypoint: Waypoint,
-    onWaypointChange: (Waypoint) -> Unit,
-    onWaypointChangeDraft: (Waypoint) -> Unit = onWaypointChange,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ColorRow(
-            selected = waypoint.taskColor,
-            onSelect = { onWaypointChange(waypoint.copy(taskColor = it)) }
-        )
-        SliderRow(
-            title = "Rotation",
-            value = waypoint.rotation.toFloat(),
-            valueLabel = "${waypoint.rotation.toInt()}°",
-            range = 0f..360f,
-            onChange = { onWaypointChangeDraft(waypoint.copy(rotation = it.toDouble())) },
-            onCommit = { onWaypointChange(waypoint.copy(rotation = it.toDouble())) },
-            onReset = { onWaypointChange(waypoint.copy(rotation = 0.0)) }
-        )
-        SliderRow(
-            title = "Width",
-            value = waypoint.scaleX.toFloat(),
-            valueLabel = "%.2fx".format(waypoint.scaleX),
-            range = 0.15f..6f,
-            onChange = { onWaypointChangeDraft(waypoint.copy(scaleX = it.toDouble())) },
-            onCommit = { onWaypointChange(waypoint.copy(scaleX = it.toDouble())) },
-            onReset = { onWaypointChange(waypoint.copy(scaleX = 1.0)) }
-        )
-        SliderRow(
-            title = "Height",
-            value = waypoint.scaleY.toFloat(),
-            valueLabel = "%.2fx".format(waypoint.scaleY),
-            range = 0.15f..6f,
-            onChange = { onWaypointChangeDraft(waypoint.copy(scaleY = it.toDouble())) },
-            onCommit = { onWaypointChange(waypoint.copy(scaleY = it.toDouble())) },
-            onReset = { onWaypointChange(waypoint.copy(scaleY = 1.0)) }
-        )
-    }
-}
-
-@Composable
-private fun ActionRow(
-    waypoint: Waypoint,
-    crosshairTargetLat: Double,
-    crosshairTargetLng: Double,
-    store: WaypointStore,
-    onMovedToCrosshair: (Waypoint) -> Unit,
-    onDelete: () -> Unit
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Button(
-            onClick = {
-                val moved = moveWaypointToCrosshair(
-                    waypoint = waypoint,
-                    crosshairLat = crosshairTargetLat,
-                    crosshairLng = crosshairTargetLng
-                )
-                store.update(moved)
-                onMovedToCrosshair(moved)
-            },
-            modifier = Modifier.weight(1f).height(36.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF0A84FF).copy(alpha = 0.85f),
-                contentColor = Color.White
-            ),
-            shape = RoundedCornerShape(8.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Icon(Icons.Default.GpsFixed, contentDescription = null, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.size(6.dp))
-            Text("Move to Crosshair", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        }
-        Button(
-            onClick = onDelete,
-            modifier = Modifier.size(width = 44.dp, height = 36.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFFF3B30).copy(alpha = 0.85f),
-                contentColor = Color.White
-            ),
-            shape = RoundedCornerShape(8.dp),
-            contentPadding = PaddingValues(0.dp)
-        ) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete symbol", modifier = Modifier.size(16.dp))
-        }
-    }
-}
-
-@Composable
-private fun SliderRow(
-    title: String,
-    value: Float,
-    valueLabel: String,
-    range: ClosedFloatingPointRange<Float>,
-    onChange: (Float) -> Unit,
-    onCommit: (Float) -> Unit = onChange,
-    onReset: () -> Unit
-) {
-    var latestValue by remember(value) { mutableStateOf(value) }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, modifier = Modifier.weight(0.75f))
-        Slider(
-            value = latestValue.coerceIn(range.start, range.endInclusive),
-            onValueChange = { latestValue = it; onChange(it) },
-            onValueChangeFinished = { onCommit(latestValue) },
-            valueRange = range,
-            modifier = Modifier.weight(1.8f)
-        )
-        Text(valueLabel, color = Color.White.copy(alpha = 0.76f), fontSize = 11.sp, modifier = Modifier.weight(0.65f))
-        TextButton(onClick = onReset, contentPadding = PaddingValues(horizontal = 4.dp)) {
-            Text("Reset", fontSize = 11.sp)
         }
     }
 }

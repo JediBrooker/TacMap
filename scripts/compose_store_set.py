@@ -26,8 +26,8 @@ import fan_slide
 
 # (number-name, type, src, eyebrow, headline, subcaption, accent)
 SPEC = [
- ("01-hero",          "single","hero.png",          "01 · TACTICAL PICTURE","Own the tactical picture","NATO APP-6 symbology over live MGRS and UTM - shared across the unit, end-to-end encrypted.","green"),
- ("02-unit-sync",     "single","unit-sync.png",     "02 · UNIT SYNC","One map, the whole unit","Symbols, drawings and waypoints sync live across iOS and Android - end-to-end encrypted.","blue"),
+ ("01-hero",          "single","hero.png",          "01 · TACTICAL PICTURE","Own the tactical picture","NATO APP-6 symbology over live MGRS and UTM - with encrypted Unit Sync when connected.","green"),
+ ("02-unit-sync",     "single","unit-sync.png",     "02 · UNIT SYNC","One map, the whole unit","Mission payloads and TacMap Chat stay end-to-end encrypted; the relay sees routing, session and traffic metadata.","blue"),
  ("03-symbols",       "single","symbols.png",       "03 · SYMBOLOGY","Mark the ground","Place NATO APP-6 symbols, then trace routes and areas point by point.","green"),
  ("04-recording",     "single","recording.png",     "04 · GPX TRACKS","Record your route","A live REC breadcrumb with point count - export as standard GPX.","amber"),
  ("05-weather",       "single","weather.png",       "05 · WEATHER + UAV","Go, caution, no-go","Map-centre wind and gusts drive the drone flight-safety call.","amber"),

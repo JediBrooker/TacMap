@@ -12,9 +12,16 @@ enum ImportedMapFileCopier {
     /// to sit readable to anyone with the unlocked device or a paired host.
     static func copyToImportedMaps(_ source: URL,
                                    maximumBytes: Int = maxPDFBytes,
+                                   preferredExtension: String? = nil,
                                    fileManager: FileManager = .default) throws -> URL {
         let dir = try importedMapsDirectory(fileManager: fileManager)
-        let dest = try copy(source, into: dir, maximumBytes: maximumBytes, fileManager: fileManager)
+        let dest = try copy(
+            source,
+            into: dir,
+            maximumBytes: maximumBytes,
+            preferredExtension: preferredExtension,
+            fileManager: fileManager
+        )
         // After-first-unlock so a backgrounded map / recording read still
         // works; matches the migration path in PDFSessionStore.
         do {
@@ -31,7 +38,12 @@ enum ImportedMapFileCopier {
     static func copy(_ source: URL,
                      into directory: URL,
                      maximumBytes: Int = maxPDFBytes,
-                     fileManager: FileManager = .default) throws -> URL {
+                     preferredExtension: String? = nil,
+                     fileManager: FileManager = .default,
+                     chunkSize: Int = 1_048_576,
+                     beforeCreate: ((URL) throws -> Void)? = nil,
+                     afterChunk: (() throws -> Void)? = nil) throws -> URL {
+        try Task.checkCancellation()
         let keys: Set<URLResourceKey> = [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]
         let before = try source.resourceValues(forKeys: keys)
         guard before.isRegularFile == true, before.isSymbolicLink != true,
@@ -39,16 +51,49 @@ enum ImportedMapFileCopier {
             throw CocoaError(.fileReadTooLarge)
         }
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let destination = uniqueDestination(for: source, in: directory, fileManager: fileManager)
+        let destination = uniqueDestination(
+            for: source,
+            in: directory,
+            preferredExtension: preferredExtension,
+            fileManager: fileManager
+        )
+        var ownsDestination = false
         do {
-            try fileManager.copyItem(at: source, to: destination)
+            // Create without replacing an import that won the same-name race.
+            // The chunk loop provides prompt task cancellation for large maps;
+            // any failure removes the partial private copy below.
+            try beforeCreate?(destination)
+            try Data().write(to: destination, options: .withoutOverwriting)
+            ownsDestination = true
+            let input = try FileHandle(forReadingFrom: source)
+            defer { try? input.close() }
+            let output = try FileHandle(forWritingTo: destination)
+            defer { try? output.close() }
+            let readSize = max(1, chunkSize)
+            var copiedBytes = 0
+            while true {
+                try Task.checkCancellation()
+                guard let chunk = try input.read(upToCount: readSize), !chunk.isEmpty else { break }
+                guard copiedBytes <= size,
+                      chunk.count <= size - copiedBytes,
+                      copiedBytes <= maximumBytes,
+                      chunk.count <= maximumBytes - copiedBytes else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                try output.write(contentsOf: chunk)
+                copiedBytes += chunk.count
+                try afterChunk?()
+            }
+            try Task.checkCancellation()
+            guard copiedBytes == size else { throw CocoaError(.fileReadCorruptFile) }
+            try output.synchronize()
             let copied = try destination.resourceValues(forKeys: keys)
             guard copied.isRegularFile == true, copied.isSymbolicLink != true,
                   let copiedSize = copied.fileSize, copiedSize == size, copiedSize <= maximumBytes else {
                 throw CocoaError(.fileReadCorruptFile)
             }
         } catch {
-            try? fileManager.removeItem(at: destination)
+            if ownsDestination { try? fileManager.removeItem(at: destination) }
             throw error
         }
         return destination
@@ -56,8 +101,9 @@ enum ImportedMapFileCopier {
 
     private static func uniqueDestination(for source: URL,
                                           in directory: URL,
+                                          preferredExtension: String?,
                                           fileManager: FileManager) -> URL {
-        let ext = source.pathExtension
+        let ext = preferredExtension ?? source.pathExtension
         let rawStem = source.deletingPathExtension().lastPathComponent
         let stem = rawStem.isEmpty ? "Imported Map" : rawStem
 
@@ -89,8 +135,10 @@ enum ImportedMapFileCopier {
 
 private enum BoundedImportReader {
     static func read(_ url: URL, maximumBytes: Int) throws -> Data {
-        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        guard values.isRegularFile == true else { throw CocoaError(.fileReadUnsupportedScheme) }
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true else {
+            throw CocoaError(.fileReadUnsupportedScheme)
+        }
         guard let size = values.fileSize, size >= 0, size <= maximumBytes else {
             throw GeoJSONImporter.ImportError.limitExceeded("file is over \(maximumBytes / 1_048_576) MB")
         }
@@ -102,8 +150,329 @@ private enum BoundedImportReader {
     }
 }
 
+enum SecurityScopedImportAccess {
+    /// Small synchronous seam used by every detached import worker. The stop
+    /// callback is guaranteed exactly once iff access was actually acquired.
+    static func withBalancedScope<T>(start: () -> Bool,
+                                     stop: () -> Void,
+                                     operation: () throws -> T) rethrows -> T {
+        let started = start()
+        defer { if started { stop() } }
+        return try operation()
+    }
+
+    static func coordinateReading<T>(at url: URL,
+                                     operation: (URL) throws -> T) throws -> T {
+        var coordinationError: NSError?
+        var outcome: Result<T, Error>?
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        coordinator.coordinate(readingItemAt: url,
+                               options: .withoutChanges,
+                               error: &coordinationError) { coordinatedURL in
+            outcome = Result { try operation(coordinatedURL) }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let outcome else { throw CocoaError(.fileReadUnknown) }
+        return try outcome.get()
+    }
+
+    static func withCoordinatedRead<T>(of url: URL,
+                                       operation: (URL) throws -> T) throws -> T {
+        try withBalancedScope(
+            start: { url.startAccessingSecurityScopedResource() },
+            stop: { url.stopAccessingSecurityScopedResource() },
+            operation: { try coordinateReading(at: url, operation: operation) }
+        )
+    }
+}
+
+/// Production drop-pin seam: construction and durable publication stay in one
+/// testable operation, so a failed disk write cannot reach map or Sync observers.
+enum DropPinMissionMutation {
+    @discardableResult
+    static func commit(coordinate: CLLocationCoordinate2D,
+                       displayedCoordinate: String,
+                       layerID: UUID,
+                       to waypointStore: WaypointStore) throws -> Waypoint {
+        let waypoint = Waypoint(
+            name: displayedCoordinate,
+            coordinate: coordinate,
+            kind: .generic,
+            layerID: layerID
+        )
+        _ = try waypointStore.addDurably(waypoint)
+        return waypoint
+    }
+}
+
+enum ExternalImportFileKind: Sendable {
+    case geoJSON
+    case kml
+}
+
+private func importWorkerIsOffMainThread() -> Bool {
+    !Thread.isMainThread
+}
+
+enum ExternalImportWorker {
+    struct Context: Codable {
+        let existingLayers: [DrawingLayer]
+        let fallbackLayerID: UUID
+        let existingWaypointIDs: [UUID]
+        let existingDrawingIDs: [UUID]
+    }
+
+    struct Payload: Sendable {
+        let encodedBatch: Data
+        let performedWorkOffMainThread: Bool
+    }
+
+    typealias CoordinatedAccess = (URL, (URL) throws -> Data) throws -> Data
+
+    /// Synchronous core so tests can prove parsing happens before the
+    /// coordinated/security-scoped closure returns. Only the freshly encoded
+    /// batch leaves that closure; file-backed input Data never does.
+    static func prepareSynchronously(
+        url: URL,
+        kind: ExternalImportFileKind,
+        encodedContext: Data,
+        batchKey: String,
+        performedWorkOffMainThread: Bool,
+        coordinatedAccess: CoordinatedAccess,
+        parseStarted: @escaping () -> Void = {}
+    ) throws -> Payload {
+        try Task.checkCancellation()
+        let context = try JSONDecoder().decode(Context.self, from: encodedContext)
+        let encodedBatch = try coordinatedAccess(url) { coordinatedURL in
+            try Task.checkCancellation()
+            let maximum = kind == .geoJSON
+                ? GeoJSONImporter.maxInputBytes
+                : KMLImporter.maxInputBytes
+            let input = try BoundedImportReader.read(coordinatedURL, maximumBytes: maximum)
+            try Task.checkCancellation()
+            parseStarted()
+            let batch: GeoJSONImporter.ExternalBatch
+            switch kind {
+            case .geoJSON:
+                batch = try GeoJSONImporter.parseExternal(
+                    input,
+                    existingLayers: context.existingLayers,
+                    fallbackLayerID: context.fallbackLayerID,
+                    existingWaypointIDs: Set(context.existingWaypointIDs),
+                    existingDrawingIDs: Set(context.existingDrawingIDs),
+                    batchKey: batchKey
+                )
+            case .kml:
+                batch = try KMLImporter.parseExternal(
+                    input,
+                    existingLayers: context.existingLayers,
+                    fallbackLayerID: context.fallbackLayerID,
+                    existingWaypointIDs: Set(context.existingWaypointIDs),
+                    existingDrawingIDs: Set(context.existingDrawingIDs),
+                    batchKey: batchKey
+                )
+            }
+            try Task.checkCancellation()
+            return try JSONEncoder().encode(batch)
+        }
+        return Payload(encodedBatch: encodedBatch,
+                       performedWorkOffMainThread: performedWorkOffMainThread)
+    }
+
+    static func prepare(url: URL,
+                        kind: ExternalImportFileKind,
+                        encodedContext: Data,
+                        batchKey: String) async throws -> Payload {
+        let worker = Task.detached(priority: .userInitiated) {
+            let offMainThread = importWorkerIsOffMainThread()
+            return try prepareSynchronously(
+                url: url,
+                kind: kind,
+                encodedContext: encodedContext,
+                batchKey: batchKey,
+                performedWorkOffMainThread: offMainThread,
+                coordinatedAccess: { source, operation in
+                    try SecurityScopedImportAccess.withCoordinatedRead(of: source,
+                                                                       operation: operation)
+                }
+            )
+        }
+        return try await withTaskCancellationHandler(
+            operation: { try await worker.value },
+            onCancel: { worker.cancel() }
+        )
+    }
+}
+
+struct PDFBoundsPayload: Sendable {
+    struct Affine: Sendable {
+        let a: Double
+        let b: Double
+        let c: Double
+        let d: Double
+        let e: Double
+        let f: Double
+    }
+
+    let south: Double
+    let west: Double
+    let north: Double
+    let east: Double
+    let cropX: Double?
+    let cropY: Double?
+    let cropWidth: Double?
+    let cropHeight: Double?
+    let affine: Affine?
+
+    init(_ bounds: GeoPDFReader.Bounds) {
+        south = bounds.southWest.latitude
+        west = bounds.southWest.longitude
+        north = bounds.northEast.latitude
+        east = bounds.northEast.longitude
+        cropX = bounds.pdfCropRect.map { Double($0.origin.x) }
+        cropY = bounds.pdfCropRect.map { Double($0.origin.y) }
+        cropWidth = bounds.pdfCropRect.map { Double($0.size.width) }
+        cropHeight = bounds.pdfCropRect.map { Double($0.size.height) }
+        affine = bounds.placementAffine.map {
+            Affine(a: $0.a, b: $0.b, c: $0.c, d: $0.d, e: $0.e, f: $0.f)
+        }
+    }
+
+    func makeBounds() -> GeoPDFReader.Bounds {
+        let crop: CGRect?
+        if let cropX, let cropY, let cropWidth, let cropHeight {
+            crop = CGRect(x: cropX, y: cropY, width: cropWidth, height: cropHeight)
+        } else {
+            crop = nil
+        }
+        let placement = affine.map {
+            AffineTransform2D(a: $0.a, b: $0.b, c: $0.c, d: $0.d, e: $0.e, f: $0.f)
+        }
+        return GeoPDFReader.Bounds(
+            southWest: CLLocationCoordinate2D(latitude: south, longitude: west),
+            northEast: CLLocationCoordinate2D(latitude: north, longitude: east),
+            pdfCropRect: crop,
+            placementAffine: placement
+        )
+    }
+}
+
+struct PDFRectPayload: Sendable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+
+    init(_ rect: CGRect) {
+        x = Double(rect.origin.x)
+        y = Double(rect.origin.y)
+        width = Double(rect.size.width)
+        height = Double(rect.size.height)
+    }
+
+    var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
+}
+
+enum ImportedMapWorker {
+    struct PDFPayload: Sendable {
+        let destination: URL
+        let geoBounds: PDFBoundsPayload?
+        let mediaBox: PDFRectPayload
+        let contentKey: String
+        let performedWorkOffMainThread: Bool
+    }
+
+    struct MBTilesPayload: Sendable {
+        let destination: URL
+        let metadata: MBTilesStore.Metadata
+        let performedWorkOffMainThread: Bool
+    }
+
+    enum WorkerError: LocalizedError {
+        case invalidMBTiles
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidMBTiles: return "Couldn't open this file as an MBTiles map."
+            }
+        }
+    }
+
+    static func preparePDF(url: URL) async throws -> PDFPayload {
+        let worker = Task.detached(priority: .userInitiated) {
+            let offMainThread = importWorkerIsOffMainThread()
+            var destination: URL?
+            do {
+                try Task.checkCancellation()
+                let prepared = try SecurityScopedImportAccess.withCoordinatedRead(of: url) { coordinatedURL in
+                    let copied = try PDFMapImporter.copyAndValidate(coordinatedURL)
+                    destination = copied
+                    try Task.checkCancellation()
+                    guard let document = PDFDocument(url: copied),
+                          let page = document.page(at: 0) else {
+                        throw PDFMapImportError.invalidPDF
+                    }
+                    let mediaBox = PDFRectPayload(page.bounds(for: .mediaBox))
+                    let geoBounds = GeoPDFReader.bounds(from: copied).map(PDFBoundsPayload.init)
+                    guard let contentKey = PDFSessionStore.contentKey(for: copied) else {
+                        throw PDFMapImportError.invalidPDF
+                    }
+                    return (copied, geoBounds, mediaBox, contentKey)
+                }
+                try Task.checkCancellation()
+                return PDFPayload(destination: prepared.0,
+                                  geoBounds: prepared.1,
+                                  mediaBox: prepared.2,
+                                  contentKey: prepared.3,
+                                  performedWorkOffMainThread: offMainThread)
+            } catch {
+                if let destination { try? FileManager.default.removeItem(at: destination) }
+                throw error
+            }
+        }
+        return try await withTaskCancellationHandler(
+            operation: { try await worker.value },
+            onCancel: { worker.cancel() }
+        )
+    }
+
+    static func prepareMBTiles(url: URL) async throws -> MBTilesPayload {
+        let worker = Task.detached(priority: .userInitiated) {
+            let offMainThread = importWorkerIsOffMainThread()
+            var destination: URL?
+            do {
+                try Task.checkCancellation()
+                let prepared = try SecurityScopedImportAccess.withCoordinatedRead(of: url) { coordinatedURL in
+                    let copied = try ImportedMapFileCopier.copyToImportedMaps(
+                        coordinatedURL,
+                        maximumBytes: ImportedMapFileCopier.maxMBTilesBytes,
+                        preferredExtension: "mbtiles"
+                    )
+                    destination = copied
+                    try Task.checkCancellation()
+                    guard let store = MBTilesStore(url: copied) else {
+                        throw WorkerError.invalidMBTiles
+                    }
+                    return (copied, store.metadata)
+                }
+                try Task.checkCancellation()
+                return MBTilesPayload(destination: prepared.0,
+                                      metadata: prepared.1,
+                                      performedWorkOffMainThread: offMainThread)
+            } catch {
+                if let destination { try? FileManager.default.removeItem(at: destination) }
+                throw error
+            }
+        }
+        return try await withTaskCancellationHandler(
+            operation: { try await worker.value },
+            onCancel: { worker.cancel() }
+        )
+    }
+}
+
 struct ContentView: View {
-    @StateObject private var locationService = LocationService()
+    @StateObject private var locationService: LocationService
     @StateObject private var waypointStore   = WaypointStore()
     @StateObject private var drawingStore    = DrawingStore()
     @StateObject private var drawingSession  = DrawingSessionViewModel()
@@ -111,7 +480,8 @@ struct ContentView: View {
     @StateObject private var visibility      = LayerVisibility()
     @StateObject private var mapVM           = MapViewModel()
     @StateObject private var calibration     = CalibrationSession()
-    @StateObject private var trackRecorder   = TrackRecorder()
+    @StateObject private var trackRecorder: TrackRecorder
+    @StateObject private var recordingCoordinator: RecordingCoordinator
 
     /// Injected from app gate so menu can show trial status + offer the
     /// unlock on demand (paywall otherwise only shows once trial expires).
@@ -120,6 +490,7 @@ struct ContentView: View {
     @State private var showPaywallSheet    = false
 
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var canUndo = false
     @State private var canRedo = false
     /// Freeze all graphic interaction (select/drag/vertex-edit/settings).
@@ -134,14 +505,21 @@ struct ContentView: View {
     @State private var showAppLockSheet    = false
     @State private var showOpsecSheet      = false
     @State private var showSyncSheet       = false
+    @State private var chatRoute: TacMapChatRoute?
+    @State private var pendingChatRoute: TacMapChatRoute?
+    @State private var appLockOverlayActive = AppLock.isEnabled
     @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: String? = nil
+    @State private var pendingImportRetry: ExternalImportCommitProgress?
+    @State private var importWorkTask: Task<Void, Never>?
     @State private var missionUnlockError: String? = nil
+    @State private var missionMutationMessage: String? = nil
     @State private var dataKeyEpoch = 0
-    /// Brief toast for remote sync updates (conflict notification).
+    /// Brief non-blocking status toast for sync and map controls.
     @State private var syncToast: String? = nil
-    /// Share sheet URL for "Export All Data"
-    @State private var exportAllURL: URL? = nil
+    @State private var headingWatchdogTask: Task<Void, Never>?
+    /// Share sheet URL for the combined mission-object GeoJSON action.
+    @State private var missionObjectExportURL: URL? = nil
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
     @State private var showLayersSheet     = false
@@ -150,6 +528,24 @@ struct ContentView: View {
     @State private var showAboutSheet      = false
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
     @State private var quickSymbolDraft: QuickSymbolDraft? = nil
+    /// View-owned drawing slider candidate. Rendered on the map without
+    /// publishing through DrawingStore/Sync until the gesture ends.
+    @State private var drawingControlsPreview: DrawingShape? = nil
+
+    init(store: StoreManager) {
+        self.store = store
+        let locationService = LocationService()
+        let trackRecorder = TrackRecorder()
+        _locationService = StateObject(wrappedValue: locationService)
+        _trackRecorder = StateObject(wrappedValue: trackRecorder)
+        _recordingCoordinator = StateObject(wrappedValue: RecordingCoordinator(
+            requestAuthorization: { locationService.requestAuthorisation() },
+            initializeDurableRecording: { trackRecorder.start() },
+            stopRecording: { trackRecorder.stop() },
+            setBackgroundUpdates: { locationService.setBackgroundUpdates($0) },
+            recordingError: { trackRecorder.persistError }
+        ))
+    }
 
     @ObservedObject private var opsec = OpsecSettings.shared
     @ObservedObject private var onlineTileHealth = OnlineTileHealth.shared
@@ -214,6 +610,123 @@ struct ContentView: View {
             || waypointStore.locked || drawingStore.locked || trackRecorder.requiresUnlock
     }
 
+    private var unitSyncBackgroundPresenceEligible: Bool {
+        opsec.backgroundUnitSyncLocation
+            && syncManager.presenceConfig.shareLocation
+            && syncManager.room?.hasPrefix("3:") == true
+            && syncManager.status == .connected
+            && LiveLocationPermissionPolicy.shouldStartUpdates(
+                for: locationService.authorisationStatus
+            )
+    }
+
+    private var syncForegroundReady: Bool {
+        scenePhase == .active
+            && !appLockOverlayActive
+            && (!DataKey.isAuthBound || DataKey.isUnlocked)
+            && !waypointStore.locked
+            && !drawingStore.locked
+    }
+
+    private func refreshUnitSyncLifecycle() {
+        let backgroundPresence = unitSyncBackgroundPresenceEligible
+        locationService.setUnitSyncBackgroundUpdates(
+            scenePhase != .active && backgroundPresence
+        )
+        syncManager.updateLifecycle(
+            foregroundReady: syncForegroundReady,
+            backgroundPresenceEnabled: backgroundPresence,
+            backgroundInterval: opsec.backgroundUnitSyncInterval.seconds
+        )
+    }
+
+    private func refreshHeadingLifecycle() {
+        let shouldRun = scenePhase == .active
+            && opsec.mapOrientationMode == .headingUp
+            && locationService.isHeadingAvailable
+        if shouldRun {
+            locationService.startHeadingUpdates()
+        } else {
+            locationService.stopHeadingUpdates()
+        }
+        refreshHeadingWatchdog()
+    }
+
+    private func refreshHeadingWatchdog() {
+        headingWatchdogTask?.cancel()
+        headingWatchdogTask = nil
+        guard scenePhase == .active,
+              opsec.mapOrientationMode == .headingUp,
+              locationService.isHeadingAvailable,
+              locationService.deviceHeading == nil else { return }
+        headingWatchdogTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled,
+                  scenePhase == .active,
+                  opsec.mapOrientationMode == .headingUp,
+                  locationService.deviceHeading == nil else { return }
+            _ = opsec.setMapOrientationMode(.northUp)
+            showTransientToast("No reliable compass reading; switched to North Up.")
+        }
+    }
+
+    private func showTransientToast(_ message: String) {
+        syncToast = message
+        UIAccessibility.post(notification: .announcement, argument: message)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if syncToast == message { syncToast = nil }
+        }
+    }
+
+    private func presentChat(_ route: TacMapChatRoute) {
+        guard scenePhase == .active,
+              !missionDataLocked,
+              !appLockOverlayActive else {
+            showTransientToast("Unlock TacMap before opening chat.")
+            return
+        }
+        chatRoute = route
+    }
+
+    private func presentDirectChat(for actorId: String) {
+        guard let recipient = syncManager.chatRecipients[actorId] else {
+            showTransientToast("That unit is not currently ready for encrypted chat.")
+            return
+        }
+        presentChat(.direct(recipient))
+    }
+
+    private func lockChatUIAndSecrets() {
+        chatRoute = nil
+        pendingChatRoute = nil
+        syncManager.lockChatForMissionData()
+    }
+
+    private func restoreChatIfSecurityAllows() {
+        guard scenePhase == .active,
+              !appLockOverlayActive,
+              !missionDataLocked else { return }
+        syncManager.migrateLegacyLocalStoresAfterUnlock()
+        syncManager.restoreChatAfterMissionUnlock()
+    }
+
+    private func handleCompassTap() {
+        switch MapHeading.compassTapAction(
+            headingUpEnabled: opsec.mapOrientationMode == .headingUp,
+            currentHeading: mapVM.heading,
+            headingAvailable: locationService.isHeadingAvailable
+        ) {
+        case .resetNorth:
+            mapVM.resetNorth()
+        case .enableHeadingUp:
+            _ = opsec.setMapOrientationMode(.headingUp)
+        case .disableHeadingUp:
+            _ = opsec.setMapOrientationMode(.northUp)
+        case .headingUnavailable:
+            showTransientToast("Heading Up is unavailable on this device.")
+        }
+    }
+
     private var baseMapContent: some View {
         GeometryReader { geo in
             ZStack {
@@ -227,7 +740,10 @@ struct ContentView: View {
                     locationService: locationService,
                     calibration: calibration,
                     graphicsLocked: graphicsLocked,
-                    peers: syncManager.peers
+                    drawingControlsPreview: drawingControlsPreview,
+                    peers: syncManager.peers,
+                    onPeerTap: presentDirectChat,
+                    onMutationError: { missionMutationMessage = $0 }
                 )
                 .ignoresSafeArea()
                 .overlay {
@@ -315,6 +831,27 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: DataKey.lockChanged)) { _ in
             dataKeyEpoch &+= 1
+            if DataKey.isAuthBound && !DataKey.isUnlocked {
+                lockChatUIAndSecrets()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppLock.stateChanged)) { note in
+            guard let value = note.object as? NSNumber else { return }
+            appLockOverlayActive = value.boolValue
+            if value.boolValue {
+                lockChatUIAndSecrets()
+            } else {
+                restoreChatIfSecurityAllows()
+            }
+            refreshUnitSyncLifecycle()
+        }
+        .alert("Mission Object Not Saved", isPresented: Binding(
+            get: { missionMutationMessage != nil },
+            set: { if !$0 { missionMutationMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { missionMutationMessage = nil }
+        } message: {
+            Text(missionMutationMessage ?? "The change could not be saved. Check available storage, then try again.")
         }
         .alert("Track Recording", isPresented: Binding(
             get: { trackRecorder.persistError != nil && !trackRecorder.requiresUnlock },
@@ -326,6 +863,24 @@ struct ContentView: View {
             Button("OK", role: .cancel) { trackRecorder.persistError = nil }
         } message: {
             Text(trackRecorder.persistError ?? "Track recording failed.")
+        }
+        .alert("Location Permission",
+               isPresented: Binding(
+                   get: { recordingCoordinator.guidance != nil },
+                   set: { if !$0 { recordingCoordinator.guidance = nil } }
+               ),
+               presenting: recordingCoordinator.guidance) { guidance in
+            if guidance.offersSettings {
+                Button("Open Settings") {
+                    recordingCoordinator.guidance = nil
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+            Button("Not Now", role: .cancel) { recordingCoordinator.guidance = nil }
+        } message: { guidance in
+            Text(guidance.message)
         }
         .task {
             drawingStore.undoManager = undoManager
@@ -341,25 +896,49 @@ struct ContentView: View {
             refreshUndoState()
         }
         .onAppear {
-            locationService.requestAuthorisation()
-            locationService.start()
+            if opsec.mapOrientationMode == .headingUp,
+               !locationService.isHeadingAvailable {
+                _ = opsec.setMapOrientationMode(.northUp)
+            }
+            refreshHeadingLifecycle()
+            if LiveLocationPermissionPolicy.shouldRequestOnInitialAppearance(
+                for: locationService.authorisationStatus
+            ) {
+                locationService.requestAuthorisation()
+            } else if LiveLocationPermissionPolicy.shouldStartUpdates(
+                for: locationService.authorisationStatus
+            ) {
+                locationService.start()
+            }
             restoreActiveBasemap()
         }
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
-            mapVM.userLocationDidUpdate(loc)
+            mapVM.userLocationDidUpdate(
+                loc,
+                resetOrientation: opsec.mapOrientationMode == .northUp
+            )
+        }
+        .onReceive(locationService.$deviceHeading.compactMap { $0 }) { heading in
+            if opsec.mapOrientationMode == .headingUp {
+                mapVM.orientMap(to: heading)
+            }
+        }
+        .onChange(of: locationService.deviceHeading) { _ in
+            refreshHeadingWatchdog()
         }
     }
 
     private var sheetContent: some View {
         lifecycleContent
         .sheet(isPresented: $showWaypointSheet) {
-            WaypointListSheet(waypointStore: waypointStore, mapVM: mapVM)
+            WaypointListSheet(waypointStore: waypointStore,
+                              drawingStore: drawingStore,
+                              mapVM: mapVM)
                 .padSheetSizing()
         }
         .sheet(item: $quickSymbolDraft) { draft in
-            WaypointEditSheet(
+            WaypointCreationSheet(
                 waypointStore: waypointStore,
-                original: nil,
                 defaultCoordinate: draft.coordinate,
                 defaultScale: draft.scale,
                 defaultLayerID: draft.layerID
@@ -373,6 +952,7 @@ struct ContentView: View {
             LayersSheet(visibility: visibility,
                         mapVM: mapVM,
                         drawingStore: drawingStore,
+                        waypointStore: waypointStore,
                         onCalibrate: startCalibration)
                 .padSheetSizing()
         }
@@ -407,9 +987,24 @@ struct ContentView: View {
             OpsecSettingsView()
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showSyncSheet) {
-            SyncSheet(manager: syncManager)
+        .sheet(isPresented: $showSyncSheet, onDismiss: {
+            guard let route = pendingChatRoute else { return }
+            pendingChatRoute = nil
+            presentChat(route)
+        }) {
+            SyncSheet(manager: syncManager) { route in
+                pendingChatRoute = route
+                showSyncSheet = false
+            }
                 .padSheetSizing()
+        }
+        .sheet(item: $chatRoute) { route in
+            TacMapChatView(
+                manager: syncManager,
+                store: syncManager.chatStore,
+                initialRoute: route
+            )
+            .padSheetSizing()
         }
     }
 
@@ -419,25 +1014,88 @@ struct ContentView: View {
             syncManager.configure(waypointStore: waypointStore,
                                   drawingStore: drawingStore,
                                   locationService: locationService)
+            if !missionDataLocked {
+                syncManager.migrateLegacyLocalStoresAfterUnlock()
+            }
+            refreshUnitSyncLifecycle()
         }
         // Remote sync update toast (conflict notif).
         .onReceive(syncManager.remoteUpdateSubject) { message in
-            syncToast = message
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                if syncToast == message { syncToast = nil }
-            }
+            showTransientToast(message)
         }
         // Feed every fix into the track recorder. It just ignores them unless recording.
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
             trackRecorder.ingest(loc)
+            syncManager.locationDidUpdate()
+        }
+        .onChange(of: locationService.authorisationStatus) { status in
+            recordingCoordinator.authorizationChanged(status)
+            if LiveLocationPermissionPolicy.shouldStartUpdates(for: status) {
+                locationService.start()
+            } else {
+                locationService.stop()
+            }
+            refreshUnitSyncLifecycle()
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                restoreChatIfSecurityAllows()
+            } else {
+                lockChatUIAndSecrets()
+            }
+            refreshUnitSyncLifecycle()
+            refreshHeadingLifecycle()
+        }
+        .onChange(of: opsec.mapOrientationMode) { mode in
+            if mode == .headingUp, !locationService.isHeadingAvailable {
+                _ = opsec.setMapOrientationMode(.northUp)
+                return
+            }
+            refreshHeadingLifecycle()
+            if mode == .headingUp {
+                if let heading = locationService.deviceHeading {
+                    mapVM.orientMap(to: heading)
+                }
+            } else {
+                mapVM.resetNorth()
+            }
+        }
+        .onChange(of: opsec.backgroundUnitSyncLocation) { _ in
+            refreshUnitSyncLifecycle()
+        }
+        .onChange(of: opsec.backgroundUnitSyncInterval) { _ in
+            refreshUnitSyncLifecycle()
+        }
+        .onChange(of: syncManager.presenceConfig.shareLocation) { _ in
+            refreshUnitSyncLifecycle()
+        }
+        .onChange(of: syncManager.room) { _ in
+            refreshUnitSyncLifecycle()
+        }
+        .onChange(of: syncManager.status) { _ in
+            refreshUnitSyncLifecycle()
+        }
+        .onChange(of: dataKeyEpoch) { _ in
+            if missionDataLocked {
+                lockChatUIAndSecrets()
+            } else {
+                restoreChatIfSecurityAllows()
+            }
+            refreshUnitSyncLifecycle()
         }
         .onChange(of: trackRecorder.isRecording) { active in
-            // Background location follows the recorder's *durable* state. A
-            // failed start or append immediately tears the capability down.
-            locationService.setBackgroundUpdates(active)
+            if !active {
+                recordingCoordinator.recorderDidStopUnexpectedly(
+                    error: trackRecorder.persistError
+                )
+            }
         }
         .sheet(isPresented: $showSearchSheet) {
-            SearchSheet(mapVM: mapVM)
+            SearchSheet(
+                mapVM: mapVM,
+                waypointStore: waypointStore,
+                drawingStore: drawingStore
+            )
                 .padSheetSizing()
         }
         .sheet(isPresented: $showAboutSheet) {
@@ -515,20 +1173,59 @@ struct ContentView: View {
 
     var body: some View {
         importerContent
+        .background(
+            EmptyView()
+                .alert("Map change not saved",
+                       isPresented: Binding(
+                        get: { mapVM.mapSelectionPersistenceIssue != nil },
+                        set: { if !$0 { mapVM.dismissMapSelectionPersistenceIssue() } }
+                       ),
+                       presenting: mapVM.mapSelectionPersistenceIssue) { _ in
+                    Button("Retry") {
+                        if mapVM.retryMapSelectionPersistence(), calibration.isCalibrating {
+                            calibration.cancel()
+                        }
+                    }
+                    Button("Not Now", role: .cancel) {
+                        mapVM.dismissMapSelectionPersistenceIssue()
+                    }
+                } message: { issue in
+                    Text(issue.message)
+                }
+        )
         .alert("Import",
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),
                presenting: importMessage) { _ in
-            Button("OK", role: .cancel) { importMessage = nil }
+            if pendingImportRetry != nil {
+                Button("Retry") { retryPendingExternalImport() }
+                Button("Cancel", role: .cancel) {
+                    pendingImportRetry = nil
+                    importMessage = nil
+                }
+            } else {
+                Button("OK", role: .cancel) { importMessage = nil }
+            }
         } message: { msg in
             Text(msg)
         }
+        .onDisappear {
+            importWorkTask?.cancel()
+            headingWatchdogTask?.cancel()
+            locationService.stopHeadingUpdates()
+            locationService.setUnitSyncBackgroundUpdates(false)
+            syncManager.updateLifecycle(
+                foregroundReady: false,
+                backgroundPresenceEnabled: false,
+                backgroundInterval: opsec.backgroundUnitSyncInterval.seconds
+            )
+        }
         .sheet(isPresented: Binding(
-            get: { exportAllURL != nil },
-            set: { if !$0 { exportAllURL = nil } }
+            get: { missionObjectExportURL != nil },
+            set: { if !$0 { missionObjectExportURL = nil } }
         )) {
-            if let url = exportAllURL {
-                ShareSheetView(activityItems: [url])
+            if let url = missionObjectExportURL {
+                ShareSheetView(activityItems: [url], title: MissionObjectExport.shareTitle)
                     .padSheetSizing()
             }
         }
@@ -552,7 +1249,7 @@ struct ContentView: View {
                         }
                         .onEnded { _ in
                             if let shape = drawingSession.finish() {
-                                drawingStore.add(shape)
+                                saveNewDrawing(shape)
                             }
                         }
                 )
@@ -584,13 +1281,16 @@ struct ContentView: View {
                     let layerID = drawingStore.activeLayerID
                         ?? drawingStore.layers.first?.id
                         ?? DrawingLayer.legacyFallbackID
-                    let wp = Waypoint(
-                        name: displayedCoordinate,
-                        coordinate: coord,
-                        kind: .generic,
-                        layerID: layerID
-                    )
-                    waypointStore.add(wp)
+                    do {
+                        try DropPinMissionMutation.commit(
+                            coordinate: coord,
+                            displayedCoordinate: displayedCoordinate,
+                            layerID: layerID,
+                            to: waypointStore
+                        )
+                    } catch {
+                        missionMutationMessage = "The dropped symbol was not added. \(error.localizedDescription) Check available storage, then try again."
+                    }
                 }
             )
             .padding(.horizontal, 12)
@@ -599,11 +1299,12 @@ struct ContentView: View {
             // that's exactly where the live-tracking record badge goes, so they
             // collided. It's paired with the Centre button at the bottom now.
 
-            if trackRecorder.isRecording {
+            if recordingCoordinator.state != .idle {
                 RecordingIndicator(
+                    state: recordingCoordinator.state,
                     pointCount: trackRecorder.points.count,
                     onStop: {
-                        trackRecorder.stop()
+                        recordingCoordinator.stop()
                     }
                 )
                 .padding(.top, 8)
@@ -660,15 +1361,13 @@ struct ContentView: View {
                             drawingsPanelOpen = false
                             showExportSheet = true
                         },
-                        isRecordingTrack: trackRecorder.isRecording,
+                        recordingState: recordingCoordinator.state,
                         trackPointCount: trackRecorder.points.count,
                         onToggleTrackRecording: {
                             drawingsPanelOpen = false
-                            if trackRecorder.isRecording {
-                                trackRecorder.stop()
-                            } else {
-                                _ = trackRecorder.start()
-                            }
+                            recordingCoordinator.toggle(
+                                authorization: locationService.authorisationStatus
+                            )
                         },
                         onExportGPX: {
                             drawingsPanelOpen = false
@@ -676,7 +1375,11 @@ struct ContentView: View {
                         },
                         onExportAll: {
                             drawingsPanelOpen = false
-                            exportAllData()
+                            exportAllMissionObjects()
+                        },
+                        onChat:      {
+                            drawingsPanelOpen = false
+                            presentChat(.room)
                         },
                         onSync:      {
                             drawingsPanelOpen = false
@@ -695,6 +1398,13 @@ struct ContentView: View {
                             showAboutSheet = true
                         }
                     )
+
+                    if syncManager.room?.hasPrefix("3:") == true {
+                        TacMapChatShortcutButton(store: syncManager.chatStore) {
+                            drawingsPanelOpen = false
+                            presentChat(.room)
+                        }
+                    }
 
                     if !drawingSession.isDrawing,
                        !measureSession.isActive,
@@ -723,7 +1433,13 @@ struct ContentView: View {
                 }
                 Spacer()
                 VStack(spacing: 6) {
-                    CompassChip(heading: mapVM.heading) { mapVM.resetNorth() }
+                    CompassChip(
+                        heading: mapVM.heading,
+                        orientationMode: opsec.mapOrientationMode,
+                        headingAvailable: locationService.isHeadingAvailable,
+                        northReference: locationService.headingNorthReference,
+                        onTap: handleCompassTap
+                    )
                     if canUndo || canRedo {
                         UndoRedoButtons(
                             canUndo: canUndo,
@@ -774,7 +1490,7 @@ struct ContentView: View {
         } else if drawingSession.isDrawing {
             DrawToolbar(session: drawingSession) {
                 if let shape = drawingSession.finish() {
-                    drawingStore.add(shape)
+                    saveNewDrawing(shape)
                 }
             }
             .padding(.horizontal, 12)
@@ -799,7 +1515,12 @@ struct ContentView: View {
                 DrawingControlsCard(
                     drawingStore: drawingStore,
                     drawingID: id,
-                    onDismiss: { mapVM.selectedDrawingID = nil }
+                    crosshairCoordinate: mapVM.cameraCentre,
+                    onPreview: { drawingControlsPreview = $0 },
+                    onDismiss: {
+                        drawingControlsPreview = nil
+                        mapVM.selectedDrawingID = nil
+                    }
                 )
                 .padding(.horizontal, 12)
                 .padding(.bottom, max(bottomInset - 32, 0))
@@ -811,11 +1532,18 @@ struct ContentView: View {
                 // strand the user away from their map. Side by side to save height;
                 // the location label shrinks when both show.
                 HStack(spacing: 8) {
+                    let locationControl = LiveLocationPermissionPolicy.control(
+                        for: locationService.authorisationStatus
+                    )
                     CentreButton(
-                        title: importedMapLoaded ? "My Location" : "Centre on My Location"
+                        title: locationControl.action == .centreOnLocation && importedMapLoaded
+                            ? "My Location"
+                            : locationControl.title,
+                        systemImage: locationControl.systemImage
                     ) {
-                        mapVM.centreOnUser(locationService.lastLocation)
+                        performLiveLocationAction(locationControl.action)
                     }
+                    .accessibilityHint(locationControl.guidance)
                     if importedMapLoaded {
                         CentreButton(title: "Map", systemImage: "map") {
                             mapVM.centreOnMap()
@@ -824,6 +1552,22 @@ struct ContentView: View {
                 }
                 .offset(y: max(bottomInset - 32, 0))
             }
+        }
+    }
+
+    private func performLiveLocationAction(_ action: LiveLocationPermissionPolicy.Action) {
+        switch action {
+        case .requestPermission:
+            locationService.requestAuthorisation()
+        case .centreOnLocation:
+            locationService.start()
+            mapVM.centreOnUser(
+                locationService.lastLocation,
+                resetOrientation: opsec.mapOrientationMode == .northUp
+            )
+        case .openSettings:
+            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+            UIApplication.shared.open(url)
         }
     }
 
@@ -852,6 +1596,14 @@ struct ContentView: View {
         canRedo = undoManager?.canRedo ?? false
     }
 
+    private func saveNewDrawing(_ shape: DrawingShape) {
+        do {
+            _ = try drawingStore.addDurably(shape)
+        } catch {
+            missionMutationMessage = "The drawing was not added. \(error.localizedDescription) Check available storage, then draw it again."
+        }
+    }
+
     /// Open the fast symbol builder on a layer whose contents are visible.
     /// Preserve an already-visible active layer; if it is hidden, prefer another
     /// visible layer without changing the user's active-layer selection.
@@ -860,14 +1612,15 @@ struct ContentView: View {
         mapVM.selectedWaypointID = nil
         mapVM.selectedDrawingID = nil
         visibility.waypointsVisible = true
+        guard let layerID = visibleLayerIDForQuickSymbol() else { return }
         quickSymbolDraft = QuickSymbolDraft(
             coordinate: mapVM.cameraCentre,
-            layerID: visibleLayerIDForQuickSymbol(),
+            layerID: layerID,
             scale: mapVM.defaultControlMeasureScale
         )
     }
 
-    private func visibleLayerIDForQuickSymbol() -> UUID {
+    private func visibleLayerIDForQuickSymbol() -> UUID? {
         if let activeID = drawingStore.activeLayerID,
            let active = drawingStore.layer(id: activeID),
            active.visible {
@@ -878,22 +1631,37 @@ struct ContentView: View {
         }
         if let activeID = drawingStore.activeLayerID,
            let active = drawingStore.layer(id: activeID) {
-            drawingStore.setLayerVisible(active, true)
-            return active.id
+            do {
+                try drawingStore.setLayerVisible(active, true)
+                return active.id
+            } catch {
+                missionMutationMessage = "The symbol layer could not be made visible. \(error.localizedDescription) Check available storage, then try again."
+                return nil
+            }
         }
         if let first = drawingStore.layers.first {
             if drawingStore.activeLayerID == nil {
                 drawingStore.activeLayerID = first.id
             }
-            drawingStore.setLayerVisible(first, true)
-            return first.id
+            do {
+                try drawingStore.setLayerVisible(first, true)
+                return first.id
+            } catch {
+                missionMutationMessage = "The symbol layer could not be made visible. \(error.localizedDescription) Check available storage, then try again."
+                return nil
+            }
         }
 
         // DrawingStore normally guarantees seed layers. Recover defensively if
         // a sync/import transition presents a transient empty collection.
         let fallback = DrawingLayer.seedDefaults[0]
-        drawingStore.addLayerVerbatim(fallback)
-        return fallback.id
+        do {
+            _ = try drawingStore.addLayerVerbatim(fallback)
+            return fallback.id
+        } catch {
+            missionMutationMessage = "A symbol layer could not be restored. \(error.localizedDescription) Check available storage, then try again."
+            return nil
+        }
     }
 
     private func unlockMissionData() {
@@ -906,6 +1674,7 @@ struct ContentView: View {
             trackRecorder.retryRecoveryAfterUnlock()
             guard !missionDataLocked else { throw DataKey.LockedError() }
             restoreActiveBasemap()
+            refreshUnitSyncLifecycle()
         } catch {
             missionUnlockError = error.localizedDescription
         }
@@ -916,34 +1685,20 @@ struct ContentView: View {
     /// keep the usable online default; the saved PDF remains available from
     /// Layers, but is no longer incorrectly assumed to have been active.
     private func restoreActiveBasemap() {
-        let source: MapSource?
-        switch ActiveMapSelectionStore.restore() {
-        case .restored(let restored):
-            source = restored
-        case .noSelection:
-            source = nil
-        case .unavailable:
-            source = nil
-        }
-        guard let source else { return }
+        guard let source = mapVM.restoreActiveMapSelection() else { return }
         NSLog("[MapVM] restored active basemap -> kind=\(source.kind)")
-        mapVM.mapSource = source
-        mapVM.frameCamera(
-            for: source,
-            userLocation: locationService.lastLocation?.coordinate
-        )
     }
 
     /// Export all waypoints + drawings + layers to GeoJSON and show
     /// system share sheet.
-    private func exportAllData() {
+    private func exportAllMissionObjects() {
         do {
-            let url = try GeoJSONExporter.exportToFile(
+            let url = try MissionObjectExport.exportToFile(
                 waypoints: waypointStore.waypoints,
                 drawings: drawingStore.shapes,
                 layers: drawingStore.layers
             )
-            exportAllURL = url
+            missionObjectExportURL = url
         } catch {
             importMessage = "Export failed: \(error.localizedDescription)"
         }
@@ -955,31 +1710,7 @@ struct ContentView: View {
             importMessage = "Import failed: \(err.localizedDescription)"
         case .success(let urls):
             guard let url = urls.first else { return }
-            // Docs picker gives us a security-scoped URL.
-            let didStart = url.startAccessingSecurityScopedResource()
-            defer { if didStart { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let data = try BoundedImportReader.read(url, maximumBytes: GeoJSONImporter.maxInputBytes)
-                let fallback = drawingStore.activeLayerID
-                    ?? drawingStore.layers.first?.id
-                    ?? DrawingLayer.legacyFallbackID
-                let parsed = try GeoJSONImporter.parse(
-                    data,
-                    existingLayers: drawingStore.layers,
-                    fallbackLayerID: fallback
-                )
-                for layer in parsed.newLayers {
-                    drawingStore.addLayerVerbatim(layer)
-                }
-                for shape in parsed.drawings { drawingStore.add(shape) }
-                for wp in parsed.waypoints { waypointStore.add(wp) }
-                importMessage = "Imported \(parsed.waypoints.count) waypoint" +
-                    "\(parsed.waypoints.count == 1 ? "" : "s") and " +
-                    "\(parsed.drawings.count) drawing" +
-                    "\(parsed.drawings.count == 1 ? "" : "s")."
-            } catch {
-                importMessage = "Couldn't parse this file as GeoJSON: \(error.localizedDescription)"
-            }
+            beginExternalImport(url: url, kind: .geoJSON, formatName: "GeoJSON")
         }
     }
 
@@ -989,30 +1720,81 @@ struct ContentView: View {
             importMessage = "Import failed: \(err.localizedDescription)"
         case .success(let urls):
             guard let url = urls.first else { return }
-            let didStart = url.startAccessingSecurityScopedResource()
-            defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+            beginExternalImport(url: url, kind: .kml, formatName: "KML")
+        }
+    }
+
+    private func beginExternalImport(url: URL,
+                                     kind: ExternalImportFileKind,
+                                     formatName: String) {
+        importWorkTask?.cancel()
+        pendingImportRetry = nil
+        let fallback = drawingStore.activeLayerID
+            ?? drawingStore.layers.first?.id
+            ?? DrawingLayer.legacyFallbackID
+        let context = ExternalImportWorker.Context(
+            existingLayers: drawingStore.layers,
+            fallbackLayerID: fallback,
+            existingWaypointIDs: waypointStore.waypoints.map(\.id),
+            existingDrawingIDs: drawingStore.shapes.map(\.id)
+        )
+        let encodedContext: Data
+        do {
+            encodedContext = try JSONEncoder().encode(context)
+        } catch {
+            importMessage = "Couldn't prepare this \(formatName) import: \(error.localizedDescription)"
+            return
+        }
+        let batchKey = UUID().uuidString
+        importWorkTask = Task { @MainActor in
             do {
-                let data = try BoundedImportReader.read(url, maximumBytes: KMLImporter.maxInputBytes)
-                let fallback = drawingStore.activeLayerID
-                    ?? drawingStore.layers.first?.id
-                    ?? DrawingLayer.legacyFallbackID
-                let parsed = try KMLImporter.parse(
-                    data,
-                    existingLayers: drawingStore.layers,
-                    fallbackLayerID: fallback
+                let payload = try await ExternalImportWorker.prepare(
+                    url: url,
+                    kind: kind,
+                    encodedContext: encodedContext,
+                    batchKey: batchKey
                 )
-                for layer in parsed.newLayers {
-                    drawingStore.addLayerVerbatim(layer)
-                }
-                for shape in parsed.drawings { drawingStore.add(shape) }
-                for wp in parsed.waypoints { waypointStore.add(wp) }
-                importMessage = "Imported \(parsed.waypoints.count) waypoint" +
-                    "\(parsed.waypoints.count == 1 ? "" : "s") and " +
-                    "\(parsed.drawings.count) drawing" +
-                    "\(parsed.drawings.count == 1 ? "" : "s")."
+                try Task.checkCancellation()
+                let batch = try JSONDecoder().decode(
+                    GeoJSONImporter.ExternalBatch.self,
+                    from: payload.encodedBatch
+                )
+                let report = ExternalImportCommitter.attempt(
+                    ExternalImportCommitProgress(batch: batch),
+                    waypointStore: waypointStore,
+                    drawingStore: drawingStore
+                )
+                applyExternalImportReport(report)
+            } catch is CancellationError {
+                // A replacement import or view teardown intentionally cancelled it.
             } catch {
-                importMessage = "Couldn't parse this file as KML: \(error.localizedDescription)"
+                pendingImportRetry = nil
+                importMessage = "Couldn't parse this file as \(formatName): \(error.localizedDescription)"
             }
+        }
+    }
+
+    private func applyExternalImportReport(_ report: ExternalImportCommitReport) {
+        switch report.state {
+        case .completed:
+            pendingImportRetry = nil
+        case .failedBeforeAnyStore, .partiallyCommitted:
+            pendingImportRetry = report.progress
+        }
+        importMessage = report.message
+    }
+
+    private func retryPendingExternalImport() {
+        guard let progress = pendingImportRetry else { return }
+        importMessage = nil
+        Task { @MainActor in
+            await Task.yield()
+            let report = ExternalImportCommitter.attempt(
+                progress,
+                waypointStore: waypointStore,
+                drawingStore: drawingStore
+            )
+            applyExternalImportReport(report)
         }
     }
 
@@ -1026,23 +1808,19 @@ struct ContentView: View {
               let source = calibration.source else { return }
         // Build fresh source so MapContainerView rebuilds overlay
         // (sync logic keys on source.id).
-        let newSource = PDFMapSource(url: source.url, bounds: nil, fromGeoPDF: false)
+        let newSource = PDFMapSource(
+            url: source.url,
+            bounds: nil,
+            fromGeoPDF: false,
+            contentKey: source.contentKey
+        )
         newSource.applyCalibration(
             transform: result.transform,
             fiduciaries: calibration.fiduciaries
         )
         let bounds = newSource.bounds
-        /// Persist the freshly-calibrated source so fiduciary fit
-        /// survives app restart. Without this next launch would
-        /// restore pre-calibration import and silently clobber the
-        /// user's calibration work.
-        guard PDFSessionStore.save(newSource) else {
-            importMessage = "Calibration was calculated but couldn't be saved securely. "
-                + "Check device storage, then try again."
-            return
-        }
+        guard mapVM.selectMapSource(newSource) else { return }
         calibration.cancel()
-        mapVM.mapSource = newSource
         if let b = bounds {
             let span = MKCoordinateSpan(
                 latitudeDelta:  abs(b.northEast.latitude  - b.southWest.latitude)  * 1.2,
@@ -1059,53 +1837,39 @@ struct ContentView: View {
             }
             return
         }
-
-        // File picker may hand us a security-scoped URL (came from outside
-        // sandbox). Copy into app-private, file-protected storage for stable
-        // access - never Documents, which is exposed via file sharing.
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-
-        let dest: URL
-        do {
-            dest = try PDFMapImporter.copyAndValidate(url)
-        } catch let error as PDFMapImportError {
-            importMessage = error.localizedDescription
-            return
-        } catch {
-            importMessage = "Couldn't import this PDF map: \(error.localizedDescription)"
-            return
-        }
-
-        NSLog("[Import] copied PDF into protected app storage")
         let cameraAtImport = mapVM.cameraCentre
-        Task.detached(priority: .userInitiated) { [mapVM] in
-            let source = PDFMapImporter.makeMapSource(
-                from: dest,
-                cameraCentre: cameraAtImport
-            )
-            NSLog("[Import] geospatial metadata parse complete")
-            NSLog("[Import] map bounds resolved")
-
-            await MainActor.run {
-                NSLog("[Import] installing PDFMapSource on MainActor")
+        importWorkTask?.cancel()
+        importWorkTask = Task { @MainActor in
+            var copiedURL: URL?
+            do {
+                let payload = try await ImportedMapWorker.preparePDF(url: url)
+                copiedURL = payload.destination
+                try Task.checkCancellation()
+                let parsedBounds = payload.geoBounds?.makeBounds()
+                let bounds = parsedBounds ?? GeoPDFReader.fallbackBounds(centeredOn: cameraAtImport)
+                let source = PDFMapSource(
+                    url: payload.destination,
+                    bounds: bounds,
+                    fromGeoPDF: parsedBounds != nil,
+                    preflightMediaBox: payload.mediaBox.rect,
+                    contentKey: payload.contentKey
+                )
                 // If PDF was calibrated in a previous session, restore
                 // fiduciaries + affine so it re-imports already aligned.
                 PDFSessionStore.applyCalibrationIfKnown(to: source)
-                guard PDFSessionStore.save(source) else {
-                    importMessage = "Couldn't save this PDF map securely. "
-                        + "Check device storage, then try again."
+                guard mapVM.selectMapSource(source) else {
+                    // The retry transition owns this private copy now.
+                    copiedURL = nil
                     return
                 }
-                mapVM.mapSource = source
-
-                /// Frame camera - snap to user if they're inside PDF
-                /// coverage, otherwise frame the whole page. Shared
-                /// with restore path via MapViewModel.frameCamera.
-                mapVM.frameCamera(
-                    for: source,
-                    userLocation: locationService.lastLocation?.coordinate
-                )
+                copiedURL = nil
+            } catch is CancellationError {
+                if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
+            } catch let error as PDFMapImportError {
+                importMessage = error.localizedDescription
+            } catch {
+                if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
+                importMessage = "Couldn't import this PDF map: \(error.localizedDescription)"
             }
         }
     }
@@ -1121,29 +1885,32 @@ struct ContentView: View {
             return
         }
 
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-
-        let dest: URL
-        do {
-            dest = try ImportedMapFileCopier.copyToImportedMaps(
-                url, maximumBytes: ImportedMapFileCopier.maxMBTilesBytes)
-        } catch {
-            importMessage = "Couldn't import this MBTiles map: \(error.localizedDescription)"
-            return
+        importWorkTask?.cancel()
+        importWorkTask = Task { @MainActor in
+            var copiedURL: URL?
+            do {
+                let payload = try await ImportedMapWorker.prepareMBTiles(url: url)
+                let destination = payload.destination
+                copiedURL = destination
+                try Task.checkCancellation()
+                let source = OfflineTileMapSource(
+                    prevalidatedURL: destination,
+                    metadata: payload.metadata
+                )
+                guard mapVM.selectMapSource(source) else {
+                    // Preserve the validated private copy for the Retry action.
+                    copiedURL = nil
+                    return
+                }
+                copiedURL = nil
+                importMessage = "Loaded offline tiles: \(source.displayName)."
+            } catch is CancellationError {
+                if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
+            } catch {
+                if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
+                importMessage = "Couldn't import this MBTiles map: \(error.localizedDescription)"
+            }
         }
-
-        guard let source = OfflineTileMapSource(url: dest) else {
-            try? FileManager.default.removeItem(at: dest)
-            importMessage = "Couldn't open this file as an MBTiles map."
-            return
-        }
-        mapVM.mapSource = source
-        mapVM.frameCamera(
-            for: source,
-            userLocation: locationService.lastLocation?.coordinate
-        )
-        importMessage = "Loaded offline tiles: \(source.displayName)."
     }
 }
 
@@ -1167,7 +1934,7 @@ private struct MissionDataUnlockView: View {
     }
 }
 
-/// Fresh install with no offline pack and online basemaps gated off draws
+/// With no offline pack and online basemaps gated off, the app draws
 /// nothing at all. Explain that, b/c a blank map with no message reads as a
 /// broken app rather than a deliberate OPSEC posture.
 private struct NoBasemapNotice: View {

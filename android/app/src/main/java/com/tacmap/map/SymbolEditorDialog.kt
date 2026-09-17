@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,11 +53,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import androidx.core.graphics.toColorInt
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -68,12 +76,17 @@ import com.tacmap.waypoints.MarkerCatalog
 import com.tacmap.waypoints.MarkerSet
 import com.tacmap.waypoints.MarkerSymbol
 import com.tacmap.waypoints.MilitarySymbolSpec
+import com.tacmap.waypoints.HIGHER_FORMATION_MAX_CODE_POINTS
+import com.tacmap.waypoints.ReinforcementStatus
 import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
 import com.tacmap.waypoints.SymbolFunction
 import com.tacmap.waypoints.TacticalControlMeasure
+import com.tacmap.waypoints.UNIQUE_IDENTIFIER_MAX_CODE_POINTS
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
+import com.tacmap.waypoints.boundUnitAmplifier
+import com.tacmap.waypoints.normalizedUnitAmplifiersForKind
 
 enum class SymbolEditorMode { MILITARY, TASK, MARKER }
 
@@ -87,8 +100,15 @@ fun SymbolEditorDialog(
     title: String,
     actionLabel: String,
     fullScreen: Boolean = true,
+    submissionError: String? = null,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, kind: WaypointKind) -> Unit
+    onConfirm: (
+        name: String,
+        kind: WaypointKind,
+        higherFormation: String?,
+        uniqueIdentifier: String?,
+        reinforcementStatus: ReinforcementStatus,
+    ) -> Unit
 ) {
     var name by remember(initialName, initialKind) { mutableStateOf(initialName) }
     var militarySpec by remember(initialKind) {
@@ -101,6 +121,9 @@ fun SymbolEditorDialog(
     var markerSet by remember(initialKind) { mutableStateOf(initialMarker?.set ?: MarkerSet.AIRSOFT) }
     var markerSymbolId by remember(initialKind) { mutableStateOf(initialMarker?.symbolId ?: "team") }
     var markerColor by remember(initialKind) { mutableStateOf(initialMarker?.colorHex ?: "#3B7BE0") }
+    var higherFormation by remember(initialKind) { mutableStateOf("") }
+    var uniqueIdentifier by remember(initialKind) { mutableStateOf("") }
+    var reinforcementStatus by remember(initialKind) { mutableStateOf(ReinforcementStatus.NONE) }
 
     val currentKind = when (mode) {
         SymbolEditorMode.MILITARY -> WaypointKind.Military(militarySpec)
@@ -204,8 +227,20 @@ fun SymbolEditorDialog(
                     }
 
                     when (mode) {
-                        SymbolEditorMode.MILITARY -> item {
-                            MilitaryTypeFields(spec = militarySpec, onChange = { militarySpec = it })
+                        SymbolEditorMode.MILITARY -> {
+                            item {
+                                MilitaryTypeFields(spec = militarySpec, onChange = { militarySpec = it })
+                            }
+                            item {
+                                UnitAmplifierFields(
+                                    higherFormation = higherFormation,
+                                    uniqueIdentifier = uniqueIdentifier,
+                                    reinforcementStatus = reinforcementStatus,
+                                    onHigherFormationChange = { higherFormation = it },
+                                    onUniqueIdentifierChange = { uniqueIdentifier = it },
+                                    onReinforcementStatusChange = { reinforcementStatus = it },
+                                )
+                            }
                         }
                         SymbolEditorMode.TASK -> item {
                             TaskTypeField(measure = measure, onChange = { measure = it })
@@ -234,37 +269,61 @@ fun SymbolEditorDialog(
                     /// under the last field, not pinned to screen bottom
                     /// where the gesture pill clips them on some devices.
                     item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            OutlinedButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Cancel")
-                            }
-                            Button(
-                                onClick = {
-                                    val trimmed = name.trim()
-                                    val resolved = if (trimmed == initialKind.displayName) {
-                                        currentKind.displayName
-                                    } else {
-                                        trimmed.ifEmpty { currentKind.displayName }
-                                    }
-                                    onConfirm(resolved, currentKind)
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF0A84FF),
-                                    contentColor = Color.White
+                            submissionError?.let { error ->
+                                Text(
+                                    error,
+                                    color = Color(0xFFFF8A80),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .semantics { contentDescription = "Symbol save error: $error" },
                                 )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text(actionLabel, fontWeight = FontWeight.SemiBold)
+                                OutlinedButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Cancel")
+                                }
+                                Button(
+                                    onClick = {
+                                        val trimmed = name.trim()
+                                        val resolved = if (trimmed == initialKind.displayName) {
+                                            currentKind.displayName
+                                        } else {
+                                            trimmed.ifEmpty { currentKind.displayName }
+                                        }
+                                        val amplifiers = normalizedUnitAmplifiersForKind(
+                                            kind = currentKind,
+                                            higherFormation = higherFormation,
+                                            uniqueIdentifier = uniqueIdentifier,
+                                            reinforcementStatus = reinforcementStatus,
+                                        )
+                                        onConfirm(
+                                            resolved,
+                                            currentKind,
+                                            amplifiers.higherFormation,
+                                            amplifiers.uniqueIdentifier,
+                                            amplifiers.reinforcementStatus,
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF0A84FF),
+                                        contentColor = Color.White
+                                    )
+                                ) {
+                                    Text(actionLabel, fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
@@ -301,7 +360,7 @@ private fun EditorTopBar(
             )
         }
         IconButton(onClick = onDismiss) {
-            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            Icon(Icons.Default.Close, contentDescription = "Close symbol editor", tint = Color.White)
         }
     }
 }
@@ -314,7 +373,7 @@ private fun EditorTopBar(
 /// etc) so we crop to visible pixels before scaling. Otherwise the
 /// glyph huddles in one corner of the tile.
 @Composable
-private fun SymbolPreviewTile(
+internal fun SymbolPreviewTile(
     kind: WaypointKind,
     fallbackIcon: ImageVector
 ) {
@@ -368,7 +427,7 @@ private fun SymbolPreviewTile(
 }
 
 @Composable
-private fun MilitaryTypeFields(
+internal fun MilitaryTypeFields(
     spec: MilitarySymbolSpec,
     onChange: (MilitarySymbolSpec) -> Unit
 ) {
@@ -400,7 +459,63 @@ private fun MilitaryTypeFields(
 }
 
 @Composable
-private fun TaskTypeField(
+internal fun UnitAmplifierFields(
+    higherFormation: String,
+    uniqueIdentifier: String,
+    reinforcementStatus: ReinforcementStatus,
+    onHigherFormationChange: (String) -> Unit,
+    onUniqueIdentifierChange: (String) -> Unit,
+    onReinforcementStatusChange: (ReinforcementStatus) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Unit Amplifiers", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(
+            value = higherFormation,
+            onValueChange = {
+                onHigherFormationChange(boundUnitAmplifier(it, HIGHER_FORMATION_MAX_CODE_POINTS))
+            },
+            label = { Text("Higher formation / parent unit (M)") },
+            supportingText = {
+                Text("${higherFormation.codePointCount(0, higherFormation.length)}/$HIGHER_FORMATION_MAX_CODE_POINTS")
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = uniqueIdentifier,
+            onValueChange = {
+                onUniqueIdentifierChange(boundUnitAmplifier(it, UNIQUE_IDENTIFIER_MAX_CODE_POINTS))
+            },
+            label = { Text("Unique identifier / callsign (T)") },
+            supportingText = {
+                Text("${uniqueIdentifier.codePointCount(0, uniqueIdentifier.length)}/$UNIQUE_IDENTIFIER_MAX_CODE_POINTS")
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        PickerField(
+            label = "Reinforced / reduced (F)",
+            selected = reinforcementStatus,
+            values = ReinforcementStatus.entries,
+            text = { it.displayName },
+            onSelected = onReinforcementStatusChange,
+        )
+        Text(
+            "These labels use the separate Unit Amplifiers switch in Layers and Labels.",
+            color = Color.White.copy(alpha = 0.62f),
+            fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
+internal fun TaskTypeField(
     measure: TacticalControlMeasure,
     onChange: (TacticalControlMeasure) -> Unit
 ) {
@@ -416,8 +531,9 @@ private fun TaskTypeField(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MarkerTypeFields(
+internal fun MarkerTypeFields(
     set: MarkerSet,
     symbolId: String,
     colorHex: String,
@@ -439,21 +555,35 @@ private fun MarkerTypeFields(
         PickerField("Symbol", selectedEntry, entries, { it.displayName }, { onSymbolChange(it.id) })
         Text("Colour", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
         val swatches = MarkerCatalog.teamColors.map { it.second } + listOf("#8A93A6", "#111417")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             swatches.forEach { hex ->
                 val selected = hex.equals(colorHex, ignoreCase = true)
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(Color(android.graphics.Color.parseColor(hex)))
-                        .border(
-                            width = if (selected) 3.dp else 1.dp,
-                            color = if (selected) Color.White else Color.White.copy(alpha = 0.3f),
-                            shape = CircleShape
-                        )
+                        .size(48.dp)
+                        .semantics {
+                            contentDescription = "$hex marker colour"
+                            role = Role.RadioButton
+                            this.selected = selected
+                        }
                         .clickable { onColorChange(hex) }
-                )
+                ) {
+                    Box(
+                        Modifier
+                            .align(Alignment.Center)
+                            .size(if (selected) 34.dp else 30.dp)
+                            .clip(CircleShape)
+                            .background(Color(hex.toColorInt()))
+                            .border(
+                                width = if (selected) 3.dp else 1.dp,
+                                color = if (selected) Color.White else Color.White.copy(alpha = 0.3f),
+                                shape = CircleShape
+                            )
+                    )
+                }
             }
         }
     }
@@ -473,7 +603,12 @@ fun <T> PickerField(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                .semantics {
+                    contentDescription = "$label, ${text(selected)}"
+                    role = Role.Button
+                }
                 .clickable { expanded = true }
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically

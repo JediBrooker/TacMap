@@ -9,6 +9,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 
 /**
  * Guards the 4-basemap wiring on the SDK-free renderer. The real regression risk
@@ -21,6 +23,11 @@ class RasterTileSourceTest {
 
     private fun url(style: BasemapStyle, z: Int, x: Int, y: Int) =
         OnlineRasterTileSource(style).tileUrl(TileIndex(z, x, y))
+
+    @Test fun onlineTileTransportRejectsEveryRedirect() {
+        assertFalse(OnlineRasterTileSource.transportClient.followRedirects)
+        assertFalse(OnlineRasterTileSource.transportClient.followSslRedirects)
+    }
 
     @Test fun esriSatelliteIsKeyed256pxIbasemaps() {
         assumeTrue("needs a build-injected Esri key", EsriKey.isAvailable)
@@ -90,5 +97,24 @@ class RasterTileSourceTest {
         BasemapStyle.entries.forEach {
             assertTrue("${it.name} needs attribution", it.attribution.isNotBlank())
         }
+    }
+
+    @Test fun cancelledOrAbandonedTileRequestsDoNotPoisonProviderHealth() {
+        assertFalse(shouldRecordOnlineTileFailure(callCancelled = true, requestStillWanted = true))
+        assertFalse(shouldRecordOnlineTileFailure(callCancelled = false, requestStillWanted = false))
+        assertFalse(shouldRecordOnlineTileFailure(callCancelled = true, requestStillWanted = false))
+        assertTrue(shouldRecordOnlineTileFailure(callCancelled = false, requestStillWanted = true))
+    }
+
+    @Test fun tileLoadCancellationIsNeverConvertedIntoAnOrdinaryMiss() = runBlocking {
+        var propagated = false
+        try {
+            loadTileOrNullPreservingCancellation<String> { throw CancellationException("superseded") }
+        } catch (_: CancellationException) {
+            propagated = true
+        }
+        assertTrue(propagated)
+
+        assertNull(loadTileOrNullPreservingCancellation<String> { throw java.io.IOException("offline") })
     }
 }

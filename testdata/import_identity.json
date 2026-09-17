@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "description": "Shared external-import identity contract. Waypoint and drawing IDs occupy one global object namespace. Layer IDs are a separate namespace and layer records/references are never reminted by this resolver.",
+  "contract": {
+    "objectKinds": ["waypoint", "drawing"],
+    "comparison": "Parse IDs as UUID values; fixture spelling is lowercase and string case is not identity.",
+    "resolutionOrder": "Process incomingObjects in array order. Preserve the first valid UUID not already used by an existing or earlier incoming waypoint/drawing. Otherwise consume the next injectedRemintIds value.",
+    "layerRule": "Do not add layer IDs to the object-ID occupied set. Do not rewrite layer records or any object's layerId.",
+    "retryRule": "A retry of the same batch reuses its prior caseKey-to-resolvedId map before collision checks. Applying those resolved objects is an idempotent upsert/skip, never a second import.",
+    "caseKeyRule": "caseKey is stable test/batch metadata, not an application object ID or layer ID."
+  },
+  "layers": {
+    "existing": [
+      {
+        "caseKey": "existing_default_layer",
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "name": "Existing Operations"
+      }
+    ],
+    "incoming": [
+      {
+        "caseKey": "incoming_layer_matches_existing_object_id",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "name": "Imported Patrol"
+      }
+    ],
+    "expectedIdsInOrder": [
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "11111111-1111-4111-8111-111111111111"
+    ],
+    "expectedChangedCount": 0
+  },
+  "existingObjects": [
+    {
+      "caseKey": "existing_waypoint",
+      "kind": "waypoint",
+      "id": "11111111-1111-4111-8111-111111111111",
+      "layerId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    },
+    {
+      "caseKey": "existing_drawing",
+      "kind": "drawing",
+      "id": "22222222-2222-4222-8222-222222222222",
+      "layerId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    }
+  ],
+  "injectedRemintIds": [
+    "90000000-0000-4000-8000-000000000001",
+    "90000000-0000-4000-8000-000000000002",
+    "90000000-0000-4000-8000-000000000003",
+    "90000000-0000-4000-8000-000000000004",
+    "90000000-0000-4000-8000-000000000005"
+  ],
+  "incomingObjects": [
+    {
+      "caseKey": "stable_waypoint_uuid",
+      "kind": "waypoint",
+      "id": "33333333-3333-4333-8333-333333333333",
+      "layerId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    },
+    {
+      "caseKey": "valid_existing_same_kind_collision",
+      "kind": "waypoint",
+      "id": "11111111-1111-4111-8111-111111111111",
+      "layerId": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "caseKey": "valid_existing_cross_type_collision",
+      "kind": "waypoint",
+      "id": "22222222-2222-4222-8222-222222222222",
+      "layerId": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "caseKey": "incoming_duplicate_first",
+      "kind": "waypoint",
+      "id": "55555555-5555-4555-8555-555555555555",
+      "layerId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    },
+    {
+      "caseKey": "incoming_duplicate_second_cross_type",
+      "kind": "drawing",
+      "id": "55555555-5555-4555-8555-555555555555",
+      "layerId": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "caseKey": "missing_id",
+      "kind": "waypoint",
+      "layerId": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "caseKey": "invalid_non_uuid_id",
+      "kind": "drawing",
+      "id": "legacy-drawing-7",
+      "layerId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    },
+    {
+      "caseKey": "stable_drawing_uuid",
+      "kind": "drawing",
+      "id": "44444444-4444-4444-8444-444444444444",
+      "layerId": "11111111-1111-4111-8111-111111111111"
+    }
+  ],
+  "expected": {
+    "resolvedObjectsInInputOrder": [
+      {
+        "caseKey": "stable_waypoint_uuid",
+        "kind": "waypoint",
+        "sourceId": "33333333-3333-4333-8333-333333333333",
+        "resolvedId": "33333333-3333-4333-8333-333333333333",
+        "layerId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "resolution": "preserved"
+      },
+      {
+        "caseKey": "valid_existing_same_kind_collision",
+        "kind": "waypoint",
+        "sourceId": "11111111-1111-4111-8111-111111111111",
+        "resolvedId": "90000000-0000-4000-8000-000000000001",
+        "layerId": "11111111-1111-4111-8111-111111111111",
+        "resolution": "existing_same_kind_collision"
+      },
+      {
+        "caseKey": "valid_existing_cross_type_collision",
+        "kind": "waypoint",
+        "sourceId": "22222222-2222-4222-8222-222222222222",
+        "resolvedId": "90000000-0000-4000-8000-000000000002",
+        "layerId": "11111111-1111-4111-8111-111111111111",
+        "resolution": "existing_cross_type_collision"
+      },
+      {
+        "caseKey": "incoming_duplicate_first",
+        "kind": "waypoint",
+        "sourceId": "55555555-5555-4555-8555-555555555555",
+        "resolvedId": "55555555-5555-4555-8555-555555555555",
+        "layerId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "resolution": "preserved"
+      },
+      {
+        "caseKey": "incoming_duplicate_second_cross_type",
+        "kind": "drawing",
+        "sourceId": "55555555-5555-4555-8555-555555555555",
+        "resolvedId": "90000000-0000-4000-8000-000000000003",
+        "layerId": "11111111-1111-4111-8111-111111111111",
+        "resolution": "incoming_duplicate"
+      },
+      {
+        "caseKey": "missing_id",
+        "kind": "waypoint",
+        "sourceId": null,
+        "resolvedId": "90000000-0000-4000-8000-000000000004",
+        "layerId": "11111111-1111-4111-8111-111111111111",
+        "resolution": "missing_id"
+      },
+      {
+        "caseKey": "invalid_non_uuid_id",
+        "kind": "drawing",
+        "sourceId": "legacy-drawing-7",
+        "resolvedId": "90000000-0000-4000-8000-000000000005",
+        "layerId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "resolution": "invalid_id"
+      },
+      {
+        "caseKey": "stable_drawing_uuid",
+        "kind": "drawing",
+        "sourceId": "44444444-4444-4444-8444-444444444444",
+        "resolvedId": "44444444-4444-4444-8444-444444444444",
+        "layerId": "11111111-1111-4111-8111-111111111111",
+        "resolution": "preserved"
+      }
+    ],
+    "consumedRemintIdsInOrder": [
+      "90000000-0000-4000-8000-000000000001",
+      "90000000-0000-4000-8000-000000000002",
+      "90000000-0000-4000-8000-000000000003",
+      "90000000-0000-4000-8000-000000000004",
+      "90000000-0000-4000-8000-000000000005"
+    ],
+    "importedObjectCount": 8,
+    "importedWaypointCount": 5,
+    "importedDrawingCount": 3,
+    "preservedIdCount": 3,
+    "remintedIdCount": 5,
+    "finalGlobalObjectCountIncludingExisting": 10,
+    "resolvedWaypointIdsInOrder": [
+      "33333333-3333-4333-8333-333333333333",
+      "90000000-0000-4000-8000-000000000001",
+      "90000000-0000-4000-8000-000000000002",
+      "55555555-5555-4555-8555-555555555555",
+      "90000000-0000-4000-8000-000000000004"
+    ],
+    "resolvedDrawingIdsInOrder": [
+      "90000000-0000-4000-8000-000000000003",
+      "90000000-0000-4000-8000-000000000005",
+      "44444444-4444-4444-8444-444444444444"
+    ]
+  },
+  "retry": {
+    "batchKey": "shared-import-identity-v1",
+    "priorResolutionMap": [
+      { "caseKey": "stable_waypoint_uuid", "resolvedId": "33333333-3333-4333-8333-333333333333" },
+      { "caseKey": "valid_existing_same_kind_collision", "resolvedId": "90000000-0000-4000-8000-000000000001" },
+      { "caseKey": "valid_existing_cross_type_collision", "resolvedId": "90000000-0000-4000-8000-000000000002" },
+      { "caseKey": "incoming_duplicate_first", "resolvedId": "55555555-5555-4555-8555-555555555555" },
+      { "caseKey": "incoming_duplicate_second_cross_type", "resolvedId": "90000000-0000-4000-8000-000000000003" },
+      { "caseKey": "missing_id", "resolvedId": "90000000-0000-4000-8000-000000000004" },
+      { "caseKey": "invalid_non_uuid_id", "resolvedId": "90000000-0000-4000-8000-000000000005" },
+      { "caseKey": "stable_drawing_uuid", "resolvedId": "44444444-4444-4444-8444-444444444444" }
+    ],
+    "partialFirstAttempt": {
+      "committedCaseKeys": [
+        "stable_waypoint_uuid",
+        "valid_existing_same_kind_collision",
+        "valid_existing_cross_type_collision",
+        "incoming_duplicate_first",
+        "missing_id"
+      ],
+      "uncommittedCaseKeys": [
+        "incoming_duplicate_second_cross_type",
+        "invalid_non_uuid_id",
+        "stable_drawing_uuid"
+      ],
+      "expectedAdditionalObjectsOnRetry": 3
+    },
+    "expectedResolvedIdsOnRetryInInputOrder": [
+      "33333333-3333-4333-8333-333333333333",
+      "90000000-0000-4000-8000-000000000001",
+      "90000000-0000-4000-8000-000000000002",
+      "55555555-5555-4555-8555-555555555555",
+      "90000000-0000-4000-8000-000000000003",
+      "90000000-0000-4000-8000-000000000004",
+      "90000000-0000-4000-8000-000000000005",
+      "44444444-4444-4444-8444-444444444444"
+    ],
+    "expectedNewRemintIdsConsumedOnRetry": [],
+    "expectedAdditionalObjectsAfterCompletedRetry": 0,
+    "expectedFinalGlobalObjectCountIncludingExisting": 10
+  }
+}

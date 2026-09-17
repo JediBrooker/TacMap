@@ -1,152 +1,196 @@
-# TacticalMaps — Architecture
+# TacMap — Cross-platform architecture
 
-This document is the cross-platform brief. It captures the shared abstractions and
-the math, so the iOS and Android teams can move in lockstep without diverging.
+This is the current cross-platform brief for the iOS and Android apps. Shared
+contracts and fixtures are preferred over platform-specific interpretations so
+the native interfaces can differ without changing behaviour or data.
 
-## 1. Shared model: store everything in WGS84
+## 1. WGS84 is the model boundary
 
-The single most important architectural choice: **all overlays (waypoints,
-polylines, polygons) are stored in WGS84 (lat/lon)**. This is the format that
-travels across every basemap:
+Waypoints, symbols, drawing vertices, track points, calibration control points,
+and Unit Sync objects use WGS84 latitude/longitude as their geographic ground
+truth. MGRS and UTM are presentation and input formats computed at the edge.
+Changing basemaps therefore never reprojects mission objects.
 
-```
-           +-----------------------------+
-           |  WGS84 overlay store         |  <-- ground truth (waypoints, lines)
-           +--------------+--------------+
+```text
+                  WGS84 mission model
+             (symbols, drawings, tracks)
                           |
-        +-----------------+-----------------+
-        |                 |                 |
-  +-----+-----+     +-----+-----+     +-----+--------+
-  |  Apple/   |     |  GeoPDF   |     | Calibrated   |
-  |  Google   |     |  source   |     | PDF source   |
-  |  satellite|     |  (tags    |     | (fiduciaries |
-  |  source   |     |   parsed) |     |  fit affine) |
-  +-----------+     +-----------+     +--------------+
+          +---------------+----------------+
+          |               |                |
+    online raster     PDF / GeoPDF       MBTiles
+   (Esri / OSM)      parsed/calibrated    offline
+          |               |                |
+          +---------------+----------------+
+                          |
+              custom map renderer + HUD
 ```
 
-When the user swaps basemaps, no re-projection of overlays is required. MGRS is
-presentation-only: it is computed on the fly from WGS84 via NGA's `mgrs-ios` /
-`mgrs` (Java) libraries.
+The native `MapSource` abstractions expose four active source families on both
+platforms:
 
-The `MapSource` abstraction (Swift protocol / Kotlin sealed interface) hides the
-basemap implementation from everything else. Four concrete kinds:
+- an independently switchable online raster source, disabled on a fresh install:
+  Esri satellite/topographic/OpenStreetMap-style
+  tiles or OpenTopoMap;
+- a GeoPDF whose geospatial metadata is parsed on-device;
+- a PDF calibrated with three or more fiduciaries; and
+- an imported MBTiles raster pyramid.
 
-- `AppleSatelliteMapSource` / `OpenStreetMapSourceAndroid` — the default
-  fallback (Apple satellite on iOS, Google satellite on Android).
-- `PDFMapSource(kind = .geoPDF)` — PDF with OGC GeoPDF tags; calibration parsed.
-- `PDFMapSource(kind = .calibratedPDF)` — hand-calibrated via 3+ fiduciaries.
-- `OfflineTileMapSource` / `OfflineTileMapSourceAndroid` — a sideloaded MBTiles
-  raster pyramid served offline via `MKTileOverlay` (iOS) / a Google Maps
-  `TileProvider` (Android).
+Both apps own their projection, camera, gestures, tile requests, and overlay
+rendering. iOS uses `TileMapView`/`TileMapContainer`; Android uses the
+Compose/Canvas `TileMapView` hosted by `CustomMapScreen`. Neither uses Apple
+Maps or Google Maps to render a basemap. iOS still uses Apple’s
+`MKLocalSearch` only for optional place-name lookup; the `MapKit` coordinate
+structs that remain in some APIs are data types, not a basemap view.
 
-## 2. Browse mode
+## 2. Camera and browse mode
 
-The header MGRS reads either the **user's GPS fix** (default) or the **map
-centre** (browse mode). Browse mode is entered when the user pans/pinches the
-map and cleared by pressing **Centre on My Location**.
+The HUD reads either the user’s GPS fix or the map centre. A pan, pinch, or
+rotation moves the app into browse mode; the centre-on-location action returns
+to the live fix. Each custom renderer publishes the same camera contract:
 
-Detection is platform-specific but conceptually identical:
+- screen point ↔ WGS84 coordinate;
+- visible region and metres per point;
+- centre and heading; and
+- projected positions for symbols, drawings, the grid, presence, and edit
+  handles.
 
-- iOS: `MKMapView` is wrapped in `UIViewRepresentable`; a `UIPanGestureRecognizer`
-  / `UIPinchGestureRecognizer` sets a one-shot flag, which the next
-  `regionDidChangeAnimated:` interprets as "user-driven".
-- Android: `CameraPositionState.cameraMoveStartedReason == REASON_GESTURE` flags
-  user-driven idle events.
+This contract keeps selection, move/edit operations, search results, and
+measurement independent of the underlying raster source.
 
-## 3. Fiduciary calibration
+## 3. PDF and fiduciary calibration
 
-For non-GeoPDF maps (or GeoPDFs whose tags we can't trust), the user places
-**fiduciaries**: each is a point on the PDF page paired with a known MGRS grid
-reference. With N ≥ 3 fiduciaries we fit a 2D affine transform from PDF page
-coordinates to WGS84:
+GeoPDF ingest recognises OGC `LGIDict` and Adobe geospatial `/VP/Measure`
+metadata. A PDF without usable georeferencing can be calibrated by pairing at
+least three page points with known ground coordinates. The fitter solves:
 
-```
-  lon = a*x + b*y + c
-  lat = d*x + e*y + f
-```
-
-Six unknowns; each fiduciary gives two equations. For N = 3 the system is
-exactly determined; for N > 3 we solve the normal equations
-`(Aᵀ A) x = Aᵀ b` (closed-form least squares), independently for X and Y. We
-then back-project each fiduciary, compute the equirectangular distance error,
-and report an RMS residual in metres. The UI should surface this number — a
-map whose RMS exceeds, say, 50 m on a 1:25,000 sheet is likely badly
-calibrated and the user should add or replace fiduciaries.
-
-Implementations:
-- iOS: `Calibration/AffineTransform2D.swift` (`AffineFitter.fit`)
-- Android: `calibration/AffineTransform2D.kt` (`AffineFitter.fit`)
-
-Both use Cramer's rule for the 3×3 normal-equations solve — fine for prototype
-scale, and avoids pulling in a linear-algebra dependency.
-
-### Why affine, not projective?
-
-A 6-DoF affine captures translation, rotation, scale, and shear. Across a single
-1:25,000 sheet (≈ 7 km × 7 km), the distortion from ignoring earth curvature
-and the source projection is sub-pixel for reasonable fiduciaries. For larger
-maps or higher-precision work, swap in a projective (8-DoF homography) fit; the
-`AffineTransform2D` interface is the swap-in seam.
-
-## 4. Export
-
-GeoJSON (RFC 7946) is the canonical export format: coordinates as
-`[longitude, latitude]`, CRS implicit WGS84. Both platforms emit identical
-output:
-
-```json
-{
-  "type": "FeatureCollection",
-  "generator": "TacticalMaps iOS prototype",
-  "features": [
-    {
-      "type": "Feature",
-      "id": "<uuid>",
-      "geometry": { "type": "Point", "coordinates": [lon, lat] },
-      "properties": { "name": "…", "kind": "camp", "elevation_m": 2345 }
-    }
-  ]
-}
+```text
+lon = a*x + b*y + c
+lat = d*x + e*y + f
 ```
 
-GPX and KML can be added later as alternate serialisers — they read the same
-WGS84 model.
+For more than three fiduciaries, the implementation solves the least-squares
+normal equations independently for longitude and latitude. Back-projected
+ground error is reported as an RMS residual in metres. Datum choices are
+normalised to WGS84 before mission data is stored.
 
-## 5. Planned: GeoPDF ingest pipeline (GDAL)
+Calibrated PDFs can be tiled into MBTiles on-device. Imported PDF and MBTiles
+bytes are copied into app-private storage. Their calibration and active/retained
+selection records are persisted separately, so switching to an online source
+does not discard the last imported map.
 
-GeoPDFs ship two non-interchangeable conventions:
+## 4. Durable mission state
 
-- **OGC GeoPDF** — the original, encoded in a `LGIDict` dictionary per page.
-- **Adobe Geospatial** — ISO 32000 extension, encoded under `/Measure`.
+Waypoints, drawings/layers, calibration metadata, sync/chat replay state,
+bounded TacMap Chat history and drafts, and the track log are committed to
+versioned, authenticated AES-256-GCM envelopes before the corresponding UI
+mutation is published. iOS protects the data key through the Keychain; Android
+wraps it with Android Keystore. Optional authentication-bound mode tightens key
+release at the cost documented in
+`security/ADR-002-key-lifetime-and-rotation.md`.
 
-Production-grade ingest requires both. The pragmatic plan:
+Imported map bytes and the local crash report are deliberately not inside the
+mission envelope. They remain app-private and receive the platform’s file
+protection, but can reveal an area of interest if the filesystem is compromised.
 
-1. Server-side (or local CLI) GDAL job rips the GeoPDF:
-   - `gdalinfo` reads the projection + neat-line.
-   - `gdal_translate` reprojects to EPSG:3857 (Web Mercator).
-   - `gdal2tiles.py` generates an MBTiles raster pyramid.
-2. The MBTiles file is sideloaded to the device.
-3. On-device, `MKTileOverlay` (iOS) / `TileOverlay` (Android) serves the tiles.
+## 5. Import and export
 
-Until that pipeline ships, the in-app PDF importer falls back to fiduciary
-calibration.
+GeoJSON (RFC 7946) is the canonical mission-object interchange format, with
+coordinates ordered `[longitude, latitude]`. Both implementations preserve
+stable object identity, layers, simplestyle-compatible drawing properties, and
+TacMap symbol metadata. KML/KMZ and GeoJSON imports resolve identity before one
+durable publication.
 
-The on-device serving half (step 3) is now implemented: the app reads a
-sideloaded `.mbtiles` directly via `MBTilesStore` and serves it through
-`MKTileOverlay` / a Google Maps `TileProvider`. Producing the MBTiles from a
-GeoPDF is still an offline GDAL step the user runs on a desktop.
+**Export All Mission Objects** exports waypoints, symbols, drawings, and layers
+as GeoJSON. Route recording is an independent store and is exported separately
+as GPX. Combining mission objects, tracks, and map assets requires a future
+versioned mission-package format rather than overloading GeoJSON.
 
-## 6. Open questions
+Imports use the platform document picker. A selected PDF or MBTiles file is
+copied to a managed private location before activation, including after process
+recreation; no platform-wide storage permission is required.
 
-- **Coordinate datum on PDFs**: most defence-issued 1:25,000 sheets use MGA94
-  (GDA94) or MGA2020 (GDA2020), not WGS84. The difference is up to ~1.8 m, which
-  matters for some uses. We should ask the user to flag the datum on import and
-  apply the appropriate shift before storing fiduciary WGS84 coordinates.
-- **Drawing layer schema**: GeoJSON `LineString` / `Polygon` are the obvious
-  encoding, but we need to decide how to attach style (colour, dash pattern,
-  width) — GeoJSON's `properties` bag is unstructured. A small in-house schema
-  with a documented set of style keys is probably the right move.
-- **Offline tiles**: sideloaded MBTiles are now served offline on both platforms
-  (copied into the app sandbox on import). Open questions remain: how large do we
-  let them get on a phone, and is an in-app tiler worth it so users don't need a
-  desktop GDAL step? AppleSatellite/GoogleSatellite remain online-only.
+## 6. Search contract
+
+Search runs in two ordered stages:
+
+1. a pure local engine handles full/partial MGRS, decimal coordinates, and
+   deterministic mission search across name, notes, type, and layer; then
+2. when the user has enabled online lookups, Apple place search (iOS) or the
+   platform Geocoder (Android) appends place results.
+
+Coordinate-shaped input, including invalid/out-of-range text, is consumed by
+the local stage and cannot fall through to a network provider. Selecting a
+mission result centres the camera and highlights exactly one waypoint or
+drawing.
+
+Shared fixtures in `testdata/` pin search order, import identity, drawing-style
+units, and symbol-edit normalisation on both platforms.
+
+## 7. Network and Unit Sync boundaries
+
+Online maps and online lookups have separate OPSEC gates and are off for a fresh
+install. Persisted existing-user choices take precedence over those defaults.
+The map gate controls construction of Esri/OpenTopoMap tile sources;
+the lookup gate controls Open-Meteo and place-provider requests. StoreKit/Play
+Billing ownership reconciliation is a separate lifecycle path and is not
+disabled by those gates.
+
+Unit Sync payloads are encrypted end-to-end with a room-derived key. The relay
+routes and temporarily/durably stores ciphertext, but receives the admission
+token and clear routing, object/version/kind, actor/session, acknowledgement,
+and control fields as well as source IPs, co-membership, and traffic timing/size.
+Signed actor and session frames authenticate their origin; they do not make
+relay-reported liveness authoritative. Protocol details and rollback limits are in
+`security/ADR-001-sync-protocol-v3.md` and `THREAT_MODEL.md`.
+
+Both clients serialize and bound delivered WebSocket messages before protocol
+parsing. iOS uses the platform message-size ceiling and requests the next
+message only after the current main-actor handler completes. Apple's public
+`URLSessionWebSocketTask` API handles RFC 6455 Ping/Pong and other control
+frames internally, so TacMap cannot apply its application receive budget to
+those individual frames; this remains a platform-transport availability
+limitation. Android's bounded RFC 6455 draft checks declared payload length,
+fragmented byte/count aggregates, and every raw data/control frame before
+retaining data, then backpressures its reader until the main-thread consumer
+completes. Neither Unit Sync transport accepts redirects or offers WebSocket
+compression.
+
+TacMap Chat is a strict, backwards-compatible v3 extension with two explicit
+recipient scopes. After `hello-ack`, each unlocked socket advertises one signed,
+memory-only X25519 public key; Chat remains unavailable until the relay returns
+the exact `chat-key-ack`. **Entire room** derives a domain-separated chat subkey
+from the room key and is therefore readable by every join-code holder.
+**Selected unit** derives an endpoint-only key from the two advertised session
+keys and binds the exact recipient actor/session/key tuple into the KDF, AEAD
+associated data, and sender signature. The relay verifies the clear outer
+signature and routes only to live Chat-capable sockets; it never stores Chat
+keys or ciphertext and never broadens an unavailable direct recipient to the
+room. A relay `chat-ack` means only **Routed** (or **Sent to room**), not delivered
+or read; TacMap Chat v1 has no endpoint receipts. The byte contract and shared
+vectors are in `security/ADR-004-tacmap-chat-v1.md` and
+`testdata/tacmap_chat_v1.json`.
+
+On both platforms, screen-off location presence is a separate, default-off OPSEC lease.
+The platform location service keeps only a foreground-started v3 session alive and outbound
+presence is rate-limited to the selected one/five/fifteen/thirty/sixty-minute cadence. Each
+update carries a backwards-compatible, sender-signed retention advertisement;
+receivers extend a marker beyond 45 seconds only for that exact authenticated
+session and never beyond 65 minutes. Revoking extended eligibility rotates the
+session so the previous marker is withdrawn instead of waiting for expiry.
+Inbound mission frames are discarded behind the mission-key lock; foreground
+return replaces the socket and reconciles from a verified snapshot. The track
+recorder and Unit Sync hold independent background-location leases so stopping
+one cannot disable the other. Android uses an ongoing location foreground
+service for the opted-in presence-only session; iOS uses the system background-
+location indicator. Neither path enables itself during an update.
+
+## 8. Current extension points
+
+- Additional PDF projections and datum transforms can be added behind the
+  calibration parser without changing mission storage.
+- A saved basemap library can build on the retained imported-map descriptor and
+  content-hash calibration records.
+- An encrypted mission package needs a versioned manifest, streaming limits,
+  authenticated contents, conflict rules, and explicit track/map inclusion.
+- A LAN/mesh Unit Sync transport could replace the relay while retaining the
+  same object and replay contracts.

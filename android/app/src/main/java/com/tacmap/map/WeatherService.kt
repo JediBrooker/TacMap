@@ -88,6 +88,7 @@ class WeatherService {
             "&hourly=visibility&wind_speed_unit=ms&forecast_days=1&timezone=auto"
 
         val body = boundedHttpsGet(url, MAX_RESPONSE_BYTES) ?: return null
+        if (OpsecSettings.shared?.onlineLookups?.value != true) return null
 
         val decoded = runCatching { json.decodeFromString<Response>(body) }.getOrNull() ?: return null
         val c = decoded.current ?: return null

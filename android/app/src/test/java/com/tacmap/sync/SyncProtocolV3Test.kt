@@ -21,7 +21,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.util.UUID
 
 /**
  * Validates Android v3 protocol implementation against the shared fixture
@@ -35,7 +37,7 @@ class SyncProtocolV3Test {
 
     @Before fun installStoreKey() {
         sealedLabels.clear()
-        SafeStore.keyProvider = SafeStore.KeyProvider { testStoreKey }
+        SafeStore.keyProvider = SafeStore.KeyProvider { testStoreKey.copyOf() }
         SafeStore.migrationPolicy = object : SafeStore.MigrationPolicy {
             override fun isSealedOnly(label: String) = label in sealedLabels
             override fun markSealedOnly(label: String) { sealedLabels += label }
@@ -58,6 +60,16 @@ class SyncProtocolV3Test {
             dir = dir?.parentFile
         }
         error("Could not locate testdata/sync_protocol_v3.json")
+    }
+
+    private val localStoreFixture: JsonObject by lazy {
+        var dir: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
+        repeat(8) {
+            val file = File(dir, "testdata/local_store_name_v1.json")
+            if (file.exists()) return@lazy Json.parseToJsonElement(file.readText()).jsonObject
+            dir = dir?.parentFile
+        }
+        error("Could not locate testdata/local_store_name_v1.json")
     }
 
     private fun JsonObject.str(k: String) = this[k]!!.jsonPrimitive.content
@@ -120,6 +132,333 @@ class SyncProtocolV3Test {
 
         assertEquals(cross.str("device_a_actor_id_in_alt_room"), altActorId)
         assertNotEquals(devA.str("actor_id"), altActorId)
+    }
+
+    @Test
+    fun opaqueLocalStoreNamesMatchSharedFixtureAndArePathSafe() {
+        val key = SyncIdentity.hexToBytes(localStoreFixture.str("data_key_hex"))
+        val room = localStoreFixture.str("room_id")
+        val chat = requireNotNull(SyncIdentity.localStoreFileName(
+            key, room, SyncIdentity.LocalStoreDomain.CHAT
+        ))
+        val replay = requireNotNull(SyncIdentity.localStoreFileName(
+            key, room, SyncIdentity.LocalStoreDomain.REPLAY
+        ))
+
+        assertEquals(localStoreFixture.str("chat_file"), chat)
+        assertEquals(localStoreFixture.str("replay_file"), replay)
+        assertNotEquals(chat, replay)
+        assertFalse(chat.contains(room))
+        assertNotEquals(chat, SyncIdentity.localStoreFileName(
+            key, "$room-other", SyncIdentity.LocalStoreDomain.CHAT
+        ))
+        assertNotEquals(chat, SyncIdentity.localStoreFileName(
+            ByteArray(32) { 0xff.toByte() }, room, SyncIdentity.LocalStoreDomain.CHAT
+        ))
+        assertTrue(chat.matches(Regex("^v1_[A-Za-z0-9_-]{43}\\.json$")))
+
+        val root = Files.createTempDirectory("opaque-store-path").toFile()
+        try {
+            val directory = File(root, "inside")
+            val resolved = SyncLocalStore.resolveFile(
+                directory = directory,
+                roomId = "../../outside-room",
+                domain = SyncIdentity.LocalStoreDomain.REPLAY,
+                dataKey = key,
+            )
+            assertEquals(directory.canonicalFile, requireNotNull(resolved.parentFile).canonicalFile)
+            assertFalse(resolved.name.contains("outside-room"))
+        } finally {
+            root.deleteRecursively()
+        }
+        assertNull(SyncIdentity.localStoreFileName(
+            ByteArray(31), room, SyncIdentity.LocalStoreDomain.CHAT
+        ))
+        assertNull(SyncIdentity.localStoreFileName(
+            key, "", SyncIdentity.LocalStoreDomain.CHAT
+        ))
+    }
+
+    @Test
+    fun coldUpgradeMigratesEveryInactiveLegacyRoomAcrossBothStores() {
+        val root = Files.createTempDirectory("opaque-store-cold-upgrade").toFile()
+        val key = ByteArray(32) { 0x6a }
+        SafeStore.keyProvider = SafeStore.KeyProvider { key.copyOf() }
+        try {
+            val chatDirectory = File(root, "tacmap_chat").apply { check(mkdirs()) }
+            val replayDirectory = File(root, "sync_replay").apply { check(mkdirs()) }
+            val rooms = listOf(
+                SyncIdentity.urlB64(ByteArray(32) { 0x31 }),
+                SyncIdentity.urlB64(ByteArray(32) { 0x32 }),
+            )
+            for (room in rooms) {
+                SafeStore.writeAtomically(
+                    File(chatDirectory, "$room.json"),
+                    "sync/chat/$room",
+                    "chat-$room",
+                )
+                SafeStore.writeAtomically(
+                    File(replayDirectory, "$room.json"),
+                    "sync/room/$room",
+                    "replay-$room",
+                )
+            }
+
+            assertEquals(4, SyncLocalStore.migrateAllLegacyStores(root))
+            for (room in rooms) {
+                for ((directory, domain) in listOf(
+                    chatDirectory to SyncIdentity.LocalStoreDomain.CHAT,
+                    replayDirectory to SyncIdentity.LocalStoreDomain.REPLAY,
+                )) {
+                    val opaque = File(
+                        directory,
+                        requireNotNull(SyncIdentity.localStoreFileName(key, room, domain)),
+                    )
+                    assertTrue(opaque.exists())
+                    assertFalse(File(directory, "$room.json").exists())
+                }
+            }
+            val remainingNames = (
+                chatDirectory.listFiles().orEmpty().asList() +
+                    replayDirectory.listFiles().orEmpty().asList()
+            ).map { it.name }
+            for (room in rooms) assertFalse(remainingNames.any { room in it })
+        } finally {
+            SafeStore.keyProvider = SafeStore.KeyProvider { testStoreKey.copyOf() }
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun lockedColdUpgradeMakesNoChangesAndMalformedNamesStayUntouched() {
+        val root = Files.createTempDirectory("opaque-store-locked-upgrade").toFile()
+        val chatDirectory = File(root, "tacmap_chat").apply { check(mkdirs()) }
+        val room = SyncIdentity.urlB64(ByteArray(32) { 0x41 })
+        val legacy = File(chatDirectory, "$room.json")
+        val legacyBytes = "locked-history".toByteArray()
+        legacy.writeBytes(legacyBytes)
+        val malformed = listOf(
+            "not-a-room.json",
+            "$room.json.backup",
+            "$room.json.corrupt-",
+            "$room.json.corrupt-not-a-timestamp",
+            ".$room.json.sealed-only-v1.backup",
+            "v1_$room.json",
+            "$room.txt",
+        )
+        malformed.forEach { File(chatDirectory, it).writeText(it) }
+        val namesBefore = chatDirectory.listFiles().orEmpty().map { it.name }.sorted()
+
+        try {
+            SafeStore.keyProvider = SafeStore.KeyProvider { throw DataKey.LockedException() }
+            assertTrue(
+                runCatching { SyncLocalStore.migrateAllLegacyStores(root) }.exceptionOrNull()
+                    is DataKey.LockedException
+            )
+            assertEquals(namesBefore, chatDirectory.listFiles().orEmpty().map { it.name }.sorted())
+            assertTrue(legacy.readBytes().contentEquals(legacyBytes))
+
+            val key = ByteArray(32) { 0x42 }
+            SafeStore.keyProvider = SafeStore.KeyProvider { key.copyOf() }
+            assertEquals(1, SyncLocalStore.migrateAllLegacyStores(root))
+            malformed.forEach { assertTrue(File(chatDirectory, it).exists()) }
+            assertFalse(legacy.exists())
+        } finally {
+            SafeStore.keyProvider = SafeStore.KeyProvider { testStoreKey.copyOf() }
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun interruptedLegacyRenameResumesMarkerAndCompanionAdoption() {
+        val root = Files.createTempDirectory("opaque-store-resume").toFile()
+        val directory = File(root, "tacmap_chat").apply { check(mkdirs()) }
+        val key = ByteArray(32) { 0x51 }
+        SafeStore.keyProvider = SafeStore.KeyProvider { key.copyOf() }
+        try {
+            val room = SyncIdentity.urlB64(ByteArray(32) { 0x52 })
+            val legacy = File(directory, "$room.json")
+            SafeStore.writeAtomically(legacy, "sync/chat/$room", "history")
+            val target = File(
+                directory,
+                requireNotNull(SyncIdentity.localStoreFileName(
+                    key,
+                    room,
+                    SyncIdentity.LocalStoreDomain.CHAT,
+                )),
+            )
+            Files.move(legacy.toPath(), target.toPath())
+            val legacyMarker = sealedOnlyMarker(legacy)
+            assertTrue(legacyMarker.exists())
+            val legacyMarkerTmp = File(legacyMarker.parentFile, legacyMarker.name + ".tmp")
+            legacyMarkerTmp.writeBytes(byteArrayOf(1))
+            val legacyCompanion = File(directory, "${legacy.name}.corrupt-123")
+            legacyCompanion.writeText("quarantine")
+
+            assertEquals(1, SyncLocalStore.migrateAllLegacyStores(root))
+            assertTrue(target.exists())
+            assertTrue(sealedOnlyMarker(target).exists())
+            val targetMarker = sealedOnlyMarker(target)
+            assertTrue(File(targetMarker.parentFile, targetMarker.name + ".tmp").exists())
+            assertEquals("quarantine", File(directory, "${target.name}.corrupt-123").readText())
+            assertFalse(directory.listFiles().orEmpty().any { room in it.name })
+        } finally {
+            SafeStore.keyProvider = SafeStore.KeyProvider { testStoreKey.copyOf() }
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun interruptedConflictKeepsMarkerAndCompanionsBoundToTheLegacyCopy() {
+        val root = Files.createTempDirectory("opaque-store-conflict-resume").toFile()
+        val directory = File(root, "tacmap_chat").apply { check(mkdirs()) }
+        val key = ByteArray(32) { 0x61 }
+        try {
+            val room = SyncIdentity.urlB64(ByteArray(32) { 0x62 })
+            val target = File(directory, requireNotNull(SyncIdentity.localStoreFileName(
+                key, room, SyncIdentity.LocalStoreDomain.CHAT,
+            )))
+            target.writeText("current")
+            val legacy = File(directory, "$room.json")
+            legacy.writeText("legacy")
+            val companion = File(directory, "${legacy.name}.corrupt-123")
+            companion.writeText("legacy quarantine")
+
+            // Model marker-first interruption: marker reached its opaque
+            // conflict slot but legacy data is still at the old path.
+            val conflict = File(directory, "${target.name}.legacy-conflict-${UUID.randomUUID()}")
+            val conflictMarker = sealedOnlyMarker(conflict)
+            conflictMarker.writeBytes(byteArrayOf(1))
+
+            SyncLocalStore.resolveFile(
+                directory, room, SyncIdentity.LocalStoreDomain.CHAT, key,
+            )
+            assertEquals("legacy", conflict.readText())
+            assertTrue(conflictMarker.exists())
+            assertEquals(
+                "legacy quarantine",
+                File(directory, "${conflict.name}.corrupt-123").readText(),
+            )
+            assertFalse(File(directory, "${target.name}.corrupt-123").exists())
+
+            // A later crash after data+marker but before companion adoption
+            // still resumes against the unique conflict copy.
+            File(directory, "${legacy.name}.corrupt-456").writeText("late quarantine")
+            SyncLocalStore.resolveFile(
+                directory, room, SyncIdentity.LocalStoreDomain.CHAT, key,
+            )
+            assertEquals(
+                "late quarantine",
+                File(directory, "${conflict.name}.corrupt-456").readText(),
+            )
+
+            // Model the former data-first implementation's interruption.
+            val oldConflict = File(
+                directory,
+                "${target.name}.legacy-conflict-${UUID.randomUUID()}",
+            ).apply { writeText("older legacy") }
+            val rawMarker = sealedOnlyMarker(legacy)
+            rawMarker.writeBytes(byteArrayOf(1))
+            SyncLocalStore.resolveFile(
+                directory, room, SyncIdentity.LocalStoreDomain.CHAT, key,
+            )
+            assertTrue(sealedOnlyMarker(oldConflict).exists())
+            assertFalse(sealedOnlyMarker(target).exists())
+            assertFalse(rawMarker.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun symbolicLinkStoresAreRejectedWithoutTouchingExternalTargets() {
+        val root = Files.createTempDirectory("opaque-store-symlink").toFile()
+        val external = Files.createTempDirectory("opaque-store-external").toFile()
+        val key = ByteArray(32) { 0x63 }
+        try {
+            val linkedRoot = File(root, "linked")
+            Files.createSymbolicLink(linkedRoot.toPath(), external.toPath())
+            assertTrue(runCatching {
+                SyncLocalStore.migrateAllLegacyStores(linkedRoot)
+            }.isFailure)
+
+            val directory = File(root, "sync_replay").apply { check(mkdirs()) }
+            val room = SyncIdentity.urlB64(ByteArray(32) { 0x64 })
+            val externalFile = File(external, "outside.json").apply { writeText("outside") }
+            Files.createSymbolicLink(File(directory, "$room.json").toPath(), externalFile.toPath())
+            assertTrue(runCatching {
+                SyncLocalStore.migrateLegacyFiles(
+                    directory, SyncIdentity.LocalStoreDomain.REPLAY, key,
+                )
+            }.isFailure)
+            assertEquals("outside", externalFile.readText())
+            assertFalse(File(directory, requireNotNull(SyncIdentity.localStoreFileName(
+                key, room, SyncIdentity.LocalStoreDomain.REPLAY,
+            ))).exists())
+        } finally {
+            root.deleteRecursively()
+            external.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun inactiveReplayMigrationFailureDoesNotBlockTheRequestedRoom() {
+        val root = Files.createTempDirectory("opaque-store-active-replay").toFile()
+        val external = Files.createTempFile("inactive-replay", ".json").toFile()
+        try {
+            val directory = File(root, "sync_replay").apply { check(mkdirs()) }
+            val activeRoom = SyncIdentity.urlB64(ByteArray(32) { 0x6c })
+            val inactiveRoom = SyncIdentity.urlB64(ByteArray(32) { 0x6d })
+            external.writeText("outside")
+            Files.createSymbolicLink(
+                File(directory, "$inactiveRoom.json").toPath(),
+                external.toPath(),
+            )
+
+            assertTrue(SyncReplayState(activeRoom, root).load())
+            assertTrue(runCatching {
+                SyncLocalStore.migrateLegacyFiles(
+                    directory,
+                    SyncIdentity.LocalStoreDomain.REPLAY,
+                    testStoreKey,
+                )
+            }.isFailure)
+            assertEquals("outside", external.readText())
+        } finally {
+            root.deleteRecursively()
+            external.delete()
+        }
+    }
+
+    @Test
+    fun noReplaceMoveCannotOverwriteARacingDestination() {
+        val root = Files.createTempDirectory("opaque-store-no-replace").toFile()
+        try {
+            val source = File(root, "source").apply { writeText("source") }
+            val destination = File(root, "destination").apply { writeText("destination") }
+            val failure = runCatching {
+                SyncLocalStore.moveNoReplace(source, destination)
+            }.exceptionOrNull()
+            assertTrue(failure is FileAlreadyExistsException)
+            assertEquals("source", source.readText())
+            assertEquals("destination", destination.readText())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun coldMigrationUsesAndZeroesTheSingleOwnedNamingKey() {
+        val root = Files.createTempDirectory("opaque-store-key-lifetime").toFile()
+        val ownedKey = ByteArray(32) { 0x65 }
+        SafeStore.keyProvider = SafeStore.KeyProvider { ownedKey }
+        try {
+            assertEquals(0, SyncLocalStore.migrateAllLegacyStores(root))
+            assertTrue(ownedKey.all { it == 0.toByte() })
+        } finally {
+            SafeStore.keyProvider = SafeStore.KeyProvider { testStoreKey.copyOf() }
+            root.deleteRecursively()
+        }
     }
 
     // -- Wire object IDs --
@@ -340,7 +679,7 @@ class SyncProtocolV3Test {
             actorA, publicKey, firstSession, "0000000000000001"
         ))
         assertTrue(first.commitPresence(actorA, publicKey, firstSession, 7))
-        val stateFile = File(dir, "sync_replay/presence-reconnect.json")
+        val stateFile = currentReplayFile(dir, "presence-reconnect")
         val stored = JSONObject(String(
             requireNotNull(SealedEnvelope.openFile(
                 testStoreKey, stateFile.readBytes(), "sync/room/presence-reconnect"
@@ -375,6 +714,56 @@ class SyncProtocolV3Test {
         ))
         assertEquals(0L, reloaded.getPresenceCounter(actorA))
         assertTrue(reloaded.commitPresence(actorA, publicKey, secondSession, 1))
+    }
+
+    @Test
+    fun legacyReplayFilenameMigratesWithoutLosingRollbackState() {
+        val room = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val publicKey = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val session = SyncIdentity.urlB64(ByteArray(32) { 0x2a })
+        val dir = Files.createTempDirectory("sync-replay-name-migration").toFile()
+        val first = SyncReplayState(room, dir)
+        assertTrue(first.load())
+        assertTrue(first.commitActorHello(actorA, publicKey, session, "0000000000000001"))
+        assertTrue(first.commitPresence(actorA, publicKey, session, 4))
+
+        val current = currentReplayFile(dir, room)
+        val legacy = File(current.parentFile, "$room.json")
+        val currentMarker = sealedOnlyMarker(current)
+        val legacyMarker = sealedOnlyMarker(legacy)
+        Files.move(current.toPath(), legacy.toPath())
+        if (currentMarker.exists()) Files.move(currentMarker.toPath(), legacyMarker.toPath())
+
+        val reloaded = SyncReplayState(room, dir)
+        assertTrue(reloaded.load())
+        assertEquals(session, reloaded.getPresenceSessionDomain(actorA))
+        assertEquals(4L, reloaded.getPresenceCounter(actorA))
+        assertTrue(current.exists())
+        assertFalse(legacy.exists())
+        assertFalse(current.name.contains(room))
+        assertFalse(legacyMarker.exists())
+    }
+
+    @Test
+    fun lockedNamingKeyNeverMovesLegacyReplayState() {
+        val room = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val dir = Files.createTempDirectory("sync-replay-name-lock").toFile()
+        val first = SyncReplayState(room, dir)
+        assertTrue(first.save())
+        val current = currentReplayFile(dir, room)
+        val legacy = File(current.parentFile, "$room.json")
+        val currentMarker = sealedOnlyMarker(current)
+        val legacyMarker = sealedOnlyMarker(legacy)
+        Files.move(current.toPath(), legacy.toPath())
+        if (currentMarker.exists()) Files.move(currentMarker.toPath(), legacyMarker.toPath())
+        val before = legacy.readBytes()
+
+        SafeStore.keyProvider = SafeStore.KeyProvider { throw DataKey.LockedException() }
+        assertFalse(SyncReplayState(room, dir).load())
+        assertTrue(legacy.readBytes().contentEquals(before))
+        assertFalse(current.exists())
+        SafeStore.keyProvider = SafeStore.KeyProvider { testStoreKey.copyOf() }
     }
 
     @Test
@@ -461,10 +850,12 @@ class SyncProtocolV3Test {
     fun helloEpochAndCrashRecoveryAreExact() {
         val devA = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
         val pub = devA.str("pubkey_base64url")
+        val roomId = fixture["key_derivation"]!!.jsonObject.str("room_id")
         val wireId = fixture["wire_object_ids"]!!.jsonObject["cases"]!!.jsonArray[0].jsonObject.str("wire_object_id")
-        val state = SyncReplayState("test-room")
-        assertEquals("0000000000000001", state.reserveHelloEpoch(actorA))
-        assertEquals("0000000000000002", state.reserveHelloEpoch(actorA))
+        val state = SyncReplayState(roomId)
+        assertEquals("0000000000000001", state.reserveHelloEpoch(actorA, pub))
+        assertEquals(pub, state.getPinnedPubkey(actorA))
+        assertEquals("0000000000000002", state.reserveHelloEpoch(actorA, pub))
         val hash = "ab".repeat(32)
         val put = state.reserveLocalPut(wireId, actorA, pub, hash)!!
         assertEquals(put, state.recoverableLocalPut(wireId, actorA, pub, hash))
@@ -472,6 +863,155 @@ class SyncProtocolV3Test {
         val del = state.reserveLocalDelete(wireId, actorA, pub)!!
         assertNull(state.recoverableLocalPut(wireId, actorA, pub, hash))
         assertEquals(listOf(wireId to del), state.recoverableLocalDeletes(actorA, pub))
+    }
+
+    @Test
+    fun localHelloEpochAndActorPinSurviveColdReloadTogether() {
+        val roomId = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val pub = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val dir = Files.createTempDirectory("sync-hello-cold-reload").toFile()
+
+        val first = SyncReplayState(roomId, dir)
+        assertTrue(first.load(actorA, pub))
+        assertEquals("0000000000000001", first.reserveHelloEpoch(actorA, pub))
+        assertEquals(pub, first.getPinnedPubkey(actorA))
+
+        val reloaded = SyncReplayState(roomId, dir)
+        assertTrue(reloaded.load(actorA, pub))
+        assertEquals(pub, reloaded.getPinnedPubkey(actorA))
+        assertEquals("0000000000000001", reloaded.getHelloEpoch(actorA))
+        assertEquals("0000000000000002", reloaded.reserveHelloEpoch(actorA, pub))
+    }
+
+    @Test
+    fun localHelloReservationFailureRollsBackActorPinAndEpoch() {
+        val roomId = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val pub = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val state = SyncReplayState(roomId, persistOverride = { false })
+
+        assertNull(state.reserveHelloEpoch(actorA, pub))
+        assertNull(state.getPinnedPubkey(actorA))
+        assertNull(state.getHelloEpoch(actorA))
+    }
+
+    @Test
+    fun legacyLocalHelloEpochOrphanIsValidatedRepairedAndPersisted() {
+        val roomId = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val pub = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val dir = Files.createTempDirectory("sync-hello-local-repair").toFile()
+        val file = writeReplayState(dir, roomId, helloEpochs = mapOf(
+            actorA to "0000000000000001"
+        ))
+
+        val repaired = SyncReplayState(roomId, dir)
+        assertTrue(repaired.load(actorA, pub))
+        assertEquals(pub, repaired.getPinnedPubkey(actorA))
+        assertEquals("0000000000000001", repaired.getHelloEpoch(actorA))
+
+        val persisted = readReplayState(file, roomId)
+        assertEquals(pub, persisted.getJSONObject("actors").getString(actorA))
+        val strictReload = SyncReplayState(roomId, dir)
+        assertTrue(strictReload.load())
+        assertEquals(pub, strictReload.getPinnedPubkey(actorA))
+    }
+
+    @Test
+    fun legacyRepairRejectsRemoteOrphanAndMismatchedLocalIdentity() {
+        val roomId = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val deviceA = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+        val deviceB = fixture["identity"]!!.jsonObject["device_b"]!!.jsonObject
+        val pubA = deviceA.str("pubkey_base64url")
+        val pubB = deviceB.str("pubkey_base64url")
+
+        val remoteDir = Files.createTempDirectory("sync-hello-remote-orphan").toFile()
+        writeReplayState(remoteDir, roomId, helloEpochs = mapOf(
+            actorB to "0000000000000001"
+        ))
+        assertFalse(SyncReplayState(roomId, remoteDir).load(actorA, pubA))
+
+        val mismatchedDir = Files.createTempDirectory("sync-hello-mismatch").toFile()
+        writeReplayState(mismatchedDir, roomId, helloEpochs = mapOf(
+            actorA to "0000000000000001"
+        ))
+        assertFalse(SyncReplayState(roomId, mismatchedDir).load(actorA, pubB))
+    }
+
+    @Test
+    fun legacyRepairRejectsLocalOrphanWithPresenceSessionReference() {
+        val roomId = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val pub = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val sessionDomain = SyncIdentity.urlB64(ByteArray(32) { 0x5a })
+        val dir = Files.createTempDirectory("sync-hello-presence-reference").toFile()
+        writeReplayState(
+            dir,
+            roomId,
+            helloEpochs = mapOf(actorA to "0000000000000001"),
+        ) { json ->
+            json.getJSONObject("presenceSeq").put(actorA, JSONObject().apply {
+                put("sd", sessionDomain)
+                put("counter", "0000000000000001")
+            })
+        }
+
+        assertFalse(SyncReplayState(roomId, dir).load(actorA, pub))
+    }
+
+    @Test
+    fun legacyRepairRejectsLocalOrphanWithPutDeleteAndPendingMutationReferences() {
+        val roomId = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val pub = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val putId = fixture["wire_object_ids"]!!.jsonObject["cases"]!!.jsonArray[0]
+            .jsonObject.str("wire_object_id")
+        val deleteId = SyncIdentity.urlB64(ByteArray(32) { 0x6b })
+        val stamp = VersionStamp(1, actorA).encode()
+        val hash = "7c".repeat(32)
+        val dir = Files.createTempDirectory("sync-hello-mutation-reference").toFile()
+        writeReplayState(
+            dir,
+            roomId,
+            helloEpochs = mapOf(actorA to "0000000000000001"),
+        ) { json ->
+            json.put("localCounter", "0000000000000001")
+            json.getJSONObject("stamps").apply {
+                put(putId, stamp)
+                put(deleteId, stamp)
+            }
+            json.getJSONObject("tombstones").put(deleteId, stamp)
+            json.getJSONObject("contentHashes").put(putId, hash)
+            json.getJSONObject("pendingModelApplications").apply {
+                put(putId, pendingMutation(stamp, pub, deleted = false, hash = hash))
+                put(deleteId, pendingMutation(stamp, pub, deleted = true, hash = null))
+            }
+        }
+
+        assertFalse(SyncReplayState(roomId, dir).load(actorA, pub))
+    }
+
+    @Test
+    fun legacyLocalOrphanRepairWriteFailureRollsBackAndFailsClosed() {
+        val roomId = fixture["key_derivation"]!!.jsonObject.str("room_id")
+        val pub = fixture["identity"]!!.jsonObject["device_a"]!!.jsonObject
+            .str("pubkey_base64url")
+        val dir = Files.createTempDirectory("sync-hello-repair-write-failure").toFile()
+        val file = writeReplayState(dir, roomId, helloEpochs = mapOf(
+            actorA to "0000000000000001"
+        ))
+        val state = SyncReplayState(roomId, dir, persistOverride = { false })
+
+        assertFalse(state.load(actorA, pub))
+        assertNull(state.getPinnedPubkey(actorA))
+        assertNull(state.getHelloEpoch(actorA))
+        val stillOrphaned = readReplayState(file, roomId)
+        assertFalse(stillOrphaned.getJSONObject("actors").has(actorA))
+        assertEquals(
+            "0000000000000001",
+            stillOrphaned.getJSONObject("helloEpochs").getString(actorA),
+        )
     }
 
     @Test
@@ -595,7 +1135,7 @@ class SyncProtocolV3Test {
         assertTrue(state.save())
         assertTrue(state.commitRemoteAuthenticated(SyncReplayState.RemoteMutation(
             mutation, priorModelHash = null, expectedModelHash = expectedHash)))
-        val file = File(dir, "sync_replay/sealed-expected.json")
+        val file = currentReplayFile(dir, "sealed-expected")
         assertTrue(SealedEnvelope.isSealedFile(file.readBytes()))
 
         val reloaded = SyncReplayState("sealed-expected", dir)
@@ -621,7 +1161,7 @@ class SyncProtocolV3Test {
         assertTrue(state.save())
         assertTrue(state.commitRemoteAuthenticated(SyncReplayState.RemoteMutation(
             mutation, priorModelHash = null, expectedModelHash = expectedHash)))
-        val file = File(dir, "sync_replay/$room.json")
+        val file = currentReplayFile(dir, room)
         val label = "sync/room/$room"
         val plain = requireNotNull(SealedEnvelope.openFile(testStoreKey, file.readBytes(), label))
         val json = JSONObject(String(plain, Charsets.UTF_8))
@@ -686,9 +1226,87 @@ class SyncProtocolV3Test {
             cycleState.pendingModelDecision(cycleMutation, incoming, journal.generation(localId)))
     }
 
+    private fun writeReplayState(
+        filesDir: File,
+        roomId: String,
+        actorPins: Map<String, String> = emptyMap(),
+        helloEpochs: Map<String, String> = emptyMap(),
+        mutate: (JSONObject) -> Unit = {},
+    ): File {
+        val replayDir = File(filesDir, "sync_replay")
+        check(replayDir.exists() || replayDir.mkdirs())
+        val file = currentReplayFile(filesDir, roomId)
+        val json = JSONObject().apply {
+            put("schemaVersion", 3)
+            put("localCounter", "0000000000000000")
+            put("lastSnapshotSeq", -1L)
+            put("stamps", JSONObject())
+            put("tombstones", JSONObject())
+            put("contentHashes", JSONObject())
+            put("actors", JSONObject().also { out ->
+                actorPins.forEach { (actor, pubkey) -> out.put(actor, pubkey) }
+            })
+            put("helloEpochs", JSONObject().also { out ->
+                helloEpochs.forEach { (actor, epoch) -> out.put(actor, epoch) }
+            })
+            put("presenceSeq", JSONObject())
+            put("pendingModelApplications", JSONObject())
+        }
+        mutate(json)
+        SafeStore.writeAtomically(file, "sync/room/$roomId", json.toString())
+        return file
+    }
+
+    private fun currentReplayFile(filesDir: File, roomId: String): File = File(
+        File(filesDir, "sync_replay"),
+        requireNotNull(SyncIdentity.localStoreFileName(
+            testStoreKey,
+            roomId,
+            SyncIdentity.LocalStoreDomain.REPLAY,
+        )),
+    )
+
+    private fun sealedOnlyMarker(file: File): File =
+        File(file.parentFile, ".${file.name}.sealed-only-v1")
+
+    private fun pendingMutation(
+        stamp: String,
+        pubkey: String,
+        deleted: Boolean,
+        hash: String?,
+    ): JSONObject = JSONObject().apply {
+        put("vs", stamp)
+        put("pub", pubkey)
+        put("deleted", deleted)
+        if (!deleted) put("hash", requireNotNull(hash))
+        put("priorHash", JSONObject.NULL)
+        put("expectedHash", if (deleted) JSONObject.NULL else hash)
+        put("localId", JSONObject.NULL)
+        put("generation", "0000000000000000")
+    }
+
+    private fun readReplayState(file: File, roomId: String): JSONObject {
+        val plaintext = requireNotNull(
+            SealedEnvelope.openFile(testStoreKey, file.readBytes(), "sync/room/$roomId")
+        )
+        return JSONObject(String(plaintext, Charsets.UTF_8))
+    }
+
     @Test
     fun relayBaseNormalizationRemovesConfiguredRoomPath() {
-        assertEquals("wss://example.test", SyncManager.normalizeRelayBase("wss://example.test/room/"))
-        assertEquals("wss://example.test", SyncManager.normalizeRelayBase("wss://example.test/v3/room"))
+        assertEquals(
+            "wss://example.test",
+            SyncManager.validatedRelayBaseForRuntime(
+                "wss://example.test/room/",
+                allowInsecureLoopback = false,
+            ),
+        )
+        assertEquals(
+            "wss://example.test",
+            SyncManager.validatedRelayBaseForRuntime(
+                "wss://example.test/v3/room",
+                allowInsecureLoopback = false,
+            ),
+        )
     }
 }

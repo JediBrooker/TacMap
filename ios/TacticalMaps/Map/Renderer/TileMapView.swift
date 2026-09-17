@@ -33,6 +33,10 @@ final class TileMapView: UIView {
     /// browse mode (header reads map centre, not user location).
     var onGestureBegan: (() -> Void)?
 
+    /// Heading Up owns camera rotation; pan and pinch remain available while
+    /// the two-finger rotation recognizer is temporarily ignored.
+    var isRotationGestureEnabled = true
+
     // MARK: tile cache + in-flight
 
     private let cache = NSCache<NSString, UIImage>()
@@ -168,6 +172,10 @@ final class TileMapView: UIView {
     }
 
     @objc private func handleRotate(_ gr: UIRotationGestureRecognizer) {
+        guard isRotationGestureEnabled else {
+            gr.rotation = 0
+            return
+        }
         switch gr.state {
         case .began:
             // Rotation is a browse gesture too. The old custom-MKMapView path
@@ -196,7 +204,7 @@ final class TileMapView: UIView {
     /// Apply one incremental rotation and assign the whole camera value so its
     /// observer always fires. Kept internal for focused regression coverage.
     func applyRotationGestureDelta(_ radians: CGFloat) {
-        guard radians.isFinite, radians != 0 else { return }
+        guard isRotationGestureEnabled, radians.isFinite, radians != 0 else { return }
         var next = camera
         next.headingDegrees = MapHeading.addingGestureRotation(
             radians, to: next.headingDegrees

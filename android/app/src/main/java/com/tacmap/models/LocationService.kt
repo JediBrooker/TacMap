@@ -48,8 +48,18 @@ class LocationService(context: Context) {
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
     }
 
-    fun hasPermission(): Boolean =
-        hasFineLocationPermission() || hasCoarseLocationPermission()
+    fun locationAccess(): LocationAccess = LocationAccessPolicy.resolve(
+        fineGranted = hasFineLocationPermission(),
+        coarseGranted = hasCoarseLocationPermission(),
+    )
+
+    fun hasPermission(): Boolean = locationAccess() != LocationAccess.Denied
+
+    fun hasPrecisePermission(): Boolean = locationAccess() == LocationAccess.Precise
+
+    fun isGpsEnabled(): Boolean =
+        runCatching { locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) }
+            .getOrDefault(false)
 
     private fun hasFineLocationPermission(): Boolean =
         ActivityCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) ==

@@ -21,6 +21,33 @@ enum MapProjectionMath {
             span: MKCoordinateSpan(latitudeDelta: max(maxLat - minLat, 0.0001),
                                    longitudeDelta: max(maxLon - minLon, 0.0001)))
     }
+
+    /// A north-up square around the viewport's half-diagonal. Every rotation of
+    /// the real viewport fits inside it, so Heading Up can reuse one heatmap
+    /// sample instead of either exposing blank wedges or starving its debounce.
+    static func orientationInvariantRegion(_ camera: MapCamera) -> MKCoordinateRegion {
+        var northUp = camera
+        northUp.headingDegrees = 0
+        let centre = CGPoint(
+            x: camera.viewportSize.width / 2,
+            y: camera.viewportSize.height / 2
+        )
+        let radius = hypot(camera.viewportSize.width, camera.viewportSize.height) / 2
+        let coords = [
+            CGPoint(x: centre.x - radius, y: centre.y - radius),
+            CGPoint(x: centre.x + radius, y: centre.y - radius),
+            CGPoint(x: centre.x - radius, y: centre.y + radius),
+            CGPoint(x: centre.x + radius, y: centre.y + radius),
+        ].map { northUp.coordinate(for: $0) }
+        let lats = coords.map(\.latitude), lons = coords.map(\.longitude)
+        let minLat = lats.min() ?? 0, maxLat = lats.max() ?? 0
+        let minLon = lons.min() ?? 0, maxLon = lons.max() ?? 0
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2,
+                                           longitude: (minLon + maxLon) / 2),
+            span: MKCoordinateSpan(latitudeDelta: max(maxLat - minLat, 0.0001),
+                                   longitudeDelta: max(maxLon - minLon, 0.0001)))
+    }
 }
 
 /// SwiftUI host for the MapKit-free `TileMapView`. Drives the basemap tile
@@ -44,7 +71,10 @@ struct TileMapContainer: UIViewRepresentable {
     @ObservedObject var calibration: CalibrationSession
     @ObservedObject var opsec = OpsecSettings.shared
     var graphicsLocked: Bool = false
+    var drawingControlsPreview: DrawingShape?
     var peers: [String: PresencePeer] = [:]
+    var onPeerTap: (String) -> Void
+    var onMutationError: (String) -> Void
 
     func makeUIView(context: Context) -> TileMapView {
         let start = locationService.lastLocation?.coordinate
@@ -62,11 +92,16 @@ struct TileMapContainer: UIViewRepresentable {
         context.coordinator.wireEditing(
             mapVM: mapVM, waypointStore: waypointStore, drawingStore: drawingStore,
             drawingSession: drawingSession, measureSession: measureSession,
-            calibration: calibration)
+            calibration: calibration, onMutationError: onMutationError)
+        context.coordinator.editing.onPresenceTap = onPeerTap
         return view
     }
 
     func updateUIView(_ view: TileMapView, context: Context) {
+        // SwiftUI may replace the state-capturing closure between updates.
+        context.coordinator.editing.onMutationError = onMutationError
+        context.coordinator.editing.onPresenceTap = onPeerTap
+        view.isRotationGestureEnabled = opsec.mapOrientationMode == .northUp
         // Only swap the source on an actual style change (assigning it clears the
         // tile cache), and only republish when the waypoint set changes - else
         // publish() mutates mapVM, re-runs updateUIView, and loops.
@@ -74,6 +109,7 @@ struct TileMapContainer: UIViewRepresentable {
                                        onlineBasemaps: opsec.onlineBasemaps)
         context.coordinator.syncPDF(source: mapVM.mapSource, view: view)
         context.coordinator.syncWaypoints(waypointStore.waypoints, view: view)
+        context.coordinator.syncDrawingControlsPreview(drawingControlsPreview)
         context.coordinator.updateOverlays(
             drawings: DrawingVectorShapes.build(
                 drawings: drawingStore.visibleShapes,
@@ -90,7 +126,10 @@ struct TileMapContainer: UIViewRepresentable {
                 selectedID: mapVM.selectedDrawingID, drawingStore: drawingStore),
             graphicsLocked: graphicsLocked)
         context.coordinator.syncCalibrationMarkers(calibration)
-        context.coordinator.syncHeatmap(visible: visibility.terrainHeatmapVisible)
+        context.coordinator.syncHeatmap(
+            visible: visibility.terrainHeatmapVisible,
+            onlineLookups: opsec.onlineLookups
+        )
         context.coordinator.syncUserLocation(
             coordinate: locationService.lastLocation?.coordinate,
             accuracy: locationService.lastLocation?.horizontalAccuracy ?? 0,
@@ -105,6 +144,7 @@ struct TileMapContainer: UIViewRepresentable {
         var waypoints: [Waypoint] = []
         private var cameraSink: AnyCancellable?
         private var resetNorthSink: AnyCancellable?
+        private var headingSink: AnyCancellable?
 
         /// Identity of the currently-installed source, so we only reassign (and
         /// clear the tile cache) when it actually changes. nil = never synced.
@@ -118,6 +158,9 @@ struct TileMapContainer: UIViewRepresentable {
 
         /// Vector overlays drawn on top of the tiles, projected via the camera.
         private var drawingsView: DrawingsOverlayView?
+        private var durableDrawingVectors: [PDFVectorShape] = []
+        private var gestureDrawingPreview: DrawingShape?
+        private var controlsDrawingPreview: DrawingShape?
         private var gridView: MGRSGridOverlayView?
         private var gridVisible = false
         private var lastGridFingerprint = ""
@@ -136,16 +179,38 @@ struct TileMapContainer: UIViewRepresentable {
         /// Drawing decorations (tap dots, name pills, point pins) + interactive
         /// vertex-edit handles + the gesture layer that drives editing.
         private var decorationsView: DrawingDecorationsOverlayView?
+        private var durableDrawingDecorations = DrawingDecorationsOverlayView.Model()
         private var handlesView: VertexHandlesOverlayView?
+        private var durableDrawingHandles: [EditHandle] = []
         let editing = MapEditingController()
 
         /// Auto terrain heatmap (opt-in, samples Open-Meteo behind the online
         /// lookups gate). Fetched debounced when the map settles.
         private var heatmapView: HeatmapOverlayView?
         private var heatmapVisible = false
+        private var heatmapOnlineLookups = false
         private var heatmapTask: Task<Void, Never>?
         private var heatmapGeneration: UInt64 = 0
         private let heatmapService = TerrainHeatmapService()
+        private struct HeatmapMotionKey: Equatable {
+            let latitude: Double
+            let longitude: Double
+            let zoom: Double
+            /// The orientation-invariant fetch region depends on the viewport's
+            /// half-diagonal, but deliberately not on live camera heading.
+            let viewportRadius: CGFloat
+
+            init(camera: MapCamera) {
+                latitude = camera.center.latitude
+                longitude = camera.center.longitude
+                zoom = camera.zoom
+                viewportRadius = hypot(
+                    camera.viewportSize.width,
+                    camera.viewportSize.height
+                ) / 2
+            }
+        }
+        private var lastHeatmapMotionKey: HeatmapMotionKey?
 
         func attach(view: TileMapView, mapVM: MapViewModel) {
             self.view = view
@@ -155,6 +220,12 @@ struct TileMapContainer: UIViewRepresentable {
                 guard let view else { return }
                 var next = view.camera
                 next.headingDegrees = 0
+                view.camera = next
+            }
+            headingSink = mapVM.headingRequests.sink { [weak view] heading in
+                guard let view else { return }
+                var next = view.camera
+                next.headingDegrees = MapHeading.normalized(heading)
                 view.camera = next
             }
 
@@ -196,6 +267,7 @@ struct TileMapContainer: UIViewRepresentable {
             // The editing gesture layer. Its refs are wired here; per-frame
             // state (handles, graphicsLocked) is pushed in updateOverlays.
             editing.handlesView = handles
+            editing.presenceView = presence
             editing.attach(to: view)
         }
 
@@ -203,13 +275,21 @@ struct TileMapContainer: UIViewRepresentable {
         /// Called from makeUIView after the coordinator is built.
         func wireEditing(mapVM: MapViewModel, waypointStore: WaypointStore,
                          drawingStore: DrawingStore, drawingSession: DrawingSessionViewModel,
-                         measureSession: MeasureSession, calibration: CalibrationSession) {
+                         measureSession: MeasureSession, calibration: CalibrationSession,
+                         onMutationError: @escaping (String) -> Void) {
             editing.mapVM = mapVM
             editing.waypointStore = waypointStore
             editing.drawingStore = drawingStore
             editing.drawingSession = drawingSession
             editing.measureSession = measureSession
             editing.calibration = calibration
+            editing.onMutationError = onMutationError
+            editing.showDrawingPreview = { [weak self] candidate in
+                self?.gestureDrawingPreview = candidate
+                self?.renderDrawingVectors()
+                self?.renderDrawingDecorations()
+                self?.renderDrawingHandles()
+            }
             editing.pdfScreenTapToPDFPoint = { [weak self] pt in
                 guard let self, let pdf = self.pdfView, let view = self.view else { return nil }
                 return pdf.pdfPoint(forScreenTap: pt, inView: view)
@@ -237,17 +317,29 @@ struct TileMapContainer: UIViewRepresentable {
             heatmapView?.reproject()
             userLocationView?.reproject(metresPerPoint: view?.camera.metresPerPoint ?? 1)
             refreshGrid()
-            // Re-fetch the heatmap for the new region once the map settles.
-            if heatmapVisible { scheduleHeatmapFetch() }
+            // Heading Up changes only orientation. Re-starting the debounce on
+            // every compass sample would prevent a heatmap fetch from finishing.
+            if heatmapVisible, let camera = view?.camera {
+                let key = HeatmapMotionKey(camera: camera)
+                if key != lastHeatmapMotionKey {
+                    lastHeatmapMotionKey = key
+                    scheduleHeatmapFetch()
+                }
+            }
         }
 
         /// Turn the terrain heatmap on/off; kicks a debounced fetch when on.
-        func syncHeatmap(visible: Bool) {
-            guard visible != heatmapVisible else { return }
+        func syncHeatmap(visible: Bool, onlineLookups: Bool) {
+            guard visible != heatmapVisible || onlineLookups != heatmapOnlineLookups else { return }
             heatmapVisible = visible
-            if visible {
+            heatmapOnlineLookups = onlineLookups
+            if visible && onlineLookups {
+                if let camera = view?.camera {
+                    lastHeatmapMotionKey = HeatmapMotionKey(camera: camera)
+                }
                 scheduleHeatmapFetch()
             } else {
+                lastHeatmapMotionKey = nil
                 heatmapGeneration &+= 1
                 heatmapTask?.cancel(); heatmapTask = nil
                 heatmapView?.clear()
@@ -258,18 +350,19 @@ struct TileMapContainer: UIViewRepresentable {
         /// camera move (so panning doesn't fire a request per frame). The
         /// service itself no-ops unless the online-lookups gate is on.
         private func scheduleHeatmapFetch() {
-            guard heatmapVisible, let view else { return }
+            guard heatmapVisible, heatmapOnlineLookups, let view else { return }
             heatmapTask?.cancel()
             heatmapGeneration &+= 1
             let generation = heatmapGeneration
-            let region = MapProjectionMath.visibleRegion(view.camera)
+            let region = MapProjectionMath.orientationInvariantRegion(view.camera)
             heatmapTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 if Task.isCancelled { return }
                 let image = await self?.heatmapService.generate(region: region)
                 guard !Task.isCancelled, let self,
                       generation == self.heatmapGeneration,
-                      self.heatmapVisible, let image else { return }
+                      self.heatmapVisible, self.heatmapOnlineLookups,
+                      OpsecSettings.shared.onlineLookups, let image else { return }
                 self.heatmapView?.update(image: image, region: (
                     center: region.center,
                     latDelta: region.span.latitudeDelta,
@@ -332,17 +425,52 @@ struct TileMapContainer: UIViewRepresentable {
                             peers: [String: PresencePeer],
                             decorations: DrawingDecorationsOverlayView.Model,
                             handles: [EditHandle], graphicsLocked: Bool) {
-            drawingsView?.update(shapes: drawings)
+            durableDrawingVectors = drawings
+            renderDrawingVectors()
             presenceView?.update(peers: peers)
-            decorationsView?.update(model: decorations)
-            handlesView?.update(handles: handles)
-            editing.handles = handles
+            durableDrawingDecorations = decorations
+            renderDrawingDecorations()
+            durableDrawingHandles = handles
+            renderDrawingHandles()
             editing.graphicsLocked = graphicsLocked
             if gridVisible != self.gridVisible {
                 self.gridVisible = gridVisible
                 if !gridVisible { gridView?.clear(); lastGridFingerprint = "" }
                 else { refreshGrid() }
             }
+        }
+
+        func syncDrawingControlsPreview(_ preview: DrawingShape?) {
+            guard preview != controlsDrawingPreview else { return }
+            controlsDrawingPreview = preview
+            renderDrawingVectors()
+            renderDrawingDecorations()
+            renderDrawingHandles()
+        }
+
+        private var activeDrawingPreview: DrawingShape? {
+            gestureDrawingPreview ?? controlsDrawingPreview
+        }
+
+        private func renderDrawingVectors() {
+            let vectors = activeDrawingPreview.map {
+                DrawingVectorShapes.replacingDrawingPreview($0, in: durableDrawingVectors)
+            } ?? durableDrawingVectors
+            drawingsView?.update(shapes: vectors)
+        }
+
+        private func renderDrawingDecorations() {
+            let model = activeDrawingPreview.map {
+                durableDrawingDecorations.replacingDrawingPreview($0)
+            } ?? durableDrawingDecorations
+            decorationsView?.update(model: model)
+        }
+
+        private func renderDrawingHandles() {
+            let handles = activeDrawingPreview.map(Self.buildEditHandles(for:))
+                ?? durableDrawingHandles
+            handlesView?.update(handles: handles)
+            editing.handles = handles
         }
 
         // MARK: - Model builders (drawing decorations + vertex-edit handles)
@@ -372,12 +500,14 @@ struct TileMapContainer: UIViewRepresentable {
             let labelsOn = visibility.drawingLabelsVisible
             for shape in drawingStore.visibleShapes {
                 if shape.kind == .point, let c = shape.clEffectiveCoordinates.first {
-                    m.pins.append(.init(lat: c.latitude, lon: c.longitude,
+                    m.pins.append(.init(sourceID: shape.id,
+                                        lat: c.latitude, lon: c.longitude,
                                         colorHex: shape.style.strokeColorHex))
                 }
                 if labelsOn, let name = shape.name?.trimmingCharacters(in: .whitespaces),
                    !name.isEmpty, let anchor = shape.labelAnchor {
-                    m.labels.append(.init(lat: anchor.latitude, lon: anchor.longitude, text: name))
+                    m.labels.append(.init(sourceID: shape.id,
+                                          lat: anchor.latitude, lon: anchor.longitude, text: name))
                 }
             }
             return m
@@ -387,6 +517,10 @@ struct TileMapContainer: UIViewRepresentable {
             guard let selectedID,
                   let shape = drawingStore.visibleShapes.first(where: { $0.id == selectedID })
             else { return [] }
+            return buildEditHandles(for: shape)
+        }
+
+        private static func buildEditHandles(for shape: DrawingShape) -> [EditHandle] {
             let coords = shape.clEffectiveCoordinates
             let isFreehand = shape.kind == .freedraw || (shape.kind == .polyline && coords.count > 20)
             guard !isFreehand, shape.kind == .polyline || shape.kind == .polygon else { return [] }
@@ -405,18 +539,26 @@ struct TileMapContainer: UIViewRepresentable {
             return out
         }
 
-        /// Rebuild the MGRS grid for the current visible region, deduped by a
-        /// coarse fingerprint so panning inside a cell doesn't re-tessellate.
+        /// Rebuild MGRS geometry for a heading-independent square around the
+        /// viewport. Compass samples then only reproject cached geometry; the
+        /// coarse fingerprint still avoids re-tessellating during small pans.
         private func refreshGrid() {
             guard gridVisible, let view, let gridView else { return }
-            let region = MapProjectionMath.visibleRegion(view.camera)
+            let region = MapProjectionMath.orientationInvariantRegion(view.camera)
+            let coverageWidth = hypot(
+                view.camera.viewportSize.width,
+                view.camera.viewportSize.height
+            )
             let fp = String(format: "%.3f,%.3f,%.3f,%.3f,%.0f",
                             region.center.latitude, region.center.longitude,
                             region.span.latitudeDelta, region.span.longitudeDelta,
-                            view.bounds.width)
+                            coverageWidth)
             guard fp != lastGridFingerprint else { return }
             lastGridFingerprint = fp
-            let built = MGRSGridRenderer.build(for: region, mapWidthPoints: view.bounds.width)
+            let built = MGRSGridRenderer.build(
+                for: region,
+                mapWidthPoints: max(coverageWidth, 1)
+            )
             gridView.update(lines: built.lines, labels: built.labels)
         }
 

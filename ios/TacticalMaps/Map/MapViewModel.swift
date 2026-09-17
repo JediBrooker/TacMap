@@ -3,6 +3,102 @@ import CoreLocation
 import MapKit
 import Combine
 
+struct MapSelectionPersistenceIssue: Identifiable, Equatable {
+    let id: UUID
+    let message: String
+}
+
+enum MapSelectionCommitFailure: Equatable {
+    case pdfSession
+    case selector
+    case pdfSessionRollback
+}
+
+enum MapSelectionCommitResult: Equatable {
+    case succeeded
+    case failed(MapSelectionCommitFailure)
+}
+
+/// Single persist-before-publication boundary for every active-map change.
+/// Generic source values keep the ordering contract independently testable
+/// without replacing production MapSource implementations with test doubles.
+final class ActiveMapSelectionCommitCoordinator<Source> {
+    private let persistSelection: (Source, Bool) -> Bool
+    private let publish: (Source) -> Void
+
+    init(persistSelection: @escaping (Source, Bool) -> Bool,
+         publish: @escaping (Source) -> Void) {
+        self.persistSelection = persistSelection
+        self.publish = publish
+    }
+
+    func select(_ source: Source,
+                clearRetained: Bool = false) -> MapSelectionCommitResult {
+        guard persistSelection(source, clearRetained) else {
+            return .failed(.selector)
+        }
+        publish(source)
+        return .succeeded
+    }
+
+    func activatePDF(_ source: Source,
+                     persistSession: () -> Bool,
+                     rollbackSession: () -> Bool) -> MapSelectionCommitResult {
+        // PDF metadata and the active/retained selector live in separate sealed
+        // stores. Session-first prevents a durable `.pdf` selector from ever
+        // pointing at missing metadata; an in-process selector failure restores
+        // the exact prior encrypted session. A process kill between these two
+        // writes is the bounded crash window: no uncommitted source reaches the
+        // running UI, but v2's generic `.pdf` selector cannot distinguish two
+        // PDF sessions if the previous active source was also a PDF. The test
+        // below locks this ordering down; closing that process-death-only window
+        // fully would require a future journaled schema shared by both stores.
+        guard persistSession() else {
+            return .failed(rollbackSession() ? .pdfSession : .pdfSessionRollback)
+        }
+        guard persistSelection(source, false) else {
+            return .failed(rollbackSession() ? .selector : .pdfSessionRollback)
+        }
+        publish(source)
+        return .succeeded
+    }
+
+    /// Cold restore publishes a source only after the persistence adapter has
+    /// authenticated and resolved its already-durable descriptor.
+    func publishRestored(_ source: Source) {
+        publish(source)
+    }
+}
+
+struct MapSelectionDependencies {
+    var persistSelection: (MapSource, Bool) -> Bool
+    var restoreActive: () -> ActiveMapSelectionStore.RestoreResult
+    var restoreRetained: () -> ActiveMapSelectionStore.RetainedRestoreResult
+    var removeRetained: (Bool) throws -> Void
+    var snapshotPDFSession: () -> PDFSessionStore.ActiveSessionSnapshot
+    var persistPDFSession: (PDFMapSource) -> Bool
+    var restorePDFSession: (PDFSessionStore.ActiveSessionSnapshot) -> Bool
+    var reconcileManagedMapFiles: () -> Bool = { false }
+
+    static let live = MapSelectionDependencies(
+        persistSelection: { ActiveMapSelectionStore.save($0, clearRetained: $1) },
+        restoreActive: ActiveMapSelectionStore.restore,
+        restoreRetained: ActiveMapSelectionStore.restoreRetained,
+        removeRetained: ActiveMapSelectionStore.removeRetainedMap,
+        snapshotPDFSession: PDFSessionStore.snapshotActiveSession,
+        persistPDFSession: PDFSessionStore.save,
+        restorePDFSession: PDFSessionStore.restoreActiveSession,
+        reconcileManagedMapFiles: ActiveMapSelectionStore.reconcileManagedImportedMapFiles
+    )
+}
+
+private enum PendingMapSelectionTransition {
+    case activate(MapSource, pdfSessionAlreadyPersisted: Bool)
+    case restoreActive
+    case deleteImported(MapSource, OnlineRasterBasemapSource)
+    case removeUnavailableRetainedEntry
+}
+
 /// Owns map camera state, browse-mode toggle, MGRS readout, compass heading,
 /// and crosshair-elevation lookups.
 ///
@@ -18,12 +114,8 @@ final class MapViewModel: ObservableObject {
     /// Default basemap: Esri Satellite when we have a key, else the one style
     /// that needs none (OpenTopoMap) so a keyless dev build still shows a map.
     /// The native Apple basemap is no longer a selectable source.
-    @Published var mapSource: MapSource = OnlineRasterBasemapSource.makeDefault() {
-        didSet {
-            NSLog("[MapVM] map source changed -> kind=\(mapSource.kind)")
-            ActiveMapSelectionStore.save(mapSource)
-        }
-    }
+    @Published private(set) var mapSource: MapSource
+    @Published private(set) var mapSelectionPersistenceIssue: MapSelectionPersistenceIssue?
 
     /// Latest terrain-elevation reading for cameraCentre (metres + staleness).
     /// Fetched async from Open-Meteo via ElevationService. Offline-resilient -
@@ -89,22 +181,231 @@ final class MapViewModel: ObservableObject {
 
     let cameraRequests     = PassthroughSubject<MKCoordinateRegion, Never>()
     let resetNorthRequests = PassthroughSubject<Void, Never>()
+    let headingRequests    = PassthroughSubject<CLLocationDirection, Never>()
 
     // MARK: - Dependencies
 
     private let elevationService = ElevationService()
     private var elevationCancellable: AnyCancellable?
+    private var elevationTask: Task<Void, Never>?
+    private let mapSelectionDependencies: MapSelectionDependencies
+    private var pendingMapSelectionTransition: PendingMapSelectionTransition?
+    private lazy var mapSelectionCoordinator = ActiveMapSelectionCommitCoordinator<MapSource>(
+        persistSelection: mapSelectionDependencies.persistSelection,
+        publish: { [weak self] source in self?.publishMapSource(source) }
+    )
 
-    init() {
+    init(mapSelectionDependencies: MapSelectionDependencies = .live,
+         initialMapSource: MapSource = OnlineRasterBasemapSource.makeDefault()) {
+        self.mapSelectionDependencies = mapSelectionDependencies
+        self.mapSource = initialMapSource
         // Debounce camera-centre changes, only hit the DEM once user
         // stops panning for 400ms. Skips no-op changes (<0.0001deg ~ 11m).
-        elevationCancellable = $cameraCentre
+        let settledCamera = $cameraCentre
             .removeDuplicates(by: Self.isApproximatelyEqual)
             .filter { !($0.latitude == 0 && $0.longitude == 0) }
             .debounce(for: .seconds(0.4), scheduler: DispatchQueue.main)
-            .sink { [weak self] coord in
-                self?.fetchElevation(for: coord)
+        elevationCancellable = Publishers.CombineLatest(
+            settledCamera,
+            OpsecSettings.shared.$onlineLookups.removeDuplicates()
+        )
+            .sink { [weak self] coord, enabled in
+                guard let self else { return }
+                if enabled {
+                    self.fetchElevation(for: coord)
+                } else {
+                    self.elevationTask?.cancel()
+                    self.elevationTask = nil
+                    self.centreElevationReading = nil
+                    Task { await self.elevationService.cancelInFlight() }
+                }
             }
+    }
+
+    // MARK: - Durable map selection
+
+    /// Select/import a source. PDF metadata and the selector are committed as
+    /// one publication transaction; MBTiles sandbox validation remains inside
+    /// ActiveMapSelectionStore before its descriptor can become active.
+    @discardableResult
+    func selectMapSource(_ source: MapSource) -> Bool {
+        executeMapSelectionTransition(
+            .activate(source, pdfSessionAlreadyPersisted: false)
+        )
+    }
+
+    @discardableResult
+    func selectOnlineBasemap(_ style: BasemapStyle) -> Bool {
+        selectMapSource(OnlineRasterBasemapSource(style))
+    }
+
+    @discardableResult
+    func restoreRetainedMap(_ source: MapSource) -> Bool {
+        executeMapSelectionTransition(
+            .activate(source, pdfSessionAlreadyPersisted: source is PDFMapSource)
+        )
+    }
+
+    /// Authenticates/resolves the durable active descriptor before publication.
+    /// Locked or corrupt storage leaves the known-good in-memory default visible
+    /// and exposes the same retry transition used by write failures.
+    @discardableResult
+    func restoreActiveMapSelection() -> MapSource? {
+        switch mapSelectionDependencies.restoreActive() {
+        case .restored(let source):
+            mapSelectionCoordinator.publishRestored(source)
+            pendingMapSelectionTransition = nil
+            mapSelectionPersistenceIssue = nil
+            _ = mapSelectionDependencies.reconcileManagedMapFiles()
+            return source
+        case .noSelection:
+            pendingMapSelectionTransition = nil
+            _ = mapSelectionDependencies.reconcileManagedMapFiles()
+            return nil
+        case .unavailable:
+            reportMapSelectionIssue(
+                transition: .restoreActive,
+                message: "The saved basemap is locked or unreadable. Unlock mission data, then tap Retry. The current map remains active."
+            )
+            return nil
+        }
+    }
+
+    func restoreRetainedMapSelection() -> ActiveMapSelectionStore.RetainedRestoreResult {
+        let result = mapSelectionDependencies.restoreRetained()
+        _ = mapSelectionDependencies.reconcileManagedMapFiles()
+        return result
+    }
+
+    /// Switches to an online source durably before releasing an active MBTiles
+    /// SQLite handle. Only then may the store validate and delete its managed
+    /// backing file.
+    @discardableResult
+    func deleteRetainedImportedMap(_ retainedSource: MapSource,
+                                   returningTo style: BasemapStyle = OnlineRasterBasemapSource.defaultStyle) -> Bool {
+        executeMapSelectionTransition(
+            .deleteImported(retainedSource, OnlineRasterBasemapSource(style))
+        )
+    }
+
+    @discardableResult
+    func removeUnavailableRetainedMapEntry() -> Bool {
+        executeMapSelectionTransition(.removeUnavailableRetainedEntry)
+    }
+
+    @discardableResult
+    func retryMapSelectionPersistence() -> Bool {
+        guard let pendingMapSelectionTransition else { return false }
+        return executeMapSelectionTransition(pendingMapSelectionTransition)
+    }
+
+    func dismissMapSelectionPersistenceIssue() {
+        mapSelectionPersistenceIssue = nil
+    }
+
+    private func executeMapSelectionTransition(_ transition: PendingMapSelectionTransition) -> Bool {
+        let outcome: MapSelectionCommitResult
+        switch transition {
+        case .activate(let source, let pdfSessionAlreadyPersisted):
+            if let pdf = source as? PDFMapSource, !pdfSessionAlreadyPersisted {
+                let snapshot = mapSelectionDependencies.snapshotPDFSession()
+                outcome = mapSelectionCoordinator.activatePDF(
+                    source,
+                    persistSession: { self.mapSelectionDependencies.persistPDFSession(pdf) },
+                    rollbackSession: {
+                        self.mapSelectionDependencies.restorePDFSession(snapshot)
+                    }
+                )
+            } else {
+                outcome = mapSelectionCoordinator.select(source)
+            }
+
+        case .restoreActive:
+            return restoreActiveMapSelection() != nil
+
+        case .deleteImported(let retainedSource, let onlineSource):
+            // If the imported source is visible, commit and publish online first
+            // so its renderer releases the SQLite/PDF resource before deletion.
+            if mapSource is PDFMapSource || mapSource is OfflineTileMapSource {
+                let switchOutcome = mapSelectionCoordinator.select(onlineSource)
+                guard switchOutcome == .succeeded else {
+                    reportMapSelectionFailure(switchOutcome, transition: transition)
+                    return false
+                }
+            }
+            (retainedSource as? OfflineTileMapSource)?.closeForDeletion()
+            do {
+                try mapSelectionDependencies.removeRetained(true)
+                _ = mapSelectionDependencies.reconcileManagedMapFiles()
+                pendingMapSelectionTransition = nil
+                mapSelectionPersistenceIssue = nil
+                return true
+            } catch {
+                reportMapSelectionIssue(
+                    transition: transition,
+                    message: "The imported map could not be deleted securely. The online map remains active and the saved entry was preserved where possible. Unlock mission data or free storage, then tap Retry. \(error.localizedDescription)"
+                )
+                return false
+            }
+
+        case .removeUnavailableRetainedEntry:
+            do {
+                try mapSelectionDependencies.removeRetained(false)
+                _ = mapSelectionDependencies.reconcileManagedMapFiles()
+                pendingMapSelectionTransition = nil
+                mapSelectionPersistenceIssue = nil
+                return true
+            } catch {
+                reportMapSelectionIssue(
+                    transition: transition,
+                    message: "The unavailable saved-map entry could not be removed. Unlock mission data or free storage, then tap Retry. \(error.localizedDescription)"
+                )
+                return false
+            }
+        }
+
+        guard outcome == .succeeded else {
+            reportMapSelectionFailure(outcome, transition: transition)
+            return false
+        }
+        pendingMapSelectionTransition = nil
+        mapSelectionPersistenceIssue = nil
+        _ = mapSelectionDependencies.reconcileManagedMapFiles()
+        return true
+    }
+
+    private func reportMapSelectionFailure(_ outcome: MapSelectionCommitResult,
+                                           transition: PendingMapSelectionTransition) {
+        guard case .failed(let reason) = outcome else { return }
+        let message: String
+        switch reason {
+        case .pdfSession:
+            message = "The PDF map could not be saved for relaunch. The previous map remains active. Unlock mission data or free storage, then tap Retry."
+        case .selector:
+            message = "The basemap choice could not be saved. The previous map remains active. Unlock mission data or free storage, then tap Retry."
+        case .pdfSessionRollback:
+            message = "Map storage recovery did not complete. Keep the app open, unlock mission data or free storage, then tap Retry before closing the app."
+        }
+        reportMapSelectionIssue(transition: transition, message: message)
+    }
+
+    private func reportMapSelectionIssue(transition: PendingMapSelectionTransition,
+                                         message: String) {
+        pendingMapSelectionTransition = transition
+        mapSelectionPersistenceIssue = MapSelectionPersistenceIssue(
+            id: UUID(),
+            message: message
+        )
+    }
+
+    private func publishMapSource(_ source: MapSource) {
+        NSLog("[MapVM] map source changed -> kind=\(source.kind)")
+        let previousSource = mapSource
+        mapSource = source
+        if previousSource !== source {
+            (previousSource as? OfflineTileMapSource)?.closeForDeletion()
+        }
+        frameCamera(for: source, userLocation: lastUserCoordinate)
     }
 
     private static func isApproximatelyEqual(_ a: CLLocationCoordinate2D,
@@ -114,11 +415,17 @@ final class MapViewModel: ObservableObject {
     }
 
     private func fetchElevation(for coord: CLLocationCoordinate2D) {
-        Task { @MainActor [weak self] in
+        guard OpsecSettings.shared.onlineLookups else {
+            centreElevationReading = nil
+            return
+        }
+        elevationTask?.cancel()
+        elevationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let reading = await self.elevationService.reading(for: coord)
             // Only commit if camera hasn't moved since we fired the request.
-            if Self.isApproximatelyEqual(self.cameraCentre, coord) {
+            if !Task.isCancelled, OpsecSettings.shared.onlineLookups,
+               Self.isApproximatelyEqual(self.cameraCentre, coord) {
                 self.centreElevationReading = reading
             }
         }
@@ -150,7 +457,7 @@ final class MapViewModel: ObservableObject {
 
     // MARK: - Inputs from the rest of the app
 
-    func userLocationDidUpdate(_ location: CLLocation) {
+    func userLocationDidUpdate(_ location: CLLocation, resetOrientation: Bool = true) {
         lastUserCoordinate = location.coordinate
         if !hasInitialFix {
             hasInitialFix = true
@@ -161,7 +468,7 @@ final class MapViewModel: ObservableObject {
                !coverage.contains(location.coordinate) {
                 return
             }
-            centreOnUser(location)
+            centreOnUser(location, resetOrientation: resetOrientation)
         }
     }
 
@@ -198,7 +505,7 @@ final class MapViewModel: ObservableObject {
         }
     }
 
-    func centreOnUser(_ location: CLLocation?) {
+    func centreOnUser(_ location: CLLocation?, resetOrientation: Bool = true) {
         guard let coord = location?.coordinate ?? lastUserCoordinate else { return }
         let region = MKCoordinateRegion(
             center: coord,
@@ -208,9 +515,8 @@ final class MapViewModel: ObservableObject {
         isBrowsing = false
         cameraCentre = coord
         cameraRequests.send(region)
-        // Re-orient north when recentering, so the map is always readable
-        // north-up after a "Centre on My Location".
-        resetNorthRequests.send(())
+        // Preserve the live phone heading while recentering in Heading Up.
+        if resetOrientation { resetNorthRequests.send(()) }
     }
 
     /// Re-frame the loaded offline/imported map's coverage. Paired with
@@ -226,6 +532,11 @@ final class MapViewModel: ObservableObject {
 
     func resetNorth() {
         resetNorthRequests.send(())
+    }
+
+    func orientMap(to heading: CLLocationDirection) {
+        guard heading.isFinite else { return }
+        headingRequests.send(MapHeading.normalized(heading))
     }
 }
 

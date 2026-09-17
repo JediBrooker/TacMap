@@ -1,21 +1,23 @@
 package com.tacmap.map.render
 
+import android.graphics.Bitmap
 import android.util.LruCache
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
@@ -23,7 +25,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import kotlinx.coroutines.launch
 import kotlin.math.log2
 import kotlin.math.roundToInt
 
@@ -60,25 +61,47 @@ fun TileMapView(
     val onChange = rememberUpdatedState(onCameraChange)
     val onStart = rememberUpdatedState(onGestureStart)
     val onTapState = rememberUpdatedState(onTap)
-    val sourceState = rememberUpdatedState(source)
+    val loadScope = rememberCoroutineScope()
 
     // Decoded tiles, keyed by address. `version` bumps to force a redraw as
-    // tiles arrive; `inFlight` dedupes concurrent loads of the same tile.
+    // tiles arrive. The load coordinator owns source/generation-scoped jobs.
     val cache = remember {
-        object : LruCache<TileIndex, ImageBitmap>(48 * 1024) {
-            override fun sizeOf(key: TileIndex, value: ImageBitmap): Int =
-                ((value.width.toLong() * value.height.toLong() * 4L + 1023L) / 1024L)
+        object : LruCache<TileIndex, CachedTile>(48 * 1024) {
+            override fun sizeOf(key: TileIndex, value: CachedTile): Int =
+                ((value.bitmap.allocationByteCount.toLong() + 1023L) / 1024L)
                     .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
+            override fun entryRemoved(
+                evicted: Boolean,
+                key: TileIndex,
+                oldValue: CachedTile,
+                newValue: CachedTile?,
+            ) {
+                if (oldValue !== newValue && !oldValue.bitmap.isRecycled) oldValue.bitmap.recycle()
+            }
         }
     }
-    val inFlight = remember { HashSet<TileIndex>() }
     var version by remember { mutableIntStateOf(0) }
-
-    // Swapping the source clears the cache (stale style/pack tiles must go).
-    LaunchedEffect(source) {
-        cache.evictAll()
-        inFlight.clear()
-        version++
+    val loadCoordinator = remember(loadScope, cache) {
+        ScopedTileLoadCoordinator<TileSource, TileIndex, Bitmap>(
+            scope = loadScope,
+            load = { tileSource, tile ->
+                loadTileOrNullPreservingCancellation { tileSource.loadTile(tile) }
+            },
+            publish = { _, tile, bitmap ->
+                cache.put(tile, CachedTile(bitmap))
+                version++
+            },
+            discard = { bitmap ->
+                if (!bitmap.isRecycled) bitmap.recycle()
+            },
+        )
+    }
+    DisposableEffect(loadCoordinator) {
+        onDispose {
+            loadCoordinator.dispose()
+            cache.evictAll()
+        }
     }
 
     // Which tiles the current camera shows, and their integer zoom.
@@ -91,18 +114,15 @@ fun TileMapView(
 
     // Fetch any visible tile we don't already have.
     LaunchedEffect(tiles, source) {
-        val s = source ?: return@LaunchedEffect
-        tiles.forEach { t ->
-            if (cache.get(t) == null && inFlight.add(t)) {
-                launch {
-                    val bmp = try { s.loadTile(t) } finally { inFlight.remove(t) }
-                    if (bmp != null && sourceState.value === s) {
-                        cache.put(t, bmp.asImageBitmap())
-                        version++
-                    }
-                }
-            }
-        }
+        loadCoordinator.reconcile(
+            source = source,
+            wanted = tiles.toSet(),
+            isLoaded = { cache.get(it) != null },
+            onSourceChanged = {
+                cache.evictAll()
+                version++
+            },
+        )
     }
 
     val inputModifier = if (gesturesEnabled) {
@@ -170,6 +190,7 @@ fun TileMapView(
             }
             .then(inputModifier)
     ) {
+        @Suppress("UNUSED_EXPRESSION") // snapshot read invalidates the draw phase when a tile arrives
         version // read so newly-loaded tiles trigger a redraw
         drawRect(BACKGROUND, size = Size(size.width, size.height))
         val cam = cameraState.value
@@ -177,7 +198,8 @@ fun TileMapView(
         // camera heading around the viewport centre (see TileMath.tileFrame).
         rotate(-cam.headingDegrees.toFloat(), pivot = Offset(size.width / 2, size.height / 2)) {
             tiles.forEach { t ->
-                val img = cache.get(t) ?: return@forEach
+                val cached = cache.get(t) ?: return@forEach
+                val img = cached.image
                 val f = TileMath.tileFrame(t, cam)
                 // dp -> px, and grow 0.5dp to hide hairline seams between tiles.
                 val x = ((f.x - 0.5) * density).roundToInt()
@@ -193,6 +215,10 @@ fun TileMapView(
             }
         }
     }
+}
+
+private class CachedTile(val bitmap: Bitmap) {
+    val image = bitmap.asImageBitmap()
 }
 
 private val BACKGROUND = Color(0xFF121212) // dark, so tile gaps aren't white

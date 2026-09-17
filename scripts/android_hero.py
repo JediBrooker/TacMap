@@ -4,10 +4,10 @@ Capture a REAL Android hero screenshot: NATO tactical situation (pushed to a
 Unit Sync room by scripts/sync_push_situation.mjs) rendered by the live app
 over Esri Satellite basemap.
 
-Google base layer is blank on locally-signed builds (Maps key whitelisted to
-Play signing cert), but Esri basemap is a TileOverlay that needs no key and
-markers/polylines/polygons render on top regardless - so this is a genuine
-capture, no compositing.
+The capture setup must explicitly enable online basemaps because production
+fresh installs are dark by default. Esri imagery is rendered by TacMap's own
+raster engine, so markers/polylines/polygons render over a genuine app capture
+without compositing.
 
     python3 scripts/android_hero.py <apk> <out_dir> <room_code>
 """
@@ -128,14 +128,13 @@ if _m:
     CX, CY = W // 2, int(H * 0.49)
     print(f"detected {W}x{H} centre={CX},{CY}")
 
-# 1) keep default Google Satellite basemap (release cert is whitelisted
-#    on the Maps key now so it authenticates + renders). Turn labels on
-#    while we have the Layers sheet open
+# 1) The screenshot fixture explicitly opts into Esri Satellite. Turn labels on
+#    while we have the Layers sheet open.
 ensure_map()
 if tap_hamburger() and tap_text("Layers and Labels"):
     enable_label_switches()
 back(1); time.sleep(1)           # close the sheet
-ensure_map(); time.sleep(10)     # let Google satellite tiles stream in
+ensure_map(); time.sleep(10)     # let Esri satellite tiles stream in
 
 # 3) join Unit Sync room - renders the pushed situation, indicator -> Connected
 if tap_hamburger() and tap_text("Unit Sync"):

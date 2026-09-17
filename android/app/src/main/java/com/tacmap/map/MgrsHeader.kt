@@ -1,13 +1,5 @@
 package com.tacmap.map
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.ClipDescription
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -43,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.settings.CoordinateDisplayType
+import com.tacmap.util.copySensitivePlainText
 
 /**
  * Primary coordinate readout card. Caller decides where it sits in the layout.
@@ -81,30 +74,21 @@ fun MgrsHeader(
                 onClickLabel = "Copy ${coordinateType.displayName} coordinate",
                 role = Role.Button,
                 onClick = {
-                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    val clip = ClipData.newPlainText(
+                    val copied = copySensitivePlainText(
+                        context,
                         "${coordinateType.displayName} coordinate",
-                        primaryCoordinate
-                    ).apply {
-                        description.extras = PersistableBundle().apply {
-                            putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-                            putBoolean("android.content.extra.IS_SENSITIVE", true)
-                        }
-                    }
-                    cm?.setPrimaryClip(clip)
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        val current = cm?.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
-                        if (current == primaryCoordinate) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) cm.clearPrimaryClip()
-                            else cm.setPrimaryClip(ClipData.newPlainText("", ""))
-                        }
-                    }, 60_000L)
+                        primaryCoordinate,
+                    )
                     Toast.makeText(
                         context,
-                        "${coordinateType.displayName} copied",
+                        if (copied) {
+                            "${coordinateType.displayName} copied"
+                        } else {
+                            "Unable to copy ${coordinateType.displayName.lowercase()}"
+                        },
                         Toast.LENGTH_SHORT
                     ).show()
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (copied) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 },
                 onLongClickLabel = "Drop pin at displayed coordinate",
                 onLongClick = onDropPin?.let { drop ->

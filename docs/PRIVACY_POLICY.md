@@ -1,218 +1,257 @@
-# TacticalMaps — Privacy Policy
+# TacMap — Privacy Policy
 
-*Last updated: 8 July 2026*  
-*Effective: at first installation of the app*
+*Last updated: 28 August 2026*
 
-This Privacy Policy describes how the TacticalMaps mobile application
-(“TacticalMaps”, “the App”, “we”, “our”, “us”) handles your information.
-It covers both the iOS and Android editions, published by Christian Brooker.
+*Applies to the iOS and Android editions of TacMap*
 
-We believe a navigation tool you take into the field should not phone home,
-build a profile of you, or feed an ad network. **TacticalMaps does not
-collect, store on our servers, sell, share, or rent your personal data —
-at all.** Everything you make stays on your device. Below we tell you exactly
-what that means in practice.
+This policy explains how the TacMap mobile application (the “App”), published
+by Christian Brooker, handles information. TacMap has no developer-operated
+user accounts, advertising, analytics, or remote crash-reporting service. The
+App can nevertheless make the specific network requests described below. Those
+requests may expose an IP address, a query, a viewed map area, store metadata,
+or encrypted Unit Sync traffic to the relevant service provider.
 
----
+## 1. Information the developer does not collect
 
-## 1. Information we do NOT collect
+TacMap does not:
 
-We want to be explicit, because the App Store “Nutrition Label” format makes
-this confusing for users. TacticalMaps **does not**:
+- require a TacMap account, email address, or profile;
+- include advertising, behavioural analytics, advertising identifiers, or a
+  developer-operated telemetry or crash-upload service;
+- sell or rent personal information;
+- read contacts, photos, microphone, camera, calendar, or Bluetooth;
+- read compass/orientation sensors except while foreground Heading Up mode is
+  enabled. Those samples rotate the map, stay in memory, and are not stored or
+  transmitted; or
+- upload mission content to a TacMap account or developer database.
 
-- Require you to create an account, log in, or supply an email
-- Use any third-party analytics SDK (no Google Analytics, no Firebase
-  Analytics, no Mixpanel, no Amplitude, no Segment)
-- Use any advertising SDK or identifier (no IDFA, no AdMob, no Meta SDK)
-- Use any crash-reporting SDK that uploads telemetry (no Sentry, no
-  Crashlytics; we rely only on Apple’s and Google’s built-in OS crash
-  reporting, which is governed by their own privacy policies and which
-  you can disable in your device settings)
-- Collect, store, or transmit your historical location, route, or movement
-  (the optional Unit Sync location sharing described in §3b is real-time,
-  ephemeral, end-to-end encrypted, and user-initiated — see that section)
-- Track which buttons you tap, how long you use the app, or anything else
-  about your behaviour
-- Read your contacts, photos (other than via the system Files / Share
-  pickers you explicitly invoke), microphone, camera, calendar, motion
-  sensors, Bluetooth, or any other sensor not listed below
+Apple and Google may provide opt-in operating-system crash diagnostics to app
+developers under their own settings and policies. TacMap also writes a short
+crash report locally; it is transmitted only if you explicitly export it.
 
----
+## 2. Information stored on your device
 
-## 2. Information stored only on your device
+| Data | Purpose and storage |
+|---|---|
+| **Live GPS fix** | Used for the location marker, MGRS/coordinate readout, camera centring, and optional live presence. A fix is held in memory unless you explicitly start track recording. |
+| **Device compass heading** | Used only while foreground Heading Up mode is enabled to rotate the map. Samples remain in memory and are not stored or transmitted. Unit Sync presence heading is instead the course reported with the live GPS fix. |
+| **Recorded track** | An explicitly started recording appends precise coordinates, timestamps, and available altitude data to an encrypted, app-private track log. Speed is used for optional live Unit Sync presence but is not stored in the track log. A stopped recording remains available until you discard it; exporting creates a separate GPX copy. |
+| **Waypoints, symbols, drawings, layers, notes, and styles** | Stored in encrypted, app-private mission files so they survive relaunch. |
+| **TacMap Chat history and replay state** | Text and reports that you send or receive, their room/selected-unit scope, local routing status, and anti-replay state are kept in a bounded encrypted, app-private file for that sync room. TacMap Chat v1 has no delivered/read receipts. |
+| **Calibration and imported-map selection metadata** | Stored in encrypted, app-private files. This can reveal the identity and geographic coverage of an imported map. |
+| **Imported PDF/GeoPDF and MBTiles maps** | Copied into app-private storage as their original file bytes. They receive the operating system’s file protection but are not encrypted by TacMap’s mission-data key. iOS Files/Finder file sharing is disabled. Android uses the system document picker and requests no broad storage permission. |
+| **App preferences** | OPSEC gates, layer visibility, camera state, and other interface choices are kept in app-private preferences. |
+| **Purchase entitlement** | A locally verified permanent-unlock marker is kept in the iOS Keychain or Android app-private preferences so a known owner can continue offline. |
 
-| Data | Why | Where it lives |
-|---|---|---|
-| **Your live GPS position** (when you grant Location permission) | To show your location on the map, compute the live MGRS readout, anchor the camera, and time-stamp drawings/waypoints | RAM only — never written to disk by us |
-| **Waypoints** you create | Persist between launches | `Application Support/waypoints.json` inside the App’s sandbox |
-| **Drawings** you create (lines, polygons, points) and their style | Persist between launches | `Application Support/drawings.json` inside the App’s sandbox |
-| **PDF maps** you import | Render the map, parse its GeoPDF metadata, apply fiduciary calibration | `Documents/<filename>.pdf` inside the App’s sandbox (exposed to the Files app on iOS so you can manage them) |
-| **Fiduciary calibration points** | Re-align imported PDFs to the satellite basemap | RAM only in v1.0; future versions may persist them per PDF |
-| **Layer visibility toggles, last camera position** | UX polish so the app reopens where you left it | iOS `UserDefaults` (sandboxed) |
+TacMap mission files use AES-256-GCM at rest. The data key is protected by the
+iOS Keychain or Android Keystore. Imported map bytes and local crash reports
+are the documented exceptions. Device compromise, an unlocked device, exports,
+and optional network services remain separate risks; see the published threat
+model for those limits.
 
-Nothing in this table is uploaded anywhere by us. It stays on the device until
-you delete the app (which removes it permanently, per Apple/Google behaviour),
-or until you export it yourself via the Share Sheet.
+Deleting the App normally removes its app-private files under the platform’s
+rules. Exported copies, files you shared to another app, store transaction
+records, and data retained by a service provider are controlled separately.
 
----
+## 3. Network requests
 
-## 3. Network requests we DO make
+### 3.1 Online maps — disabled by default and independently switchable
 
-The App makes outbound HTTPS requests only in the following narrow cases:
+While **Online basemap tiles** is enabled, the App’s own raster renderer requests
+the tiles you view from Esri (satellite, topographic, and OpenStreetMap-style
+tiles) or OpenTopoMap. The provider receives your IP address and tile
+coordinates/zoom, which reveal the area and movement of the map view.
 
-| When | To | What we send | Why |
-|---|---|---|---|
-| Every time the map camera settles on a new location (debounced to once every 400ms) | **`api.open-meteo.com`** | The latitude/longitude of the map centre, rounded to 4 decimal places (≈11 m) | To fetch terrain elevation for the crosshair readout |
-| Every time you type in the **Search** field (debounced to 350ms after you stop typing) | Apple’s **MapKit Local Search** service | Your search query (e.g. “coffee”, “Holsworthy”) and your current camera region (to bias results) | To return matching place names and addresses |
-| Every time MapKit needs satellite imagery for a tile you are viewing | Apple’s **Maps** service | The tile coordinate | To render the satellite basemap |
+Both editions use the same custom map renderer. TacMap does not use Apple Maps
+or Google Maps to render the basemap. This setting is off for a fresh install;
+an update preserves an existing user's stored choice. Leave it off and use an imported PDF/GeoPDF or MBTiles pack if the area of
+interest must not leave the device.
 
-We do not include any account identifier, device identifier, advertising ID,
-or your historical location with these requests. The request is no more
-identifying than typing the same query into the iOS or Android Maps app would
-be.
+### 3.2 Online lookups — disabled by default and independently switchable
 
-**Apple’s privacy policy for MapKit:**
-<https://www.apple.com/legal/internet-services/maps/terms-en.html>
+While **Online lookups** is enabled:
 
-**Open-Meteo’s privacy policy:**
-<https://open-meteo.com/en/privacy>
+- Open-Meteo receives the map-centre coordinate for elevation and weather
+  (coarsened to roughly 110 m), or a 24 × 24 coordinate grid covering the
+  visible map area for the terrain heat-map (coarsened to roughly 11 m);
+- iOS can send a typed place-name/address query and camera region to Apple’s
+  place-search service through `MKLocalSearch`; and
+- Android can send a typed place-name/address query and location bias through
+  the device’s platform `Geocoder` provider (commonly Google or the device
+  vendor on Google-enabled devices).
 
-**Google’s privacy policy (Android edition uses Google Maps):**
-<https://policies.google.com/privacy>
+This setting is off for a fresh install, and an update preserves an existing
+user's stored choice. You can enable it at any time in Privacy & OPSEC settings;
+leave it off for an offline posture.
 
----
+MGRS, partial-grid, latitude/longitude, waypoint, drawing, type, note, and layer
+searches run on-device. Coordinate-shaped input — including malformed or
+out-of-range coordinate text — is not forwarded to either place provider.
 
-## 3b. Unit Sync — optional real-time team sharing
+### 3.3 Unit Sync — optional
 
-If you choose to use the **Unit Sync** feature, the App opens a WebSocket
-connection to our relay server at
-`tacmap-sync.christianbrooker.workers.dev` (hosted on Cloudflare Workers).
-This is **entirely opt-in** — the feature is off by default and no
-connection is made unless you enter a join code.
+Unit Sync is off until you enter a join code. Joining opens a WebSocket to the
+configured relay (the default service is hosted on Cloudflare, and you may
+self-host it).
 
-### What is transmitted
+Mission payloads are sealed on-device with AES-256-GCM. Synced map objects,
+presence, and **Entire room** Chat use keys derived from the join code, so every
+join-code holder can decrypt content shared to the room. A **Selected unit**
+message instead uses a pairwise key derived from the two selected live endpoint
+sessions; the relay, other room members, and join-code holders outside that pair
+cannot decrypt it. Protocol envelope and control fields are not
+mission-payload ciphertext.
 
-| Data | Encrypted? | Stored on server? |
-|---|---|---|
-| **Waypoints, drawings, and layers** you create while syncing | Yes — AES-256-GCM, end-to-end encrypted with a key derived from the join code. The relay **never** holds the key and **cannot** decrypt the content. | Ciphertext only, per-room, deleted when all devices disconnect or after 7 days of inactivity |
-| **Your GPS position, callsign, unit type, heading, speed** (only if you enable "Share my location") | Yes — same AES-256-GCM encryption. The relay sees only opaque ciphertext. | **Not stored** — relayed in-memory to connected peers and discarded |
-| **A random device identifier** (UUID, not linked to your Apple/Google account) | No (used for message routing) | In-memory only while the socket is open |
+The relay and its hosting/network providers can still observe or process:
 
-### What is NOT transmitted
+- your IP address, the routing room identifier, and the authorization token sent
+  during the WebSocket handshake (the relay retains a hash of that token);
+- clear outer object/version/kind, request, acknowledgement, and deletion fields;
+- room co-membership, connection and session identifiers, public actor keys,
+  and signed actor/session announcements;
+- Chat sender/session/key ID, whether the scope is Entire room or Selected unit,
+  and, for Selected unit, the exact recipient actor/session/key ID;
+- connection times, message timing, frequency, and sizes; and
+- encrypted mission objects and tombstones held for synchronisation.
 
-- Your Apple ID, Google account, email, phone number, or any real-world
-  identity — there are no accounts
-- Your location history — presence is a 5-second heartbeat, not a track;
-  the relay does not log or store it
-- Any data from other apps on your device
+Encrypted mission objects and actor records can remain at the relay until the
+room has been idle for seven days. Live location presence is forwarded to
+connected peers and held only as current in-memory session state. TacMap Chat
+key adverts and ciphertext are forwarded only to currently connected,
+Chat-capable sessions and are not written to the relay's room storage. There is
+no offline Chat mailbox. A relay acknowledgement shown as **Routed** or **Sent
+to room** does not mean that a recipient decrypted, displayed, or read a
+message; TacMap Chat v1 has no endpoint delivery/read receipts. The UI’s
+“online” member state is relay-reported: signed session messages authenticate
+their origin, but an untrusted relay can delay, replay, or suppress liveness.
+Treat it as an indication, not proof that a person is presently connected.
 
-### End-to-end encryption
+Leaving the room closes the connection and stops further Unit Sync traffic.
+The bounded local Chat history remains sealed in app-private storage for that
+room unless the App's data is deleted; leaving does not create a relay copy.
+Turning off **Share my location** stops live-position broadcasts without
+leaving the room. On iOS and Android, **Background Unit Sync location** is a
+separate OPSEC switch and is off by default. When both location-sharing switches
+are on in a joined v3 room, TacMap can keep its authenticated socket active after
+the screen locks and send an encrypted position at the selected best-effort
+cadence (one, five, fifteen, thirty, or sixty minutes). iOS continues the
+foreground-started Core Location session with the system background-location
+indicator visible. Android runs a location foreground service with an ongoing
+notification and does not request `ACCESS_BACKGROUND_LOCATION`. Both platforms
+ignore inbound mission traffic while locked or backgrounded and reconnect for a
+verified snapshot after you return.
+If either control is off when you try to join a v3 room, TacMap pauses before
+joining and asks whether to enable both; cancelling leaves the room unjoined.
+The signed last-known lifetime is bounded to the selected cadence plus delivery
+grace (never more than 65 minutes); older/foreground-only senders remain on the
+45-second window. Turning either switch off prevents screen-off broadcasts and
+rotates or closes the authenticated session so an extended marker is withdrawn.
 
-The relay is **E2E-blind by design**. The encryption key is derived
-on-device from the unit join code via PBKDF2 (210,000 iterations) and
-never leaves the device. The relay cannot read your waypoints, drawings,
-location, callsign, or unit composition — it only routes opaque
-ciphertext between devices that share the same join code.
+### 3.4 App Store and Google Play
 
-### How to disable
+TacMap uses StoreKit or Google Play Billing for its trial and one-time unlock.
+The App can reconcile ownership when it launches and on throttled foreground
+transitions; opening a paywall also loads product and localised-price details.
+These contacts are independent of the online-map and online-lookup gates.
 
-You can stop sharing at any time:
+Apple or Google may process the signed-in store account, app/product identifier,
+transaction or purchase-token information, device/service data, IP address,
+timing, and diagnostics under their policies. TacMap does not attach map
+coordinates, tracks, mission objects, imported maps, callsigns, Unit Sync data,
+or mission keys to store requests. There is no TacMap purchase-validation
+server.
 
-- **Location sharing**: toggle "Share my location" off in the Unit Sync
-  dialog. Your position is no longer broadcast; existing peers are
-  notified you have left.
-- **All sync**: tap "Leave room" to disconnect entirely. No further data
-  is sent or received.
-- **Never used**: if you never enter a join code, no sync connection is
-  ever made and none of the above applies.
+## 4. Permissions
 
----
-
-## 4. Permissions we request
+Heading Up reads the device compass only while that foreground mode is active;
+it does not require a separate runtime permission. When a usable location fix
+is available, the App may use it locally to correct magnetic heading to true
+north. Without one, the compass remains explicitly marked as magnetic north.
 
 ### iOS
 
-- **Location — While Using the App** (`NSLocationWhenInUseUsageDescription`).
-  Required to display your live position, the live MGRS readout, and
-  (optionally) to broadcast your position to your unit via Unit Sync. You
-  can decline; the App still works but the “Your Location” mode shows
-  nothing and live presence sharing is unavailable.
-- **Location — Always** (`NSLocationAlwaysAndWhenInUseUsageDescription`)
-  is declared so future versions can offer optional background track logging.
-  **v1.0 does not use background location.** Even if you grant Always
-  permission today, the App will not record or transmit your location in
-  the background.
-- **Files / Documents picker.** Used only when you import a PDF map.
-- **Share Sheet.** Used when you export GeoJSON or share data.
+- **Location While Using the App** supports the live position, MGRS readout,
+  optional live presence, and a user-started GPX track. TacMap presents the
+  permission prompt on the first map presentation so live location can work
+  immediately after consent. It declares the background-location mode and
+  enables it only while an explicit track recording is active or while the
+  separate Background Unit Sync OPSEC switch is on and a v3 room is actively
+  sharing location. The system background-location indicator remains visible.
+  The App does not request “Always” authorisation, cannot relaunch this session
+  after termination, and cannot guarantee an exact wall-clock interval.
+- **Face ID** is requested only if you enable a Face ID-protected app or
+  mission-data lock.
+- The system document picker and share sheet appear only when you choose an
+  import or export action.
 
 ### Android
 
-- **`ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION`**. Same reasons as iOS
-  Location — live position display, MGRS readout, and optional Unit Sync
-  presence sharing.
-- **`INTERNET`**. To make the network requests listed in §3 and §3b above.
+- **Precise/approximate location** supports the same live-map and Unit Sync
+  features and is requested on the first map presentation. Precise foreground
+  location is required to record a GPS track.
+- **Foreground service (location)** keeps either a recording that you started,
+  or explicitly opted-in v3 Background Unit Sync presence, running while the
+  App is backgrounded or the screen is locked. The service displays an ongoing
+  notification for the active feature.
+- **Notifications** is requested on Android 13 and later for that foreground
+  service notification.
+- **Internet/network state** supports the optional services and store contacts
+  described above. **Billing** supports the one-time unlock.
 
-You can revoke any permission at any time via your device’s Settings.
+Android does not request broad file/media storage access or the
+`ACCESS_BACKGROUND_LOCATION` permission. You can revoke granted permissions in
+system Settings; doing so disables the affected feature.
 
----
+## 5. Imports and exports you initiate
 
-## 5. Data exports you initiate
+PDF/GeoPDF and MBTiles maps selected through the system document picker are
+copied into TacMap's app-private storage so the imported map remains available.
+GeoJSON, KML, and KMZ files are instead read under the picker's scoped access,
+parsed into mission objects, and then released; TacMap persists the resulting
+mission objects in its encrypted stores rather than retaining the source file.
 
-When you tap **Export GeoJSON** or **Export All Data**, the App serialises
-your waypoints and drawings into a `.geojson` file in the App’s temporary
-directory and presents it to the iOS / Android Share Sheet. **We do not
-upload that file.** It goes only to whichever destination you choose
-(Files, Mail, AirDrop, Messages, etc.). The receiving app is governed by
-its own privacy policy.
-
----
+**Export All Mission Objects** creates a GeoJSON file containing waypoints,
+symbols, drawings, and layer information. A recorded route is exported
+separately as GPX. GPX contains a timestamp for each recorded point; GeoJSON
+contains mission-object and layer creation times rather than per-vertex timing.
+These files can also contain precise coordinates, notes, and elevations. TacMap
+writes them locally and presents the system share/save interface; the App does
+not choose or upload to a destination for you. After you select another app,
+service, or person, their privacy and retention rules apply.
 
 ## 6. Children
 
-TacticalMaps is not directed at children under 13 and does not knowingly
-collect any information from them. If you believe a child has used the App
-in a way that requires deletion of data, please contact us at the address
-below — although note that we hold no server-side data to delete.
+TacMap is not directed to children under 13. It does not operate a user-account
+or advertising service. If a child uses an optional provider or platform store,
+that provider’s policies and the device account settings apply.
 
----
+## 7. Your choices and rights
 
-## 7. Your rights (GDPR / CCPA / similar)
+You can inspect, edit, export, or delete mission objects in the App; discard a
+saved track; remove an imported map; leave Unit Sync; turn off both online
+gates; revoke permissions; or delete the App. TacMap does not maintain a
+developer database containing your mission content against which an access or
+deletion request can be run. Service providers may hold the limited metadata
+described above; contact the relevant provider for requests concerning their
+records.
 
-Because we do not collect, process, or store any personal data on our
-servers, the standard data-subject rights (access, rectification, erasure,
-portability, restriction, objection) have no data to attach to. Everything
-you create lives on your device under your direct control and can be
-removed by deleting the App.
-
-If you believe this is incorrect for your jurisdiction, contact us and we
-will respond within 30 days.
-
----
+Privacy and consumer rights vary by jurisdiction. Contact us if you believe
+this policy is inaccurate or if you need help identifying the relevant data
+controller or service provider.
 
 ## 8. Changes to this policy
 
-If we change this policy, we will:
+Material changes will be published at the same public policy URL with a revised
+date. Release notes will call out changes that materially alter data handling.
 
-- Update the **Last updated** date at the top
-- Bump the App’s version number
-- Publish the new policy at the same public URL the App links to
-
-We will not silently broaden data collection.
-
----
-
-## 9. Contact
-
-For any privacy question, complaint, or request:
+## 9. Contact and source
 
 - **Email:** christianbrooker@gmail.com
-- **GitHub issues:** <https://github.com/JediBrooker/TacticalMaps/issues>
+- **Issues:** <https://github.com/JediBrooker/TacMap/issues>
+- **Source:** <https://github.com/JediBrooker/TacMap>
+- **Threat model:** <https://tacmap.app/threat-model>
 
----
-
-## 10. Open source acknowledgement
-
-TacticalMaps is open source under the MIT License (see `LICENSE` in the
-repository). The full source is available at
-<https://github.com/JediBrooker/TacticalMaps>. You can audit every network
-call, every persisted file, and every permission for yourself.
+TacMap is open source under the MIT License. The source is available for audit,
+but the exact behaviour of Apple, Google, Esri, OpenTopoMap, Open-Meteo,
+Cloudflare, network operators, and apps you share to is governed by those
+parties’ systems and policies.

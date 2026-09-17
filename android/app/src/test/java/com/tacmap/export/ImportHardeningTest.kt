@@ -1,5 +1,6 @@
 package com.tacmap.export
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
@@ -18,6 +19,41 @@ class ImportHardeningTest {
         assertTrue(parsed.waypoints.size == 1)
         assertTrue(parsed.drawings.size == 1)
         assertTrue(parsed.newLayers.single().name == "Ops")
+    }
+
+    @Test fun externalKmlAndKmzWidthsConvertPortableDpToRendererPixels() {
+        val xml = """<kml><Placemark><LineString><coordinates>151.2,-33.8 151.3,-33.9</coordinates></LineString></Placemark></kml>"""
+
+        val kml = KmlImporter.parseStream(
+            ByteArrayInputStream(xml.toByteArray()),
+            emptyList(),
+            "fallback",
+            density = 2.5f,
+        )
+        assertEquals(7.5f, kml.drawings.single().strokeWidth, 0.001f)
+
+        val zipped = ByteArrayOutputStream().also { bytes ->
+            ZipOutputStream(bytes).use { zip ->
+                zip.putNextEntry(ZipEntry("doc.kml"))
+                zip.write(xml.toByteArray())
+                zip.closeEntry()
+            }
+        }.toByteArray()
+        val kmz = KmlImporter.parseStream(
+            ByteArrayInputStream(zipped),
+            emptyList(),
+            "fallback",
+            density = 3f,
+        )
+        assertEquals(9f, kmz.drawings.single().strokeWidth, 0.001f)
+    }
+
+    @Test fun kmlParserDefaultDensityPreservesLegacyCallSiteWidth() {
+        val xml = """<kml><Placemark><LineString><coordinates>151.2,-33.8 151.3,-33.9</coordinates></LineString></Placemark></kml>"""
+
+        val parsed = KmlImporter.parse(xml, emptyList(), "fallback")
+
+        assertEquals(8f, parsed.drawings.single().strokeWidth, 0.001f)
     }
 
     @Test fun kmlRejectsDoctypeAndExternalEntities() {
@@ -59,5 +95,19 @@ class ImportHardeningTest {
         val input = ByteArrayInputStream(ByteArray(8 * 1024 * 1024 + 1) { ' '.code.toByte() })
         val failure = runCatching { GeoJsonImporter.parseStream(input, emptyList(), "fallback") }.exceptionOrNull()
         assertTrue(failure is GeoJsonImporter.ImportException)
+    }
+
+    @Test fun genericGeoJsonParserNeverMintsMissingSyncIdentity() {
+        val json = """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[151.2,-33.8]},"properties":{"name":"No ID"}}]}"""
+        val parsed = GeoJsonImporter.parse(json, emptyList(), "fallback")
+        assertTrue(parsed.waypoints.single().id.isEmpty())
+        assertTrue(parsed.identityOrder.single().sourceId == null)
+    }
+
+    @Test fun kmlParserLeavesMissingIdentityForExternalResolver() {
+        val xml = """<kml><Placemark><Point><coordinates>151.2,-33.8</coordinates></Point></Placemark></kml>"""
+        val parsed = KmlImporter.parse(xml, emptyList(), "fallback")
+        assertTrue(parsed.waypoints.single().id.isEmpty())
+        assertTrue(parsed.identityOrder.single().sourceId == null)
     }
 }

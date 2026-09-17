@@ -6,8 +6,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -41,13 +44,17 @@ import com.tacmap.calibration.Calibration
 import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.Wgs84Bounds
+import com.tacmap.calibration.Wgs84Coordinate
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.mgrs.MgrsGridRenderer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.Layout
@@ -57,6 +64,7 @@ import com.tacmap.waypoints.SymbolEchelon
 import com.tacmap.waypoints.SymbolFunction
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.sync.PresencePeer
+import com.tacmap.sync.presenceMarkerPresentation
 import com.tacmap.waypoints.Waypoint
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -64,6 +72,9 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Vector drawings (lines / polygons / points) on the SDK-free renderer. Projects
@@ -99,7 +110,10 @@ private fun DrawScope.drawFeature(
 
     val d = proj.density
     val stroke = Color(feature.strokeColor)
-    val fill = Color(feature.strokeColor and 0x00FFFFFF or 0x33000000)
+    // Fill is an independent persisted style. Deriving it from the stroke here
+    // made a correctly imported polygon silently render with the wrong colour
+    // and opacity even though its GeoJSON round-trip was intact.
+    val fill = Color(feature.fillColor)
     val width = (if (isDraft) feature.strokeWidth + 2f else feature.strokeWidth)
     val dash = if (isDraft || feature.strokeStyle == DrawingStrokeStyle.DASHED)
         PathEffect.dashPathEffect(floatArrayOf(width * 3f, width * 2f), 0f) else null
@@ -243,18 +257,26 @@ fun MgrsGridCanvas(camera: MapCamera, density: Float, modifier: Modifier = Modif
     if (camera.viewportWidth <= 0.0 || camera.viewportHeight <= 0.0) return
     val proj = remember(camera, density) { MapProjection(camera, density) }
 
-    val built = remember(camera) {
-        val corners = listOf(
-            0.0 to 0.0, camera.viewportWidth to 0.0,
-            0.0 to camera.viewportHeight, camera.viewportWidth to camera.viewportHeight
-        ).map { camera.coordinate(it.first, it.second) }
-        val lats = corners.map { it.first }
-        val lons = corners.map { it.second }
-        val widthPx = (camera.viewportWidth * density).roundToInt().coerceAtLeast(1)
+    // Geometry covers the square around the viewport's half-diagonal, so it is
+    // valid at every heading. Live compass samples only reproject these cached
+    // lines; they do not synchronously rebuild the MGRS tessellation.
+    val gridBounds = remember(
+        camera.centerLat,
+        camera.centerLon,
+        camera.zoom,
+        camera.viewportWidth,
+        camera.viewportHeight,
+    ) { orientationInvariantGridBounds(camera) }
+    val coverageWidthPx = (
+        hypot(camera.viewportWidth, camera.viewportHeight) * density
+    ).roundToInt().coerceAtLeast(1)
+    val built = remember(gridBounds, coverageWidthPx) {
         MgrsGridRenderer.build(
-            minLat = lats.min(), minLng = lons.min(),
-            maxLat = lats.max(), maxLng = lons.max(),
-            mapWidthPx = widthPx
+            minLat = gridBounds.southwest.latitude,
+            minLng = gridBounds.southwest.longitude,
+            maxLat = gridBounds.northeast.latitude,
+            maxLng = gridBounds.northeast.longitude,
+            mapWidthPx = coverageWidthPx,
         )
     }
 
@@ -306,6 +328,26 @@ fun MgrsGridCanvas(camera: MapCamera, density: Float, modifier: Modifier = Modif
             if (mark.isVertical) nc.restore()
         }
     }
+}
+
+/** Heading-independent MGRS geometry coverage for the current viewport. */
+internal fun orientationInvariantGridBounds(camera: MapCamera): Wgs84Bounds {
+    val radius = hypot(camera.viewportWidth, camera.viewportHeight) / 2.0
+    val centreX = camera.viewportWidth / 2.0
+    val centreY = camera.viewportHeight / 2.0
+    val northUp = camera.copy(headingDegrees = 0.0)
+    val coordinates = listOf(
+        northUp.coordinate(centreX - radius, centreY - radius),
+        northUp.coordinate(centreX + radius, centreY - radius),
+        northUp.coordinate(centreX + radius, centreY + radius),
+        northUp.coordinate(centreX - radius, centreY + radius),
+    )
+    val latitudes = coordinates.map { it.first }
+    val longitudes = coordinates.map { it.second }
+    return Wgs84Bounds(
+        Wgs84Coordinate(latitudes.min(), longitudes.min()),
+        Wgs84Coordinate(latitudes.max(), longitudes.max()),
+    )
 }
 
 /**
@@ -430,6 +472,9 @@ fun WaypointSymbolsLayer(
 
 private enum class ScreenAnchorC { CENTER, TOP }
 
+private enum class ScreenHorizontalAnchorC { START, END }
+private enum class ScreenVerticalAnchorC { TOP, BOTTOM }
+
 @Composable
 private fun ScreenAnchoredC(screenX: Int, screenY: Int, anchor: ScreenAnchorC = ScreenAnchorC.CENTER,
                             content: @Composable () -> Unit) {
@@ -448,6 +493,160 @@ private fun LabelPillC(text: String) {
     Text(text, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
         modifier = Modifier.background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(4.dp))
             .padding(horizontal = 5.dp, vertical = 2.dp))
+}
+
+/** Match iOS's compact Unit Sync callsign badge without changing other map labels. */
+@Composable
+private fun PresenceCallsignPillC(text: String) {
+    Text(
+        text = text,
+        color = Color.White,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        style = TextStyle(
+            // UILabel does not add Android's legacy top/bottom font padding.
+            platformStyle = PlatformTextStyle(includeFontPadding = false),
+        ),
+        modifier = Modifier
+            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(3.dp))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    )
+}
+
+@Composable
+private fun ScreenEdgeAnchoredC(
+    screenX: Int,
+    screenY: Int,
+    horizontalAnchor: ScreenHorizontalAnchorC,
+    verticalAnchor: ScreenVerticalAnchorC,
+    content: @Composable () -> Unit,
+) {
+    Layout(content = content) { measurables, constraints ->
+        val child = measurables.firstOrNull() ?: return@Layout layout(0, 0) {}
+        val placeable = child.measure(constraints.copy(minWidth = 0, minHeight = 0))
+        layout(0, 0) {
+            placeable.place(
+                x = screenX - if (horizontalAnchor == ScreenHorizontalAnchorC.END) placeable.width else 0,
+                y = screenY - if (verticalAnchor == ScreenVerticalAnchorC.BOTTOM) placeable.height else 0,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmplifierLabelC(field: String, text: String) {
+    Text(
+        text = text,
+        color = Color.White,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        lineHeight = 10.sp,
+        style = TextStyle(
+            platformStyle = PlatformTextStyle(includeFontPadding = false),
+            lineHeightStyle = LineHeightStyle(
+                alignment = LineHeightStyle.Alignment.Center,
+                trim = LineHeightStyle.Trim.Both,
+            ),
+        ),
+        maxLines = 1,
+        modifier = Modifier
+            .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(3.dp))
+            // Font padding is disabled above, so this 3 dp horizontal inset
+            // produces a compact chip without hidden Android top/bottom space.
+            .padding(horizontal = 3.dp)
+            .semantics { contentDescription = "Unit amplifier $field, $text" },
+    )
+}
+
+internal data class UnitAmplifierAnchors(
+    val fieldFX: Float,
+    val fieldFY: Float,
+    val fieldMX: Float,
+    val fieldMY: Float,
+    val fieldTX: Float,
+    val fieldTY: Float,
+)
+
+/** Approximate the APP-6 frame inside the bundled icon view boxes. HQ icons
+ * reserve their lower portion for the staff, so Fields M/T must use the frame
+ * bottom rather than the overall visible bottom. */
+internal fun unitAmplifierAnchors(
+    centreX: Float,
+    centreY: Float,
+    visibleWidth: Float,
+    visibleHeight: Float,
+    isHeadquarters: Boolean,
+    density: Float,
+): UnitAmplifierAnchors {
+    val left = centreX - visibleWidth / 2f
+    val top = centreY - visibleHeight / 2f
+    val right = centreX + visibleWidth / 2f
+    val frameTop = top + visibleHeight * if (isHeadquarters) 0.13f else 0.25f
+    val frameBottom = top + visibleHeight * if (isHeadquarters) 0.62f else 0.97f
+    val gap = 3f * density
+    return UnitAmplifierAnchors(
+        fieldFX = right + gap,
+        fieldFY = frameTop,
+        fieldMX = right + gap,
+        fieldMY = frameBottom,
+        fieldTX = left - gap,
+        fieldTY = frameBottom,
+    )
+}
+
+/** FM 1-02.2 Fields F/M/T. This layer is intentionally independent from
+ * [WaypointLabelsLayer], whose unit label is the user-facing waypoint name. */
+@Composable
+fun UnitAmplifierLabelsLayer(
+    waypoints: List<Waypoint>,
+    camera: MapCamera,
+    density: Float,
+) {
+    val context = LocalContext.current
+    val projection = remember(camera, density) { MapProjection(camera, density) }
+    waypoints.forEach { waypoint ->
+        val military = waypoint.kind as? WaypointKind.Military ?: return@forEach
+        val fieldF = waypoint.reinforcementStatus.amplifier
+        val fieldM = waypoint.higherFormation?.trim().orEmpty()
+        val fieldT = waypoint.uniqueIdentifier?.trim().orEmpty()
+        if (fieldF.isEmpty() && fieldM.isEmpty() && fieldT.isEmpty()) return@forEach
+
+        val screen = projection.toScreen(waypoint.latitude, waypoint.longitude)
+        val visible = SymbolIconFactory.visibleBoundsFor(context, waypoint)
+        val anchors = unitAmplifierAnchors(
+            centreX = screen.x,
+            centreY = screen.y,
+            visibleWidth = visible.width().toFloat(),
+            visibleHeight = visible.height().toFloat(),
+            isHeadquarters = military.spec.isHeadquarters,
+            density = density,
+        )
+        if (fieldF.isNotEmpty()) {
+            ScreenEdgeAnchoredC(
+                anchors.fieldFX.roundToInt(),
+                anchors.fieldFY.roundToInt(),
+                ScreenHorizontalAnchorC.START,
+                ScreenVerticalAnchorC.BOTTOM,
+            ) { AmplifierLabelC("F", fieldF) }
+        }
+        if (fieldM.isNotEmpty()) {
+            ScreenEdgeAnchoredC(
+                anchors.fieldMX.roundToInt(),
+                anchors.fieldMY.roundToInt(),
+                ScreenHorizontalAnchorC.START,
+                ScreenVerticalAnchorC.TOP,
+            ) { AmplifierLabelC("M", fieldM) }
+        }
+        if (fieldT.isNotEmpty()) {
+            ScreenEdgeAnchoredC(
+                anchors.fieldTX.roundToInt(),
+                anchors.fieldTY.roundToInt(),
+                ScreenHorizontalAnchorC.END,
+                ScreenVerticalAnchorC.TOP,
+            ) { AmplifierLabelC("T", fieldT) }
+        }
+    }
 }
 
 /** Waypoint name labels (unit pill below the icon, task pill centred). */
@@ -490,13 +689,61 @@ fun DrawingLabelsLayer(drawings: List<DrawingFeature>, camera: MapCamera, densit
     }
 }
 
+internal data class PresenceMarkerPlacement(
+    val iconLeftPx: Float,
+    val iconTopPx: Float,
+    val labelCentreXPx: Float,
+    val labelTopPx: Float,
+)
+
+/**
+ * Keep a presence symbol and its callsign on one screen-space anchor.
+ *
+ * Military bitmaps are not ordinary centred pins: they can contain transparent
+ * padding, echelon marks above the frame, and (for HQ units) a long staff below
+ * it. Positioning the bitmap by its full dimensions while positioning the label
+ * separately makes those two pieces look like different units. Centre the
+ * bitmap's visible bounds on the projection and put the label under the APP-6
+ * frame; an HQ staff may continue behind/below the label, matching iOS.
+ */
+internal fun presenceMarkerPlacement(
+    projectedX: Float,
+    projectedY: Float,
+    visibleLeftPx: Float,
+    visibleTopPx: Float,
+    visibleRightPx: Float,
+    visibleBottomPx: Float,
+    isHeadquarters: Boolean,
+    density: Float,
+): PresenceMarkerPlacement {
+    val visibleWidth = (visibleRightPx - visibleLeftPx).coerceAtLeast(1f)
+    val visibleHeight = (visibleBottomPx - visibleTopPx).coerceAtLeast(1f)
+    val iconLeft = projectedX - (visibleLeftPx + visibleWidth / 2f)
+    val iconTop = projectedY - (visibleTopPx + visibleHeight / 2f)
+    val frameBottomRatio = if (isHeadquarters) 0.62f else 1f
+    return PresenceMarkerPlacement(
+        iconLeftPx = iconLeft,
+        iconTopPx = iconTop,
+        labelCentreXPx = projectedX,
+        labelTopPx = iconTop + visibleTopPx + visibleHeight * frameBottomRatio + 3f * density,
+    )
+}
+
 /** Presence peers: military symbol + callsign pill, projected. */
 @Composable
 fun PresenceLayer(peers: Map<String, PresencePeer>, camera: MapCamera, density: Float) {
     val context = LocalContext.current
     val proj = remember(camera, density) { MapProjection(camera, density) }
+    var nowUptimeMs by remember { mutableLongStateOf(System.nanoTime() / 1_000_000L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000L)
+            nowUptimeMs = System.nanoTime() / 1_000_000L
+        }
+    }
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         peers.values.forEach { peer ->
+            val presentation = presenceMarkerPresentation(peer, nowUptimeMs)
             val wp = remember(peer.clientId, peer.affiliation, peer.echelon, peer.function, peer.isHQ,
                               peer.lat, peer.lon, peer.callsign) {
                 val spec = MilitarySymbolSpec(
@@ -509,18 +756,43 @@ fun PresenceLayer(peers: Map<String, PresencePeer>, camera: MapCamera, density: 
                 Waypoint(id = peer.clientId, name = peer.callsign, latitude = peer.lat, longitude = peer.lon,
                     kind = WaypointKind.Military(spec))
             }
-            val img = remember(wp.kind) {
-                SymbolIconFactory.drawableFor(context, wp).toBitmap(
-                    SymbolIconFactory.drawableFor(context, wp).intrinsicWidth.coerceAtLeast(1),
-                    SymbolIconFactory.drawableFor(context, wp).intrinsicHeight.coerceAtLeast(1)).asImageBitmap()
+            val artwork = remember(wp.kind) {
+                val drawable = SymbolIconFactory.drawableFor(context, wp)
+                val image = drawable.toBitmap(
+                    drawable.intrinsicWidth.coerceAtLeast(1),
+                    drawable.intrinsicHeight.coerceAtLeast(1),
+                ).asImageBitmap()
+                image to SymbolIconFactory.visibleBoundsFor(context, wp)
             }
+            val (img, visible) = artwork
             val s = proj.toScreen(peer.lat, peer.lon)
-            Image(bitmap = img, contentDescription = peer.callsign,
-                modifier = Modifier.offset { IntOffset((s.x - img.width / 2).roundToInt(), (s.y - img.height / 2).roundToInt()) }
+            val placement = presenceMarkerPlacement(
+                projectedX = s.x,
+                projectedY = s.y,
+                visibleLeftPx = visible.left.toFloat(),
+                visibleTopPx = visible.top.toFloat(),
+                visibleRightPx = visible.right.toFloat(),
+                visibleBottomPx = visible.bottom.toFloat(),
+                isHeadquarters = peer.isHQ,
+                density = density,
+            )
+            Image(bitmap = img, contentDescription = presentation.accessibilityLabel,
+                modifier = Modifier.offset {
+                    IntOffset(placement.iconLeftPx.roundToInt(), placement.iconTopPx.roundToInt())
+                }
+                    .alpha(if (peer.isStale) 0.55f else 1f)
                     .size(with(androidx.compose.ui.platform.LocalDensity.current) { img.width.toDp() },
                           with(androidx.compose.ui.platform.LocalDensity.current) { img.height.toDp() }))
-            if (peer.callsign.isNotBlank()) {
-                ScreenAnchoredC(s.x.roundToInt(), (s.y + img.height / 2 + 2).roundToInt(), ScreenAnchorC.TOP) { LabelPillC(peer.callsign) }
+            if (presentation.visibleLabel.isNotBlank()) {
+                ScreenAnchoredC(
+                    placement.labelCentreXPx.roundToInt(),
+                    placement.labelTopPx.roundToInt(),
+                    ScreenAnchorC.TOP,
+                ) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.alpha(if (peer.isStale) 0.55f else 1f)
+                    ) { PresenceCallsignPillC(presentation.visibleLabel) }
+                }
             }
         }
     }
@@ -535,13 +807,39 @@ fun PresenceLayer(peers: Map<String, PresencePeer>, camera: MapCamera, density: 
 fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val proj = remember(camera, density) { MapProjection(camera, density) }
-    var bmp by remember(source.uri) { mutableStateOf<Bitmap?>(null) }
+    val bitmapState = remember(source.uri) { mutableStateOf<Bitmap?>(null) }
+    var bmp by bitmapState
+    val active = remember(source.uri) { java.util.concurrent.atomic.AtomicBoolean(true) }
+    DisposableEffect(source.uri) {
+        active.set(true)
+        onDispose {
+            active.set(false)
+            bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle()
+            bitmapState.value = null
+        }
+    }
     LaunchedEffect(source.uri) {
-        bmp = runCatching {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                PdfPageRenderer.renderFirstPage(context, source.uri).bitmap
+        var rendered: Bitmap? = null
+        try {
+            rendered = withContext(Dispatchers.IO) {
+                PdfPageRenderer.renderFirstPage(context, source.uri).bitmap.also {
+                    // Preserve ownership if prompt cancellation wins the race
+                    // while dispatching the completed render back to Main.
+                    rendered = it
+                }
             }
-        }.getOrNull()
+            if (rendered != null && active.get()) {
+                bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle()
+                bitmapState.value = rendered
+                rendered = null
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The surrounding map remains usable if a corrupt PDF cannot render.
+        } finally {
+            rendered?.takeUnless(Bitmap::isRecycled)?.recycle()
+        }
     }
     val image = bmp ?: return
     val transform = (source.calibration as? Calibration.Fiduciaries)?.transform

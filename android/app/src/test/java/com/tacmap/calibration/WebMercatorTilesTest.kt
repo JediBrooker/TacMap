@@ -45,10 +45,20 @@ class WebMercatorTilesTest {
         val r = WebMercatorTiles.tileRange(bounds, 12)
         assertTrue(r.minX <= r.maxX)
         assertTrue(r.minY <= r.maxY)
-        assertTrue("range should be small for a city box", r.count in 1..64)
+        assertTrue("range should be small for a city box", r.count in 1L..64L)
         // Every tile index within the valid grid.
         val max = (1 shl 12) - 1
         assertTrue(r.minX in 0..max && r.maxX in 0..max)
         assertTrue(r.minY in 0..max && r.maxY in 0..max)
+    }
+
+    @Test
+    fun worldRangeCountDoesNotOverflowAtHighZoom() {
+        val world = Wgs84Bounds(
+            southwest = Wgs84Coordinate(-90.0, -180.0),
+            northeast = Wgs84Coordinate(90.0, 180.0),
+        )
+
+        assertEquals(274_877_906_944L, WebMercatorTiles.tileRange(world, 19).count)
     }
 }

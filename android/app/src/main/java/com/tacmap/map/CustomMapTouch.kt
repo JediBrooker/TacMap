@@ -32,6 +32,7 @@ import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.map.render.MapCamera
 import com.tacmap.map.render.MapProjection
+import com.tacmap.sync.PresencePeer
 import com.tacmap.waypoints.Waypoint
 import kotlin.math.hypot
 import kotlin.math.log2
@@ -102,6 +103,7 @@ internal fun VertexHandlesOverlayCustom(
 internal fun MapItemTouchOverlayCustom(
     waypoints: List<Waypoint>,
     drawings: List<DrawingFeature>,
+    peers: Map<String, PresencePeer>,
     camera: MapCamera,
     density: Float,
     drawingInputEnabled: Boolean,
@@ -111,9 +113,11 @@ internal fun MapItemTouchOverlayCustom(
     onWaypointTap: (Waypoint) -> Unit,
     onWaypointMoved: (waypoint: Waypoint, lat: Double, lng: Double) -> Unit,
     onDrawingTap: (String) -> Unit,
+    onPresencePeerTap: (PresencePeer) -> Unit,
     onDrawingMoved: (featureId: String, deltaLat: Double, deltaLng: Double) -> Unit,
     minZoom: Double,
     maxZoom: Double,
+    rotationEnabled: Boolean,
     onCameraChange: (MapCamera) -> Unit,
     onMapGestureStart: () -> Unit,
     onEmptyTap: () -> Unit
@@ -124,6 +128,7 @@ internal fun MapItemTouchOverlayCustom(
     val drawingTolerancePx = with(LocalDensity.current) { 22.dp.toPx() }
     val tapSlopPx = with(LocalDensity.current) { 8.dp.toPx() }
     val hitExpandPx = with(LocalDensity.current) { 6.dp.toPx() }
+    val presenceHitRadiusPx = with(LocalDensity.current) { 32.dp.toPx() }
 
     val projectedWaypoints = remember(waypoints, camera) {
         waypoints.map { wp ->
@@ -143,19 +148,25 @@ internal fun MapItemTouchOverlayCustom(
             CProjShape(f.id, f.geometry, f.effectivePoints.map { proj.toScreen(it.latitude, it.longitude) })
         }
     }
+    val projectedPeers = remember(peers, camera) {
+        peers.values.map { peer -> peer to proj.toScreen(peer.lat, peer.lon) }
+    }
 
     val cWps = rememberUpdatedState(projectedWaypoints)
     val cShapes = rememberUpdatedState(projectedShapes)
+    val cPeers = rememberUpdatedState(projectedPeers)
     val cProj = rememberUpdatedState(proj)
     val cOnWpTap = rememberUpdatedState(onWaypointTap)
     val cOnWpMoved = rememberUpdatedState(onWaypointMoved)
     val cOnDrTap = rememberUpdatedState(onDrawingTap)
+    val cOnPeerTap = rememberUpdatedState(onPresencePeerTap)
     val cOnDrMoved = rememberUpdatedState(onDrawingMoved)
     val cOnEmpty = rememberUpdatedState(onEmptyTap)
     val cOnDrag = rememberUpdatedState(onDragStateChange)
     val cCamera = rememberUpdatedState(camera)
     val cMinZoom = rememberUpdatedState(minZoom)
     val cMaxZoom = rememberUpdatedState(maxZoom)
+    val cRotationEnabled = rememberUpdatedState(rotationEnabled)
     val cOnCameraChange = rememberUpdatedState(onCameraChange)
     val cOnMapGestureStart = rememberUpdatedState(onMapGestureStart)
     val cLocked = rememberUpdatedState(locked)
@@ -167,12 +178,17 @@ internal fun MapItemTouchOverlayCustom(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val start = down.position
-                    val wpHit = if (!cLocked.value) {
+                    val peerHit = closestPresencePeer(
+                        start,
+                        cPeers.value,
+                        presenceHitRadiusPx,
+                    )
+                    val wpHit = if (peerHit == null && !cLocked.value) {
                         hitWaypoints(start, cWps.value, hitExpandPx)
                     } else {
                         null
                     }
-                    val shapeHit = if (wpHit == null && !cLocked.value) {
+                    val shapeHit = if (peerHit == null && wpHit == null && !cLocked.value) {
                         hitShapes(start, cShapes.value, drawingTolerancePx)
                     } else {
                         null
@@ -246,7 +262,13 @@ internal fun MapItemTouchOverlayCustom(
                                             rotationDegrees = event.calculateRotation(),
                                             density = density,
                                             minZoom = cMinZoom.value,
-                                            maxZoom = cMaxZoom.value
+                                            maxZoom = cMaxZoom.value,
+                                            rotationEnabled = cRotationEnabled.value,
+                                            headingOverrideDegrees = if (cRotationEnabled.value) {
+                                                null
+                                            } else {
+                                                cCamera.value.headingDegrees
+                                            },
                                         )
                                         if (next != gestureCamera) {
                                             if (!mapGestureStarted) {
@@ -309,13 +331,30 @@ internal fun MapItemTouchOverlayCustom(
                                 }
                             }
 
-                            CustomMapGestureMode.MAP_PENDING -> cOnEmpty.value()
+                            CustomMapGestureMode.MAP_PENDING -> {
+                                if (peerHit != null) cOnPeerTap.value(peerHit) else cOnEmpty.value()
+                            }
                             CustomMapGestureMode.MAP_TRANSFORM -> Unit
                         }
                     }
                 }
             }
     )
+}
+
+internal fun closestPresencePeer(
+    point: Offset,
+    projectedPeers: List<Pair<PresencePeer, Offset>>,
+    radiusPx: Float,
+): PresencePeer? {
+    if (!radiusPx.isFinite() || radiusPx <= 0f) return null
+    return projectedPeers.asSequence()
+        .map { (peer, position) ->
+            peer to hypot(point.x - position.x, point.y - position.y)
+        }
+        .filter { (_, distance) -> distance <= radiusPx }
+        .minByOrNull { (_, distance) -> distance }
+        ?.first
 }
 
 internal enum class CustomMapGestureMode {
@@ -365,10 +404,16 @@ internal fun applyCustomMapTransform(
     rotationDegrees: Float,
     density: Float,
     minZoom: Double,
-    maxZoom: Double
+    maxZoom: Double,
+    rotationEnabled: Boolean = true,
+    headingOverrideDegrees: Double? = null,
 ): MapCamera {
     if (density <= 0f || !density.isFinite()) return camera
-    var next = camera
+    var next = if (!rotationEnabled && headingOverrideDegrees?.isFinite() == true) {
+        camera.copy(headingDegrees = normalizedHeadingDegrees(headingOverrideDegrees))
+    } else {
+        camera
+    }
     val centreX = next.viewportWidth / 2
     val centreY = next.viewportHeight / 2
     val panX = panPx.x / density.toDouble()
@@ -391,7 +436,7 @@ internal fun applyCustomMapTransform(
         next = next.copy(centerLat = lat, centerLon = lon)
     }
 
-    if (rotationDegrees.isFinite() && rotationDegrees != 0f) {
+    if (rotationEnabled && rotationDegrees.isFinite() && rotationDegrees != 0f) {
         var heading = (next.headingDegrees - rotationDegrees) % 360
         if (heading < 0) heading += 360
         next = next.copy(headingDegrees = heading)

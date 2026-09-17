@@ -1,0 +1,21 @@
+{
+  "_comment": "Cross-platform optional signed v3 horizontal-accuracy extension. The unchanged pv=1 payload remains independently signed for old-client compatibility.",
+  "horizontal_accuracy_metres": 25.0,
+  "envelope_version": 1,
+  "version_field": "pav",
+  "payload_field": "pa",
+  "signature_field": "pasig",
+  "signature_kind": "loc-accuracy",
+  "payload_base64": "AAAAAAAAOUA=",
+  "payload_hex": "0000000000003940",
+  "payload_hash_hex": "e7b8ee63056a30fe915339c69a58a2c6524122e307384c171a612d2c97c26a3a",
+  "room_id_raw_hex": "5eb0adef7fca4d02e9a07bac36b5e1f48d20f8dddd840736802224baff65b6b6",
+  "actor_id": "Y76wfSvVY2qpokajMcNv3gML7FC-eyQcuAO7CDFh1fg",
+  "session_domain_hex": "4db7f2e7e2b7cb74334a009964fab6a568408c0ea9f060bd0fa1cf826ff116f0",
+  "counter": 1,
+  "public_key_base64url": "4fwkWR_fPVeArRSMbcjrm4ATK21qDwIH4FOS54EZDwg",
+  "seed_hex": "df6cdbc887e6adadf29f298129ed89c00de6a8ad44bb77aa045bb53a7592eb4a",
+  "preimage_hex": "03035eb0adef7fca4d02e9a07bac36b5e1f48d20f8dddd840736802224baff65b6b62b005937367766537656593271706f6b616a4d634e7633674d4c3746432d6579516375414f37434446683166674db7f2e7e2b7cb74334a009964fab6a568408c0ea9f060bd0fa1cf826ff116f03030303030303030303030303030303100000c6c6f632d6163637572616379e7b8ee63056a30fe915339c69a58a2c6524122e307384c171a612d2c97c26a3a",
+  "signature_base64url": "KgyeoiueCxjh0zHxu3yqe9ibn-ygoqoyfLa_zHGP5p0ZmvwKHZRMtzBhizBSkPUkXZkoJ7nbfQKzxHQfZv1gBw",
+  "ios_signature_base64url": "e6tkXVofAIOISN-ob3e2XQSXiHvCGxU7hqyftMBxmfxFiaF1ymHlBPYIX5S7fCPPvz4zP0KqN7mFV8KLR06JAg"
+}

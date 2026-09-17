@@ -1,6 +1,7 @@
 package com.tacmap.map
 
 import com.tacmap.settings.OpsecSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.math.cos
@@ -83,7 +84,11 @@ internal class ElevationCache(private val capacity: Int = 256) {
  * MapViewModel does via collectLatest).
  */
 class ElevationService(
-    private val staleFallbackMetres: Double = 2_000.0
+    private val staleFallbackMetres: Double = 2_000.0,
+    private val onlineLookupsEnabled: () -> Boolean = {
+        OpsecSettings.shared?.onlineLookups?.value == true
+    },
+    private val fetchBody: suspend (url: String, limit: Int) -> String? = ::boundedHttpsGet,
 ) {
     @Serializable
     private data class ElevationResponse(val elevation: List<Double> = emptyList())
@@ -99,7 +104,7 @@ class ElevationService(
         // OPSEC: an elevation lookup ships the coordinate to a third party
         // (Open-Meteo), so gate it HERE, not just in the caller - that way no
         // future call site can leak the AO while online lookups are off.
-        if (OpsecSettings.shared?.onlineLookups?.value != true) return null
+        if (!onlineLookupsEnabled()) return null
         if (lat == 0.0 && lng == 0.0) return null
 
         // Coarsen to ~110 m (3dp) so the exact map centre isn't disclosed,
@@ -107,9 +112,14 @@ class ElevationService(
         val cLat = Math.round(lat * 1000.0) / 1000.0
         val cLng = Math.round(lng * 1000.0) / 1000.0
 
-        cache.exact(cLat, cLng)?.let { return ElevationReading(it, isStale = false) }
+        cache.exact(cLat, cLng)?.let {
+            return if (onlineLookupsEnabled()) ElevationReading(it, isStale = false) else null
+        }
 
         val fetched = fetch(cLat, cLng)
+        // The user may have disabled online lookups while the HTTPS request was
+        // in flight. Never cache or publish a result after that boundary.
+        if (!onlineLookupsEnabled()) return null
         if (fetched != null) {
             cache.insert(cLat, cLng, fetched)
             return ElevationReading(fetched, isStale = false)
@@ -122,13 +132,21 @@ class ElevationService(
         return null
     }
 
-    private suspend fun fetch(lat: Double, lng: Double): Double? = runCatching {
-            val body = boundedHttpsGet(
+    private suspend fun fetch(lat: Double, lng: Double): Double? {
+        return try {
+            val body = fetchBody(
                 "https://api.open-meteo.com/v1/elevation?latitude=$lat&longitude=$lng",
-                MAX_RESPONSE_BYTES
-            ) ?: return@runCatching null
+                MAX_RESPONSE_BYTES,
+            ) ?: return null
             json.decodeFromString<ElevationResponse>(body).elevation.firstOrNull()
-        }.getOrNull()
+        } catch (cancelled: CancellationException) {
+            // collectLatest relies on cancellation reaching OkHttp. Treating it
+            // as a network miss could incorrectly publish a cached stale value.
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private companion object { const val MAX_RESPONSE_BYTES = 256 * 1024 }
 }

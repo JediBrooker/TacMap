@@ -3,22 +3,29 @@ package com.tacmap.map
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.Redo
-import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,17 +44,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.calibration.Datum
+import com.tacmap.models.HeadingNorthReference
+import com.tacmap.settings.MapOrientationMode
 import kotlin.math.roundToInt
 
 // HUD chrome (round buttons, mils compass) + PDF-calibration UI.
@@ -72,6 +82,67 @@ internal fun CircleHudButton(
     }
 }
 
+/** TacMap Chat launcher with metadata-only unread state and accessible count. */
+@Composable
+internal fun TacMapChatHudButton(unreadCount: Int, onClick: () -> Unit) {
+    val count = unreadCount.coerceAtLeast(0)
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clickable(onClickLabel = "Open TacMap Chat", onClick = onClick)
+            .semantics { contentDescription = tacMapChatContentDescription(count) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(Color(0xCC000000)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.Chat,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        tacMapChatUnreadBadgeText(count)?.let { badgeText ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .height(18.dp)
+                    .widthIn(min = 18.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(Color(0xFFD32F2F))
+                    .border(1.dp, Color.White, RoundedCornerShape(9.dp))
+                    .padding(horizontal = 3.dp)
+                    .clearAndSetSemantics { },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    badgeText,
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+internal fun tacMapChatUnreadBadgeText(count: Int): String? = when {
+    count <= 0 -> null
+    count > 99 -> "99+"
+    else -> count.toString()
+}
+
+internal fun tacMapChatContentDescription(count: Int): String = when (count) {
+    1 -> "TacMap Chat, 1 unread message"
+    in 2..Int.MAX_VALUE -> "TacMap Chat, $count unread messages"
+    else -> "TacMap Chat"
+}
+
 /** One-tap entry to the symbol builder at the current map crosshair. */
 @Composable
 internal fun QuickAddSymbolButton(onClick: () -> Unit) {
@@ -93,71 +164,143 @@ internal fun QuickAddSymbolButton(onClick: () -> Unit) {
     }
 }
 
+/**
+ * Contains the rapidly changing camera-bearing and north-reference flows so a
+ * compass update does not recompose the entire map screen.
+ */
 @Composable
-internal fun CompassChip(mapOrientationDegrees: Double, onTap: () -> Unit = {}) {
+internal fun MapCompassChip(
+    vm: MapViewModel,
+    orientationMode: MapOrientationMode,
+    onHeadingUnavailable: () -> Unit,
+) {
+    val mapBearingDegrees by vm.mapBearingDegrees.collectAsState()
+    val northReference by vm.headingService.headingNorthReference.collectAsState()
+    CompassChip(
+        mapOrientationDegrees = mapBearingDegrees,
+        orientationMode = orientationMode,
+        headingAvailable = vm.headingService.isHeadingAvailable,
+        northReference = northReference,
+        onTap = {
+            if (vm.onCompassTapped() == CompassTapAction.HEADING_UNAVAILABLE) {
+                onHeadingUnavailable()
+            }
+        },
+    )
+}
+
+@Composable
+internal fun CompassChip(
+    mapOrientationDegrees: Double,
+    orientationMode: MapOrientationMode,
+    headingAvailable: Boolean,
+    northReference: HeadingNorthReference?,
+    onTap: () -> Unit = {},
+) {
     /// mapOrientationDegrees = camera bearing (0 = north up, 90 = east up).
-    /// Mils reading matches that bearing, needle rotates counter to it
-    /// so it keeps pointing at true north as map turns.
+    /// Mils reading matches that bearing. The north marker rotates counter to it so
+    /// it points at the active true- or magnetic-north reference as the map turns.
     val screenUpBearingDegrees = normalizedDegrees(mapOrientationDegrees)
     val mils = mapHeadingMils(screenUpBearingDegrees)
+    val referenceDescription = when {
+        orientationMode != MapOrientationMode.HEADING_UP -> "true north"
+        northReference != null -> northReference.accessibilityLabel
+        else -> "north reference pending"
+    }
+    val referenceSuffix = if (orientationMode == MapOrientationMode.HEADING_UP) {
+        northReference?.displaySuffix ?: "?"
+    } else {
+        "T"
+    }
+    val activeBorderColor = if (northReference == HeadingNorthReference.MAGNETIC_NORTH) {
+        Color(0xFFFFB74D)
+    } else {
+        Color(0xFF42A5F5)
+    }
+    val tapLabel = when (compassTapAction(
+        mode = orientationMode,
+        currentHeading = screenUpBearingDegrees,
+        headingAvailable = headingAvailable,
+    )) {
+        CompassTapAction.RESET_NORTH -> "Reset map to north"
+        CompassTapAction.ENABLE_HEADING_UP -> "Switch to Heading Up"
+        CompassTapAction.DISABLE_HEADING_UP -> "Switch to North Up"
+        CompassTapAction.HEADING_UNAVAILABLE -> "Explain Heading Up availability"
+    }
     Box(
         modifier = Modifier
             .size(56.dp)
             .clip(CircleShape)
-            .background(Color(0xCC000000))
-            .clickable(onClickLabel = "Reset map to north") { onTap() }
-            .semantics { contentDescription = "Compass, $mils mils" },
+            .background(Color.Black.copy(alpha = 0.82f))
+            .border(
+                width = if (orientationMode == MapOrientationMode.HEADING_UP) 2.dp else 1.dp,
+                color = if (orientationMode == MapOrientationMode.HEADING_UP) {
+                    activeBorderColor.copy(alpha = 0.95f)
+                } else {
+                    Color.White.copy(alpha = 0.14f)
+                },
+                shape = CircleShape,
+            )
+            .clickable(onClickLabel = tapLabel) { onTap() }
+            .semantics {
+                contentDescription = buildString {
+                    append(orientationMode.displayName)
+                    append(", $referenceDescription")
+                    append(", compass, $mils mils")
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(
+        // Match iOS: a small red triangle and white N orbit the upper dial as
+        // one north marker. The mils readout below remains upright.
+        Box(
             Modifier
                 .size(34.dp)
                 .align(Alignment.TopCenter)
+                .rotate(-screenUpBearingDegrees.toFloat())
         ) {
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val needleHalfLength = size.height * 0.34f
-            val needleWing = size.width * 0.13f
-            val needleWaist = size.height * 0.04f
-            val strokeWidth = size.width * 0.032f
-            rotate(degrees = -screenUpBearingDegrees.toFloat(), pivot = center) {
-                val northNeedle = Path().apply {
-                    moveTo(cx, cy - needleHalfLength)
-                    lineTo(cx - needleWing, cy + needleWaist)
-                    lineTo(cx, cy - needleWaist)
-                    lineTo(cx + needleWing, cy + needleWaist)
+            Canvas(Modifier.fillMaxSize()) {
+                val centreX = size.width / 2f
+                val top = 3.dp.toPx()
+                val halfWidth = 4.dp.toPx()
+                val triangleHeight = 7.dp.toPx()
+                val northTick = Path().apply {
+                    moveTo(centreX, top)
+                    lineTo(centreX - halfWidth, top + triangleHeight)
+                    lineTo(centreX + halfWidth, top + triangleHeight)
                     close()
                 }
-                val southNeedle = Path().apply {
-                    moveTo(cx, cy + needleHalfLength)
-                    lineTo(cx - needleWing, cy - needleWaist)
-                    lineTo(cx, cy + needleWaist)
-                    lineTo(cx + needleWing, cy - needleWaist)
-                    close()
-                }
-                drawLine(
-                    Color.White,
-                    start = center.copy(y = cy - needleHalfLength),
-                    end = center.copy(y = cy + needleHalfLength),
-                    strokeWidth = strokeWidth
-                )
-                drawPath(northNeedle, Color(0xFFFF3B30))
-                drawPath(southNeedle, Color.White)
+                drawPath(northTick, Color(0xFFFF3B30))
             }
-            drawCircle(
-                Color.White.copy(alpha = 0.72f),
-                radius = size.width * 0.04f,
-                center = center,
-                style = Stroke(width = strokeWidth * 0.85f)
+
+            Text(
+                "N",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 7.dp),
             )
         }
+
+        Box(
+            Modifier
+                .width(30.8.dp)
+                .height(0.5.dp)
+                .offset(y = 4.dp)
+                .background(Color.White.copy(alpha = 0.10f))
+        )
+
         Text(
-            "%04d".format(mils),
+            "%04d%s".format(mils, referenceSuffix),
             color = Color(0xFF8CF28C),
-            fontSize = 13.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp)
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp)
         )
     }
 }
@@ -179,13 +322,13 @@ internal fun UndoRedoButtons(
     AnimatedVisibility(visible = canUndo || canRedo) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             UndoRedoChip(
-                icon = Icons.Default.Undo,
+                icon = Icons.AutoMirrored.Filled.Undo,
                 enabled = canUndo,
                 contentDescription = "Undo",
                 onClick = onUndo
             )
             UndoRedoChip(
-                icon = Icons.Default.Redo,
+                icon = Icons.AutoMirrored.Filled.Redo,
                 enabled = canRedo,
                 contentDescription = "Redo",
                 onClick = onRedo

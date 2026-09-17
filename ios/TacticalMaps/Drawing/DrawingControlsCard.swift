@@ -1,4 +1,37 @@
 import SwiftUI
+import CoreLocation
+
+/// View-owned transaction for continuous controls. Slider ticks only mutate
+/// this candidate; `finish` hands one final shape to the durable store.
+struct DrawingSliderTransaction {
+    private(set) var original: DrawingShape?
+    private(set) var candidate: DrawingShape?
+
+    @discardableResult
+    mutating func update(from durable: DrawingShape,
+                         _ mutation: (inout DrawingShape) -> Void) -> DrawingShape {
+        if original == nil {
+            original = durable
+            candidate = durable
+        }
+        var next = candidate ?? durable
+        mutation(&next)
+        candidate = next
+        return next
+    }
+
+    @discardableResult
+    mutating func finish(_ commit: (DrawingShape) throws -> Bool) throws -> Bool {
+        guard let candidate else { return false }
+        defer { cancel() }
+        return try commit(candidate)
+    }
+
+    mutating func cancel() {
+        original = nil
+        candidate = nil
+    }
+}
 
 /// Compact card that pops up when user taps a finished drawing on the
 /// map. Same idea as `SymbolControlsCard` for waypoints: name, colour,
@@ -6,37 +39,50 @@ import SwiftUI
 struct DrawingControlsCard: View {
     @ObservedObject var drawingStore: DrawingStore
     let drawingID: UUID
+    let crosshairCoordinate: CLLocationCoordinate2D
+    let onPreview: (DrawingShape?) -> Void
     let onDismiss: () -> Void
 
     @State private var showDeleteConfirm = false
     @State private var showNameAlert     = false
     @State private var draftName: String = ""
+    @State private var mutationError: String?
+    @State private var sliderTransaction = DrawingSliderTransaction()
     /// Rotation / width / height sliders visibility. They eat most of
     /// the card's vertical space so they hide behind a toggle.
     @State private var showTransforms    = false
+    @State private var showEditor        = false
 
     var body: some View {
-        if let shape = drawingStore.shapes.first(where: { $0.id == drawingID }) {
-            card(for: shape)
+        if let durable = drawingStore.shapes.first(where: { $0.id == drawingID }) {
+            card(for: sliderTransaction.candidate ?? durable)
+                .onDisappear { cancelSliderTransaction() }
         }
     }
 
     private func card(for shape: DrawingShape) -> some View {
         VStack(spacing: 8) {
             header(for: shape)
-            // Transform sliders behind a toggle - compact card only shows
-            // colour, dash, layer, delete unless user explicitly wants
-            // to transform. Points don't have transform controls obv.
-            if shape.kind != .point && showTransforms {
+            quickActionRow(for: shape)
+            // Continuous style/transform controls stay behind a toggle so the
+            // resting card remains compact. Every tick is an in-memory preview;
+            // the gesture end performs one checked durable commit.
+            if showEditor && shape.kind != .point && showTransforms {
+                strokeWidthRow(for: shape)
+                if shape.kind == .polygon {
+                    fillOpacityRow(for: shape)
+                }
                 rotationRow(for: shape)
                 widthRow(for: shape)
                 heightRow(for: shape)
             }
             // Tactical line-graphic picker for line shapes (FLOT, boundary…).
-            if shape.kind == .polyline || shape.kind == .freedraw {
+            if showEditor && (shape.kind == .polyline || shape.kind == .freedraw) {
                 lineGraphicRow(for: shape)
             }
-            actionRow(for: shape)
+            if showEditor {
+                actionRow(for: shape)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -48,8 +94,12 @@ struct DrawingControlsCard: View {
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         .alert("Delete drawing?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
-                drawingStore.remove(shape)
-                onDismiss()
+                do {
+                    _ = try drawingStore.deleteDurably(shape)
+                    onDismiss()
+                } catch {
+                    mutationError = "\(error.localizedDescription) Check available storage, then try again."
+                }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -62,9 +112,43 @@ struct DrawingControlsCard: View {
                 var updated = shape
                 let trimmed = draftName.trimmingCharacters(in: .whitespaces)
                 updated.name = trimmed.isEmpty ? nil : trimmed
-                drawingStore.update(updated)
+                commit(updated, actionName: "Rename Drawing")
             }
             Button("Cancel", role: .cancel) { }
+        }
+        .alert("Drawing Not Saved", isPresented: Binding(
+            get: { mutationError != nil },
+            set: { if !$0 { mutationError = nil } }
+        )) {
+            Button("OK", role: .cancel) { mutationError = nil }
+        } message: {
+            Text(mutationError ?? "The drawing change could not be saved. Check available storage, then try again.")
+        }
+    }
+
+    private func quickActionRow(for shape: DrawingShape) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { showEditor.toggle() }
+            } label: {
+                Label("Edit Drawing", systemImage: "slider.horizontal.3")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityValue(showEditor ? "Expanded" : "Collapsed")
+
+            Button {
+                commit(shape.moved(to: crosshairCoordinate), actionName: "Move Drawing to Crosshair")
+            } label: {
+                Label("Move to Crosshair", systemImage: "scope")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Move drawing to crosshair")
         }
     }
 
@@ -79,7 +163,7 @@ struct DrawingControlsCard: View {
                 Button {
                     var updated = shape
                     updated.style.lineGraphic = (g == .plain) ? nil : g
-                    drawingStore.update(updated)
+                    commit(updated, actionName: "Change Line Graphic")
                 } label: {
                     Label(g.displayName, systemImage: g.symbolName)
                 }
@@ -143,7 +227,7 @@ struct DrawingControlsCard: View {
             .accessibilityHint("Rename drawing")
 
             Spacer(minLength: 4)
-            Button(action: onDismiss) {
+            Button(action: dismissControls) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.body)
                     .symbolRenderingMode(.hierarchical)
@@ -157,16 +241,13 @@ struct DrawingControlsCard: View {
     // MARK: Compact style controls (used in the action row)
 
     /// Tappable circle swatch that opens a palette menu.
-    private func colourButton(for shape: DrawingShape) -> some View {
+    private func strokeColourButton(for shape: DrawingShape) -> some View {
         Menu {
             ForEach(DrawingPalette.swatches) { swatch in
                 Button {
                     var updated = shape
-                    updated.style.strokeColorHex = swatch.hex
-                    if updated.style.fillColorHex != nil {
-                        updated.style.fillColorHex = swatch.hex
-                    }
-                    drawingStore.update(updated)
+                    updated.style.setStrokeHue(swatch.hex)
+                    commit(updated, actionName: "Change Drawing Colour")
                 } label: {
                     // .tint() on each row colours the Label's icon, without it
                     // Menu items ignore foregroundStyle() and the dots are
@@ -185,7 +266,59 @@ struct DrawingControlsCard: View {
                 .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Drawing colour")
+        .accessibilityLabel("Stroke colour")
+        .accessibilityValue(DrawingPalette.swatch(forHex: shape.style.strokeColorHex)?.name
+                            ?? shape.style.strokeColorHex)
+    }
+
+    /// Polygon fill controls are independent of the stroke. This menu exposes
+    /// both fill hue and opacity without expanding the compact controls card.
+    private func fillStyleButton(for shape: DrawingShape) -> some View {
+        let fillHex = shape.style.fillColorHex ?? DrawingPalette.default.hex
+        return Menu {
+            Section("Fill colour") {
+                ForEach(DrawingPalette.swatches) { swatch in
+                    Button {
+                        var updated = shape
+                        updated.style.setFillHue(swatch.hex)
+                        commit(updated, actionName: "Change Fill Colour")
+                    } label: {
+                        Label(swatch.name,
+                              systemImage: fillHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
+                                  ? "largecircle.fill.circle"
+                                  : "circle.fill")
+                    }
+                    .tint(swatch.color)
+                }
+            }
+            Section("Fill opacity") {
+                ForEach([0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0], id: \.self) { opacity in
+                    Button {
+                        var updated = shape
+                        updated.style.setFillOpacity(opacity)
+                        commit(updated, actionName: "Change Fill Opacity")
+                    } label: {
+                        Label("\(Int(opacity * 100))%",
+                              systemImage: abs(shape.style.fillOpacity - opacity) < 0.001
+                                  ? "checkmark.circle.fill"
+                                  : "circle")
+                    }
+                }
+            }
+        } label: {
+            ZStack {
+                Circle().fill(Color(hex: fillHex).opacity(shape.style.fillOpacity))
+                Circle().stroke(.white.opacity(0.5), lineWidth: 1)
+                Image(systemName: "paintbrush.pointed.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 1)
+            }
+            .frame(width: 30, height: 30)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Fill style")
+        .accessibilityValue("\(DrawingPalette.swatch(forHex: fillHex)?.name ?? fillHex), \(Int(shape.style.fillOpacity * 100)) percent")
     }
 
     /// Solid vs dashed toggle. Same look as the DrawToolbar version.
@@ -193,7 +326,7 @@ struct DrawingControlsCard: View {
         Button {
             var updated = shape
             updated.style.dashPattern = (shape.style.dashPattern == nil) ? [8, 6] : nil
-            drawingStore.update(updated)
+            commit(updated, actionName: "Change Stroke Style")
         } label: {
             ZStack {
                 Circle().fill(.white.opacity(shape.style.dashPattern != nil ? 0.22 : 0.10))
@@ -226,7 +359,7 @@ struct DrawingControlsCard: View {
                 Button {
                     var updated = shape
                     updated.layerID = layer.id
-                    drawingStore.update(updated)
+                    commit(updated, actionName: "Move Drawing to Layer")
                 } label: {
                     Label("\(layer.name) (\(count))",
                           systemImage: layer.id == current?.id
@@ -260,24 +393,61 @@ struct DrawingControlsCard: View {
         drawingStore.shapes(in: layer.id).count
     }
 
-    // MARK: Geometric sliders - rotation, width, height
+    // MARK: Continuous style + geometric sliders
+
+    private func strokeWidthRow(for shape: DrawingShape) -> some View {
+        sliderRow(
+            icon: "scribble.variable",
+            title: "Stroke width",
+            valueLabel: String(format: "%.1f pt", shape.style.strokeWidth),
+            value: shape.style.strokeWidth,
+            range: 0.5...16,
+            step: 0.5,
+            onPreview: { value in
+                previewChange(from: shape) { $0.style.strokeWidth = value }
+            },
+            onCommit: { finishSliderTransaction(actionName: "Change Stroke Width") },
+            onReset: {
+                commitReset(actionName: "Reset Stroke Width") {
+                    $0.style.strokeWidth = DrawingStyle.default.strokeWidth
+                }
+            }
+        )
+    }
+
+    private func fillOpacityRow(for shape: DrawingShape) -> some View {
+        sliderRow(
+            icon: "circle.lefthalf.filled",
+            title: "Fill opacity",
+            valueLabel: "\(Int((shape.style.fillOpacity * 100).rounded()))%",
+            value: shape.style.fillOpacity,
+            range: 0...1,
+            step: 0.05,
+            onPreview: { value in
+                previewChange(from: shape) { $0.style.setFillOpacity(value) }
+            },
+            onCommit: { finishSliderTransaction(actionName: "Change Fill Opacity") },
+            onReset: {
+                commitReset(actionName: "Reset Fill Opacity") {
+                    $0.style.setFillOpacity(DrawingStyle.default.fillOpacity)
+                }
+            }
+        )
+    }
 
     private func rotationRow(for shape: DrawingShape) -> some View {
         sliderRow(
             icon: "arrow.clockwise.circle",
             title: "Rotation",
             valueLabel: "\(Int(shape.rotation.rounded()))°",
-            value: Binding(
-                get: { shape.rotation },
-                set: { newValue in
-                    var updated = shape
-                    updated.rotation = newValue
-                    drawingStore.update(updated)
-                }
-            ),
+            value: shape.rotation,
             range: 0...360,
             step: 1,
-            resetTo: 0
+            onPreview: { value in
+                previewChange(from: shape) { $0.rotation = value }
+            },
+            onCommit: { finishSliderTransaction(actionName: "Rotate Drawing") },
+            onReset: { commitReset(actionName: "Reset Drawing Rotation") { $0.rotation = 0 } }
         )
     }
 
@@ -286,17 +456,14 @@ struct DrawingControlsCard: View {
             icon: "arrow.left.and.right.circle",
             title: "Width",
             valueLabel: String(format: "%.2f×", shape.scaleX),
-            value: Binding(
-                get: { shape.scaleX },
-                set: { newValue in
-                    var updated = shape
-                    updated.scaleX = newValue
-                    drawingStore.update(updated)
-                }
-            ),
+            value: shape.scaleX,
             range: 0.1...10.0,
             step: 0.05,
-            resetTo: 1.0
+            onPreview: { value in
+                previewChange(from: shape) { $0.scaleX = value }
+            },
+            onCommit: { finishSliderTransaction(actionName: "Resize Drawing Width") },
+            onReset: { commitReset(actionName: "Reset Drawing Width") { $0.scaleX = 1 } }
         )
     }
 
@@ -305,53 +472,47 @@ struct DrawingControlsCard: View {
             icon: "arrow.up.and.down.circle",
             title: "Height",
             valueLabel: String(format: "%.2f×", shape.scaleY),
-            value: Binding(
-                get: { shape.scaleY },
-                set: { newValue in
-                    var updated = shape
-                    updated.scaleY = newValue
-                    drawingStore.update(updated)
-                }
-            ),
+            value: shape.scaleY,
             range: 0.1...10.0,
             step: 0.05,
-            resetTo: 1.0
+            onPreview: { value in
+                previewChange(from: shape) { $0.scaleY = value }
+            },
+            onCommit: { finishSliderTransaction(actionName: "Resize Drawing Height") },
+            onReset: { commitReset(actionName: "Reset Drawing Height") { $0.scaleY = 1 } }
         )
     }
 
     private func sliderRow(icon: String,
                            title: String,
                            valueLabel: String,
-                           value: Binding<Double>,
+                           value: Double,
                            range: ClosedRange<Double>,
                            step: Double,
-                           resetTo defaultValue: Double) -> some View {
+                           onPreview: @escaping (Double) -> Void,
+                           onCommit: @escaping () -> Void,
+                           onReset: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
-            Slider(value: value, in: range, step: step, onEditingChanged: { editing in
-                // group per-tick undo registrations into one step so Undo
-                // undoes the whole drag, not each individual tick
-                if editing {
-                    drawingStore.undoManager?.beginUndoGrouping()
-                } else {
-                    drawingStore.undoManager?.endUndoGrouping()
-                    drawingStore.undoManager?.setActionName(title)
-                }
-            })
+            Slider(
+                value: Binding(get: { value }, set: onPreview),
+                in: range,
+                step: step,
+                onEditingChanged: { editing in if !editing { onCommit() } }
+            )
             Text(valueLabel)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 44, alignment: .trailing)
-            Button {
-                value.wrappedValue = defaultValue
-            } label: {
+            Button(action: onReset) {
                 Image(systemName: "arrow.counterclockwise")
                     .font(.caption2.weight(.semibold))
                     .frame(width: 22, height: 22)
                     .background(.tint.opacity(0.15), in: Circle())
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Reset \(title)")
@@ -362,7 +523,10 @@ struct DrawingControlsCard: View {
 
     private func actionRow(for shape: DrawingShape) -> some View {
         HStack(spacing: 8) {
-            colourButton(for: shape)
+            strokeColourButton(for: shape)
+            if shape.kind == .polygon {
+                fillStyleButton(for: shape)
+            }
             dashedToggle(for: shape)
             if shape.kind != .point {
                 transformToggle()
@@ -391,7 +555,7 @@ struct DrawingControlsCard: View {
         }
     }
 
-    /// Show/hide the rotation + width + height sliders.
+    /// Show/hide continuous style and transform sliders.
     private func transformToggle() -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.18)) {
@@ -412,5 +576,55 @@ struct DrawingControlsCard: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Transform controls")
         .accessibilityValue(showTransforms ? "Expanded" : "Collapsed")
+    }
+
+    private func previewChange(from shape: DrawingShape,
+                               mutation: (inout DrawingShape) -> Void) {
+        let preview = sliderTransaction.update(from: shape, mutation)
+        onPreview(preview)
+    }
+
+    private func finishSliderTransaction(actionName: String) {
+        do {
+            _ = try sliderTransaction.finish { candidate in
+                try drawingStore.commitEdit(candidate, actionName: actionName)
+            }
+            onPreview(nil)
+        } catch {
+            // commitEdit is durable-before-publish, so clearing the transient
+            // candidate immediately restores the last known-good store shape.
+            onPreview(nil)
+            mutationError = "\(error.localizedDescription) The previous drawing is still active. Check available storage, then try again."
+        }
+    }
+
+    private func commitReset(actionName: String,
+                             mutation: (inout DrawingShape) -> Void) {
+        cancelSliderTransaction()
+        guard var durable = drawingStore.shapes.first(where: { $0.id == drawingID }) else {
+            mutationError = "That drawing no longer exists. Close its controls and try again."
+            return
+        }
+        mutation(&durable)
+        commit(durable, actionName: actionName)
+    }
+
+    private func cancelSliderTransaction() {
+        sliderTransaction.cancel()
+        onPreview(nil)
+    }
+
+    private func dismissControls() {
+        cancelSliderTransaction()
+        onDismiss()
+    }
+
+    private func commit(_ shape: DrawingShape, actionName: String) {
+        cancelSliderTransaction()
+        do {
+            _ = try drawingStore.commitEdit(shape, actionName: actionName)
+        } catch {
+            mutationError = "\(error.localizedDescription) Check available storage, then try again."
+        }
     }
 }

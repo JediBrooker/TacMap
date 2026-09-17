@@ -36,6 +36,9 @@ data class Waypoint(
     val scaleX: Double = 1.0,
     val scaleY: Double = 1.0,
     @SerialName("task_color") val taskColor: TaskColor = TaskColor.BLACK,
+    @SerialName("higher_formation") val higherFormation: String? = null,
+    @SerialName("unique_identifier") val uniqueIdentifier: String? = null,
+    @SerialName("reinforcement_status") val reinforcementStatus: ReinforcementStatus = ReinforcementStatus.NONE,
     @SerialName("layer_id") val layerId: String = DEFAULT_LAYER_ID,
     @SerialName("created_at_epoch_ms") val createdAt: Long = System.currentTimeMillis()
 ) {
@@ -44,6 +47,60 @@ data class Waypoint(
     companion object {
         const val DEFAULT_LAYER_ID = "default"
     }
+}
+
+const val HIGHER_FORMATION_MAX_CODE_POINTS = 21
+const val UNIQUE_IDENTIFIER_MAX_CODE_POINTS = 30
+
+/** FM 1-02.2 Field F. The map renderer uses the parenthesized constructs
+ * shown in Figure 2-6 while the stable lowercase values travel in GeoJSON. */
+@Serializable
+enum class ReinforcementStatus(val displayName: String, val amplifier: String) {
+    @SerialName("none") NONE("None", ""),
+    @SerialName("reinforced") REINFORCED("Reinforced (+)", "(+)"),
+    @SerialName("reduced") REDUCED("Reduced (-)", "(-)")
+}
+
+internal fun boundUnitAmplifier(value: String, maxCodePoints: Int): String {
+    require(maxCodePoints >= 0)
+    val count = value.codePointCount(0, value.length)
+    return if (count <= maxCodePoints) value
+    else value.substring(0, value.offsetByCodePoints(0, maxCodePoints))
+}
+
+internal fun normalizedUnitAmplifier(value: String?, maxCodePoints: Int): String? =
+    value?.trim()
+        ?.let { boundUnitAmplifier(it, maxCodePoints) }
+        ?.ifBlank { null }
+
+internal data class NormalizedUnitAmplifiers(
+    val higherFormation: String?,
+    val uniqueIdentifier: String?,
+    val reinforcementStatus: ReinforcementStatus,
+)
+
+/** Enforces the unit-only invariant at UI/import boundaries. Keeping this
+ * normalization in one pure helper prevents a category change from leaving
+ * hidden amplifier data on a task, marker, or generic waypoint. */
+internal fun normalizedUnitAmplifiersForKind(
+    kind: WaypointKind,
+    higherFormation: String?,
+    uniqueIdentifier: String?,
+    reinforcementStatus: ReinforcementStatus,
+): NormalizedUnitAmplifiers = if (kind is WaypointKind.Military) {
+    NormalizedUnitAmplifiers(
+        higherFormation = normalizedUnitAmplifier(
+            higherFormation,
+            HIGHER_FORMATION_MAX_CODE_POINTS,
+        ),
+        uniqueIdentifier = normalizedUnitAmplifier(
+            uniqueIdentifier,
+            UNIQUE_IDENTIFIER_MAX_CODE_POINTS,
+        ),
+        reinforcementStatus = reinforcementStatus,
+    )
+} else {
+    NormalizedUnitAmplifiers(null, null, ReinforcementStatus.NONE)
 }
 
 @Serializable(with = WaypointKindSerializer::class)

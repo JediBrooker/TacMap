@@ -36,6 +36,10 @@ class TrackLogTest {
 
     private fun tempFile(): File = File(Files.createTempDirectory("tracklog").toFile(), "recording.ndjson")
 
+    private fun preparedFile(): File = tempFile().also(TrackLog::truncate)
+
+    private fun append(file: File, point: TrackPoint) = TrackLog.append(file, point, testKey)
+
     private fun pt(i: Int) = TrackPoint(
         latitude = 50.0 + i * 0.001,
         longitude = -1.0 - i * 0.001,
@@ -44,9 +48,9 @@ class TrackLogTest {
     )
 
     @Test fun appendThenReadRecoversEveryPoint() {
-        val f = tempFile()
+        val f = preparedFile()
         val points = (0 until 25).map { pt(it) }
-        points.forEach { TrackLog.append(f, it) }
+        points.forEach { append(f, it) }
         // Simulate a fresh process reading the log after a crash.
         val recovered = TrackLog.read(f)
         assertEquals(points, recovered.points)
@@ -54,8 +58,8 @@ class TrackLogTest {
     }
 
     @Test fun everyLineOnDiskIsSealed() {
-        val f = tempFile()
-        (0 until 3).forEach { TrackLog.append(f, it.let(::pt)) }
+        val f = preparedFile()
+        (0 until 3).forEach { append(f, it.let(::pt)) }
         val lines = f.readLines().filter { it.isNotBlank() }
         assertEquals(3, lines.size)
         assertTrue("every line sealed", lines.all { SealedEnvelope.isSealedLine(it) })
@@ -67,18 +71,18 @@ class TrackLogTest {
     }
 
     @Test fun truncateStartsFresh() {
-        val f = tempFile()
-        (0 until 5).forEach { TrackLog.append(f, pt(it)) }
+        val f = preparedFile()
+        (0 until 5).forEach { append(f, pt(it)) }
         TrackLog.truncate(f)
         assertTrue(TrackLog.read(f).points.isEmpty())
-        TrackLog.append(f, pt(99))
+        append(f, pt(99))
         assertEquals(listOf(pt(99)), TrackLog.read(f).points)
     }
 
     @Test fun tornFinalLineIsSkippedAndEarlierPointsSurvive() {
-        val f = tempFile()
-        TrackLog.append(f, pt(1))
-        TrackLog.append(f, pt(2))
+        val f = preparedFile()
+        append(f, pt(1))
+        append(f, pt(2))
         // Interrupted append: half a sealed line, no newline.
         f.appendText("v1:DAwMDAwMDAwMDAwMj5F3mCpw")
         val recovered = TrackLog.read(f)
@@ -88,8 +92,8 @@ class TrackLogTest {
     @Test fun corruptedMiddleLineDoesNotInvalidateTheTail() {
         // This is why we don't bind the line index into the AAD. Flip a byte in
         // line 2 and lines 3..5 must still open.
-        val f = tempFile()
-        (1..5).forEach { TrackLog.append(f, pt(it)) }
+        val f = preparedFile()
+        (1..5).forEach { append(f, pt(it)) }
         val lines = f.readLines().toMutableList()
         lines[1] = lines[1].dropLast(4) + "AAAA"
         f.writeText(lines.joinToString("\n") + "\n")
@@ -134,5 +138,22 @@ class TrackLogTest {
         val alien = SealedEnvelope.sealLine(testKey, """{"latitude":1.0}""".toByteArray(), "waypoints.json")
         f.writeText(alien + "\n")
         assertTrue(TrackLog.read(f).points.isEmpty())
+    }
+
+    @Test fun preparedAppendUsesExplicitKeyWithoutCallingGlobalProvider() {
+        val f = preparedFile()
+        SafeStore.keyProvider = SafeStore.KeyProvider {
+            throw AssertionError("background append must not reacquire the global key")
+        }
+
+        append(f, pt(7))
+
+        SafeStore.keyProvider = SafeStore.KeyProvider { testKey }
+        assertEquals(listOf(pt(7)), TrackLog.read(f).points)
+    }
+
+    @Test fun appendRefusesAFileWithoutDurablePreparationMarker() {
+        val failure = runCatching { append(tempFile(), pt(1)) }.exceptionOrNull()
+        assertTrue(failure is java.io.IOException)
     }
 }

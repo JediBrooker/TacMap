@@ -7,6 +7,7 @@ import CoreLocation
 struct WeatherSheet: View {
     let coordinate: CLLocationCoordinate2D
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var opsec = OpsecSettings.shared
 
     @State private var reading: WeatherReading? = nil
     @State private var loading = true
@@ -52,9 +53,11 @@ struct WeatherSheet: View {
             .navigationTitle("Weather & UAV Safety")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
-            .task(id: reloadToken) {
+            .task(id: WeatherTaskKey(reloadToken: reloadToken, onlineLookups: opsec.onlineLookups)) {
                 loading = true
-                reading = await service.reading(for: coordinate)
+                reading = opsec.onlineLookups
+                    ? await service.reading(for: coordinate)
+                    : nil
                 loading = false
             }
         }
@@ -85,4 +88,9 @@ struct WeatherSheet: View {
                 .gridColumnAlignment(.trailing)
         }
     }
+}
+
+private struct WeatherTaskKey: Hashable {
+    let reloadToken: Int
+    let onlineLookups: Bool
 }

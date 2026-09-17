@@ -6,8 +6,6 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
@@ -28,6 +26,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Close
@@ -49,6 +48,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Sync
@@ -76,6 +76,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,6 +93,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,6 +102,7 @@ import com.tacmap.map.render.OnlineTileHealth
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tacmap.calibration.AffineFitter
 import com.tacmap.calibration.Calibration
@@ -112,6 +115,9 @@ import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.calibration.Wgs84Coordinate
+import com.tacmap.app.DocumentImportKind
+import com.tacmap.app.AppLock
+import com.tacmap.app.PendingDocumentImport
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
@@ -121,12 +127,21 @@ import com.tacmap.drawings.DrawingStore
 import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.export.GeoJsonExporter
 import com.tacmap.mgrs.MgrsFormatter
+import com.tacmap.models.LiveMapLocationAction
+import com.tacmap.models.LiveMapLocationPermissionPolicy
+import com.tacmap.models.LiveMapLocationState
+import com.tacmap.models.TrackRecordingPhase
+import com.tacmap.models.TrackRecordingSettingsTarget
+import com.tacmap.settings.MapOrientationMode
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.WaypointStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
 import java.io.File
 
 private data class QuickAddTarget(
@@ -135,35 +150,58 @@ private data class QuickAddTarget(
     val layerId: String
 )
 
+private data class PendingDrawingMutation(
+    val intent: DrawingMutationIntent,
+    val message: String,
+    val persist: () -> Boolean,
+    val onSaved: () -> Unit,
+)
+
 @Composable
-fun MapScreen(
+internal fun MapScreen(
+    appLock: AppLock,
     vm: MapViewModel = viewModel(),
     isPurchased: Boolean = true,
     trialDaysRemaining: Int = 0,
-    pendingPdfImportUri: Uri?,
-    onRequestPdfImport: (Array<String>) -> Unit,
-    onPdfImportConsumed: (Uri) -> Unit,
-    pendingGeoJsonImportUri: Uri? = null,
-    onRequestGeoJsonImport: ((Array<String>) -> Unit)? = null,
-    onGeoJsonImportConsumed: (Uri) -> Unit = {},
+    pendingDocumentImport: PendingDocumentImport?,
+    onRequestDocumentImport: (DocumentImportKind) -> Unit,
+    onClaimDocumentImport: (String) -> Boolean,
+    onCompleteDocumentImport: (String) -> Unit,
+    onAbandonDocumentImport: (String) -> Boolean,
     onRequestAuthBoundChange: ((Boolean) -> Unit)? = null,
+    liveMapLocationState: LiveMapLocationState,
+    onRequestLiveMapLocation: () -> Unit,
+    onOpenLiveMapLocationSettings: () -> Unit,
+    onRequestTrackRecording: () -> Unit,
+    onOpenTrackRecordingSettings: ((TrackRecordingSettingsTarget) -> Unit)? = null,
     onUnlock: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val rendererDensity = LocalDensity.current.density
     val scope = rememberCoroutineScope()
+    val unitSyncRuntime = remember(context) {
+        (context.applicationContext as com.tacmap.app.TacticalApp).unitSyncRuntime
+    }
+    val unitSyncForegroundEpoch by unitSyncRuntime.foregroundEpoch.collectAsState()
 
     val onlineBasemapsEnabled by vm.opsec.onlineBasemaps.collectAsState()
+    val onlineLookupsEnabled by vm.opsec.onlineLookups.collectAsState()
     val primaryCoordinateType by vm.opsec.primaryCoordinateType.collectAsState()
+    val mapOrientationMode by vm.opsec.mapOrientationMode.collectAsState()
+    var headingSessionActive by remember { mutableStateOf(false) }
     val onlineTilesUnavailable by OnlineTileHealth.temporarilyUnavailable.collectAsState()
-    val isBrowsing by vm.isBrowsing.collectAsState()
     val pendingTarget by vm.pendingCameraTarget.collectAsState()
     val cameraLat by vm.cameraLat.collectAsState()
     val cameraLng by vm.cameraLng.collectAsState()
+    val cameraViewportState by vm.cameraViewportState.collectAsState()
     val centreElevation by vm.centreElevation.collectAsState()
-    val isRecordingTrack by vm.trackRecorder.isRecording.collectAsState()
+    val trackRecordingState by vm.trackRecorder.uiState.collectAsState()
+    val isRecordingTrack = trackRecordingState.showsRec
     val trackPoints by vm.trackRecorder.points.collectAsState()
     val trackPersistError by vm.trackRecorder.persistError.collectAsState()
     val mapSource by vm.mapSource.collectAsState()
+    val retainedImportedMap by vm.retainedImportedMapSource.collectAsState()
+    val mapSelectionPersistenceIssue by vm.mapSelectionPersistenceIssue.collectAsState()
 
     /// Is anything on screen actually pulling tiles off the internet right now?
     /// Only the online raster styles (Esri/OSM) do; offline packs and PDFs don't.
@@ -180,9 +218,13 @@ fun MapScreen(
         else -> null
     }
     val basemapColor = if (importedMapLoaded) Color(0xFF74E38A) else Color(0xFFFF5A5A)
-    val waypointStore = remember { WaypointStore(context) }
+    val waypointStore = remember(unitSyncForegroundEpoch) { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
-    val drawingStore = remember { DrawingStore(context) }
+    val drawingStore = remember(unitSyncForegroundEpoch) { DrawingStore(context) }
+    val importIdentityJournal = remember {
+        com.tacmap.export.ExternalImportIdentityJournal(context)
+    }
+    val documentCopyJournal = remember { DocumentImportCopyJournal(context) }
     val drawingDocument by drawingStore.document.collectAsState()
     val drawingCanUndo by drawingStore.canUndo.collectAsState()
     val drawingCanRedo by drawingStore.canRedo.collectAsState()
@@ -190,6 +232,8 @@ fun MapScreen(
     val waypointCanRedo by waypointStore.canRedo.collectAsState()
     val waypointDataLocked by waypointStore.locked.collectAsState()
     val drawingDataLocked by drawingStore.locked.collectAsState()
+    val waypointStoreError by waypointStore.loadError.collectAsState()
+    val drawingStoreError by drawingStore.loadError.collectAsState()
     val canUndo = drawingCanUndo || waypointCanUndo
     val canRedo = drawingCanRedo || waypointCanRedo
     val lastLocation by vm.locationService.lastLocation.collectAsState()
@@ -208,7 +252,6 @@ fun MapScreen(
         utm = vm.headerUtm,
     )
     val selectedWaypointId by vm.selectedWaypointId.collectAsState()
-    val mapBearingDegrees by vm.mapBearingDegrees.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var showWaypointSheet by remember { mutableStateOf(false) }
@@ -223,28 +266,80 @@ fun MapScreen(
     var quickAddMenuOpen by remember { mutableStateOf(false) }
     var quickAddTarget by remember { mutableStateOf<QuickAddTarget?>(null) }
     var quickAddEditorMode by remember { mutableStateOf<SymbolEditorMode?>(null) }
+    var quickAddCreationError by remember { mutableStateOf<String?>(null) }
     /// weather/UAV widget target = (lat, lng) of map centre, null when closed
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var showAppLockSetup by remember { mutableStateOf(false) }
-    val appLock = remember { com.tacmap.app.AppLock(context) }
     var showSyncDialog by remember { mutableStateOf(false) }
-    val syncManager = remember {
-        com.tacmap.sync.SyncManager(waypointStore, drawingStore, scope, context)
+    var chatTarget by remember { mutableStateOf<com.tacmap.sync.TacMapChatTarget?>(null) }
+    val unitSyncLease = remember(unitSyncRuntime, waypointStore, drawingStore) {
+        unitSyncRuntime.acquireForeground(
+            waypointStore = waypointStore,
+            drawingStore = drawingStore,
+            parentScope = scope,
+            locationProvider = { vm.locationService.lastLocation.value },
+        )
     }
-    DisposableEffect(syncManager) {
-        onDispose { syncManager.dispose() }
+    val syncManager = unitSyncLease.manager
+    DisposableEffect(unitSyncLease) {
+        onDispose { unitSyncRuntime.releaseScreen(unitSyncLease) }
+    }
+    DisposableEffect(lifecycleOwner, unitSyncLease) {
+        var active = true
+        fun reattachAfterActivityResume() {
+            scope.launch {
+                // MainActivity unwraps the mission key after super.onResume().
+                // Yield past that callback before handing stores back to Sync.
+                kotlinx.coroutines.yield()
+                if (active) {
+                    unitSyncRuntime.reattachRetainedScreen(
+                        lease = unitSyncLease,
+                        waypointStore = waypointStore,
+                        drawingStore = drawingStore,
+                        locationProvider = { vm.locationService.lastLocation.value },
+                    )
+                }
+            }
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) reattachAfterActivityResume()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            reattachAfterActivityResume()
+        }
+        onDispose {
+            active = false
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
     val syncStatus by syncManager.status.collectAsState()
+    val syncRoom by syncManager.room.collectAsState()
+    val unreadChatMessageCount by syncManager.unreadChatMessageCount.collectAsState()
     val presencePeers by syncManager.peers.collectAsState()
-
-    // Wire the location provider so SyncManager can send presence updates.
-    syncManager.locationProvider = { vm.locationService.lastLocation.value }
 
     // Snackbar for remote sync conflict notifications (Fix #3).
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
-    LaunchedEffect(Unit) {
-        syncManager.remoteUpdates.collect { msg ->
-            snackbarHostState.showSnackbar(msg, duration = androidx.compose.material3.SnackbarDuration.Short)
+    LaunchedEffect(syncManager, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            syncManager.remoteUpdates.collect { msg ->
+                snackbarHostState.showSnackbar(
+                    msg,
+                    duration = androidx.compose.material3.SnackbarDuration.Short,
+                )
+            }
+        }
+    }
+    LaunchedEffect(mapSelectionPersistenceIssue?.id) {
+        val issue = mapSelectionPersistenceIssue ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = issue.message,
+            actionLabel = "Retry",
+            withDismissAction = true,
+            duration = androidx.compose.material3.SnackbarDuration.Indefinite,
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+            vm.retryMapSelectionPersistence()
         }
     }
 
@@ -258,8 +353,11 @@ fun MapScreen(
     // persisted to SharedPrefs so layer toggles survive app relaunch
     // (previously plain remember{} that reset every launch, annoying)
     var unitLabelsVisible by rememberPersistedBoolean("unitLabels", false)
+    var unitAmplifiersVisible by rememberPersistedBoolean("unitAmplifiers", true)
     var taskLabelsVisible by rememberPersistedBoolean("taskLabels", false)
     var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
+    var symbologyVisible by rememberPersistedBoolean("symbologyVisible", true)
+    var drawingsVisible by rememberPersistedBoolean("drawingsVisible", true)
     var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
     var terrainHeatmapVisible by rememberPersistedBoolean("terrainHeatmap", false)
     var userLocationVisible by rememberPersistedBoolean("userLocation", true)
@@ -274,167 +372,216 @@ fun MapScreen(
     // Datum the sheet's MGRS is in; fiduciaries are shifted to WGS84 on save.
     var calibrationDatum by remember { mutableStateOf(Datum.WGS84) }
     var activeDrawingName by remember { mutableStateOf("") }
-    var activeStrokeColor by remember { mutableStateOf(DrawingDefaults.DEFAULT_COLOR) }
+    var activeStrokeColor by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_COLOR) }
     var activeStrokeStyle by remember { mutableStateOf(DrawingStrokeStyle.SOLID) }
+    var pendingDrawingMutation by remember { mutableStateOf<PendingDrawingMutation?>(null) }
 
-    var hasLocationPermission by remember {
-        mutableStateOf(vm.locationService.hasPermission())
+    fun checkedDrawingMutation(
+        intent: DrawingMutationIntent,
+        persist: () -> Boolean,
+    ): DrawingMutationUiResult {
+        val result = DrawingMutationUiCoordinator.attempt(intent, persist)
+        // The checked UI outcome owns this mutation failure. Avoid presenting a
+        // second generic store alert over its actionable Retry surface.
+        drawingStore.acknowledgeLoadError()
+        return result
     }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { granted ->
-        if (granted[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
-            hasLocationPermission = true
+
+    fun performDrawingMutation(
+        intent: DrawingMutationIntent,
+        persist: () -> Boolean,
+        onSaved: () -> Unit = {},
+    ): DrawingMutationUiResult {
+        val result = checkedDrawingMutation(intent, persist)
+        if (result.saved) {
+            pendingDrawingMutation = null
+            onSaved()
+        } else {
+            pendingDrawingMutation = PendingDrawingMutation(
+                intent = intent,
+                message = (result as DrawingMutationUiResult.Failed).message,
+                persist = persist,
+                onSaved = onSaved,
+            )
         }
+        return result
     }
 
-    suspend fun importSelectedPdf(uri: Uri) {
+    val hasPreciseLocation = liveMapLocationState == LiveMapLocationState.Precise
+    val liveLocationControl = LiveMapLocationPermissionPolicy.controlFor(liveMapLocationState)
+
+    suspend fun importSelectedPdf(uri: Uri, operationKey: String) {
         val source = runCatching {
             withContext(Dispatchers.IO) {
                 importPdfMapSource(
                     context = context,
                     sourceUri = uri,
                     cameraLat = cameraLat,
-                    cameraLng = cameraLng
+                    cameraLng = cameraLng,
+                    operationKey = operationKey,
+                    copyJournal = documentCopyJournal,
                 )
             }
         }.onFailure {
-            Toast.makeText(context, "Unable to import PDF map.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, pdfImportUserMessage(it), Toast.LENGTH_LONG).show()
         }.getOrNull()
 
         source?.let {
-            vm.setMapSource(it)
-            Toast.makeText(context, "Imported ${it.displayName}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // MainActivity keeps the picker result while the app locks and rebuilds
-    // this screen. Consume the URI once the mission key is available again.
-    LaunchedEffect(pendingPdfImportUri) {
-        val uri = pendingPdfImportUri ?: return@LaunchedEffect
-        try {
-            importSelectedPdf(uri)
-        } finally {
-            onPdfImportConsumed(uri)
-        }
-    }
-
-    val mbtilesImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            val source = runCatching {
-                withContext(Dispatchers.IO) { importMBTilesMapSource(context, uri) }
-            }.getOrNull()
-            if (source == null) {
-                Toast.makeText(context, "Couldn't open this file as MBTiles.", Toast.LENGTH_SHORT).show()
-            } else {
-                vm.setMapSource(source)
-                Toast.makeText(context, "Loaded offline tiles: ${source.displayName}", Toast.LENGTH_SHORT).show()
+            if (vm.setMapSource(it)) {
+                Toast.makeText(context, "Imported ${it.displayName}", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    suspend fun importSelectedGeoJson(uri: Uri) {
-            val fallback = drawingDocument.layers
-                .firstOrNull { it.id == activeDrawingLayerId }?.id
-                ?: drawingDocument.layers.firstOrNull()?.id
-                ?: com.tacmap.drawings.DrawingDocument.DEFAULT_LAYER_ID
-            val parsed = withContext(Dispatchers.IO) {
-                parseGeoJsonDocument(
-                    input = runCatching { context.contentResolver.openInputStream(uri) }.getOrNull(),
-                    existingLayers = drawingDocument.layers,
+    suspend fun importExternalObjects(uri: Uri, kind: DocumentImportKind) {
+        val fallback = drawingDocument.layers
+            .firstOrNull { it.id == activeDrawingLayerId }?.id
+            ?: drawingDocument.layers.firstOrNull()?.id
+            ?: DrawingDocument.DEFAULT_LAYER_ID
+        val existingLayers = drawingDocument.layers.toList()
+        val occupied = waypoints.map {
+            com.tacmap.export.OccupiedExternalImportIdentity(
+                com.tacmap.export.ExternalImportObjectKind.WAYPOINT,
+                it.id,
+            )
+        } + drawingDocument.features.map {
+            com.tacmap.export.OccupiedExternalImportIdentity(
+                com.tacmap.export.ExternalImportObjectKind.DRAWING,
+                it.id,
+            )
+        }
+        val initiallyResolved = withContext(Dispatchers.IO) {
+            val bytes = readBoundedExternalImport(context.contentResolver.openInputStream(uri))
+            val parsed = when (kind) {
+                DocumentImportKind.GEO_JSON -> com.tacmap.export.GeoJsonImporter.parseStream(
+                    input = ByteArrayInputStream(bytes),
+                    existingLayers = existingLayers,
                     fallbackLayerId = fallback,
+                    density = context.resources.displayMetrics.density,
                 )
+                DocumentImportKind.KML -> com.tacmap.export.KmlImporter.parseStream(
+                    input = ByteArrayInputStream(bytes),
+                    existingLayers = existingLayers,
+                    fallbackLayerId = fallback,
+                    density = context.resources.displayMetrics.density,
+                )
+                else -> error("$kind is not an object import")
             }
-            val feedback = applyGeoJsonImportResult(parsed) { imported ->
-                drawingStore.addImported(imported.newLayers, imported.drawings)
-                waypointStore.addAll(imported.waypoints)
-            }
-            Toast.makeText(
-                context,
-                feedback.message,
-                if (feedback.succeeded) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
-            ).show()
-    }
-
-    val geoJsonImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch { importSelectedGeoJson(uri) }
-    }
-
-    // MainActivity owns the production launcher because opening DocumentsUI
-    // intentionally locks the mission key and tears this composition down.
-    // Once the Activity has unlocked/recreated MapScreen, consume the returned
-    // URI exactly once through the same bounded parser/application path.
-    LaunchedEffect(pendingGeoJsonImportUri) {
-        val uri = pendingGeoJsonImportUri ?: return@LaunchedEffect
-        try {
-            importSelectedGeoJson(uri)
-        } finally {
-            onGeoJsonImportConsumed(uri)
+            val batchKey = com.tacmap.export.ExternalImportIdentityJournal.batchKey(
+                kind.savedValue,
+                bytes,
+            )
+            batchKey to importIdentityJournal.resolveAndPersist(
+                batchKey = batchKey,
+                parsed = parsed,
+                occupied = occupied,
+            )
         }
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            "External import commit reconciliation must run on the main thread"
+        }
+        val (batchKey, preliminary) = initiallyResolved
+        val liveWaypoints = waypointStore.committedWaypoints.value
+        val liveDrawings = drawingStore.committedDocument.value.features
+        val reconciled = importIdentityJournal.reconcileAndPersist(
+            batchKey = batchKey,
+            resolved = preliminary,
+            liveWaypoints = liveWaypoints,
+            liveDrawings = liveDrawings,
+        )
+        val commit = com.tacmap.export.commitExternalImport(
+            imported = reconciled.result,
+            commitWaypoints = { incoming ->
+                val before = waypointStore.committedWaypoints.value
+                    .mapTo(HashSet()) { it.id.lowercase() }
+                val saved = waypointStore.addAll(incoming)
+                com.tacmap.export.ExternalImportStoreCommit(
+                    succeeded = saved,
+                    insertedCount = if (saved) incoming.count { it.id.lowercase() !in before } else 0,
+                )
+            },
+            commitDrawings = { layers, incoming ->
+                val before = drawingStore.committedDocument.value.features
+                    .mapTo(HashSet()) { it.id.lowercase() }
+                val saved = drawingStore.addImported(layers, incoming)
+                com.tacmap.export.ExternalImportStoreCommit(
+                    succeeded = saved,
+                    insertedCount = if (saved) incoming.count { it.id.lowercase() !in before } else 0,
+                )
+            },
+        )
+        val raceDetail = reconciled.identities.consumedRemintIds.size.takeIf { it > 0 }
+            ?.let { "; reconciled $it live ID collision(s)" }
+            .orEmpty()
+        Toast.makeText(
+            context,
+            commit.message + raceDetail,
+            if (commit.succeeded) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
+        ).show()
     }
 
-    val kmlImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            val fallback = drawingDocument.layers
-                .firstOrNull { it.id == activeDrawingLayerId }?.id
-                ?: drawingDocument.layers.firstOrNull()?.id
-                ?: com.tacmap.drawings.DrawingDocument.DEFAULT_LAYER_ID
-            // Read bytes (not text) so a KMZ zip survives intact.
-            val parsed = runCatching {
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                        com.tacmap.export.KmlImporter.parseStream(
-                            input = stream,
-                            existingLayers = drawingDocument.layers,
-                            fallbackLayerId = fallback
-                        )
-                    } ?: throw IllegalStateException("Couldn't read file")
+    suspend fun processDocumentImport(pending: PendingDocumentImport) {
+        val uri = Uri.parse(pending.uri)
+        when (pending.kind) {
+            DocumentImportKind.PDF -> importSelectedPdf(uri, "pdf:${pending.token}")
+            DocumentImportKind.MBTILES -> {
+                val source = withContext(Dispatchers.IO) {
+                    importMBTilesMapSource(
+                        context,
+                        uri,
+                        "mbtiles:${pending.token}",
+                        documentCopyJournal,
+                    )
                 }
-            }.getOrElse { e ->
-                Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
-                return@launch
+                    ?: throw IllegalArgumentException("The selected file is not a readable MBTiles database")
+                if (vm.setMapSource(source)) {
+                    Toast.makeText(
+                        context,
+                        "Loaded offline tiles: ${source.displayName}",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
-            drawingStore.addImported(parsed.newLayers, parsed.drawings)
-            waypointStore.addAll(parsed.waypoints)
-            Toast.makeText(
-                context,
-                "Imported ${parsed.waypoints.size} waypoint(s) and ${parsed.drawings.size} drawing(s)",
-                Toast.LENGTH_SHORT
-            ).show()
+            DocumentImportKind.GEO_JSON, DocumentImportKind.KML ->
+                importExternalObjects(uri, pending.kind)
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (!vm.locationService.hasPermission()) {
-            permissionLauncher.launch(arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ))
+    // The Activity owns and persists picker results. Claim exactly once while
+    // this composition is alive; cancellation abandons the claim for the next
+    // rebuilt MapScreen, while every terminal result releases the URI grant.
+    LaunchedEffect(pendingDocumentImport?.token) {
+        val pending = pendingDocumentImport ?: return@LaunchedEffect
+        if (!onClaimDocumentImport(pending.token)) return@LaunchedEffect
+        var terminal = false
+        try {
+            processDocumentImport(pending)
+            terminal = true
+        } catch (cancelled: CancellationException) {
+            onAbandonDocumentImport(pending.token)
+            throw cancelled
+        } catch (failure: Throwable) {
+            terminal = true
+            val detail = failure.message?.takeIf { it.isNotBlank() }
+                ?: "The selected document could not be imported"
+            Toast.makeText(context, "Import failed: $detail", Toast.LENGTH_LONG).show()
+        } finally {
+            if (terminal) onCompleteDocumentImport(pending.token)
         }
     }
 
-    DisposableEffect(lifecycleOwner, hasLocationPermission) {
+    DisposableEffect(lifecycleOwner, hasPreciseLocation) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
-                    if (hasLocationPermission) vm.locationService.start()
+                    if (hasPreciseLocation) vm.locationService.start()
                 }
                 Lifecycle.Event.ON_STOP -> vm.locationService.stop()
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        if (hasLocationPermission &&
+        if (hasPreciseLocation &&
             lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         ) {
             vm.locationService.start()
@@ -442,6 +589,78 @@ fun MapScreen(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             vm.locationService.stop()
+        }
+    }
+
+    LaunchedEffect(mapOrientationMode, vm.headingService.isHeadingAvailable) {
+        if (mapOrientationMode == MapOrientationMode.HEADING_UP &&
+            !vm.headingService.isHeadingAvailable
+        ) {
+            vm.opsec.setMapOrientationMode(MapOrientationMode.NORTH_UP)
+        } else if (mapOrientationMode == MapOrientationMode.NORTH_UP) {
+            vm.requestResetNorth()
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, mapOrientationMode) {
+        fun startHeadingOrFallBack() {
+            headingSessionActive = vm.headingService.start()
+            if (!headingSessionActive) {
+                vm.opsec.setMapOrientationMode(MapOrientationMode.NORTH_UP)
+                Toast.makeText(
+                    context,
+                    "Compass heading unavailable; switched to North Up.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    if (mapOrientationMode == MapOrientationMode.HEADING_UP) {
+                        startHeadingOrFallBack()
+                    }
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    headingSessionActive = false
+                    vm.headingService.stop()
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (mapOrientationMode == MapOrientationMode.HEADING_UP &&
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        ) {
+            startHeadingOrFallBack()
+        } else {
+            headingSessionActive = false
+            vm.headingService.stop()
+        }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            headingSessionActive = false
+            vm.headingService.stop()
+        }
+    }
+
+    LaunchedEffect(mapOrientationMode, headingSessionActive) {
+        if (mapOrientationMode == MapOrientationMode.HEADING_UP &&
+            headingSessionActive
+        ) {
+            delay(5_000)
+            if (vm.opsec.mapOrientationMode.value == MapOrientationMode.HEADING_UP &&
+                headingSessionActive &&
+                vm.headingService.headingDegrees.value == null
+            ) {
+                vm.opsec.setMapOrientationMode(MapOrientationMode.NORTH_UP)
+                Toast.makeText(
+                    context,
+                    "No reliable compass reading; switched to North Up.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
         }
     }
 
@@ -475,30 +694,31 @@ fun MapScreen(
             quickAddMenuOpen = false
             quickAddEditorMode = null
             quickAddTarget = null
+            quickAddCreationError = null
         }
     }
     val draftDrawing = when {
         // measure tool takes precedence - render its polyline as draft
         // overlay so user can see the path they're laying down
-        measureSession.isActive && measureSession.points.size >= 1 -> DrawingFeature(
+        measureSession.isActive && measureSession.points.size >= 1 -> newMapDrawingFeature(
             name = "",
             geometry = DrawingGeometry.LINE,
             points = measureSession.points.map { DrawingPoint(it.first, it.second) },
             layerId = safeActiveLayerId,
             strokeColor = 0xFFFFA500.toInt(),
             fillColor = 0,
-            strokeWidth = DrawingDefaults.STROKE_WIDTH,
-            strokeStyle = DrawingStrokeStyle.DASHED
+            strokeStyle = DrawingStrokeStyle.DASHED,
+            density = rendererDensity,
         )
-        draftGeometry != null -> DrawingFeature(
+        draftGeometry != null -> newMapDrawingFeature(
             name = drawingNameOrDefault(activeDrawingName, draftGeometry!!, drawingDocument.features),
             geometry = draftGeometry!!,
             points = draftPoints,
             layerId = safeActiveLayerId,
             strokeColor = activeStrokeColor,
             fillColor = activeStrokeColor.withAlpha(0x33),
-            strokeWidth = DrawingDefaults.STROKE_WIDTH,
-            strokeStyle = activeStrokeStyle
+            strokeStyle = activeStrokeStyle,
+            density = rendererDensity,
         )
         else -> null
     }
@@ -515,19 +735,21 @@ fun MapScreen(
         val geometry = draftGeometry ?: return
         val points = (extraPoint?.let { draftPoints + it } ?: draftPoints).dedupeTrailingPoints()
         if (points.size >= geometry.minimumVertices) {
-            drawingStore.addFeature(
-                DrawingFeature(
+            val candidate = newMapDrawingFeature(
                     name = drawingNameOrDefault(activeDrawingName, geometry, drawingDocument.features),
                     geometry = geometry,
                     points = points,
                     layerId = safeActiveLayerId,
                     strokeColor = activeStrokeColor,
                     fillColor = activeStrokeColor.withAlpha(0x33),
-                    strokeWidth = DrawingDefaults.STROKE_WIDTH,
-                    strokeStyle = activeStrokeStyle
+                    strokeStyle = activeStrokeStyle,
+                    density = rendererDensity,
                 )
+            performDrawingMutation(
+                intent = DrawingMutationIntent.CREATE,
+                persist = { drawingStore.addFeature(candidate) },
+                onSaved = ::stopDrawing,
             )
-            stopDrawing()
         }
     }
 
@@ -545,8 +767,7 @@ fun MapScreen(
         val point = DrawingPoint(lat, lng)
         when (tool) {
             DrawingGeometry.POINT -> {
-                drawingStore.addFeature(
-                    DrawingFeature(
+                val candidate = newMapDrawingFeature(
                         name = drawingNameOrDefault(
                             activeDrawingName,
                             DrawingGeometry.POINT,
@@ -557,9 +778,12 @@ fun MapScreen(
                         layerId = safeActiveLayerId,
                         strokeColor = activeStrokeColor,
                         fillColor = activeStrokeColor.withAlpha(0x33),
-                        strokeWidth = DrawingDefaults.STROKE_WIDTH,
-                        strokeStyle = activeStrokeStyle
+                        strokeStyle = activeStrokeStyle,
+                        density = rendererDensity,
                     )
+                performDrawingMutation(
+                    intent = DrawingMutationIntent.CREATE,
+                    persist = { drawingStore.addFeature(candidate) },
                 )
             }
             DrawingGeometry.LINE, DrawingGeometry.POLYGON -> {
@@ -588,7 +812,7 @@ fun MapScreen(
             Toast.makeText(context, "Calibration needs 3 non-colinear points.", Toast.LENGTH_SHORT).show()
             return
         }
-        vm.setMapSource(source.calibrated(result.transform, calibrationFiduciaries))
+        if (!vm.setMapSource(source.calibrated(result.transform, calibrationFiduciaries))) return
         isCalibratingPdf = false
         pendingCalibrationTap = null
         Toast.makeText(context, "Calibration RMS ${result.rmsMetres.toInt()}m", Toast.LENGTH_SHORT).show()
@@ -606,6 +830,7 @@ fun MapScreen(
                 waypoints = waypoints,
                 mapSource = mapSource,
                 onlineBasemapsEnabled = onlineBasemapsEnabled,
+                onlineLookupsEnabled = onlineLookupsEnabled,
                 drawings = drawingDocument.features,
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,
@@ -621,34 +846,39 @@ fun MapScreen(
                 },
                 onFreeDrawEnd = {
                     finishDraft()
-                    isFreeDrawMode = false
-                    activeDrawTool = null
-                    draftGeometry = null
-                    draftPoints = emptyList()
                 },
                 calibrationInputEnabled = isCalibratingPdf,
                 calibrationFiduciaries = if (isCalibratingPdf) calibrationFiduciaries else emptyList(),
                 mgrsGridVisible = mgrsGridVisible,
                 terrainHeatmapVisible = terrainHeatmapVisible,
                 unitLabelsVisible = unitLabelsVisible,
+                unitAmplifiersVisible = unitAmplifiersVisible,
                 taskLabelsVisible = taskLabelsVisible,
                 drawingLabelsVisible = drawingLabelsVisible,
+                symbologyVisible = symbologyVisible,
+                drawingsVisible = drawingsVisible,
                 peers = presencePeers,
                 selectedDrawingId = selectedDrawingId,
-                selectedWaypointId = selectedWaypointId,
+                initialCameraState = cameraViewportState,
                 pendingTarget = pendingTarget,
                 resetNorthRequests = vm.resetNorthRequests,
+                headingUpEnabled = mapOrientationMode == MapOrientationMode.HEADING_UP,
+                deviceHeadingDegrees = vm.headingService.headingDegrees,
                 onConsumePendingTarget = vm::consumePendingCameraTarget,
-                onCameraIdle = { lat, lng, byUser ->
-                    vm.onCameraIdle(lat, lng, byUser)
-                },
+                onCameraIdle = vm::onCameraIdle,
                 onBearingChanged = vm::onMapBearingChanged,
                 onMarkerTap = { wp ->
                     selectedDrawingId = null
                     vm.selectWaypoint(wp.id)
                 },
                 onWaypointMoved = { wp, lat, lng ->
-                    waypointStore.update(wp.copy(latitude = lat, longitude = lng))
+                    if (!waypointStore.update(wp.copy(latitude = lat, longitude = lng))) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                "The symbol move could not be saved. Its previous position is still active."
+                            )
+                        }
+                    }
                 },
                 onDrawingTap = ::handleDrawingTap,
                 onCalibrationTap = { lat, lng ->
@@ -663,20 +893,37 @@ fun MapScreen(
                     vm.selectWaypoint(null)
                     selectedDrawingId = featureId
                 },
+                onPresencePeerTap = { peer ->
+                    val target = syncManager.chatTargetFor(peer.clientId)
+                    if (target != null) {
+                        chatTarget = target
+                    } else {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                "That unit is not currently available for secure chat"
+                            )
+                        }
+                    }
+                },
                 onVertexMoved = { featureId, vertexIndex, lat, lng ->
                     drawingDocument.features.firstOrNull { it.id == featureId }?.let { feature ->
-                        drawingStore.updateFeature(feature.withVertexMoved(vertexIndex, lat, lng))
+                        val candidate = feature.withVertexMoved(vertexIndex, lat, lng)
+                        performDrawingMutation(DrawingMutationIntent.EDIT, {
+                            drawingStore.updateFeature(candidate)
+                        })
                     }
                 },
                 onVertexInserted = { featureId, atIndex, lat, lng ->
                     drawingDocument.features.firstOrNull { it.id == featureId }?.let { feature ->
-                        drawingStore.updateFeature(feature.withVertexInserted(atIndex, lat, lng))
+                        val candidate = feature.withVertexInserted(atIndex, lat, lng)
+                        performDrawingMutation(DrawingMutationIntent.EDIT, {
+                            drawingStore.updateFeature(candidate)
+                        })
                     }
                 },
                 onShapeMoved = { featureId, deltaLat, deltaLng ->
                     drawingDocument.features.firstOrNull { it.id == featureId }?.let { feature ->
-                        drawingStore.updateFeature(
-                            feature.copy(
+                        val candidate = feature.copy(
                                 points = feature.points.map { point ->
                                     point.copy(
                                         latitude = point.latitude + deltaLat,
@@ -684,13 +931,18 @@ fun MapScreen(
                                     )
                                 }
                             )
-                        )
+                        performDrawingMutation(DrawingMutationIntent.EDIT, {
+                            drawingStore.updateFeature(candidate)
+                        })
                     }
                 },
                 onVertexDeleted = { featureId, vertexIndex ->
                     drawingDocument.features.firstOrNull { it.id == featureId }?.let { feature ->
                         feature.withVertexRemovedOrNull(vertexIndex)?.let {
-                            drawingStore.updateFeature(it)
+                            val candidate = it
+                            performDrawingMutation(DrawingMutationIntent.EDIT, {
+                                drawingStore.updateFeature(candidate)
+                            })
                         }
                     }
                 },
@@ -735,15 +987,16 @@ fun MapScreen(
                 val activeLayerId = drawingDocument.layers
                     .firstOrNull { it.isVisible }?.id
                     ?: com.tacmap.drawings.DrawingDocument.DEFAULT_LAYER_ID
-                waypointStore.add(
-                    com.tacmap.waypoints.Waypoint(
+                val waypoint = com.tacmap.waypoints.Waypoint(
                         name = primaryCoordinateDisplay.text,
                         latitude = lat,
                         longitude = lng,
                         kind = com.tacmap.waypoints.WaypointKind.Generic,
                         layerId = activeLayerId
                     )
-                )
+                if (persistNewSymbol(waypoint) { waypointStore.add(it) } is DurableSymbolCreation.Failed) {
+                    scope.launch { snackbarHostState.showSnackbar(SYMBOL_CREATION_ERROR) }
+                }
             }
         )
         // The online-tiles warning used to sit here under the header, but that's
@@ -883,13 +1136,24 @@ fun MapScreen(
                     DropdownMenuItem(
                         text = {
                             Text(
-                                if (isRecordingTrack) "Stop Track Recording (${trackPoints.size} pts)"
-                                else "Start Track Recording"
+                                when (trackRecordingState.phase) {
+                                    TrackRecordingPhase.Recording ->
+                                        "Stop Track Recording (${trackPoints.size} pts)"
+                                    TrackRecordingPhase.Starting -> "Starting Track Recording…"
+                                    TrackRecordingPhase.AwaitingPermission -> "Retry Track Recording"
+                                    TrackRecordingPhase.Interrupted,
+                                    TrackRecordingPhase.Idle -> "Start Track Recording"
+                                }
                             )
                         },
+                        enabled = trackRecordingState.phase != TrackRecordingPhase.Starting,
                         onClick = {
                             hamburgerOpen = false
-                            if (isRecordingTrack) vm.stopTrackRecording() else vm.startTrackRecording()
+                            if (isRecordingTrack) {
+                                vm.stopTrackRecording()
+                            } else {
+                                onRequestTrackRecording()
+                            }
                         },
                         leadingIcon = {
                             Icon(
@@ -906,6 +1170,14 @@ fun MapScreen(
                             showSyncDialog = true
                         },
                         leadingIcon = { Icon(Icons.Default.Sync, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("TacMap Chat") },
+                        onClick = {
+                            hamburgerOpen = false
+                            chatTarget = com.tacmap.sync.TacMapChatTarget.EntireRoom
+                        },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("App Lock") },
@@ -935,16 +1207,18 @@ fun MapScreen(
                     )
                 }
             }
+            if (tacMapChatHudVisible(syncRoom)) {
+                TacMapChatHudButton(unreadCount = unreadChatMessageCount) {
+                    chatTarget = com.tacmap.sync.TacMapChatTarget.EntireRoom
+                }
+            }
             if (quickAddAllowed) {
                 Box {
                     QuickAddSymbolButton {
                         // Freeze the placement target now. The user can spend
                         // time in the editor without a later camera update
                         // silently changing where the symbol will land.
-                        selectedDrawingId = null
-                        drawingDocument.layers
-                            .firstOrNull { it.id == quickAddLayerId && !it.isVisible }
-                            ?.let { drawingStore.setLayerVisible(it.id, true) }
+                        quickAddCreationError = null
                         quickAddTarget = QuickAddTarget(cameraLat, cameraLng, quickAddLayerId)
                         quickAddMenuOpen = true
                     }
@@ -960,6 +1234,7 @@ fun MapScreen(
                             leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) },
                             onClick = {
                                 quickAddMenuOpen = false
+                                quickAddCreationError = null
                                 quickAddEditorMode = SymbolEditorMode.MILITARY
                             }
                         )
@@ -968,6 +1243,7 @@ fun MapScreen(
                             leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) },
                             onClick = {
                                 quickAddMenuOpen = false
+                                quickAddCreationError = null
                                 quickAddEditorMode = SymbolEditorMode.TASK
                             }
                         )
@@ -976,6 +1252,7 @@ fun MapScreen(
                             leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) },
                             onClick = {
                                 quickAddMenuOpen = false
+                                quickAddCreationError = null
                                 quickAddEditorMode = SymbolEditorMode.MARKER
                             }
                         )
@@ -985,9 +1262,16 @@ fun MapScreen(
             UnitLabelsToggle(active = unitLabelsVisible) { unitLabelsVisible = !unitLabelsVisible }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                CompassChip(
-                    mapOrientationDegrees = mapBearingDegrees,
-                    onTap = vm::requestResetNorth
+                MapCompassChip(
+                    vm = vm,
+                    orientationMode = mapOrientationMode,
+                    onHeadingUnavailable = {
+                        Toast.makeText(
+                            context,
+                            "Heading Up is unavailable on this device.",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
                 )
                 UndoRedoButtons(
                     canUndo = canUndo,
@@ -1050,13 +1334,31 @@ fun MapScreen(
             DrawingFeatureEditBar(
                 feature = selectedDrawing,
                 layers = drawingDocument.layers,
-                onFeatureChange = drawingStore::updateFeature,
-                onFeatureChangeDraft = drawingStore::updateFeatureNoUndo,
+                onFeatureChange = { candidate ->
+                    checkedDrawingMutation(DrawingMutationIntent.EDIT) {
+                        drawingStore.updateFeature(candidate)
+                    }
+                },
+                onFeatureChangeDraft = drawingStore::previewFeature,
+                onMoveToCrosshair = {
+                    checkedDrawingMutation(DrawingMutationIntent.EDIT) {
+                        drawingStore.updateFeature(
+                            selectedDrawing.movedToCrosshair(cameraLat, cameraLng)
+                        )
+                    }
+                },
                 onDelete = {
-                    drawingStore.removeFeature(selectedDrawing.id)
+                    drawingStore.revertPreview()
+                    val result = checkedDrawingMutation(DrawingMutationIntent.DELETE) {
+                        drawingStore.removeFeature(selectedDrawing.id)
+                    }
+                    if (result.saved) selectedDrawingId = null
+                    result
+                },
+                onDismiss = {
+                    drawingStore.revertPreview()
                     selectedDrawingId = null
                 },
-                onDismiss = { selectedDrawingId = null },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 12.dp, vertical = 16.dp)
@@ -1070,13 +1372,6 @@ fun MapScreen(
                 crosshairTargetLat = cameraLat,
                 crosshairTargetLng = cameraLng,
                 store = waypointStore,
-                onMovedToCrosshair = { moved ->
-                    // Keep the selected card bound to the moved model and give
-                    // explicit feedback: the symbol itself now sits under the
-                    // centre reticle and can otherwise be hard to see.
-                    vm.selectWaypoint(moved.id)
-                    Toast.makeText(context, "Moved ${moved.name} to crosshair", Toast.LENGTH_SHORT).show()
-                },
                 onDismiss = { vm.selectWaypoint(null) },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1096,8 +1391,24 @@ fun MapScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 CentrePill(
-                    onClick = { vm.centreOnUser() },
-                    label = if (importedMapLoaded) "My Location" else "Centre on My Location"
+                    onClick = {
+                        when (liveLocationControl.action) {
+                            LiveMapLocationAction.RequestPermission -> onRequestLiveMapLocation()
+                            LiveMapLocationAction.CentreOnLocation -> vm.centreOnUser()
+                            LiveMapLocationAction.OpenSettings -> onOpenLiveMapLocationSettings()
+                        }
+                    },
+                    label = if (hasPreciseLocation && importedMapLoaded) {
+                        "My Location"
+                    } else {
+                        liveLocationControl.title
+                    },
+                    icon = if (liveLocationControl.action == LiveMapLocationAction.OpenSettings) {
+                        Icons.Default.Settings
+                    } else {
+                        Icons.Default.GpsFixed
+                    },
+                    guidance = liveLocationControl.guidance,
                 )
                 if (importedMapLoaded) {
                     CentrePill(
@@ -1138,27 +1449,42 @@ fun MapScreen(
                 SymbolEditorMode.MARKER -> "New Marker"
             },
             actionLabel = "Place",
+            submissionError = quickAddCreationError,
             onDismiss = {
                 quickAddEditorMode = null
                 quickAddTarget = null
+                quickAddCreationError = null
             },
-            onConfirm = { name, kind ->
-                selectedDrawingId = null
-                drawingDocument.layers
-                    .firstOrNull { it.id == capturedQuickTarget.layerId && !it.isVisible }
-                    ?.let { drawingStore.setLayerVisible(it.id, true) }
+            onConfirm = { name, kind, higherFormation, uniqueIdentifier, reinforcementStatus ->
                 val added = Waypoint(
                     name = name,
                     latitude = capturedQuickTarget.latitude,
                     longitude = capturedQuickTarget.longitude,
                     kind = kind,
+                    higherFormation = higherFormation,
+                    uniqueIdentifier = uniqueIdentifier,
+                    reinforcementStatus = reinforcementStatus,
                     layerId = capturedQuickTarget.layerId
                 )
-                waypointStore.add(added)
-                vm.selectWaypoint(added.id)
-                Toast.makeText(context, "Added $name at crosshair", Toast.LENGTH_SHORT).show()
-                quickAddEditorMode = null
-                quickAddTarget = null
+                when (val result = persistNewSymbol(added) { waypointStore.add(it) }) {
+                    is DurableSymbolCreation.Saved -> {
+                        selectedDrawingId = null
+                        drawingDocument.layers
+                            .firstOrNull { it.id == capturedQuickTarget.layerId && !it.isVisible }
+                            ?.let { hiddenLayer ->
+                                performDrawingMutation(
+                                    intent = DrawingMutationIntent.VISIBILITY,
+                                    persist = { drawingStore.setLayerVisible(hiddenLayer.id, true) },
+                                )
+                            }
+                        vm.selectWaypoint(result.waypoint.id)
+                        Toast.makeText(context, "Added $name at crosshair", Toast.LENGTH_SHORT).show()
+                        quickAddCreationError = null
+                        quickAddEditorMode = null
+                        quickAddTarget = null
+                    }
+                    is DurableSymbolCreation.Failed -> quickAddCreationError = result.message
+                }
             }
         )
     }
@@ -1216,9 +1542,31 @@ fun MapScreen(
                 draftPoints = emptyList()
                 showDrawingSheet = false
             },
-            onLayerVisibilityChange = drawingStore::setLayerVisible,
+            onLayerVisibilityChange = { id, visible ->
+                checkedDrawingMutation(DrawingMutationIntent.VISIBILITY) {
+                    drawingStore.setLayerVisible(id, visible)
+                }
+            },
             onAddLayer = drawingStore::addLayer,
-            onDeleteFeature = drawingStore::removeFeature
+            onUpdateLayer = drawingStore::updateLayer,
+            onDeleteLayer = { layerId ->
+                val outcome = deleteMissionLayer(layerId, waypointStore, drawingStore)
+                if (outcome.succeeded) {
+                    if (activeDrawingLayerId == layerId) {
+                        activeDrawingLayerId = outcome.fallbackLayerId
+                            ?: DrawingDocument.DEFAULT_LAYER_ID
+                    }
+                    Toast.makeText(context, "Layer deleted; contents moved to Friendly", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Layer could not be deleted", Toast.LENGTH_SHORT).show()
+                }
+                outcome.succeeded
+            },
+            onDeleteFeature = { id ->
+                checkedDrawingMutation(DrawingMutationIntent.DELETE) {
+                    drawingStore.removeFeature(id)
+                }
+            }
         )
     }
 
@@ -1226,8 +1574,10 @@ fun MapScreen(
         SearchDialog(
             waypoints = waypoints,
             drawings = drawingDocument.features,
+            layers = drawingDocument.layers,
             cameraLat = cameraLat,
             cameraLng = cameraLng,
+            onlineLookupsEnabled = onlineLookupsEnabled,
             onDismiss = { showSearchDialog = false },
             onFlyTo = { lat, lng -> vm.flyTo(lat, lng) },
             onWaypointSelected = { waypointId ->
@@ -1246,7 +1596,12 @@ fun MapScreen(
     }
 
     weatherTarget?.let { (lat, lng) ->
-        WeatherDialog(lat = lat, lng = lng, onDismiss = { weatherTarget = null })
+        WeatherDialog(
+            lat = lat,
+            lng = lng,
+            onlineLookupsEnabled = onlineLookupsEnabled,
+            onDismiss = { weatherTarget = null },
+        )
     }
 
     if (showAppLockSetup) {
@@ -1256,6 +1611,7 @@ fun MapScreen(
     if (showOpsecSettings) {
         OpsecSettingsDialog(
             opsec = vm.opsec,
+            headingAvailable = vm.headingService.isHeadingAvailable,
             onRequestAuthBoundChange = onRequestAuthBoundChange,
             onDismiss = { showOpsecSettings = false },
         )
@@ -1295,19 +1651,104 @@ fun MapScreen(
         )
     }
 
-    trackPersistError?.let { message ->
+    val recordingStateMessage = trackRecordingState.message.takeIf {
+        trackRecordingState.phase == TrackRecordingPhase.AwaitingPermission ||
+            trackRecordingState.phase == TrackRecordingPhase.Interrupted
+    }
+    (recordingStateMessage ?: trackPersistError)?.let { message ->
         AlertDialog(
-            onDismissRequest = vm.trackRecorder::acknowledgePersistError,
+            onDismissRequest = {
+                if (recordingStateMessage != null) vm.trackRecorder.dismissRecordingMessage()
+                else vm.trackRecorder.acknowledgePersistError()
+            },
             title = { Text("Track recording") },
             text = { Text(message) },
             confirmButton = {
-                TextButton(onClick = vm.trackRecorder::acknowledgePersistError) { Text("OK") }
+                TextButton(
+                    onClick = {
+                        if (recordingStateMessage != null) {
+                            vm.trackRecorder.dismissRecordingMessage()
+                            onRequestTrackRecording()
+                        } else {
+                            vm.trackRecorder.acknowledgePersistError()
+                        }
+                    }
+                ) { Text(if (recordingStateMessage != null) "Retry" else "OK") }
+            },
+            dismissButton = trackRecordingState.settingsTarget?.let { target ->
+                {
+                    TextButton(
+                        onClick = {
+                            vm.trackRecorder.dismissRecordingMessage()
+                            onOpenTrackRecordingSettings?.invoke(target)
+                        }
+                    ) { Text("Settings") }
+                }
+            },
+        )
+    }
+
+    pendingDrawingMutation?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingDrawingMutation = null },
+            title = { Text("Drawing change not saved") },
+            text = { Text(pending.message) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val result = checkedDrawingMutation(pending.intent, pending.persist)
+                    if (result.saved) {
+                        pendingDrawingMutation = null
+                        pending.onSaved()
+                    } else {
+                        pendingDrawingMutation = pending.copy(
+                            message = (result as DrawingMutationUiResult.Failed).message
+                        )
+                    }
+                }) { Text("Retry") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDrawingMutation = null }) { Text("Not now") }
+            },
+        )
+    }
+
+    (waypointStoreError ?: drawingStoreError)?.let { message ->
+        AlertDialog(
+            onDismissRequest = {
+                if (waypointStoreError != null) waypointStore.acknowledgeLoadError()
+                else drawingStore.acknowledgeLoadError()
+            },
+            title = { Text("Mission data was not saved") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (waypointStoreError != null) waypointStore.acknowledgeLoadError()
+                        else drawingStore.acknowledgeLoadError()
+                    }
+                ) { Text("OK") }
             },
         )
     }
 
     if (showSyncDialog) {
-        com.tacmap.sync.SyncDialog(manager = syncManager, onDismiss = { showSyncDialog = false })
+        com.tacmap.sync.SyncDialog(
+            manager = syncManager,
+            opsec = vm.opsec,
+            onDismiss = { showSyncDialog = false },
+            onOpenChat = { target ->
+                showSyncDialog = false
+                chatTarget = target
+            },
+        )
+    }
+
+    chatTarget?.let { target ->
+        com.tacmap.sync.TacMapChatDialog(
+            manager = syncManager,
+            initialTarget = target,
+            onDismiss = { chatTarget = null },
+        )
     }
 
     tilingProgress?.let { (done, total) ->
@@ -1333,23 +1774,39 @@ fun MapScreen(
 
     if (showLayersSheet) {
         LayersSheet(
+            symbologyVisible = symbologyVisible,
+            drawingsVisible = drawingsVisible,
             mgrsGridVisible = mgrsGridVisible,
             userLocationVisible = userLocationVisible,
             unitLabelsVisible = unitLabelsVisible,
+            unitAmplifiersVisible = unitAmplifiersVisible,
             taskLabelsVisible = taskLabelsVisible,
             drawingLabelsVisible = drawingLabelsVisible,
             terrainHeatmapVisible = terrainHeatmapVisible,
             onMgrsGridChange = { mgrsGridVisible = it },
+            onSymbologyVisibleChange = { symbologyVisible = it },
+            onDrawingsVisibleChange = { drawingsVisible = it },
             onUserLocationChange = { userLocationVisible = it },
             onTerrainHeatmapChange = { terrainHeatmapVisible = it },
             onUnitLabelsChange = { unitLabelsVisible = it },
+            onUnitAmplifiersChange = { unitAmplifiersVisible = it },
             onTaskLabelsChange = { taskLabelsVisible = it },
             onDrawingLabelsChange = { drawingLabelsVisible = it },
             drawingLayers = drawingDocument.layers,
             drawingFeatures = drawingDocument.features,
-            onSetLayerVisible = { id, v -> drawingStore.setLayerVisible(id, v) },
+            onSetLayerVisible = { id, visible ->
+                checkedDrawingMutation(DrawingMutationIntent.VISIBILITY) {
+                    drawingStore.setLayerVisible(id, visible)
+                }
+            },
             activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
+            retainedImportedMapName = retainedImportedMap?.displayName,
+            importedMapActive = importedMapLoaded,
+            onReturnToImportedMap = {
+                vm.restoreRetainedImportedMap()
+                showLayersSheet = false
+            },
             hasPdfMap = pdfSource != null,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
             onCalibratePdf = {
@@ -1369,9 +1826,12 @@ fun MapScreen(
                         }
                         tilingProgress = null
                         if (path != null) {
-                            com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
+                            val activated = com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
                                 ?.let { vm.setMapSource(it) }
-                            Toast.makeText(context, "Offline tiles ready", Toast.LENGTH_SHORT).show()
+                                ?: false
+                            if (activated) {
+                                Toast.makeText(context, "Offline tiles ready", Toast.LENGTH_SHORT).show()
+                            }
                         } else {
                             Toast.makeText(
                                 context,
@@ -1389,7 +1849,7 @@ fun MapScreen(
             },
             onUnloadOfflineTiles = {
                 showLayersSheet = false
-                vm.restoreOnlineBasemap()
+                vm.unloadOfflineTiles()
             },
             onDismiss = { showLayersSheet = false }
         )
@@ -1399,49 +1859,45 @@ fun MapScreen(
         ImportExportSheet(
             onImportPdf = {
                 showImportExportSheet = false
-                val mimeTypes = arrayOf("application/pdf")
-                onRequestPdfImport(mimeTypes)
+                onRequestDocumentImport(DocumentImportKind.PDF)
             },
             onImportTiles = {
                 showImportExportSheet = false
-                // MBTiles has no standard MIME type, show all files.
-                mbtilesImportLauncher.launch(arrayOf("*/*"))
+                onRequestDocumentImport(DocumentImportKind.MBTILES)
             },
             onImportGeoJson = {
                 showImportExportSheet = false
-                val mimeTypes = arrayOf("application/geo+json", "application/json", "*/*")
-                onRequestGeoJsonImport?.invoke(mimeTypes) ?: geoJsonImportLauncher.launch(mimeTypes)
+                onRequestDocumentImport(DocumentImportKind.GEO_JSON)
             },
             onImportKml = {
                 showImportExportSheet = false
-                // KML/KMZ have no reliable MIME registration across providers, show all files.
-                kmlImportLauncher.launch(arrayOf(
-                    "application/vnd.google-earth.kml+xml",
-                    "application/vnd.google-earth.kmz",
-                    "*/*"
-                ))
+                onRequestDocumentImport(DocumentImportKind.KML)
             },
             onExportGeoJson = {
                 showImportExportSheet = false
-                shareGeoJson(
-                    context = context,
-                    waypoints = waypoints,
-                    drawings = drawingDocument.features,
-                    layers = drawingDocument.layers
-                )
+                scope.launch {
+                    shareGeoJson(
+                        context = context,
+                        waypoints = waypoints,
+                        drawings = drawingDocument.features,
+                        layers = drawingDocument.layers,
+                    )
+                }
             },
             onExportGpx = {
                 showImportExportSheet = false
-                shareGpx(context = context, points = trackPoints)
+                scope.launch { shareGpx(context = context, points = trackPoints) }
             },
             onExportAllData = {
                 showImportExportSheet = false
-                exportAllData(
-                    context = context,
-                    waypoints = waypoints,
-                    drawings = drawingDocument.features,
-                    layers = drawingDocument.layers
-                )
+                scope.launch {
+                    exportAllMissionObjects(
+                        context = context,
+                        waypoints = waypoints,
+                        drawings = drawingDocument.features,
+                        layers = drawingDocument.layers,
+                    )
+                }
             },
             hasSavedTrack = trackPoints.isNotEmpty(),
             isRecordingTrack = isRecordingTrack,
@@ -1482,3 +1938,5 @@ fun MapScreen(
         )
     }
 }
+
+internal fun tacMapChatHudVisible(room: String?): Boolean = room?.startsWith("3:") == true

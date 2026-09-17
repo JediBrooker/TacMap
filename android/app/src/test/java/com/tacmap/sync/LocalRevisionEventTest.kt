@@ -22,6 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.nio.file.Files
+import java.util.UUID
 
 class LocalRevisionEventTest {
     private val sealedLabels = mutableSetOf<String>()
@@ -97,5 +98,33 @@ class LocalRevisionEventTest {
         assertFalse(processor.process(com.tacmap.models.ModelMutationEvent(setOf(id))))
         assertTrue(failedClosed)
         assertEquals(0, failing.generation(id))
+    }
+
+    @Test fun tenThousandObjectMutationUsesOneJournalWriteAndRollsBackAsAUnit() {
+        val dir = Files.createTempDirectory("revision-batch").toFile()
+        val ids = (1..10_000).map { UUID(0L, it.toLong()).toString() }
+        var writes = 0
+        var allowWrite = true
+        val journal = LocalModelRevisionJournal(
+            dir,
+            persistOverride = {
+                writes++
+                allowWrite
+            },
+        )
+
+        val idSet = ids.toSet()
+        assertTrue(journal.bumpAll(idSet))
+        assertEquals(1, writes)
+        ids.forEach { assertEquals(1L, journal.generation(it)) }
+
+        allowWrite = false
+        assertFalse(journal.bumpAll(idSet))
+        assertEquals(2, writes)
+        ids.forEach { assertEquals(1L, journal.generation(it)) }
+
+        assertFalse(journal.bumpAll(idSet + "not-a-uuid"))
+        assertEquals("invalid input must fail before persistence", 2, writes)
+        ids.forEach { assertEquals(1L, journal.generation(it)) }
     }
 }

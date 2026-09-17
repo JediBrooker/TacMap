@@ -20,6 +20,9 @@ final class LayerVisibility: ObservableObject {
     /// Whether the name-label pill is rendered under each military / generic
     /// waypoint icon.
     @Published var unitLabelsVisible:    Bool = false { didSet { d.set(unitLabelsVisible,    forKey: K.unitLabels) } }
+    /// FM 1-02.2 M/T/F unit amplifier text. Independent from waypoint name
+    /// labels so a map can show either label family without the other.
+    @Published var unitAmplifiersVisible: Bool = true { didSet { d.set(unitAmplifiersVisible, forKey: K.unitAmplifiers) } }
     /// Name-label inside each task graphic. Seperate toggle from units
     /// b/c tasks render labels inside the bubble (not below it) and
     /// users often want one on without the other.
@@ -43,6 +46,7 @@ final class LayerVisibility: ObservableObject {
         static let pdfOverlay    = "layers.pdfOverlayVisible"
         static let drawingLabels = "layers.drawingLabelsVisible"
         static let unitLabels    = "layers.unitLabelsVisible"
+        static let unitAmplifiers = "layers.unitAmplifiersVisible"
         static let taskLabels    = "layers.taskLabelsVisible"
         static let mgrsGrid      = "layers.mgrsGridVisible"
         static let terrainHeatmap = "layers.terrainHeatmapVisible"
@@ -60,6 +64,7 @@ final class LayerVisibility: ObservableObject {
         pdfOverlayVisible    = restore(K.pdfOverlay,    default: true)
         drawingLabelsVisible = restore(K.drawingLabels, default: false)
         unitLabelsVisible    = restore(K.unitLabels,    default: false)
+        unitAmplifiersVisible = restore(K.unitAmplifiers, default: true)
         taskLabelsVisible    = restore(K.taskLabels,    default: false)
         mgrsGridVisible      = restore(K.mgrsGrid,      default: false)
         terrainHeatmapVisible = restore(K.terrainHeatmap, default: false)

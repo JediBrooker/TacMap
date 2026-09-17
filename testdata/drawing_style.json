@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "description": "Cross-platform drawing-style contract. Portable stroke widths are screen-independent points/dp; Android's map renderer stores physical pixels and must convert at every import/export boundary. Polygon fill colour and opacity are independent from stroke colour.",
+  "widthContract": {
+    "portableUnit": "screenIndependentPoint",
+    "androidStoredUnit": "physicalPixel",
+    "iosStoredUnit": "screenIndependentPoint",
+    "androidExportFormula": "portableWidth = storedPixels / sourceDensity",
+    "androidImportFormula": "storedPixels = portableWidth * targetDensity"
+  },
+  "widthRoundTrips": [
+    {
+      "caseKey": "mdpi_to_xhdpi",
+      "sourceDensity": 1.0,
+      "sourceStoredPixels": 3.0,
+      "expectedPortableWidth": 3.0,
+      "targetDensity": 2.0,
+      "expectedTargetStoredPixels": 6.0
+    },
+    {
+      "caseKey": "xhdpi_to_xxxhdpi",
+      "sourceDensity": 2.0,
+      "sourceStoredPixels": 6.0,
+      "expectedPortableWidth": 3.0,
+      "targetDensity": 3.0,
+      "expectedTargetStoredPixels": 9.0
+    },
+    {
+      "caseKey": "fractional_density",
+      "sourceDensity": 2.5,
+      "sourceStoredPixels": 7.5,
+      "expectedPortableWidth": 3.0,
+      "targetDensity": 1.5,
+      "expectedTargetStoredPixels": 4.5
+    }
+  ],
+  "polygonStyle": {
+    "portable": {
+      "strokeRgb": "#336699",
+      "strokeWidth": 3.0,
+      "strokeStyle": "dashed",
+      "fillRgb": "#33CC44",
+      "fillOpacity": 0.4
+    },
+    "expectedAndroidAtDensity2_5": {
+      "strokeArgb": "#FF336699",
+      "strokeWidthPixels": 7.5,
+      "strokeStyle": "dashed",
+      "fillArgb": "#6633CC44"
+    },
+    "expectedIos": {
+      "strokeRgb": "#336699",
+      "strokeWidthPoints": 3.0,
+      "dashPattern": [8.0, 4.0],
+      "fillRgb": "#33CC44",
+      "fillOpacity": 0.4
+    },
+    "independentMutations": [
+      {
+        "caseKey": "change_stroke_only",
+        "mutation": { "strokeRgb": "#AA1122" },
+        "expectedStrokeRgb": "#AA1122",
+        "expectedFillRgb": "#33CC44",
+        "expectedFillOpacity": 0.4
+      },
+      {
+        "caseKey": "change_fill_only",
+        "mutation": { "fillRgb": "#2244CC", "fillOpacity": 0.6 },
+        "expectedStrokeRgb": "#336699",
+        "expectedFillRgb": "#2244CC",
+        "expectedFillOpacity": 0.6
+      }
+    ]
+  }
+}

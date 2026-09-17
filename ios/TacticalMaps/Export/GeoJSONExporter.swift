@@ -87,6 +87,17 @@ enum GeoJSONExporter {
             props["tacticalmaps:affiliation"] = spec.affiliation.rawValue
             props["tacticalmaps:echelon"]     = spec.echelon.rawValue
             props["tacticalmaps:function"]    = spec.function.rawValue
+            if let higherFormation = UnitAmplifierText.normalized(
+                wp.higherFormation,
+                maximumLength: UnitAmplifierText.higherFormationMaxLength) {
+                props["tacticalmaps:higher_formation"] = higherFormation
+            }
+            if let uniqueIdentifier = UnitAmplifierText.normalized(
+                wp.uniqueIdentifier,
+                maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength) {
+                props["tacticalmaps:unique_identifier"] = uniqueIdentifier
+            }
+            props["tacticalmaps:reinforcement_status"] = wp.reinforcementStatus.rawValue
             if spec.isHeadquarters {
                 props["tacticalmaps:is_hq"] = true
             }

@@ -4,12 +4,28 @@ import MapKit
 /// Single vector shape (drawing, in-progress sketch, or measure line)
 /// to redraw above the imported PDF.
 struct PDFVectorShape {
+    /// Durable drawing identity. Nil for transient drawing/measure sessions.
+    let sourceID: UUID?
     let coords: [CLLocationCoordinate2D]
     let isPolygon: Bool
     let style: DrawingStyle
     let isSelected: Bool
     /// In-progress sketches render dashed regardless of the saved dash pattern.
     let inProgress: Bool
+
+    init(sourceID: UUID? = nil,
+         coords: [CLLocationCoordinate2D],
+         isPolygon: Bool,
+         style: DrawingStyle,
+         isSelected: Bool,
+         inProgress: Bool) {
+        self.sourceID = sourceID
+        self.coords = coords
+        self.isPolygon = isPolygon
+        self.style = style
+        self.isSelected = isSelected
+        self.inProgress = inProgress
+    }
 }
 
 /// Transparent subview that strokes/fills drawing/measure/in-progress shapes in

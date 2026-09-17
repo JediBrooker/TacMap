@@ -36,11 +36,14 @@ class PdfImportSmokeTest {
 
         val latitude = -35.2809
         val longitude = 149.1300
+        val copyJournalDir = File(context.cacheDir, "pdf-import-smoke-journal").apply { mkdirs() }
         val source = importPdfMapSource(
             context = context,
             sourceUri = Uri.fromFile(selectedPdf),
             cameraLat = latitude,
             cameraLng = longitude,
+            operationKey = "pdf-import-smoke",
+            copyJournal = DocumentImportCopyJournal.forTests(copyJournalDir),
         )
 
         assertTrue(File(requireNotNull(source.uri.path)).isFile)

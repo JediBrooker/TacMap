@@ -25,8 +25,8 @@ enum GeoPDFReader {
         /// GeoPDF control points (GPTS/LPTS). When present, overlay places
         /// the page with this transform (captures grid-convergence rotation
         /// and true scale) instead of stretching to the lat/lon box (which
-        /// leaves the sheet's grid ~1 deg off true). nil for LGIDict /
-        /// known-sheet / fallback paths.
+        /// leaves the sheet's grid ~1 deg off true). nil only for known-sheet
+        /// and ungeoreferenced fallback paths.
         let placementAffine: AffineTransform2D?
 
         init(southWest: CLLocationCoordinate2D,
@@ -70,18 +70,35 @@ enum GeoPDFReader {
     ///    Gives pixel-accurate bounds + crop in one shot.
     /// 2. OGC LGIDict (older): /LGIDict on page dict with /CTM + /Neatline.
     static func bounds(from url: URL) -> Bounds? {
-        // (1) Adobe Geospatial - the modern, common path. If present just trust it.
-        if let adobe = parseAdobeGeospatial(url: url),
-           let sw = adobe.southWest, let ne = adobe.northEast {
+        // (1) Adobe Geospatial - the modern, common path. A malformed
+        // declared-GEO map body must not silently downgrade to a smaller valid
+        // inset or to unrelated fallback metadata.
+        switch parseAdobeGeospatial(url: url) {
+        case .valid(let adobe):
+            guard let sw = adobe.southWest, let ne = adobe.northEast else {
+                return nil
+            }
             return Bounds(southWest: sw, northEast: ne,
                           pdfCropRect: adobe.pdfCropRect,
                           placementAffine: adobe.placementAffine)
+        case .rejected:
+            return nil
+        case .absent:
+            break
         }
 
         // (2) OGC LGIDict fallback.
         let raw = parseLGIDictRaw(url: url)
-        if let p = raw, let sw = p.southWest, let ne = p.northEast {
-            return Bounds(southWest: sw, northEast: ne, pdfCropRect: p.pdfCropRect)
+        if let p = raw,
+           let sw = p.southWest,
+           let ne = p.northEast,
+           let affine = p.placementAffine {
+            return Bounds(
+                southWest: sw,
+                northEast: ne,
+                pdfCropRect: p.pdfCropRect,
+                placementAffine: affine
+            )
         }
 
         // (3) Last-resort known-sheet table for PDFs without metadata.
@@ -119,6 +136,12 @@ enum GeoPDFReader {
         var placementAffine: AffineTransform2D?
     }
 
+    private enum AdobeGeospatialParseResult {
+        case absent
+        case valid(ParsedLGI)
+        case rejected
+    }
+
     // MARK: - Adobe Geospatial (/VP /Measure) parsing
     //
     // PDF page can have a /VP entry: array of Viewport dicts.
@@ -132,18 +155,28 @@ enum GeoPDFReader {
     //
     // For our purposes: bounds = bbox of GPTS, crop = BBox.
 
-    private static func parseAdobeGeospatial(url: URL) -> ParsedLGI? {
+    private static func parseAdobeGeospatial(url: URL) -> AdobeGeospatialParseResult {
         guard let doc  = PDFDocument(url: url),
               let page = doc.page(at: 0),
               let cg   = page.pageRef,
-              let pageDict = cg.dictionary else { return nil }
+              let pageDict = cg.dictionary else { return .absent }
+
+        let pageResult = selectAdobeViewports(in: pageDict)
+        guard case .absent = pageResult else { return pageResult }
+        guard let catalog = cg.document?.catalog else { return .absent }
+        return selectAdobeViewports(in: catalog)
+    }
+
+    private static func selectAdobeViewports(
+        in parent: CGPDFDictionaryRef
+    ) -> AdobeGeospatialParseResult {
 
         var vpArr: CGPDFArrayRef?
-        guard CGPDFDictionaryGetArray(pageDict, "VP", &vpArr),
-              let vpRef = vpArr,
-              CGPDFArrayGetCount(vpRef) > 0 else {
-            return nil
-        }
+        guard CGPDFDictionaryGetArray(parent, "VP", &vpArr),
+              let vpRef = vpArr else { return .absent }
+        let count = CGPDFArrayGetCount(vpRef)
+        guard count > 0 else { return .absent }
+        guard count <= maximumMetadataEntries else { return .rejected }
 
         // A georeferenced topo page usually has SEVERAL viewports: the map
         // neatline plus small marginalia insets (adjoining-sheets index, state
@@ -151,43 +184,54 @@ enum GeoPDFReader {
         // the adjoining-sheets inset FIRST, and that thing is georeferenced
         // against a 145 deg E prime meridian, so trusting it drops the import
         // off the coast of West Africa. The map body is always the LARGEST
-        // viewport by BBox area, so pick that one. Keep a crop-only fallback
-        // for viewports that give us a BBox but no usable geo bounds.
-        let count = CGPDFArrayGetCount(vpRef)
-        var bestGeo: (area: Double, sw: CLLocationCoordinate2D, ne: CLLocationCoordinate2D, crop: CGRect?, viewport: CGPDFDictionaryRef)?
-        var bestCrop: (area: Double, crop: CGRect)?
+        // viewport by BBox area, so pick that one.
+        var bestGeo: (area: Double, sw: CLLocationCoordinate2D, ne: CLLocationCoordinate2D, crop: CGRect, affine: AffineTransform2D)?
+        var largestMalformedDeclaredGeoArea = -1.0
+        var hasUnrankableMalformedDeclaredGeo = false
+        var sawDeclaredGeo = false
 
         for idx in 0..<count {
             var vpDict: CGPDFDictionaryRef?
             guard CGPDFArrayGetDictionary(vpRef, idx, &vpDict),
                   let viewport = vpDict else { continue }
 
-            let crop = viewportCrop(viewport)
-            let area = crop.map { Double($0.width) * Double($0.height) } ?? 0
+            guard geoMeasure(in: viewport) != nil else { continue }
+            sawDeclaredGeo = true
 
-            if let bounds = viewportGeoBounds(viewport) {
+            guard let crop = viewportCrop(viewport) else {
+                // Without a safe BBox this declared GEO viewport cannot be
+                // ranked against another candidate. Selecting an inset would
+                // therefore be guesswork, so fail closed.
+                hasUnrankableMalformedDeclaredGeo = true
+                continue
+            }
+            let area = Double(crop.width) * Double(crop.height)
+
+            if let bounds = viewportGeoBounds(viewport),
+               let affine = viewportAffine(viewport, crop: crop) {
                 if area > (bestGeo?.area ?? -1) {
-                    bestGeo = (area, bounds.sw, bounds.ne, crop, viewport)
+                    bestGeo = (area, bounds.sw, bounds.ne, crop, affine)
                 }
-            } else if let crop, area > (bestCrop?.area ?? -1) {
-                bestCrop = (area, crop)
+            } else {
+                largestMalformedDeclaredGeoArea = max(largestMalformedDeclaredGeoArea, area)
             }
         }
 
         if let g = bestGeo {
-            // Fit an affine from the chosen viewport's GPTS/LPTS control points
-            // so page gets placed with true rotation/scale instead of being
-            // stretched to the lat/lon box. Falls back to nil (bbox placement)
-            // if viewport lacks LPTS or the fit is degenerate.
-            let affine = g.crop.flatMap { viewportAffine(g.viewport, crop: $0) }
-            NSLog("[GeoPDF] Adobe Geospatial: \(count) viewport(s); selected valid geospatial viewport; affine=\(affine != nil ? "yes" : "no")")
-            return ParsedLGI(southWest: g.sw, northEast: g.ne, pdfCropRect: g.crop, placementAffine: affine)
+            guard !hasUnrankableMalformedDeclaredGeo,
+                  largestMalformedDeclaredGeoArea <= g.area else {
+                NSLog("[GeoPDF] Adobe Geospatial: rejected malformed declared-GEO viewport that could supersede selected inset")
+                return .rejected
+            }
+            NSLog("[GeoPDF] Adobe Geospatial: \(count) viewport(s); selected valid geospatial viewport")
+            return .valid(ParsedLGI(
+                southWest: g.sw,
+                northEast: g.ne,
+                pdfCropRect: g.crop,
+                placementAffine: g.affine
+            ))
         }
-        if let c = bestCrop {
-            NSLog("[GeoPDF] Adobe Geospatial: no decodable GPTS in \(count) viewport(s) - returning largest crop only")
-            return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: c.crop)
-        }
-        return nil
+        return sawDeclaredGeo ? .rejected : .absent
     }
 
     /// /BBox -> a well-formed crop rect in PDF user space (y-up, origin
@@ -197,13 +241,8 @@ enum GeoPDFReader {
         var bboxArr: CGPDFArrayRef?
         guard CGPDFDictionaryGetArray(viewport, "BBox", &bboxArr),
               let bbox = bboxArr,
-              CGPDFArrayGetCount(bbox) >= 4 else { return nil }
-        var nums = [Double](repeating: 0, count: 4)
-        for i in 0..<4 {
-            var n: CGPDFReal = 0
-            guard CGPDFArrayGetNumber(bbox, i, &n) else { return nil }
-            nums[i] = Double(n)
-        }
+              CGPDFArrayGetCount(bbox) == 4 else { return nil }
+        guard let nums = pdfRectangleValues(bbox) else { return nil }
         let x0 = min(nums[0], nums[2]), x1 = max(nums[0], nums[2])
         let y0 = min(nums[1], nums[3]), y1 = max(nums[1], nums[3])
         guard x1 > x0, y1 > y0 else { return nil }
@@ -216,15 +255,7 @@ enum GeoPDFReader {
     private static func viewportGeoBounds(_ viewport: CGPDFDictionaryRef)
         -> (sw: CLLocationCoordinate2D, ne: CLLocationCoordinate2D)? {
 
-        var measureDict: CGPDFDictionaryRef?
-        guard CGPDFDictionaryGetDictionary(viewport, "Measure", &measureDict),
-              let measure = measureDict else { return nil }
-
-        // /Subtype must be /GEO for geographic measurement.
-        var subtypePtr: UnsafePointer<Int8>?
-        if CGPDFDictionaryGetName(measure, "Subtype", &subtypePtr), let sp = subtypePtr {
-            guard String(cString: sp) == "GEO" else { return nil }
-        }
+        guard let measure = geoMeasure(in: viewport) else { return nil }
 
         var gptsArr: CGPDFArrayRef?
         guard CGPDFDictionaryGetArray(measure, "GPTS", &gptsArr),
@@ -232,30 +263,32 @@ enum GeoPDFReader {
 
         // GPTS longitudes are relative to GCS prime meridian (Greenwich for
         // the map body, but 145 deg E on some QTopo insets).
-        let primeMeridian = measurePrimeMeridian(measure)
+        guard let primeMeridian = measurePrimeMeridian(measure) else { return nil }
 
         let count = CGPDFArrayGetCount(gpts)
+        guard count >= 6,
+              count <= maximumGeoControlValues,
+              count.isMultiple(of: 2) else { return nil }
         var lats: [Double] = []
         var lons: [Double] = []
         var i = 0
         while i + 1 < count {
             var lat: CGPDFReal = 0, lon: CGPDFReal = 0
             guard CGPDFArrayGetNumber(gpts, i,     &lat),
-                  CGPDFArrayGetNumber(gpts, i + 1, &lon) else { break }
-            lats.append(Double(lat))
-            lons.append(Double(lon) + primeMeridian)
+                  CGPDFArrayGetNumber(gpts, i + 1, &lon) else { return nil }
+            let latitude = Double(lat)
+            let longitude = Double(lon) + primeMeridian
+            guard isEarthCoordinate(latitude: latitude, longitude: longitude) else {
+                return nil
+            }
+            lats.append(latitude)
+            lons.append(longitude)
             i += 2
         }
 
         guard let minLat = lats.min(), let maxLat = lats.max(),
               let minLon = lons.min(), let maxLon = lons.max(),
               minLat != maxLat, minLon != maxLon else { return nil }
-
-        // Sanity: real-Earth values.
-        let lonRange: ClosedRange<Double> = -180.0...180.0
-        let latRange: ClosedRange<Double> = -90.0...90.0
-        guard lonRange.contains(minLon), lonRange.contains(maxLon),
-              latRange.contains(minLat), latRange.contains(maxLat) else { return nil }
 
         return (CLLocationCoordinate2D(latitude: minLat, longitude: minLon),
                 CLLocationCoordinate2D(latitude: maxLat, longitude: maxLon))
@@ -267,9 +300,7 @@ enum GeoPDFReader {
     /// crop the page is rasterised against, keeps the fit and render consistent.
     /// Returns nil if LPTS is absent or points are degenerate.
     private static func viewportAffine(_ viewport: CGPDFDictionaryRef, crop: CGRect) -> AffineTransform2D? {
-        var measureDict: CGPDFDictionaryRef?
-        guard CGPDFDictionaryGetDictionary(viewport, "Measure", &measureDict),
-              let measure = measureDict else { return nil }
+        guard let measure = geoMeasure(in: viewport) else { return nil }
 
         var gptsArr: CGPDFArrayRef?
         var lptsArr: CGPDFArrayRef?
@@ -277,12 +308,30 @@ enum GeoPDFReader {
               CGPDFDictionaryGetArray(measure, "LPTS", &lptsArr), let lpts = lptsArr
         else { return nil }
 
-        let primeMeridian = measurePrimeMeridian(measure)
-        let pairs = min(CGPDFArrayGetCount(gpts), CGPDFArrayGetCount(lpts)) / 2
-        guard pairs >= 3 else { return nil }
+        guard let primeMeridian = measurePrimeMeridian(measure) else { return nil }
+        let gptsCount = CGPDFArrayGetCount(gpts)
+        let lptsCount = CGPDFArrayGetCount(lpts)
+        guard gptsCount == lptsCount,
+              gptsCount >= 6,
+              gptsCount <= maximumGeoControlValues,
+              gptsCount.isMultiple(of: 2) else { return nil }
+        let pairs = gptsCount / 2
 
-        let ox = Double(crop.minX), oy = Double(crop.minY)
-        let cw = Double(crop.width), ch = Double(crop.height)
+        // LPTS are axes within the *ordered* BBox endpoints. Preserve a negative
+        // Y (or X) delta used by raster-style producers instead of normalising
+        // it away through CGRect, while retaining the normalised crop for render.
+        var bboxArr: CGPDFArrayRef?
+        guard CGPDFDictionaryGetArray(viewport, "BBox", &bboxArr),
+              let bbox = bboxArr,
+              let bboxValues = pdfRectangleValues(bbox) else { return nil }
+        let originX = bboxValues[0]
+        let originY = bboxValues[1]
+        let deltaX = bboxValues[2] - bboxValues[0]
+        let deltaY = bboxValues[3] - bboxValues[1]
+        guard deltaX.isFinite, deltaY.isFinite,
+              abs(deltaX) > 1e-9, abs(deltaY) > 1e-9,
+              Double(crop.width).isFinite, Double(crop.height).isFinite,
+              crop.width > 0, crop.height > 0 else { return nil }
         var fiducials: [Fiduciary] = []
         for j in 0..<pairs {
             var lat: CGPDFReal = 0, lon: CGPDFReal = 0
@@ -291,33 +340,90 @@ enum GeoPDFReader {
                   CGPDFArrayGetNumber(gpts, j * 2 + 1, &lon),
                   CGPDFArrayGetNumber(lpts, j * 2,     &nx),
                   CGPDFArrayGetNumber(lpts, j * 2 + 1, &ny) else { return nil }
+            let latitude = Double(lat)
+            let longitude = Double(lon) + primeMeridian
+            let normalX = Double(nx)
+            let normalY = Double(ny)
+            guard isEarthCoordinate(latitude: latitude, longitude: longitude),
+                  normalX.isFinite, normalY.isFinite,
+                  (0.0...1.0).contains(normalX),
+                  (0.0...1.0).contains(normalY) else { return nil }
             fiducials.append(Fiduciary(
-                pdfX: ox + Double(nx) * cw,
-                pdfY: oy + Double(ny) * ch,
+                pdfX: originX + normalX * deltaX,
+                pdfY: originY + normalY * deltaY,
                 mgrs: "",
-                latitude:  Double(lat),
-                longitude: Double(lon) + primeMeridian
+                latitude: latitude,
+                longitude: longitude
             ))
         }
         return try? AffineFitter.fit(fiducials).transform
+    }
+
+    private static let maximumGeoControlValues = 8_192
+    private static let maximumMetadataEntries = 64
+
+    private static func pdfRectangleValues(_ array: CGPDFArrayRef) -> [Double]? {
+        guard CGPDFArrayGetCount(array) == 4 else { return nil }
+        var values: [Double] = []
+        values.reserveCapacity(4)
+        for index in 0..<4 {
+            var number: CGPDFReal = 0
+            guard CGPDFArrayGetNumber(array, index, &number) else { return nil }
+            let value = Double(number)
+            guard value.isFinite,
+                  abs(value) <= maximumSafePDFCoordinateMagnitude else { return nil }
+            values.append(value)
+        }
+        return values
+    }
+
+    private static func geoMeasure(in viewport: CGPDFDictionaryRef) -> CGPDFDictionaryRef? {
+        var measureDict: CGPDFDictionaryRef?
+        guard CGPDFDictionaryGetDictionary(viewport, "Measure", &measureDict),
+              let measure = measureDict else { return nil }
+        var subtypePtr: UnsafePointer<Int8>?
+        guard CGPDFDictionaryGetName(measure, "Subtype", &subtypePtr),
+              let subtypePtr,
+              String(cString: subtypePtr) == "GEO" else { return nil }
+        return measure
     }
 
     /// GPTS longitudes are measured from the GCS prime meridian, almost always
     /// Greenwich (0) but some QTopo insets declare e.g. PRIMEM["...",145.0].
     /// Without adding that offset the longitudes come out ~145 deg too small.
     /// Parses the offset from Measure's /GCS /WKT string.
-    private static func measurePrimeMeridian(_ measure: CGPDFDictionaryRef) -> Double {
+    private static func measurePrimeMeridian(_ measure: CGPDFDictionaryRef) -> Double? {
         var gcsDict: CGPDFDictionaryRef?
+        guard dictionaryHasValue(measure, key: "GCS") else { return 0 }
         guard CGPDFDictionaryGetDictionary(measure, "GCS", &gcsDict),
-              let gcs = gcsDict else { return 0 }
+              let gcs = gcsDict else { return nil }
         var wktRef: CGPDFStringRef?
+        guard dictionaryHasValue(gcs, key: "WKT") else { return 0 }
         guard CGPDFDictionaryGetString(gcs, "WKT", &wktRef), let s = wktRef,
-              let wkt = CGPDFStringCopyTextString(s) as String? else { return 0 }
-        guard let re = try? NSRegularExpression(pattern: #"PRIMEM\["[^"]*",\s*(-?\d+(?:\.\d+)?)"#),
-              let m = re.firstMatch(in: wkt, range: NSRange(wkt.startIndex..., in: wkt)),
-              m.numberOfRanges > 1,
-              let gr = Range(m.range(at: 1), in: wkt) else { return 0 }
-        return Double(wkt[gr]) ?? 0
+              let wkt = CGPDFStringCopyTextString(s) as String? else { return nil }
+        guard wkt.range(of: "PRIMEM", options: .caseInsensitive) != nil else { return 0 }
+        guard let re = try? NSRegularExpression(
+            pattern: #"PRIMEM\s*\[\s*"[^"]*"\s*,\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?)"#,
+            options: .caseInsensitive
+        ),
+        let m = re.firstMatch(in: wkt, range: NSRange(wkt.startIndex..., in: wkt)),
+        m.numberOfRanges > 1,
+        let gr = Range(m.range(at: 1), in: wkt),
+        let value = Double(wkt[gr]),
+        value.isFinite,
+        (-180.0...180.0).contains(value) else { return nil }
+        return value
+    }
+
+    private static func dictionaryHasValue(_ dictionary: CGPDFDictionaryRef, key: String) -> Bool {
+        var object: CGPDFObjectRef?
+        return CGPDFDictionaryGetObject(dictionary, key, &object)
+    }
+
+    private static func isEarthCoordinate(latitude: Double, longitude: Double) -> Bool {
+        latitude.isFinite && longitude.isFinite &&
+            (-90.0...90.0).contains(latitude) &&
+            (-180.0...180.0).contains(longitude)
     }
 
     // MARK: - LGIDict parsing
@@ -328,11 +434,16 @@ enum GeoPDFReader {
     /// fails on strings so we fall back to CGPDFArrayGetString + parse.
     private static func arrayReal(_ arr: CGPDFArrayRef, _ idx: Int) -> Double? {
         var num: CGPDFReal = 0
-        if CGPDFArrayGetNumber(arr, idx, &num) { return Double(num) }
+        if CGPDFArrayGetNumber(arr, idx, &num) {
+            let value = Double(num)
+            return value.isFinite ? value : nil
+        }
         var sRef: CGPDFStringRef?
         if CGPDFArrayGetString(arr, idx, &sRef), let s = sRef,
-           let cf = CGPDFStringCopyTextString(s) as String? {
-            return Double(cf)
+           let cf = CGPDFStringCopyTextString(s) as String?,
+           let value = Double(cf.trimmingCharacters(in: .whitespacesAndNewlines)),
+           value.isFinite {
+            return value
         }
         return nil
     }
@@ -359,8 +470,88 @@ enum GeoPDFReader {
         var n: CGPDFInteger = 0
         // PDF integers can also be encoded as strings in LGIDict.
         if CGPDFDictionaryGetInteger(dict, key, &n) { return Int(n) }
-        if let s = dictString(dict, key) { return Int(s) }
-        return nil
+        guard let value = dictReal(dict, key),
+              value.rounded(.towardZero) == value,
+              value >= Double(Int.min),
+              value <= Double(Int.max) else { return nil }
+        return Int(value)
+    }
+
+    private struct ParsedDatum {
+        let ellipsoid: Ellipsoid
+        let dx: Double
+        let dy: Double
+        let dz: Double
+    }
+
+    private static let knownDatumCodes: Set<String> = [
+        "WE", "WD", "GD", "NA", "OB", "OG", "OS", "EU", "NS", "TC", "CH", "NT", "NF", "KK"
+    ]
+
+    private static func dictReal(_ dictionary: CGPDFDictionaryRef, _ key: String) -> Double? {
+        var number: CGPDFReal = 0
+        if CGPDFDictionaryGetNumber(dictionary, key, &number) {
+            let value = Double(number)
+            return value.isFinite ? value : nil
+        }
+        guard let string = dictString(dictionary, key),
+              let value = Double(string.trimmingCharacters(in: .whitespacesAndNewlines)),
+              value.isFinite else { return nil }
+        return value
+    }
+
+    private static func parseDatum(_ projection: CGPDFDictionaryRef,
+                                   requireExplicit: Bool) -> ParsedDatum? {
+        guard dictionaryHasValue(projection, key: "Datum") else {
+            return requireExplicit
+                ? nil
+                : ParsedDatum(ellipsoid: .wgs84, dx: 0, dy: 0, dz: 0)
+        }
+
+        var datumDictionary: CGPDFDictionaryRef?
+        if CGPDFDictionaryGetDictionary(projection, "Datum", &datumDictionary),
+           let datum = datumDictionary {
+            var ellipsoidDictionary: CGPDFDictionaryRef?
+            guard CGPDFDictionaryGetDictionary(datum, "Ellipsoid", &ellipsoidDictionary),
+                  let ellipsoid = ellipsoidDictionary,
+                  let semiMajorAxis = dictReal(ellipsoid, "SemiMajorAxis"),
+                  let inverseFlattening = dictReal(ellipsoid, "InvFlattening"),
+                  inverseFlattening > 0 else { return nil }
+            let flattening = 1.0 / inverseFlattening
+            guard semiMajorAxis >= 6_000_000,
+                  semiMajorAxis <= 7_000_000,
+                  flattening.isFinite,
+                  flattening > 0,
+                  flattening < 0.01 else { return nil }
+            let sourceEllipsoid = Ellipsoid(a: semiMajorAxis, f: flattening)
+
+            guard dictionaryHasValue(datum, key: "ToWGS84") else {
+                // A non-modern ellipsoid with no translation cannot be placed
+                // safely onto WGS84.
+                guard abs(semiMajorAxis - Ellipsoid.wgs84.a) < 1,
+                      abs(inverseFlattening - 298.257223563) < 0.01 else { return nil }
+                return ParsedDatum(ellipsoid: sourceEllipsoid, dx: 0, dy: 0, dz: 0)
+            }
+
+            var translationDictionary: CGPDFDictionaryRef?
+            guard CGPDFDictionaryGetDictionary(datum, "ToWGS84", &translationDictionary),
+                  let translation = translationDictionary,
+                  let dx = dictReal(translation, "dx"),
+                  let dy = dictReal(translation, "dy"),
+                  let dz = dictReal(translation, "dz") else { return nil }
+            return ParsedDatum(ellipsoid: sourceEllipsoid, dx: dx, dy: dy, dz: dz)
+        }
+
+        guard let rawCode = dictName(projection, "Datum") else { return nil }
+        let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard knownDatumCodes.contains(code) else { return nil }
+        let parameters = DatumShift.params(for: code)
+        return ParsedDatum(
+            ellipsoid: parameters.ellipsoid,
+            dx: parameters.dx,
+            dy: parameters.dy,
+            dz: parameters.dz
+        )
     }
 
     private static func parseLGIDictRaw(url: URL) -> ParsedLGI? {
@@ -380,6 +571,7 @@ enum GeoPDFReader {
         if CGPDFDictionaryGetArray(pageDict!, "LGIDict", &arr),
            let arrRef = arr {
             let count = CGPDFArrayGetCount(arrRef)
+            guard count > 0, count <= maximumMetadataEntries else { return nil }
             for i in 0..<count {
                 var e: CGPDFDictionaryRef?
                 if CGPDFArrayGetDictionary(arrRef, i, &e), let entry = e {
@@ -400,35 +592,44 @@ enum GeoPDFReader {
         NSLog("[GeoPDF] LGIDict: \(entries.count) entries; selected supported entry")
         let entryDict = chosen
 
-        // CTM (PDF user space -> projection coords). 6 numbers, may be strings.
-        var ctm = [Double](repeating: 0, count: 6)
+        // CTM (PDF user space -> projection coords). Exactly 6 finite numbers,
+        // optionally encoded as strings by older ADF/AUSLIG producers.
+        var ctm: [Double]?
         var ctmArr: CGPDFArrayRef?
-        var haveCTM = false
         if CGPDFDictionaryGetArray(entryDict, "CTM", &ctmArr),
            let ctmRef = ctmArr,
-           CGPDFArrayGetCount(ctmRef) >= 6 {
-            haveCTM = true
-            for i in 0..<6 {
-                if let v = arrayReal(ctmRef, i) { ctm[i] = v }
-                else { haveCTM = false; break }
-            }
+           CGPDFArrayGetCount(ctmRef) == 6 {
+            let values = (0..<6).compactMap { arrayReal(ctmRef, $0) }
+            if values.count == 6 { ctm = values }
         }
 
-        // Neatline: array of x,y pairs in PDF user space (may be strings).
+        // Neatline: complete x,y pairs in PDF user space (may be strings).
+        // An explicitly malformed value invalidates the metadata; never use a
+        // valid prefix or silently replace a bad declared neatline with MediaBox.
         var neatlinePts: [CGPoint] = []
         var nlArr: CGPDFArrayRef?
-        if CGPDFDictionaryGetArray(entryDict, "Neatline", &nlArr),
-           let nlRef = nlArr {
+        if dictionaryHasValue(entryDict, key: "Neatline") {
+            guard CGPDFDictionaryGetArray(entryDict, "Neatline", &nlArr),
+                  let nlRef = nlArr else { return nil }
             let count = CGPDFArrayGetCount(nlRef)
-            var i = 0
-            while i + 1 < count {
+            guard count >= 6,
+                  count <= maximumGeoControlValues,
+                  count.isMultiple(of: 2) else { return nil }
+            for i in stride(from: 0, to: count, by: 2) {
                 guard let x = arrayReal(nlRef, i),
-                      let y = arrayReal(nlRef, i + 1) else { break }
+                      let y = arrayReal(nlRef, i + 1),
+                      abs(x) <= maximumSafePDFCoordinateMagnitude,
+                      abs(y) <= maximumSafePDFCoordinateMagnitude else { return nil }
                 neatlinePts.append(CGPoint(x: x, y: y))
-                i += 2
             }
-        }
-        if neatlinePts.isEmpty {
+        } else {
+            let mediaValues = [
+                Double(mediaBox.minX), Double(mediaBox.minY),
+                Double(mediaBox.maxX), Double(mediaBox.maxY)
+            ]
+            guard mediaValues.allSatisfy({
+                $0.isFinite && abs($0) <= maximumSafePDFCoordinateMagnitude
+            }), mediaBox.width > 0, mediaBox.height > 0 else { return nil }
             neatlinePts = [
                 CGPoint(x: mediaBox.minX, y: mediaBox.minY),
                 CGPoint(x: mediaBox.maxX, y: mediaBox.minY),
@@ -443,96 +644,41 @@ enum GeoPDFReader {
         let pdfCrop: CGRect? = {
             guard let minPX = pdfXs.min(), let maxPX = pdfXs.max(),
                   let minPY = pdfYs.min(), let maxPY = pdfYs.max(),
-                  maxPX > minPX, maxPY > minPY else { return nil }
-            return CGRect(x: minPX, y: minPY,
-                          width: maxPX - minPX,
-                          height: maxPY - minPY)
+                  [minPX, maxPX, minPY, maxPY].allSatisfy(\.isFinite),
+                  maxPX > minPX, maxPY > minPY,
+                  (maxPX - minPX).isFinite,
+                  (maxPY - minPY).isFinite else { return nil }
+            let crop = CGRect(x: minPX, y: minPY,
+                              width: maxPX - minPX,
+                              height: maxPY - minPY)
+            return crop.width.isFinite && crop.height.isFinite ? crop : nil
         }()
 
         // Projection. We handle: LL/LongLat (geographic), UT (UTM),
         // TC (Transverse Mercator), LC (Lambert Conformal Conic).
-        // Params read from /Projection; /Display is consulted for the UTM
-        // shortcut (lets TC PDFs whose CentralMeridian matches a standard
-        // UTM zone reuse the NGA UTM helper).
-        var projectionType = "LL"
-        var utmZone: Int = 0
-        var utmHemiName = "N"
-        var centralMeridian: Double = 0
-        var originLatitude:  Double = 0
-        var falseEasting:    Double = 0
-        var falseNorthing:   Double = 0
-        var scaleFactor:     Double = 1.0
-        var stdParallel1:    Double = 0
-        var stdParallel2:    Double = 0
-        // Resolved source datum: ellipsoid + geocentric translation to WGS84.
-        // Populated from either an inline /Datum dict (USGS US Topo and many
-        // OGC GeoPDFs) or a 2-letter /Datum name.
-        var srcEllipsoid = Ellipsoid.wgs84
-        var datumDx = 0.0, datumDy = 0.0, datumDz = 0.0
-
-        // Read a Double that may be encoded as PDF number, PDF string, or via
-        // dictName fallback.
-        func dictReal(_ dict: CGPDFDictionaryRef, _ key: String) -> Double? {
-            var n: CGPDFReal = 0
-            if CGPDFDictionaryGetNumber(dict, key, &n) { return Double(n) }
-            if let s = dictString(dict, key) { return Double(s) }
-            return nil
-        }
-
+        // Missing/malformed projection metadata is crop-only. Projected CRSs
+        // additionally require an explicit, understood source datum.
         var projDict: CGPDFDictionaryRef?
-        if CGPDFDictionaryGetDictionary(entryDict, "Projection", &projDict),
-           let pDict = projDict {
-            if let t = dictName(pDict, "ProjectionType") { projectionType = t }
-            if let z = dictInt(pDict,  "Zone")                { utmZone        = z }
-            if let h = dictName(pDict, "Hemisphere")          { utmHemiName    = h.uppercased() }
-            if let v = dictReal(pDict, "CentralMeridian")     { centralMeridian = v }
-            if let v = dictReal(pDict, "OriginLatitude")      { originLatitude  = v }
-            if let v = dictReal(pDict, "FalseEasting")        { falseEasting    = v }
-            if let v = dictReal(pDict, "FalseNorthing")       { falseNorthing   = v }
-            if let v = dictReal(pDict, "ScaleFactor")         { scaleFactor     = v }
-            if let v = dictReal(pDict, "StandardParallelOne") { stdParallel1    = v }
-            if let v = dictReal(pDict, "StandardParallelTwo") { stdParallel2    = v }
-
-            // Datum: inline /Datum dict carries the source /Ellipsoid
-            // (SemiMajorAxis + InvFlattening) and /ToWGS84 dx/dy/dz translation
-            // directly, which is what USGS US Topo and many OGC GeoPDFs use.
-            // Only when /Datum is a bare 2-letter OGC name do we look it up in
-            // the DatumShift table. Reading embedded params means a legacy-datum
-            // sheet in dict form gets its true 50-250m shift (previously just
-            // fell through to WGS84 identity).
-            var datumDict: CGPDFDictionaryRef?
-            if CGPDFDictionaryGetDictionary(pDict, "Datum", &datumDict), let dDict = datumDict {
-                var ellDict: CGPDFDictionaryRef?
-                if CGPDFDictionaryGetDictionary(dDict, "Ellipsoid", &ellDict), let eDict = ellDict,
-                   let a = dictReal(eDict, "SemiMajorAxis"), a > 0,
-                   let invF = dictReal(eDict, "InvFlattening"), invF > 0 {
-                    srcEllipsoid = Ellipsoid(a: a, f: 1.0 / invF)
-                }
-                var t2w: CGPDFDictionaryRef?
-                if CGPDFDictionaryGetDictionary(dDict, "ToWGS84", &t2w), let tDict = t2w {
-                    datumDx = dictReal(tDict, "dx") ?? 0
-                    datumDy = dictReal(tDict, "dy") ?? 0
-                    datumDz = dictReal(tDict, "dz") ?? 0
-                }
-            } else if let d = dictName(pDict, "Datum") {
-                let p = DatumShift.params(for: d.uppercased())
-                srcEllipsoid = p.ellipsoid
-                datumDx = p.dx; datumDy = p.dy; datumDz = p.dz
-            }
+        guard CGPDFDictionaryGetDictionary(entryDict, "Projection", &projDict),
+              let projectionDictionary = projDict,
+              let rawProjectionType = dictName(projectionDictionary, "ProjectionType") else {
+            NSLog("[GeoPDF] LGIDict has no complete projection - returning crop only")
+            return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
+        }
+        let projectionType = rawProjectionType
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        let isProjected = projectionType != "LL" && projectionType != "LONGLAT"
+        guard let datum = parseDatum(projectionDictionary, requireExplicit: isProjected) else {
+            NSLog("[GeoPDF] LGIDict datum is absent, unknown, or incomplete - returning crop only")
+            return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
         }
 
-        // /Display dict often has the easy UTM mapping (Zone, Hemi) even when
-        // main /Projection is TC. Prefer Display values when set.
+        // /Display may carry the zone/hemisphere for a UTM projection.
         var displayDict: CGPDFDictionaryRef?
-        if CGPDFDictionaryGetDictionary(entryDict, "Display", &displayDict),
-           let dDict = displayDict {
-            if let dt = dictName(dDict, "ProjectionType"), dt == "UT" {
-                if let z = dictInt(dDict, "Zone")  { utmZone = z }
-                if let h = dictName(dDict, "Hemisphere")  { utmHemiName = h.uppercased() }
-            }
-        }
+        _ = CGPDFDictionaryGetDictionary(entryDict, "Display", &displayDict)
 
-        guard haveCTM else {
+        guard let ctm else {
             NSLog("[GeoPDF] LGIDict has no CTM - returning crop only")
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
         }
@@ -544,55 +690,82 @@ enum GeoPDFReader {
             let xx = Double(p.x), yy = Double(p.y)
             return (a * xx + c * yy + e, b * xx + d * yy + f)
         }
+        guard projected.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
+            NSLog("[GeoPDF] LGIDict CTM overflowed - returning crop only")
+            return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
+        }
 
         var lats: [Double] = []
         var lons: [Double] = []
+        var placementControls: [Fiduciary] = []
 
-        // Build a Projection from what we parsed. Inverse runs on the source
-        // datum's ellipsoid (resolved above); DatumShift then removes the datum
-        // offset to land on WGS84.
-        let ellipsoid = srcEllipsoid
+        // Build a fully specified Projection. Inverse runs on the source datum's
+        // ellipsoid; DatumShift then removes its offset to land on WGS84.
+        let ellipsoid = datum.ellipsoid
         let projection: Projection? = {
             switch projectionType {
-            case "LL", "LongLat":
+            case "LL", "LONGLAT":
                 return .longLat
 
-            case "UT":
-                guard utmZone > 0 else { return nil }
-                let h: Hemisphere = (utmHemiName == "S") ? .SOUTH : .NORTH
-                return .utm(zone: utmZone, hemisphere: h, ellipsoid: ellipsoid)
+            case "UT", "UTM":
+                guard let zone = dictInt(projectionDictionary, "Zone")
+                        ?? displayDict.flatMap({ dictInt($0, "Zone") }),
+                      (1...60).contains(zone),
+                      let rawHemisphere = dictName(projectionDictionary, "Hemisphere")
+                        ?? displayDict.flatMap({ dictName($0, "Hemisphere") }) else { return nil }
+                let hemisphere = rawHemisphere
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .uppercased()
+                let isSouthern: Bool
+                switch hemisphere {
+                case "N", "NORTH": isSouthern = false
+                case "S", "SOUTH": isSouthern = true
+                default: return nil
+                }
+                // Do not route through the NGA UTM helper here: it is fixed to
+                // WGS84 and would discard a valid legacy/custom source ellipsoid.
+                return .transverseMercator(
+                    centralMeridian: Double(zone) * 6 - 183,
+                    originLatitude: 0,
+                    falseEasting: 500_000,
+                    falseNorthing: isSouthern ? 10_000_000 : 0,
+                    scaleFactor: 0.9996,
+                    ellipsoid: ellipsoid
+                )
 
             case "TC":
-                // Prefer the UTM shortcut when /Display gave us a zone AND the
-                // TC parameters match a UTM zone (FE 500000, FN 10000000 for
-                // south or 0 for north, k0 0.9996, central meridian = zone
-                // central). For ADF/AUSLIG PDFs this hits.
-                let cmMatchesZone = utmZone > 0 &&
-                    abs(centralMeridian - (Double(utmZone) * 6 - 183)) < 0.01
-                let isStandardUTM = cmMatchesZone &&
-                    abs(falseEasting - 500_000) < 0.5 &&
-                    abs(scaleFactor - 0.9996) < 1e-4
-                if isStandardUTM {
-                    let h: Hemisphere = (utmHemiName == "S") ? .SOUTH : .NORTH
-                    return .utm(zone: utmZone, hemisphere: h, ellipsoid: ellipsoid)
-                }
-                // Otherwise solve the general TM directly with the LGIDict params.
+                guard let centralMeridian = dictReal(projectionDictionary, "CentralMeridian"),
+                      (-180.0...180.0).contains(centralMeridian),
+                      let originLatitude = dictReal(projectionDictionary, "OriginLatitude"),
+                      (-90.0...90.0).contains(originLatitude),
+                      let falseEasting = dictReal(projectionDictionary, "FalseEasting"),
+                      let falseNorthing = dictReal(projectionDictionary, "FalseNorthing"),
+                      let scaleFactor = dictReal(projectionDictionary, "ScaleFactor"),
+                      scaleFactor > 0,
+                      scaleFactor <= 10 else { return nil }
                 return .transverseMercator(
                     centralMeridian: centralMeridian,
                     originLatitude:  originLatitude,
                     falseEasting:    falseEasting,
                     falseNorthing:   falseNorthing,
-                    scaleFactor:     scaleFactor == 0 ? 1.0 : scaleFactor,
+                    scaleFactor:     scaleFactor,
                     ellipsoid:       ellipsoid
                 )
 
             case "LC":
-                // LCC needs two standard parallels. Some encodings omit
-                // StandardParallelTwo for the "1SP" variant, just treat as p2==p1.
-                let p2 = stdParallel2 != 0 ? stdParallel2 : stdParallel1
+                guard let parallelOne = dictReal(projectionDictionary, "StandardParallelOne"),
+                      (-89.999...89.999).contains(parallelOne) else { return nil }
+                let parallelTwo = dictReal(projectionDictionary, "StandardParallelTwo") ?? parallelOne
+                guard (-89.999...89.999).contains(parallelTwo),
+                      let originLatitude = dictReal(projectionDictionary, "OriginLatitude"),
+                      (-89.999...89.999).contains(originLatitude),
+                      let centralMeridian = dictReal(projectionDictionary, "CentralMeridian"),
+                      (-180.0...180.0).contains(centralMeridian),
+                      let falseEasting = dictReal(projectionDictionary, "FalseEasting"),
+                      let falseNorthing = dictReal(projectionDictionary, "FalseNorthing") else { return nil }
                 return .lambertConformalConic(
-                    stdParallel1:    stdParallel1,
-                    stdParallel2:    p2,
+                    stdParallel1:    parallelOne,
+                    stdParallel2:    parallelTwo,
                     originLatitude:  originLatitude,
                     centralMeridian: centralMeridian,
                     falseEasting:    falseEasting,
@@ -620,11 +793,25 @@ enum GeoPDFReader {
             // removes 50-250m offset for legacy datums, whether named by a
             // 2-letter code or carried as an inline /Datum ToWGS84 dict).
             let w = DatumShift.toWGS84(lat: g.lat, lon: g.lon,
-                                       sourceEllipsoid: srcEllipsoid,
-                                       dx: datumDx, dy: datumDy, dz: datumDz)
+                                       sourceEllipsoid: datum.ellipsoid,
+                                       dx: datum.dx, dy: datum.dy, dz: datum.dz)
+            guard w.lat.isFinite, w.lon.isFinite,
+                  (-90.0...90.0).contains(w.lat),
+                  (-180.0...180.0).contains(w.lon) else {
+                NSLog("[GeoPDF] projected corner \(idx) produced an invalid WGS84 coordinate")
+                return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
+            }
             NSLog("[GeoPDF] projected corner \(idx) decoded")
             lats.append(w.lat)
             lons.append(w.lon)
+            let pdfPoint = neatlinePts[idx]
+            placementControls.append(Fiduciary(
+                pdfX: Double(pdfPoint.x),
+                pdfY: Double(pdfPoint.y),
+                mgrs: "",
+                latitude: w.lat,
+                longitude: w.lon
+            ))
         }
 
         guard let minLon = lons.min(), let maxLon = lons.max(),
@@ -644,11 +831,25 @@ enum GeoPDFReader {
             return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
         }
 
+        // The overlay must use the actual CTM/projection placement, never an
+        // axis-aligned stretch of projected bounds. Fit the same PDF→WGS84
+        // affine used by manual and Adobe control points. Over a single topo
+        // sheet projection curvature is tiny; a large residual means metadata
+        // is inconsistent and automatic placement must fail closed.
+        guard let placement = try? AffineFitter.fit(placementControls),
+              placement.crossValidated,
+              placement.rmsMetres.isFinite,
+              placement.rmsMetres <= 50 else {
+            NSLog("[GeoPDF] LGIDict placement fit rejected - crop only")
+            return ParsedLGI(southWest: nil, northEast: nil, pdfCropRect: pdfCrop)
+        }
+
         NSLog("[GeoPDF] LGIDict bounds decoded")
         return ParsedLGI(
             southWest: CLLocationCoordinate2D(latitude: minLat, longitude: minLon),
             northEast: CLLocationCoordinate2D(latitude: maxLat, longitude: maxLon),
-            pdfCropRect: pdfCrop
+            pdfCropRect: pdfCrop,
+            placementAffine: placement.transform
         )
     }
 
@@ -656,13 +857,39 @@ enum GeoPDFReader {
     /// and the PDF isn't a known sheet. Better than not rendering at all.
     static func fallbackBounds(centeredOn camera: CLLocationCoordinate2D,
                                 halfWidthMetres: Double = 5000) -> Bounds {
+        let safeHalfWidth = halfWidthMetres.isFinite && halfWidthMetres > 0
+            ? min(halfWidthMetres, 1_000_000)
+            : 5_000
+        // Web-Mercator has no finite representation at the poles. Clamp an
+        // unavailable/corrupt camera to a safe terrestrial centre rather than
+        // publishing Inf/NaN fallback bounds into the renderer and persistence.
+        let latitude = camera.latitude.isFinite
+            ? min(85, max(-85, camera.latitude))
+            : 0
+        let rawLongitude = camera.longitude.isFinite ? camera.longitude : 0
+        let normalizedLongitude = ((rawLongitude + 180).truncatingRemainder(dividingBy: 360) + 360)
+            .truncatingRemainder(dividingBy: 360) - 180
         let metresPerDegLat = 111_320.0
-        let metresPerDegLon = 111_320.0 * cos(camera.latitude * .pi / 180)
-        let dLat = halfWidthMetres / metresPerDegLat
-        let dLon = halfWidthMetres / metresPerDegLon
+        let metresPerDegLon = 111_320.0 * cos(latitude * .pi / 180)
+        let dLat = safeHalfWidth / metresPerDegLat
+        let dLon = safeHalfWidth / metresPerDegLon
+        let mercatorLatitudeLimit = 85.05112878
+        let centreLatitude = min(
+            mercatorLatitudeLimit - dLat,
+            max(-mercatorLatitudeLimit + dLat, latitude)
+        )
+        // This Bounds representation is non-wrapping, so nudge an antimeridian
+        // fallback just enough to keep both longitudes Earth-valid.
+        let centreLongitude = min(180 - dLon, max(-180 + dLon, normalizedLongitude))
         return Bounds(
-            southWest: CLLocationCoordinate2D(latitude:  camera.latitude - dLat, longitude: camera.longitude - dLon),
-            northEast: CLLocationCoordinate2D(latitude:  camera.latitude + dLat, longitude: camera.longitude + dLon),
+            southWest: CLLocationCoordinate2D(
+                latitude: centreLatitude - dLat,
+                longitude: centreLongitude - dLon
+            ),
+            northEast: CLLocationCoordinate2D(
+                latitude: centreLatitude + dLat,
+                longitude: centreLongitude + dLon
+            ),
             pdfCropRect: nil
         )
     }

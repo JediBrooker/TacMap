@@ -16,11 +16,13 @@ actor TerrainHeatmapService {
         // OPSEC: the heat-map samples the region's DEM from a third party
         // (Open-Meteo), transmitting the coordinates. Opt-in only.
         guard OpsecSettings.shared.onlineLookups else { return nil }
-        guard grid >= 2 else { return nil }
+        guard (2...32).contains(grid) else { return nil }
         let north = region.center.latitude + region.span.latitudeDelta / 2
         let south = region.center.latitude - region.span.latitudeDelta / 2
         let west = region.center.longitude - region.span.longitudeDelta / 2
         let east = region.center.longitude + region.span.longitudeDelta / 2
+        guard [north, south, west, east].allSatisfy(\.isFinite),
+              north <= 90, south >= -90, west >= -180, east <= 180 else { return nil }
 
         var lat = [Double](repeating: 0, count: grid * grid)
         var lon = [Double](repeating: 0, count: grid * grid)
@@ -38,8 +40,15 @@ actor TerrainHeatmapService {
         while i < elev.count {
             guard OpsecSettings.shared.onlineLookups, !Task.isCancelled else { return nil }
             let end = min(i + 100, elev.count)   // Open-Meteo: <=100 points/request
-            let latStr = (i..<end).map { String(lat[$0]) }.joined(separator: ",")
-            let lonStr = (i..<end).map { String(lon[$0]) }.joined(separator: ",")
+            // Coarsen to ~11 m, matching Android. Finer precision is useless
+            // for this 24x24 visualisation and needlessly fingerprints the AO.
+            let locale = Locale(identifier: "en_US_POSIX")
+            let latStr = (i..<end).map {
+                String(format: "%.4f", locale: locale, lat[$0])
+            }.joined(separator: ",")
+            let lonStr = (i..<end).map {
+                String(format: "%.4f", locale: locale, lon[$0])
+            }.joined(separator: ",")
             guard var comps = URLComponents(string: "https://api.open-meteo.com/v1/elevation") else { return nil }
             comps.queryItems = [
                 URLQueryItem(name: "latitude", value: latStr),
@@ -61,6 +70,7 @@ actor TerrainHeatmapService {
             i = end
         }
 
+        guard OpsecSettings.shared.onlineLookups, !Task.isCancelled else { return nil }
         let known = elev.compactMap { $0 }
         guard let lo = known.min(), let hi = known.max() else { return nil }
         let range = (hi - lo) > 1e-6 ? (hi - lo) : 1.0

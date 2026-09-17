@@ -48,6 +48,11 @@ xcodebuild \
   -allowProvisioningUpdates \
   archive
 
+# Inspect the archive itself, not just source files, so a stale/missing privacy
+# manifest or release declaration cannot reach the upload step unnoticed.
+./scripts/verify_release_metadata.sh \
+  "$ARCHIVE_PATH/Products/Applications/TacticalMaps.app"
+
 echo
 echo "✓ Archive ready: $ARCHIVE_PATH"
 echo

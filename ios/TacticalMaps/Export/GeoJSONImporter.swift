@@ -1,6 +1,98 @@
 import Foundation
 import CoreLocation
 
+/// Identity policy used only by user-initiated external imports. Unit Sync
+/// continues to call `GeoJSONImporter.parse` and therefore preserves the
+/// authenticated object ID embedded in its payload.
+struct ExternalImportIdentityResolver {
+    enum ObjectKind: String, Codable, Hashable {
+        case waypoint
+        case drawing
+    }
+
+    enum ResolutionReason: String, Codable, Hashable {
+        case preserved
+        case existingSameKindCollision = "existing_same_kind_collision"
+        case existingCrossTypeCollision = "existing_cross_type_collision"
+        case incomingDuplicate = "incoming_duplicate"
+        case missingID = "missing_id"
+        case invalidID = "invalid_id"
+        case commitTimeCollision = "commit_time_collision"
+    }
+
+    struct Resolution: Codable, Hashable {
+        let caseKey: String
+        let kind: ObjectKind
+        let sourceID: String?
+        let resolvedID: UUID
+        let resolution: ResolutionReason
+    }
+
+    private let existingKinds: [UUID: ObjectKind]
+    private let priorByCaseKey: [String: Resolution]
+    private let makeUUID: () -> UUID
+    private var occupied: Set<UUID>
+    private var acceptedIncoming: Set<UUID> = []
+    private(set) var resolutions: [Resolution] = []
+
+    init(existingWaypointIDs: Set<UUID>,
+         existingDrawingIDs: Set<UUID>,
+         priorResolutions: [Resolution] = [],
+         idFactory: @escaping () -> UUID = UUID.init) {
+        var kinds = Dictionary(uniqueKeysWithValues: existingWaypointIDs.map { ($0, ObjectKind.waypoint) })
+        for id in existingDrawingIDs where kinds[id] == nil { kinds[id] = .drawing }
+        self.existingKinds = kinds
+        self.priorByCaseKey = Dictionary(uniqueKeysWithValues: priorResolutions.map { ($0.caseKey, $0) })
+        self.makeUUID = idFactory
+        self.occupied = existingWaypointIDs.union(existingDrawingIDs)
+    }
+
+    mutating func resolve(sourceID: String?, kind: ObjectKind, caseKey: String) -> UUID {
+        if let prior = priorByCaseKey[caseKey], prior.kind == kind {
+            occupied.insert(prior.resolvedID)
+            acceptedIncoming.insert(prior.resolvedID)
+            resolutions.append(prior)
+            return prior.resolvedID
+        }
+
+        let parsed = sourceID.flatMap(UUID.init(uuidString:))
+        let reason: ResolutionReason
+        let resolved: UUID
+        if sourceID == nil {
+            reason = .missingID
+            resolved = nextUniqueID()
+        } else if parsed == nil {
+            reason = .invalidID
+            resolved = nextUniqueID()
+        } else if let candidate = parsed, let existingKind = existingKinds[candidate] {
+            reason = existingKind == kind ? .existingSameKindCollision : .existingCrossTypeCollision
+            resolved = nextUniqueID()
+        } else if let candidate = parsed, acceptedIncoming.contains(candidate) || occupied.contains(candidate) {
+            reason = .incomingDuplicate
+            resolved = nextUniqueID()
+        } else {
+            reason = .preserved
+            resolved = parsed!
+            occupied.insert(resolved)
+        }
+
+        acceptedIncoming.insert(resolved)
+        resolutions.append(Resolution(caseKey: caseKey,
+                                      kind: kind,
+                                      sourceID: sourceID,
+                                      resolvedID: resolved,
+                                      resolution: reason))
+        return resolved
+    }
+
+    private mutating func nextUniqueID() -> UUID {
+        while true {
+            let candidate = makeUUID()
+            if occupied.insert(candidate).inserted { return candidate }
+        }
+    }
+}
+
 /// Parses a GeoJSON FeatureCollection back into domain objects.
 ///
 /// Round-trips our own export via `tacticalmaps:*` properties. For foreign
@@ -15,7 +107,7 @@ enum GeoJSONImporter {
     private static let maxJSONNodes = 300_000
     private static let parseDeadline: TimeInterval = 4
 
-    struct Result {
+    struct Result: Codable {
         var waypoints: [Waypoint] = []
         var drawings:  [DrawingShape] = []
         /// Layers from the import that dont exist in the store yet.
@@ -24,6 +116,12 @@ enum GeoJSONImporter {
         /// Features skipped b/c coordinates were non-finite or out of range.
         /// Surfaced in the import summary so we don't silently drop stuff.
         var invalidSkipped: Int = 0
+    }
+
+    struct ExternalBatch: Codable {
+        let batchKey: String
+        let result: Result
+        let identityResolutions: [ExternalImportIdentityResolver.Resolution]
     }
 
     /// True if a single lon/lat pair is finite and in range.
@@ -70,6 +168,52 @@ enum GeoJSONImporter {
     static func parse(_ data: Data,
                       existingLayers: [DrawingLayer],
                       fallbackLayerID: UUID) throws -> Result {
+        try parseCore(data,
+                      existingLayers: existingLayers,
+                      fallbackLayerID: fallbackLayerID,
+                      preserveExternalLayerIDs: false,
+                      resolveExternalID: nil)
+    }
+
+    /// Parses a user-selected file under the external-import identity policy.
+    /// Layer IDs are deliberately absent from the occupied object set.
+    static func parseExternal(_ data: Data,
+                              existingLayers: [DrawingLayer],
+                              fallbackLayerID: UUID,
+                              existingWaypointIDs: Set<UUID>,
+                              existingDrawingIDs: Set<UUID>,
+                              batchKey: String,
+                              priorResolutions: [ExternalImportIdentityResolver.Resolution] = [],
+                              idFactory: @escaping () -> UUID = UUID.init) throws -> ExternalBatch {
+        var resolver = ExternalImportIdentityResolver(
+            existingWaypointIDs: existingWaypointIDs,
+            existingDrawingIDs: existingDrawingIDs,
+            priorResolutions: priorResolutions,
+            idFactory: idFactory
+        )
+        let parsed = try parseCore(
+            data,
+            existingLayers: existingLayers,
+            fallbackLayerID: fallbackLayerID,
+            preserveExternalLayerIDs: true,
+            resolveExternalID: { sourceID, kind, featureIndex in
+                resolver.resolve(sourceID: sourceID,
+                                 kind: kind,
+                                 caseKey: "feature-\(featureIndex)")
+            }
+        )
+        return ExternalBatch(batchKey: batchKey,
+                             result: parsed,
+                             identityResolutions: resolver.resolutions)
+    }
+
+    private static func parseCore(
+        _ data: Data,
+        existingLayers: [DrawingLayer],
+        fallbackLayerID: UUID,
+        preserveExternalLayerIDs: Bool,
+        resolveExternalID: ((String?, ExternalImportIdentityResolver.ObjectKind, Int) -> UUID)?
+    ) throws -> Result {
         guard data.count <= maxInputBytes else { throw ImportError.limitExceeded("file is over 16 MB") }
         let deadline = Date().addingTimeInterval(parseDeadline)
         guard let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -87,7 +231,7 @@ enum GeoJSONImporter {
         var layersByID = Dictionary(uniqueKeysWithValues: existingLayers.map { ($0.id.uuidString, $0) })
         var coordinateCount = 0
 
-        for feature in features {
+        for (featureIndex, feature) in features.enumerated() {
             if Date() > deadline { throw ImportError.limitExceeded("parsing took too long") }
             if withUnsafeCurrentTask(body: { $0?.isCancelled ?? false }) { throw ImportError.cancelled }
             guard let geometry = feature["geometry"] as? [String: Any],
@@ -108,46 +252,82 @@ enum GeoJSONImporter {
                 props: props,
                 existingLayersByID: &layersByID,
                 newLayers: &result.newLayers,
-                fallback: fallbackLayerID
+                fallback: fallbackLayerID,
+                preserveValidID: preserveExternalLayerIDs
             )
 
             switch category {
             case "drawing":
+                let id = resolvedObjectID(feature: feature,
+                                          kind: .drawing,
+                                          featureIndex: featureIndex,
+                                          external: resolveExternalID)
                 if let shape = parseDrawing(feature: feature,
                                             geometry: geometry,
                                             geomType: geomType,
                                             props: props,
-                                            layerID: layerID) {
+                                            layerID: layerID,
+                                            id: id) {
                     result.drawings.append(shape)
                 }
             case "military", "controlMeasure", "generic", "marker":
-                if geomType == "Point",
-                   let wp = parseWaypoint(feature: feature,
-                                          geometry: geometry,
-                                          props: props,
-                                          category: category,
-                                          layerID: layerID) {
-                    result.waypoints.append(wp)
+                if geomType == "Point" {
+                    let id = resolvedObjectID(feature: feature,
+                                              kind: .waypoint,
+                                              featureIndex: featureIndex,
+                                              external: resolveExternalID)
+                    if let wp = parseWaypoint(feature: feature,
+                                              geometry: geometry,
+                                              props: props,
+                                              category: category,
+                                              layerID: layerID,
+                                              id: id) {
+                        result.waypoints.append(wp)
+                    }
                 }
             default:
                 // Foreign GeoJSON - just classify by geometry type.
                 if geomType == "Point" {
+                    let id = resolvedObjectID(feature: feature,
+                                              kind: .waypoint,
+                                              featureIndex: featureIndex,
+                                              external: resolveExternalID)
                     if let wp = parseGenericPoint(feature: feature,
                                                   geometry: geometry,
                                                   props: props,
-                                                  layerID: layerID) {
+                                                  layerID: layerID,
+                                                  id: id) {
                         result.waypoints.append(wp)
                     }
-                } else if let shape = parseDrawing(feature: feature,
-                                                   geometry: geometry,
-                                                   geomType: geomType,
-                                                   props: props,
-                                                   layerID: layerID) {
-                    result.drawings.append(shape)
+                } else {
+                    let id = resolvedObjectID(feature: feature,
+                                              kind: .drawing,
+                                              featureIndex: featureIndex,
+                                              external: resolveExternalID)
+                    if let shape = parseDrawing(feature: feature,
+                                                geometry: geometry,
+                                                geomType: geomType,
+                                                props: props,
+                                                layerID: layerID,
+                                                id: id) {
+                        result.drawings.append(shape)
+                    }
                 }
             }
         }
         return result
+    }
+
+    private static func resolvedObjectID(
+        feature: [String: Any],
+        kind: ExternalImportIdentityResolver.ObjectKind,
+        featureIndex: Int,
+        external: ((String?, ExternalImportIdentityResolver.ObjectKind, Int) -> UUID)?
+    ) -> UUID {
+        let sourceID = feature["id"] as? String
+        return external?(sourceID, kind, featureIndex)
+            ?? sourceID.flatMap(UUID.init(uuidString:))
+            ?? UUID()
     }
 
     private static func validateStructure(_ value: Any, depth: Int, nodes: inout Int) throws {
@@ -199,7 +379,8 @@ enum GeoJSONImporter {
     private static func resolveLayerID(props: [String: Any],
                                        existingLayersByID: inout [String: DrawingLayer],
                                        newLayers: inout [DrawingLayer],
-                                       fallback: UUID) -> UUID {
+                                       fallback: UUID,
+                                       preserveValidID: Bool) -> UUID {
         let idStr = (props["tacticalmaps:layer_id"] as? String)
             ?? (props["layer_id"] as? String)
         // Case-insensitive id match (Android lowercase vs iOS uppercase UUIDs).
@@ -207,12 +388,23 @@ enum GeoJSONImporter {
            let layer = existingLayersByID.first(where: { $0.key.caseInsensitiveCompare(idStr) == .orderedSame })?.value {
             return layer.id
         }
+        let name = (props["tacticalmaps:layer"] as? String)
+            ?? (props["layer_name"] as? String)
+        if preserveValidID,
+           let idStr,
+           let uuid = UUID(uuidString: idStr) {
+            let color = (props["tacticalmaps:layer_color"] as? String)
+                ?? (props["layer_color"] as? String)
+                ?? "#FFA500"
+            let layer = DrawingLayer(id: uuid, name: name ?? "Imported", defaultColorHex: color)
+            existingLayersByID[uuid.uuidString] = layer
+            newLayers.append(layer)
+            return uuid
+        }
         // Before minting a new layer for an unknown id, try to adopt an existing
         // one with the same name. Otherwise devices with default layers under
         // different per-install ids proliferate duplicate "Friendly"/"Enemy"
         // layers on every import/sync. Ask me how I know.
-        let name = (props["tacticalmaps:layer"] as? String)
-            ?? (props["layer_name"] as? String)
         if let name,
            let match = existingLayersByID.values.first(where: { $0.name == name }) {
             return match.id
@@ -236,7 +428,8 @@ enum GeoJSONImporter {
                                      geometry: [String: Any],
                                      geomType: String,
                                      props: [String: Any],
-                                     layerID: UUID) -> DrawingShape? {
+                                     layerID: UUID,
+                                     id: UUID) -> DrawingShape? {
         let (kind, coords): (DrawingKind, [Coordinate2D])
         switch geomType {
         case "Point":
@@ -295,7 +488,6 @@ enum GeoJSONImporter {
 
         let name = props["name"] as? String
         let notes = props["description"] as? String
-        let id = (feature["id"] as? String).flatMap { UUID(uuidString: $0) } ?? UUID()
         let createdAt = parseDate(props["tacticalmaps:created_at"]) ?? parseDate(props["created_at"])
 
         return DrawingShape(
@@ -335,15 +527,14 @@ enum GeoJSONImporter {
                                       geometry: [String: Any],
                                       props: [String: Any],
                                       category: String?,
-                                      layerID: UUID) -> Waypoint? {
+                                      layerID: UUID,
+                                      id: UUID) -> Waypoint? {
         guard let c = geometry["coordinates"] as? [Double], c.count >= 2 else { return nil }
         let coord = CLLocationCoordinate2D(latitude: c[1], longitude: c[0])
         let name = (props["name"] as? String) ?? "Imported"
         let notes = (props["description"] as? String) ?? (props["notes"] as? String)
         let elevation = boundedDouble(props["tacticalmaps:elevation_m"], -12_000...100_000)
             ?? boundedDouble(props["elevation_m"], -12_000...100_000)
-        let id = (feature["id"] as? String).flatMap { UUID(uuidString: $0) } ?? UUID()
-
         let kind: WaypointKind
         switch category {
         case "military":
@@ -391,6 +582,14 @@ enum GeoJSONImporter {
             ?? 1
         let taskColor = (props["tacticalmaps:task_color"] as? String)
             .flatMap { TaskColor(rawValue: $0.lowercased()) } ?? .black
+        let higherFormation = UnitAmplifierText.normalized(
+            props["tacticalmaps:higher_formation"] as? String,
+            maximumLength: UnitAmplifierText.higherFormationMaxLength)
+        let uniqueIdentifier = UnitAmplifierText.normalized(
+            props["tacticalmaps:unique_identifier"] as? String,
+            maximumLength: UnitAmplifierText.uniqueIdentifierMaxLength)
+        let reinforcementStatus = (props["tacticalmaps:reinforcement_status"] as? String)
+            .flatMap { ReinforcementStatus(rawValue: $0.lowercased()) } ?? .none
         let createdAt = parseDate(props["tacticalmaps:created_at"]) ?? parseDate(props["created_at"])
         return Waypoint(id: id,
                         name: name,
@@ -402,6 +601,9 @@ enum GeoJSONImporter {
                         scaleX: scaleX,
                         scaleY: scaleY,
                         taskColor: taskColor,
+                        higherFormation: higherFormation,
+                        uniqueIdentifier: uniqueIdentifier,
+                        reinforcementStatus: reinforcementStatus,
                         layerID: layerID,
                         createdAt: createdAt ?? .now)
     }
@@ -409,12 +611,14 @@ enum GeoJSONImporter {
     private static func parseGenericPoint(feature: [String: Any],
                                           geometry: [String: Any],
                                           props: [String: Any],
-                                          layerID: UUID) -> Waypoint? {
+                                          layerID: UUID,
+                                          id: UUID) -> Waypoint? {
         return parseWaypoint(feature: feature,
                              geometry: geometry,
                              props: props,
                              category: "generic",
-                             layerID: layerID)
+                             layerID: layerID,
+                             id: id)
     }
 
     private static func doubleValue(_ any: Any?) -> Double? {
@@ -435,5 +639,249 @@ enum GeoJSONImporter {
         if let value = any as? NSNumber { return value.boolValue }
         if let value = any as? String { return Bool(value) }
         return nil
+    }
+}
+
+struct ExternalImportCommitProgress {
+    var batch: GeoJSONImporter.ExternalBatch
+    var waypointStoreCommitted = false
+    var drawingStoreCommitted = false
+    var waypointCommit: BatchImportCommit?
+    var drawingCommit: DrawingBatchImportCommit?
+}
+
+struct ExternalImportCommitReport {
+    enum State: Equatable {
+        case completed
+        case failedBeforeAnyStore
+        case partiallyCommitted
+    }
+
+    let state: State
+    let progress: ExternalImportCommitProgress
+    let message: String
+
+    var insertedWaypointCount: Int { progress.waypointCommit?.insertedCount ?? 0 }
+    var skippedWaypointCount: Int { progress.waypointCommit?.skippedExistingCount ?? 0 }
+    var insertedDrawingCount: Int { progress.drawingCommit?.insertedDrawingCount ?? 0 }
+    var skippedDrawingCount: Int { progress.drawingCommit?.skippedExistingDrawingCount ?? 0 }
+}
+
+/// Coordinates the intentionally non-atomic two-store import. The waypoint
+/// store is committed first, and progress retains the already resolved batch
+/// so a drawing-store failure can be retried without reparsing or reminting.
+@MainActor
+enum ExternalImportCommitter {
+    static func attempt(_ initial: ExternalImportCommitProgress,
+                        waypointStore: WaypointStore,
+                        drawingStore: DrawingStore,
+                        idFactory: () -> UUID = UUID.init) -> ExternalImportCommitReport {
+        var progress = reconcileLiveCollisions(
+            initial,
+            waypointStore: waypointStore,
+            drawingStore: drawingStore,
+            idFactory: idFactory
+        )
+        let parsed = progress.batch.result
+
+        if !progress.waypointStoreCommitted {
+            do {
+                progress.waypointCommit = try waypointStore.importBatch(
+                    parsed.waypoints,
+                    batchKey: progress.batch.batchKey
+                )
+                progress.waypointStoreCommitted = true
+            } catch {
+                return ExternalImportCommitReport(
+                    state: .failedBeforeAnyStore,
+                    progress: progress,
+                    message: "No imported mission objects were saved. \(error.localizedDescription)"
+                )
+            }
+        }
+
+        if !progress.drawingStoreCommitted {
+            do {
+                progress.drawingCommit = try drawingStore.importBatch(
+                    layers: parsed.newLayers,
+                    drawings: parsed.drawings,
+                    batchKey: progress.batch.batchKey
+                )
+                progress.drawingStoreCommitted = true
+            } catch {
+                let waypointCommit = progress.waypointCommit
+                    ?? BatchImportCommit(insertedCount: 0, skippedExistingCount: 0)
+                let handledWaypointCount = waypointCommit.insertedCount
+                    + waypointCommit.skippedExistingCount
+                let partial = handledWaypointCount > 0 && progress.waypointStoreCommitted
+                let prefix = partial
+                    ? "Waypoint store committed \(waypointCommit.insertedCount) new and skipped \(waypointCommit.skippedExistingCount) already-present object\(handledWaypointCount == 1 ? "" : "s"), but drawings and their layers were not saved. Retry will reuse the reconciled object IDs and will not duplicate the saved waypoints."
+                    : "No imported mission objects were saved."
+                return ExternalImportCommitReport(
+                    state: partial ? .partiallyCommitted : .failedBeforeAnyStore,
+                    progress: progress,
+                    message: "\(prefix) \(error.localizedDescription)"
+                )
+            }
+        }
+
+        return ExternalImportCommitReport(
+            state: .completed,
+            progress: progress,
+            message: completionMessage(progress)
+        )
+    }
+
+    private struct ObjectKey: Hashable {
+        let kind: ExternalImportIdentityResolver.ObjectKind
+        let id: UUID
+    }
+
+    /// Parsing runs off-main, so local or Sync mutations can land before the
+    /// MainActor commit. Reconcile only the still-uncommitted half against the
+    /// live global namespace, in original input order, and retain every remint
+    /// in the batch used by later retries.
+    private static func reconcileLiveCollisions(
+        _ initial: ExternalImportCommitProgress,
+        waypointStore: WaypointStore,
+        drawingStore: DrawingStore,
+        idFactory: () -> UUID
+    ) -> ExternalImportCommitProgress {
+        var progress = initial
+        guard !progress.waypointStoreCommitted || !progress.drawingStoreCommitted else {
+            return progress
+        }
+
+        var occupied = Set(waypointStore.waypoints.map(\.id))
+            .union(drawingStore.shapes.map(\.id))
+        var replacements: [ObjectKey: UUID] = [:]
+        var resolutions = progress.batch.identityResolutions
+
+        func isUncommitted(_ kind: ExternalImportIdentityResolver.ObjectKind) -> Bool {
+            switch kind {
+            case .waypoint: return !progress.waypointStoreCommitted
+            case .drawing: return !progress.drawingStoreCommitted
+            }
+        }
+
+        func nextUniqueID() -> UUID {
+            while true {
+                let candidate = idFactory()
+                if occupied.insert(candidate).inserted { return candidate }
+            }
+        }
+
+        for index in resolutions.indices where isUncommitted(resolutions[index].kind) {
+            let resolution = resolutions[index]
+            let key = ObjectKey(kind: resolution.kind, id: resolution.resolvedID)
+            let resolvedID: UUID
+            if occupied.contains(resolution.resolvedID) {
+                resolvedID = nextUniqueID()
+                resolutions[index] = ExternalImportIdentityResolver.Resolution(
+                    caseKey: resolution.caseKey,
+                    kind: resolution.kind,
+                    sourceID: resolution.sourceID,
+                    resolvedID: resolvedID,
+                    resolution: .commitTimeCollision
+                )
+            } else {
+                occupied.insert(resolution.resolvedID)
+                resolvedID = resolution.resolvedID
+            }
+            replacements[key] = resolvedID
+        }
+
+        // Hand-built batches in tests and future importers may not carry an
+        // identity record. Reconcile those objects after the ordered records.
+        if !progress.waypointStoreCommitted {
+            for waypoint in progress.batch.result.waypoints {
+                let key = ObjectKey(kind: .waypoint, id: waypoint.id)
+                guard replacements[key] == nil else { continue }
+                if occupied.contains(waypoint.id) {
+                    replacements[key] = nextUniqueID()
+                } else {
+                    occupied.insert(waypoint.id)
+                    replacements[key] = waypoint.id
+                }
+            }
+        }
+        if !progress.drawingStoreCommitted {
+            for drawing in progress.batch.result.drawings {
+                let key = ObjectKey(kind: .drawing, id: drawing.id)
+                guard replacements[key] == nil else { continue }
+                if occupied.contains(drawing.id) {
+                    replacements[key] = nextUniqueID()
+                } else {
+                    occupied.insert(drawing.id)
+                    replacements[key] = drawing.id
+                }
+            }
+        }
+
+        var result = progress.batch.result
+        result.waypoints = result.waypoints.map { waypoint in
+            guard let id = replacements[ObjectKey(kind: .waypoint, id: waypoint.id)],
+                  id != waypoint.id else { return waypoint }
+            return Waypoint(id: id,
+                            name: waypoint.name,
+                            notes: waypoint.notes,
+                            latitude: waypoint.latitude,
+                            longitude: waypoint.longitude,
+                            elevation: waypoint.elevation,
+                            kind: waypoint.kind,
+                            rotation: waypoint.rotation,
+                            scaleX: waypoint.scaleX,
+                            scaleY: waypoint.scaleY,
+                            taskColor: waypoint.taskColor,
+                            higherFormation: waypoint.higherFormation,
+                            uniqueIdentifier: waypoint.uniqueIdentifier,
+                            reinforcementStatus: waypoint.reinforcementStatus,
+                            layerID: waypoint.layerID,
+                            createdAt: waypoint.createdAt)
+        }
+        result.drawings = result.drawings.map { drawing in
+            guard let id = replacements[ObjectKey(kind: .drawing, id: drawing.id)],
+                  id != drawing.id else { return drawing }
+            return DrawingShape(id: id,
+                                name: drawing.name,
+                                notes: drawing.notes,
+                                kind: drawing.kind,
+                                coordinates: drawing.coordinates,
+                                style: drawing.style,
+                                createdAt: drawing.createdAt,
+                                layerID: drawing.layerID,
+                                rotation: drawing.rotation,
+                                scaleX: drawing.scaleX,
+                                scaleY: drawing.scaleY)
+        }
+        progress.batch = GeoJSONImporter.ExternalBatch(
+            batchKey: progress.batch.batchKey,
+            result: result,
+            identityResolutions: resolutions
+        )
+        return progress
+    }
+
+    private static func completionMessage(_ progress: ExternalImportCommitProgress) -> String {
+        let waypoint = progress.waypointCommit
+            ?? BatchImportCommit(insertedCount: 0, skippedExistingCount: 0)
+        let drawing = progress.drawingCommit
+            ?? DrawingBatchImportCommit(insertedLayerCount: 0,
+                                        insertedDrawingCount: 0,
+                                        skippedExistingDrawingCount: 0)
+        let skipped = waypoint.skippedExistingCount + drawing.skippedExistingDrawingCount
+        var message = "Imported \(waypoint.insertedCount) new waypoint"
+            + "\(waypoint.insertedCount == 1 ? "" : "s") and "
+            + "\(drawing.insertedDrawingCount) new drawing"
+            + "\(drawing.insertedDrawingCount == 1 ? "" : "s")"
+        if drawing.insertedLayerCount > 0 {
+            message += " across \(drawing.insertedLayerCount) new layer"
+                + "\(drawing.insertedLayerCount == 1 ? "" : "s")"
+        }
+        if skipped > 0 {
+            message += "; skipped \(skipped) already-present object"
+                + "\(skipped == 1 ? "" : "s")"
+        }
+        return message + "."
     }
 }

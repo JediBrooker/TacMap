@@ -21,21 +21,21 @@ on:
 jobs:
   build:
     name: Test and build for iPhone Simulator
-    runs-on: macos-15
+    # Apple requires the iOS 26 SDK for App Store uploads from 28 April 2026.
+    # GitHub's official macos-26 arm64 image is GA and carries Xcode 26.
+    runs-on: macos-26
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Select latest Xcode
+      - name: Require Xcode 26
         shell: bash
         run: |
           set -euo pipefail
-          XCODE=$(find /Applications -maxdepth 1 -type d -name 'Xcode_16*.app' -print | sort -V | tail -1)
-          XCODE=${XCODE:-/Applications/Xcode.app}
-          test -d "$XCODE/Contents/Developer"
-          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          xcodebuild -version | grep -Eq '^Xcode 26([.]|$)'
 
       - name: Xcode + Simulator runtime info
         shell: bash
@@ -109,8 +109,9 @@ jobs:
             -destination "generic/platform=iOS Simulator" \
             -clonedSourcePackagesDirPath /tmp/spm-cache \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY=- \
+            PROVISIONING_PROFILE_SPECIFIER= \
             build 2>&1 | tee build.log | xcbeautify --renderer github-actions
 
       - name: Upload build log on failure
@@ -151,8 +152,6 @@ jobs:
             -only-testing:TacticalMapsTests \
             -parallel-testing-enabled NO \
             -resultBundlePath TestResults.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
             test 2>&1 | tee test.log | xcbeautify --renderer github-actions
 
       - name: Run PDF picker smoke test (iPhone Simulator)
@@ -183,9 +182,29 @@ jobs:
             -only-testing:TacticalMapsUITests/PDFPickerSmokeTests \
             -parallel-testing-enabled NO \
             -resultBundlePath PDFSmokeResults.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
             test 2>&1 | tee pdf-smoke-test.log | xcbeautify --renderer github-actions
+
+      - name: Build clean installable Simulator app
+        working-directory: ios
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project TacticalMaps.xcodeproj \
+            -scheme TacticalMaps \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -clonedSourcePackagesDirPath /tmp/spm-cache \
+            -derivedDataPath build/installable \
+            build 2>&1 | tee installable-build.log | xcbeautify --renderer github-actions
+
+      - name: Verify installable Simulator signature
+        working-directory: ios
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/verify_simulator_app.sh \
+            build/installable/Build/Products/Debug-iphonesimulator/TacticalMaps.app
 
       - name: Upload test diagnostics on failure
         if: failure()
@@ -205,5 +224,5 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: TacticalMaps-iOS-debug
-          path: ios/build/Build/Products/Debug-iphonesimulator/TacticalMaps.app
+          path: ios/build/installable/Build/Products/Debug-iphonesimulator/TacticalMaps.app
           retention-days: 14

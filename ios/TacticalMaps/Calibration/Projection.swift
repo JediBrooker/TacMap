@@ -165,12 +165,29 @@ enum Projection {
     func inverse(easting x: Double, northing y: Double) -> (lat: Double, lon: Double)? {
         switch self {
         case .longLat:
+            guard y.isFinite, x.isFinite,
+                  (-90.0...90.0).contains(y),
+                  (-180.0...180.0).contains(x) else { return nil }
             return (y, x)
 
-        case .utm(let zone, let hemisphere, _):
-            let u = UTM(zone, hemisphere, x, y)
-            let p = u.toPoint()
-            return (p.latitude, p.longitude)
+        case .utm(let zone, let hemisphere, let ellipsoid):
+            guard (1...60).contains(zone) else { return nil }
+            let falseNorthing: Double
+            switch hemisphere {
+            case .NORTH: falseNorthing = 0
+            case .SOUTH: falseNorthing = 10_000_000
+            @unknown default: return nil
+            }
+            return tmInverse(
+                x: x,
+                y: y,
+                centralMeridian: Double(zone) * 6 - 183,
+                originLatitude: 0,
+                falseEasting: 500_000,
+                falseNorthing: falseNorthing,
+                scaleFactor: 0.9996,
+                ellipsoid: ellipsoid
+            )
 
         case .transverseMercator(let lon0, let phi0, let fe, let fn, let k0, let ell):
             return tmInverse(x: x, y: y,
@@ -197,6 +214,18 @@ enum Projection {
                             falseNorthing: Double,
                             scaleFactor: Double,
                             ellipsoid: Ellipsoid) -> (lat: Double, lon: Double)? {
+        guard x.isFinite, y.isFinite,
+              centralMeridian.isFinite,
+              (-180.0...180.0).contains(centralMeridian),
+              originLatitude.isFinite,
+              (-90.0...90.0).contains(originLatitude),
+              falseEasting.isFinite, falseNorthing.isFinite,
+              scaleFactor.isFinite, scaleFactor > 0, scaleFactor <= 10,
+              ellipsoid.a.isFinite,
+              (6_000_000.0...7_000_000.0).contains(ellipsoid.a),
+              ellipsoid.f.isFinite, ellipsoid.f > 0, ellipsoid.f < 0.01 else {
+            return nil
+        }
         let a   = ellipsoid.a
         let e2  = ellipsoid.e2
         let eD2 = ellipsoid.eDash2
@@ -232,6 +261,9 @@ enum Projection {
         let C1 = eD2 * cP1*cP1
         let R1 = a * (1 - e2) / pow(onemE2sin2, 1.5)
         let D  = xE / (N1 * k0)
+        // The inverse series is not trustworthy far outside a TM zone. It can
+        // otherwise return finite but geographically false coordinates.
+        guard D.isFinite, abs(D) <= 1 else { return nil }
         let D2 = D*D, D3 = D2*D, D4 = D2*D2, D5 = D4*D, D6 = D4*D2
 
         let phi = phi1 - (N1 * tP1 / R1) * (
@@ -246,7 +278,9 @@ enum Projection {
 
         let latDeg = phi * 180 / .pi
         let lonDeg = lam * 180 / .pi
-        guard latDeg.isFinite, lonDeg.isFinite else { return nil }
+        guard latDeg.isFinite, lonDeg.isFinite,
+              (-90.0...90.0).contains(latDeg),
+              (-180.0...180.0).contains(lonDeg) else { return nil }
         return (latDeg, lonDeg)
     }
 
@@ -261,6 +295,21 @@ enum Projection {
                              falseEasting: Double,
                              falseNorthing: Double,
                              ellipsoid: Ellipsoid) -> (lat: Double, lon: Double)? {
+        guard x.isFinite, y.isFinite,
+              stdParallel1.isFinite,
+              (-89.999...89.999).contains(stdParallel1),
+              stdParallel2.isFinite,
+              (-89.999...89.999).contains(stdParallel2),
+              originLatitude.isFinite,
+              (-89.999...89.999).contains(originLatitude),
+              centralMeridian.isFinite,
+              (-180.0...180.0).contains(centralMeridian),
+              falseEasting.isFinite, falseNorthing.isFinite,
+              ellipsoid.a.isFinite,
+              (6_000_000.0...7_000_000.0).contains(ellipsoid.a),
+              ellipsoid.f.isFinite, ellipsoid.f > 0, ellipsoid.f < 0.01 else {
+            return nil
+        }
         let a   = ellipsoid.a
         let e   = ellipsoid.e
         let e2  = ellipsoid.e2
@@ -289,10 +338,11 @@ enum Projection {
         } else {
             n = (log(m1) - log(m2)) / (log(t1) - log(t2))
         }
-        guard n != 0 else { return nil }
+        guard n.isFinite, abs(n) > 1e-15 else { return nil }
 
         let F = m1 / (n * pow(t1, n))
         let rho0 = a * F * pow(t0, n)
+        guard F.isFinite, rho0.isFinite else { return nil }
 
         let xE = x - falseEasting
         let yN = y - falseNorthing
@@ -300,10 +350,11 @@ enum Projection {
         // rho carries the sign of n so southern-origin charts still resolve.
         let dy = rho0 - yN
         let rho = (n >= 0 ? 1.0 : -1.0) * sqrt(xE*xE + dy*dy)
-        guard rho != 0 else { return nil }
+        guard rho.isFinite, rho != 0 else { return nil }
 
         let theta = atan2((n >= 0 ? xE : -xE), (n >= 0 ? dy : -dy))
         let tValue = pow(rho / (a * F), 1.0 / n)
+        guard tValue.isFinite, tValue > 0 else { return nil }
 
         // Iterate Snyder eq. 15-9 until convergence.
         var phi = .pi/2 - 2 * atan(tValue)
@@ -317,7 +368,12 @@ enum Projection {
         }
 
         let lam = theta / n + lon0
-        return (phi * 180 / .pi, lam * 180 / .pi)
+        let latitude = phi * 180 / .pi
+        let longitude = lam * 180 / .pi
+        guard latitude.isFinite, longitude.isFinite,
+              (-90.0...90.0).contains(latitude),
+              (-180.0...180.0).contains(longitude) else { return nil }
+        return (latitude, longitude)
     }
 
     // MARK: - Meridional arc (shared)

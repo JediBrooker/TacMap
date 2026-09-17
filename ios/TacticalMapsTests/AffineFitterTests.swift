@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import CoreLocation
 @testable import TacticalMaps
 
 /// Fiduciary calibration is the highest-stakes math in the app - a sign
@@ -123,5 +124,118 @@ final class AffineFitterTests: XCTestCase {
     func testInverted_singularReturnsNil() {
         let singular = AffineTransform2D(a: 0, b: 0, c: 1, d: 0, e: 0, f: 2)
         XCTAssertNil(singular.inverted())
+    }
+
+    func testFit_rejectsMaliciousNonFiniteAndExtremeControlPoints() {
+        let safe = [
+            fiduciary(x: 0, y: 0, using: known),
+            fiduciary(x: 1000, y: 0, using: known),
+            fiduciary(x: 0, y: 800, using: known),
+        ]
+        var nan = safe
+        nan[0].pdfX = .nan
+        var extreme = safe
+        extreme[0].pdfY = .greatestFiniteMagnitude
+        var infinite = safe
+        infinite[0].latitude = .infinity
+        var offEarth = safe
+        offEarth[0].longitude = 181
+
+        for controls in [nan, extreme, infinite, offEarth] {
+            XCTAssertThrowsError(try AffineFitter.fit(controls)) { error in
+                guard case AffineFitError.invalidInput = error else {
+                    return XCTFail("expected .invalidInput, got \(error)")
+                }
+            }
+        }
+    }
+
+    func testNonFiniteOrOverflowingTransformsCannotBeInvertedOrPublished() {
+        let bounds = GeoPDFReader.Bounds(
+            southWest: CLLocationCoordinate2D(latitude: -34, longitude: 150),
+            northEast: CLLocationCoordinate2D(latitude: -33, longitude: 151),
+            pdfCropRect: CGRect(x: 0, y: 0, width: 600, height: 400)
+        )
+        let source = PDFMapSource(
+            url: FileManager.default.temporaryDirectory.appendingPathComponent("malicious.pdf"),
+            bounds: bounds,
+            preflightMediaBox: CGRect(x: 0, y: 0, width: 600, height: 400)
+        )
+        let controls = [
+            Fiduciary(pdfX: 0, pdfY: 0, mgrs: "a", latitude: -34, longitude: 150),
+            Fiduciary(pdfX: 600, pdfY: 0, mgrs: "b", latitude: -34, longitude: 151),
+            Fiduciary(pdfX: 0, pdfY: 400, mgrs: "c", latitude: -33, longitude: 150),
+        ]
+        let nan = AffineTransform2D(a: .nan, b: 0, c: 0, d: 0, e: 1, f: 0)
+        let overflow = AffineTransform2D(a: .greatestFiniteMagnitude, b: 0, c: 0,
+                                         d: 0, e: .greatestFiniteMagnitude, f: 0)
+
+        XCTAssertNil(nan.inverted())
+        XCTAssertNil(overflow.inverted())
+        source.applyCalibration(transform: nan, fiduciaries: controls)
+        XCTAssertNil(source.calibration)
+        source.applyCalibration(transform: overflow, fiduciaries: controls)
+        XCTAssertNil(source.calibration)
+        XCTAssertEqual(source.bounds, bounds, "failed publication must leave prior bounds intact")
+    }
+
+    func testPDFOverlayPlacementPreservesAFullShearedAffineBasis() throws {
+        let topLeft = CGPoint(x: 20, y: 30)
+        let topRight = CGPoint(x: 140, y: 60)
+        let bottomLeft = CGPoint(x: 70, y: 190)
+        let bottomRight = CGPoint(x: 190, y: 220)
+        let placement = try XCTUnwrap(pdfAffineOverlayPlacement(
+            topLeft: topLeft,
+            topRight: topRight,
+            bottomLeft: bottomLeft,
+            bottomRight: bottomRight
+        ))
+
+        func mapped(_ local: CGPoint) -> CGPoint {
+            let relative = CGPoint(
+                x: local.x - placement.boundsSize.width / 2,
+                y: local.y - placement.boundsSize.height / 2
+            ).applying(placement.transform)
+            return CGPoint(x: placement.center.x + relative.x,
+                           y: placement.center.y + relative.y)
+        }
+
+        let mappedTopLeft = mapped(.zero)
+        let mappedTopRight = mapped(CGPoint(x: placement.boundsSize.width, y: 0))
+        let mappedBottomLeft = mapped(CGPoint(x: 0, y: placement.boundsSize.height))
+        let mappedBottomRight = mapped(CGPoint(
+            x: placement.boundsSize.width,
+            y: placement.boundsSize.height
+        ))
+        XCTAssertEqual(mappedTopLeft.x, topLeft.x, accuracy: 1e-10)
+        XCTAssertEqual(mappedTopLeft.y, topLeft.y, accuracy: 1e-10)
+        XCTAssertEqual(mappedTopRight.x, topRight.x, accuracy: 1e-10)
+        XCTAssertEqual(mappedTopRight.y, topRight.y, accuracy: 1e-10)
+        XCTAssertEqual(mappedBottomLeft.x, bottomLeft.x, accuracy: 1e-10)
+        XCTAssertEqual(mappedBottomLeft.y, bottomLeft.y, accuracy: 1e-10)
+        XCTAssertEqual(mappedBottomRight.x, bottomRight.x, accuracy: 1e-10)
+        XCTAssertEqual(mappedBottomRight.y, bottomRight.y, accuracy: 1e-10)
+
+        // A rotation-only placement forces the down axis perpendicular to the
+        // right axis. This fixture deliberately is not perpendicular, proving
+        // the regression exercises shear rather than just scale + rotation.
+        let right = CGVector(dx: topRight.x - topLeft.x, dy: topRight.y - topLeft.y)
+        let down = CGVector(dx: bottomLeft.x - topLeft.x, dy: bottomLeft.y - topLeft.y)
+        XCTAssertNotEqual(right.dx * down.dx + right.dy * down.dy, 0, accuracy: 1e-10)
+    }
+
+    func testPDFOverlayPlacementRejectsNonFiniteAndCollapsedGeometry() {
+        XCTAssertNil(pdfAffineOverlayPlacement(
+            topLeft: CGPoint(x: CGFloat.nan, y: 0),
+            topRight: CGPoint(x: 100, y: 0),
+            bottomLeft: CGPoint(x: 0, y: 100),
+            bottomRight: CGPoint(x: 100, y: 100)
+        ))
+        XCTAssertNil(pdfAffineOverlayPlacement(
+            topLeft: .zero,
+            topRight: CGPoint(x: 100, y: 0),
+            bottomLeft: CGPoint(x: 200, y: 0),
+            bottomRight: CGPoint(x: 300, y: 0)
+        ))
     }
 }

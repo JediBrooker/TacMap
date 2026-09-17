@@ -108,4 +108,39 @@ class AffineFitterTest {
     fun invertedSingularReturnsNull() {
         assertNull(AffineTransform2D(0.0, 0.0, 1.0, 0.0, 0.0, 2.0).inverted())
     }
+
+    @Test
+    fun maliciousNonFiniteOrExtremeControlPointsAreRejected() {
+        val safe = listOf(fid(0.0, 0.0), fid(1000.0, 0.0), fid(0.0, 800.0))
+        val malicious = listOf(
+            safe.toMutableList().also { it[0] = it[0].copy(pdfX = Double.NaN) },
+            safe.toMutableList().also { it[0] = it[0].copy(pdfY = Double.MAX_VALUE) },
+            safe.toMutableList().also { it[0] = it[0].copy(latitude = Double.POSITIVE_INFINITY) },
+            safe.toMutableList().also { it[0] = it[0].copy(longitude = 181.0) },
+        )
+
+        malicious.forEach { controls ->
+            try {
+                AffineFitter.fit(controls)
+                fail("expected invalid affine input to be rejected")
+            } catch (_: AffineFitError.InvalidInput) {
+                // expected
+            }
+        }
+    }
+
+    @Test
+    fun nonFiniteOrOverflowingTransformsCannotBeInvertedOrPublished() {
+        val info = PdfPageInfo(pageWidth = 600, pageHeight = 400)
+        val nan = AffineTransform2D(Double.NaN, 0.0, 0.0, 0.0, 1.0, 0.0)
+        val overflow = AffineTransform2D(
+            Double.MAX_VALUE, 0.0, 0.0,
+            0.0, Double.MAX_VALUE, 0.0,
+        )
+
+        assertNull(nan.inverted())
+        assertNull(overflow.inverted())
+        assertNull(calibratedPdfBounds(nan, info))
+        assertNull(calibratedPdfBounds(overflow, info))
+    }
 }

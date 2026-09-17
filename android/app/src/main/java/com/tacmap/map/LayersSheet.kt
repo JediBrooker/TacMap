@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -25,14 +26,26 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.tacmap.calibration.BasemapStyle
+
+private data class PendingLayerVisibilityMutation(
+    val message: String,
+    val retry: () -> DrawingMutationUiResult,
+)
 
 /**
  * Overlay + label toggles, plus imported-map management. Opened from
@@ -42,23 +55,32 @@ import com.tacmap.calibration.BasemapStyle
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LayersSheet(
+    symbologyVisible: Boolean,
+    drawingsVisible: Boolean,
     mgrsGridVisible: Boolean,
     userLocationVisible: Boolean,
     unitLabelsVisible: Boolean,
+    unitAmplifiersVisible: Boolean,
     taskLabelsVisible: Boolean,
     drawingLabelsVisible: Boolean,
     terrainHeatmapVisible: Boolean,
     onMgrsGridChange: (Boolean) -> Unit,
+    onSymbologyVisibleChange: (Boolean) -> Unit,
+    onDrawingsVisibleChange: (Boolean) -> Unit,
     onUserLocationChange: (Boolean) -> Unit,
     onTerrainHeatmapChange: (Boolean) -> Unit,
     onUnitLabelsChange: (Boolean) -> Unit,
+    onUnitAmplifiersChange: (Boolean) -> Unit,
     onTaskLabelsChange: (Boolean) -> Unit,
     onDrawingLabelsChange: (Boolean) -> Unit,
     drawingLayers: List<DrawingLayer>,
     drawingFeatures: List<DrawingFeature>,
-    onSetLayerVisible: (String, Boolean) -> Unit,
+    onSetLayerVisible: (String, Boolean) -> DrawingMutationUiResult,
     activeBaseMap: BasemapStyle?,
     onSelectBaseMap: (BasemapStyle) -> Unit,
+    retainedImportedMapName: String?,
+    importedMapActive: Boolean,
+    onReturnToImportedMap: () -> Unit,
     hasPdfMap: Boolean,
     hasOfflineTiles: Boolean,
     onCalibratePdf: () -> Unit,
@@ -68,6 +90,16 @@ fun LayersSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var pendingVisibility by remember { mutableStateOf<PendingLayerVisibilityMutation?>(null) }
+    fun attemptVisibility(retry: () -> DrawingMutationUiResult) {
+        pendingVisibility = when (val result = retry()) {
+            DrawingMutationUiResult.Saved -> null
+            is DrawingMutationUiResult.Failed -> PendingLayerVisibilityMutation(
+                message = result.message,
+                retry = retry,
+            )
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             Modifier
@@ -78,12 +110,15 @@ fun LayersSheet(
             Text("Layers and Labels", fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
             SectionHeader("Overlays")
+            ToggleRow("Symbology", symbologyVisible, onSymbologyVisibleChange)
+            ToggleRow("Drawings", drawingsVisible, onDrawingsVisibleChange)
             ToggleRow("MGRS Grid", mgrsGridVisible, onMgrsGridChange)
             ToggleRow("My Location", userLocationVisible, onUserLocationChange)
             ToggleRow("Terrain Heat-map", terrainHeatmapVisible, onTerrainHeatmapChange)
 
             SectionHeader("Labels")
             ToggleRow("Unit Labels", unitLabelsVisible, onUnitLabelsChange)
+            ToggleRow("Unit Amplifiers", unitAmplifiersVisible, onUnitAmplifiersChange)
             ToggleRow("Task Labels", taskLabelsVisible, onTaskLabelsChange)
             ToggleRow("Drawing Labels", drawingLabelsVisible, onDrawingLabelsChange)
 
@@ -92,12 +127,13 @@ fun LayersSheet(
                 DrawingLayerRow(
                     layer = layer,
                     count = drawingFeatures.count { it.layerId == layer.id },
-                    onVisibleChange = { onSetLayerVisible(layer.id, it) }
+                    onVisibleChange = { visible ->
+                        attemptVisibility { onSetLayerVisible(layer.id, visible) }
+                    }
                 )
             }
 
             SectionHeader("Basemap")
-            val importedMapActive = hasPdfMap || hasOfflineTiles
             // Keyed styles (all but OSM Topo) need the ArcGIS key baked in at
             // build time. No key -> hide them, rather than offer a basemap that
             // would just render blank.
@@ -110,11 +146,25 @@ fun LayersSheet(
                         onClick = { onSelectBaseMap(style) }
                     )
                 }
+            retainedImportedMapName?.let { name ->
+                BasemapRow(
+                    label = "Imported: $name",
+                    selected = importedMapActive,
+                    onClick = onReturnToImportedMap,
+                )
+            }
             if (importedMapActive) {
                 Text(
-                    "An imported map is active — pick a basemap to switch back to it.",
+                    "The imported map is active. Choose an online basemap above to switch away without removing it.",
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            if (!importedMapActive && retainedImportedMapName != null) {
+                Text(
+                    "Your imported map is retained. Select its row to return to it.",
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
 
@@ -149,6 +199,19 @@ fun LayersSheet(
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+    pendingVisibility?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingVisibility = null },
+            title = { Text("Layer visibility not saved") },
+            text = { Text(pending.message) },
+            confirmButton = {
+                TextButton(onClick = { attemptVisibility(pending.retry) }) { Text("Retry") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingVisibility = null }) { Text("Not now") }
+            },
+        )
     }
 }
 
@@ -185,7 +248,11 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(label, fontSize = 15.sp)
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            modifier = Modifier.semantics { contentDescription = label },
+        )
     }
 }
 
@@ -210,6 +277,12 @@ private fun DrawingLayerRow(layer: DrawingLayer, count: Int, onVisibleChange: (B
                 )
             }
         }
-        Switch(checked = layer.isVisible, onCheckedChange = onVisibleChange)
+        Switch(
+            checked = layer.isVisible,
+            onCheckedChange = onVisibleChange,
+            modifier = Modifier.semantics {
+                contentDescription = "${layer.name} layer visibility"
+            },
+        )
     }
 }

@@ -80,5 +80,89 @@ final class MGRSFormatterTests: XCTestCase {
         XCTAssertNil(MGRSFormatter.coordinate(from: "hello"))
         XCTAssertNil(MGRSFormatter.coordinate(from: ""))
         XCTAssertNil(MGRSFormatter.coordinate(from: "H"))
+        XCTAssertNil(MGRSFormatter.coordinate(from: "BKM1234"),
+                     "the vendored converter has no UPS parser")
+    }
+
+    func testGridResolverCentresShorthandAndFullMGRSAtEverySupportedPrecision() throws {
+        let anchor = CLLocationCoordinate2D(latitude: -33.8688, longitude: 151.2093)
+        let anchorGrid = MGRSFormatter.string(from: anchor, spaced: false)
+        let prefix = String(anchorGrid.dropLast(10))
+        let cases: [(String, Int)] = [
+            ("1234", 1_000),
+            ("123456", 100),
+            ("12345678", 10),
+            ("1234567890", 1),
+        ]
+
+        for (figures, squareSize) in cases {
+            let shorthand = try MGRSFormatter.resolveGridReference(figures, relativeTo: anchor)
+            let full = try MGRSFormatter.resolveGridReference(
+                prefix + figures, relativeTo: .init(latitude: 0, longitude: 0))
+            XCTAssertEqual(shorthand.figureCount, figures.count)
+            XCTAssertEqual(shorthand.squareSizeMetres, squareSize)
+            XCTAssertTrue(shorthand.usedLocalContext)
+            XCTAssertFalse(full.usedLocalContext)
+            XCTAssertEqual(shorthand.coordinate.latitude, full.coordinate.latitude, accuracy: 0.0000001)
+            XCTAssertEqual(shorthand.coordinate.longitude, full.coordinate.longitude, accuracy: 0.0000001)
+
+            let half = figures.count / 2
+            let east = String(figures.prefix(half))
+            let north = String(figures.suffix(half))
+            let centredEast = half == 5 ? east : east + "5" + String(repeating: "0", count: 4 - half)
+            let centredNorth = half == 5 ? north : north + "5" + String(repeating: "0", count: 4 - half)
+            XCTAssertEqual(
+                MGRSFormatter.string(from: shorthand.coordinate, spaced: false),
+                prefix + centredEast + centredNorth,
+                "\(figures) must resolve to the cell centre rather than its south-west corner"
+            )
+        }
+    }
+
+    func testGridResolverAllowsZeroZeroAsLegitimateLocalContext() throws {
+        let anchor = CLLocationCoordinate2D(latitude: 0, longitude: 0)
+        let resolved = try MGRSFormatter.resolveGridReference("1234", relativeTo: anchor)
+        XCTAssertTrue(resolved.usedLocalContext)
+        XCTAssertEqual(resolved.figureCount, 4)
+        XCTAssertEqual(resolved.squareSizeMetres, 1_000)
+    }
+
+    func testGridResolverRejectsUnsupportedPrecisionAndUnavailableContext() {
+        XCTAssertThrowsError(try MGRSFormatter.resolveGridReference(
+            "12345", relativeTo: .init(latitude: -33, longitude: 151))) { error in
+                XCTAssertEqual(error as? MGRSFormatter.GridReferenceError,
+                               .unsupportedPrecision)
+            }
+        XCTAssertThrowsError(try MGRSFormatter.resolveGridReference(
+            "1234", relativeTo: .init(latitude: 89, longitude: 0))) { error in
+                XCTAssertEqual(error as? MGRSFormatter.GridReferenceError,
+                               .unavailableLocalContext)
+            }
+        XCTAssertNil(MGRSFormatter.coordinate(from: "56HLH١٢٣٤"))
+        XCTAssertThrowsError(try MGRSFormatter.resolveGridReference(
+            "١٢٣٤", relativeTo: .init(latitude: -33, longitude: 151))) { error in
+                XCTAssertEqual(error as? MGRSFormatter.GridReferenceError,
+                               .invalidReference)
+            }
+    }
+
+    func testGridResolverNormalizesLowercaseAndMixedWhitespace() throws {
+        let anchor = CLLocationCoordinate2D(latitude: -33.8688, longitude: 151.2093)
+        let prefix = String(MGRSFormatter.string(from: anchor, spaced: false).dropLast(10))
+        let resolved = try MGRSFormatter.resolveGridReference(
+            "\t\(prefix.lowercased()) 12\n34 ", relativeTo: anchor)
+        XCTAssertEqual(resolved.formattedReference, "\(prefix) 12 34")
+        XCTAssertEqual(resolved.squareSizeMetres, 1_000)
+    }
+
+    func testGridResolverAcceptsValidBoundaryCellCentres() throws {
+        for reference in ["60EXU6744", "31XEP0028"] {
+            let resolved = try MGRSFormatter.resolveGridReference(
+                reference, relativeTo: .init(latitude: 0, longitude: 0))
+            XCTAssertTrue((-90...90).contains(resolved.coordinate.latitude), reference)
+            XCTAssertTrue((-180...180).contains(resolved.coordinate.longitude), reference)
+            XCTAssertTrue(resolved.coordinate.latitude.isFinite, reference)
+            XCTAssertTrue(resolved.coordinate.longitude.isFinite, reference)
+        }
     }
 }

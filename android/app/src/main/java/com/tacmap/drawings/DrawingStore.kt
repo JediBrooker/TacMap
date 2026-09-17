@@ -2,6 +2,7 @@ package com.tacmap.drawings
 
 import android.content.Context
 import com.tacmap.util.SafeStore
+import com.tacmap.util.MissionStorePersistence
 import com.tacmap.models.ModelMutationEvent
 import com.tacmap.models.ModelMutationOrigin
 import kotlinx.coroutines.channels.Channel
@@ -14,14 +15,23 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 
-class DrawingStore private constructor(private val file: File) {
+class DrawingStore private constructor(
+    private val file: File,
+    private val persistence: MissionStorePersistence,
+) {
 
-    constructor(context: Context) : this(File(context.filesDir, "drawings.json"))
+    constructor(context: Context) : this(
+        File(context.filesDir, "drawings.json"),
+        MissionStorePersistence.SAFE_STORE,
+    )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
     private val _document = MutableStateFlow(DrawingDocument())
     val document: StateFlow<DrawingDocument> = _document.asStateFlow()
+    /** Last successfully persisted document. UI previews never enter this flow. */
+    private val _committedDocument = MutableStateFlow(DrawingDocument())
+    val committedDocument: StateFlow<DrawingDocument> = _committedDocument.asStateFlow()
     private val mutationChannel = Channel<ModelMutationEvent>(Channel.UNLIMITED)
     val mutations: Flow<ModelMutationEvent> = mutationChannel.receiveAsFlow()
 
@@ -35,6 +45,8 @@ class DrawingStore private constructor(private val file: File) {
 
     private val undoStack = ArrayDeque<DrawingDocument>()
     private val redoStack = ArrayDeque<DrawingDocument>()
+    private var previewBase: DrawingDocument? = null
+    private var previewObjectId: String? = null
 
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
@@ -44,63 +56,79 @@ class DrawingStore private constructor(private val file: File) {
 
     init { load() }
 
-    fun addFeature(feature: DrawingFeature, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
-        pushUndo()
-        _document.value = _document.value.copy(
-            features = _document.value.features + feature
-        ).withDefaultLayers()
-        persist()
-        emit(setOf(feature.id), origin)
+    @Synchronized
+    fun addFeature(feature: DrawingFeature, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL): Boolean {
+        val before = stableDocument()
+        if (before.features.any { it.id == feature.id }) return false
+        val candidate = before.copy(features = before.features + feature).withDefaultLayers()
+        return commit(before, candidate, setOf(feature.id), origin, recordUndo = true)
     }
 
     /** One undo snapshot and one atomic persistence write for bounded imports. */
-    fun addImported(layers: List<DrawingLayer>, features: List<DrawingFeature>, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
-        if (layers.isEmpty() && features.isEmpty()) return
-        pushUndo()
-        val existingIds = _document.value.layers.asSequence().map { it.id }.toHashSet()
-        _document.value = _document.value.copy(
-            layers = _document.value.layers + layers.filter { existingIds.add(it.id) },
-            features = _document.value.features + features
+    @Synchronized
+    fun addImported(
+        layers: List<DrawingLayer>,
+        features: List<DrawingFeature>,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        if (layers.isEmpty() && features.isEmpty()) return true
+        val before = stableDocument()
+        val layerIds = before.layers.asSequence().map { it.id }.toHashSet()
+        val featureIds = before.features.asSequence().map { it.id }.toHashSet()
+        val newLayers = layers.filter { layerIds.add(it.id) }
+        val newFeatures = features.filter { featureIds.add(it.id) }
+        if (newLayers.isEmpty() && newFeatures.isEmpty()) return true
+        val candidate = before.copy(
+            layers = before.layers + newLayers,
+            features = before.features + newFeatures,
         ).withDefaultLayers()
-        persist()
-        emit(if (layers.isEmpty()) features.mapTo(HashSet()) { it.id }
-            else _document.value.features.mapTo(HashSet()) { it.id }, origin)
+        val changed = if (newLayers.isEmpty()) {
+            newFeatures.mapTo(HashSet()) { it.id }
+        } else {
+            candidate.features.mapTo(HashSet()) { it.id }
+        }
+        return commit(before, candidate, changed, origin, recordUndo = true)
     }
 
-    fun updateFeature(feature: DrawingFeature, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
-        if (_document.value.features.none { it.id == feature.id } ||
-            _document.value.features.first { it.id == feature.id } == feature) return
-        pushUndo()
-        _document.value = _document.value.copy(
-            features = _document.value.features.map {
-                if (it.id == feature.id) feature else it
-            }
+    @Synchronized
+    fun updateFeature(feature: DrawingFeature, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL): Boolean {
+        if (previewBase != null && previewObjectId == feature.id) return commitPreview(feature, origin)
+        val before = stableDocument()
+        if (before.features.none { it.id == feature.id }) return false
+        val candidate = before.copy(
+            features = before.features.map { if (it.id == feature.id) feature else it },
         ).withDefaultLayers()
-        persist()
-        emit(setOf(feature.id), origin)
+        if (candidate == before) return true
+        return commit(before, candidate, setOf(feature.id), origin, recordUndo = true)
     }
 
-    fun removeFeature(featureId: String, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
-        if (_document.value.features.none { it.id == featureId }) return
-        pushUndo()
-        _document.value = _document.value.copy(
-            features = _document.value.features.filterNot { it.id == featureId }
+    @Synchronized
+    fun removeFeature(featureId: String, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL): Boolean {
+        val before = stableDocument()
+        if (before.features.none { it.id == featureId }) return false
+        val candidate = before.copy(
+            features = before.features.filterNot { it.id == featureId },
         ).withDefaultLayers()
-        persist()
-        emit(setOf(featureId), origin)
+        return commit(before, candidate, setOf(featureId), origin, recordUndo = true)
     }
 
-    fun addLayer(name: String, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
-        pushUndo()
-        val cleanName = name.trim().ifBlank { "Layer ${_document.value.layers.size + 1}" }
-        _document.value = _document.value.copy(
-            layers = _document.value.layers + DrawingLayer(
+    @Synchronized
+    fun addLayer(name: String, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL): Boolean {
+        val before = stableDocument()
+        val cleanName = name.trim().ifBlank { "Layer ${before.layers.size + 1}" }
+        val candidate = before.copy(
+            layers = before.layers + DrawingLayer(
                 name = cleanName,
-                color = nextCustomLayerColor()
-            )
+                color = nextCustomLayerColor(before),
+            ),
         ).withDefaultLayers()
-        persist()
-        emit(_document.value.features.mapTo(HashSet()) { it.id }, origin)
+        return commit(
+            before,
+            candidate,
+            candidate.features.mapTo(HashSet()) { it.id },
+            origin,
+            recordUndo = true,
+        )
     }
 
     /**
@@ -108,63 +136,256 @@ class DrawingStore private constructor(private val file: File) {
      * GeoJSON import so feature.layerId references resolve correctly
      * after round-trip. No-op if layer with same id already exists.
      */
-    fun addLayerVerbatim(layer: DrawingLayer, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
-        if (_document.value.layers.any { it.id == layer.id }) return
-        _document.value = _document.value.copy(
-            layers = _document.value.layers + layer
+    @Synchronized
+    fun addLayerVerbatim(layer: DrawingLayer, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL): Boolean {
+        val before = stableDocument()
+        if (before.layers.any { it.id == layer.id }) return true
+        val candidate = before.copy(
+            layers = before.layers + layer,
         ).withDefaultLayers()
-        persist()
-        emit(_document.value.features.mapTo(HashSet()) { it.id }, origin)
+        return commit(
+            before,
+            candidate,
+            candidate.features.mapTo(HashSet()) { it.id },
+            origin,
+            recordUndo = false,
+        )
     }
 
-    fun setLayerVisible(layerId: String, visible: Boolean, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
-        if (_document.value.layers.none { it.id == layerId && it.isVisible != visible }) return
-        _document.value = _document.value.copy(
-            layers = _document.value.layers.map {
+    @Synchronized
+    fun setLayerVisible(
+        layerId: String,
+        visible: Boolean,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        val before = stableDocument()
+        if (before.layers.none { it.id == layerId && it.isVisible != visible }) return true
+        val candidate = before.copy(
+            layers = before.layers.map {
                 if (it.id == layerId) it.copy(isVisible = visible) else it
-            }
+            },
         ).withDefaultLayers()
-        persist()
-        emit(_document.value.features.mapTo(HashSet()) { it.id }, origin)
+        return commit(
+            before,
+            candidate,
+            candidate.features.mapTo(HashSet()) { it.id },
+            origin,
+            recordUndo = false,
+        )
+    }
+
+    @Synchronized
+    fun renameLayer(
+        layerId: String,
+        name: String,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        if (layerId in DrawingDocument.DEFAULT_LAYER_IDS) return false
+        val before = stableDocument()
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return false
+        if (before.layers.none { it.id == layerId }) return false
+        val candidate = before.copy(
+            layers = before.layers.map { if (it.id == layerId) it.copy(name = cleanName) else it },
+        ).withDefaultLayers()
+        if (candidate == before) return true
+        return commit(
+            before,
+            candidate,
+            candidate.features.mapTo(HashSet()) { it.id },
+            origin,
+            recordUndo = true,
+        )
+    }
+
+    @Synchronized
+    fun recolorLayer(
+        layerId: String,
+        color: Int,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        if (layerId in DrawingDocument.DEFAULT_LAYER_IDS) return false
+        val before = stableDocument()
+        if (before.layers.none { it.id == layerId }) return false
+        val opaqueColor = color or 0xFF000000.toInt()
+        val candidate = before.copy(
+            layers = before.layers.map { if (it.id == layerId) it.copy(color = opaqueColor) else it },
+        ).withDefaultLayers()
+        if (candidate == before) return true
+        return commit(
+            before,
+            candidate,
+            candidate.features.mapTo(HashSet()) { it.id },
+            origin,
+            recordUndo = true,
+        )
+    }
+
+    /** Rename and recolour a custom layer as one durable candidate mutation. */
+    @Synchronized
+    fun updateLayer(
+        layerId: String,
+        name: String,
+        color: Int,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        if (layerId in DrawingDocument.DEFAULT_LAYER_IDS) return false
+        val before = stableDocument()
+        val cleanName = name.trim()
+        if (cleanName.isBlank() || before.layers.none { it.id == layerId }) return false
+        val opaqueColor = color or 0xFF000000.toInt()
+        val candidate = before.copy(
+            layers = before.layers.map { layer ->
+                if (layer.id == layerId) layer.copy(name = cleanName, color = opaqueColor) else layer
+            },
+        ).withDefaultLayers()
+        if (candidate == before) return true
+        return commit(
+            before,
+            candidate,
+            candidate.features.mapTo(HashSet()) { it.id },
+            origin,
+            recordUndo = true,
+        )
+    }
+
+    /** Remove a custom layer only after atomically reassigning all drawings to
+     * a real fallback in the same persisted document. */
+    @Synchronized
+    fun deleteLayerReassigningFeatures(
+        layerId: String,
+        fallbackLayerId: String,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        if (layerId in DrawingDocument.DEFAULT_LAYER_IDS || layerId == fallbackLayerId) return false
+        val before = stableDocument()
+        if (before.layers.none { it.id == layerId }) return false
+        if (before.layers.none { it.id == fallbackLayerId }) return false
+        val movedIds = before.features
+            .filter { it.layerId == layerId }
+            .mapTo(HashSet()) { it.id }
+        val candidate = before.copy(
+            layers = before.layers.filterNot { it.id == layerId },
+            features = before.features.map { feature ->
+                if (feature.id in movedIds) feature.copy(layerId = fallbackLayerId) else feature
+            },
+        ).withDefaultLayers()
+        return commit(
+            before,
+            candidate,
+            // Layer metadata is embedded in exported objects, so all drawings
+            // are invalidated even when no geometry moved.
+            candidate.features.mapTo(HashSet()) { it.id },
+            origin,
+            recordUndo = true,
+        )
     }
 
     /** Update feature for visual feedback during a gesture (e.g. slider drag)
      *  without pushing to undo stack. Call [updateFeature] at gesture end. */
-    fun updateFeatureNoUndo(feature: DrawingFeature, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL) {
-        if (_document.value.features.none { it.id == feature.id } ||
-            _document.value.features.first { it.id == feature.id } == feature) return
-        _document.value = _document.value.copy(
-            features = _document.value.features.map { if (it.id == feature.id) feature else it }
+    @Synchronized
+    fun updateFeatureNoUndo(
+        feature: DrawingFeature,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        val before = stableDocument()
+        if (before.features.none { it.id == feature.id }) return false
+        val candidate = before.copy(
+            features = before.features.map { if (it.id == feature.id) feature else it },
         ).withDefaultLayers()
-        persist()
-        emit(setOf(feature.id), origin)
+        if (candidate == before) return true
+        return commit(before, candidate, setOf(feature.id), origin, recordUndo = false)
     }
 
-    fun undo() {
-        val snapshot = undoStack.removeLastOrNull() ?: return
-        val changed = changedIds(_document.value, snapshot)
-        redoStack.addLast(_document.value)
+    /** In-memory-only gesture preview: no disk write, undo entry, or sync event. */
+    @Synchronized
+    fun previewFeature(feature: DrawingFeature): Boolean {
+        val activeBase = previewBase
+        if (activeBase == null || previewObjectId != feature.id) {
+            revertPreview()
+            val before = _document.value
+            if (before.features.none { it.id == feature.id }) return false
+            previewBase = before
+            previewObjectId = feature.id
+        }
+        val base = checkNotNull(previewBase)
+        _document.value = base.copy(
+            features = base.features.map { if (it.id == feature.id) feature else it },
+        ).withDefaultLayers()
+        return true
+    }
+
+    @Synchronized
+    fun commitPreview(
+        feature: DrawingFeature,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        val before = previewBase
+        if (before == null || previewObjectId != feature.id) return updateFeature(feature, origin)
+        val candidate = before.copy(
+            features = before.features.map { if (it.id == feature.id) feature else it },
+        ).withDefaultLayers()
+        previewBase = null
+        previewObjectId = null
+        if (candidate == before) {
+            _document.value = before
+            return true
+        }
+        if (!persistCandidate(candidate)) {
+            _document.value = before
+            return false
+        }
+        pushUndo(before)
+        _committedDocument.value = candidate
+        _document.value = candidate
+        emit(setOf(feature.id), origin)
+        return true
+    }
+
+    @Synchronized
+    fun revertPreview() {
+        previewBase?.let { _document.value = it }
+        previewBase = null
+        previewObjectId = null
+    }
+
+    @Synchronized
+    fun undo(): Boolean {
+        revertPreview()
+        val snapshot = undoStack.lastOrNull() ?: return false
+        val before = _document.value
+        val changed = changedIds(before, snapshot)
+        if (!persistCandidate(snapshot)) return false
+        undoStack.removeLast()
+        redoStack.addLast(before)
+        _committedDocument.value = snapshot
         _document.value = snapshot
-        persist()
         _canUndo.value = undoStack.isNotEmpty()
         _canRedo.value = true
         emit(changed, ModelMutationOrigin.LOCAL)
+        return true
     }
 
-    fun redo() {
-        val snapshot = redoStack.removeLastOrNull() ?: return
-        val changed = changedIds(_document.value, snapshot)
-        undoStack.addLast(_document.value)
+    @Synchronized
+    fun redo(): Boolean {
+        revertPreview()
+        val snapshot = redoStack.lastOrNull() ?: return false
+        val before = _document.value
+        val changed = changedIds(before, snapshot)
+        if (!persistCandidate(snapshot)) return false
+        redoStack.removeLast()
+        undoStack.addLast(before)
+        _committedDocument.value = snapshot
         _document.value = snapshot
-        persist()
         _canUndo.value = true
         _canRedo.value = redoStack.isNotEmpty()
         emit(changed, ModelMutationOrigin.LOCAL)
+        return true
     }
 
-    private fun pushUndo() {
+    private fun pushUndo(snapshot: DrawingDocument) {
         if (undoStack.size >= 50) undoStack.removeFirst()
-        undoStack.addLast(_document.value)
+        undoStack.addLast(snapshot)
         redoStack.clear()
         _canUndo.value = true
         _canRedo.value = false
@@ -177,7 +398,11 @@ class DrawingStore private constructor(private val file: File) {
 
     private fun load() {
         when (val r = SafeStore.readOrQuarantine(file, LABEL) { json.decodeFromString<DrawingDocument>(it) }) {
-            is SafeStore.LoadResult.Loaded -> _document.value = r.value.withDefaultLayers()
+            is SafeStore.LoadResult.Loaded -> {
+                val loaded = r.value.withDefaultLayers()
+                _committedDocument.value = loaded
+                _document.value = loaded
+            }
             is SafeStore.LoadResult.Empty -> Unit // fresh install, keep default document
             is SafeStore.LoadResult.Corrupt ->
                 // Do NOT overwrite: unreadable file is preserved as
@@ -192,10 +417,42 @@ class DrawingStore private constructor(private val file: File) {
         }
     }
 
-    private fun persist() {
-        if (_locked.value) return
-        runCatching { SafeStore.writeAtomically(file, LABEL, json.encodeToString(_document.value)) }
-            .onFailure { _loadError.value = "Could not save drawings to disk: ${it.message}" }
+    private fun persistCandidate(candidate: DrawingDocument): Boolean {
+        if (_locked.value) {
+            _loadError.value = "Drawings are locked and the change was not saved."
+            return false
+        }
+        return runCatching { persistence.write(file, LABEL, json.encodeToString(candidate)) }
+            .fold(
+                onSuccess = { true },
+                onFailure = {
+                    _loadError.value = "Could not save drawings to disk; the change was reverted: ${it.message}"
+                    false
+                },
+            )
+    }
+
+    private fun commit(
+        before: DrawingDocument,
+        candidate: DrawingDocument,
+        changed: Set<String>,
+        origin: ModelMutationOrigin,
+        recordUndo: Boolean,
+    ): Boolean {
+        if (!persistCandidate(candidate)) return false
+        if (recordUndo) pushUndo(before)
+        _committedDocument.value = candidate
+        _document.value = candidate
+        emit(changed, origin)
+        return true
+    }
+
+    private fun stableDocument(): DrawingDocument {
+        val base = previewBase ?: return _document.value
+        _document.value = base
+        previewBase = null
+        previewObjectId = null
+        return base
     }
 
     private fun emit(ids: Set<String>, origin: ModelMutationOrigin) {
@@ -211,7 +468,10 @@ class DrawingStore private constructor(private val file: File) {
 
     internal companion object {
         private const val LABEL = "drawings.json"
-        fun forTests(filesDir: File) = DrawingStore(File(filesDir, LABEL))
+        fun forTests(
+            filesDir: File,
+            persistence: MissionStorePersistence = MissionStorePersistence.SAFE_STORE,
+        ) = DrawingStore(File(filesDir, LABEL), persistence)
     }
 
     private fun DrawingDocument.withDefaultLayers(): DrawingDocument {
@@ -226,8 +486,8 @@ class DrawingStore private constructor(private val file: File) {
         return copy(layers = defaults + customLayers)
     }
 
-    private fun nextCustomLayerColor(): Int {
-        val customLayerCount = _document.value.layers.count {
+    private fun nextCustomLayerColor(document: DrawingDocument): Int {
+        val customLayerCount = document.layers.count {
             it.id !in DrawingDocument.DEFAULT_LAYER_IDS
         }
         return DrawingDocument.CUSTOM_LAYER_COLORS[

@@ -79,6 +79,16 @@ class SyncReplayState(
         val pendingModelApplications: HashMap<String, RemoteMutation>,
     )
 
+    private data class LocalIdentity(
+        val actorId: String,
+        val pubkey: String,
+    )
+
+    private data class DecodedLoad(
+        val snapshot: MemorySnapshot,
+        val requiresRepair: Boolean,
+    )
+
     private fun memorySnapshot() = MemorySnapshot(
         localCounter, lastSnapshotSeq, HashMap(stamps), HashMap(tombstones),
         HashMap(contentHashes), HashMap(actors), HashMap(helloEpochs),
@@ -216,14 +226,30 @@ class SyncReplayState(
             (remote.localModelId == null || runCatching { java.util.UUID.fromString(remote.localModelId) }.isSuccess) &&
             remote.acceptedGeneration in 0..VersionStamp.MAX_COUNTER
 
-    /** Reserve a strictly increasing unsigned-64 hello epoch before signing. */
-    fun reserveHelloEpoch(actorId: String): String? {
-        if (SyncIdentity.urlB64Decode32(actorId) == null) return null
-        val current = helloEpochs[actorId]?.let { runCatching { BigInteger(it, 16) }.getOrNull() } ?: BigInteger.ZERO
+    /**
+     * Reserve a strictly increasing unsigned-64 hello epoch before signing.
+     * The room-derived local identity pin and epoch are one durable transaction:
+     * a crash can expose both or neither, never an undecodable orphan epoch.
+     */
+    fun reserveHelloEpoch(actorId: String, pubkey: String): String? {
+        val identity = validatedLocalIdentity(actorId, pubkey) ?: return null
+        val pinned = actors[actorId]
+        if (pinned != null && pinned != pubkey) return null
+        val currentHex = helloEpochs[actorId]
+        val current = if (currentHex == null) {
+            BigInteger.ZERO
+        } else {
+            SyncIdentity.parseHelloEpoch(currentHex)?.let { BigInteger(it, 16) } ?: return null
+        }
         val next = current + BigInteger.ONE
         if (next > BigInteger("ffffffffffffffff", 16)) return null
         val hex = next.toString(16).padStart(16, '0')
-        return hex.takeIf { persistTransaction { helloEpochs[actorId] = hex } }
+        return hex.takeIf {
+            persistTransaction {
+                actors[identity.actorId] = identity.pubkey
+                helloEpochs[identity.actorId] = hex
+            }
+        }
     }
 
     /**
@@ -431,8 +457,19 @@ class SyncReplayState(
     private fun stateFile(): File? {
         val dir = filesDir ?: return null
         val syncDir = File(dir, "sync_replay")
-        if (!syncDir.exists() && !syncDir.mkdirs()) throw IllegalStateException("cannot create replay-state directory")
-        return File(syncDir, "$roomId.json")
+        val namingKey = SafeStore.keyProvider.key()
+        return try {
+            // Resolve only this room. Global unlock migration still scans and
+            // reports inactive-room failures independently.
+            SyncLocalStore.resolveFile(
+                directory = syncDir,
+                roomId = roomId,
+                domain = SyncIdentity.LocalStoreDomain.REPLAY,
+                dataKey = namingKey,
+            )
+        } finally {
+            namingKey.fill(0)
+        }
     }
 
     /** Returns false instead of swallowing a locked key or failed atomic write. */
@@ -448,19 +485,89 @@ class SyncReplayState(
     }
 
     /** Empty state is valid; locked, corrupt, or invalid state fails closed. */
-    fun load(): Boolean {
+    fun load(): Boolean = load(localIdentity = null)
+
+    /**
+     * Production load with the room-derived local identity. Besides verifying
+     * an existing local pin, this can repair the one historical invalid shape
+     * written by the old hello reservation: exactly this local actor has an
+     * epoch but no actor pin. No remote or ambiguous orphan is migrated.
+     */
+    fun load(localActorId: String, localPubkey: String): Boolean {
+        val identity = validatedLocalIdentity(localActorId, localPubkey) ?: return false
+        return load(identity)
+    }
+
+    private fun load(localIdentity: LocalIdentity?): Boolean {
         val file = try { stateFile() } catch (_: Throwable) { return false } ?: return true
         return try {
-            when (val result = SafeStore.readOrQuarantine(file, label) { decode(JSONObject(it)) }) {
+            when (val result = SafeStore.readOrQuarantine(file, label) {
+                decodeForLoad(JSONObject(it), localIdentity)
+            }) {
                 is SafeStore.LoadResult.Empty -> true
                 is SafeStore.LoadResult.Loaded -> {
-                    restore(result.value)
-                    true
+                    if (result.value.requiresRepair) {
+                        persistTransaction { restore(result.value.snapshot) }
+                    } else {
+                        restore(result.value.snapshot)
+                        true
+                    }
                 }
                 is SafeStore.LoadResult.Locked, is SafeStore.LoadResult.Corrupt -> false
             }
         } catch (_: Throwable) {
             false
+        }
+    }
+
+    private fun validatedLocalIdentity(actorId: String, pubkey: String): LocalIdentity? {
+        val roomIdRaw = SyncIdentity.urlB64Decode32(roomId) ?: return null
+        val pubkeyRaw = SyncIdentity.urlB64Decode32(pubkey) ?: return null
+        if (SyncIdentity.actorId(roomIdRaw, pubkeyRaw) != actorId) return null
+        return LocalIdentity(actorId, pubkey)
+    }
+
+    private fun decodeForLoad(json: JSONObject, localIdentity: LocalIdentity?): DecodedLoad {
+        val strict = runCatching {
+            decode(json).also { snapshot ->
+                localIdentity?.let { identity ->
+                    require(snapshot.actors[identity.actorId]?.let { it == identity.pubkey } != false)
+                }
+            }
+        }
+        strict.getOrNull()?.let { return DecodedLoad(it, requiresRepair = false) }
+
+        val identity = localIdentity ?: throw checkNotNull(strict.exceptionOrNull())
+        val repairedJson = repairLocalHelloEpochOrphan(json, identity)
+            ?: throw checkNotNull(strict.exceptionOrNull())
+        val repaired = decode(repairedJson)
+        require(repaired.actors[identity.actorId] == identity.pubkey)
+        return DecodedLoad(repaired, requiresRepair = true)
+    }
+
+    private fun repairLocalHelloEpochOrphan(
+        json: JSONObject,
+        identity: LocalIdentity,
+    ): JSONObject? {
+        val actorPins = runCatching {
+            decodeStrings(json.getJSONObject("actors"))
+        }.getOrNull() ?: return null
+        val epochs = runCatching {
+            decodeStrings(json.optJSONObject("helloEpochs") ?: JSONObject())
+        }.getOrNull() ?: return null
+        val orphanActors = epochs.keys - actorPins.keys
+        if (orphanActors != setOf(identity.actorId)) return null
+
+        // Prove this epoch is the document's sole defect. Removing only the
+        // historical orphan must recover a completely valid pre-reservation
+        // state; otherwise adding a pin could accidentally legitimize stamps,
+        // pending mutations, or presence state that already referenced it.
+        val withoutOrphan = JSONObject(json.toString())
+        withoutOrphan.getJSONObject("helloEpochs").remove(identity.actorId)
+        if (runCatching { decode(withoutOrphan) }.isFailure) return null
+
+        return JSONObject(json.toString()).also { repaired ->
+            repaired.getJSONObject("actors").put(identity.actorId, identity.pubkey)
         }
     }
 
@@ -603,7 +710,12 @@ class SyncReplayState(
         lastSnapshotSeq = -1L
         stamps.clear(); tombstones.clear(); contentHashes.clear(); actors.clear(); helloEpochs.clear()
         presenceSessions.clear(); pendingModelApplications.clear(); transientPresenceSeq.clear()
-        try { stateFile()?.delete() } catch (_: Throwable) { /* explicit forget is best effort */ }
+        try {
+            stateFile()?.let { file ->
+                file.delete()
+                File(file.parentFile, ".${file.name}.sealed-only-v1").delete()
+            }
+        } catch (_: Throwable) { /* explicit forget is best effort */ }
     }
 }
 
@@ -623,13 +735,30 @@ class LocalModelRevisionJournal(
 
     @Synchronized fun generation(localId: String?): Long = localId?.let { generations[it] } ?: 0L
 
-    @Synchronized fun bump(localId: String): Boolean {
-        if (runCatching { UUID.fromString(localId) }.isFailure) return false
-        val current = generations[localId] ?: 0L
-        if (current >= VersionStamp.MAX_COUNTER) return false
-        generations[localId] = current + 1
+    @Synchronized fun bump(localId: String): Boolean = bumpAll(setOf(localId))
+
+    /**
+     * Advances one durable generation for every object in a store mutation.
+     * Bulk imports and layer operations can contain thousands of IDs; they are
+     * one logical commit, so persist the complete journal once and roll the
+     * entire in-memory candidate back if that atomic write fails.
+     */
+    @Synchronized fun bumpAll(localIds: Set<String>): Boolean {
+        if (localIds.isEmpty()) return true
+
+        val previous = HashMap<String, Long>(localIds.size)
+        for (localId in localIds) {
+            if (runCatching { UUID.fromString(localId) }.isFailure) return false
+            val current = generations[localId] ?: 0L
+            if (current >= VersionStamp.MAX_COUNTER) return false
+            previous[localId] = current
+        }
+        for ((localId, current) in previous) generations[localId] = current + 1
+
         if (save()) return true
-        if (current == 0L) generations.remove(localId) else generations[localId] = current
+        for ((localId, current) in previous) {
+            if (current == 0L) generations.remove(localId) else generations[localId] = current
+        }
         return false
     }
 
@@ -677,7 +806,7 @@ class LocalRevisionEventProcessor(
 ) {
     fun process(event: ModelMutationEvent): Boolean {
         if (event.origin == ModelMutationOrigin.REMOTE_SYNC) return true
-        if (event.localIds.all { journal.bump(it) }) return true
+        if (journal.bumpAll(event.localIds)) return true
         onPersistenceFailure()
         return false
     }

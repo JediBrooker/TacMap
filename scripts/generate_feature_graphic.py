@@ -2,8 +2,8 @@
 """
 Generate the Google Play feature graphic (1024x500 PNG) for TacticalMaps.
 
-Dark tactical theme with MGRS grid, NATO APP-6 symbols, and 1.2.0
-headline (Unit Sync with live presence). Uses brand fonts from
+Dark tactical theme with MGRS grid, NATO APP-6 symbols, and the current
+Unit Sync/live-presence headline. Uses brand fonts from
 scripts/fonts/.
 
     python3 scripts/generate_feature_graphic.py
@@ -153,7 +153,7 @@ def main():
     hq_x, hq_y = 850 - 40, 428 - 28
     d.line([(hq_x, hq_y), (hq_x, hq_y - 20)], fill=FRIEND_FILL, width=2)
 
-    # presence markers (1.2.0 feature)
+    # Unit Sync presence markers
     presence_marker(d, 760, 330, 8, 350, "ALPHA-1")
     presence_marker(d, 870, 260, 8, 10, "BRAVO-2")
     presence_marker(d, 820, 390, 8, 270, "CHARLIE-3")

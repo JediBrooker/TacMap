@@ -4,19 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TacMap — Offline, encrypted team mapping</title>
-<meta name="description" content="TacMap is an offline-first, end-to-end encrypted team map. No server, no account, nothing phoning home. iOS and Android.">
+<meta name="description" content="TacMap is an offline-first field map for iOS and Android, with imported maps, MGRS tools and optional end-to-end encrypted team sync. No account, ads or analytics.">
 <link rel="canonical" href="https://tacmap.app/">
 <meta name="theme-color" content="#0E1519">
 <link rel="icon" type="image/png" href="assets/brand/app-icon-512.png">
 <meta property="og:title" content="TacMap — Offline, encrypted team mapping">
-<meta property="og:description" content="One map, your whole team, no signal required. End-to-end encrypted presence, offline charts, two-minute setup. No server, no account. iOS and Android.">
+<meta property="og:description" content="Offline field mapping on iOS and Android, with optional end-to-end encrypted team sync when connected. No account, ads or analytics.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tacmap.app/">
 <meta property="og:image" content="https://tacmap.app/assets/brand/app-icon-512.png">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Saira:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
     --void:#0E1519;        /* deep cool gunmetal ground */
@@ -54,6 +51,8 @@
     opacity:.5;
   }
   .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px;position:relative;z-index:1}
+  .flush-top{padding-top:0}
+  .eyebrow.centered{justify-content:center;display:flex}
 
   a{color:inherit;text-decoration:none}
   .mono{font-family:"IBM Plex Mono",monospace}
@@ -189,6 +188,9 @@
   .shot{flex:0 0 auto;width:264px;scroll-snap-align:center}
   .shot img{display:block;width:100%;height:auto;border-radius:6px;
     border:1px solid var(--line);background:var(--void-2)}
+  .shot figcaption{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-faint);padding-top:8px;text-align:center}
+  .shot figcaption b{color:var(--signal);font-weight:500}
   .rail-hint{margin-top:6px;font-family:"IBM Plex Mono";font-size:11.5px;
     letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
   @media(max-width:600px){.shot{width:228px}}
@@ -297,17 +299,22 @@
     <div class="hero-grid">
       <div class="rv in">
         <span class="eyebrow">Offline-first · Encrypted · iOS + Android</span>
-        <h1>One map.<br>Your whole team.<br><em>No signal required.</em></h1>
-        <p class="lead">TacMap keeps everyone on the same map when you are off the
-          grid. End-to-end encrypted presence, offline charts, and a two-minute
-          setup. No server. No account.</p>
+        <h1>Your field map.<br>Ready offline.<br><em>Synced when connected.</em></h1>
+        <p class="lead">TacMap keeps navigation and mission tools available when
+          signal drops. When a network is available, optional end-to-end encrypted
+          Unit Sync shares the picture and live TacMap Chat. No account, ads,
+          or analytics.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#get">Get TacMap →</a>
           <a class="btn btn-ghost" href="#verify">Read the threat model</a>
         </div>
         <div class="hero-meta">
-          <b>What the relay can read:</b> nothing. Positions and callsigns are
-          sealed before they leave your device.
+          <b>Relay boundary:</b> mission content is sealed on-device. The relay
+          still handles the admission token; clear routing, envelope, actor/
+          session/key, acknowledgement and control fields; Chat scope and the
+          exact selected-unit recipient; room co-membership; and IP, timing,
+          frequency and size metadata. It can also delay, replay, suppress or
+          selectively route traffic within the limits in the threat model.
         </div>
       </div>
 
@@ -326,7 +333,7 @@
 
 <div class="strip">
   <div class="strip-in">
-    <span>No telemetry</span>
+    <span>No analytics</span>
     <span>No ads</span>
     <span>No account</span>
     <span>E2E encrypted</span>
@@ -354,7 +361,7 @@
           <tr><td>Platforms</td><td class="us">iOS and Android, one app</td><td>ATAK / iTAK / WinTAK, varying parity</td></tr>
           <tr><td>Multi-user setup</td><td class="us">Share a join code</td><td>Often a TAK Server to run and secure</td></tr>
           <tr><td>Account</td><td class="us">None</td><td>Depends on deployment</td></tr>
-          <tr><td>Presence encryption</td><td class="us">End-to-end, relay sees ciphertext</td><td>Depends on server / config</td></tr>
+          <tr><td>Presence encryption</td><td class="us">E2E content; relay sees traffic/session metadata</td><td>Depends on server / config</td></tr>
           <tr><td>Time to first shared map</td><td class="us">Minutes</td><td>Setup and a real learning curve</td></tr>
           <tr><td>Offline maps</td><td class="us">Default</td><td>Supported, more setup</td></tr>
           <tr><td>Auditable</td><td class="us">Open source + published threat model</td><td>Open core</td></tr>
@@ -362,14 +369,17 @@
       </table>
     </div>
     <p class="cmp-note">TAK is the more powerful platform, and it is fair to say
-      so. TacMap wins on time to first shared map, cross-platform parity, and a
-      security story a non-specialist can verify for themselves.</p>
+      so. TacMap focuses on time to first shared map, a shared iOS/Android feature
+      contract, and a security story a non-specialist can verify. The gallery
+      below contains only screenshots checked against the 2.0 candidate;
+      cross-platform parity is enforced by the test suite, not inferred from
+      marketing artwork.</p>
   </div>
 </section>
 
 <!-- CAPABILITIES -->
 <a id="capabilities"></a>
-<section class="blk" style="padding-top:0">
+<section class="blk flush-top">
   <div class="wrap rv">
     <div class="gridref"><b>REF 02</b> Capabilities</div>
     <h2>Built to work when the network does not.</h2>
@@ -382,21 +392,38 @@
       </div>
       <div class="feat">
         <div class="fnum">C-02</div>
-        <h3>Encrypted team presence</h3>
-        <p>See each other move in real time. Positions, callsigns, and markers are
-          sealed on-device. The relay routes ciphertext and cannot read any of it.</p>
+        <h3>Reliable encrypted presence</h3>
+        <p>See each other move in real time, reject implausible GPS jumps, and
+          retain a clearly aged last-known marker through brief reconnects.
+          Screen-off sharing is a separate opt-in on both platforms.</p>
       </div>
       <div class="feat">
         <div class="fnum">C-03</div>
-        <h3>Nothing phones home</h3>
-        <p>No analytics, no ad SDKs, no crash telemetry. Crash logs are written to
-          your device and shared only if you choose to.</p>
+        <h3>TacMap Chat</h3>
+        <p>Send encrypted text or reports to the entire room or one selected live
+          unit. The relay routes ciphertext but still sees Chat scope, the selected
+          recipient, and traffic metadata; “Routed” is not a read receipt.</p>
       </div>
       <div class="feat">
         <div class="fnum">C-04</div>
-        <h3>Two minutes, any team</h3>
-        <p>Share a join code and you are synced. No account, no server to stand up.
-          Run your own relay if you want to own the entire path.</p>
+        <h3>North Up or Heading Up</h3>
+        <p>Rotate the map by touch or let the phone compass keep the map aligned
+          with your heading. The north indicator and mils readout stay explicit,
+          including the selected true, magnetic, or grid-north reference.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-05</div>
+        <h3>Bring your own maps</h3>
+        <p>Import PDF, GeoPDF, and MBTiles packs. TacMap reads embedded
+          georeferencing where available and calibrates ordinary map sheets
+          on-device when it is not.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-06</div>
+        <h3>No ads or analytics</h3>
+        <p>Crash reports stay local unless you export them. Online maps/lookups
+          are opt-in; platform stores may still reconcile your unlock without
+          receiving mission or location payloads.</p>
       </div>
     </div>
   </div>
@@ -404,27 +431,38 @@
 
 <!-- SCREENS -->
 <a id="screens"></a>
-<section class="blk" style="padding-top:0">
+<section class="blk flush-top">
   <div class="wrap rv">
     <div class="gridref"><b>REF 03</b> Screens</div>
-    <h2>The whole app, screen by screen.</h2>
-    <p class="sub">The iPhone App Store set, exactly as it ships. Scroll sideways,
-      or swipe on a phone.</p>
+    <h2>Current store screens across both platforms.</h2>
+    <p class="sub">These iPhone and Android phone screens were checked against
+      the 2.0 release candidate. Older Android and iPad artwork is intentionally
+      excluded until recaptured; scroll sideways or swipe on a phone.</p>
 
     <div class="rail" tabindex="0" role="region" aria-label="TacMap screenshots, horizontally scrollable">
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/01-hero.webp" type="image/webp">
-          <img src="assets/store/01-hero.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Own the tactical picture. NATO APP-6 symbology over live MGRS and UTM, shared across the unit, end-to-end encrypted.">
+          <source srcset="assets/store/02-unit-sync.webp" type="image/webp">
+          <img src="assets/store/02-unit-sync.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="One map, the whole unit. Mission payloads and TacMap Chat stay end-to-end encrypted; the relay sees routing, session and traffic metadata.">
         </picture>
+        <figcaption><b>iOS</b> · Unit Sync</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/02-unit-sync.webp" type="image/webp">
-          <img src="assets/store/02-unit-sync.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="One map, the whole unit. Symbols, drawings and waypoints sync live across iOS and Android, end-to-end encrypted.">
+          <source srcset="assets/store/android-01-field-tools.webp" type="image/webp">
+          <img src="assets/store/android-01-field-tools.jpg" width="660" height="1283" loading="lazy" decoding="async"
+               alt="Everything in reach. Current Android field-tools menu with search, symbology, drawings, recording, TacMap Chat and Unit Sync.">
         </picture>
+        <figcaption><b>Android</b> · Field tools</figcaption>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/store/android-02-unit-sync.webp" type="image/webp">
+          <img src="assets/store/android-02-unit-sync.jpg" width="660" height="1283" loading="lazy" decoding="async"
+               alt="One map, the whole unit. Current Android Unit Sync setup with the 2.0 relay and encryption disclosure.">
+        </picture>
+        <figcaption><b>Android</b> · Unit Sync</figcaption>
       </figure>
       <figure class="shot">
         <picture>
@@ -432,6 +470,7 @@
           <img src="assets/store/03-symbols.jpg" width="660" height="1434" loading="lazy" decoding="async"
                alt="Mark the ground. Place NATO APP-6 symbols, then trace routes and areas point by point.">
         </picture>
+        <figcaption><b>iOS</b> · Symbols and drawings</figcaption>
       </figure>
       <figure class="shot">
         <picture>
@@ -439,20 +478,23 @@
           <img src="assets/store/04-recording.jpg" width="660" height="1434" loading="lazy" decoding="async"
                alt="Record your route. A live REC breadcrumb with point count, exported as standard GPX.">
         </picture>
+        <figcaption><b>iOS</b> · Track recording</figcaption>
       </figure>
       <figure class="shot">
         <picture>
           <source srcset="assets/store/05-weather.webp" type="image/webp">
           <img src="assets/store/05-weather.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Go, caution, no-go. Map-centre wind and gusts drive the drone flight-safety call.">
+               alt="Go, caution, no-go. When online lookups are enabled, map-centre wind and gusts drive the drone flight-safety call.">
         </picture>
+        <figcaption><b>iOS</b> · Online weather</figcaption>
       </figure>
       <figure class="shot">
         <picture>
           <source srcset="assets/store/06-basemaps.webp" type="image/webp">
           <img src="assets/store/06-basemaps.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Satellite or terrain. Native satellite, Esri high-res imagery, or OpenTopoMap topography, switched in a tap.">
+               alt="Satellite or terrain. Esri imagery or topography and OpenTopoMap topography, switched in a tap when online basemaps are enabled.">
         </picture>
+        <figcaption><b>iOS</b> · Online basemaps</figcaption>
       </figure>
       <figure class="shot">
         <picture>
@@ -460,54 +502,59 @@
           <img src="assets/store/07-import-export.jpg" width="660" height="1434" loading="lazy" decoding="async"
                alt="In and out, anywhere. Import GeoPDF, KML and KMZ; export GeoJSON and GPX.">
         </picture>
+        <figcaption><b>iOS</b> · Import and export</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/08-symbol-builder.webp" type="image/webp">
-          <img src="assets/store/08-symbol-builder.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Build any symbol. Affiliation, echelon and function with a live preview.">
+          <img src="assets/store/08-measure.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Range, area and bearing measurement on iOS, with a plotted path and NATO-mils readout.">
         </picture>
+        <figcaption><b>iOS</b> · Measure</figcaption>
       </figure>
       <figure class="shot">
         <picture>
           <source srcset="assets/store/09-search.webp" type="image/webp">
           <img src="assets/store/09-search.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Jump to any grid. Search a place name, or a full or partial MGRS reference.">
+               alt="Jump to a full or partial MGRS reference locally, or search a place name when online lookups are enabled.">
         </picture>
+        <figcaption><b>iOS</b> · Search</figcaption>
       </figure>
       <figure class="shot">
         <picture>
           <source srcset="assets/store/10-pdfmap.webp" type="image/webp">
           <img src="assets/store/10-pdfmap.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Bring your own map. Import a GeoPDF or defence map sheet, georeferenced on-device, with your live tactical picture on top.">
+               alt="Bring your own map. Import a GeoPDF or scanned PDF map sheet, georeferenced on-device, with your mission picture on top.">
         </picture>
+        <figcaption><b>iOS</b> · PDF map</figcaption>
       </figure>
     </div>
-    <p class="rail-hint">10 screens · iPhone</p>
+    <p class="rail-hint">9 verified iPhone screens · 2 verified Android screens</p>
   </div>
 </section>
 
 <!-- WHO -->
 <a id="who"></a>
-<section class="blk" style="padding-top:0">
+<section class="blk flush-top">
   <div class="wrap rv">
     <div class="gridref"><b>REF 04</b> Built for</div>
-    <h2>Teams that move together where there is no signal.</h2>
+    <h2>Field tools that remain useful when signal drops.</h2>
     <div class="who">
       <div class="who-card">
         <span class="tag">Field</span>
         <h3>Milsim &amp; airsoft</h3>
-        <p>Run a real shared map for your whole element, fully offline.</p>
+        <p>Pre-stage the map and use field tools offline; Unit Sync reconnects
+          through its relay when a network path is available.</p>
       </div>
       <div class="who-card">
         <span class="tag">Response</span>
         <h3>Search &amp; rescue</h3>
-        <p>Keep the team on one map in the valley where nothing else works.</p>
+        <p>Keep navigation and a pre-staged map available when coverage disappears.</p>
       </div>
       <div class="who-card">
         <span class="tag">Ready</span>
         <h3>Preparedness</h3>
-        <p>Your map, your team, no account and nothing leaving your devices.</p>
+        <p>Your map, your team, no account; optional network paths stay visible
+          and off until you choose them.</p>
       </div>
       <div class="who-card">
         <span class="tag">Pro</span>
@@ -527,12 +574,13 @@
         <div class="gridref"><b>REF 05</b> Verify</div>
         <h2>Don't take our word for it. Read it.</h2>
         <p class="sub">The whole security story is documented and open. The sync
-          layer is end-to-end encrypted, the relay only ever handles sealed blobs
-          and routing metadata, and the crypto ships with a test suite. If you can
+          layer is end-to-end encrypted, while the relay handles encrypted
+          payloads plus a clear admission token, envelope, actor/session, control,
+          and traffic metadata. The crypto ships with a test suite. If you can
           read code, you can check every claim on this page.</p>
       </div>
       <div class="vlinks">
-        <a class="vlink" href="/threat-model.html">
+        <a class="vlink" href="/threat-model">
           <span><span class="vt">Threat model</span><span class="vd">What each party can and cannot see, in plain language.</span></span>
           <span class="arrow">→</span>
         </a>
@@ -540,8 +588,12 @@
           <span><span class="vt">Source on GitHub</span><span class="vd">The full app, open for audit.</span></span>
           <span class="arrow">→</span>
         </a>
-        <a class="vlink" href="/threat-model.html#relay">
+        <a class="vlink" href="/threat-model#relay">
           <span><span class="vt">How sync encryption works</span><span class="vd">Key derivation, sealing, and what the relay handles.</span></span>
+          <span class="arrow">→</span>
+        </a>
+        <a class="vlink" href="/privacy">
+          <span><span class="vt">Privacy policy</span><span class="vd">On-device storage, optional providers, relay metadata, and platform permissions.</span></span>
           <span class="arrow">→</span>
         </a>
       </div>
@@ -557,25 +609,41 @@
     <h2>Straight answers.</h2>
     <div class="faq">
       <div class="qa"><div class="q">Do I need a server?</div>
-        <div class="a">No. Share a join code and your team is synced through an
-          encrypted relay. You can also self-host the relay if you want to own the
-          entire path.</div></div>
+        <div class="a">You do not need to administer one. Unit Sync uses an
+          encrypted relay when connected; you can use the hosted relay or
+          self-host it.</div></div>
       <div class="qa"><div class="q">What can the sync relay see?</div>
-        <div class="a">Ciphertext and routing metadata only. It never sees
-          positions, callsigns, or unit identity, because everything is sealed on
-          your device before it is sent. Details are in the
+        <div class="a">Encrypted mission payloads; the admission token during
+          connection; and clear routing, object/version/kind, actor/session/key,
+          request/acknowledgement and control fields. For Chat it sees room versus
+          selected-unit scope and the exact selected recipient. It also sees room
+          co-membership plus IP, timing, frequency, and size metadata. The relay
+          does not receive plaintext or the room key, but a weak human join code
+          can be guessed offline from the visible room identifier, and the relay
+          can delay, replay, suppress, or selectively route traffic. Member
+          liveness is relay-reported, not independently proven. Details are in the
           <a href="#verify">threat model</a>.</div></div>
       <div class="qa"><div class="q">Is my data encrypted?</div>
-        <div class="a">Presence and sync are end-to-end encrypted in transit. On
-          your device, data stays in app-private storage protected by your device
-          lock. Nothing is uploaded to a cloud account.</div></div>
+        <div class="a">Presence and sync are end-to-end encrypted. Mission
+          objects, calibration metadata and tracks are encrypted in app-private
+          storage; imported map bytes remain private under device file protection.</div></div>
+      <div class="qa"><div class="q">Does “Routed” mean a Chat message was read?</div>
+        <div class="a">No. TacMap Chat v1 is live-only and has no endpoint
+          delivery or read receipt. “Routed” or “Sent to room” means only that the
+          relay accepted the ciphertext for its current live routing scope.</div></div>
       <div class="qa"><div class="q">Which platforms?</div>
-        <div class="a">iOS and Android, from one codebase, with matching behaviour
-          on both.</div></div>
+        <div class="a">Native iOS and Android apps in one repository. Shared data
+          contracts and fixtures cover cross-platform behaviour; native layouts
+          can differ, and the screenshot gallery is not the parity test suite.</div></div>
+      <div class="qa"><div class="q">What does Export All Mission Objects include?</div>
+        <div class="a"><strong>Export All Mission Objects</strong> creates GeoJSON
+          for waypoints, symbols, drawings, and layers. A recorded route remains
+          a separate GPX export.</div></div>
       <div class="qa"><div class="q">Is it really private?</div>
-        <div class="a">No analytics, no ad networks, no crash telemetry, no
-          account. The repo is open so you can confirm exactly what it does and
-          does not send.</div></div>
+        <div class="a">No TacMap account, behavioural analytics, ads, or developer
+          crash uploads. Optional tiles/lookups and Unit Sync are disclosed and
+          gated; platform stores may reconcile the one-time unlock. The
+          <a href="/privacy">privacy policy</a> documents each path.</div></div>
     </div>
   </div>
 </section>
@@ -584,10 +652,11 @@
 <a id="get"></a>
 <section class="dl">
   <div class="wrap rv">
-    <span class="eyebrow" style="justify-content:center;display:flex">Free to try</span>
+    <span class="eyebrow centered">Free to try</span>
     <h2>Get your team on one map.</h2>
-    <p>Download TacMap, share a join code, and you are moving as one. Offline,
-      encrypted, no account.</p>
+    <p>Download TacMap for offline field tools. When connected, share a join code
+      for encrypted Unit Sync presence, mission objects, and TacMap Chat. No
+      TacMap account.</p>
     <div class="cta-row">
       <a class="store" href="https://apps.apple.com/au/app/tacmap/id6773175573"><span><span class="k">Download on the</span><span class="v">App Store</span></span></a>
       <a class="store" href="https://play.google.com/store/apps/details?id=com.tacmap"><span><span class="k">Get it on</span><span class="v">Google Play</span></span></a>
@@ -602,6 +671,8 @@
     <div class="foot-links">
       <a href="#compare">vs TAK</a>
       <a href="#verify">Security</a>
+      <a href="/privacy">Privacy</a>
+      <a href="mailto:christianbrooker@gmail.com">Support</a>
       <a href="https://github.com/JediBrooker/TacMap">GitHub</a>
       <a href="#faq">FAQ</a>
     </div>

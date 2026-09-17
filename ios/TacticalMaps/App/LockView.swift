@@ -141,10 +141,14 @@ struct AppLockSetupView: View {
             message = "PINs must match and be 4 digits."
             return
         }
-        AppLock.setPIN(newPIN)
-        resetFields()
-        isEnabled = true
-        message = "App Lock enabled. TacMap will lock when backgrounded."
+        do {
+            try AppLock.setPIN(newPIN)
+            resetFields()
+            isEnabled = true
+            message = "App Lock enabled. TacMap will lock when backgrounded."
+        } catch {
+            message = error.localizedDescription
+        }
     }
 
     private func changePIN() {
@@ -158,20 +162,28 @@ struct AppLockSetupView: View {
             message = "New PINs must match and be 4 digits."
             return
         }
-        AppLock.setPIN(newPIN)
-        resetFields()
-        message = "PIN changed."
+        do {
+            try AppLock.setPIN(newPIN)
+            resetFields()
+            message = "PIN changed."
+        } catch {
+            message = error.localizedDescription
+        }
     }
 
     private func disable() {
-        if AppLock.disable(currentPIN: currentPIN) {
-            resetFields()
-            isEnabled = false
-            message = "App Lock disabled."
-        } else {
-            message = AppLock.lockoutRemaining > 0
-                ? "Too many attempts. Try again shortly."
-                : "Current PIN is incorrect."
+        do {
+            if try AppLock.disable(currentPIN: currentPIN) {
+                resetFields()
+                isEnabled = false
+                message = "App Lock disabled."
+            } else {
+                message = AppLock.lockoutRemaining > 0
+                    ? "Too many attempts. Try again shortly."
+                    : "Current PIN is incorrect."
+            }
+        } catch {
+            message = error.localizedDescription
         }
     }
 

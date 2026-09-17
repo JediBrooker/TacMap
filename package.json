@@ -1,9 +1,16 @@
 {
   "private": true,
   "scripts": {
-    "generate:milsymbol": "node scripts/generate_milsymbol_assets.cjs"
+    "generate:milsymbol": "node scripts/generate_milsymbol_assets.cjs",
+    "build:site": "node site/build-docs.mjs",
+    "test:site": "npm run build:site && node --test site/test/*.test.mjs",
+    "check:site": "npm run test:site && wrangler deploy --dry-run --config site/wrangler.jsonc"
   },
   "dependencies": {
     "milsymbol": "3.0.4"
+  },
+  "devDependencies": {
+    "marked": "18.0.11",
+    "wrangler": "4.127.0"
   }
 }

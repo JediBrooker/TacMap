@@ -37,9 +37,7 @@ internal data class PresencePayloadV3(
 
     fun isValid(): Boolean =
         callsign.codePointCount(0, callsign.length) <= MAX_CALLSIGN_CODE_POINTS &&
-            lat.isFinite() && lat in -90.0..90.0 &&
-            lon.isFinite() && lon in -180.0..180.0 &&
-            heading.isFinite() && speed.isFinite()
+            PresenceLocationQuality.hasValidWireValues(lat, lon, heading, speed)
 
     companion object {
         const val ENVELOPE_VERSION = 1

@@ -38,6 +38,47 @@ enum KMLImporter {
     static func parse(_ data: Data,
                       existingLayers: [DrawingLayer],
                       fallbackLayerID: UUID) throws -> GeoJSONImporter.Result {
+        try parseCore(data,
+                      existingLayers: existingLayers,
+                      fallbackLayerID: fallbackLayerID,
+                      resolveExternalID: nil)
+    }
+
+    static func parseExternal(_ data: Data,
+                              existingLayers: [DrawingLayer],
+                              fallbackLayerID: UUID,
+                              existingWaypointIDs: Set<UUID>,
+                              existingDrawingIDs: Set<UUID>,
+                              batchKey: String,
+                              priorResolutions: [ExternalImportIdentityResolver.Resolution] = [],
+                              idFactory: @escaping () -> UUID = UUID.init) throws -> GeoJSONImporter.ExternalBatch {
+        var resolver = ExternalImportIdentityResolver(
+            existingWaypointIDs: existingWaypointIDs,
+            existingDrawingIDs: existingDrawingIDs,
+            priorResolutions: priorResolutions,
+            idFactory: idFactory
+        )
+        let parsed = try parseCore(
+            data,
+            existingLayers: existingLayers,
+            fallbackLayerID: fallbackLayerID,
+            resolveExternalID: { sourceID, kind, featureIndex in
+                resolver.resolve(sourceID: sourceID,
+                                 kind: kind,
+                                 caseKey: "feature-\(featureIndex)")
+            }
+        )
+        return GeoJSONImporter.ExternalBatch(batchKey: batchKey,
+                                             result: parsed,
+                                             identityResolutions: resolver.resolutions)
+    }
+
+    private static func parseCore(
+        _ data: Data,
+        existingLayers: [DrawingLayer],
+        fallbackLayerID: UUID,
+        resolveExternalID: ((String?, ExternalImportIdentityResolver.ObjectKind, Int) -> UUID)?
+    ) throws -> GeoJSONImporter.Result {
         guard data.count <= maxInputBytes else { throw ImportError.limitExceeded("file is over 16 MB") }
         let kmlData: Data
         if data.count >= 2, data[data.startIndex] == 0x50, data[data.startIndex + 1] == 0x4B {
@@ -51,7 +92,8 @@ enum KMLImporter {
 
         let delegate = KMLParserDelegate(existingLayers: existingLayers,
                                          fallbackLayerID: fallbackLayerID,
-                                         deadline: Date().addingTimeInterval(4))
+                                         deadline: Date().addingTimeInterval(4),
+                                         resolveExternalID: resolveExternalID)
         let parser = XMLParser(data: kmlData)
         parser.delegate = delegate
         parser.shouldResolveExternalEntities = false
@@ -85,6 +127,8 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     private var inPlacemark = false
     private var placemarkName: String?
     private var placemarkNotes: String?
+    private var placemarkSourceID: String?
+    private var placemarkIndex = 0
     private enum Geom { case point, line, polygon }
     private var geom: Geom?
     private var coords: [Coordinate2D] = []
@@ -94,14 +138,19 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
     private var featureCount = 0
     private var coordinateCount = 0
     private let deadline: Date
+    private let resolveExternalID: ((String?, ExternalImportIdentityResolver.ObjectKind, Int) -> UUID)?
     private(set) var failure: Error?
 
-    init(existingLayers: [DrawingLayer], fallbackLayerID: UUID, deadline: Date) {
+    init(existingLayers: [DrawingLayer],
+         fallbackLayerID: UUID,
+         deadline: Date,
+         resolveExternalID: ((String?, ExternalImportIdentityResolver.ObjectKind, Int) -> UUID)? = nil) {
         self.layersByName = Dictionary(existingLayers.map { ($0.name, $0) },
                                        uniquingKeysWith: { a, _ in a })
         self.fallbackLayerID = fallbackLayerID
         self.layerStack = [fallbackLayerID]
         self.deadline = deadline
+        self.resolveExternalID = resolveExternalID
     }
 
     private var currentLayerID: UUID { layerStack.last ?? fallbackLayerID }
@@ -135,6 +184,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
             // Inherit the enclosing layer until a <name> refines it.
             layerStack.append(currentLayerID)
         case "Placemark":
+            placemarkIndex = featureCount
             featureCount += 1
             if featureCount > KMLImporter.maxFeatures {
                 fail(.limitExceeded("more than 10,000 placemarks"), parser)
@@ -143,6 +193,7 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
             inPlacemark = true
             placemarkName = nil
             placemarkNotes = nil
+            placemarkSourceID = attributeDict["id"]
             geom = nil
             coords = []
             firstAltitude = nil
@@ -224,8 +275,9 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
         switch geom {
         case .point:
             guard let first = coords.first else { return }
+            let id = resolvedObjectID(kind: .waypoint)
             let wp = Waypoint(
-                id: UUID(),
+                id: id,
                 name: (placemarkName?.isEmpty == false ? placemarkName! : "Imported"),
                 notes: placemarkNotes,
                 coordinate: CLLocationCoordinate2D(latitude: first.latitude,
@@ -240,7 +292,10 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
             result.waypoints.append(wp)
         case .line:
             guard coords.count >= 2 else { return }
-            result.drawings.append(makeShape(kind: .polyline, coords: coords, layerID: layerID))
+            result.drawings.append(makeShape(id: resolvedObjectID(kind: .drawing),
+                                             kind: .polyline,
+                                             coords: coords,
+                                             layerID: layerID))
         case .polygon:
             var pts = coords
             if pts.count > 1, let f = pts.first, let l = pts.last,
@@ -248,13 +303,25 @@ private final class KMLParserDelegate: NSObject, XMLParserDelegate {
                 pts.removeLast()
             }
             guard pts.count >= 3 else { return }
-            result.drawings.append(makeShape(kind: .polygon, coords: pts, layerID: layerID))
+            result.drawings.append(makeShape(id: resolvedObjectID(kind: .drawing),
+                                             kind: .polygon,
+                                             coords: pts,
+                                             layerID: layerID))
         }
     }
 
-    private func makeShape(kind: DrawingKind, coords: [Coordinate2D], layerID: UUID) -> DrawingShape {
+    private func resolvedObjectID(kind: ExternalImportIdentityResolver.ObjectKind) -> UUID {
+        resolveExternalID?(placemarkSourceID, kind, placemarkIndex)
+            ?? placemarkSourceID.flatMap(UUID.init(uuidString:))
+            ?? UUID()
+    }
+
+    private func makeShape(id: UUID,
+                           kind: DrawingKind,
+                           coords: [Coordinate2D],
+                           layerID: UUID) -> DrawingShape {
         DrawingShape(
-            id: UUID(),
+            id: id,
             name: placemarkName,
             notes: placemarkNotes,
             kind: kind,

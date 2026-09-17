@@ -11,9 +11,14 @@ final class DrawingSessionViewModel: ObservableObject {
     @Published private(set) var activeKind: DrawingKind? = nil
     @Published private(set) var inProgressCoordinates: [Coordinate2D] = []
 
-    /// Stroke / fill colour for the in-progress drawing. Sticks around
-    /// across sessions untill the user picks something else.
+    /// Stroke colour for the in-progress drawing. It is deliberately
+    /// independent from polygon fill colour.
     @Published var strokeColorHex: String = DrawingPalette.default.hex
+
+    /// Polygon fill hue and opacity. Both persist across drawing sessions,
+    /// just like stroke colour, so a user's chosen style remains convenient.
+    @Published var fillColorHex: String = DrawingPalette.default.hex
+    @Published var fillOpacity: Double = 0.2
 
     /// When true, finished lines and polygon strokes render dashed.
     /// Persists across sessions until the user toggles it.
@@ -96,7 +101,8 @@ final class DrawingSessionViewModel: ObservableObject {
         // without losing the shape outline on satellite.
         let style = DrawingStyle(
             strokeColorHex: strokeColorHex,
-            fillColorHex:   strokeColorHex,   // polygons fill with same hue
+            fillColorHex:   fillColorHex,
+            fillOpacity:    min(max(fillOpacity.isFinite ? fillOpacity : 0.2, 0), 1),
             dashPattern:    isDashed ? [8, 6] : nil
         )
         let trimmedName = shapeName.trimmingCharacters(in: .whitespaces)

@@ -5,16 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Threat model — TacMap</title>
 <meta name="description" content="What TacMap exposes, to whom, and where its guarantees stop. Written for users, unit security staff, and code auditors.">
-<link rel="canonical" href="https://tacmap.app/threat-model.html">
+<link rel="canonical" href="https://tacmap.app/threat-model">
 <meta name="theme-color" content="#0E1519">
 <link rel="icon" type="image/png" href="assets/brand/app-icon-512.png">
 <meta property="og:title" content="TacMap threat model">
 <meta property="og:description" content="What TacMap exposes, to whom, and where its guarantees stop.">
 <meta property="og:type" content="article">
-<meta property="og:url" content="https://tacmap.app/threat-model.html">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Saira:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<meta property="og:url" content="https://tacmap.app/threat-model">
 <style>
   :root{
     --void:#0E1519; --void-2:#0B1013; --panel:#141E24;
@@ -25,25 +22,26 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{background:var(--void);color:var(--ink);
-    font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.7;
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.7;
     -webkit-font-smoothing:antialiased}
   a{color:var(--signal);text-decoration:none}
   a:hover{text-decoration:underline}
+  main a{overflow-wrap:anywhere}
 
   header.nav{position:sticky;top:0;z-index:20;
     background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line-2)}
   .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
     display:flex;align-items:center;justify-content:space-between;gap:20px}
-  .brand{display:flex;align-items:center;gap:11px;font-family:"Saira",sans-serif;
+  .brand{display:flex;align-items:center;gap:11px;font-family:system-ui,sans-serif;
     font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
   .brand:hover{text-decoration:none}
   .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
-  .nav-in .back{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink-dim)}
+  .nav-in .back{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;color:var(--ink-dim)}
   .nav-in .back:hover{color:var(--ink);text-decoration:none}
 
   main{max-width:var(--maxw);margin:0 auto;padding:56px 28px 96px}
-  h1,h2,h3,h4{font-family:"Saira",sans-serif;line-height:1.15;letter-spacing:-.01em;
+  h1,h2,h3,h4{font-family:system-ui,sans-serif;line-height:1.15;letter-spacing:-.01em;
     color:var(--ink);scroll-margin-top:80px}
   h1{font-size:clamp(32px,5vw,46px);font-weight:800;margin-bottom:8px}
   h2{font-size:clamp(22px,3vw,30px);font-weight:700;margin:52px 0 16px;
@@ -58,7 +56,7 @@
   blockquote{border-left:2px solid var(--signal);padding-left:18px;margin:18px 0;
     color:var(--ink-dim)}
 
-  code{font-family:"IBM Plex Mono",monospace;font-size:.9em;color:var(--ink);
+  code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9em;color:var(--ink);
     background:var(--panel);border:1px solid var(--line-2);
     border-radius:3px;padding:1px 5px}
   pre{background:var(--void-2);border:1px solid var(--line);border-radius:5px;
@@ -69,7 +67,7 @@
   table{width:100%;border-collapse:collapse;font-size:14.5px}
   th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-2);
     vertical-align:top}
-  thead th{font-family:"Saira",sans-serif;font-weight:700;background:var(--void-2);
+  thead th{font-family:system-ui,sans-serif;font-weight:700;background:var(--void-2);
     color:var(--ink);white-space:nowrap}
   td{color:var(--ink-dim)}
   tbody tr:last-child td{border-bottom:none}
@@ -77,7 +75,7 @@
   footer{border-top:1px solid var(--line-2);background:var(--void-2);padding:32px 0}
   .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;
     display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
-    font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-faint);
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:var(--ink-faint);
     letter-spacing:.06em}
   .foot-in a{color:var(--ink-dim)}
 </style>
@@ -94,7 +92,7 @@
 </header>
 <main>
 <h1 id="tacmap-threat-model">TacMap Threat Model</h1>
-<p><strong>Status:</strong> working draft · <strong>Audience:</strong> users, unit security staff, code auditors
+<p><strong>Status:</strong> maintained release document · <strong>Audience:</strong> users, unit security staff, code auditors
 <strong>Scope:</strong> what information TacMap can expose, to whom, and where its guarantees stop.</p>
 <p>This document is deliberately plain. If you use TacMap to hold or share unit
 information, you should be able to read this in five minutes and know exactly
@@ -105,10 +103,12 @@ does <strong>not</strong> protect you from.</p>
 <h2 id="1-what-tacmap-is">1. What TacMap is</h2>
 <p>An offline-first tactical mapping tool for iOS and Android: MGRS grid, drawing
 and measurement, military symbology, waypoints and track logs, import/export,
-and an <strong>optional</strong> unit sync feature that shares live presence and map objects
-between devices that share a join code.</p>
-<p>Everything except sync works with no network at all. Sync is off until a user
-joins a room.</p>
+and an <strong>optional</strong> unit sync feature that shares live presence, map objects,
+and live TacMap Chat messages between devices that share a join code.</p>
+<p>Core navigation, imported-map, drawing, measurement, and mission-object work can
+run without a network. Unit Sync requires a path to its relay. Online tiles and
+lookups require their separately enabled providers, and platform-store ownership
+reconciliation can occur independently of those OPSEC gates.</p>
 <hr>
 <h2 id="2-critical-information-what-an-adversary-wants">2. Critical information (what an adversary wants)</h2>
 <p>If TacMap is holding real data, the sensitive items are:</p>
@@ -116,6 +116,8 @@ joins a room.</p>
 <li><strong>Positions</strong> — your live position, and peers&#39; positions, headings, speeds.</li>
 <li><strong>Unit identity</strong> — callsigns, affiliation, echelon, function, HQ status.</li>
 <li><strong>Scheme of manoeuvre</strong> — waypoints, routes, tracks, drawn control measures.</li>
+<li><strong>Messages and reports</strong> — operational text, reply context, and who sent it
+to whom.</li>
 <li><strong>Area of interest</strong> — the ground you are looking at, even without any markup.</li>
 <li><strong>Association and tempo</strong> — who is working with whom, and when activity spikes.</li>
 </ul>
@@ -127,10 +129,13 @@ joins a room.</p>
 <tr><td>The sync relay</td><td><strong>Untrusted</strong></td><td>Routes encrypted traffic; can see metadata.</td></tr>
 <tr><td>Basemap / lookup providers</td><td><strong>Untrusted</strong></td><td>See the coordinates you request.</td></tr>
 <tr><td>The network path (ISP, Wi-Fi, carrier)</td><td><strong>Untrusted</strong></td><td>Sees who you talk to and when.</td></tr>
-<tr><td>Other members of your sync room</td><td>Trusted by you</td><td>They hold the room key and see everything you share.</td></tr></tbody></table></div>
-<p>The design goal is that <strong>only your device and your own room members</strong> ever see
-critical information in cleartext. Everything else on this list sees ciphertext
-or coordinate requests, never unit data.</p>
+<tr><td>Other members of your sync room</td><td>Partly trusted by you</td><td>They hold the room key and see room-shared content. A Selected unit chat uses a separate pairwise session key, but its recipient can still copy the plaintext.</td></tr></tbody></table></div>
+<p>The design goal is that <strong>only your device and the intended sharing scope</strong> see
+mission payloads in cleartext. Room objects, presence, and Entire room chat are
+readable by room-key holders. Selected unit chat is readable only by the two
+selected live endpoint sessions. The relay sees ciphertext together with the
+clear protocol metadata and control fields documented below. Tile/lookup
+providers see the coordinates or queries required for an action you enable.</p>
 <hr>
 <h2 id="relay">4. What the sync relay can and cannot see</h2>
 <p>This is the core statement. Read it before trusting sync.</p>
@@ -138,44 +143,80 @@ or coordinate requests, never unit data.</p>
 human join code (e.g. <code>bravo-tonight</code>) into three separate values using a slow
 password-stretch (PBKDF2-HMAC-SHA256, 210,000 iterations). One value is a
 routing ID the relay uses to connect you to your room. A second is the
-encryption key, which <strong>never leaves your device</strong>. A third is a write token
-that only travels inside the connection handshake. Every map object and every
-presence update is sealed with AES-256-GCM using the encryption key before it is
-sent. The relay only ever forwards sealed blobs. It cannot reverse the routing
-ID straight back to the key. But the routing ID and the key are both derived
-from the same join code, so the protection is only ever as strong as that code:
+encryption key, which <strong>never leaves your device</strong>. A third is an authorization
+token sent to the relay inside the TLS-protected WebSocket handshake; the relay
+hashes and pins it for room admission. Every map object and every presence update
+is sealed with AES-256-GCM using the encryption key before it is sent. The relay
+forwards and may retain that ciphertext, but it also handles clear routing,
+object/version/kind, request/acknowledgement, actor, session, chat scope and
+recipient routing, and control fields.
+It cannot reverse the routing ID straight back to the key. But the routing ID
+and the key are both derived from the same join code, so the protection is only
+ever as strong as that code:
 a weak or human-memorable code can be guessed offline (see <em>Your join code is
 the whole ballgame</em>, below). With a strong, generated code the relay can route
-your traffic but cannot read it.</p>
+the traffic and inspect the metadata listed below, but—absent compromise of a
+client or the code—it cannot decrypt correctly authenticated mission-payload
+ciphertext.</p>
 <p><strong>What the relay CAN see:</strong></p>
 <ul>
 <li>The <strong>routing room ID</strong> (a 256-bit value derived from your join code; not
 directly reversible, but it doubles as an offline <em>verifier</em> for guessed
 codes - see <em>Your join code is the whole ballgame</em>, below).</li>
+<li>The room <strong>authorization token</strong> during each connection handshake and the hash
+retained for later room admission checks. This token is distinct from the
+mission-payload encryption key but is also derived from the join code.</li>
 <li>The <strong>IP addresses</strong> of connected devices, and therefore approximate
 geographic origin.</li>
 <li><strong>Traffic metadata:</strong> when devices connect, how often they send, message sizes
 and timing.</li>
 <li>That a set of devices <strong>belong to the same room</strong> (co-membership).</li>
+<li>Clear outer object IDs, versions, kinds, writer IDs, request IDs,
+acknowledgements, and delete/control message types around encrypted payloads.</li>
+<li>Public actor keys, actor/session identifiers, signatures, and the signed
+session announcements used by clients to display relay-reported membership.</li>
+<li>TacMap Chat&#39;s clear sender/session/key ID and whether a frame is <strong>Entire
+room</strong> or <strong>Selected unit</strong>. For a selected-unit frame it also sees the exact
+recipient actor/session/key ID. It sees ephemeral X25519 public keys and
+transport acknowledgements, but chat frames are live-only and are not written
+to relay storage.</li>
 </ul>
 <p><strong>What the relay CANNOT see:</strong></p>
 <ul>
 <li>Positions, headings, speeds.</li>
 <li>Callsigns, affiliation, echelon, function, HQ status.</li>
 <li>Waypoints, routes, tracks, drawn control measures.</li>
-<li>The join code, or anything typed by users.</li>
+<li>Chat text, report contents, reply references, and in-message timestamps.
+Those fields remain inside the ciphertext. Chat v1 has no delivery/read
+receipts.</li>
+<li>The join code itself, although the routing ID lets an observer confirm offline
+guesses and a relay also receives the separately derived authorization token.</li>
 <li>The contents of any synced object. All of it is AES-256-GCM ciphertext.</li>
 </ul>
-<p><strong>Why a hostile relay still cannot cheat.</strong> Each sealed object binds its own
+<p><strong>What payload authentication prevents.</strong> Each sealed object binds its own
 routing metadata (object ID, version, kind) into the encryption as associated
-data. A relay that tries to replay an object under a different ID, or move it
-between rooms, produces an authentication failure and the client rejects it. A
-leaked routing ID alone cannot write to a room either, because writing requires
-the separate write token.</p>
+data. A relay that relabels an object under a different ID or moves it between
+rooms produces an authentication failure and the client rejects it. An outside
+party with only a leaked routing ID also cannot pass room admission without the
+separate authorization token. The relay can still suppress, delay, replay, or
+serve older genuinely authenticated state; those limits are explicit in §7.</p>
+<p>TacMap Chat applies the same rule to recipient scope. The binary header bound
+into both AES-GCM and the sender&#39;s Ed25519 signature contains the room, sender,
+session, counter, message ID, key ID, scope, and—when selected—the exact
+recipient actor/session/key. A relay cannot turn a selected-unit message into
+an Entire room message or silently retarget it. Selected-unit encryption uses a
+session X25519 secret that neither the relay nor other join-code holders have.</p>
 <p><strong>The honest limit.</strong> Content is protected. <strong>Metadata is not.</strong> A relay
 operator, or anyone who compromises or coerces the relay or its host, can learn
 that a group of IPs form a unit, roughly where they are, and when they are
-active. That is enough to infer association and operational tempo. See §7.</p>
+active. Selected-unit routing also exposes who is messaging whom, even though
+the words remain encrypted. That is enough to infer association and operational
+tempo. See §7.</p>
+<p>The member list is also not independent proof of liveness. A signed session
+announcement authenticates the device that created it, but the relay decides
+when to forward a join or leave and can replay, delay, suppress, or reorder
+genuinely signed session state. The UI therefore describes members as
+relay-reported sessions; confirm critical presence out-of-band.</p>
 <p><strong>Your join code is the whole ballgame.</strong> The routing ID, the encryption key,
 and the write token are all derived from the join code through one fixed,
 app-wide salt. There is no per-room salt on purpose: the relay has to route by a
@@ -194,38 +235,40 @@ yourself, especially a memorable one, is guessable and is not covered by the
 guarantees above. (A memory-hard KDF - Argon2id/scrypt - would raise the
 per-guess cost further and is a planned hardening; it does not remove the need
 for an entropic code.)</p>
-<p>The relay is auditable: it only ever handles sealed blobs plus routing IDs. You
-do not have to trust ours. <strong>You can self-host it</strong> (see §8).</p>
-<p>Crypto reference for auditors: <code>SyncCrypto.kt</code> / <code>SyncCrypto.swift</code> and their
-test suites. Android and iOS produce byte-identical wire format
-(<code>iv(12) || ciphertext || tag(16)</code>).</p>
+<p>The relay is auditable: its payloads are sealed, while its source shows the clear
+admission token, envelope metadata, actor/session records, and control traffic it
+also handles. You do not have to trust ours. <strong>You can self-host it</strong> (see §8).</p>
+<p>Crypto reference for auditors: <code>SyncCrypto.kt</code> / <code>SyncCrypto.swift</code>, the TacMap
+Chat crypto implementations, ADR-004, and their test suites. Android and iOS
+produce byte-identical sealed format (<code>iv(12) || ciphertext || tag(16)</code>).</p>
 <hr>
 <h2 id="5-network-egress-table">5. Network egress table</h2>
 <p>Every outbound connection TacMap can make, what triggers it, what the far end
-learns, and its default state. If a row is off by default, TacMap makes no such
-request until you opt in.</p>
-<div class="tablewrap"><table><thead><tr><th>Endpoint</th><th>Purpose</th><th>Triggered by</th><th>What the provider learns</th><th>Default</th><th>Mitigation</th></tr></thead><tbody><tr><td><code>ibasemaps-api.arcgis.com</code> (Esri World Imagery)</td><td>Satellite basemap tiles (the default style)</td><td>Viewing the map with online basemaps enabled</td><td>Your IP + the tile coordinates/zoom you view = your area of interest, over time</td><td><strong>Off</strong> (online basemaps gate)</td><td>Leave the gate off; use offline packs, see §6</td></tr>
-<tr><td><code>static-map-tiles-api.arcgis.com</code> (Esri)</td><td>Topographic + OSM-street basemap tiles (licensed)</td><td>Selecting those styles with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> (online basemaps gate)</td><td>Leave the gate off; use offline packs</td></tr>
-<tr><td><code>a.tile.opentopomap.org</code>, <code>b.tile.opentopomap.org</code>, <code>c.tile.opentopomap.org</code></td><td>OpenTopoMap community topo tiles (the one keyless style)</td><td>Selecting the OSM-Topo style with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> (online basemaps gate)</td><td>Leave the gate off; use offline packs</td></tr>
-<tr><td><code>api.open-meteo.com/v1/forecast</code></td><td>Weather lookup</td><td>Opening the weather dialog</td><td>Your IP + the exact coordinates queried</td><td><strong>Off</strong> (online lookups gate)</td><td>Leave online lookups off</td></tr>
-<tr><td><code>api.open-meteo.com/v1/elevation</code></td><td>Elevation + terrain heatmap</td><td>Elevation/terrain features</td><td>Your IP + the exact coordinates queried</td><td><strong>Off</strong> (online lookups gate)</td><td>Leave online lookups off</td></tr>
-<tr><td>Place-name search — iOS <code>MKLocalSearch</code> (Apple), Android <code>Geocoder</code> (Google/OEM on GMS devices)</td><td>Turning a typed place name into a coordinate</td><td>Typing 2+ characters in Search</td><td>Your IP + the search string, which can itself reveal your AO (searching a FOB/village name)</td><td><strong>Off</strong> (online lookups gate)</td><td>Leave online lookups off; navigate by MGRS/grid instead</td></tr>
-<tr><td>Sync relay (default: <code>tacmap-sync.&lt;...&gt;.workers.dev</code>)</td><td>Encrypted unit sync transport</td><td>Joining a sync room</td><td>Ciphertext + routing ID + your IP + traffic timing (see §4)</td><td>Off until you join a room</td><td>Self-host the relay; see §8</td></tr>
-<tr><td>Apple App Store (StoreKit offer-code redemption) / <code>play.google.com/redeem</code></td><td>Offer-code / licence redemption</td><td>Viewing purchase options or tapping &quot;redeem&quot;</td><td>Your store account, code, and standard purchase metadata; no map or unit data</td><td>Purchase UI only</td><td>n/a</td></tr></tbody></table></div>
+learns, and its default state. The online-map and lookup gates start off for a
+fresh install and can be enabled independently. An update preserves choices
+that an existing user already stored.</p>
+<div class="tablewrap"><table><thead><tr><th>Endpoint</th><th>Purpose</th><th>Triggered by</th><th>What the provider learns</th><th>Default</th><th>Mitigation</th></tr></thead><tbody><tr><td><code>ibasemaps-api.arcgis.com</code> (Esri World Imagery)</td><td>Satellite basemap tiles (the initial style after opt-in)</td><td>Viewing the map with online basemaps enabled</td><td>Your IP + the tile coordinates/zoom you view = your area of interest, over time</td><td><strong>Off</strong> until online basemaps are enabled</td><td>Leave the gate off; use offline packs, see §6</td></tr>
+<tr><td><code>static-map-tiles-api.arcgis.com</code> (Esri)</td><td>Topographic + OSM-street basemap tiles (licensed)</td><td>Selecting those styles with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> until online basemaps are enabled</td><td>Leave the gate off; use offline packs</td></tr>
+<tr><td><code>a.tile.opentopomap.org</code>, <code>b.tile.opentopomap.org</code>, <code>c.tile.opentopomap.org</code></td><td>OpenTopoMap community topo tiles (the one keyless style)</td><td>Selecting the OSM-Topo style with online basemaps enabled</td><td>Your IP + requested tile coordinates = your AO</td><td><strong>Off</strong> until online basemaps are enabled</td><td>Leave the gate off; use offline packs</td></tr>
+<tr><td><code>api.open-meteo.com/v1/forecast</code></td><td>Weather lookup</td><td>Opening the weather dialog after enabling online lookups</td><td>Your IP + the map-centre coordinate, coarsened to roughly 110 m</td><td><strong>Off</strong> until online lookups are enabled</td><td>Leave online lookups off</td></tr>
+<tr><td><code>api.open-meteo.com/v1/elevation</code></td><td>Elevation + terrain heatmap</td><td>Elevation/terrain features after enabling online lookups</td><td>Your IP + the map-centre coordinate coarsened to roughly 110 m for elevation, or a 24 × 24 coordinate grid coarsened to roughly 11 m covering the visible area for terrain</td><td><strong>Off</strong> until online lookups are enabled</td><td>Leave online lookups off</td></tr>
+<tr><td>Place-name search — iOS <code>MKLocalSearch</code> (Apple), Android platform <code>Geocoder</code></td><td>Turning a typed place name into a coordinate</td><td>Typing 2+ non-coordinate characters in Search after online lookups are enabled</td><td>Your IP + the search string; iOS also supplies the camera region and Android can supply a location bias. These can reveal your AO (for example, searching a FOB/village name)</td><td><strong>Off</strong> until online lookups are enabled; coordinate-shaped text stays local</td><td>Leave online lookups off; navigate by MGRS/grid instead</td></tr>
+<tr><td>Sync relay (default: <code>tacmap-sync.&lt;...&gt;.workers.dev</code>)</td><td>Encrypted unit sync and live TacMap Chat transport</td><td>Joining a sync room</td><td>Encrypted mission/chat payloads; routing ID; admission token during the handshake; clear envelope, actor/session/key IDs, chat scope and selected recipient, request/acknowledgement and control fields; your IP and traffic timing/size (see §4)</td><td>Off until you join a room</td><td>Self-host the relay; see §8</td></tr>
+<tr><td>Apple App Store / Google Play</td><td>Ownership reconciliation, product details, purchase, restore, redemption</td><td>App launch and throttled foreground refresh; product/price loading while a paywall is visible; user purchase/restore/redeem actions</td><td>Standard store account, app/product, transaction/token, device, IP, timing, and diagnostic metadata; no map, location, or Unit Sync payload</td><td>Lifecycle reconciliation can occur even when OPSEC gates are off</td><td>Airplane mode or external network policy is the only complete suppression; see ADR-003</td></tr></tbody></table></div>
 <p>The three basemap rows apply to <strong>both platforms</strong> — iOS and Android draw the
-same Esri/OSM raster tiles, gated off by default. There is <strong>no Apple-Maps row
-and no Google-Maps row any more</strong>: both platforms render the map themselves now
-(§6). On iOS, Apple&#39;s <code>geod</code> daemon is never invoked and fetches nothing (measured
-zero, §6). On Android, the Google Maps SDK has been removed from the app entirely —
-there is no map SDK left to check in with Google on launch (§6).</p>
+same Esri/OSM raster tiles only after explicit opt-in. Neither app uses Apple Maps or
+Google Maps for basemap rendering (§6). On iOS, the custom renderer does not
+create an <code>MKMapView</code>, so Apple&#39;s <code>geod</code> daemon is not asked for basemap tiles
+(measured zero, §6). On Android, the Google Maps SDK has been removed from the
+app entirely (§6). Apple&#39;s <code>MKLocalSearch</code> remains an opt-in place-search path
+and is listed separately above.</p>
 <p><strong>Read this table as the whole story.</strong> If an endpoint is not listed here, the
-app does not contact it. <em>We</em> add no analytics SDK, no crash telemetry, no ad
-network; our own crash reports are written to local storage only and shared by
-you manually. <strong>Neither platform links a map SDK any more</strong> — iOS dropped MapKit
-and Android dropped the Google Maps SDK, so there is no longer any third-party
-map-engine telemetry on either one. The only Google dependency left on Android is
-Play Billing, which binds to the Play Store service and exchanges data only on a
-user-initiated purchase or restore (no map or unit data, ever); see §6.</p>
+app does not contact it. <em>We</em> add no analytics SDK, remote crash telemetry, or
+ad network; our own crash reports are written to local storage only and shared
+by you manually. Neither platform instantiates a third-party basemap engine.
+iOS links Apple frameworks for coordinate types and opt-in place search, not
+basemap rendering. Play Billing and StoreKit may reconcile entitlement at
+launch/foreground as well as during user purchase actions; see ADR-003.</p>
 <hr>
 <h2 id="6-the-area-of-interest-problem-basemaps-and-lookups">6. The area-of-interest problem (basemaps and lookups)</h2>
 <p>Even with sync fully off, requesting online map tiles or online
@@ -236,9 +279,9 @@ over time. This is the same class of exposure as the 2018 fitness-app heatmap
 incident.</p>
 <p>TacMap&#39;s controls:</p>
 <ul>
-<li><strong>Online lookups (weather, elevation, terrain) are off by default.</strong> They stay
-off until you explicitly enable them.</li>
-<li><strong>Online basemaps are off by default</strong>, behind their own OPSEC toggle
+<li><strong>Online lookups (place search, weather, elevation, terrain) are off for a
+fresh install</strong> and can be enabled independently.</li>
+<li><strong>Online basemaps are off for a fresh install</strong>, behind their own OPSEC toggle
 (Settings → Privacy &amp; OPSEC → Online basemap tiles). While off, no Esri and no
 OpenTopoMap tile is ever requested: the app does not construct the tile
 provider at all, so there is no URL to fetch.</li>
@@ -249,13 +292,12 @@ recommended posture for any real operation: pre-stage an MBTiles pack or a
 GeoPDF sheet before you deploy, then leave both online gates off in the field.</li>
 </ul>
 <h3 id="the-two-platforms-both-now-closed">The two platforms, both now closed</h3>
-<p>Both platforms draw the same Esri/OSM raster tiles, gate them off by default, and
-now render through the <strong>same in-app tile renderer</strong> — no Apple MapKit, no Google
-Maps SDK. Neither platform links a map engine that can phone a map provider on
-launch. The map is a Compose/Canvas renderer on Android and a Metal/CoreGraphics
-renderer on iOS, both of which draw only the raster source you chose: an Esri/OSM
-online style when the basemap gate is on, an offline pack/GeoPDF when you&#39;ve
-imported one, or nothing when both are off.</p>
+<p>Both platforms draw the same Esri/OSM raster tiles only after explicit opt-in,
+and render through app-owned tile engines rather than an Apple or Google
+basemap view. The map is a Compose/Canvas renderer on Android and a custom UIKit
+renderer on iOS. Each draws only the raster source you chose: an Esri/OSM online
+style when the basemap gate is on, an offline pack/GeoPDF when you have imported
+one, or nothing when both are off.</p>
 <p>That is a change from earlier builds, where Android hosted the map in Google&#39;s
 SDK. With online basemaps off, that SDK still fetched no basemap tiles — but the
 SDK <em>itself</em> phoned home on launch (~280 KB cold / ~24 KB warm on a Pixel emulator)
@@ -269,13 +311,13 @@ or <code>com.google.maps.android</code> classes (verifiable with <code>dexdump</
 build). There is no longer any code path that performs the provisioning check-in,
 because the code that performed it is not in the binary.</p>
 <p>So on Android, as on iOS, with the basemap gate <strong>off</strong> the app makes no basemap
-tile request of any kind and a stationary map settles to zero; with it <strong>on</strong>,
-tiles go to Esri/OpenTopoMap (your choice, behind the persistent red banner). The
-one honest caveat that remains is not ours: on a device with Google Play Services
-installed, the OS&#39;s own GMS processes have their own ambient network chatter, and
-Play Billing (still linked, for the paid unlock) binds to the Play Store service.
-Neither is TacMap requesting anything, and neither carries map or unit data. For a
-guaranteed-dark launch, airplane mode still removes every vector at once.</p>
+tile request; with it <strong>on</strong>, tiles go to Esri/OpenTopoMap (your choice, behind
+the persistent red banner). On a device with Google Play Services, system GMS
+processes can have ambient network traffic of their own. Separately, TacMap&#39;s
+Play Billing integration can bind to the Play Store for the entitlement contacts
+listed in §5; those requests do not include map or unit payloads. When no network
+contact at all is acceptable, disable all relevant radios or use an externally
+enforced network policy and verify the actual device configuration.</p>
 <h3 id="the-ios-side-now-closed">The iOS side, now closed</h3>
 <p>For most of this app&#39;s life, iOS had a hole here we could not close from inside
 MapKit. MapKit has no &quot;no basemap&quot; mode; the only way to suppress Apple&#39;s basemap
@@ -290,7 +332,7 @@ was on or off — the same tiles either way.</p>
 rendered by an in-app tile renderer we wrote (<code>TileMapView</code>), which draws only the
 raster source you chose — an Esri/OSM online style when the basemap gate is on, an
 offline pack/GeoPDF when you&#39;ve imported one, or nothing when both are off. There
-is no MapKit view in the tree, so <code>geod</code> is never asked for a tile.</p>
+is no <code>MKMapView</code> in the tree, so <code>geod</code> is never asked for a tile.</p>
 <p>This is measured, the same WAL way. After checkpointing geod&#39;s <code>MapTiles.sqlitedb-wal</code>
 to zero and then panning the renderer aggressively across fresh ground:</p>
 <div class="tablewrap"><table><thead><tr><th>Map engine</th><th>geod tile-store growth while panning</th></tr></thead><tbody><tr><td>Old MKMapView</td><td>~457 KB (fetched regardless of the gate)</td></tr>
@@ -300,7 +342,7 @@ to zero and then panning the renderer aggressively across fresh ground:</p>
 basemap-tile contact to any Apple map host</strong> (<code>*.ls.apple.com</code>, <code>gspe*</code>,
 <code>cdn.apple-mapkit</code>). So on iOS the AO no longer leaks to Apple <em>through the
 basemap</em>. (One thing still can: place-name <strong>search</strong> uses <code>MKLocalSearch</code>,
-which sends the query you type to Apple&#39;s servers - but only if you enable
+which sends the query you type and camera region to Apple&#39;s servers - but only if you enable
 online lookups and use the search box. See §5.) What the online-basemaps gate now buys
 you is the ordinary thing it says: with it off, the app makes no basemap tile
 request of any kind, and an imported offline pack or GeoPDF genuinely hides your
@@ -308,19 +350,22 @@ AO — there is no Apple fetch underneath it any more.</p>
 <p>The remaining ambient exposure is now symmetric across both platforms and comes
 only from the providers you can still choose to use: turning the basemap gate
 <strong>on</strong> sends your tile coordinates to Esri/OpenTopoMap (your choice, with a
-persistent red banner while it&#39;s active). Neither platform links a map SDK, so
-there is no map-engine launch check-in on either one.</p>
-<p>Rule of thumb: <strong>if you can see the internet, the internet can see your AO.</strong>
-Pre-stage offline maps before you need them; the gate and the in-app renderer now
-make &quot;offline pack loaded, radio on, nothing leaks&quot; true on <strong>both</strong> platforms.</p>
+persistent red banner while it is active). No Apple or Google basemap engine is
+started on either platform.</p>
+<p>Rule of thumb: <strong>an online map or coordinate lookup exposes your AO to its
+provider.</strong> Pre-stage offline maps before you need them. With both online gates
+off, the in-app renderers make no basemap or lookup request on either platform;
+Unit Sync, store reconciliation, operating-system traffic, and any other app on
+the device remain separate network paths.</p>
 <hr>
 <h2 id="7-what-tacmap-does-not-protect-you-from">7. What TacMap does NOT protect you from</h2>
 <p>Stated plainly, because a tool that hides its limits cannot be trusted.</p>
 <ul>
 <li><p><strong>Relay traffic analysis.</strong> Content is encrypted; the fact and pattern of
 communication is not. Co-membership, approximate location by IP, and activity
-tempo are inferable at the relay. Self-hosting moves this trust to you but does
-not remove it. A LAN/mesh transport removes the internet vector entirely
+tempo are inferable at the relay. Selected-unit chat also reveals the sender
+and recipient actor/session tuple to the relay. Self-hosting moves this trust
+to you but does not remove it. A LAN/mesh transport removes the internet vector entirely
 [PLANNED].</p>
 </li>
 <li><p><strong>A coerced relay can suppress or roll back, not just observe.</strong> AEAD stops the
@@ -341,40 +386,52 @@ and confirm critical changes out-of-band. Detecting these cases requires an
 external transparency log or out-of-band trust anchor; a relay-controlled
 monotonic sequence alone is not sufficient.</p>
 </li>
-<li><p><strong>Area-of-interest leakage via online basemaps/lookups.</strong> See §6. If you turn
-the online-basemaps or online-lookups gate on, the tile/query coordinates go to
-the provider (Esri/OpenTopoMap/Open-Meteo) from your IP. That is inherent to
-using an online map and is off by default. (Neither platform links a map SDK
-any more: iOS no longer touches Apple&#39;s <code>geod</code>, and Android no longer links the
-Google Maps SDK — both covered in §6.)</p>
+<li><p><strong>Area-of-interest leakage via online basemaps/lookups.</strong> See §6. While the
+online-basemaps or online-lookups gate is on, the tile/query coordinates go to
+the provider (Esri/OpenTopoMap/Open-Meteo, Apple place search, or the Android
+platform Geocoder) from your IP. That is inherent to using an online map or
+lookup and is disabled by default. Coordinate-shaped search text is handled
+locally and does not reach a place provider. iOS no longer asks Apple&#39;s
+<code>geod</code> for basemap tiles, and Android no longer links the Google Maps SDK (§6).</p>
 </li>
 <li><p><strong>Device compromise or capture.</strong> Mission data (waypoints, drawings, track
-logs, PDF calibration) is <strong>encrypted at rest</strong> with AES-256-GCM. The key never
-exists in plaintext on disk: on Android it is wrapped by a non-exportable
-Android Keystore key, on iOS it lives in the Keychain
-(<code>AfterFirstUnlockThisDeviceOnly</code>, never synced to iCloud, never in a backup).
-What that does and does not defeat depends on one setting:</p>
+logs, PDF calibration, chat history/drafts, and chat replay state) is
+<strong>encrypted at rest</strong> with AES-256-GCM. The key is
+not written as plaintext application data: on Android it is wrapped by an
+Android Keystore key whose bytes are not exportable through that API; on iOS
+it lives in the Keychain as <code>AfterFirstUnlockThisDeviceOnly</code>. The iOS item does
+not sync through iCloud Keychain or restore onto another device, but a protected
+backup can restore it to the same device. What this does and does not defeat
+depends on the platform, device implementation, boot state, and one setting:</p>
 <ul>
-<li><p><strong>Default (device-bound key).</strong> A forensic extraction of the <em>filesystem</em> —
-a disk image, <code>adb pull</code>, a backup, a <strong>powered-off or before-first-unlock</strong>
-seized handset, a device you binned or sent for repair — recovers
-<strong>ciphertext only</strong>. Two caveats. A device seized <strong>after</strong> first unlock and
-still powered on holds the key&#39;s class key resident, so a current forensic
-exploit could lift the data key - effectively the code-execution case below.
-And the keystore releases the key to this app automatically, so an attacker
-who achieves <strong>code execution as the app on a rooted or jailbroken device</strong>
-can simply ask the keystore to decrypt, and recovers everything.
-Non-exportable means the key cannot be <em>copied</em>, not that it cannot be <em>used</em>.
-Auth-bound mode (below) is the answer to both.</p>
+<li><p><strong>Default (device-bound key).</strong> An ordinary extraction of TacMap&#39;s files gets
+ciphertext plus wrapped-key/Keychain state rather than a plaintext mission
+store. This is useful protection for backups and powered-off or
+before-first-unlock capture, subject to the platform and device&#39;s own data
+protection. It is not a blanket guarantee for every locked device. After
+first unlock, a live exploit may be able to run as TacMap and ask the
+Keystore/Keychain to decrypt. On Android this code does not request StrongBox
+or require/attest hardware-backed <code>KeyInfo</code>, so it does not claim that the
+wrapping key is hardware-backed on every supported device. Non-exportable
+means the API does not return key bytes, not that a compromised system cannot
+use the key.</p>
 </li>
 <li><p><strong>&quot;Require unlock to decrypt mission data&quot; (auth-bound key), opt-in.</strong> The
-key is regenerated with a hardware user-authentication requirement, so the
-TEE (Android) or Secure Enclave (iOS) refuses to release it without a fresh
-device credential or biometric. Root or jailbreak alone recovers nothing.
+same DEK is re-protected/re-wrapped with the platform&#39;s user-authentication
+access policy, so
+the Android Keystore or iOS Keychain requires a recent device credential or
+biometric before use. This raises the bar after process death, but the exact
+hardware enforcement varies and is not verified by the Android app; a fully
+compromised OS or secure-hardware vulnerability is outside this guarantee.
+Android also records AUTH as a dedicated user-auth-required Keystore alias:
+while that alias exists, rolled-back mutable preferences cannot select the
+older DEVICE wrapper. After a verified transition the app removes the DEVICE
+wrapper and KEK. Preference/Keystore write failure can still make the data
+unavailable, but it fails closed instead of silently lowering protection.
 The costs are real: after the process dies, nothing reads or writes mission
 data until you authenticate, <strong>including background track recording</strong>; and on
-Android, removing your device lockscreen destroys the key and the data with
-it.</p>
+Android, removing your device lockscreen can invalidate the key and make the
+data unreadable.</p>
 </li>
 </ul>
 <p>A note against overclaiming: on iOS the key is a raw AES key, so it is <strong>not</strong>
@@ -386,6 +443,11 @@ not encryption</strong>, and is independent of all of the above.</p>
 <p>Overwritten plaintext from a pre-encryption build is replaced in place by an
 atomic rename. On flash storage the old blocks may survive until wear-levelling
 reclaims them, protected only by the platform&#39;s own full-disk encryption.</p>
+<p>Per-room Chat and rollback-state files use DEK-bound opaque filenames so a
+filesystem or backup index does not disclose the routing room ID. On upgrade,
+both apps scan and rename every canonical legacy room filename after the DEK is
+available, including inactive rooms; a locked key causes no filesystem changes
+and interrupted passes resume on the next unlocked launch.</p>
 </li>
 <li><p><strong>Data that is still plaintext on disk.</strong> Imported basemaps are not sealed under
 the app key: MBTiles packs and imported PDF/GeoPDF sheets sit in app-private
@@ -403,12 +465,41 @@ to be async-signal-safe (no allocation or crypto), and doing keystore crypto
 inside a crash handler is fragile. Stack traces rarely contain coordinates but
 can carry an imported map&#39;s file name; clear it if that matters.</p>
 </li>
-<li><p><strong>Your own room members.</strong> Everyone with the join code sees everything shared
-in that room. Rotate codes and manage membership accordingly.</p>
+<li><p><strong>Your own room members and chat recipients.</strong> Everyone with the join code can
+decrypt map objects, presence, and <strong>Entire room</strong> chat. A <strong>Selected unit</strong>
+message instead uses an ephemeral X25519 session secret and is not decryptable
+merely from the join code. Its selected recipient can still screenshot, copy,
+quote, or retransmit it. Direct chat is live-only in v1: there is no relay
+mailbox, and an offline or changed recipient session fails rather than
+widening delivery to the room. It has session forward secrecy after key
+erasure, not a Signal-style double ratchet or post-compromise security.</p>
+</li>
+<li><p><strong>Opted-in screen-off presence (iOS and Android).</strong> Background Unit Sync
+location is off by default and requires its OPSEC switch, <strong>Share my
+location</strong>, and an active v3 room. On iOS, TacMap continues the
+foreground-started Core Location session and leaves the system background
+location indicator visible. On Android, TacMap runs a location foreground
+service with an ongoing notification; it does not request
+<code>ACCESS_BACKGROUND_LOCATION</code>. Both platforms intentionally retain only the
+current room/session signing material needed to send encrypted positions at
+a best-effort bounded cadence. Neither path retains or unlocks the auth-bound
+mission-data key for this purpose.
+The extension lifetime is signed separately from the backwards-compatible
+location payload, is capped at 65 minutes, and requires the exact active
+session; legacy/foreground-only locations retain the 45-second window. A
+sharing or eligibility change rotates/closes the session to withdraw any
+extended marker. Cached fixes older than two minutes are not rebroadcast,
+and receiver expiry uses process-monotonic time so wall-clock changes cannot
+prolong a marker.
+Inbound mission/session frames are ignored while the app is locked or
+backgrounded, and a new verified snapshot is required on foreground return.
+If the authenticated socket drops, sharing pauses rather than creating a new
+background session. Force-quit, termination, permission loss, and unavailable
+GPS/network also stop delivery.</p>
 </li>
 <li><p><strong>Peer identity: established devices are signed; brand-new ones are not.</strong> Each
 device holds a per-device Ed25519 key and signs every <strong>presence</strong> update <em>and</em>
-every <strong>object write/delete</strong>; the first time you see a client id you pin its
+every <strong>object write/delete</strong>, chat-key advert, and chat frame; the first time you see a client id you pin its
 public key (trust-on-first-use), and every later message from that id - presence
 or object - must carry a valid signature under the pinned key. So one room member
 <strong>cannot</strong> impersonate another <em>established</em> device: not its callsign/position,
@@ -426,12 +517,14 @@ the salt is a global constant (see §4, <em>Your join code is the whole
 ballgame</em>). The Unit Sync screen generates a strong ~78-bit code and rejects
 codes under 14 characters; use the generator and do not invent your own.</p>
 </li>
-<li><p><strong>Export metadata.</strong> GPX and GeoJSON exports embed <strong>precise per-point
-timestamps</strong> alongside coordinates and elevation, plus the fixed string <code>TacMap</code>
-as the creator. They do <strong>not</strong> embed device identifiers, hardware IDs, your
-sync client ID, or callsigns. The residual exposure is the timestamps: a shared
-track file reveals exactly when you were at each point (pattern of life). Scrub
-timing before sharing a track outside your unit if that matters.</p>
+<li><p><strong>Export metadata.</strong> A GPX track embeds a timestamp for every recorded point,
+along with its coordinates, optional elevation, and the fixed creator string
+<code>TacMap</code>. Mission-object GeoJSON instead carries each waypoint, drawing, and
+layer&#39;s creation time; it does not add per-vertex timestamps or a generated-at
+field. Neither format adds a hardware ID or sync client ID. GeoJSON does carry
+user-entered names and notes, which can contain callsigns or other sensitive
+text. A shared GPX track therefore exposes exact pattern-of-life timing; scrub
+it before sharing outside your unit if that matters.</p>
 </li>
 <li><p><strong>Authorisation.</strong> This is not a technical control and TacMap cannot grant it.
 A well-engineered app is <strong>not</strong> an accredited one. Whether you are permitted
@@ -442,7 +535,7 @@ ask before you load real data.</p>
 </ul>
 <hr>
 <h2 id="8-recommended-posture-and-self-hosting">8. Recommended posture and self-hosting</h2>
-<p><strong>OPSEC-first defaults (already set):</strong></p>
+<p><strong>Fresh-install defaults:</strong></p>
 <ul>
 <li>Screen capture blocked (keeps live position out of screenshots and the recents
 thumbnail). This is literal on Android (<code>FLAG_SECURE</code> blocks screenshots,
@@ -450,33 +543,61 @@ screen recording, and the recents thumbnail). On iOS there is no public API to
 block an in-app screenshot, so the toggle only covers the <strong>app-switcher
 snapshot</strong> (an opaque cover while the app is backgrounded) - a deliberate
 screenshot of the live map is still possible.</li>
-<li>Online lookups off.</li>
-<li>Online basemaps off.</li>
+<li>Online lookups off; enabling them sends provider queries described in §5.</li>
+<li>Online basemaps off; enabling them exposes viewed tile coordinates as described in §5.</li>
 <li>Mission data encrypted at rest with a device-bound key.</li>
 <li>Sync off until you join a room.</li>
+<li>TacMap Chat unavailable until an upgraded v3 relay acknowledges the current
+session&#39;s signed ephemeral chat key. Messages are live-only: there is no
+offline mailbox, and <strong>Routed</strong> does not mean delivered or read.</li>
+<li>Relay ingress is bounded per socket by both frame count and encoded UTF-8
+bytes: 1 MiB per frame and 4 MiB/200 frames per 10 seconds. Binary frames are
+bounded before decoding and protocol pings accept no padding fields.</li>
+<li>Client receive paths are bounded before JSON parsing as well. iOS configures
+the platform WebSocket&#39;s 1 MiB message ceiling and receives delivered
+messages serially. Apple&#39;s public WebSocket API handles RFC 6455 control
+frames internally, so the app cannot count individual Ping/Pong frames; a
+hostile relay&#39;s control-frame flood remains a native-transport availability
+risk, mitigated by the relay rate limit and operating-system networking
+stack. Android rejects oversized declared frames before payload allocation,
+caps every fragmented aggregate and its fragment count, rate-limits every raw
+data/control frame, and applies reader-thread backpressure until the
+serialized protocol consumer has handled the current message. WebSocket
+compression and redirects are not enabled for Unit Sync.</li>
+<li>Background Unit Sync location off until you explicitly enable it in OPSEC.</li>
 </ul>
 <p><strong>For real operations, additionally:</strong></p>
 <ul>
-<li>Pre-stage <strong>offline basemap packs</strong>; do not use online tiles. On iOS this is
-not sufficient on its own, see §6: fly the device in <strong>airplane mode</strong>, or put
-it on a network you control, if your AO must not reach Apple.</li>
+<li>Pre-stage <strong>offline basemap packs</strong> and leave online tiles/lookups off. The
+app then makes no provider request for the area of interest. Store entitlement
+reconciliation and operating-system traffic are separate; use <strong>airplane
+mode</strong> or a network you control when no network contact at all is acceptable.</li>
 <li>Turn on <strong>&quot;Require unlock to decrypt mission data&quot;</strong> if device capture is a
 more realistic threat to you than a track cut short by a reboot. Read the
 trade-off in §7 first, and on Android do not remove your lockscreen afterwards.</li>
 <li><strong>Self-host the sync relay</strong> so no traffic transits an account you do not
 control. The relay is a single Cloudflare Worker + Durable Object
 (<code>sync/src/index.ts</code>); deploy it to your own account and point the app at it in
-Settings → relay URL. It only ever forwards sealed blobs by routing ID, so a
-minimal deployment is enough.</li>
+Settings → relay URL. It stores/forwards encrypted mission objects, but only
+forwards live Chat frames. It still handles the clear admission, envelope,
+actor/session/key, Chat scope/selected-recipient, acknowledgement, and
+control metadata described in §4.</li>
 <li>Use generated join codes and rotate them per activity.</li>
 <li>Treat a lost <strong>unlocked</strong> device as a compromise of all mission data on it. A
-lost <strong>locked</strong> device, with the default device-bound key, yields ciphertext.</li>
+powered-off or before-first-unlock device presents a stronger platform data-
+protection boundary; a device merely locked after first unlock is not promised
+safe against a live forensic exploit. Use auth-bound mode where that trade-off
+fits, and follow your platform/security authority&#39;s capture procedures.</li>
 </ul>
 <hr>
 <h2 id="9-for-auditors">9. For auditors</h2>
 <ul>
 <li>Sync crypto: <code>android/.../sync/SyncCrypto.kt</code>, <code>ios/.../Sync/SyncCrypto.swift</code>,
 and the matching <code>SyncCryptoTest</code> suites.</li>
+<li>TacMap Chat&#39;s exact signed key-advert, room/direct header, AAD, KDF, relay
+routing, metadata, and lifecycle contract is in
+<code>security/ADR-004-tacmap-chat-v1.md</code>. Cross-platform bytes are pinned by
+<code>testdata/tacmap_chat_v1.json</code>.</li>
 <li>At-rest crypto: <code>util/SealedEnvelope.{kt,swift}</code> (AES-256-GCM, wire format
 <code>magic(7) || iv(12) || ct || tag(16)</code>, store label bound as AEAD associated
 data) and <code>util/DataKey.{kt,swift}</code> (key custody + the auth-bound toggle).
@@ -485,17 +606,16 @@ third implementation, so Android and iOS are pinned to one wire format rather
 than to each other.</li>
 <li>Egress: every network call the <em>app</em> makes is in the services listed in §5.
 There is no analytics, telemetry, or ad SDK; verify by searching the source for
-outbound URLs. (Historically iOS leaked map tiles through Apple&#39;s <code>geod</code> daemon,
-which no source search would reveal; §6 documents how that was closed - there
-is no MapKit view left, so <code>geod</code> is never asked for a tile.)</li>
+outbound URLs. (Historically iOS leaked map tiles through Apple&#39;s <code>geod</code>
+daemon, which no source search would reveal; §6 documents how that was closed
+— there is no <code>MKMapView</code>, so <code>geod</code> is never asked for a basemap tile.)</li>
 <li>OPSEC defaults: <code>settings/OpsecSettings.kt</code> and the iOS equivalent.</li>
 <li>Crash handling: <code>CrashReporter</code> (local file only).</li>
 </ul>
 <p>Issues and disclosures welcome via the repository.</p>
 <hr>
-<p><em>This is a living document. Items marked TODO/VERIFY are not yet substantiated
-in this draft and must not be cited as guarantees until confirmed against the
-code.</em></p>
+<p><em>This is maintained release documentation. Revalidate it against every candidate
+build; planned work and unverified device-specific behaviour are not guarantees.</em></p>
 
 </main>
 <footer>

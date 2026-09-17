@@ -8,6 +8,7 @@ struct DrawingsPanel: View {
     @ObservedObject var session: DrawingSessionViewModel
     let onShowAll: () -> Void
     let onDismiss: () -> Void
+    @State private var mutationError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -78,6 +79,14 @@ struct DrawingsPanel: View {
         .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.12)))
         .frame(width: 250)
+        .alert("Drawing Not Deleted", isPresented: Binding(
+            get: { mutationError != nil },
+            set: { if !$0 { mutationError = nil } }
+        )) {
+            Button("OK", role: .cancel) { mutationError = nil }
+        } message: {
+            Text(mutationError ?? "The drawing could not be deleted. Check available storage, then try again.")
+        }
     }
 
     @ViewBuilder
@@ -97,7 +106,11 @@ struct DrawingsPanel: View {
             }
             Spacer()
             Button {
-                drawingStore.remove(shape)
+                do {
+                    _ = try drawingStore.deleteDurably(shape)
+                } catch {
+                    mutationError = "\(error.localizedDescription) Check available storage, then try again."
+                }
             } label: {
                 Image(systemName: "trash")
                     .font(.subheadline)

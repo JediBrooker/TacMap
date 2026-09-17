@@ -3,11 +3,13 @@ package com.tacmap.calibration
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -43,27 +45,29 @@ object PdfTiler {
         val coverage = source.coverage ?: return@withContext null
 
         val (minZoom, maxZoom) = zoomRange(info, coverage)
-        var total = 0
-        for (z in minZoom..maxZoom) total += WebMercatorTiles.tileRange(coverage, z).count
-        if (total == 0) return@withContext null
+        var totalTiles = 0L
+        for (z in minZoom..maxZoom) totalTiles += WebMercatorTiles.tileRange(coverage, z).count
+        if (totalTiles !in 1L..MAX_TILES.toLong()) return@withContext null
+        val total = totalTiles.toInt()
 
         val dir = File(context.filesDir, "offline_tiles").apply { mkdirs() }
-        val outFile = File(dir, "tacmap-${System.currentTimeMillis()}.mbtiles")
+        val outFile = File(dir, "tacmap-${UUID.randomUUID()}.mbtiles")
         // Bake into a .partial temp, only publish on full success. An
         // interrupted run can't leave a truncated file that later loads
         // as a "valid" but incomplete basemap.
         val tmpFile = File(dir, "${outFile.name}.partial")
         val outPath = outFile.absolutePath
         val writer = MBTilesWriter.create(tmpFile.absolutePath) ?: return@withContext null
-        writer.writeMetadata(
-            name = source.displayName,
-            minZoom = minZoom,
-            maxZoom = maxZoom,
-            bounds = coverage
-        )
 
         var done = 0
         try {
+            writer.writeMetadata(
+                name = source.displayName,
+                minZoom = minZoom,
+                maxZoom = maxZoom,
+                bounds = coverage
+            )
+            check(!writer.hadError) { "Could not write generated map metadata" }
             for (z in minZoom..maxZoom) {
                 // honour cancellation (Cancel button) - bail instead of baking
                 // every zoom level after the user backed out
@@ -72,21 +76,27 @@ object PdfTiler {
                 writer.beginBatch()
                 for (tx in range.minX..range.maxX) {
                     for (ty in range.minY..range.maxY) {
+                        ensureActive()
                         val box = WebMercatorTiles.tileBounds(z, tx, ty)
                         // whole-tile off-page gate; strips re-derive per-band rects
                         if (pdfPixelRect(inverse, box, info) != null) {
                             val strips = buildStrips(inverse, box, z, ty, info)
-                            val png = if (strips.isEmpty()) null else runCatching {
-                                val bmp = PdfPageRenderer.renderFirstPageStrips(
-                                    context, source.uri, strips, TILE, TILE
-                                )
-                                val bytes = ByteArrayOutputStream().use {
-                                    bmp.compress(Bitmap.CompressFormat.PNG, 100, it); it.toByteArray()
+                            check(strips.isNotEmpty()) { "Could not map generated PDF tile" }
+                            val bmp = PdfPageRenderer.renderFirstPageStrips(
+                                context, source.uri, strips, TILE, TILE
+                            )
+                            val png = try {
+                                ByteArrayOutputStream().use {
+                                    check(bmp.compress(Bitmap.CompressFormat.PNG, 100, it)) {
+                                        "Could not encode generated PDF tile"
+                                    }
+                                    it.toByteArray()
                                 }
-                                bmp.recycle()
-                                bytes
-                            }.getOrNull()
-                            if (png != null) writer.putTile(z, tx, ty, png)
+                            } finally {
+                                if (!bmp.isRecycled) bmp.recycle()
+                            }
+                            writer.putTile(z, tx, ty, png)
+                            check(!writer.hadError) { "Could not write generated map tile" }
                         }
                         done++
                         if (done % 16 == 0) onProgress(Progress(done, total))
@@ -99,21 +109,23 @@ object PdfTiler {
             // tile/metadata write failed mid-bake (e.g. disk full), don't
             // pass a half-baked file off as complete basemap
             if (writer.hadError) {
-                tmpFile.delete()
+                deleteMBTilesArtifacts(tmpFile)
                 null
             } else {
-                File(outPath).delete()
-                if (tmpFile.renameTo(File(outPath))) outPath else { tmpFile.delete(); null }
+                deleteMBTilesSidecars(tmpFile)
+                if (tmpFile.renameTo(File(outPath))) outPath
+                else { deleteMBTilesArtifacts(tmpFile); null }
             }
         } catch (c: kotlinx.coroutines.CancellationException) {
             // cancelled by user, clean up temp and propagate so the caller's
             // coroutine ends without reporting a failure
-            writer.close()
-            tmpFile.delete()
+            runCatching { writer.close() }
+            deleteMBTilesArtifacts(tmpFile)
             throw c
-        } catch (_: Throwable) {
-            writer.close()
-            tmpFile.delete()
+        } catch (failure: Throwable) {
+            Log.w(TAG, "Offline PDF tile generation failed (${failure.javaClass.simpleName})")
+            runCatching { writer.close() }
+            deleteMBTilesArtifacts(tmpFile)
             null
         }
     }
@@ -215,14 +227,14 @@ object PdfTiler {
 
         var minZoom = 0
         for (z in 0..maxZoom) {
-            if (WebMercatorTiles.tileRange(coverage, z).count <= 4) minZoom = z else break
+            if (WebMercatorTiles.tileRange(coverage, z).count <= 4L) minZoom = z else break
         }
         minZoom = minZoom.coerceAtMost(maxZoom)
 
         while (maxZoom > minZoom) {
-            var total = 0
+            var total = 0L
             for (z in minZoom..maxZoom) total += WebMercatorTiles.tileRange(coverage, z).count
-            if (total <= MAX_TILES) break
+            if (total <= MAX_TILES.toLong()) break
             maxZoom--
         }
         return minZoom to maxZoom
@@ -230,4 +242,5 @@ object PdfTiler {
 
     private const val TILE = 256
     private const val MAX_TILES = 2500
+    private const val TAG = "PdfTiler"
 }
