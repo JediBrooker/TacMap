@@ -2885,28 +2885,44 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncJoinCodeMustStartWithLegacyRoomsRequireAn",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_signing_identity_is_locked_or_unavailable_unlock_cae3b2c6": {
     "en": "Signing identity is locked or unavailable. Unlock the device and try again.",
     "de": "Die Signaturidentität ist gesperrt oder nicht verfügbar. Entsperre das Gerät und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncSigningIdentityIsLockedOrUnavailableUnlockTheDevice",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_signing_identity_is_unavailable_0cb3ad6b": {
     "en": "Signing identity is unavailable.",
     "de": "Die Signaturidentität ist nicht verfügbar.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncSigningIdentityIsUnavailable",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_saved_rollback_protection_state_is_locked_or_dam_d2a8cd05": {
     "en": "Saved rollback-protection state is locked or damaged. Sync was not started.",
     "de": "Der gespeicherte Rücksetzschutz ist gesperrt oder beschädigt. Die Synchronisierung wurde nicht gestartet.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncSavedRollbackProtectionStateIsLockedOrDamagedSync",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_local_revision_history_could_not_be_saved_sync_i_ede036c2": {
     "en": "Local revision history could not be saved; sync is paused.",
@@ -2914,35 +2930,55 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_rollback_protection_state_could_not_be_saved_3597a18b": {
     "en": "Rollback-protection state could not be saved.",
     "de": "Der Rücksetzschutz konnte nicht gespeichert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncRollbackProtectionStateCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_could_not_construct_authenticated_hello_e7270eae": {
     "en": "Could not construct authenticated hello.",
     "de": "Die authentifizierte Begrüßungsnachricht konnte nicht erstellt werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncCouldNotConstructAuthenticatedHello",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_could_not_reserve_authenticated_session_epoch_387f6b1a": {
     "en": "Could not reserve authenticated session epoch.",
     "de": "Die authentifizierte Sitzungsepoche konnte nicht reserviert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncCouldNotReserveAuthenticatedSessionEpoch",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_could_not_send_authenticated_hello_f93c7fbd": {
     "en": "Could not send authenticated hello.",
     "de": "Die authentifizierte Begrüßungsnachricht konnte nicht gesendet werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncCouldNotSendAuthenticatedHello",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_drawing_39de4731": {
     "en": "Drawing",
@@ -2979,35 +3015,55 @@
     "de": "Ungültige Synchronisierungs-Snapshot-Grenze.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncInvalidSyncSnapshotFence",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_sync_snapshot_authentication_failed_1fc99888": {
     "en": "Sync snapshot authentication failed.",
     "de": "Authentifizierung des Synchronisierungs-Snapshots fehlgeschlagen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncSyncSnapshotAuthenticationFailed",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_sync_snapshot_contained_an_unauthenticated_recor_d165216e": {
     "en": "Sync snapshot contained an unauthenticated record.",
     "de": "Der Synchronisierungs-Snapshot enthielt einen nicht authentifizierten Datensatz.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncSyncSnapshotContainedAnUnauthenticatedRecord",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_served_an_older_snapshot_newer_authent_d7eb6c17": {
     "en": "The relay served an older snapshot; newer authenticated local state was retained.",
     "de": "Der Relay-Server lieferte einen älteren Snapshot; der neuere authentifizierte lokale Stand wurde beibehalten.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncTheRelayServedAnOlderSnapshotNewerAuthenticatedLocal",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_actor_rollback_protection_state_could_not_be_sav_88065786": {
     "en": "Actor rollback-protection state could not be saved.",
     "de": "Der Rücksetzschutz des Teilnehmers konnte nicht gespeichert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncActorRollbackProtectionStateCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_waypoint_updated_by_another_device_54ed5976": {
     "en": "Waypoint updated by another device",
@@ -3028,7 +3084,11 @@
     "de": "Der Wiederholungsschutz für Standortmeldungen konnte nicht gespeichert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncPresenceReplayStateCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_room_911ea89c": {
     "en": "Room",
@@ -7716,98 +7776,154 @@
     "de": "TacMap Chat ist mit keinem sicheren Raum verbunden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTacmapChatIsNotAttachedToASecureRoom",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_unlock_mission_data_to_use_tacmap_chat_01a3669e": {
     "en": "Unlock mission data to use TacMap Chat.",
     "de": "Entsperre Einsatzdaten, um TacMap Chat zu verwenden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatUnlockMissionDataToUseTacmapChat01a3669e",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_could_not_be_authenticate_7fae567c": {
     "en": "Encrypted chat history could not be authenticated.",
     "de": "Der verschlüsselte Chatverlauf konnte nicht authentifiziert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryCouldNotBeAuthenticated7fae567c",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_unencrypted_chat_history_was_rejected_7ba52d6a": {
     "en": "Unencrypted chat history was rejected.",
     "de": "Unverschlüsselter Chatverlauf wurde abgewiesen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatUnencryptedChatHistoryWasRejected7ba52d6a",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_chat_history_contains_an_invalid_record_367181d6": {
     "en": "Chat history contains an invalid record.",
     "de": "Der Chatverlauf enthält einen ungültigen Eintrag.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatChatHistoryContainsAnInvalidRecord",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_chat_history_reached_its_protected_storage_limit_e0fa6135": {
     "en": "Chat history reached its protected storage limit.",
     "de": "Der Chatverlauf hat die Grenze für geschützten Speicher erreicht.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatChatHistoryReachedItsProtectedStorageLimite0fa6135",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_could_not_be_updated_42373d96": {
     "en": "Encrypted chat history could not be updated.",
     "de": "Der verschlüsselte Chatverlauf konnte nicht aktualisiert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryCouldNotBeUpdated",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_secure_chat_session_changed_select_the_recip_7c3686e5": {
     "en": "The secure chat session changed. Select the recipient again.",
     "de": "Die sichere Chatsitzung hat sich geändert. Wähle den Empfänger erneut aus.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheSecureChatSessionChangedSelectTheRecipientAgain",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_chat_text_is_invalid_or_too_large_4a173079": {
     "en": "The chat text is invalid or too large.",
     "de": "Der Chattext ist ungültig oder zu groß.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheChatTextIsInvalidOrTooLarge",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_encrypted_chat_frame_is_malformed_b870c0fa": {
     "en": "The encrypted chat frame is malformed.",
     "de": "Der verschlüsselte Chat-Datenrahmen ist fehlerhaft.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheEncryptedChatFrameIsMalformed",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_chat_frame_failed_sender_authentication_385eee9e": {
     "en": "The chat frame failed sender authentication.",
     "de": "Die Absenderauthentifizierung des Chat-Datenrahmens ist fehlgeschlagen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheChatFrameFailedSenderAuthentication",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_a_private_channel_could_not_be_established_with__facd9fa0": {
     "en": "A private channel could not be established with that unit.",
     "de": "Mit dieser Einheit konnte kein privater Kanal aufgebaut werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatAPrivateChannelCouldNotBeEstablishedWithThat",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_message_could_not_be_encrypted_e8505ef8": {
     "en": "The message could not be encrypted.",
     "de": "Die Nachricht konnte nicht verschlüsselt werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheMessageCouldNotBeEncrypted",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_message_could_not_be_decrypted_f929006e": {
     "en": "The message could not be decrypted.",
     "de": "Die Nachricht konnte nicht entschlüsselt werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheMessageCouldNotBeDecrypted",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_mission_data_access_control_was_not_changed_beca_e902205b": {
     "en": "Mission-data access control was not changed because the previous key slot could not be removed securely. Try again.",
@@ -8816,7 +8932,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotExceededTheSafeSizeLimit",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_sent_live_data_before_completing_its_s_6573ff79": {
     "en": "The relay sent live data before completing its snapshot fence.",
@@ -8824,7 +8944,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelaySentLiveDataBeforeCompletingItsSnapshot",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_did_not_complete_its_initial_snapshot__98e4c95c": {
     "en": "The relay did not complete its initial snapshot in time.",
@@ -8832,7 +8956,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelayDidNotCompleteItsInitialSnapshotIn",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_began_out_of_order_f3be853e": {
     "en": "The relay snapshot began out of order.",
@@ -8840,7 +8968,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotBeganOutOfOrder",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_fence_was_malformed_7faa5d0e": {
     "en": "The relay snapshot fence was malformed.",
@@ -8848,7 +8980,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotFenceWasMalformed",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_page_arrived_out_of_order_f442b665": {
     "en": "The relay snapshot page arrived out of order.",
@@ -8856,21 +8992,33 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotPageArrivedOutOfOrder",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_page_was_malformed_or_contain_23f66a18": {
     "en": "The relay snapshot page was malformed or contained too many records.",
     "de": "Eine Seite des Relay-Datenstands war fehlerhaft oder enthielt zu viele Einträge.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotPageWasMalformedOrContainedToo",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_member_list_was_malformed_or__310bc3cc": {
     "en": "The relay snapshot member list was malformed or too large.",
     "de": "Die Mitgliederliste des Relay-Datenstands war fehlerhaft oder zu groß.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotMemberListWasMalformedOrToo",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_ended_before_its_final_page_b759c0a0": {
     "en": "The relay snapshot ended before its final page.",
@@ -8878,7 +9026,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotEndedBeforeItsFinalPage",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_end_fence_was_malformed_d6db7a21": {
     "en": "The relay snapshot end fence was malformed.",
@@ -8886,7 +9038,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotEndFenceWasMalformed",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_snapshot_fence_changed_before_completi_2b974c05": {
     "en": "The relay snapshot fence changed before completion.",
@@ -8894,20 +9050,37 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheRelaySnapshotFenceChangedBeforeCompletion",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_authenticated_sync_record_did_not_contain_ex_36ad42e7": {
     "en": "The authenticated sync record did not contain exactly one valid mission object.",
     "de": "Der authentifizierte Synchronisierungseintrag enthielt nicht genau ein gültiges Einsatzobjekt.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncTheAuthenticatedSyncRecordDidNotContainExactlyOne",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_authenticated_sync_record_conflicts_with_ano_15fbb1bc": {
     "en": "The authenticated sync record conflicts with another object type using ID {1}.",
     "de": "Der authentifizierte Synchronisierungseintrag steht im Konflikt mit einem anderen Objekttyp mit der ID {1}.",
     "platforms": [
       "ios"
+    ],
+    "accessor": "syncTheAuthenticatedSyncRecordConflictsWithAnotherObjectType",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_the_authenticated_sync_update_could_not_be_saved_34a2dd80": {
@@ -8915,6 +9088,15 @@
     "de": "Die authentifizierte Synchronisierungsänderung konnte nicht gespeichert werden: {1}",
     "platforms": [
       "ios"
+    ],
+    "accessor": "syncTheAuthenticatedSyncUpdateCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_apply_synced_waypoint_f5e56b84": {
@@ -8937,7 +9119,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncCouldNotSaveUnitSyncIdentityLocationSharingThe",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_saved_unit_sync_identity_location_sharing_is_loc_ca2414d7": {
     "en": "Saved Unit Sync identity/location sharing is locked or damaged. Location sharing remains off.",
@@ -8945,14 +9131,22 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncSavedUnitSyncIdentityLocationSharingIsLockedOr",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_saved_unit_sync_identity_location_sharing_failed_4c4318a8": {
     "en": "Saved Unit Sync identity/location sharing failed its sealed-storage policy. Location sharing remains off.",
     "de": "Die gespeicherte Unit-Sync-Identität/Standortfreigabe verletzt ihre Richtlinie für verschlüsselte Speicherung. Die Standortfreigabe bleibt ausgeschaltet.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncSavedUnitSyncIdentityLocationSharingFailedItsSealed",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_could_not_migrate_unit_sync_identity_location_sh_18a0783f": {
     "en": "Could not migrate Unit Sync identity/location sharing to encrypted storage. Location sharing remains off.",
@@ -8960,77 +9154,121 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncCouldNotMigrateUnitSyncIdentityLocationSharingTo",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_configured_unit_sync_relay_is_unsafe_or_inva_d0e3ab12": {
     "en": "The configured Unit Sync relay is unsafe or invalid. Correct it in Settings, Privacy & OPSEC.",
     "de": "Das eingestellte Unit-Sync-Relay ist unsicher oder ungültig. Korrigiere es unter Einstellungen, Datenschutz und OPSEC.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncTheConfiguredUnitSyncRelayIsUnsafeOrInvalidd0e3ab12",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_tacmap_chat_requires_a_secure_v3_room_75801b2f": {
     "en": "TacMap Chat requires a secure v3 room.",
     "de": "TacMap Chat benötigt einen sicheren v3-Raum.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTacmapChatRequiresASecureVRoom",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_saved_unit_sync_metadata_could_not_be_migrated_t_83546d0d": {
     "en": "Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again.",
     "de": "Gespeicherte Unit-Sync-Metadaten konnten nicht auf private Dateinamen umgestellt werden. Prüfe den verfügbaren Speicherplatz, entsperre die Einsatzdaten und versuche es erneut.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncSavedUnitSyncMetadataCouldNotBeMigratedTo",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_tacmap_chat_requires_a_secure_v3_unit_sync_room_c1b924d7": {
     "en": "TacMap Chat requires a secure v3 Unit Sync room.",
     "de": "TacMap Chat benötigt einen sicheren v3-Unit-Sync-Raum.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTacmapChatRequiresASecureVUnitSyncRoom",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_is_locked_or_unavailable_db9f18cc": {
     "en": "Encrypted chat history is locked or unavailable.",
     "de": "Der verschlüsselte Chatverlauf ist gesperrt oder nicht verfügbar.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryIsLockedOrUnavailable",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_is_still_establishing_a_relay_ses_3eff4bcd": {
     "en": "Encrypted chat is still establishing a relay session.",
     "de": "Der verschlüsselte Chat baut noch eine Relay-Sitzung auf.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatEncryptedChatIsStillEstablishingARelaySession",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_select_a_unit_before_sending_this_message_284141b1": {
     "en": "Select a unit before sending this message.",
     "de": "Wähle vor dem Senden dieser Nachricht eine Einheit aus.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatSelectAUnitBeforeSendingThisMessage",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_that_unit_s_secure_session_changed_select_it_aga_f2ae7a5b": {
     "en": "That unit's secure session changed. Select it again; nothing was broadcast.",
     "de": "Die sichere Sitzung dieser Einheit hat sich geändert. Wähle sie erneut aus; es wurde nichts an den Raum gesendet.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatThatUnitSSecureSessionChangedSelectItAgain",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_this_chat_session_reached_its_message_limit_reco_4d1b70c7": {
     "en": "This chat session reached its message limit. Reconnect Unit Sync.",
     "de": "Diese Chatsitzung hat ihre Nachrichtengrenze erreicht. Verbinde Unit Sync neu.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatThisChatSessionReachedItsMessageLimitReconnectUnit",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_message_could_not_be_routed_to_the_relay_f8f578a3": {
     "en": "The message could not be routed to the relay.",
     "de": "Die Nachricht konnte nicht an das Relay weitergeleitet werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheMessageCouldNotBeRoutedToTheRelay",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_join_a_secure_unit_sync_room_to_use_chat_f8fd94ac": {
     "en": "Join a secure Unit Sync room to use chat.",
@@ -9044,7 +9282,11 @@
     "de": "Der verschlüsselte Chatverlauf ist nicht verfügbar.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatHistoryUnavailable",
+    "deferred": true,
+    "context": "Chat history availability warning retained across language changes.",
+    "parameters": []
   },
   "ui_unit_sync_must_be_connected_for_live_chat_accf5edf": {
     "en": "Unit Sync must be connected for live chat.",
@@ -9065,21 +9307,33 @@
     "de": "Der verschlüsselte Chat konnte keine Sitzung aufbauen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatEncryptedChatCouldNotEstablishASession",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_chat_key_advertisement_could_not_reach_the_r_fa130837": {
     "en": "The chat-key advertisement could not reach the relay.",
     "de": "Die Ankündigung des Chatschlüssels erreichte das Relay nicht.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheChatKeyAdvertisementCouldNotReachTheRelay",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_relay_did_not_acknowledge_encrypted_chat_cap_70ebc8a1": {
     "en": "The relay did not acknowledge encrypted chat capability.",
     "de": "Das Relay hat die Fähigkeit zum verschlüsselten Chat nicht bestätigt.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheRelayDidNotAcknowledgeEncryptedChatCapability",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_unit_1_4e9fbb2d": {
     "en": "Unit {1}",
@@ -9093,7 +9347,11 @@
     "de": "Sichere Zufallsdaten für die Sitzung sind nicht verfügbar. Unit Sync wurde nicht gestartet.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncSecureSessionRandomnessIsUnavailableUnitSyncWasNot",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_unit_sync_disconnected_check_the_relay_or_networ_87e21148": {
     "en": "Unit Sync disconnected. Check the relay or network; reconnecting automatically.",
@@ -9101,14 +9359,22 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnecting",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_unit_sync_handshake_timed_out_reconnecting_autom_fb03ea30": {
     "en": "Unit Sync handshake timed out. Reconnecting automatically.",
     "de": "Zeitüberschreitung beim Unit-Sync-Verbindungsaufbau. Die Verbindung wird automatisch wiederhergestellt.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncUnitSyncHandshakeTimedOutReconnectingAutomatically",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_unit_sync_snapshot_failed_1_verify_the_relay_or__a8f400af": {
     "en": "Unit Sync snapshot failed: {1} Verify the relay or network; reconnecting automatically.",
@@ -9116,6 +9382,15 @@
     "platforms": [
       "ios",
       "android"
+    ],
+    "accessor": "syncUnitSyncSnapshotFailedVerifyTheRelayOrNetwork",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_a_unit_sync_change_is_still_unconfirmed_after_bo_3d3fc607": {
@@ -9124,35 +9399,55 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncAUnitSyncChangeIsStillUnconfirmedAfterBounded",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_resolve_the_duplicate_waypoint_drawing_identity__2354c2a5": {
     "en": "Resolve the duplicate waypoint/drawing identity locally, then rejoin Unit Sync.",
     "de": "Behebe die doppelte Wegpunkt-/Zeichnungskennung lokal und tritt Unit Sync dann erneut bei.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncResolveTheDuplicateWaypointDrawingIdentityLocallyThenRejoin",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_ask_the_sender_to_update_tacmap_and_send_the_mis_258bd4bf": {
     "en": "Ask the sender to update TacMap and send the mission object again before rejoining.",
     "de": "Bitte den Absender, TacMap zu aktualisieren und das Einsatzobjekt erneut zu senden, bevor du wieder beitrittst.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncAskTheSenderToUpdateTacmapAndSendThe",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_verified_update_remains_pending_unlock_missi_d13aecf2": {
     "en": "The verified update remains pending. Unlock mission data or free device storage, then rejoin Unit Sync to retry it.",
     "de": "Die verifizierte Änderung bleibt ausstehend. Entsperre Einsatzdaten oder schaffe Gerätespeicher und tritt Unit Sync erneut bei, um sie wieder zu versuchen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncTheVerifiedUpdateRemainsPendingUnlockMissionDataOr",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_unlock_mission_data_or_free_device_storage_then__20c288f2": {
     "en": "Unlock mission data or free device storage, then leave and rejoin Unit Sync so the relay can resend it.",
     "de": "Entsperre Einsatzdaten oder schaffe Gerätespeicher. Verlasse Unit Sync und tritt erneut bei, damit das Relay die Änderung erneut senden kann.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncUnlockMissionDataOrFreeDeviceStorageThenLeave",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_sync_update_not_saved_open_unit_sync_for_recover_cf5eac52": {
     "en": "Sync update not saved. Open Unit Sync for recovery guidance.",
@@ -9167,7 +9462,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheUnitSyncRoomIsFullSoThisSaved",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_unit_sync_relay_could_not_durably_save_this__83a5b10a": {
     "en": "The Unit Sync relay could not durably save this change. It remains saved locally and will be retried.",
@@ -9175,7 +9474,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheUnitSyncRelayCouldNotDurablySaveThis",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_unit_sync_relay_rejected_an_out_of_date_chan_48a1f81e": {
     "en": "The Unit Sync relay rejected an out-of-date change. The local edit remains saved; reconnecting will reconcile it from a verified snapshot.",
@@ -9183,7 +9486,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheUnitSyncRelayRejectedAnOutOfDate",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_this_unit_sync_session_can_no_longer_confirm_cha_ae41c407": {
     "en": "This Unit Sync session can no longer confirm changes. The local edit remains saved; reconnecting with a fresh authenticated session.",
@@ -9191,7 +9498,11 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncThisUnitSyncSessionCanNoLongerConfirmChanges",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_unit_sync_relay_rejected_a_change_as_invalid_ecd9ccd2": {
     "en": "The Unit Sync relay rejected a change as invalid. The local edit remains saved; open Unit Sync for recovery guidance.",
@@ -9199,20 +9510,37 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "syncTheUnitSyncRelayRejectedAChangeAsInvalid",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_a_pending_authenticated_sync_update_could_not_be_d2c45d56": {
     "en": "A pending authenticated sync update could not be saved.",
     "de": "Eine ausstehende authentifizierte Synchronisierungsänderung konnte nicht gespeichert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "syncAPendingAuthenticatedSyncUpdateCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or failure. Preserve generation, security priority, saved-state guarantees and diagnostic details.",
+    "parameters": []
   },
   "ui_the_relay_rejected_encrypted_chat_capability_1_e10e27f3": {
     "en": "The relay rejected encrypted chat capability ({1}).",
     "de": "Das Relay hat die Fähigkeit zum verschlüsselten Chat abgewiesen ({1}).",
     "platforms": [
       "ios"
+    ],
+    "accessor": "chatTheRelayRejectedEncryptedChatCapability",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_new_tacmap_chat_1_from_2_535daff9": {
@@ -9227,14 +9555,22 @@
     "de": "Der Status der weitergeleiteten Nachricht konnte nicht sicher gespeichert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheRoutedMessageStatusCouldNotBeSavedSecurely",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_the_unrouted_message_status_could_not_be_saved_s_155e2274": {
     "en": "The unrouted message status could not be saved securely.",
     "de": "Der Status der nicht weitergeleiteten Nachricht konnte nicht sicher gespeichert werden.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "chatTheUnroutedMessageStatusCouldNotBeSavedSecurely",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_unit_4e545960": {
     "en": "Unit",
@@ -11343,49 +11679,77 @@
     "de": "Ungültige Chatraum-Kennung",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatInvalidChatRoomIdentity",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_could_not_be_migrated_b03b3947": {
     "en": "Encrypted chat history could not be migrated",
     "de": "Verschlüsselter Chatverlauf konnte nicht übertragen werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryCouldNotBeMigrated",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_could_not_be_read_69b14425": {
     "en": "Encrypted chat history could not be read",
     "de": "Verschlüsselter Chatverlauf konnte nicht gelesen werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryCouldNotBeRead",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_unencrypted_chat_history_was_rejected_4094bb5f": {
     "en": "Unencrypted chat history was rejected",
     "de": "Unverschlüsselter Chatverlauf wurde abgewiesen",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatUnencryptedChatHistoryWasRejected",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_exceeded_its_storage_limi_67b069f1": {
     "en": "Encrypted chat history exceeded its storage limit",
     "de": "Verschlüsselter Chatverlauf überschritt seine Speichergrenze",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryExceededItsStorageLimit",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_could_not_be_authenticate_20b766f3": {
     "en": "Encrypted chat history could not be authenticated",
     "de": "Verschlüsselter Chatverlauf konnte nicht authentifiziert werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryCouldNotBeAuthenticated",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_unlock_mission_data_to_use_tacmap_chat_3abca24f": {
     "en": "Unlock mission data to use TacMap Chat",
     "de": "Entsperre Einsatzdaten, um TacMap Chat zu verwenden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatUnlockMissionDataToUseTacmapChat",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_missing_chat_history_version_01c2c79b": {
     "en": "Missing chat history version",
@@ -11413,21 +11777,33 @@
     "de": "Chatverlauf konnte nicht kodiert werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatChatHistoryCouldNotBeEncoded",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_chat_history_reached_its_protected_storage_limit_d32d7332": {
     "en": "Chat history reached its protected storage limit",
     "de": "Chatverlauf hat die Grenze für geschützten Speicher erreicht",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatChatHistoryReachedItsProtectedStorageLimit",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_chat_history_could_not_be_saved_ddf4afad": {
     "en": "Chat history could not be saved",
     "de": "Chatverlauf konnte nicht gespeichert werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatChatHistoryCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_background_unit_sync_stopped_but_its_off_setting_65defb1a": {
     "en": "Background Unit Sync stopped, but its OFF setting could not be saved. ",
@@ -11448,14 +11824,22 @@
     "de": "Unit Sync im Hintergrund benötigt die Berechtigung für den genauen Standort, bevor es bei ausgeschaltetem Bildschirm laufen kann.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncBackgroundUnitSyncNeedsPreciseLocationPermissionBeforeIt",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_background_unit_sync_needs_gps_turned_on_before__9d05489c": {
     "en": "Background Unit Sync needs GPS turned on before it can run with the screen off.",
     "de": "Unit Sync im Hintergrund benötigt aktiviertes GPS, bevor es bei ausgeschaltetem Bildschirm laufen kann.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncBackgroundUnitSyncNeedsGpsTurnedOnBeforeIt",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_background_unit_sync_could_not_start_24e6f4d9": {
     "en": "Background Unit Sync could not start: ",
@@ -11469,42 +11853,66 @@
     "de": "Tritt einem verbundenen v3-Unit-Sync-Raum bei, um TacMap Chat zu nutzen",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatJoinAConnectedVUnitSyncRoomToUse",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_local_revision_history_could_not_be_saved_sync_i_5a16df15": {
     "en": "Local revision history could not be saved; sync is paused. Leave and rejoin after checking available storage.",
     "de": "Lokaler Änderungsverlauf konnte nicht gespeichert werden; die Synchronisierung ist angehalten. Verlasse den Raum, prüfe den verfügbaren Speicherplatz und tritt erneut bei.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncLocalRevisionHistoryCouldNotBeSavedSyncIs",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_join_code_is_too_short_to_be_safe_generate_a_new_7ab67544": {
     "en": "Join code is too short to be safe. Generate a new strong room code.",
     "de": "Der Beitrittscode ist zu kurz, um sicher zu sein. Erzeuge einen neuen starken Raumcode.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncJoinCodeIsTooShortToBeSafeGenerate",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_the_configured_unit_sync_relay_is_unsafe_or_inva_59fe82a1": {
     "en": "The configured Unit Sync relay is unsafe or invalid. Correct it in Privacy & OPSEC.",
     "de": "Das eingestellte Unit-Sync-Relay ist unsicher oder ungültig. Korrigiere es unter Datenschutz und OPSEC.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncTheConfiguredUnitSyncRelayIsUnsafeOrInvalid",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_sync_signing_identity_is_locked_or_damaged_unloc_c9a19e3d": {
     "en": "Sync signing identity is locked or damaged. Unlock mission data, then try joining again.",
     "de": "Die Signaturidentität der Synchronisierung ist gesperrt oder beschädigt. Entsperre Einsatzdaten und versuche erneut beizutreten.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncSyncSigningIdentityIsLockedOrDamagedUnlockMission",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_sync_identity_or_rollback_state_is_locked_or_dam_c8609c75": {
     "en": "Sync identity or rollback state is locked or damaged. Unlock mission data, then try joining again.",
     "de": "Synchronisierungsidentität oder Rollback-Status sind gesperrt oder beschädigt. Entsperre Einsatzdaten und versuche erneut beizutreten.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncSyncIdentityOrRollbackStateIsLockedOrDamaged",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_unknown_unit_d120e025": {
     "en": "Unknown unit",
@@ -11518,48 +11926,81 @@
     "de": "Tritt einem v3-Unit-Sync-Raum bei, um TacMap Chat zu nutzen",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatJoinAVUnitSyncRoomToUseTacmap",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_is_unavailable_18886913": {
     "en": "Encrypted chat history is unavailable",
     "de": "Verschlüsselter Chatverlauf nicht verfügbar",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryIsUnavailable",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_encrypted_chat_history_could_not_be_saved_a73dce47": {
     "en": "Encrypted chat history could not be saved",
     "de": "Verschlüsselter Chatverlauf konnte nicht gespeichert werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatEncryptedChatHistoryCouldNotBeSaved",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_secure_chat_history_is_unavailable_8d99a1aa": {
     "en": "Secure chat history is unavailable",
     "de": "Sicherer Chatverlauf nicht verfügbar",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatSecureChatHistoryIsUnavailable",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_tacmap_chat_is_waiting_for_unit_sync_fb784032": {
     "en": "TacMap Chat is waiting for Unit Sync",
     "de": "TacMap Chat wartet auf Unit Sync",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatTacmapChatIsWaitingForUnitSync",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_secure_chat_is_still_starting_833f9a51": {
     "en": "Secure chat is still starting",
     "de": "Sicherer Chat wird noch gestartet",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatSecureChatIsStillStarting",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_unit_sync_connection_failed_1_check_the_relay_or_789de674": {
     "en": "Unit Sync connection failed: {1}. Check the relay or network; reconnecting automatically.",
     "de": "Unit-Sync-Verbindung fehlgeschlagen: {1}. Prüfe Relay oder Netzwerk; die Verbindung wird automatisch wiederhergestellt.",
     "platforms": [
       "android"
+    ],
+    "accessor": "syncUnitSyncConnectionFailedCheckTheRelayOrNetwork",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_saved_unit_sync_metadata_could_not_be_migrated_t_e508a134": {
@@ -11581,98 +12022,154 @@
     "de": "Dieses Relay bestätigt keine Unterstützung für TacMap Chat",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatThisRelayDoesNotConfirmTacmapChatSupport",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_no_chat_ready_units_are_available_1dd5f612": {
     "en": "No chat-ready units are available",
     "de": "Keine chatbereiten Einheiten verfügbar",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatNoChatReadyUnitsAreAvailable",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_enter_a_message_4f2da3b8": {
     "en": "Enter a message",
     "de": "Nachricht eingeben",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatEnterAMessage",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_message_is_longer_than_4096_utf_8_bytes_48ec0ecd": {
     "en": "Message is longer than 4096 UTF-8 bytes",
     "de": "Die Nachricht ist länger als 4096 UTF-8-Bytes",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatMessageIsLongerThanUtfBytes",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_secure_room_is_unavailable_c81a0792": {
     "en": "Secure room is unavailable",
     "de": "Sicherer Raum nicht verfügbar",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatSecureRoomIsUnavailable",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_secure_identity_is_unavailable_fa84ddbb": {
     "en": "Secure identity is unavailable",
     "de": "Sichere Identität nicht verfügbar",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatSecureIdentityIsUnavailable",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_secure_session_is_unavailable_d4dc91e2": {
     "en": "Secure session is unavailable",
     "de": "Sichere Sitzung nicht verfügbar",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatSecureSessionIsUnavailable",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_secure_chat_session_must_reconnect_3bc899f3": {
     "en": "Secure chat session must reconnect",
     "de": "Sichere Chatsitzung muss neu verbunden werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatSecureChatSessionMustReconnect",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_selected_unit_is_no_longer_available_d79de2a4": {
     "en": "Selected unit is no longer available",
     "de": "Ausgewählte Einheit ist nicht mehr verfügbar",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatSelectedUnitIsNoLongerAvailable",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_message_could_not_be_encoded_safely_29a1d49e": {
     "en": "Message could not be encoded safely",
     "de": "Nachricht konnte nicht sicher kodiert werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatMessageCouldNotBeEncodedSafely",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_selected_unit_s_secure_key_is_invalid_eabdf2af": {
     "en": "Selected unit's secure key is invalid",
     "de": "Der sichere Schlüssel der ausgewählten Einheit ist ungültig",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatSelectedUnitSSecureKeyIsInvalid",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_message_could_not_be_encrypted_455cd642": {
     "en": "Message could not be encrypted",
     "de": "Nachricht konnte nicht verschlüsselt werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatMessageCouldNotBeEncrypted",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_this_device_d052579c": {
     "en": "This device",
     "de": "Dieses Gerät",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatThisDevice",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_message_could_not_be_sent_a789d6a6": {
     "en": "Message could not be sent",
     "de": "Nachricht konnte nicht gesendet werden",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatMessageCouldNotBeSent",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_unsupported_relay_frame_2a22829c": {
     "en": "Unsupported relay frame",
@@ -11686,20 +12183,37 @@
     "de": "Rollback-Warnung: Der Relay-Datenstand ist älter als ein bereits auf diesem Gerät bekannter Stand. Prüfe vor dem Fortfahren den Raumcode und das Relay.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncSyncRollbackWarningTheRelaySnapshotIsOlderThan",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_a_synced_symbol_delete_could_not_be_saved_check__fc350e3a": {
     "en": "A synced symbol delete could not be saved. Check available storage, then leave and rejoin to retry.",
     "de": "Eine synchronisierte Symbollöschung konnte nicht gespeichert werden. Prüfe den verfügbaren Speicherplatz, verlasse den Raum und tritt erneut bei.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncASyncedSymbolDeleteCouldNotBeSavedCheck",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_secure_chat_key_was_rejected_1_15306fc0": {
     "en": "Secure chat key was rejected ({1})",
     "de": "Sicherer Chatschlüssel wurde abgewiesen ({1})",
     "platforms": [
       "android"
+    ],
+    "accessor": "chatSecureChatKeyWasRejected",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": [
+      {
+        "name": "detail1",
+        "type": "string"
+      }
     ]
   },
   "ui_unit_sync_secure_handshake_timed_out_check_the_r_8219de68": {
@@ -11707,35 +12221,55 @@
     "de": "Zeitüberschreitung beim sicheren Unit-Sync-Verbindungsaufbau. Prüfe Relay oder Netzwerk; die Verbindung wird automatisch wiederhergestellt.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncUnitSyncSecureHandshakeTimedOutCheckTheRelay",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_sync_snapshot_authentication_failed_no_unverifie_ce2d2703": {
     "en": "Sync snapshot authentication failed. No unverified room data was applied; verify the room code and relay, then rejoin.",
     "de": "Authentifizierung des Synchronisierungsdatenstands fehlgeschlagen. Es wurden keine ungeprüften Raumdaten übernommen. Prüfe Raumcode und Relay und tritt erneut bei.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncSyncSnapshotAuthenticationFailedNoUnverifiedRoomDataWas",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_sync_stopped_because_rollback_state_could_not_be_f0fd4c04": {
     "en": "Sync stopped because rollback state could not be secured. Check available storage, then leave and rejoin.",
     "de": "Synchronisierung beendet, da der Rollback-Status nicht gesichert werden konnte. Prüfe den verfügbaren Speicherplatz, verlasse den Raum und tritt erneut bei.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncSyncStoppedBecauseRollbackStateCouldNotBeSecured",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_precise_location_is_unavailable_background_unit__4b896752": {
     "en": "Precise location is unavailable; Background Unit Sync location stopped.",
     "de": "Genauer Standort nicht verfügbar; Unit-Sync-Standort im Hintergrund wurde beendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncPreciseLocationIsUnavailableBackgroundUnitSyncLocationStopped",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_gps_is_turned_off_background_unit_sync_location__fa4f3a1e": {
     "en": "GPS is turned off; Background Unit Sync location stopped.",
     "de": "GPS ist ausgeschaltet; Unit-Sync-Standort im Hintergrund wurde beendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncGpsIsTurnedOffBackgroundUnitSyncLocationStopped",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_background_unit_sync_location_stopped_52550489": {
     "en": "Background Unit Sync location stopped: ",
@@ -11749,7 +12283,11 @@
     "de": "GPS wurde ausgeschaltet; Unit-Sync-Standort im Hintergrund wurde beendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "syncGpsWasTurnedOffBackgroundUnitSyncLocationStopped",
+    "deferred": true,
+    "context": "Retained Unit Sync warning or service failure. Translation must not change generation, security priority or connection decisions.",
+    "parameters": []
   },
   "ui_background_unit_sync_936e2273": {
     "en": "Background Unit Sync",
@@ -11910,7 +12448,11 @@
     "de": "Einem verbundenen v3-Unit-Sync-Raum beitreten",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "chatJoinAConnectedVUnitSyncRoom",
+    "deferred": true,
+    "context": "Retained chat availability or encrypted history failure. Resolve on display without changing chat state or user messages.",
+    "parameters": []
   },
   "ui_to_join_tacmap_will_enable_share_my_location_and_35595381": {
     "en": "To join, TacMap will enable Share my location and Background Unit Sync location. ",
@@ -13373,5 +13915,73 @@
         "type": "string"
       }
     ]
+  },
+  "background_sync_start_failed": {
+    "en": "Background Unit Sync could not start: {1}",
+    "de": "Unit Sync im Hintergrund konnte nicht gestartet werden: {1}",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "backgroundSyncStartFailed",
+    "deferred": true,
+    "context": "Background Unit Sync failure with a verbatim platform diagnostic. Display only; never change service eligibility or session state.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "background_sync_location_stopped": {
+    "en": "Background Unit Sync location stopped: {1}",
+    "de": "Unit-Sync-Standort im Hintergrund beendet: {1}",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "backgroundSyncLocationStopped",
+    "deferred": true,
+    "context": "Background Unit Sync failure with a verbatim platform diagnostic. Display only; never change service eligibility or session state.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "sync_recovery_detail": {
+    "en": "{1} {2}",
+    "de": "{1} {2}",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "syncRecoveryDetail",
+    "deferred": true,
+    "context": "A complete localised failure description followed by complete localised recovery guidance. Both arguments remain deferred; do not alter diagnostic/user content.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      },
+      {
+        "name": "recovery",
+        "type": "string"
+      }
+    ]
+  },
+  "sync_configured_relay_unavailable": {
+    "en": "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.",
+    "de": "Unit Sync konnte den konfigurierten Relay-Server nicht verwenden. Starte TacMap neu oder aktualisiere die App und versuche es erneut.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncConfiguredRelayUnavailable",
+    "deferred": true,
+    "context": "Configured relay validation failed. Relay is app-managed; there is no user-editable relay URL.",
+    "parameters": []
   }
 }

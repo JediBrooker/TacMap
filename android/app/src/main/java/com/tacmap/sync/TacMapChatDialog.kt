@@ -61,7 +61,8 @@ fun TacMapChatDialog(
     val recipients by manager.chatRecipients.collectAsState()
     val unreadTotal by manager.unreadChatMessageCount.collectAsState()
     val sessionReady by manager.chatSessionReady.collectAsState()
-    val availability by manager.chatAvailabilityMessage.collectAsState()
+    val availabilityMessage by manager.chatAvailabilityMessage.collectAsState()
+    val availability = availabilityMessage?.text
     val historyAvailability by manager.chatHistoryAvailability.collectAsState()
     var roomScope by remember(initialTarget) {
         mutableStateOf(initialTarget === TacMapChatTarget.EntireRoom)
@@ -71,7 +72,7 @@ fun TacMapChatDialog(
     }
     var recipientMenuOpen by remember { mutableStateOf(false) }
     var body by remember { mutableStateOf("") }
-    var sendIssue by remember { mutableStateOf<String?>(null) }
+    var sendIssue by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     var confirmRoomSend by remember { mutableStateOf(false) }
 
     // App/DataKey lock must not leave plaintext drafts or route snapshots in remember state.
@@ -117,7 +118,7 @@ fun TacMapChatDialog(
     val blockReason = if (!roomScope && selectedSnapshot == null) {
         L10n.text("Choose a unit")
     } else {
-        manager.chatSendBlockReason(currentTarget)
+        manager.chatSendBlockReason(currentTarget)?.text
     }
     val canSend = sessionReady && blockReason == null && body.isNotBlank()
 
@@ -130,7 +131,7 @@ fun TacMapChatDialog(
             trimmed,
         )) {
             is TacMapChatSendResult.Sent -> body = ""
-            is TacMapChatSendResult.Blocked -> sendIssue = result.reason
+            is TacMapChatSendResult.Blocked -> sendIssue = result.pendingReason
         }
     }
 
@@ -341,7 +342,7 @@ fun TacMapChatDialog(
         AlertDialog(
             onDismissRequest = { sendIssue = null },
             title = { Text("TacMap Chat") },
-            text = { Text(issue) },
+            text = { Text(issue.text) },
             confirmButton = {
                 TextButton(onClick = { sendIssue = null }) { Text(Messages.acknowledge()) }
             },

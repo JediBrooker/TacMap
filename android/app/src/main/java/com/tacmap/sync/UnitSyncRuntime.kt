@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.LocalizedMessage
+
 import com.tacmap.localization.Messages
 
 import com.tacmap.localization.L10n
@@ -58,7 +60,7 @@ class UnitSyncRuntime(
     private var serviceGenerationCounter = 0L
     private var authorizedServiceGeneration: Long? = null
     private var serviceController: ServiceController? = null
-    private var lastPrerequisiteIssue: String? = null
+    private var lastPrerequisiteIssue: LocalizedMessage? = null
     /** Notification Stop must remain effective for this process even if the
      * preference disk commit fails and its last durable value is still true. */
     private var backgroundStopSuppressed = false
@@ -215,7 +217,7 @@ class UnitSyncRuntime(
     }
 
     @Synchronized
-    internal fun onServiceUnavailable(generation: Long, message: String) {
+    internal fun onServiceUnavailable(generation: Long, message: LocalizedMessage) {
         if (authorizedServiceGeneration != generation) return
         authorizedServiceGeneration = null
         serviceController = null
@@ -231,7 +233,7 @@ class UnitSyncRuntime(
         if (!persisted) {
             backgroundStopSuppressed = true
             manager?.reportBackgroundLocationIssue(
-                Messages.backgroundSyncDisableFailed()
+                Messages.backgroundSyncDisableFailedMessage()
             )
         }
         invalidateAndStopService(revokeSession = true)
@@ -261,9 +263,9 @@ class UnitSyncRuntime(
         val prerequisiteIssue = when {
             !wantsBackgroundLocation -> null
             !hasPreciseLocation() ->
-                L10n.text("Background Unit Sync needs Precise location permission before it can run with the screen off.")
+                Messages.syncBackgroundUnitSyncNeedsPreciseLocationPermissionBeforeItMessage()
             !gpsEnabled() ->
-                L10n.text("Background Unit Sync needs GPS turned on before it can run with the screen off.")
+                Messages.syncBackgroundUnitSyncNeedsGpsTurnedOnBeforeItMessage()
             else -> null
         }
         if (activityForeground && prerequisiteIssue != null &&
@@ -286,8 +288,7 @@ class UnitSyncRuntime(
                     authorizedServiceGeneration = null
                     manager?.revokeBackgroundLocationEligibility(reconnectIfForeground = true)
                     manager?.reportBackgroundLocationIssue(
-                        L10n.text("Background Unit Sync could not start: ") +
-                            (failure.message ?: failure.javaClass.simpleName)
+                        Messages.backgroundSyncStartFailedMessage(failure.message ?: failure.javaClass.simpleName)
                     )
                 }
             }

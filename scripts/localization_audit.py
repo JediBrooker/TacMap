@@ -35,7 +35,7 @@ DISPLAY_ARGS = {'text', 'title', 'message', 'hint', 'placeholder', 'label',
                 'displayName', 'contentDescription', 'accessibilityLabel',
                 'accessibilityHint', 'accessibilityValue', 'errorMessage',
                 'statusMessage', 'failureReason', 'recoverySuggestion'}
-DISPLAY_PROPERTIES = DISPLAY_ARGS | {'errorDescription', 'localizedDescription', 'statusTitle'}
+DISPLAY_PROPERTIES = DISPLAY_ARGS | {'errorDescription', 'localizedDescription', 'statusTitle', 'statusText', 'buttonTitle', 'bodyText', 'guidance'}
 
 
 @dataclass

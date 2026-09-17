@@ -1,5 +1,9 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.LocalizedMessage
+
+import com.tacmap.localization.Messages
+
 import android.content.res.Configuration
 import com.tacmap.localization.AppLanguage
 import kotlinx.coroutines.CoroutineScope
@@ -112,21 +116,20 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
             if (!hasPreciseLocation()) {
                 fail(
                     generation,
-                    L10n.text("Precise location is unavailable; Background Unit Sync location stopped."),
+                    Messages.syncPreciseLocationIsUnavailableBackgroundUnitSyncLocationStoppedMessage(),
                 )
                 return START_NOT_STICKY
             }
             val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                fail(generation, L10n.text("GPS is turned off; Background Unit Sync location stopped."))
+                fail(generation, Messages.syncGpsIsTurnedOffBackgroundUnitSyncLocationStoppedMessage())
                 return START_NOT_STICKY
             }
             registerLocationListener(interval)
         } catch (failure: RuntimeException) {
             fail(
                 generation,
-                L10n.text("Background Unit Sync location stopped: ") +
-                    (failure.message ?: failure.javaClass.simpleName),
+                Messages.backgroundSyncLocationStoppedMessage(failure.message ?: failure.javaClass.simpleName),
             )
         }
         return START_NOT_STICKY
@@ -137,7 +140,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
         if (activeGeneration == null || selectedInterval == interval) return
         if (!hasPreciseLocation()) {
             activeGeneration?.let { generation ->
-                fail(generation, L10n.text("Precise location is unavailable; Background Unit Sync location stopped."))
+                fail(generation, Messages.syncPreciseLocationIsUnavailableBackgroundUnitSyncLocationStoppedMessage())
             }
             return
         }
@@ -164,7 +167,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
                 if (!hasPreciseLocation()) {
                     fail(
                         generation,
-                        L10n.text("Precise location is unavailable; Background Unit Sync location stopped."),
+                        Messages.syncPreciseLocationIsUnavailableBackgroundUnitSyncLocationStoppedMessage(),
                     )
                     return
                 }
@@ -175,7 +178,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
 
             override fun onProviderDisabled(provider: String) {
                 if (provider == LocationManager.GPS_PROVIDER) {
-                    fail(generation, L10n.text("GPS was turned off; Background Unit Sync location stopped."))
+                    fail(generation, Messages.syncGpsWasTurnedOffBackgroundUnitSyncLocationStoppedMessage())
                 }
             }
 
@@ -203,7 +206,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
         locationListener = null
     }
 
-    private fun fail(generation: Long, message: String) {
+    private fun fail(generation: Long, message: LocalizedMessage) {
         runtime.onServiceUnavailable(generation, message)
         stopSelf()
     }

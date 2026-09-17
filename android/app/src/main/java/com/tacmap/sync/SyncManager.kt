@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.LocalizedMessage
+
 import com.tacmap.localization.Messages
 
 import com.tacmap.localization.L10n
@@ -206,8 +208,8 @@ class SyncManager(
     /** Persistent, actionable failure detail for SyncDialog. Transient peer
      * update notices remain on [remoteUpdates]. Security warnings stay visible
      * until dismissed or superseded by a clean later snapshot generation. */
-    private val _lastError = MutableStateFlow<String?>(null)
-    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+    private val _lastError = MutableStateFlow<LocalizedMessage?>(null)
+    val lastError: StateFlow<LocalizedMessage?> = _lastError.asStateFlow()
     private val issueLifecycle = SyncIssueLifecycle()
     private var activeConnectionGeneration: Long = 0
 
@@ -235,16 +237,16 @@ class SyncManager(
     val unreadChatMessageCount: StateFlow<Int> = chatHistoryStore.unreadCount
     internal val chatHistoryAvailability: StateFlow<TacMapChatHistoryAvailability> =
         chatHistoryStore.availability
-    val chatHistoryIssue: StateFlow<String?> = chatHistoryStore.issue
+    val chatHistoryIssue: StateFlow<LocalizedMessage?> = chatHistoryStore.issue
     private val _chatRecipients = MutableStateFlow<Map<String, TacMapChatTarget.SelectedUnit>>(emptyMap())
     val chatRecipients: StateFlow<Map<String, TacMapChatTarget.SelectedUnit>> =
         _chatRecipients.asStateFlow()
     private val _chatSessionReady = MutableStateFlow(false)
     val chatSessionReady: StateFlow<Boolean> = _chatSessionReady.asStateFlow()
-    private val _chatAvailabilityMessage = MutableStateFlow<String?>(
-        L10n.text("Join a connected v3 Unit Sync room to use TacMap Chat")
+    private val _chatAvailabilityMessage = MutableStateFlow<LocalizedMessage?>(
+        Messages.chatJoinAConnectedVUnitSyncRoomToUseMessage()
     )
-    val chatAvailabilityMessage: StateFlow<String?> = _chatAvailabilityMessage.asStateFlow()
+    val chatAvailabilityMessage: StateFlow<LocalizedMessage?> = _chatAvailabilityMessage.asStateFlow()
     private val prefs = context.applicationContext.getSharedPreferences("sync", Context.MODE_PRIVATE)
     private val clientId: String = prefs.getString("clientId", null)
         ?: UUID.randomUUID().toString().also { prefs.edit().putString("clientId", it).apply() }
@@ -269,7 +271,7 @@ class SyncManager(
     private val revisionEventProcessor = LocalRevisionEventProcessor(modelRevisionJournal) {
         revisionJournalAvailable = false
         reportError(
-            L10n.text("Local revision history could not be saved; sync is paused. Leave and rejoin after checking available storage."),
+            Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsMessage(),
             SyncIssueKind.SECURITY,
         )
         persistenceFailure()
@@ -581,7 +583,7 @@ class SyncManager(
         }
         if (!result.succeeded) {
             reportError(
-                L10n.text("Could not save Unit Sync identity/location sharing. The previous setting remains active; check available storage and try again."),
+                Messages.syncCouldNotSaveUnitSyncIdentityLocationSharingTheMessage(),
                 SyncIssueKind.SECURITY,
             )
         } else if (result.changed) {
@@ -626,11 +628,11 @@ class SyncManager(
         val code = joinCode.trim()
         if (code.isEmpty()) return
         if (!code.startsWith("3:") && !code.startsWith("2:")) {
-            reportError(L10n.text("Join code must start with 3:. Legacy rooms require an explicit 2: prefix."))
+            reportError(Messages.syncJoinCodeMustStartWithLegacyRoomsRequireAnMessage())
             return
         }
         if (SyncCrypto.isJoinCodeTooWeak(code)) {
-            reportError(L10n.text("Join code is too short to be safe. Generate a new strong room code."))
+            reportError(Messages.syncJoinCodeIsTooShortToBeSafeGenerateMessage())
             return
         }
         val configuredRelay = validatedRelayBaseForRuntime(
@@ -638,7 +640,7 @@ class SyncManager(
         )
         if (configuredRelay == null) {
             reportError(
-                L10n.text("The configured Unit Sync relay is unsafe or invalid. Correct it in Privacy & OPSEC."),
+                Messages.syncConfiguredRelayUnavailableMessage(),
                 SyncIssueKind.SECURITY,
             )
             return
@@ -649,7 +651,7 @@ class SyncManager(
         _roomName.value = requestedRoomName
         if (runCatching { deviceSeed; myPublicKey }.isFailure) {
             reportError(
-                L10n.text("Sync signing identity is locked or damaged. Unlock mission data, then try joining again."),
+                Messages.syncSyncSigningIdentityIsLockedOrDamagedUnlockMissionMessage(),
                 SyncIssueKind.SECURITY,
             )
             return
@@ -671,7 +673,7 @@ class SyncManager(
             }.getOrElse {
                 _status.value = Status.OFFLINE
                 reportError(
-                    L10n.text("Sync identity or rollback state is locked or damaged. Unlock mission data, then try joining again."),
+                    Messages.syncSyncIdentityOrRollbackStateIsLockedOrDamagedMessage(),
                     SyncIssueKind.SECURITY,
                 )
                 return
@@ -760,10 +762,10 @@ class SyncManager(
     }
 
     fun acknowledgeLastError() {
-        _lastError.value = issueLifecycle.dismiss()?.message
+        _lastError.value = issueLifecycle.dismiss()?.pendingMessage
     }
 
-    internal fun reportBackgroundLocationIssue(message: String) {
+    internal fun reportBackgroundLocationIssue(message: LocalizedMessage) {
         reportError(message)
     }
 
@@ -867,17 +869,17 @@ class SyncManager(
     private fun refreshChatAvailability() {
         val issue = when {
             protocolVersion != 3 || _room.value == null ->
-                L10n.text("Join a v3 Unit Sync room to use TacMap Chat")
+                Messages.chatJoinAVUnitSyncRoomToUseTacmapMessage()
             chatHistoryStore.availability.value == TacMapChatHistoryAvailability.LOCKED ->
-                L10n.text("Unlock mission data to use TacMap Chat")
+                Messages.chatUnlockMissionDataToUseTacmapChatMessage()
             chatHistoryStore.availability.value == TacMapChatHistoryAvailability.CORRUPT ->
-                chatHistoryStore.issue.value ?: L10n.text("Encrypted chat history is unavailable")
+                chatHistoryStore.issue.value ?: Messages.chatEncryptedChatHistoryIsUnavailableMessage()
             chatHistoryStore.availability.value == TacMapChatHistoryAvailability.UNAVAILABLE ->
-                chatHistoryStore.issue.value ?: L10n.text("Encrypted chat history could not be saved")
+                chatHistoryStore.issue.value ?: Messages.chatEncryptedChatHistoryCouldNotBeSavedMessage()
             chatHistoryStore.availability.value != TacMapChatHistoryAvailability.READY ->
-                L10n.text("Secure chat history is unavailable")
-            _status.value != Status.CONNECTED -> L10n.text("TacMap Chat is waiting for Unit Sync")
-            !localChatKeyAcknowledged -> L10n.text("Secure chat is still starting")
+                Messages.chatSecureChatHistoryIsUnavailableMessage()
+            _status.value != Status.CONNECTED -> Messages.chatTacmapChatIsWaitingForUnitSyncMessage()
+            !localChatKeyAcknowledged -> Messages.chatSecureChatIsStillStartingMessage()
             else -> null
         }
         _chatAvailabilityMessage.value = issue
@@ -1012,8 +1014,8 @@ class SyncManager(
                 v3HandshakeFailureGeneration != connectionGeneration
             ) {
                 val message = detail?.takeIf { it.isNotBlank() }?.let {
-                    L10n.text("Unit Sync connection failed: %1\$s. Check the relay or network; reconnecting automatically.", it)
-                } ?: L10n.text("Unit Sync disconnected. Check the relay or network; reconnecting automatically.")
+                    Messages.syncUnitSyncConnectionFailedCheckTheRelayOrNetworkMessage(it)
+                } ?: Messages.syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnectingMessage()
                 reportError(message)
             }
             reconnectJob?.cancel()
@@ -1040,7 +1042,7 @@ class SyncManager(
             wantConnected = false
             _status.value = Status.OFFLINE
             reportError(
-                L10n.text("The configured Unit Sync relay is unsafe or invalid. Correct it in Privacy & OPSEC."),
+                Messages.syncConfiguredRelayUnavailableMessage(),
                 SyncIssueKind.SECURITY,
             )
             return
@@ -1173,7 +1175,7 @@ class SyncManager(
             if (retry == null) {
                 if (outboundDeliveries.pending(delivery.localId)?.requestId == delivery.requestId) {
                     reportError(
-                        L10n.text("A Unit Sync change is still unconfirmed after bounded retries. Reconnecting to reconcile it; the local edit remains saved."),
+                        Messages.syncAUnitSyncChangeIsStillUnconfirmedAfterBoundedMessage(),
                     )
                     ws?.cancel()
                 }
@@ -1203,12 +1205,12 @@ class SyncManager(
     }
 
     private fun reportError(
-        message: String,
+        message: LocalizedMessage,
         kind: SyncIssueKind = SyncIssueKind.CONNECTION,
         generation: Long = activeConnectionGeneration,
     ) {
-        _lastError.value = issueLifecycle.report(message, kind, generation)?.message
-        _remoteUpdates.tryEmit(message)
+        _lastError.value = issueLifecycle.report(message, kind, generation)?.pendingMessage
+        _remoteUpdates.tryEmit(message.text)
     }
 
     /** Cold-upgrade cleanup for inactive per-room Chat/replay files. A locked
@@ -1216,17 +1218,17 @@ class SyncManager(
     private fun migrateLegacyLocalStoresAfterUnlock() {
         try {
             SyncLocalStore.migrateAllLegacyStores(appFilesDir)
-            _lastError.value = issueLifecycle.clearPersistentSecurity()?.message
+            _lastError.value = issueLifecycle.clearPersistentSecurity()?.pendingMessage
         } catch (_: DataKey.LockedException) {
             return
         } catch (failure: Throwable) {
             val message =
-                Messages.syncMetadataMigrationFailed()
+                Messages.syncMetadataMigrationFailedMessage()
             _lastError.value = issueLifecycle.reportPersistentSecurity(
                 message,
                 activeConnectionGeneration,
-            )?.message
-            _remoteUpdates.tryEmit(message)
+            )?.pendingMessage
+            _remoteUpdates.tryEmit(message.text)
         }
     }
 
@@ -1496,7 +1498,7 @@ class SyncManager(
                 chatKeyRetryJob = null
                 clearChatTransport(markPendingFailed = true)
                 _chatAvailabilityMessage.value =
-                    L10n.text("This relay does not confirm TacMap Chat support")
+                    Messages.chatThisRelayDoesNotConfirmTacmapChatSupportMessage()
                 _chatSessionReady.value = false
             }
         }
@@ -1514,7 +1516,7 @@ class SyncManager(
     fun markChatMessagesRead(target: TacMapChatTarget): Boolean =
         chatHistoryStore.markRead(target)
 
-    fun chatSendBlockReason(target: TacMapChatTarget): String? {
+    fun chatSendBlockReason(target: TacMapChatTarget): LocalizedMessage? {
         chatHistoryStore.issue.value?.let { issue ->
             if (chatHistoryStore.availability.value != TacMapChatHistoryAvailability.READY) return issue
         }
@@ -1524,9 +1526,9 @@ class SyncManager(
             localChatKeyAcknowledged = localChatKeyAcknowledged,
             peerKeys = chatPeerKeys,
         )
-        if (gate is TacMapChatSendGate.Blocked) return gate.reason
+        if (gate is TacMapChatSendGate.Blocked) return gate.pendingReason
         if (target === TacMapChatTarget.EntireRoom && chatPeerKeys.isEmpty()) {
-            return L10n.text("No chat-ready units are available")
+            return Messages.chatNoChatReadyUnitsAreAvailableMessage()
         }
         return null
     }
@@ -1538,21 +1540,21 @@ class SyncManager(
         body: String,
     ): TacMapChatSendResult {
         chatSendBlockReason(target)?.let { return TacMapChatSendResult.Blocked(it) }
-        if (body.isBlank()) return TacMapChatSendResult.Blocked(L10n.text("Enter a message"))
+        if (body.isBlank()) return TacMapChatSendResult.Blocked(Messages.chatEnterAMessageMessage())
         if (body.toByteArray(Charsets.UTF_8).size > TacMapChatPayload.MAX_BODY_UTF8_BYTES) {
-            return TacMapChatSendResult.Blocked(L10n.text("Message is longer than 4096 UTF-8 bytes"))
+            return TacMapChatSendResult.Blocked(Messages.chatMessageIsLongerThanUtfBytesMessage())
         }
-        val keys = v3Keys ?: return TacMapChatSendResult.Blocked(L10n.text("Secure room is unavailable"))
-        val actor = myActorId ?: return TacMapChatSendResult.Blocked(L10n.text("Secure identity is unavailable"))
-        val sessionRaw = sessionDomain ?: return TacMapChatSendResult.Blocked(L10n.text("Secure session is unavailable"))
+        val keys = v3Keys ?: return TacMapChatSendResult.Blocked(Messages.chatSecureRoomIsUnavailableMessage())
+        val actor = myActorId ?: return TacMapChatSendResult.Blocked(Messages.chatSecureIdentityIsUnavailableMessage())
+        val sessionRaw = sessionDomain ?: return TacMapChatSendResult.Blocked(Messages.chatSecureSessionIsUnavailableMessage())
         val sessionText = SyncIdentity.urlB64(sessionRaw)
         val fromKid = localChatKeyId
-            ?: return TacMapChatSendResult.Blocked(L10n.text("Secure chat is still starting"))
+            ?: return TacMapChatSendResult.Blocked(Messages.chatSecureChatIsStillStartingMessage())
         val ephemeral = chatEphemeralKey
-            ?: return TacMapChatSendResult.Blocked(L10n.text("Secure chat is still starting"))
+            ?: return TacMapChatSendResult.Blocked(Messages.chatSecureChatIsStillStartingMessage())
         if (chatCounter >= VersionStamp.MAX_COUNTER) {
             clearChatTransport(markPendingFailed = true)
-            return TacMapChatSendResult.Blocked(L10n.text("Secure chat session must reconnect"))
+            return TacMapChatSendResult.Blocked(Messages.chatSecureChatSessionMustReconnectMessage())
         }
 
         val peer = (TacMapChatTargetGate.evaluate(
@@ -1584,7 +1586,7 @@ class SyncManager(
             recipientChatKeyId = selected?.chatKeyId,
         )
         val header = runCatching { TacMapChatCrypto.header(fields) }.getOrElse {
-            return TacMapChatSendResult.Blocked(L10n.text("Selected unit is no longer available"))
+            return TacMapChatSendResult.Blocked(Messages.chatSelectedUnitIsNoLongerAvailableMessage())
         }
         val payload = TacMapChatPayload(
             pv = TacMapChatPayload.VERSION,
@@ -1594,25 +1596,25 @@ class SyncManager(
             replyTo = null,
         )
         val plaintext = TacMapChatPayloadCodec.encode(payload)
-            ?: return TacMapChatSendResult.Blocked(L10n.text("Message could not be encoded safely"))
+            ?: return TacMapChatSendResult.Blocked(Messages.chatMessageCouldNotBeEncodedSafelyMessage())
         val messageKey = if (scope == TacMapChatScope.ROOM) {
             TacMapChatCrypto.roomChatKey(keys.roomKey)
         } else {
             val currentPeer = peer
-                ?: return TacMapChatSendResult.Blocked(L10n.text("Selected unit is no longer available"))
+                ?: return TacMapChatSendResult.Blocked(Messages.chatSelectedUnitIsNoLongerAvailableMessage())
             TacMapChatCrypto.directChatKey(
                 ephemeral,
                 currentPeer.x25519PublicKey,
                 keys.roomIdRaw,
                 header,
-            ) ?: return TacMapChatSendResult.Blocked(L10n.text("Selected unit's secure key is invalid"))
+            ) ?: return TacMapChatSendResult.Blocked(Messages.chatSelectedUnitSSecureKeyIsInvalidMessage())
         }
         val sealed = try {
             TacMapChatCrypto.seal(messageKey, plaintext, header)
         } finally {
             messageKey.fill(0)
             plaintext.fill(0)
-        } ?: return TacMapChatSendResult.Blocked(L10n.text("Message could not be encrypted"))
+        } ?: return TacMapChatSendResult.Blocked(Messages.chatMessageCouldNotBeEncryptedMessage())
         val signature = SyncSigning.sign(
             deviceSeed,
             TacMapChatCrypto.signaturePreimage(header, sealed),
@@ -1654,7 +1656,7 @@ class SyncManager(
         if (!chatHistoryStore.append(localMessage)) {
             refreshChatAvailability()
             return TacMapChatSendResult.Blocked(
-                chatHistoryStore.issue.value ?: L10n.text("Encrypted chat history could not be saved")
+                chatHistoryStore.issue.value ?: Messages.chatEncryptedChatHistoryCouldNotBeSavedMessage()
             )
         }
         chatCounter = counter
@@ -1674,7 +1676,7 @@ class SyncManager(
             pendingChat.remove(messageId)
             chatHistoryStore.updateDelivery(messageId, TacMapChatDeliveryState.FAILED, "send_failed")
             refreshChatAvailability()
-            return TacMapChatSendResult.Blocked(L10n.text("Message could not be sent"))
+            return TacMapChatSendResult.Blocked(Messages.chatMessageCouldNotBeSentMessage())
         }
         return TacMapChatSendResult.Sent(messageId)
     }
@@ -1857,7 +1859,7 @@ class SyncManager(
                     _lastError.value = issueLifecycle.connectionSucceeded(
                         atGeneration = connectionGeneration,
                         verifiedCleanSnapshot = false,
-                    )?.message
+                    )?.pendingMessage
                     syncLocalState(
                         waypointStore.committedWaypoints.value,
                         drawingStore.committedDocument.value,
@@ -1902,7 +1904,7 @@ class SyncManager(
                 if (replay.lastSnapshotSeq >= 0 && seq < replay.lastSnapshotSeq) {
                     android.util.Log.w("SyncManager", "Sync relay supplied an older snapshot fence")
                     reportError(
-                        L10n.text("Sync rollback warning: the relay snapshot is older than state already seen on this device. Verify the room code and relay before continuing."),
+                        Messages.syncSyncRollbackWarningTheRelaySnapshotIsOlderThanMessage(),
                         SyncIssueKind.SECURITY,
                     )
                 }
@@ -2047,11 +2049,11 @@ class SyncManager(
         val retryable = nack.retryable
         val pending = outboundDeliveries.reject(nack) ?: return
         val message = when (code) {
-            "quota" -> L10n.text("The Unit Sync room is full, so this saved local change was not uploaded. Remove room content or use a new room, then reconnect.")
-            "storage" -> L10n.text("The Unit Sync relay could not durably save this change. It remains saved locally and will be retried.")
-            "stale", "not-found", "counter-window" -> L10n.text("The Unit Sync relay rejected an out-of-date change. The local edit remains saved; reconnecting will reconcile it from a verified snapshot.")
-            "session-replaced", "session-mismatch", "hello-required" -> L10n.text("This Unit Sync session can no longer confirm changes. The local edit remains saved; reconnecting with a fresh authenticated session.")
-            else -> L10n.text("The Unit Sync relay rejected a change as invalid. The local edit remains saved; open Unit Sync for recovery guidance.")
+            "quota" -> Messages.syncTheUnitSyncRoomIsFullSoThisSavedMessage()
+            "storage" -> Messages.syncTheUnitSyncRelayCouldNotDurablySaveThisMessage()
+            "stale", "not-found", "counter-window" -> Messages.syncTheUnitSyncRelayRejectedAnOutOfDateMessage()
+            "session-replaced", "session-mismatch", "hello-required" -> Messages.syncThisUnitSyncSessionCanNoLongerConfirmChangesMessage()
+            else -> Messages.syncTheUnitSyncRelayRejectedAChangeAsInvalidMessage()
         }
         reportError(message, SyncIssueKind.SECURITY)
         if (retryable) {
@@ -2204,7 +2206,7 @@ class SyncManager(
         }
         if (!removeSyncedObject(id, kindById[id])) {
             reportError(
-                L10n.text("A synced symbol delete could not be saved. Check available storage, then leave and rejoin to retry."),
+                Messages.syncASyncedSymbolDeleteCouldNotBeSavedCheckMessage(),
                 SyncIssueKind.SECURITY,
             )
             return
@@ -2237,7 +2239,7 @@ class SyncManager(
         _lastError.value = issueLifecycle.connectionSucceeded(
             atGeneration = activeConnectionGeneration,
             verifiedCleanSnapshot = true,
-        )?.message
+        )?.pendingMessage
         // A reconnect rotates the v3 session domain, so publish on the new
         // authenticated transport immediately. A still-recent GPS fix may seed
         // this session once; older fixes must wait for a new OS callback.
@@ -2363,7 +2365,7 @@ class SyncManager(
         val session = sessionDomain?.let(SyncIdentity::urlB64) ?: return
         if (nack.first != actor || nack.second != session) return
         clearChatTransport(markPendingFailed = true)
-        _chatAvailabilityMessage.value = L10n.text("Secure chat key was rejected (%1\$s)", nack.third)
+        _chatAvailabilityMessage.value = Messages.chatSecureChatKeyWasRejectedMessage(nack.third)
         _chatSessionReady.value = false
     }
 
@@ -3458,7 +3460,7 @@ class SyncManager(
                 // fallback: it could be older, attacker-restored, and have
                 // Share my location enabled. Keep the fail-closed default.
                 reportError(
-                    L10n.text("Saved Unit Sync identity/location sharing is locked or damaged. Location sharing remains off."),
+                    Messages.syncSavedUnitSyncIdentityLocationSharingIsLockedOrMessage(),
                     SyncIssueKind.SECURITY,
                 )
             }
@@ -3475,7 +3477,7 @@ class SyncManager(
                     presenceConfigDurable = true
                 } else {
                     reportError(
-                        L10n.text("Could not migrate Unit Sync identity/location sharing to encrypted storage. Location sharing remains off."),
+                        Messages.syncCouldNotMigrateUnitSyncIdentityLocationSharingToMessage(),
                         SyncIssueKind.SECURITY,
                     )
                 }
@@ -3610,7 +3612,7 @@ class SyncManager(
             v3HandshakeFailureGeneration = connectionGeneration
             _status.value = Status.OFFLINE
             reportError(
-                L10n.text("Unit Sync secure handshake timed out. Check the relay or network; reconnecting automatically."),
+                Messages.syncUnitSyncSecureHandshakeTimedOutCheckTheRelayMessage(),
                 SyncIssueKind.CONNECTION,
                 connectionGeneration,
             )
@@ -3624,7 +3626,7 @@ class SyncManager(
         v2SnapshotFailureGeneration = connectionGeneration
         _status.value = Status.OFFLINE
         reportError(
-            L10n.text("Unit Sync snapshot failed: %1\$s Verify the relay or network; reconnecting automatically.", reason),
+            Messages.syncUnitSyncSnapshotFailedVerifyTheRelayOrNetworkMessage(reason),
             SyncIssueKind.CONNECTION,
             connectionGeneration,
         )
@@ -3642,7 +3644,7 @@ class SyncManager(
         awaitingHelloAck = false
         resetSnapshot()
         reportError(
-            L10n.text("Sync snapshot authentication failed. No unverified room data was applied; verify the room code and relay, then rejoin."),
+            Messages.syncSyncSnapshotAuthenticationFailedNoUnverifiedRoomDataWasMessage(),
             SyncIssueKind.SECURITY,
         )
         failConnection(clearPeers = true)
@@ -3673,7 +3675,7 @@ class SyncManager(
         _onlineMembers.value = onlineMemberTracker.clear()
         _peers.value = emptyMap()
         reportError(
-            L10n.text("Sync stopped because rollback state could not be secured. Check available storage, then leave and rejoin."),
+            Messages.syncSyncStoppedBecauseRollbackStateCouldNotBeSecuredMessage(),
             SyncIssueKind.SECURITY,
         )
         ws?.close(4014, L10n.text("secure state unavailable"))

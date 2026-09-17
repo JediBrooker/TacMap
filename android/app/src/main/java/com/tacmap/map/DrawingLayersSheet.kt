@@ -528,7 +528,7 @@ private fun DrawingFeatureRow(
         Column(Modifier.weight(1f)) {
             Text(feature.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Text(
-                L10n.text("%1\$s • %2\$s • %3\$s pts", feature.geometry.displayName, layerName ?: "Layer", feature.points.size) +
+                L10n.text("%1\$s • %2\$s • %3\$s pts", feature.geometry.displayName, layerName ?: L10n.text("Layer"), feature.points.size) +
                     if (isVisible) "" else L10n.text(" • hidden"),
                 fontSize = 11.sp
             )

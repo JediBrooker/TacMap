@@ -25,6 +25,25 @@ final class TacMapChatStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testLockedHistoryIssueTracksLanguageWithoutUnlockingOrWriting() throws {
+        let original = AppLanguage.shared.selection
+        defer { AppLanguage.shared.select(original) }
+        AppLanguage.shared.select(.en)
+        let store = TacMapChatStore(containerURL: directory)
+        try store.open(roomId: roomId)
+        store.lock()
+        let retained = store.pendingIssue
+        let before = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        XCTAssertEqual(store.issue, "Unlock mission data to use TacMap Chat.")
+        AppLanguage.shared.select(.de)
+        XCTAssertEqual(store.issue, "Entsperre Einsatzdaten, um TacMap Chat zu verwenden.")
+        XCTAssertEqual(store.pendingIssue, retained)
+        XCTAssertEqual(store.activeRoomId, roomId)
+        XCTAssertTrue(store.isLocked)
+        XCTAssertTrue(store.messages.isEmpty)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), before)
+    }
+
     func testHistoryIsSealedAndRoundTrips() throws {
         let store = TacMapChatStore(containerURL: directory)
         try store.open(roomId: roomId)

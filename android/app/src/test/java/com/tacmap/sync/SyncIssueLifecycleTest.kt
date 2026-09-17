@@ -9,7 +9,7 @@ class SyncIssueLifecycleTest {
     fun rollbackWarningSurvivesTheAckFromItsOwnSnapshotGeneration() {
         val lifecycle = SyncIssueLifecycle()
         val generation = lifecycle.beginConnection()
-        lifecycle.report("rollback", SyncIssueKind.SECURITY, generation)
+        lifecycle.report(com.tacmap.localization.LocalizedMessage.literal("rollback"), SyncIssueKind.SECURITY, generation)
 
         val remaining = lifecycle.connectionSucceeded(
             atGeneration = generation,
@@ -24,10 +24,10 @@ class SyncIssueLifecycleTest {
     fun onlyALaterCleanSnapshotSupersedesAnUndismissedSecurityWarning() {
         val lifecycle = SyncIssueLifecycle()
         val warnedGeneration = lifecycle.beginConnection()
-        lifecycle.report("rollback", SyncIssueKind.SECURITY, warnedGeneration)
+        lifecycle.report(com.tacmap.localization.LocalizedMessage.literal("rollback"), SyncIssueKind.SECURITY, warnedGeneration)
 
         val retryGeneration = lifecycle.beginConnection()
-        lifecycle.report("temporary disconnect", SyncIssueKind.CONNECTION, retryGeneration)
+        lifecycle.report(com.tacmap.localization.LocalizedMessage.literal("temporary disconnect"), SyncIssueKind.CONNECTION, retryGeneration)
         assertEquals("rollback", lifecycle.issue?.message)
         assertNull(lifecycle.connectionSucceeded(retryGeneration, verifiedCleanSnapshot = true))
     }
@@ -36,9 +36,9 @@ class SyncIssueLifecycleTest {
     fun ordinaryConnectionErrorsClearOnSuccessButNotFromAnOlderCallback() {
         val lifecycle = SyncIssueLifecycle()
         val oldGeneration = lifecycle.beginConnection()
-        lifecycle.report("first failure", SyncIssueKind.CONNECTION, oldGeneration)
+        lifecycle.report(com.tacmap.localization.LocalizedMessage.literal("first failure"), SyncIssueKind.CONNECTION, oldGeneration)
         val currentGeneration = lifecycle.beginConnection()
-        lifecycle.report("current failure", SyncIssueKind.CONNECTION, currentGeneration)
+        lifecycle.report(com.tacmap.localization.LocalizedMessage.literal("current failure"), SyncIssueKind.CONNECTION, currentGeneration)
 
         assertEquals(
             "current failure",
@@ -51,7 +51,7 @@ class SyncIssueLifecycleTest {
     fun explicitDismissalClearsEitherIssueKind() {
         val lifecycle = SyncIssueLifecycle()
         val generation = lifecycle.beginConnection()
-        lifecycle.report("rollback", SyncIssueKind.SECURITY, generation)
+        lifecycle.report(com.tacmap.localization.LocalizedMessage.literal("rollback"), SyncIssueKind.SECURITY, generation)
 
         assertNull(lifecycle.dismiss())
         assertNull(lifecycle.issue)
@@ -61,14 +61,14 @@ class SyncIssueLifecycleTest {
     fun localMigrationWarningSurvivesSnapshotsAndDismissalUntilMigrationSucceeds() {
         val lifecycle = SyncIssueLifecycle()
         val generation = lifecycle.beginConnection()
-        lifecycle.reportPersistentSecurity("storage migration", generation)
+        lifecycle.reportPersistentSecurity(com.tacmap.localization.LocalizedMessage.literal("storage migration"), generation)
 
         val retryGeneration = lifecycle.beginConnection()
         assertEquals(
             "storage migration",
             lifecycle.connectionSucceeded(retryGeneration, verifiedCleanSnapshot = true)?.message,
         )
-        lifecycle.report("rollback", SyncIssueKind.SECURITY, retryGeneration)
+        lifecycle.report(com.tacmap.localization.LocalizedMessage.literal("rollback"), SyncIssueKind.SECURITY, retryGeneration)
         assertEquals("rollback", lifecycle.issue?.message)
         assertEquals("storage migration", lifecycle.dismiss()?.message)
         assertNull(lifecycle.clearPersistentSecurity())

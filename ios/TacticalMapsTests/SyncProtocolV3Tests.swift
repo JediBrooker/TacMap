@@ -2891,13 +2891,13 @@ final class SyncProtocolV3Tests: XCTestCase {
     func testRollbackWarningSurvivesSameGenerationHelloAckAndOnlyLaterCleanSnapshotClearsIt() {
         let lifecycle = SyncIssueLifecycle()
         let warned = lifecycle.beginConnection()
-        lifecycle.report("rollback", kind: .security, generation: warned)
+        lifecycle.report(.literal("rollback"), kind: .security, generation: warned)
         XCTAssertEqual(
             lifecycle.connectionSucceeded(generation: warned, verifiedCleanSnapshot: true)?.message,
             "rollback")
 
         let later = lifecycle.beginConnection()
-        lifecycle.report("temporary disconnect", kind: .connection, generation: later)
+        lifecycle.report(.literal("temporary disconnect"), kind: .connection, generation: later)
         XCTAssertEqual(lifecycle.issue?.message, "rollback")
         XCTAssertNil(lifecycle.connectionSucceeded(generation: later, verifiedCleanSnapshot: true))
     }
@@ -2905,7 +2905,7 @@ final class SyncProtocolV3Tests: XCTestCase {
     func testLocalMigrationWarningSurvivesSnapshotsAndDismissalUntilMigrationSucceeds() {
         let lifecycle = SyncIssueLifecycle()
         let generation = lifecycle.beginConnection()
-        lifecycle.reportPersistentSecurity("storage migration", generation: generation)
+        lifecycle.reportPersistentSecurity(.literal("storage migration"), generation: generation)
 
         let retryGeneration = lifecycle.beginConnection()
         XCTAssertEqual(
@@ -2915,7 +2915,7 @@ final class SyncProtocolV3Tests: XCTestCase {
             )?.message,
             "storage migration"
         )
-        lifecycle.report("rollback", kind: .security, generation: retryGeneration)
+        lifecycle.report(.literal("rollback"), kind: .security, generation: retryGeneration)
         XCTAssertEqual(lifecycle.issue?.message, "rollback")
         XCTAssertEqual(lifecycle.dismiss()?.message, "storage migration")
         XCTAssertNil(lifecycle.clearPersistentSecurity())

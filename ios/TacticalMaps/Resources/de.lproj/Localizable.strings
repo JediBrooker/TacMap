@@ -24,6 +24,8 @@
 "Could not save the language setting. Try again." = "Die Spracheinstellung konnte nicht gespeichert werden. Versuche es erneut.";
 "id.settings_language_title" = "Sprache";
 "Language" = "Sprache";
+"id.sync_configured_relay_unavailable" = "Unit Sync konnte den konfigurierten Relay-Server nicht verwenden. Starte TacMap neu oder aktualisiere die App und versuche es erneut.";
+"id.sync_recovery_detail" = "%1$@ %2$@";
 "id.synced_layers_save_failed" = "Die synchronisierten Ebenen konnten nicht gespeichert werden: %1$@";
 "id.trial_expired_details" = "Dein kostenloser Testzeitraum von %1$@ Tagen ist abgelaufen. Mit einem einmaligen Kauf kannst du TacMap weiter nutzen – Live-MGRS, GeoPDF-Karten, NATO-APP-6-Symbole und GeoJSON-Export.";
 "id.trial_remaining_details" = "Du nutzt den kostenlosen Test (noch %1$@). Jetzt für dauerhaften Zugriff freischalten.";

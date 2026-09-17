@@ -24,6 +24,8 @@
 "Could not save the language setting. Try again." = "Could not save the language setting. Try again.";
 "id.settings_language_title" = "Language";
 "Language" = "Language";
+"id.sync_configured_relay_unavailable" = "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.";
+"id.sync_recovery_detail" = "%1$@ %2$@";
 "id.synced_layers_save_failed" = "Could not save synced layers to disk: %1$@";
 "id.trial_expired_details" = "Your %1$@-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.";
 "id.trial_remaining_details" = "You're on the free trial (%1$@ left). Unlock now for permanent access.";

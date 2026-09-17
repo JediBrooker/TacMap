@@ -16,15 +16,17 @@ enum TacMapChatCrypto {
         case encryptionFailed
         case decryptionFailed
 
-        var errorDescription: String? {
+        var errorDescription: String? { localizedMessage.text }
+
+        var localizedMessage: LocalizedMessage {
             switch self {
-            case .invalidContext: return L10n.text("The secure chat session changed. Select the recipient again.")
-            case .invalidPayload: return L10n.text("The chat text is invalid or too large.")
-            case .invalidFrame: return L10n.text("The encrypted chat frame is malformed.")
-            case .invalidSignature: return L10n.text("The chat frame failed sender authentication.")
-            case .keyAgreementFailed: return L10n.text("A private channel could not be established with that unit.")
-            case .encryptionFailed: return L10n.text("The message could not be encrypted.")
-            case .decryptionFailed: return L10n.text("The message could not be decrypted.")
+            case .invalidContext: return Messages.chatTheSecureChatSessionChangedSelectTheRecipientAgainMessage()
+            case .invalidPayload: return Messages.chatTheChatTextIsInvalidOrTooLargeMessage()
+            case .invalidFrame: return Messages.chatTheEncryptedChatFrameIsMalformedMessage()
+            case .invalidSignature: return Messages.chatTheChatFrameFailedSenderAuthenticationMessage()
+            case .keyAgreementFailed: return Messages.chatAPrivateChannelCouldNotBeEstablishedWithThatMessage()
+            case .encryptionFailed: return Messages.chatTheMessageCouldNotBeEncryptedMessage()
+            case .decryptionFailed: return Messages.chatTheMessageCouldNotBeDecryptedMessage()
             }
         }
     }

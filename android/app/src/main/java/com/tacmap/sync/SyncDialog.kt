@@ -83,7 +83,8 @@ fun SyncDialog(
     val roomName by manager.roomName.collectAsState()
     val peers by manager.peers.collectAsState()
     val onlineMembers by manager.onlineMembers.collectAsState()
-    val lastError by manager.lastError.collectAsState()
+    val lastErrorMessage by manager.lastError.collectAsState()
+    val lastError = lastErrorMessage?.text
     val backgroundUnitSyncLocation by opsec.backgroundUnitSyncLocation.collectAsState()
     val backgroundUnitSyncInterval by opsec.backgroundUnitSyncInterval.collectAsState()
     var code by remember { mutableStateOf(room ?: "") }

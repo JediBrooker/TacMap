@@ -1,6 +1,8 @@
 package com.tacmap.sync
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 import android.content.Context
 import com.tacmap.util.DataKey
@@ -42,8 +44,8 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
     private val _availability = MutableStateFlow(TacMapChatHistoryAvailability.CLOSED)
     val availability: StateFlow<TacMapChatHistoryAvailability> = _availability.asStateFlow()
-    private val _issue = MutableStateFlow<String?>(null)
-    val issue: StateFlow<String?> = _issue.asStateFlow()
+    private val _issue = MutableStateFlow<LocalizedMessage?>(null)
+    val issue: StateFlow<LocalizedMessage?> = _issue.asStateFlow()
 
     private var activeRoomId: String? = null
     private var activeFile: File? = null
@@ -54,7 +56,7 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
     @Synchronized
     fun open(roomId: String): Boolean {
         close()
-        if (!TacMapChatIds.isCanonical32(roomId)) return failCorrupt(L10n.text("Invalid chat room identity"))
+        if (!TacMapChatIds.isCanonical32(roomId)) return failCorrupt(Messages.chatInvalidChatRoomIdentityMessage())
 
         val namingKey = try {
             SafeStore.keyProvider.key()
@@ -77,20 +79,20 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
                 dataKey = namingKey,
             )
         } catch (_: Throwable) {
-            return failUnavailable(L10n.text("Encrypted chat history could not be migrated"))
+            return failUnavailable(Messages.chatEncryptedChatHistoryCouldNotBeMigratedMessage())
         } finally {
             namingKey.fill(0)
         }
         val label = "sync/chat/$roomId"
         if (file.exists()) {
             val raw = runCatching { file.readBytes() }.getOrElse {
-                return failCorrupt(L10n.text("Encrypted chat history could not be read"))
+                return failCorrupt(Messages.chatEncryptedChatHistoryCouldNotBeReadMessage())
             }
             if (!SealedEnvelope.isSealedFile(raw)) {
-                return failCorrupt(L10n.text("Unencrypted chat history was rejected"))
+                return failCorrupt(Messages.chatUnencryptedChatHistoryWasRejectedMessage())
             }
             if (raw.size > MAX_ENCODED_HISTORY_BYTES + SEALED_FILE_OVERHEAD_ALLOWANCE) {
-                return failCorrupt(L10n.text("Encrypted chat history exceeded its storage limit"))
+                return failCorrupt(Messages.chatEncryptedChatHistoryExceededItsStorageLimitMessage())
             }
         }
 
@@ -104,7 +106,7 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
             is SafeStore.LoadResult.Loaded -> activate(roomId, file, label, loaded.value)
             is SafeStore.LoadResult.Locked -> failLocked()
             is SafeStore.LoadResult.Corrupt -> failCorrupt(
-                L10n.text("Encrypted chat history could not be authenticated")
+                Messages.chatEncryptedChatHistoryCouldNotBeAuthenticatedMessage()
             )
         }
     }
@@ -130,7 +132,7 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
         activeLabel = null
         replay = emptyList()
         _availability.value = TacMapChatHistoryAvailability.LOCKED
-        _issue.value = L10n.text("Unlock mission data to use TacMap Chat")
+        _issue.value = Messages.chatUnlockMissionDataToUseTacmapChatMessage()
     }
 
     /** Persists before publishing; a storage failure cannot create phantom history. */
@@ -373,11 +375,11 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
             unreadInboundMessageIds = normalizedUnread,
         )
         val encoded = runCatching { json.encodeToString(envelope) }.getOrElse {
-            _issue.value = L10n.text("Chat history could not be encoded")
+            _issue.value = Messages.chatChatHistoryCouldNotBeEncodedMessage()
             return false
         }
         if (encoded.toByteArray(Charsets.UTF_8).size > MAX_ENCODED_HISTORY_BYTES) {
-            _issue.value = L10n.text("Chat history reached its protected storage limit")
+            _issue.value = Messages.chatChatHistoryReachedItsProtectedStorageLimitMessage()
             return false
         }
         return runCatching { SafeStore.writeAtomically(file, label, encoded) }
@@ -393,7 +395,7 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
                     if (error is DataKey.LockedException || error is DataKey.UnrecoverableException) {
                         lock()
                     } else {
-                        _issue.value = L10n.text("Chat history could not be saved")
+                        _issue.value = Messages.chatChatHistoryCouldNotBeSavedMessage()
                         _availability.value = TacMapChatHistoryAvailability.UNAVAILABLE
                     }
                     false
@@ -406,7 +408,7 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
         return false
     }
 
-    private fun failCorrupt(message: String): Boolean {
+    private fun failCorrupt(message: LocalizedMessage): Boolean {
         _messages.value = emptyList()
         publishUnread(emptySet())
         activeRoomId = null
@@ -418,7 +420,7 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
         return false
     }
 
-    private fun failUnavailable(message: String): Boolean {
+    private fun failUnavailable(message: LocalizedMessage): Boolean {
         _messages.value = emptyList()
         publishUnread(emptySet())
         activeRoomId = null

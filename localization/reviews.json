@@ -2627,63 +2627,63 @@
     },
     "ui_join_code_must_start_with_3_legacy_rooms_require_8e0b55c2": {
       "de": {
-        "source": "5ba55148ba83d36043a30263adc8d6e9e8ccba15e24528fd0105d8a822acb31d",
+        "source": "ca8e71088e5a12baddf0650595aef089e92763015c994abf7bb77450bca16149",
         "translation": "6eb9ab39c464c05904df1344c4651ba54dc0f362b170dd73d527a06ec1d3f9f9",
         "status": "reviewed"
       }
     },
     "ui_signing_identity_is_locked_or_unavailable_unlock_cae3b2c6": {
       "de": {
-        "source": "80c38aca7644866e7765566f6881775acf83e93f91a91e2aeed4ebf92d4a491c",
+        "source": "ebecc6c2d02bcca52e47f17aefa4fe6a6a26fcb50ea993916d20438138325336",
         "translation": "47134195e504a2a0d9b1900c3728303486b36228273f1461c55aed94ee206c93",
         "status": "reviewed"
       }
     },
     "ui_signing_identity_is_unavailable_0cb3ad6b": {
       "de": {
-        "source": "f551900bd85023a87bbbe1b796429ce1aca757037ad6ddd8906d6939c3fd4f36",
+        "source": "254d4c0ee370a76009cceb60edff1d0bf27ec93a6aa0e187516ccd0025033870",
         "translation": "7324b7d15e59b8b7187363b9edcdfd13db7a9c4034e0465c44b51ac0016e75b7",
         "status": "reviewed"
       }
     },
     "ui_saved_rollback_protection_state_is_locked_or_dam_d2a8cd05": {
       "de": {
-        "source": "30c7318f4ba3a0370de95a8793165dab77055512b50b4ea003a1af1c4675b540",
+        "source": "8f07837779a8e86d164b7fefd7468fd5aa3fa7d1efc687df1ea9b1430b217c6c",
         "translation": "26db6bf2ec491f533d7cdbf5b720202f67ad9c2b3c3811548587139a0496ce0d",
         "status": "reviewed"
       }
     },
     "ui_local_revision_history_could_not_be_saved_sync_i_ede036c2": {
       "de": {
-        "source": "573862403c5ef9f6179075117f348bffc91e6c615ac0de01863c83784bcc1de6",
+        "source": "6adfbc188768f0b18397ed9bd48d6cc7e0584177fd9159335c9f2a8905332e22",
         "translation": "f2e4ded454e55ca8c799338478531d4029eed3fe4045523f8642bef2b2dd2886",
         "status": "reviewed"
       }
     },
     "ui_rollback_protection_state_could_not_be_saved_3597a18b": {
       "de": {
-        "source": "0b14e3b85a9556346d9fe777e62cb5280e918c3cd7cee03115cd34e76a1ee6d4",
+        "source": "cb93f2d6a89d9edff850b80b8f8be3341f6d23b0f92ee2c49ed25b11ece7306c",
         "translation": "e64c6d65707f726984047c6044c12f5050b3b92147d5c5aeea74fb5fcccf5e36",
         "status": "reviewed"
       }
     },
     "ui_could_not_construct_authenticated_hello_e7270eae": {
       "de": {
-        "source": "2d924b4af259fac0b18f2c8596a8cc527c0c923a18fe5caf7d1d4a0f130c851d",
+        "source": "193d79afeba89a34eaf390227a3f740e277246b889928d1d9029f5c621f49378",
         "translation": "2134d21b2171ef87574b76c78dff457f2774de9df03a704bb6b239fa6a5df35e",
         "status": "reviewed"
       }
     },
     "ui_could_not_reserve_authenticated_session_epoch_387f6b1a": {
       "de": {
-        "source": "3c191afe56034d85f3faf8aca5fe555aa0bfe3f113aa5c6e13c4c63e127080e2",
+        "source": "93de6b5c16ea94ee6622dab9f3a5d145ad7b562bea74ae87563204e4562f893e",
         "translation": "f25f885c591a66f1ec15ad6a6cfdb5b58b5a34f9a547c6ffb7d4e49c084daa08",
         "status": "reviewed"
       }
     },
     "ui_could_not_send_authenticated_hello_f93c7fbd": {
       "de": {
-        "source": "1bd7cb8d92a738cb60e1b88b0291d70a04c626e8c20fe824da4ed93f9068349c",
+        "source": "39e54d92210245ef060890b48342c621fcf86c2ad0345dbc0ccf8084ee7cc403",
         "translation": "d1c02d4ce4c239f40805f97baacb2bff7968fc9c31f58cf7e936bec41f71c394",
         "status": "reviewed"
       }
@@ -2718,35 +2718,35 @@
     },
     "ui_invalid_sync_snapshot_fence_5404b7bc": {
       "de": {
-        "source": "dd0b943095a1837bb7f02aed080c8fbe81e923912518d538867452e58c27e2ce",
+        "source": "16f5318e41fc187e539ebf81800f046cd288e5e6b4a90cb4a421d6693eee4aa4",
         "translation": "460e27400f0b360fb2027258beefd24da3d1381b78157615a8aaa17564af978e",
         "status": "reviewed"
       }
     },
     "ui_sync_snapshot_authentication_failed_1fc99888": {
       "de": {
-        "source": "78eda4a5adc7ffe722ad72eacf0dadf7cf21c81b88c370768f7805f5eaed7888",
+        "source": "a4b029f2faea1581a19ebcb3a018f070ede438ca56144c61e41c22e85b314d38",
         "translation": "02c18b68de634e0b52a828447def34aef379c99dd001948214098020a2ae5bd1",
         "status": "reviewed"
       }
     },
     "ui_sync_snapshot_contained_an_unauthenticated_recor_d165216e": {
       "de": {
-        "source": "1a077733062081a15fa2925d9582c4ebfe578fdf1e153e0105b00d0689d2cffd",
+        "source": "3e08ab4abca530c2008503d84c28a976fa0cc81f4c7cbf3366f0702f86c29f37",
         "translation": "0e1526b2539728e3dbbf0f6f4067468a0c361fa8a0570d7b1d501549946506cf",
         "status": "reviewed"
       }
     },
     "ui_the_relay_served_an_older_snapshot_newer_authent_d7eb6c17": {
       "de": {
-        "source": "af46b188d290f7afcc5c45daf13ea143f4b900656d4bb5b66c582d815a123a8e",
+        "source": "2f7ab38bb92caf14ed5886d6989bb2b99cbb21f0829883cf260b234123a84f75",
         "translation": "768b16f093ae9aa6999087ad774ffacc28b779744a325e8598a348274e0190cb",
         "status": "reviewed"
       }
     },
     "ui_actor_rollback_protection_state_could_not_be_sav_88065786": {
       "de": {
-        "source": "1fe2ffda090aa4cecf3a43cfb9639db553cb69956179428e99e5a663667ab997",
+        "source": "5975661d4a8539499bd3c52d8987e6ffb1e0e953ebda12065024daac11d1e3eb",
         "translation": "2ab0a02efeebfbd74404e44d73bac1dcee8d8cec996599fb678efeb9f5918bee",
         "status": "reviewed"
       }
@@ -2767,7 +2767,7 @@
     },
     "ui_presence_replay_state_could_not_be_saved_596636f3": {
       "de": {
-        "source": "204f7012000fb3d379031467c0afcd561fc0639c85bc7817ff7efe369099df37",
+        "source": "49e761ceb580d5295ee282f1e21edd50a897cf4b9f9cebd83329c74cc3d99723",
         "translation": "66d50cbfba13267b3941180277e8b295628c37c848072397588f70ceee139b98",
         "status": "reviewed"
       }
@@ -7114,98 +7114,98 @@
     },
     "ui_tacmap_chat_is_not_attached_to_a_secure_room_6453a862": {
       "de": {
-        "source": "a19acc6e4e145f9712595047f1c6543351ca3f0d434fcccf61debefe0d7bd3f5",
+        "source": "053b997ffd1b03809dddeee545d3002e1af2e7ad80bd8fcb07156f04421ddce4",
         "translation": "af05dabf3b6d2ad6dddb7236110938159bc05325acb5872caf00d59758dedb33",
         "status": "reviewed"
       }
     },
     "ui_unlock_mission_data_to_use_tacmap_chat_01a3669e": {
       "de": {
-        "source": "2fd0864cdfa3f39eb67b51c085a32ef27b0bd2fb3107891400dd90e5c0235a11",
+        "source": "0ce30ba29c030288683e55c1c74595abee69d06a0d60c8dcc6c651c9cf3328d3",
         "translation": "917afadc223948c69bdc30bc103d57bbbbb64f71c5e52a570027899b2691db87",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_could_not_be_authenticate_7fae567c": {
       "de": {
-        "source": "8190906169d76c7eb8b8665484225216821fe42110226742333394fc4c7d2c23",
+        "source": "6f03ef8b3b32eaa0ed7865054be26a4bce08a6fca90f793605c8b23379b4037e",
         "translation": "9936d65fe89b880ebfa15f7b01696fe0e9061ebbcdc93884e85a0cbad54a2dbd",
         "status": "reviewed"
       }
     },
     "ui_unencrypted_chat_history_was_rejected_7ba52d6a": {
       "de": {
-        "source": "fc1a91b7d186323b9e5f7d0d3b398b9f5b596576fef4cfef546be65f1698fe29",
+        "source": "0f2efa628efdafb36be658189b1ca4b7cf74c2d03c5f42af7d7fc5d4844f6fcf",
         "translation": "dab9a916072e3a8fc43028615e52ea46fd533ef5575d76ea689959f17ac5d710",
         "status": "reviewed"
       }
     },
     "ui_chat_history_contains_an_invalid_record_367181d6": {
       "de": {
-        "source": "2ec6944fca7e80a8da8c8ade86e05ed19f54347d144fce5c2769210dfb325fdc",
+        "source": "3e40489cd20a6bf7a50c9e28935c2e2c5b0b81d85d2786fa4ce1f2e36d190e97",
         "translation": "aa30e5d1ef07e195cfd49d89b0f156947377ef5e8f24522a414fc2896b081b15",
         "status": "reviewed"
       }
     },
     "ui_chat_history_reached_its_protected_storage_limit_e0fa6135": {
       "de": {
-        "source": "a93da5b0e481301b81ce63cd9a44d0e6cfa88c8c6f15c9eaab1177b9bd60a4cb",
+        "source": "52f70c5fdd3af4bff8cff334516d7d88ef97fc0b977c7fd2e11aae0ab6e2ffaa",
         "translation": "42195a54dca95d2c44d11c4ef1e58ad3297a141f4d07ee3f878a13b935d8497b",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_could_not_be_updated_42373d96": {
       "de": {
-        "source": "2b78e9d6c712d46db68f00079a00045d6d880e8314b28cfb642f35d32d14e788",
+        "source": "6f65fff6b56b4ed7b8bec62d9a8a0f44ad7dd170cf2fdef8d8c5251da7298c41",
         "translation": "fc333722134fd44e391bae49746c9b976f01c9078643aa0713d262f0ab4896a2",
         "status": "reviewed"
       }
     },
     "ui_the_secure_chat_session_changed_select_the_recip_7c3686e5": {
       "de": {
-        "source": "3cbc218c3f36995b77a989c91c9d9cad3f09f8fe446bfb67a94fba86cf039252",
+        "source": "e817d24dd6ef9037f35f03d865947b0be9b129d8163d65c1b90cbd3f340b3776",
         "translation": "b512d2c6bcaa67b30b356cb994c9a5e873aeed91a876374ffb07530078e1394d",
         "status": "reviewed"
       }
     },
     "ui_the_chat_text_is_invalid_or_too_large_4a173079": {
       "de": {
-        "source": "8c01bb58f4b18ccfda93642af70a938fa43b8b205035c08e3a6cd4b954bf7025",
+        "source": "bf52488b8522cdea5111fffc4cd039f5082f482f02190a3eb7602156b82e4606",
         "translation": "6fbf0cd6fc5ed85202d59fcfe9399a61253c66db6db2ed8d243da8c50d925eae",
         "status": "reviewed"
       }
     },
     "ui_the_encrypted_chat_frame_is_malformed_b870c0fa": {
       "de": {
-        "source": "ea38579b7133c14006b88f2d3a6d5d5ede3f7a2cfed161241038937b42eed412",
+        "source": "f060847a2025293ac72f3852f62b62c12d0edd1f82425dcac6c491c99cfc2398",
         "translation": "a8936477094b39f971df071d7a6d5baeabac85029518fa46c46bbdacd9fb4d64",
         "status": "reviewed"
       }
     },
     "ui_the_chat_frame_failed_sender_authentication_385eee9e": {
       "de": {
-        "source": "a81c7a833659abe9be5e5a39afd51e4aba00d448d907701505742e4d505abb0b",
+        "source": "b4381219ba8a193d62e2c897dacff2c01784819d07683989183d73a655695e27",
         "translation": "ad5f036f98185e9f275b751930629d6b283a9c76d7aa3440ad3039bc53498ce7",
         "status": "reviewed"
       }
     },
     "ui_a_private_channel_could_not_be_established_with__facd9fa0": {
       "de": {
-        "source": "a90987d25b771f89453b614453c6aa8979d47df319a099e604f1f74d774b96c7",
+        "source": "cfbc91d8046cd8a477a12638137405f345f23fa8383b07d33fd6344e2eea9875",
         "translation": "cdd91d0a29638ddbe7e0d7eef5b591782717478714f970a6f24853ccb71eff7c",
         "status": "reviewed"
       }
     },
     "ui_the_message_could_not_be_encrypted_e8505ef8": {
       "de": {
-        "source": "a8f8417513ba77b0b57ddcdf3b8f5ccf659f178b9ed8f13487e6b1948f4e6dc5",
+        "source": "81d0ca230e511dea313cacb7b5993a7bb1b5b5a6191226175dca8eb20238ebc6",
         "translation": "a34b5a3697c83bef1e5a79f5135d9b2f5547d1a2116e0cabb529c01897bc57ce",
         "status": "reviewed"
       }
     },
     "ui_the_message_could_not_be_decrypted_f929006e": {
       "de": {
-        "source": "e91695e5add30ab6ea996857a06a205aa3a1cd7e8c90d4eee1be288d95bce1e4",
+        "source": "298d3beb3beaffb04c74e6c7f04a5950669c173acddb91b078c0fb60678c5628",
         "translation": "a9917a5b7fc182b4d8e1fead6b713ad049582e4bf83ac5fbe47823f893018c67",
         "status": "reviewed"
       }
@@ -8073,98 +8073,98 @@
     },
     "ui_the_relay_snapshot_exceeded_the_safe_size_limit_39e358a0": {
       "de": {
-        "source": "2dc873bc1663c16a5e4624c7eb4b79df41d1ea8cc997d672cbad9c66e298b546",
+        "source": "3152223ac4a262c2d89d3e70af30495b6c57d149ad7b4ff28e8a1c17e1a37e26",
         "translation": "b8f3bcd575e5a9c134293807b1ca5d96287bb1f7f62c02efc200545c3f4a681f",
         "status": "reviewed"
       }
     },
     "ui_the_relay_sent_live_data_before_completing_its_s_6573ff79": {
       "de": {
-        "source": "00d74e1e14b1ffc85f6e83f5e03781349c32d01e95214b3306a36ec06afe0529",
+        "source": "d789003248fe4ef4c35dc94ef4a3fc6dfcc1171e8154a3239913d0c409658848",
         "translation": "f62cf0943182400d114ede0dea6796f388295ae609563a443e096b47d1e197da",
         "status": "reviewed"
       }
     },
     "ui_the_relay_did_not_complete_its_initial_snapshot__98e4c95c": {
       "de": {
-        "source": "e90f864f45451c6f668b277dd5ac9a99063d6e3d028b57f8a4e6f04bc1e25135",
+        "source": "ec403f32ce77eec42ec01711783dbc74f014b8908043b933937aad21a1c64c73",
         "translation": "c890a00aedca6241cdc2e89a88cf08e98a1c1e60f486d82890f278ccbf75fa19",
         "status": "reviewed"
       }
     },
     "ui_the_relay_snapshot_began_out_of_order_f3be853e": {
       "de": {
-        "source": "21c572792fedcdb5a29510d5361374df1d02850133abbff3882ab0608f20261f",
+        "source": "76ba46911c2124422251d10c3887090a9bd219587c392c7546bd2ebdbe9ea4d8",
         "translation": "45caa056e2ad8c9fd17920a9bb44cb714bb7f42bbe221dc77673437bc4704248",
         "status": "reviewed"
       }
     },
     "ui_the_relay_snapshot_fence_was_malformed_7faa5d0e": {
       "de": {
-        "source": "c6d203d9fc87f86fb21a525b78d3e4e4c53e399b18811cfcc8e45a5babc42fce",
+        "source": "5b59ff050b1f255b1751ada30604604b712c8b8d55bcc8e695eb3d568f400fb2",
         "translation": "6296e0cf29187c9cc5f229bf9962ac8aa10479c67b5ce82023e7f395d0fa02e5",
         "status": "reviewed"
       }
     },
     "ui_the_relay_snapshot_page_arrived_out_of_order_f442b665": {
       "de": {
-        "source": "b43f7eff9e5ca372ddff03adc7b615f498ce7c110a7804dcf090902849ef4b43",
+        "source": "0e90f023475ee821af491d8e02b5da099eccf00101fae2e9182178d73b0de9a2",
         "translation": "f1ea94b5c9fad46f5e356ecb0b4b860df9c0bb0d7a608fbb38fb3f7405e5a910",
         "status": "reviewed"
       }
     },
     "ui_the_relay_snapshot_page_was_malformed_or_contain_23f66a18": {
       "de": {
-        "source": "8842cc0fa22b12d650be4316def13837137ceebc6e12585f1d8b5b8704d28a5e",
+        "source": "3b347638fe78f2e31ea32508c81e6b291cf2b451be80664424853f679fe1f115",
         "translation": "63922e5b70522c68b1d27cf0d79e207ed2b27b662554605d81c78613d713d2d8",
         "status": "reviewed"
       }
     },
     "ui_the_relay_snapshot_member_list_was_malformed_or__310bc3cc": {
       "de": {
-        "source": "99bb0e8e929045545a637327bf6f5dd065e2474a747234aa2c6c31bab99273c9",
+        "source": "97bd7414b964a6222d8b20d30bb03ab20bda4d6c2bf7327021b05725b696eb5e",
         "translation": "29b25fc214736b48155777c96a811c662594f30e3816d8b1397866730ebff9ea",
         "status": "reviewed"
       }
     },
     "ui_the_relay_snapshot_ended_before_its_final_page_b759c0a0": {
       "de": {
-        "source": "55c610aec0e1aaa47efb5468a68ca7674737400df47cfdba141e15f7716e95bb",
+        "source": "d745001345fd0a7d482dd008c88ef6c3f4b06c2858fb5821d9ec326dafd12be5",
         "translation": "646d27b3640793ab810d336453ee041080d87823fea5d325a676c3eb08416f04",
         "status": "reviewed"
       }
     },
     "ui_the_relay_snapshot_end_fence_was_malformed_d6db7a21": {
       "de": {
-        "source": "e0ec3338ea515d53aaadbcbfbb43ea1218a9d10e6503c05734088fb54210a118",
+        "source": "a87c73347e666e625030cceea78a8f65c53fa1715df8347906379b67981d7ab7",
         "translation": "cd90f00b8350d564258267f3b231aa1b8ed99c47c85066761c84caf59c229036",
         "status": "reviewed"
       }
     },
     "ui_the_relay_snapshot_fence_changed_before_completi_2b974c05": {
       "de": {
-        "source": "e0afb0aaf63cbb089795e69754c43288af45b16cae912ca324b8aa927896c6f3",
+        "source": "8b4a3d7326959301204e91d0b569290a915565cce92e6e6d18faf201b27a8657",
         "translation": "808e2c6b47e8de5712c8806e464184155640b1507e942013ce32a8253c821067",
         "status": "reviewed"
       }
     },
     "ui_the_authenticated_sync_record_did_not_contain_ex_36ad42e7": {
       "de": {
-        "source": "2f24b97a311d39e1caf26df67a6835269fa5e2f984294a8e1d904975771c4425",
+        "source": "c6dc51473c5936e2a3dd2326cc8fbd58b66be6d9b25cf557138ce01c93967f3f",
         "translation": "2394731e3f040d0ef4038f6780832332b3915159091dab600c609b191a8d81d6",
         "status": "reviewed"
       }
     },
     "ui_the_authenticated_sync_record_conflicts_with_ano_15fbb1bc": {
       "de": {
-        "source": "339f27388cc248cb848ebead0b3116d0b6d4aede178c52492cd8b96dabd43675",
+        "source": "401c417877f011d57328cf69d53fddff634b5198f04a5fac4a71df44d3c1706a",
         "translation": "20371d1e3edeb01c18fe09592c0897eba8374788fdb0c9ab3163579f06fac4a1",
         "status": "reviewed"
       }
     },
     "ui_the_authenticated_sync_update_could_not_be_saved_34a2dd80": {
       "de": {
-        "source": "a59bfcdbc5658a0c792ccae402773ba2ca1ae489e2d661f0193a2fdc38b0b422",
+        "source": "60bb3a14d29b545c27dcb650b8afe066e8173f24736493bbbbf573935b1084ee",
         "translation": "00a03ddc76d568958b21193c6cc0057dff265e522375689a25ec1aafa89c6e79",
         "status": "reviewed"
       }
@@ -8185,98 +8185,98 @@
     },
     "ui_could_not_save_unit_sync_identity_location_shari_07624acb": {
       "de": {
-        "source": "35f43c87cb334d0ade9e6c7e484bc79341795c8614cc19262ed41aedd1da17d9",
+        "source": "286e22195ca0ac100d849f155b615da0a62c517a2c7a6d648e1c9f71d9f0a7a8",
         "translation": "84026e0bd6c102345d972d0d78961be09cc1703b269fe0837827f9dd795f0d6f",
         "status": "reviewed"
       }
     },
     "ui_saved_unit_sync_identity_location_sharing_is_loc_ca2414d7": {
       "de": {
-        "source": "1d60c8a3ceb169791e27cafa6c4c1130e2fa4f186b6a66d91bfd125c44d7fa8b",
+        "source": "7b00dafdd0e4ad95c3bb699aaa69a5775b6da2b47c6e7b986d999c55fc488eaa",
         "translation": "1862e8b2fd80793516e76d938030154a4d755c9e14b291131727c973f79a2c88",
         "status": "reviewed"
       }
     },
     "ui_saved_unit_sync_identity_location_sharing_failed_4c4318a8": {
       "de": {
-        "source": "ae3e5cf654d078114241236a97f75181cfa7edb3b7c4853205cfa54975784da5",
+        "source": "2e10a483649ddafec7784172507a523c03e2036cba4af1526183fc1b36e26122",
         "translation": "4244fed54c10213df97ac7150d3e3f8106da9c4ee14c71ada3c287c6b0bce106",
         "status": "reviewed"
       }
     },
     "ui_could_not_migrate_unit_sync_identity_location_sh_18a0783f": {
       "de": {
-        "source": "393e4d52150ea1f53c5cfbdb19271f6d190b41063940da0783b4a03b8e26d54b",
+        "source": "74870b4f4bef99c260e752fc15bfd66a67a3766d0bfeaa0c98f23ee7f9199e7e",
         "translation": "aae99fc0a029ecd908edbfe0a0e20723fd0443fdb6d44414a6c62355b6097f03",
         "status": "reviewed"
       }
     },
     "ui_the_configured_unit_sync_relay_is_unsafe_or_inva_d0e3ab12": {
       "de": {
-        "source": "8de8e80ff53808a22dd8cd9fa18580fc758eb249825d6dc3feeb5607a4de1764",
+        "source": "91ee801b38a1901ea839dc215377502f66b2e17b822694ab052a550f5bc4b347",
         "translation": "eed8e4c297474ab6d106b966e595513c239748f6245551b191a69d6da44471d0",
         "status": "reviewed"
       }
     },
     "ui_tacmap_chat_requires_a_secure_v3_room_75801b2f": {
       "de": {
-        "source": "b51d9a0cf8c3509cc7afab238d55bf63a7f6028fe8eb16966336da2adef79899",
+        "source": "366a69a65aadb09beaf93447a8a742819518fa0429e48ebaa2bdd6f2f166f10e",
         "translation": "c89198f4ef8357f037a87f98d475ae8962ef5b32d9da0d56683eb0e10d8355f4",
         "status": "reviewed"
       }
     },
     "ui_saved_unit_sync_metadata_could_not_be_migrated_t_83546d0d": {
       "de": {
-        "source": "82d467f22ccf920c9eeb5306dde4f8c68f705ecfa50ef0a9f328fc72221f6739",
+        "source": "b1dbca8113ea3fb19290633f3aaaebfb1167e973fa0187308b00bd24e931187e",
         "translation": "a0a52425c44ea99f05159e4e730da1461e107d7ae94275758069626d75c711d3",
         "status": "reviewed"
       }
     },
     "ui_tacmap_chat_requires_a_secure_v3_unit_sync_room_c1b924d7": {
       "de": {
-        "source": "8193a70c1afeb117d02f38049db2d94bed7150298253d889e33f0807c6e6dbb8",
+        "source": "4e995e7e49b1e197561f26c1c28e6fa85fcefc8f31518c34f61608bb1b284c30",
         "translation": "edefddc0afe603fff87a4974569f4d1fc08594d54cbec830366bfcc57a2c1972",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_is_locked_or_unavailable_db9f18cc": {
       "de": {
-        "source": "9ef151328100c5b9b74091f01056e572c6d3f6183b82d9a21726a3ebca142ae0",
+        "source": "1a9adb98e793291b7af95ed2fe65d21105a5dee4b961968c5184993cdd43299c",
         "translation": "8ac1aeb5986c336d06c4e4df5176372326359a09d7ca817b300fcfcaa0f14d46",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_is_still_establishing_a_relay_ses_3eff4bcd": {
       "de": {
-        "source": "44a5d77bdf2c60f2037ddce2c1c0265be08ae910aae9817da0306276b2661137",
+        "source": "28cdadb451dd6d8e8c988bad5e971eca00566d577fed53475421dde661c8b369",
         "translation": "ee4e51ccdcb8d0cbb1bd224a68622abe853a0c023afc7a63b75d0f95799e3e16",
         "status": "reviewed"
       }
     },
     "ui_select_a_unit_before_sending_this_message_284141b1": {
       "de": {
-        "source": "3a29f45fd70f089bffae05bcf65971d25e766828ed59f1b3ce1e6d36bfb09506",
+        "source": "a081a63327d2148e931801edf183a43972d3b383039704edbf783c7a2a80c2ee",
         "translation": "9b03321e8f863c46a8a53461834bf6aa4b3df7c5806f1c0f594f0c24d9d387e8",
         "status": "reviewed"
       }
     },
     "ui_that_unit_s_secure_session_changed_select_it_aga_f2ae7a5b": {
       "de": {
-        "source": "bec3edc0bbf5cf5acf70dd0c439eecdec1f0ad134e2dc7d3d355222054c37b17",
+        "source": "7289d3d58ae0f6ed1e2110a2b26ffa1c5ca982bfb50395570e2a3d4041be1538",
         "translation": "bb809651feb832997ee9e3a18dc2c9ba7048fced00c0d4aa11a402fe4804e8d0",
         "status": "reviewed"
       }
     },
     "ui_this_chat_session_reached_its_message_limit_reco_4d1b70c7": {
       "de": {
-        "source": "c2e5e554201a65b40d769316c4c74778d949d358c91900211bf2ef8c15adcb37",
+        "source": "c98f5d30cb75621785d391eb9d5fcb3fbdfccde5113918d6431533a5c52ccafa",
         "translation": "cc33004ad7f7ec5ca15d8d5b755788493de3c1cebb029987da935053b8ea7615",
         "status": "reviewed"
       }
     },
     "ui_the_message_could_not_be_routed_to_the_relay_f8f578a3": {
       "de": {
-        "source": "0f7f5595d5463b05a41945190ce34dbc6eb1085403863224723d5058f8a9c473",
+        "source": "78a8958137e466450b275b061737474470c20854c553d4ac66297e5c2d0f80e2",
         "translation": "8ce8e7f63dac89dc73435030a9c42ce9dc72a1c0467284ab4dc7174b6210b021",
         "status": "reviewed"
       }
@@ -8290,7 +8290,7 @@
     },
     "ui_encrypted_chat_history_is_unavailable_266b2d04": {
       "de": {
-        "source": "542fb2b0e1dc62cefaacf3b408fa7b0d4ac862c4fe6b7d1b0a8864aeaaffed70",
+        "source": "f8a04e4e406450638782ea18738c10b9f7196dfbaa28dd365e9f59bc513ff463",
         "translation": "a991f8ff9f6cd82c2a3a99fa419c42a5e204a79713c0783371badf147581d991",
         "status": "reviewed"
       }
@@ -8311,21 +8311,21 @@
     },
     "ui_encrypted_chat_could_not_establish_a_session_a6a451fe": {
       "de": {
-        "source": "c678ec736f82e6890d51034859dfad6f3d7d335c2f7c099d0e6cb7f8cc89770f",
+        "source": "6602e69481e34aea1295b4d4099cccafbbd1adb1b0f361eeb80ea7d63029cc40",
         "translation": "47f8c61cc5d82d04ac3a91a743168dc4c56ec2b840bc012bd632159ae99c6339",
         "status": "reviewed"
       }
     },
     "ui_the_chat_key_advertisement_could_not_reach_the_r_fa130837": {
       "de": {
-        "source": "6d962bd470c10246dd68447e65096a0642f1e921d4485523a3608aca60093e83",
+        "source": "31645463f0ef6117957dec1d154d5bbee90b0a070f8cc67c2742c9cfd7c4738f",
         "translation": "c52ff6d11621bee1f8b6acfc0ac049b2fe6569847d1960c19e2434e63e1c5385",
         "status": "reviewed"
       }
     },
     "ui_the_relay_did_not_acknowledge_encrypted_chat_cap_70ebc8a1": {
       "de": {
-        "source": "5b81e5ef94d305c93e68f3862bb8e00402c018d85951e795108d5001ef61dc5a",
+        "source": "73f55a259712c973cf48f9dc143d88fef418f34491b160b8245295ac1d9cbf9d",
         "translation": "7936ab9ca4e4654eefa8e533badd5af5dcadb502f136d971162fb330a7b1ff6d",
         "status": "reviewed"
       }
@@ -8339,63 +8339,63 @@
     },
     "ui_secure_session_randomness_is_unavailable_unit_sy_a7551a4c": {
       "de": {
-        "source": "57834c7f8b8950820a2fe80156bbf0eadcdac07c8eb662671e7b2f1ca30dd620",
+        "source": "93fbe774847721ac4df67f5790749803510a065d4d7658144886dcc7d0cbf75a",
         "translation": "a9e8ad031548354cf6ad88ea2449c72418971347eb1db7abf5a53c299946de2d",
         "status": "reviewed"
       }
     },
     "ui_unit_sync_disconnected_check_the_relay_or_networ_87e21148": {
       "de": {
-        "source": "a609bb959809f9635251791768aef913228d2fb938ff85eace43f80e452cf030",
+        "source": "d594ee202f3e3a80876233bdec1845ffabd67a67bcdd5ef5c41f8e8ced145e38",
         "translation": "ab2b74b4f7d6232edaee185c9600518bab6dc3838b0c3178b0d3eac77bfaf305",
         "status": "reviewed"
       }
     },
     "ui_unit_sync_handshake_timed_out_reconnecting_autom_fb03ea30": {
       "de": {
-        "source": "a9e990e6ce7d8112aacb0f6ced582585c11692148cfd37ea23ad4606b1fcadc9",
+        "source": "a940710c2c21094419ca7fe7185e8dbe50ea3b02d1e75b4fe0ec6f2547595ef9",
         "translation": "63304e9a93b44b0a2c60364689851f2be08371887d5200e00613930912d6285f",
         "status": "reviewed"
       }
     },
     "ui_unit_sync_snapshot_failed_1_verify_the_relay_or__a8f400af": {
       "de": {
-        "source": "4339d8d2d7e23612f4aded176a2153913c665b2883a3dd1f7d34c1399c968a70",
+        "source": "306433a71448d02d2a73f827dacca6beceddd7b7cf4da7ec56084ef998a6db35",
         "translation": "a1857b821834c9e38a89e057435637309be17b382bfe32c7f20c4613487e59a7",
         "status": "reviewed"
       }
     },
     "ui_a_unit_sync_change_is_still_unconfirmed_after_bo_3d3fc607": {
       "de": {
-        "source": "fceb4ecc5d50c641b8ddf3e88b1d2e9499e3a6fd7df5d53f585f641524bf4b68",
+        "source": "41dd5f7cd11ff0574fe68ae25b0a117f5050f6341dff5d701c9bc190c9759b8b",
         "translation": "3f9471b095bfda27a4a24e96b8abf9f0547f791d0279984c3054ee6493cb5d57",
         "status": "reviewed"
       }
     },
     "ui_resolve_the_duplicate_waypoint_drawing_identity__2354c2a5": {
       "de": {
-        "source": "8c6da2db25441e1ecf7ae184fd3b3e652943afd56a8489ac414bd6d9132dc566",
+        "source": "80161124075aca18050ced6b13f99cdb7abb519607f0bdfc9d35ad40b7672ae9",
         "translation": "aa3d5c1250a170ef385c1b894d81d744f5ae47349431b7d78688863f93efaf0d",
         "status": "reviewed"
       }
     },
     "ui_ask_the_sender_to_update_tacmap_and_send_the_mis_258bd4bf": {
       "de": {
-        "source": "a46d7378e2e053aa5d54e22a76af25ea03e818305d507613eec812293565d55c",
+        "source": "07dfa849fef002b613a84a02fab5aed2675036489eab9bc83143395a54482cea",
         "translation": "dd8f0f1aa4960519974dfb5d786c66bd81ffa014dbf6b58ad5ab7ee0ae8c64ee",
         "status": "reviewed"
       }
     },
     "ui_the_verified_update_remains_pending_unlock_missi_d13aecf2": {
       "de": {
-        "source": "b900af0a9ab841ab82b88322826e97caa0241a0d1b394e8eae655740fc1f9495",
+        "source": "304a626478ff2ccb3641b79a7f8e5c6ef1b799f9e4c36085a85b2ecc5e0ba58f",
         "translation": "12ca2fd1a4a8547aa4134a74c6d62989307f2a322892f2f8af8ff6046c7146e2",
         "status": "reviewed"
       }
     },
     "ui_unlock_mission_data_or_free_device_storage_then__20c288f2": {
       "de": {
-        "source": "b9831c1de7f36f348776f3f0d10216d3e5fed8f529baa56e80f6e263d494f643",
+        "source": "eb2116205e55ceca7117539156c2a60cfb2dcec2b4b7cc291dd862eaa30229b3",
         "translation": "f5dd4bf581edfa3b3514a4d315a8e5d8d17405ad4f8efc005817e6902364a5cd",
         "status": "reviewed"
       }
@@ -8409,49 +8409,49 @@
     },
     "ui_the_unit_sync_room_is_full_so_this_saved_local_c_4e353477": {
       "de": {
-        "source": "a2253c44f10837706d9af7ba57fef4c8cfddbd16a385124c47688636e7ac0182",
+        "source": "af642534277b9aa7361e9b73e55125e3d20949c0ba2eefc3f111986596585b22",
         "translation": "a17ff08ba334c5698bc8febf39ab8a56f967619de60ed66f8865e06ad2861a5c",
         "status": "reviewed"
       }
     },
     "ui_the_unit_sync_relay_could_not_durably_save_this__83a5b10a": {
       "de": {
-        "source": "cb44c3dc682932707bfcfa95761fef4a1b7692ac9b7b0972f9ae69fba8292f45",
+        "source": "5fae8f40f4d65349015029f548d2df7b50f244648992a8b0da4f990853d6814b",
         "translation": "ba73a3b7d648b3e2882b50c98256a2acc9f2a0a5ac14ef44e4085b9429eb6906",
         "status": "reviewed"
       }
     },
     "ui_the_unit_sync_relay_rejected_an_out_of_date_chan_48a1f81e": {
       "de": {
-        "source": "083d41bdbcb1277d6af8fc46b0b5dacacfcdde181da545b54dbeb0e29c5c8153",
+        "source": "fe6412e702e0b29bf3659f096b7b1b246a8e4fa22024cc70a938626422ee5082",
         "translation": "7e4596fcb545d1b89de65cc238db32e3544d753b6ea96ee1c2ea3e6b79fcff81",
         "status": "reviewed"
       }
     },
     "ui_this_unit_sync_session_can_no_longer_confirm_cha_ae41c407": {
       "de": {
-        "source": "ba964bbcb1e1ba3d32d3cd764acdd15f74711740f07b965b9be617e76f50f016",
+        "source": "4b841bcb084bd9e7c2bfd7a5e4973ec50075dd90db770afe7a76c225f2a93358",
         "translation": "65000ab8c8896cd413d63c96f790dbffd6ee44d53a74010232d7bf77d8b3fc7b",
         "status": "reviewed"
       }
     },
     "ui_the_unit_sync_relay_rejected_a_change_as_invalid_ecd9ccd2": {
       "de": {
-        "source": "e48eb7c4f1e44b52f08ee352bd82dfeeb6609a9672d0518354c6468361737118",
+        "source": "ff8d4287394e17fea45baf15a22073233b5b91444fa81a14dcfad9df3752fad3",
         "translation": "86cb54882dab70540010ce78f12f26721012bde3e7b233c2733fc35bf0e5da0b",
         "status": "reviewed"
       }
     },
     "ui_a_pending_authenticated_sync_update_could_not_be_d2c45d56": {
       "de": {
-        "source": "9201cca5d50071ca83abc4bf611a32539e4dd2ddb947fff0cec9e968b153a988",
+        "source": "c66a3698fc80f5d72fb19a1a97a3e5fd5a9e813b9bf5679852b47fb19b547137",
         "translation": "1cf48146c5beaf2c491a1feaf3c5eca379011e132b8b2511f6042528f17091f3",
         "status": "reviewed"
       }
     },
     "ui_the_relay_rejected_encrypted_chat_capability_1_e10e27f3": {
       "de": {
-        "source": "53c081ea4bbb97ca9516b48dd7fb6eb30a6b2dd82125f2e403ee9a5045419183",
+        "source": "a37cf8cf9c1934156f8d512bcad3b08535f21ee48a4d53277b4d82a85938026f",
         "translation": "0366d687da1898ebe7083220a0a49b090a63fd58e5242c1f0171edc4e14abafe",
         "status": "reviewed"
       }
@@ -8465,14 +8465,14 @@
     },
     "ui_the_routed_message_status_could_not_be_saved_sec_0ab17702": {
       "de": {
-        "source": "aaf7d4fc9e02fbd1b7cb81ed8e913089cb693e686b9a5673f023ca013f45c256",
+        "source": "eda3eb8157baefa54e3e4b620719735346f925b128ad2c9bdc0068aafe21365c",
         "translation": "6e5a5a64e66a8eb9940e8962196fce261ec30701c15d550c8a2a3148839ab769",
         "status": "reviewed"
       }
     },
     "ui_the_unrouted_message_status_could_not_be_saved_s_155e2274": {
       "de": {
-        "source": "d86ee3f8ca88e2994ed9634b82d447662ba086f09069cea29ba426e0fc4e7fbd",
+        "source": "7216128817d6db2abce470a31755276dfb924aa37311024514aae9568f36b53f",
         "translation": "b8f885c178151cb55e3eefe202679a85e194a5b066102ec31e8a0a01f3c1b53a",
         "status": "reviewed"
       }
@@ -10376,49 +10376,49 @@
     },
     "ui_invalid_chat_room_identity_d3e319cc": {
       "de": {
-        "source": "29cde2f31d22507d2dfaf4932863a09fc340013e37a2b1f6ebc08b8c54dba39d",
+        "source": "f34859b2aa8414a983332c9b52085c4a76fb86036841edadc4026125497ad1b5",
         "translation": "e8b76d324881034d76c4c3f9c4f4a0a2c2e44f7dd3a164612fc6b9836607e119",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_could_not_be_migrated_b03b3947": {
       "de": {
-        "source": "a4414907355b5007b989c3dde7e170dcc791b54b7e992e13cb0fb1aa700b1c89",
+        "source": "17de347611a09199b310859afda44cbd7c297a4873897a1fb441dc8106113028",
         "translation": "168375e5e92b8a1a685124a1bf66c1e4a1da3bcad81a9b0f2c0b1de69ae3d4fb",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_could_not_be_read_69b14425": {
       "de": {
-        "source": "32541a03273ee42189e28ea61fbdd2fbe33020e78be40782da8dc5ae1fdd1750",
+        "source": "d62bedc3e3dbe7697cf153e612a20623d42df1fd12eff42dc4df55600d2da006",
         "translation": "485c72941055834e8a218a75c4de2c4efe5ace045360c9ca31041a0bebc8cd1c",
         "status": "reviewed"
       }
     },
     "ui_unencrypted_chat_history_was_rejected_4094bb5f": {
       "de": {
-        "source": "da263b073ddcde0372a2310deb2070412ce3511f40c740d6607596cab2d72258",
+        "source": "8fd8fb5c0db0e2dbaea3f3c13190089c339c9e81dfc5d5a053d36e0e56f81d0f",
         "translation": "7d04d4e167fd1988ce9fa32f8de5f9c961b6003dff8250019f5307e9289ff869",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_exceeded_its_storage_limi_67b069f1": {
       "de": {
-        "source": "450f0f5a90d73281d5054ce9460301e8296da79705ac8821d2e1f294287e070c",
+        "source": "bd48870c3431f33e307885f2f23cfaf5c6730e741387ee20187a1d201ba1e103",
         "translation": "8491efc3c9559ac3b7cd57ea0d6f356792e90717ddaf5aab520878ee37fffe92",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_could_not_be_authenticate_20b766f3": {
       "de": {
-        "source": "38147d5245f866aa5afec95d2d01946621985680369d36adb73cff373b4ac571",
+        "source": "57f88c7b4c23b4e394810f5c557f3e984a49df39ca006dce0bf5f117085512b9",
         "translation": "a2bccc1c981f8da8ceaee93d64380b61b3946c4269c5efe04d69b3bd1264a6ac",
         "status": "reviewed"
       }
     },
     "ui_unlock_mission_data_to_use_tacmap_chat_3abca24f": {
       "de": {
-        "source": "ccb596febef3ba466422ee9f4c0f0e06ea4ece72e91d9f7682258f21536ffffe",
+        "source": "52e2fd22ccb8689060d4f7752ca70ad36c1cb7a590afa52cbd47e2d88be2cb97",
         "translation": "05eb40e77323ea0a88ba5faa7355713585323d66db8b879ae45778672adf9860",
         "status": "reviewed"
       }
@@ -10446,21 +10446,21 @@
     },
     "ui_chat_history_could_not_be_encoded_94835822": {
       "de": {
-        "source": "fc5fccc2e667fa7d8327d4576147c223997ad8ae6f49305f9acca8f399063d67",
+        "source": "14bb9aec2ca3819b75089248f0661d52c38c6273b5ff1c1b01dbb31183c34578",
         "translation": "43eb02561d7730638c45dd34785a549a1767a6eda2c91de3ddf31ce145ddfb2c",
         "status": "reviewed"
       }
     },
     "ui_chat_history_reached_its_protected_storage_limit_d32d7332": {
       "de": {
-        "source": "8ca85739320858f8ff4c5209867e5735e810412a2a9126cb9454819a4d465495",
+        "source": "628c58e5faabbddf0bd5734612320f562aa4d51cad0ddf67433025b73a2d8f6e",
         "translation": "e12740c045babff9a8464c424622c53591b54808020d7178296d5b03ece5c883",
         "status": "reviewed"
       }
     },
     "ui_chat_history_could_not_be_saved_ddf4afad": {
       "de": {
-        "source": "ff18d0991bda824da67c69c7dd67aacbe18f9a1068c54ee3a08c2e7aac42f6d9",
+        "source": "968bfa2d7fb2cbf952413f72bb1dd00a4d06f1b833438a7b170b854802976403",
         "translation": "d910a14ba67c157fafdc46c785d72e1c978826cda303f3e29c48b77ee299faf9",
         "status": "reviewed"
       }
@@ -10481,14 +10481,14 @@
     },
     "ui_background_unit_sync_needs_precise_location_perm_fd28b03d": {
       "de": {
-        "source": "697f3b147333de1db9a8a768a9cd63b490cb07894840a30994891d29d55f782d",
+        "source": "e3857693940b3350273422587fda16d1610de59550677cdff9d680e88133317c",
         "translation": "efbc18413060ccd7e3ef8e7239d83f629e755b3b63e2ebcf4df658d7e37eede2",
         "status": "reviewed"
       }
     },
     "ui_background_unit_sync_needs_gps_turned_on_before__9d05489c": {
       "de": {
-        "source": "4743b79bbca501a0a05140d34e69a6eebfdd78bca16b827214198200c72c2c57",
+        "source": "dd0db4c5535a0d335baec27fdf44a64eb4c34238a43f214a8787786844e22db6",
         "translation": "4749dd67329cdb3d8f691c9a3bc6baf2c3648508981484e9d7134c39139237a7",
         "status": "reviewed"
       }
@@ -10502,42 +10502,42 @@
     },
     "ui_join_a_connected_v3_unit_sync_room_to_use_tacmap_96833dc5": {
       "de": {
-        "source": "e94f858f4d53ef37943840bd860195aacad9c31860c571af885bc70760908dcf",
+        "source": "22a85daceca3be78996e801ab39504e7891d3aed0e3747779bed9fd535b132bb",
         "translation": "1b7e3ba51106089fc933ca4d866a3add4d1cd695d49e989aac2fcafd8304a1db",
         "status": "reviewed"
       }
     },
     "ui_local_revision_history_could_not_be_saved_sync_i_5a16df15": {
       "de": {
-        "source": "12d2244216869a620e3f2b7c015904cb4158bce17a94fd9641d8c65456ae52d7",
+        "source": "d1bcf4a0e662e3b23363d714b02592fac10d98e29287bf7b71f2ed79ac01d8e7",
         "translation": "66b101413e250dd12a55d9dbd3220647a9a88bc364d77403beb3f791572707d9",
         "status": "reviewed"
       }
     },
     "ui_join_code_is_too_short_to_be_safe_generate_a_new_7ab67544": {
       "de": {
-        "source": "5be59ed5e8535c7782ddd33c17602fab6ad9669693b2f60b2cde0409358b45e6",
+        "source": "0e49dffb5bb999f9d8ad1ca5ae12c6e31d7a8d545b316fd30e89ee5919d997ee",
         "translation": "64b9ba4901cc8e1f179c565468c02dcb338cd1b62cabb166ec0daef9ed256ebd",
         "status": "reviewed"
       }
     },
     "ui_the_configured_unit_sync_relay_is_unsafe_or_inva_59fe82a1": {
       "de": {
-        "source": "795f4b3cbf8503f988085ef5db02f12c2b0ca68ffb4cb3d4bbb491174b59f92a",
+        "source": "e2515e99b0b73be2a014d314a86c2c5e59c3cb7b68598c560e35494ac71f5863",
         "translation": "858d509a5584ff24850205f4066c2b0486c8316f0b71cbdbdb1155e1fdca0194",
         "status": "reviewed"
       }
     },
     "ui_sync_signing_identity_is_locked_or_damaged_unloc_c9a19e3d": {
       "de": {
-        "source": "bf7709562acbdb64ccefc6fb9d317c148ab3e8550fc862baebfcf349df1dc1bb",
+        "source": "5f414397d0a3267742e9a7c903bf076693e41e691d989e89a69d13ac57f3026e",
         "translation": "dd15bb70f20364fb33f2c8b3dbbc98032cd9543651a3c8fdbb249b776764cacb",
         "status": "reviewed"
       }
     },
     "ui_sync_identity_or_rollback_state_is_locked_or_dam_c8609c75": {
       "de": {
-        "source": "1fe8d06699da2e96ec45f72838014adfe7f77c3457d1cca0586b9d1f31de6fb5",
+        "source": "393237fbfc0ea3f228599c23be2a4e8218206e499bb08c3bb396993b00aeaa3c",
         "translation": "3357a604856e287b7dc0bebb65cbb7e06017e70f2ea2721f2d8d49e0c396569a",
         "status": "reviewed"
       }
@@ -10551,49 +10551,49 @@
     },
     "ui_join_a_v3_unit_sync_room_to_use_tacmap_chat_19a11200": {
       "de": {
-        "source": "307db1d2da45dd9d36384310cd68d7e10295cf0f5b264db8460b4cb32ac6c8e8",
+        "source": "e00f4ae53034abe641d4d1a8e1b4768b3fe0313f8a5bfa1c379495277c1f8af0",
         "translation": "e39aecdac3d089825d3be0665a2532232a31c877c5c61809c3b9b624b83fcfa2",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_is_unavailable_18886913": {
       "de": {
-        "source": "2fbdf0d851367c94cf36c5ab2ae7267b93bff81da4b6d3adea0de3fac5dcd9d5",
+        "source": "ff77a6d70eaa3f1da646ec89d03fc7c063f6a5c04c3800f323004774b7066296",
         "translation": "165d44de248cc940b8e32bf52a9a2db1910fffa37d5fed649b2a028682cc9150",
         "status": "reviewed"
       }
     },
     "ui_encrypted_chat_history_could_not_be_saved_a73dce47": {
       "de": {
-        "source": "e6bc7ba946e2c88cbe6be75f8548c034726feac506bb4603595cf691c132f34e",
+        "source": "f785535dbb929e139a76d5536e60d0d70c13b999a3c8f0eaa61347e6f5ba750e",
         "translation": "8ff145d6992bf6e123de49b0ab7c8095207cc8d3cb261a9324ad392019344a9f",
         "status": "reviewed"
       }
     },
     "ui_secure_chat_history_is_unavailable_8d99a1aa": {
       "de": {
-        "source": "b351dd21a0b2047ed0dddf6489441454b15be8c672d53f5ff67fa04beebea177",
+        "source": "8bcf2b8fd039b35a7b58b19022bcf0ea2d206d6285a13e3024e889a35a91d795",
         "translation": "5b6303ec8f9396e817b053804d062629dc30d441d2a2c246660c1268dcfcc019",
         "status": "reviewed"
       }
     },
     "ui_tacmap_chat_is_waiting_for_unit_sync_fb784032": {
       "de": {
-        "source": "3ded245ae0c63722fec6e42436b442d878b03f8dbe69b6104196926984994584",
+        "source": "eea7d639632cbe9b202a1d2a5436fb4b457f34888ef8afbf30e6b320f09ac0af",
         "translation": "a82142dab580de81ff7bb961c54a750e89c8d8b49d015c88a522c94da33bc8d8",
         "status": "reviewed"
       }
     },
     "ui_secure_chat_is_still_starting_833f9a51": {
       "de": {
-        "source": "0d0bd205c1afc732887c33aa339ca0bae927907a4a5928efe7ffb8ca55aba7f2",
+        "source": "2ea248a078f85d6ad88d17154fc56c7b76553822d9e04c1582d2c4cc6437829d",
         "translation": "a16cdfb51cfcc48781e9c0383380ada9028c572fd4a16245242db15b7bb91240",
         "status": "reviewed"
       }
     },
     "ui_unit_sync_connection_failed_1_check_the_relay_or_789de674": {
       "de": {
-        "source": "f6542b297278287ab18077648c63c8fdea930679c63e7897d9430040739a00a0",
+        "source": "4037acd60ede9be874cff997d93c4aaf34b054c6899fdc125f7de313b94058df",
         "translation": "81e08906f5b2f5b0220d8cf16573e900990f852d34d815b125db1258b61b6021",
         "status": "reviewed"
       }
@@ -10614,98 +10614,98 @@
     },
     "ui_this_relay_does_not_confirm_tacmap_chat_support_6dd5ad65": {
       "de": {
-        "source": "5e5d36b6a5be03981e27395fe29ed1f7810eeb8320966ab81971967bf590e24f",
+        "source": "7d0084cf15b34dd3b65214edfd82856bfa7cc33c2eb723c02bce254283797bce",
         "translation": "335bd544fff3bd7241f4979172484ca468d3a8e761a934efe2aa1b96406813b0",
         "status": "reviewed"
       }
     },
     "ui_no_chat_ready_units_are_available_1dd5f612": {
       "de": {
-        "source": "1686e3919b89416bb1a233dec7da74e694ccd0976f74e824a80123b9acb8bbcd",
+        "source": "75b18f3db481cd2345100bf802909d524f89a11161ad1ad28897854f9d290a9b",
         "translation": "f042d7255ac7d8609e34b61e2963db449986cb32fd456e816985d03be8983e3e",
         "status": "reviewed"
       }
     },
     "ui_enter_a_message_4f2da3b8": {
       "de": {
-        "source": "35ce6c028ba269b7ac5e10a9c58d6531456a8bc635c7e8a203289c590edc4fb1",
+        "source": "f45725d550837c0fa486d148aab9c9e3fd17f7a4f0a4267f53ac239298fc01f4",
         "translation": "d70d1649ca4e84fdc6fe211c2c06460384dcd349fb1f4a7c46dbd2a1e67994c0",
         "status": "reviewed"
       }
     },
     "ui_message_is_longer_than_4096_utf_8_bytes_48ec0ecd": {
       "de": {
-        "source": "8e453200139227257e029bd34a13692cf27756538dd12c3ce77df7441bcb1ad1",
+        "source": "ca19b642898bd4b22601da026c55d9eb5ce4cfc8be8478a93aa034c773ac2568",
         "translation": "aebed6597838543f084da853001d6c3d68a08d11836cac7d27c1c19b081cc5c8",
         "status": "reviewed"
       }
     },
     "ui_secure_room_is_unavailable_c81a0792": {
       "de": {
-        "source": "68437950c2d52470132bf9754800403e9f9ca800f15f32ba38ea27c5243fa791",
+        "source": "b415bb8f07fc1aee5bf636592bc5bc5aa242a135e3f1e89d3a901cba470426de",
         "translation": "2676922c76e91b44fd6347728a8ab57887f97172f504ef7e7f6b3f3db3a80ea0",
         "status": "reviewed"
       }
     },
     "ui_secure_identity_is_unavailable_fa84ddbb": {
       "de": {
-        "source": "e6774edf3a98d896bc4f54e71ecd8bdb7bdee0e0b3a9d2f05fc1af5675fd4107",
+        "source": "7b3e142da98287a1062985f6ebbeccd410a448cf41b240e1b95492100710f606",
         "translation": "66c6f63b687438a1bce584e629b6ef2619f025e490b7da46ffb81812e02c6fea",
         "status": "reviewed"
       }
     },
     "ui_secure_session_is_unavailable_d4dc91e2": {
       "de": {
-        "source": "79476a2f1047b25799391a2d9b58bede5018c2e71ea3fc5e68ca3c60018340ec",
+        "source": "b87b2c8e2731fb6a9bb9100ac5bc63d27052ae4897590a71a01138d8d47bd097",
         "translation": "6d260c085bef79ceca4bc97d60f3b4ac9bf25affca7e6c4ca0ec77249ee60f37",
         "status": "reviewed"
       }
     },
     "ui_secure_chat_session_must_reconnect_3bc899f3": {
       "de": {
-        "source": "a04faab4457898de85ca34f1f3e0c4f8de02bdd2d88f55307dcfb298c3448957",
+        "source": "ca77c5dea8ffa0a03b1c40a882fabdc26524a80f8f81064dce5db78ca3a973b8",
         "translation": "e9f0c52d110506a9d8eacdf8fe3ebdfd0c2d0de49089cf50214c94e75f835eed",
         "status": "reviewed"
       }
     },
     "ui_selected_unit_is_no_longer_available_d79de2a4": {
       "de": {
-        "source": "242e627a9f2032376bd0bc957abde4c954f772a781a0082b7c28f98e77df7b01",
+        "source": "3503715546359ba0d0eaa6290cf997676bfb97ad08d20c82f62190d2edf455a1",
         "translation": "66ed469297a0c7d808d032d1bfe2449fe05408578053bae4e99cfa608fdbc1e6",
         "status": "reviewed"
       }
     },
     "ui_message_could_not_be_encoded_safely_29a1d49e": {
       "de": {
-        "source": "5413db9816589f15d9abc7b875be4c801676f2667156c387d15c9601e8b8cb85",
+        "source": "9ef5d824ca5d532812bdf3ae8a0421d5a46380ebd7f7316d5e7477496bd37468",
         "translation": "19011146d2b3406e731c600607a9feb45840bd6a2e68cfdfe6528e05d5c706ab",
         "status": "reviewed"
       }
     },
     "ui_selected_unit_s_secure_key_is_invalid_eabdf2af": {
       "de": {
-        "source": "47ca45c8f3d88118984831ff289fc8f9069727cf360eb4aafc2efaf9d52861e6",
+        "source": "d1c95cb0f56d28bb8a9248f318d6e0f336809b4a976790d871c495744642c28b",
         "translation": "7ee548b7e42ccba344d35f656de7704d19971e1e396da44263a410cfe712f01d",
         "status": "reviewed"
       }
     },
     "ui_message_could_not_be_encrypted_455cd642": {
       "de": {
-        "source": "844e2f0ad0652ac1ff0274badd6d8c228ad18094ecccc1191abb6b3671dfc24b",
+        "source": "54037cf73b58a572c65680ff8d9adbcde64f1f7b5f441c80104200dca5761820",
         "translation": "c3c502e998c2c11e951ef2a7abcb49b3204ff8a74d19c835b8093dee60511257",
         "status": "reviewed"
       }
     },
     "ui_this_device_d052579c": {
       "de": {
-        "source": "6b85707ee95c24eb4d824018f57635458f6f0f2e9b1810a6d7c5ccef29ff310b",
+        "source": "98a6e811ce3c7ed5e3b95a3e3720f65128cfd8043b67d83b49eede7faf32cf93",
         "translation": "7df8352e13ff50519ae356e01354d739ffa81de993843fb7927ed479b5d6d949",
         "status": "reviewed"
       }
     },
     "ui_message_could_not_be_sent_a789d6a6": {
       "de": {
-        "source": "21ba0bbfe7ba14c251d46ab4ed4651d0d0de8e4dad489815ef8949f568ef5f01",
+        "source": "e2cb659959088625220e3c40af7626fe0da1f2e3ca86db548cae3a80f703118c",
         "translation": "17a07f344af4e7dfa92ff054f946870301e76872b4630b9511b8b9d173e7d284",
         "status": "reviewed"
       }
@@ -10719,56 +10719,56 @@
     },
     "ui_sync_rollback_warning_the_relay_snapshot_is_olde_b8befa71": {
       "de": {
-        "source": "d829b2ec48436c367f88e6ae6d9fa73edc719a4ba41523cac65a75fb0b9c6a63",
+        "source": "294dd99ab2dbe24cd8d6522a66687fa56aa384165db58440178d6f8d956531b8",
         "translation": "a3e95e7e55146247e72355aa3bc279affee23413ffb789348c65a28edef0562f",
         "status": "reviewed"
       }
     },
     "ui_a_synced_symbol_delete_could_not_be_saved_check__fc350e3a": {
       "de": {
-        "source": "b136d29c528cb1fdc69a3ff26c971f8905d2a48104f9eda44b2882d2bb5dbaec",
+        "source": "3620101cca575cc25a92980f6a372d8e2aa94be12749a3fc42d0561eab615ae8",
         "translation": "332c2c12b36bd8e2ef7aca7272808f97faeab5510b471bffad2b6d74bac1822f",
         "status": "reviewed"
       }
     },
     "ui_secure_chat_key_was_rejected_1_15306fc0": {
       "de": {
-        "source": "2c1cb8bbf0b7f8bbe8ecb3821f2c5b09b5c662193ca1f3884d5d89a4851673ad",
+        "source": "3847f587e8bbaf8f3b18081c7044fa3c7b6b7d3a92ef01467f509c854ffd6ae7",
         "translation": "1e35ea08df6feb308f2a10808e099746001c2fbdfb794b98a51cb3d04682071c",
         "status": "reviewed"
       }
     },
     "ui_unit_sync_secure_handshake_timed_out_check_the_r_8219de68": {
       "de": {
-        "source": "fbd0cbe8ae79b89b6b3391d44daae4fefdd4b74883f5864ba8e463a2480abf67",
+        "source": "a3263229c264b7c9f0a1080a0f9505f93eaec96c42bf14544c3cad2160f483ce",
         "translation": "2ca9725887466f9848dc56f861c876eb8581cb832d07e4f31f23f49700ebaae5",
         "status": "reviewed"
       }
     },
     "ui_sync_snapshot_authentication_failed_no_unverifie_ce2d2703": {
       "de": {
-        "source": "31153256d1fa5d1d2168fb11e8c6762526d0652e934bb4175d0331593efc7137",
+        "source": "b870ec2271a398706270711bc4891f2967549248cc93f7f946332f8ba265424e",
         "translation": "6fcb59d20df07cdbe054c1c6c5ab37d6574dd9f8571b233c0bf2fa86869ff072",
         "status": "reviewed"
       }
     },
     "ui_sync_stopped_because_rollback_state_could_not_be_f0fd4c04": {
       "de": {
-        "source": "e9ca2b5ee2959273d55d870c2be94f070e32e3592dc3c5d0e319f84132c0bffc",
+        "source": "3af174141b039b2471b78fd37703aa0bad04d5379eee5ea27636956a4ddf5e64",
         "translation": "a6aa2e4611d7eaaebe988f66f603606f88e4fb0ae9d08977fc28cfe68af056dd",
         "status": "reviewed"
       }
     },
     "ui_precise_location_is_unavailable_background_unit__4b896752": {
       "de": {
-        "source": "c7165e50d0f23a5c3d0143154c91d91d8ebb881b3e5e7fa505627e5942fc308e",
+        "source": "1655009dbab0cf54ab0985ab0f1f4af8958718a47f7cfcb4f6ada7734fd8f899",
         "translation": "2a595c3a26566639c46cf9527a725238bbf7aa8f732dafa361330bfff0fb99ae",
         "status": "reviewed"
       }
     },
     "ui_gps_is_turned_off_background_unit_sync_location__fa4f3a1e": {
       "de": {
-        "source": "4594a347cabea409620335c8546580b78eb926db554a635ee62ae22975339261",
+        "source": "46a4f21cfc4b4436c23f61de6addca298464c0c6f205fa1267f3428ba8357e8a",
         "translation": "6ca7ebd94d85b8b61807ab2f669724bdf316d934f844635547dcd3ddfbd3e05b",
         "status": "reviewed"
       }
@@ -10782,7 +10782,7 @@
     },
     "ui_gps_was_turned_off_background_unit_sync_location_727a3abd": {
       "de": {
-        "source": "dd2185a72d995d1c9db68ea1de428bca280ea0ec4a4e9c937f7827083237ca67",
+        "source": "ac89f5b8cb909661f07ab55796a1812482755a820e285bfa3432e7de5bd6c744",
         "translation": "6a00a30e44a05527d397581a888a41dbeed190f30815ca4cc3aa3e33b072a54d",
         "status": "reviewed"
       }
@@ -10943,7 +10943,7 @@
     },
     "ui_join_a_connected_v3_unit_sync_room_eb46063a": {
       "de": {
-        "source": "abddbb64c08b8c27274e683f0a8d01d63d41df3a21fc23d1b6bda75a5d696857",
+        "source": "5b391df4ddbfafbfb7bf21d6773335f063af523e2bf89d2d6ae1c0bd574e1e91",
         "translation": "278c904e401649ab13f244ec9d9ef7e3326a4d50e5daeae09ed6e8aa4140b938",
         "status": "reviewed"
       }
@@ -11904,6 +11904,34 @@
       "de": {
         "source": "4f2e54794608756cb28116bc4cf36e563ac201af1a4210fd2587107eb6217ef6",
         "translation": "922604b10cd7606b231fc22cc16d669ffd8d92f137e8627c5fb83dfb9cc2ebd5",
+        "status": "reviewed"
+      }
+    },
+    "background_sync_start_failed": {
+      "de": {
+        "source": "87b1b827279047e9c0c5b0058ef84494403a8128a304b3092bd07c9f45cbf4f6",
+        "translation": "9d655c17ce44879c866f195b483dbaede6934957cdb0eb807961a80ee61dd63f",
+        "status": "reviewed"
+      }
+    },
+    "background_sync_location_stopped": {
+      "de": {
+        "source": "bd61f446aaf254078030728cfe3af14f951d47c5eb336b1b7d8e9ce24c05b9a8",
+        "translation": "9403cc0478cddac444054081e8733dde9164c2643d0b90bb01262b949bb0f496",
+        "status": "reviewed"
+      }
+    },
+    "sync_recovery_detail": {
+      "de": {
+        "source": "57d150242f4f17ba2126b0de804a890dda2233fe500f0461b6ea1e250b32d46c",
+        "translation": "dc6c1f5e9fab8e2cef44ffe1605869f7919d0e9a87c95716416f2a9950507440",
+        "status": "reviewed"
+      }
+    },
+    "sync_configured_relay_unavailable": {
+      "de": {
+        "source": "ad5d87f1e3c855753f9cc0d1daf42d54233a4d3001d43cf60631952efc9b07fe",
+        "translation": "3cdc42d7090e91f9acaa8ea6bb0b3eea1890ffe206bddd841d520ec365960771",
         "status": "reviewed"
       }
     }

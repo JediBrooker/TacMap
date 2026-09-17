@@ -12,15 +12,17 @@ final class TacMapChatStore: ObservableObject {
         case historyTooLarge
         case persistenceFailed
 
-        var errorDescription: String? {
+        var errorDescription: String? { localizedMessage.text }
+
+        var localizedMessage: LocalizedMessage {
             switch self {
-            case .inactive: return L10n.text("TacMap Chat is not attached to a secure room.")
-            case .locked: return L10n.text("Unlock mission data to use TacMap Chat.")
-            case .corrupt: return L10n.text("Encrypted chat history could not be authenticated.")
-            case .unsealed: return L10n.text("Unencrypted chat history was rejected.")
-            case .invalidRecord: return L10n.text("Chat history contains an invalid record.")
-            case .historyTooLarge: return L10n.text("Chat history reached its protected storage limit.")
-            case .persistenceFailed: return L10n.text("Encrypted chat history could not be updated.")
+            case .inactive: return Messages.chatTacmapChatIsNotAttachedToASecureRoomMessage()
+            case .locked: return Messages.chatUnlockMissionDataToUseTacmapChat01a3669eMessage()
+            case .corrupt: return Messages.chatEncryptedChatHistoryCouldNotBeAuthenticated7fae567cMessage()
+            case .unsealed: return Messages.chatUnencryptedChatHistoryWasRejected7ba52d6aMessage()
+            case .invalidRecord: return Messages.chatChatHistoryContainsAnInvalidRecordMessage()
+            case .historyTooLarge: return Messages.chatChatHistoryReachedItsProtectedStorageLimite0fa6135Message()
+            case .persistenceFailed: return Messages.chatEncryptedChatHistoryCouldNotBeUpdatedMessage()
             }
         }
     }
@@ -121,7 +123,8 @@ final class TacMapChatStore: ObservableObject {
 
     @Published private(set) var messages: [TacMapChatMessage] = []
     @Published private(set) var activeRoomId: String?
-    @Published private(set) var issue: String?
+    @Published private(set) var pendingIssue: LocalizedMessage?
+    var issue: String? { pendingIssue?.text }
     @Published private(set) var isLocked = false
     /// Aggregate only; message IDs and conversation membership remain private
     /// to the sealed store.
@@ -273,7 +276,7 @@ final class TacMapChatStore: ObservableObject {
             }
         }
         publish(recovered)
-        issue = nil
+        pendingIssue = nil
     }
 
     /// Removes plaintext history and replay metadata from memory. The sealed
@@ -284,7 +287,7 @@ final class TacMapChatStore: ObservableObject {
         activeRoomId = nil
         fileURL = nil
         label = nil
-        issue = nil
+        pendingIssue = nil
         isLocked = false
         unreadMessageCount = 0
     }
@@ -294,7 +297,7 @@ final class TacMapChatStore: ObservableObject {
         messages.removeAll(keepingCapacity: false)
         fileURL = nil
         label = nil
-        issue = StoreError.locked.localizedDescription
+        pendingIssue = StoreError.locked.localizedMessage
         isLocked = true
         unreadMessageCount = 0
     }
@@ -448,7 +451,7 @@ final class TacMapChatStore: ObservableObject {
             attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
         )
         try SafeStore.write(data, to: fileURL, label: label)
-        issue = nil
+        pendingIssue = nil
     }
 
     private func publish(_ value: Document) {
@@ -487,7 +490,7 @@ final class TacMapChatStore: ObservableObject {
         activeRoomId = nil
         fileURL = nil
         label = nil
-        issue = error.localizedDescription
+        pendingIssue = error.localizedMessage
         isLocked = error == .locked
         unreadMessageCount = 0
     }

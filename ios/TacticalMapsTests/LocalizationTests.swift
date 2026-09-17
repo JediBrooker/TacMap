@@ -83,6 +83,44 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(germanSeed.name, "Eigene Kräfte")
     }
 
+    func testSyncSecurityWarningRefreshesWithoutChangingItsLifecycle() {
+        let language = AppLanguage.shared
+        let original = language.selection
+        defer { language.select(original) }
+        let lifecycle = SyncIssueLifecycle()
+        let warned = lifecycle.beginConnection()
+        language.select(.en)
+        let message = Messages.syncTheRelayServedAnOlderSnapshotNewerAuthenticatedLocalMessage()
+        lifecycle.report(message, kind: .security, generation: warned)
+        let english = lifecycle.issue?.message
+        language.select(.de)
+        XCTAssertNotEqual(lifecycle.issue?.message, english)
+        XCTAssertEqual(lifecycle.issue?.pendingMessage, message)
+        XCTAssertEqual(lifecycle.issue?.generation, warned)
+        XCTAssertEqual(lifecycle.issue?.kind, .security)
+        XCTAssertNotNil(lifecycle.connectionSucceeded(generation: warned, verifiedCleanSnapshot: true))
+        let next = lifecycle.beginConnection()
+        lifecycle.report(Messages.syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnectingMessage(), kind: .connection, generation: next)
+        XCTAssertEqual(lifecycle.issue?.pendingMessage, message)
+        XCTAssertNil(lifecycle.connectionSucceeded(generation: next, verifiedCleanSnapshot: true))
+    }
+
+    func testNestedSyncRecoveryRefreshesBothParts() {
+        let language = AppLanguage.shared
+        let original = language.selection
+        defer { language.select(original) }
+        let detail = SyncRemoteModelMutationError.invalidPayload.localizedMessage
+        let recovery = Messages.syncTheUnitSyncRoomIsFullSoThisSavedMessage()
+        let combined = Messages.syncRecoveryDetailMessage("", "")
+            .withArgument(0, detail).withArgument(1, recovery)
+        language.select(.en)
+        XCTAssertEqual(combined.text, detail.text + " " + recovery.text)
+        let english = combined.text
+        language.select(.de)
+        XCTAssertEqual(combined.text, detail.text + " " + recovery.text)
+        XCTAssertNotEqual(combined.text, english)
+    }
+
     func testLanguageChoicePersistsAndInvalidChoiceFallsBackToDevice() throws {
         let name = "LocalizationTests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

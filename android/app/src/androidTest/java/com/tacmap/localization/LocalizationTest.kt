@@ -14,6 +14,30 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalizationTest {
+    @Test fun lockedChatHistoryTracksLanguageWithoutUnlockingOrWriting() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        L10n.install(context)
+        val original = AppLanguage.selection
+        val directory = java.io.File(context.cacheDir, "chat-localisation-${java.util.UUID.randomUUID()}")
+        directory.mkdirs()
+        try {
+            AppLanguage.select(context, SupportedLanguage.ENGLISH)
+            val store = com.tacmap.sync.TacMapChatHistoryStore.forTests(directory)
+            store.lock()
+            val retained = store.issue.value
+            assertEquals("Unlock mission data to use TacMap Chat", retained?.text)
+            AppLanguage.select(context, SupportedLanguage.GERMAN)
+            assertEquals("Entsperre Einsatzdaten, um TacMap Chat zu verwenden", store.issue.value?.text)
+            assertEquals(retained, store.issue.value)
+            assertEquals(com.tacmap.sync.TacMapChatHistoryAvailability.LOCKED, store.availability.value)
+            org.junit.Assert.assertTrue(store.messages.value.isEmpty())
+            org.junit.Assert.assertTrue(directory.listFiles()!!.isEmpty())
+        } finally {
+            AppLanguage.select(context, original)
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun retainedLiveLocationControlsRefreshWithoutChangingActions() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         L10n.install(context)
@@ -44,13 +68,14 @@ class LocalizationTest {
             val layer = com.tacmap.drawings.DrawingDocument.defaultLayer()
             val custom = layer.copy(id = "custom")
             val edited = layer.copy(name = "My team")
-            val before = kotlinx.serialization.json.Json.encodeToString(com.tacmap.drawings.DrawingLayer.serializer(), layer)
+            val encoder = kotlinx.serialization.json.Json { encodeDefaults = true }
+            val before = encoder.encodeToString(com.tacmap.drawings.DrawingLayer.serializer(), layer)
             AppLanguage.select(context, SupportedLanguage.GERMAN)
             assertEquals("Eigene Kräfte", layer.displayName)
             assertEquals("Friendly", layer.name)
             assertEquals("Friendly", custom.displayName)
             assertEquals("My team", edited.displayName)
-            assertEquals(before, kotlinx.serialization.json.Json.encodeToString(com.tacmap.drawings.DrawingLayer.serializer(), layer))
+            assertEquals(before, encoder.encodeToString(com.tacmap.drawings.DrawingLayer.serializer(), layer))
             val germanSeed = com.tacmap.drawings.DrawingDocument.defaultLayer()
             assertEquals("Eigene Kräfte", germanSeed.name)
             AppLanguage.select(context, SupportedLanguage.ENGLISH)
@@ -88,6 +113,31 @@ class LocalizationTest {
             assertEquals(com.tacmap.billing.BillingPhase.Connecting, loading.phase)
             org.junit.Assert.assertFalse(loading.purchaseEnabled)
             assertEquals(com.tacmap.billing.BillingStoreIssueKind.PurchaseAcknowledgement, issue.kind)
+        } finally { AppLanguage.select(context, original) }
+    }
+
+    @Test fun retainedSyncSecurityWarningPreservesGenerationAndPriority() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        L10n.install(context)
+        val original = AppLanguage.selection
+        try {
+            AppLanguage.select(context, SupportedLanguage.ENGLISH)
+            val lifecycle = com.tacmap.sync.SyncIssueLifecycle()
+            val warned = lifecycle.beginConnection()
+            val message = Messages.syncSyncRollbackWarningTheRelaySnapshotIsOlderThanMessage()
+            lifecycle.report(message, com.tacmap.sync.SyncIssueKind.SECURITY, warned)
+            val english = lifecycle.issue?.message
+            AppLanguage.select(context, SupportedLanguage.GERMAN)
+            org.junit.Assert.assertFalse(lifecycle.issue?.message == english)
+            org.junit.Assert.assertSame(message, lifecycle.issue?.pendingMessage)
+            assertEquals(warned, lifecycle.issue?.generation)
+            assertEquals(com.tacmap.sync.SyncIssueKind.SECURITY, lifecycle.issue?.kind)
+            org.junit.Assert.assertNotNull(lifecycle.connectionSucceeded(warned, true))
+            val next = lifecycle.beginConnection()
+            lifecycle.report(Messages.syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnectingMessage(),
+                com.tacmap.sync.SyncIssueKind.CONNECTION, next)
+            org.junit.Assert.assertSame(message, lifecycle.issue?.pendingMessage)
+            org.junit.Assert.assertNull(lifecycle.connectionSucceeded(next, true))
         } finally { AppLanguage.select(context, original) }
     }
 

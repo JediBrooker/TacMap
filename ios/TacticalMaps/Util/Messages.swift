@@ -93,6 +93,18 @@ enum Messages {
     static func settingsLanguageTitle() -> String {
         L10n.message("id.settings_language_title", fallback: "Language")
     }
+    static func syncConfiguredRelayUnavailable() -> String {
+        L10n.message("id.sync_configured_relay_unavailable", fallback: "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.")
+    }
+    static func syncConfiguredRelayUnavailableMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_configured_relay_unavailable", fallback: "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.", arguments: [])
+    }
+    static func syncRecoveryDetail(_ detail: String, _ recovery: String) -> String {
+        L10n.message("id.sync_recovery_detail", fallback: "%1$@ %2$@", detail, recovery)
+    }
+    static func syncRecoveryDetailMessage(_ detail: String, _ recovery: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_recovery_detail", fallback: "%1$@ %2$@", arguments: [detail, recovery])
+    }
     static func syncedLayersSaveFailed(_ detail: String) -> String {
         L10n.message("id.synced_layers_save_failed", fallback: "Could not save synced layers to disk: %1$@", detail)
     }
@@ -111,11 +123,35 @@ enum Messages {
     static func trialRemainingDetailsMessage(_ value: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.trial_remaining_details", fallback: "You're on the free trial (%1$@ left). Unlock now for permanent access.", arguments: [value])
     }
+    static func syncAPendingAuthenticatedSyncUpdateCouldNotBeSaved() -> String {
+        L10n.message("id.ui_a_pending_authenticated_sync_update_could_not_be_d2c45d56", fallback: "A pending authenticated sync update could not be saved.")
+    }
+    static func syncAPendingAuthenticatedSyncUpdateCouldNotBeSavedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_a_pending_authenticated_sync_update_could_not_be_d2c45d56", fallback: "A pending authenticated sync update could not be saved.", arguments: [])
+    }
+    static func chatAPrivateChannelCouldNotBeEstablishedWithThat() -> String {
+        L10n.message("id.ui_a_private_channel_could_not_be_established_with__facd9fa0", fallback: "A private channel could not be established with that unit.")
+    }
+    static func chatAPrivateChannelCouldNotBeEstablishedWithThatMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_a_private_channel_could_not_be_established_with__facd9fa0", fallback: "A private channel could not be established with that unit.", arguments: [])
+    }
     static func trackSavedExists() -> String {
         L10n.message("id.ui_a_saved_track_already_exists_export_or_discard_i_a1920160", fallback: "A saved track already exists. Export or discard it before starting a new recording.")
     }
     static func trackSavedExistsMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_a_saved_track_already_exists_export_or_discard_i_a1920160", fallback: "A saved track already exists. Export or discard it before starting a new recording.", arguments: [])
+    }
+    static func syncAUnitSyncChangeIsStillUnconfirmedAfterBounded() -> String {
+        L10n.message("id.ui_a_unit_sync_change_is_still_unconfirmed_after_bo_3d3fc607", fallback: "A Unit Sync change is still unconfirmed after bounded retries. Reconnecting to reconcile it; the local edit remains saved.")
+    }
+    static func syncAUnitSyncChangeIsStillUnconfirmedAfterBoundedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_a_unit_sync_change_is_still_unconfirmed_after_bo_3d3fc607", fallback: "A Unit Sync change is still unconfirmed after bounded retries. Reconnecting to reconcile it; the local edit remains saved.", arguments: [])
+    }
+    static func syncActorRollbackProtectionStateCouldNotBeSaved() -> String {
+        L10n.message("id.ui_actor_rollback_protection_state_could_not_be_sav_88065786", fallback: "Actor rollback-protection state could not be saved.")
+    }
+    static func syncActorRollbackProtectionStateCouldNotBeSavedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_actor_rollback_protection_state_could_not_be_sav_88065786", fallback: "Actor rollback-protection state could not be saved.", arguments: [])
     }
     static func billingAlreadyUnlocked() -> String {
         L10n.message("id.ui_already_unlocked_9f5005e4", fallback: "Already unlocked.")
@@ -141,6 +177,12 @@ enum Messages {
     static func billingAppleVerifiedYourPurchaseButTacmapCouldnTSaveMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_apple_verified_your_purchase_but_tacmap_couldn_t_268afcfa", fallback: "Apple verified your purchase, but TacMap couldn't save the unlock securely. The purchase remains pending in TacMap; restart the device and tap Check Again.", arguments: [])
     }
+    static func syncAskTheSenderToUpdateTacmapAndSendThe() -> String {
+        L10n.message("id.ui_ask_the_sender_to_update_tacmap_and_send_the_mis_258bd4bf", fallback: "Ask the sender to update TacMap and send the mission object again before rejoining.")
+    }
+    static func syncAskTheSenderToUpdateTacmapAndSendTheMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_ask_the_sender_to_update_tacmap_and_send_the_mis_258bd4bf", fallback: "Ask the sender to update TacMap and send the mission object again before rejoining.", arguments: [])
+    }
     static func liveLocationCentre() -> String {
         L10n.message("id.ui_centre_on_my_location_82529ff7", fallback: "Centre on My Location")
     }
@@ -152,6 +194,24 @@ enum Messages {
     }
     static func liveLocationCentreHintMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_centres_the_map_on_your_latest_location_cd51a85e", fallback: "Centres the map on your latest location.", arguments: [])
+    }
+    static func chatChatHistoryContainsAnInvalidRecord() -> String {
+        L10n.message("id.ui_chat_history_contains_an_invalid_record_367181d6", fallback: "Chat history contains an invalid record.")
+    }
+    static func chatChatHistoryContainsAnInvalidRecordMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_chat_history_contains_an_invalid_record_367181d6", fallback: "Chat history contains an invalid record.", arguments: [])
+    }
+    static func chatChatHistoryReachedItsProtectedStorageLimite0fa6135() -> String {
+        L10n.message("id.ui_chat_history_reached_its_protected_storage_limit_e0fa6135", fallback: "Chat history reached its protected storage limit.")
+    }
+    static func chatChatHistoryReachedItsProtectedStorageLimite0fa6135Message() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_chat_history_reached_its_protected_storage_limit_e0fa6135", fallback: "Chat history reached its protected storage limit.", arguments: [])
+    }
+    static func syncCouldNotConstructAuthenticatedHello() -> String {
+        L10n.message("id.ui_could_not_construct_authenticated_hello_e7270eae", fallback: "Could not construct authenticated hello.")
+    }
+    static func syncCouldNotConstructAuthenticatedHelloMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_construct_authenticated_hello_e7270eae", fallback: "Could not construct authenticated hello.", arguments: [])
     }
     static func couldNotDeleteDrawingFromDisk(_ detail1: String) -> String {
         L10n.message("id.ui_could_not_delete_drawing_from_disk_1_2d322d02", fallback: "Could not delete drawing from disk: %1$@", detail1)
@@ -170,6 +230,18 @@ enum Messages {
     }
     static func trackReencryptFailedMessage(_ detail: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_could_not_encrypt_the_recovered_track_1_1986bd1a", fallback: "Could not encrypt the recovered track: %1$@", arguments: [detail])
+    }
+    static func syncCouldNotMigrateUnitSyncIdentityLocationSharingTo() -> String {
+        L10n.message("id.ui_could_not_migrate_unit_sync_identity_location_sh_18a0783f", fallback: "Could not migrate Unit Sync identity/location sharing to encrypted storage. Location sharing remains off.")
+    }
+    static func syncCouldNotMigrateUnitSyncIdentityLocationSharingToMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_migrate_unit_sync_identity_location_sh_18a0783f", fallback: "Could not migrate Unit Sync identity/location sharing to encrypted storage. Location sharing remains off.", arguments: [])
+    }
+    static func syncCouldNotReserveAuthenticatedSessionEpoch() -> String {
+        L10n.message("id.ui_could_not_reserve_authenticated_session_epoch_387f6b1a", fallback: "Could not reserve authenticated session epoch.")
+    }
+    static func syncCouldNotReserveAuthenticatedSessionEpochMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_reserve_authenticated_session_epoch_387f6b1a", fallback: "Could not reserve authenticated session epoch.", arguments: [])
     }
     static func couldNotRestoreDrawingToDisk(_ detail1: String) -> String {
         L10n.message("id.ui_could_not_restore_drawing_to_disk_1_274affa0", fallback: "Could not restore drawing to disk: %1$@", detail1)
@@ -237,11 +309,23 @@ enum Messages {
     static func couldNotSaveReassignedWaypointsToDiskMessage(_ detail1: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_could_not_save_reassigned_waypoints_to_disk_1_a62f01a5", fallback: "Could not save reassigned waypoints to disk: %1$@", arguments: [detail1])
     }
+    static func syncCouldNotSaveUnitSyncIdentityLocationSharingThe() -> String {
+        L10n.message("id.ui_could_not_save_unit_sync_identity_location_shari_07624acb", fallback: "Could not save Unit Sync identity/location sharing. The previous setting remains active; check available storage and try again.")
+    }
+    static func syncCouldNotSaveUnitSyncIdentityLocationSharingTheMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_save_unit_sync_identity_location_shari_07624acb", fallback: "Could not save Unit Sync identity/location sharing. The previous setting remains active; check available storage and try again.", arguments: [])
+    }
     static func couldNotSaveWaypointChangeToDisk(_ detail1: String) -> String {
         L10n.message("id.ui_could_not_save_waypoint_change_to_disk_1_9ef95837", fallback: "Could not save waypoint change to disk: %1$@", detail1)
     }
     static func couldNotSaveWaypointChangeToDiskMessage(_ detail1: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_could_not_save_waypoint_change_to_disk_1_9ef95837", fallback: "Could not save waypoint change to disk: %1$@", arguments: [detail1])
+    }
+    static func syncCouldNotSendAuthenticatedHello() -> String {
+        L10n.message("id.ui_could_not_send_authenticated_hello_f93c7fbd", fallback: "Could not send authenticated hello.")
+    }
+    static func syncCouldNotSendAuthenticatedHelloMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_send_authenticated_hello_f93c7fbd", fallback: "Could not send authenticated hello.", arguments: [])
     }
     static func couldNotUndoImportedDrawings(_ detail1: String) -> String {
         L10n.message("id.ui_could_not_undo_imported_drawings_1_a6e33832", fallback: "Could not undo imported drawings: %1$@", detail1)
@@ -291,6 +375,60 @@ enum Messages {
     static func liveLocationEnableMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_enable_live_location_ce184825", fallback: "Enable Live Location", arguments: [])
     }
+    static func chatEncryptedChatCouldNotEstablishASession() -> String {
+        L10n.message("id.ui_encrypted_chat_could_not_establish_a_session_a6a451fe", fallback: "Encrypted chat could not establish a session.")
+    }
+    static func chatEncryptedChatCouldNotEstablishASessionMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_encrypted_chat_could_not_establish_a_session_a6a451fe", fallback: "Encrypted chat could not establish a session.", arguments: [])
+    }
+    static func chatEncryptedChatHistoryCouldNotBeAuthenticated7fae567c() -> String {
+        L10n.message("id.ui_encrypted_chat_history_could_not_be_authenticate_7fae567c", fallback: "Encrypted chat history could not be authenticated.")
+    }
+    static func chatEncryptedChatHistoryCouldNotBeAuthenticated7fae567cMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_encrypted_chat_history_could_not_be_authenticate_7fae567c", fallback: "Encrypted chat history could not be authenticated.", arguments: [])
+    }
+    static func chatEncryptedChatHistoryCouldNotBeUpdated() -> String {
+        L10n.message("id.ui_encrypted_chat_history_could_not_be_updated_42373d96", fallback: "Encrypted chat history could not be updated.")
+    }
+    static func chatEncryptedChatHistoryCouldNotBeUpdatedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_encrypted_chat_history_could_not_be_updated_42373d96", fallback: "Encrypted chat history could not be updated.", arguments: [])
+    }
+    static func chatEncryptedChatHistoryIsLockedOrUnavailable() -> String {
+        L10n.message("id.ui_encrypted_chat_history_is_locked_or_unavailable_db9f18cc", fallback: "Encrypted chat history is locked or unavailable.")
+    }
+    static func chatEncryptedChatHistoryIsLockedOrUnavailableMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_encrypted_chat_history_is_locked_or_unavailable_db9f18cc", fallback: "Encrypted chat history is locked or unavailable.", arguments: [])
+    }
+    static func chatHistoryUnavailable() -> String {
+        L10n.message("id.ui_encrypted_chat_history_is_unavailable_266b2d04", fallback: "Encrypted chat history is unavailable.")
+    }
+    static func chatHistoryUnavailableMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_encrypted_chat_history_is_unavailable_266b2d04", fallback: "Encrypted chat history is unavailable.", arguments: [])
+    }
+    static func chatEncryptedChatIsStillEstablishingARelaySession() -> String {
+        L10n.message("id.ui_encrypted_chat_is_still_establishing_a_relay_ses_3eff4bcd", fallback: "Encrypted chat is still establishing a relay session.")
+    }
+    static func chatEncryptedChatIsStillEstablishingARelaySessionMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_encrypted_chat_is_still_establishing_a_relay_ses_3eff4bcd", fallback: "Encrypted chat is still establishing a relay session.", arguments: [])
+    }
+    static func syncInvalidSyncSnapshotFence() -> String {
+        L10n.message("id.ui_invalid_sync_snapshot_fence_5404b7bc", fallback: "Invalid sync snapshot fence.")
+    }
+    static func syncInvalidSyncSnapshotFenceMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_invalid_sync_snapshot_fence_5404b7bc", fallback: "Invalid sync snapshot fence.", arguments: [])
+    }
+    static func syncJoinCodeMustStartWithLegacyRoomsRequireAn() -> String {
+        L10n.message("id.ui_join_code_must_start_with_3_legacy_rooms_require_8e0b55c2", fallback: "Join code must start with 3:. Legacy rooms require an explicit 2: prefix.")
+    }
+    static func syncJoinCodeMustStartWithLegacyRoomsRequireAnMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_join_code_must_start_with_3_legacy_rooms_require_8e0b55c2", fallback: "Join code must start with 3:. Legacy rooms require an explicit 2: prefix.", arguments: [])
+    }
+    static func syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2() -> String {
+        L10n.message("id.ui_local_revision_history_could_not_be_saved_sync_i_ede036c2", fallback: "Local revision history could not be saved; sync is paused.")
+    }
+    static func syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_local_revision_history_could_not_be_saved_sync_i_ede036c2", fallback: "Local revision history could not be saved; sync is paused.", arguments: [])
+    }
     static func recordingAccessChanged() -> String {
         L10n.message("id.ui_location_access_changed_so_track_recording_stopp_5b2389dc", fallback: "Location access changed, so track recording stopped. Your saved track was preserved. Re-enable Location access in Settings to record again.")
     }
@@ -333,6 +471,12 @@ enum Messages {
     static func liveLocationSettingsMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_open_location_settings_4295919a", fallback: "Open Location Settings", arguments: [])
     }
+    static func syncPresenceReplayStateCouldNotBeSaved() -> String {
+        L10n.message("id.ui_presence_replay_state_could_not_be_saved_596636f3", fallback: "Presence replay state could not be saved.")
+    }
+    static func syncPresenceReplayStateCouldNotBeSavedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_presence_replay_state_could_not_be_saved_596636f3", fallback: "Presence replay state could not be saved.", arguments: [])
+    }
     static func billingPurchaseCancelledYouHaveNotBeenCharged() -> String {
         L10n.message("id.ui_purchase_cancelled_you_have_not_been_charged_4962904b", fallback: "Purchase cancelled. You have not been charged.")
     }
@@ -360,17 +504,35 @@ enum Messages {
     static func recoveryCopyFallback() -> String {
         L10n.message("id.ui_recovery_copy_6f7749ab", fallback: "recovery copy")
     }
+    static func syncResolveTheDuplicateWaypointDrawingIdentityLocallyThenRejoin() -> String {
+        L10n.message("id.ui_resolve_the_duplicate_waypoint_drawing_identity__2354c2a5", fallback: "Resolve the duplicate waypoint/drawing identity locally, then rejoin Unit Sync.")
+    }
+    static func syncResolveTheDuplicateWaypointDrawingIdentityLocallyThenRejoinMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_resolve_the_duplicate_waypoint_drawing_identity__2354c2a5", fallback: "Resolve the duplicate waypoint/drawing identity locally, then rejoin Unit Sync.", arguments: [])
+    }
     static func liveLocationReviewHint() -> String {
         L10n.message("id.ui_review_location_access_in_settings_4adfc9dd", fallback: "Review Location access in Settings.")
     }
     static func liveLocationReviewHintMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_review_location_access_in_settings_4adfc9dd", fallback: "Review Location access in Settings.", arguments: [])
     }
+    static func syncRollbackProtectionStateCouldNotBeSaved() -> String {
+        L10n.message("id.ui_rollback_protection_state_could_not_be_saved_3597a18b", fallback: "Rollback-protection state could not be saved.")
+    }
+    static func syncRollbackProtectionStateCouldNotBeSavedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_rollback_protection_state_could_not_be_saved_3597a18b", fallback: "Rollback-protection state could not be saved.", arguments: [])
+    }
     static func trackLegacyLineInvalid() -> String {
         L10n.message("id.ui_saved_legacy_track_contains_an_invalid_line_and__dfd76fd9", fallback: "Saved legacy track contains an invalid line and was preserved unchanged.")
     }
     static func trackLegacyLineInvalidMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_saved_legacy_track_contains_an_invalid_line_and__dfd76fd9", fallback: "Saved legacy track contains an invalid line and was preserved unchanged.", arguments: [])
+    }
+    static func syncSavedRollbackProtectionStateIsLockedOrDamagedSync() -> String {
+        L10n.message("id.ui_saved_rollback_protection_state_is_locked_or_dam_d2a8cd05", fallback: "Saved rollback-protection state is locked or damaged. Sync was not started.")
+    }
+    static func syncSavedRollbackProtectionStateIsLockedOrDamagedSyncMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_rollback_protection_state_is_locked_or_dam_d2a8cd05", fallback: "Saved rollback-protection state is locked or damaged. Sync was not started.", arguments: [])
     }
     static func trackLineRecoveryFailed() -> String {
         L10n.message("id.ui_saved_track_contains_an_authenticated_line_that__c692cd6b", fallback: "Saved track contains an authenticated line that could not be recovered.")
@@ -402,6 +564,78 @@ enum Messages {
     static func trackTooLargeMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_saved_track_is_too_large_to_recover_safely_87b7d3da", fallback: "Saved track is too large to recover safely.", arguments: [])
     }
+    static func syncSavedUnitSyncIdentityLocationSharingFailedItsSealed() -> String {
+        L10n.message("id.ui_saved_unit_sync_identity_location_sharing_failed_4c4318a8", fallback: "Saved Unit Sync identity/location sharing failed its sealed-storage policy. Location sharing remains off.")
+    }
+    static func syncSavedUnitSyncIdentityLocationSharingFailedItsSealedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_unit_sync_identity_location_sharing_failed_4c4318a8", fallback: "Saved Unit Sync identity/location sharing failed its sealed-storage policy. Location sharing remains off.", arguments: [])
+    }
+    static func syncSavedUnitSyncIdentityLocationSharingIsLockedOr() -> String {
+        L10n.message("id.ui_saved_unit_sync_identity_location_sharing_is_loc_ca2414d7", fallback: "Saved Unit Sync identity/location sharing is locked or damaged. Location sharing remains off.")
+    }
+    static func syncSavedUnitSyncIdentityLocationSharingIsLockedOrMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_unit_sync_identity_location_sharing_is_loc_ca2414d7", fallback: "Saved Unit Sync identity/location sharing is locked or damaged. Location sharing remains off.", arguments: [])
+    }
+    static func syncSavedUnitSyncMetadataCouldNotBeMigratedTo() -> String {
+        L10n.message("id.ui_saved_unit_sync_metadata_could_not_be_migrated_t_83546d0d", fallback: "Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again.")
+    }
+    static func syncSavedUnitSyncMetadataCouldNotBeMigratedToMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_unit_sync_metadata_could_not_be_migrated_t_83546d0d", fallback: "Saved Unit Sync metadata could not be migrated to private filenames. Check available storage, then unlock mission data and try again.", arguments: [])
+    }
+    static func syncSecureSessionRandomnessIsUnavailableUnitSyncWasNot() -> String {
+        L10n.message("id.ui_secure_session_randomness_is_unavailable_unit_sy_a7551a4c", fallback: "Secure session randomness is unavailable. Unit Sync was not started.")
+    }
+    static func syncSecureSessionRandomnessIsUnavailableUnitSyncWasNotMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_secure_session_randomness_is_unavailable_unit_sy_a7551a4c", fallback: "Secure session randomness is unavailable. Unit Sync was not started.", arguments: [])
+    }
+    static func chatSelectAUnitBeforeSendingThisMessage() -> String {
+        L10n.message("id.ui_select_a_unit_before_sending_this_message_284141b1", fallback: "Select a unit before sending this message.")
+    }
+    static func chatSelectAUnitBeforeSendingThisMessageMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_select_a_unit_before_sending_this_message_284141b1", fallback: "Select a unit before sending this message.", arguments: [])
+    }
+    static func syncSigningIdentityIsLockedOrUnavailableUnlockTheDevice() -> String {
+        L10n.message("id.ui_signing_identity_is_locked_or_unavailable_unlock_cae3b2c6", fallback: "Signing identity is locked or unavailable. Unlock the device and try again.")
+    }
+    static func syncSigningIdentityIsLockedOrUnavailableUnlockTheDeviceMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_signing_identity_is_locked_or_unavailable_unlock_cae3b2c6", fallback: "Signing identity is locked or unavailable. Unlock the device and try again.", arguments: [])
+    }
+    static func syncSigningIdentityIsUnavailable() -> String {
+        L10n.message("id.ui_signing_identity_is_unavailable_0cb3ad6b", fallback: "Signing identity is unavailable.")
+    }
+    static func syncSigningIdentityIsUnavailableMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_signing_identity_is_unavailable_0cb3ad6b", fallback: "Signing identity is unavailable.", arguments: [])
+    }
+    static func syncSyncSnapshotAuthenticationFailed() -> String {
+        L10n.message("id.ui_sync_snapshot_authentication_failed_1fc99888", fallback: "Sync snapshot authentication failed.")
+    }
+    static func syncSyncSnapshotAuthenticationFailedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_sync_snapshot_authentication_failed_1fc99888", fallback: "Sync snapshot authentication failed.", arguments: [])
+    }
+    static func syncSyncSnapshotContainedAnUnauthenticatedRecord() -> String {
+        L10n.message("id.ui_sync_snapshot_contained_an_unauthenticated_recor_d165216e", fallback: "Sync snapshot contained an unauthenticated record.")
+    }
+    static func syncSyncSnapshotContainedAnUnauthenticatedRecordMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_sync_snapshot_contained_an_unauthenticated_recor_d165216e", fallback: "Sync snapshot contained an unauthenticated record.", arguments: [])
+    }
+    static func chatTacmapChatIsNotAttachedToASecureRoom() -> String {
+        L10n.message("id.ui_tacmap_chat_is_not_attached_to_a_secure_room_6453a862", fallback: "TacMap Chat is not attached to a secure room.")
+    }
+    static func chatTacmapChatIsNotAttachedToASecureRoomMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_tacmap_chat_is_not_attached_to_a_secure_room_6453a862", fallback: "TacMap Chat is not attached to a secure room.", arguments: [])
+    }
+    static func chatTacmapChatRequiresASecureVRoom() -> String {
+        L10n.message("id.ui_tacmap_chat_requires_a_secure_v3_room_75801b2f", fallback: "TacMap Chat requires a secure v3 room.")
+    }
+    static func chatTacmapChatRequiresASecureVRoomMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_tacmap_chat_requires_a_secure_v3_room_75801b2f", fallback: "TacMap Chat requires a secure v3 room.", arguments: [])
+    }
+    static func chatTacmapChatRequiresASecureVUnitSyncRoom() -> String {
+        L10n.message("id.ui_tacmap_chat_requires_a_secure_v3_unit_sync_room_c1b924d7", fallback: "TacMap Chat requires a secure v3 Unit Sync room.")
+    }
+    static func chatTacmapChatRequiresASecureVUnitSyncRoomMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_tacmap_chat_requires_a_secure_v3_unit_sync_room_c1b924d7", fallback: "TacMap Chat requires a secure v3 Unit Sync room.", arguments: [])
+    }
     static func billingTacmapFoundTheLatestPurchaseStatusButCouldnT() -> String {
         L10n.message("id.ui_tacmap_found_the_latest_purchase_status_but_coul_5c9e82cd", fallback: "TacMap found the latest purchase status but couldn't save it securely. Restart the device, then tap Restore purchase again.")
     }
@@ -432,6 +666,12 @@ enum Messages {
     static func billingTacmapVerifiedYourAppStoreStatusButCouldnTMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_tacmap_verified_your_app_store_status_but_couldn_afd6e407", fallback: "TacMap verified your App Store status but couldn't save it securely. Your existing unlock was kept. Restart the device, then tap Check Again.", arguments: [])
     }
+    static func chatThatUnitSSecureSessionChangedSelectItAgain() -> String {
+        L10n.message("id.ui_that_unit_s_secure_session_changed_select_it_aga_f2ae7a5b", fallback: "That unit's secure session changed. Select it again; nothing was broadcast.")
+    }
+    static func chatThatUnitSSecureSessionChangedSelectItAgainMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_that_unit_s_secure_session_changed_select_it_aga_f2ae7a5b", fallback: "That unit's secure session changed. Select it again; nothing was broadcast.", arguments: [])
+    }
     static func billingTheAppStoreReturnedAnUnknownPurchaseResultTap() -> String {
         L10n.message("id.ui_the_app_store_returned_an_unknown_purchase_resul_a59e82d0", fallback: "The App Store returned an unknown purchase result. Tap Check Again before trying the purchase again.")
     }
@@ -444,11 +684,221 @@ enum Messages {
     static func billingTheAppStoreSentAnUnlockUpdateTacmapCouldnMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_the_app_store_sent_an_unlock_update_tacmap_could_3b7c44d2", fallback: "The App Store sent an unlock update TacMap couldn't verify. Your existing unlock was kept. Tap Check Again; use Restore purchase if the problem continues.", arguments: [])
     }
+    static func syncTheAuthenticatedSyncRecordConflictsWithAnotherObjectType(_ detail1: String) -> String {
+        L10n.message("id.ui_the_authenticated_sync_record_conflicts_with_ano_15fbb1bc", fallback: "The authenticated sync record conflicts with another object type using ID %1$@.", detail1)
+    }
+    static func syncTheAuthenticatedSyncRecordConflictsWithAnotherObjectTypeMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_authenticated_sync_record_conflicts_with_ano_15fbb1bc", fallback: "The authenticated sync record conflicts with another object type using ID %1$@.", arguments: [detail1])
+    }
+    static func syncTheAuthenticatedSyncRecordDidNotContainExactlyOne() -> String {
+        L10n.message("id.ui_the_authenticated_sync_record_did_not_contain_ex_36ad42e7", fallback: "The authenticated sync record did not contain exactly one valid mission object.")
+    }
+    static func syncTheAuthenticatedSyncRecordDidNotContainExactlyOneMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_authenticated_sync_record_did_not_contain_ex_36ad42e7", fallback: "The authenticated sync record did not contain exactly one valid mission object.", arguments: [])
+    }
+    static func syncTheAuthenticatedSyncUpdateCouldNotBeSaved(_ detail1: String) -> String {
+        L10n.message("id.ui_the_authenticated_sync_update_could_not_be_saved_34a2dd80", fallback: "The authenticated sync update could not be saved: %1$@", detail1)
+    }
+    static func syncTheAuthenticatedSyncUpdateCouldNotBeSavedMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_authenticated_sync_update_could_not_be_saved_34a2dd80", fallback: "The authenticated sync update could not be saved: %1$@", arguments: [detail1])
+    }
+    static func chatTheChatFrameFailedSenderAuthentication() -> String {
+        L10n.message("id.ui_the_chat_frame_failed_sender_authentication_385eee9e", fallback: "The chat frame failed sender authentication.")
+    }
+    static func chatTheChatFrameFailedSenderAuthenticationMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_chat_frame_failed_sender_authentication_385eee9e", fallback: "The chat frame failed sender authentication.", arguments: [])
+    }
+    static func chatTheChatKeyAdvertisementCouldNotReachTheRelay() -> String {
+        L10n.message("id.ui_the_chat_key_advertisement_could_not_reach_the_r_fa130837", fallback: "The chat-key advertisement could not reach the relay.")
+    }
+    static func chatTheChatKeyAdvertisementCouldNotReachTheRelayMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_chat_key_advertisement_could_not_reach_the_r_fa130837", fallback: "The chat-key advertisement could not reach the relay.", arguments: [])
+    }
+    static func chatTheChatTextIsInvalidOrTooLarge() -> String {
+        L10n.message("id.ui_the_chat_text_is_invalid_or_too_large_4a173079", fallback: "The chat text is invalid or too large.")
+    }
+    static func chatTheChatTextIsInvalidOrTooLargeMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_chat_text_is_invalid_or_too_large_4a173079", fallback: "The chat text is invalid or too large.", arguments: [])
+    }
+    static func syncTheConfiguredUnitSyncRelayIsUnsafeOrInvalidd0e3ab12() -> String {
+        L10n.message("id.ui_the_configured_unit_sync_relay_is_unsafe_or_inva_d0e3ab12", fallback: "The configured Unit Sync relay is unsafe or invalid. Correct it in Settings, Privacy & OPSEC.")
+    }
+    static func syncTheConfiguredUnitSyncRelayIsUnsafeOrInvalidd0e3ab12Message() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_configured_unit_sync_relay_is_unsafe_or_inva_d0e3ab12", fallback: "The configured Unit Sync relay is unsafe or invalid. Correct it in Settings, Privacy & OPSEC.", arguments: [])
+    }
+    static func chatTheEncryptedChatFrameIsMalformed() -> String {
+        L10n.message("id.ui_the_encrypted_chat_frame_is_malformed_b870c0fa", fallback: "The encrypted chat frame is malformed.")
+    }
+    static func chatTheEncryptedChatFrameIsMalformedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_encrypted_chat_frame_is_malformed_b870c0fa", fallback: "The encrypted chat frame is malformed.", arguments: [])
+    }
+    static func chatTheMessageCouldNotBeDecrypted() -> String {
+        L10n.message("id.ui_the_message_could_not_be_decrypted_f929006e", fallback: "The message could not be decrypted.")
+    }
+    static func chatTheMessageCouldNotBeDecryptedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_message_could_not_be_decrypted_f929006e", fallback: "The message could not be decrypted.", arguments: [])
+    }
+    static func chatTheMessageCouldNotBeEncrypted() -> String {
+        L10n.message("id.ui_the_message_could_not_be_encrypted_e8505ef8", fallback: "The message could not be encrypted.")
+    }
+    static func chatTheMessageCouldNotBeEncryptedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_message_could_not_be_encrypted_e8505ef8", fallback: "The message could not be encrypted.", arguments: [])
+    }
+    static func chatTheMessageCouldNotBeRoutedToTheRelay() -> String {
+        L10n.message("id.ui_the_message_could_not_be_routed_to_the_relay_f8f578a3", fallback: "The message could not be routed to the relay.")
+    }
+    static func chatTheMessageCouldNotBeRoutedToTheRelayMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_message_could_not_be_routed_to_the_relay_f8f578a3", fallback: "The message could not be routed to the relay.", arguments: [])
+    }
     static func billingThePurchaseCouldnTBeCompletedCheckYourConnection() -> String {
         L10n.message("id.ui_the_purchase_couldn_t_be_completed_check_your_co_5524be32", fallback: "The purchase couldn't be completed. Check your connection, tap Check Again, and try once more.")
     }
     static func billingThePurchaseCouldnTBeCompletedCheckYourConnectionMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_the_purchase_couldn_t_be_completed_check_your_co_5524be32", fallback: "The purchase couldn't be completed. Check your connection, tap Check Again, and try once more.", arguments: [])
+    }
+    static func chatTheRelayDidNotAcknowledgeEncryptedChatCapability() -> String {
+        L10n.message("id.ui_the_relay_did_not_acknowledge_encrypted_chat_cap_70ebc8a1", fallback: "The relay did not acknowledge encrypted chat capability.")
+    }
+    static func chatTheRelayDidNotAcknowledgeEncryptedChatCapabilityMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_did_not_acknowledge_encrypted_chat_cap_70ebc8a1", fallback: "The relay did not acknowledge encrypted chat capability.", arguments: [])
+    }
+    static func syncTheRelayDidNotCompleteItsInitialSnapshotIn() -> String {
+        L10n.message("id.ui_the_relay_did_not_complete_its_initial_snapshot__98e4c95c", fallback: "The relay did not complete its initial snapshot in time.")
+    }
+    static func syncTheRelayDidNotCompleteItsInitialSnapshotInMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_did_not_complete_its_initial_snapshot__98e4c95c", fallback: "The relay did not complete its initial snapshot in time.", arguments: [])
+    }
+    static func chatTheRelayRejectedEncryptedChatCapability(_ detail1: String) -> String {
+        L10n.message("id.ui_the_relay_rejected_encrypted_chat_capability_1_e10e27f3", fallback: "The relay rejected encrypted chat capability (%1$@).", detail1)
+    }
+    static func chatTheRelayRejectedEncryptedChatCapabilityMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_rejected_encrypted_chat_capability_1_e10e27f3", fallback: "The relay rejected encrypted chat capability (%1$@).", arguments: [detail1])
+    }
+    static func syncTheRelaySentLiveDataBeforeCompletingItsSnapshot() -> String {
+        L10n.message("id.ui_the_relay_sent_live_data_before_completing_its_s_6573ff79", fallback: "The relay sent live data before completing its snapshot fence.")
+    }
+    static func syncTheRelaySentLiveDataBeforeCompletingItsSnapshotMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_sent_live_data_before_completing_its_s_6573ff79", fallback: "The relay sent live data before completing its snapshot fence.", arguments: [])
+    }
+    static func syncTheRelayServedAnOlderSnapshotNewerAuthenticatedLocal() -> String {
+        L10n.message("id.ui_the_relay_served_an_older_snapshot_newer_authent_d7eb6c17", fallback: "The relay served an older snapshot; newer authenticated local state was retained.")
+    }
+    static func syncTheRelayServedAnOlderSnapshotNewerAuthenticatedLocalMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_served_an_older_snapshot_newer_authent_d7eb6c17", fallback: "The relay served an older snapshot; newer authenticated local state was retained.", arguments: [])
+    }
+    static func syncTheRelaySnapshotBeganOutOfOrder() -> String {
+        L10n.message("id.ui_the_relay_snapshot_began_out_of_order_f3be853e", fallback: "The relay snapshot began out of order.")
+    }
+    static func syncTheRelaySnapshotBeganOutOfOrderMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_began_out_of_order_f3be853e", fallback: "The relay snapshot began out of order.", arguments: [])
+    }
+    static func syncTheRelaySnapshotEndFenceWasMalformed() -> String {
+        L10n.message("id.ui_the_relay_snapshot_end_fence_was_malformed_d6db7a21", fallback: "The relay snapshot end fence was malformed.")
+    }
+    static func syncTheRelaySnapshotEndFenceWasMalformedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_end_fence_was_malformed_d6db7a21", fallback: "The relay snapshot end fence was malformed.", arguments: [])
+    }
+    static func syncTheRelaySnapshotEndedBeforeItsFinalPage() -> String {
+        L10n.message("id.ui_the_relay_snapshot_ended_before_its_final_page_b759c0a0", fallback: "The relay snapshot ended before its final page.")
+    }
+    static func syncTheRelaySnapshotEndedBeforeItsFinalPageMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_ended_before_its_final_page_b759c0a0", fallback: "The relay snapshot ended before its final page.", arguments: [])
+    }
+    static func syncTheRelaySnapshotExceededTheSafeSizeLimit() -> String {
+        L10n.message("id.ui_the_relay_snapshot_exceeded_the_safe_size_limit_39e358a0", fallback: "The relay snapshot exceeded the safe size limit.")
+    }
+    static func syncTheRelaySnapshotExceededTheSafeSizeLimitMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_exceeded_the_safe_size_limit_39e358a0", fallback: "The relay snapshot exceeded the safe size limit.", arguments: [])
+    }
+    static func syncTheRelaySnapshotFenceChangedBeforeCompletion() -> String {
+        L10n.message("id.ui_the_relay_snapshot_fence_changed_before_completi_2b974c05", fallback: "The relay snapshot fence changed before completion.")
+    }
+    static func syncTheRelaySnapshotFenceChangedBeforeCompletionMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_fence_changed_before_completi_2b974c05", fallback: "The relay snapshot fence changed before completion.", arguments: [])
+    }
+    static func syncTheRelaySnapshotFenceWasMalformed() -> String {
+        L10n.message("id.ui_the_relay_snapshot_fence_was_malformed_7faa5d0e", fallback: "The relay snapshot fence was malformed.")
+    }
+    static func syncTheRelaySnapshotFenceWasMalformedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_fence_was_malformed_7faa5d0e", fallback: "The relay snapshot fence was malformed.", arguments: [])
+    }
+    static func syncTheRelaySnapshotMemberListWasMalformedOrToo() -> String {
+        L10n.message("id.ui_the_relay_snapshot_member_list_was_malformed_or__310bc3cc", fallback: "The relay snapshot member list was malformed or too large.")
+    }
+    static func syncTheRelaySnapshotMemberListWasMalformedOrTooMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_member_list_was_malformed_or__310bc3cc", fallback: "The relay snapshot member list was malformed or too large.", arguments: [])
+    }
+    static func syncTheRelaySnapshotPageArrivedOutOfOrder() -> String {
+        L10n.message("id.ui_the_relay_snapshot_page_arrived_out_of_order_f442b665", fallback: "The relay snapshot page arrived out of order.")
+    }
+    static func syncTheRelaySnapshotPageArrivedOutOfOrderMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_page_arrived_out_of_order_f442b665", fallback: "The relay snapshot page arrived out of order.", arguments: [])
+    }
+    static func syncTheRelaySnapshotPageWasMalformedOrContainedToo() -> String {
+        L10n.message("id.ui_the_relay_snapshot_page_was_malformed_or_contain_23f66a18", fallback: "The relay snapshot page was malformed or contained too many records.")
+    }
+    static func syncTheRelaySnapshotPageWasMalformedOrContainedTooMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_relay_snapshot_page_was_malformed_or_contain_23f66a18", fallback: "The relay snapshot page was malformed or contained too many records.", arguments: [])
+    }
+    static func chatTheRoutedMessageStatusCouldNotBeSavedSecurely() -> String {
+        L10n.message("id.ui_the_routed_message_status_could_not_be_saved_sec_0ab17702", fallback: "The routed message status could not be saved securely.")
+    }
+    static func chatTheRoutedMessageStatusCouldNotBeSavedSecurelyMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_routed_message_status_could_not_be_saved_sec_0ab17702", fallback: "The routed message status could not be saved securely.", arguments: [])
+    }
+    static func chatTheSecureChatSessionChangedSelectTheRecipientAgain() -> String {
+        L10n.message("id.ui_the_secure_chat_session_changed_select_the_recip_7c3686e5", fallback: "The secure chat session changed. Select the recipient again.")
+    }
+    static func chatTheSecureChatSessionChangedSelectTheRecipientAgainMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_secure_chat_session_changed_select_the_recip_7c3686e5", fallback: "The secure chat session changed. Select the recipient again.", arguments: [])
+    }
+    static func syncTheUnitSyncRelayCouldNotDurablySaveThis() -> String {
+        L10n.message("id.ui_the_unit_sync_relay_could_not_durably_save_this__83a5b10a", fallback: "The Unit Sync relay could not durably save this change. It remains saved locally and will be retried.")
+    }
+    static func syncTheUnitSyncRelayCouldNotDurablySaveThisMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_unit_sync_relay_could_not_durably_save_this__83a5b10a", fallback: "The Unit Sync relay could not durably save this change. It remains saved locally and will be retried.", arguments: [])
+    }
+    static func syncTheUnitSyncRelayRejectedAChangeAsInvalid() -> String {
+        L10n.message("id.ui_the_unit_sync_relay_rejected_a_change_as_invalid_ecd9ccd2", fallback: "The Unit Sync relay rejected a change as invalid. The local edit remains saved; open Unit Sync for recovery guidance.")
+    }
+    static func syncTheUnitSyncRelayRejectedAChangeAsInvalidMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_unit_sync_relay_rejected_a_change_as_invalid_ecd9ccd2", fallback: "The Unit Sync relay rejected a change as invalid. The local edit remains saved; open Unit Sync for recovery guidance.", arguments: [])
+    }
+    static func syncTheUnitSyncRelayRejectedAnOutOfDate() -> String {
+        L10n.message("id.ui_the_unit_sync_relay_rejected_an_out_of_date_chan_48a1f81e", fallback: "The Unit Sync relay rejected an out-of-date change. The local edit remains saved; reconnecting will reconcile it from a verified snapshot.")
+    }
+    static func syncTheUnitSyncRelayRejectedAnOutOfDateMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_unit_sync_relay_rejected_an_out_of_date_chan_48a1f81e", fallback: "The Unit Sync relay rejected an out-of-date change. The local edit remains saved; reconnecting will reconcile it from a verified snapshot.", arguments: [])
+    }
+    static func syncTheUnitSyncRoomIsFullSoThisSaved() -> String {
+        L10n.message("id.ui_the_unit_sync_room_is_full_so_this_saved_local_c_4e353477", fallback: "The Unit Sync room is full, so this saved local change was not uploaded. Remove room content or use a new room, then reconnect.")
+    }
+    static func syncTheUnitSyncRoomIsFullSoThisSavedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_unit_sync_room_is_full_so_this_saved_local_c_4e353477", fallback: "The Unit Sync room is full, so this saved local change was not uploaded. Remove room content or use a new room, then reconnect.", arguments: [])
+    }
+    static func chatTheUnroutedMessageStatusCouldNotBeSavedSecurely() -> String {
+        L10n.message("id.ui_the_unrouted_message_status_could_not_be_saved_s_155e2274", fallback: "The unrouted message status could not be saved securely.")
+    }
+    static func chatTheUnroutedMessageStatusCouldNotBeSavedSecurelyMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_unrouted_message_status_could_not_be_saved_s_155e2274", fallback: "The unrouted message status could not be saved securely.", arguments: [])
+    }
+    static func syncTheVerifiedUpdateRemainsPendingUnlockMissionDataOr() -> String {
+        L10n.message("id.ui_the_verified_update_remains_pending_unlock_missi_d13aecf2", fallback: "The verified update remains pending. Unlock mission data or free device storage, then rejoin Unit Sync to retry it.")
+    }
+    static func syncTheVerifiedUpdateRemainsPendingUnlockMissionDataOrMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_the_verified_update_remains_pending_unlock_missi_d13aecf2", fallback: "The verified update remains pending. Unlock mission data or free device storage, then rejoin Unit Sync to retry it.", arguments: [])
+    }
+    static func chatThisChatSessionReachedItsMessageLimitReconnectUnit() -> String {
+        L10n.message("id.ui_this_chat_session_reached_its_message_limit_reco_4d1b70c7", fallback: "This chat session reached its message limit. Reconnect Unit Sync.")
+    }
+    static func chatThisChatSessionReachedItsMessageLimitReconnectUnitMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_this_chat_session_reached_its_message_limit_reco_4d1b70c7", fallback: "This chat session reached its message limit. Reconnect Unit Sync.", arguments: [])
+    }
+    static func syncThisUnitSyncSessionCanNoLongerConfirmChanges() -> String {
+        L10n.message("id.ui_this_unit_sync_session_can_no_longer_confirm_cha_ae41c407", fallback: "This Unit Sync session can no longer confirm changes. The local edit remains saved; reconnecting with a fresh authenticated session.")
+    }
+    static func syncThisUnitSyncSessionCanNoLongerConfirmChangesMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_this_unit_sync_session_can_no_longer_confirm_cha_ae41c407", fallback: "This Unit Sync session can no longer confirm changes. The local edit remains saved; reconnecting with a fresh authenticated session.", arguments: [])
     }
     static func recordingStartInactive() -> String {
         L10n.message("id.ui_track_recording_could_not_start_no_recording_is__62bcfbe1", fallback: "Track recording could not start. No recording is active.")
@@ -473,6 +923,42 @@ enum Messages {
     }
     static func recordingInterruptedPreservedMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_track_recording_was_interrupted_the_saved_track__d5e7016b", fallback: "Track recording was interrupted. The saved track was preserved.", arguments: [])
+    }
+    static func chatUnencryptedChatHistoryWasRejected7ba52d6a() -> String {
+        L10n.message("id.ui_unencrypted_chat_history_was_rejected_7ba52d6a", fallback: "Unencrypted chat history was rejected.")
+    }
+    static func chatUnencryptedChatHistoryWasRejected7ba52d6aMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_unencrypted_chat_history_was_rejected_7ba52d6a", fallback: "Unencrypted chat history was rejected.", arguments: [])
+    }
+    static func syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnecting() -> String {
+        L10n.message("id.ui_unit_sync_disconnected_check_the_relay_or_networ_87e21148", fallback: "Unit Sync disconnected. Check the relay or network; reconnecting automatically.")
+    }
+    static func syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnectingMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_unit_sync_disconnected_check_the_relay_or_networ_87e21148", fallback: "Unit Sync disconnected. Check the relay or network; reconnecting automatically.", arguments: [])
+    }
+    static func syncUnitSyncHandshakeTimedOutReconnectingAutomatically() -> String {
+        L10n.message("id.ui_unit_sync_handshake_timed_out_reconnecting_autom_fb03ea30", fallback: "Unit Sync handshake timed out. Reconnecting automatically.")
+    }
+    static func syncUnitSyncHandshakeTimedOutReconnectingAutomaticallyMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_unit_sync_handshake_timed_out_reconnecting_autom_fb03ea30", fallback: "Unit Sync handshake timed out. Reconnecting automatically.", arguments: [])
+    }
+    static func syncUnitSyncSnapshotFailedVerifyTheRelayOrNetwork(_ detail1: String) -> String {
+        L10n.message("id.ui_unit_sync_snapshot_failed_1_verify_the_relay_or__a8f400af", fallback: "Unit Sync snapshot failed: %1$@ Verify the relay or network; reconnecting automatically.", detail1)
+    }
+    static func syncUnitSyncSnapshotFailedVerifyTheRelayOrNetworkMessage(_ detail1: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_unit_sync_snapshot_failed_1_verify_the_relay_or__a8f400af", fallback: "Unit Sync snapshot failed: %1$@ Verify the relay or network; reconnecting automatically.", arguments: [detail1])
+    }
+    static func syncUnlockMissionDataOrFreeDeviceStorageThenLeave() -> String {
+        L10n.message("id.ui_unlock_mission_data_or_free_device_storage_then__20c288f2", fallback: "Unlock mission data or free device storage, then leave and rejoin Unit Sync so the relay can resend it.")
+    }
+    static func syncUnlockMissionDataOrFreeDeviceStorageThenLeaveMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_unlock_mission_data_or_free_device_storage_then__20c288f2", fallback: "Unlock mission data or free device storage, then leave and rejoin Unit Sync so the relay can resend it.", arguments: [])
+    }
+    static func chatUnlockMissionDataToUseTacmapChat01a3669e() -> String {
+        L10n.message("id.ui_unlock_mission_data_to_use_tacmap_chat_01a3669e", fallback: "Unlock mission data to use TacMap Chat.")
+    }
+    static func chatUnlockMissionDataToUseTacmapChat01a3669eMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_unlock_mission_data_to_use_tacmap_chat_01a3669e", fallback: "Unlock mission data to use TacMap Chat.", arguments: [])
     }
     static func waypointsAreEncryptedAndLocked(_ detail1: String) -> String {
         L10n.message("id.ui_waypoints_are_encrypted_and_locked_1_93dedbe5", fallback: "Waypoints are encrypted and locked. %1$@", detail1)

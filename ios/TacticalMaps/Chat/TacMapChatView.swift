@@ -13,7 +13,7 @@ struct TacMapChatView: View {
     @State private var selectedRecipientSnapshot: TacMapChatRecipient?
     @State private var bodyText = ""
     @State private var pendingRoomBroadcast = false
-    @State private var sendIssue: String?
+    @State private var sendIssue: LocalizedMessage?
 
     init(manager: SyncManager,
          store: TacMapChatStore,
@@ -62,7 +62,7 @@ struct TacMapChatView: View {
             )) {
                 Button(Messages.acknowledge(), role: .cancel) { sendIssue = nil }
             } message: {
-                Text(sendIssue ?? L10n.text("The message was not sent."))
+                Text(sendIssue?.text ?? L10n.text("The message was not sent."))
             }
             .onChange(of: store.isLocked) { locked in
                 if locked { clearPlaintextAndDismiss() }
@@ -328,7 +328,10 @@ struct TacMapChatView: View {
             )
             bodyText = ""
         } catch {
-            sendIssue = error.localizedDescription
+            sendIssue = (error as? TacMapChatStore.StoreError)?.localizedMessage
+                ?? (error as? SyncManager.ChatSendError)?.localizedMessage
+                ?? (error as? TacMapChatCrypto.CryptoError)?.localizedMessage
+                ?? .literal(error.localizedDescription)
         }
     }
 

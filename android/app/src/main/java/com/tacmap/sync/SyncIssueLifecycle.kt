@@ -1,5 +1,7 @@
 package com.tacmap.sync
 
+import com.tacmap.localization.LocalizedMessage
+
 /** Classification matters because a transport reconnect is allowed to retire
  * an ordinary connection error, but it must not erase a rollback warning from
  * the snapshot it just accepted. */
@@ -9,10 +11,12 @@ internal enum class SyncIssueKind {
 }
 
 internal data class SyncIssue(
-    val message: String,
+    val pendingMessage: LocalizedMessage,
     val kind: SyncIssueKind,
     val generation: Long,
-)
+) {
+    val message: String get() = pendingMessage.text
+}
 
 /** Generation-aware lifecycle for the actionable Sync banner.
  *
@@ -35,7 +39,7 @@ internal class SyncIssueLifecycle {
         return generation
     }
 
-    fun report(message: String, kind: SyncIssueKind, atGeneration: Long = generation): SyncIssue? {
+    fun report(message: LocalizedMessage, kind: SyncIssueKind, atGeneration: Long = generation): SyncIssue? {
         val current = transientIssue
         transientIssue = when {
             current == null -> SyncIssue(message, kind, atGeneration)
@@ -53,7 +57,7 @@ internal class SyncIssueLifecycle {
     /** Storage migration failures cannot be proven resolved by a clean relay
      * snapshot. They remain visible until a later local migration succeeds. */
     fun reportPersistentSecurity(
-        message: String,
+        message: LocalizedMessage,
         atGeneration: Long = generation,
     ): SyncIssue? {
         persistentSecurityIssue = SyncIssue(message, SyncIssueKind.SECURITY, atGeneration)

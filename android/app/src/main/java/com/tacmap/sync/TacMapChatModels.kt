@@ -1,6 +1,8 @@
 package com.tacmap.sync
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -30,7 +32,9 @@ internal fun TacMapChatTarget.SelectedUnit.displayLabel(): String {
 
 sealed interface TacMapChatSendResult {
     data class Sent(val messageId: String) : TacMapChatSendResult
-    data class Blocked(val reason: String) : TacMapChatSendResult
+    data class Blocked(val pendingReason: LocalizedMessage) : TacMapChatSendResult {
+        val reason: String get() = pendingReason.text
+    }
 }
 
 @Serializable
@@ -222,7 +226,9 @@ internal data class TacMapChatHistoryEnvelope(
 
 internal sealed interface TacMapChatSendGate {
     data class Ready(val peer: TacMapChatPeerKey? = null) : TacMapChatSendGate
-    data class Blocked(val reason: String) : TacMapChatSendGate
+    data class Blocked(val pendingReason: LocalizedMessage) : TacMapChatSendGate {
+        val reason: String get() = pendingReason.text
+    }
 }
 
 /** Pure send-time gate used by SyncManager and tests. */
@@ -233,8 +239,8 @@ internal object TacMapChatTargetGate {
         localChatKeyAcknowledged: Boolean,
         peerKeys: Map<String, TacMapChatPeerKey>,
     ): TacMapChatSendGate {
-        if (!connectedV3) return TacMapChatSendGate.Blocked(L10n.text("Join a connected v3 Unit Sync room"))
-        if (!localChatKeyAcknowledged) return TacMapChatSendGate.Blocked(L10n.text("Secure chat is still starting"))
+        if (!connectedV3) return TacMapChatSendGate.Blocked(Messages.chatJoinAConnectedVUnitSyncRoomMessage())
+        if (!localChatKeyAcknowledged) return TacMapChatSendGate.Blocked(Messages.chatSecureChatIsStillStartingMessage())
         if (target === TacMapChatTarget.EntireRoom) return TacMapChatSendGate.Ready()
         val selected = target as TacMapChatTarget.SelectedUnit
         val current = peerKeys[selected.actorId]
@@ -245,7 +251,7 @@ internal object TacMapChatTargetGate {
             TacMapChatSendGate.Ready(current)
         } else {
             // Deliberately no room fallback: the user selected one exact endpoint.
-            TacMapChatSendGate.Blocked(L10n.text("Selected unit is no longer available"))
+            TacMapChatSendGate.Blocked(Messages.chatSelectedUnitIsNoLongerAvailableMessage())
         }
     }
 }
