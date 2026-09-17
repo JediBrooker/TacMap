@@ -28,6 +28,7 @@
 " · %1$@ unread message%2$@" = " · %1$@ ungelesene Nachricht%2$@";
 "%1$@ updated by another device" = "%1$@ wurde von einem anderen Gerät aktualisiert";
 "%1$@ visibility" = "Sichtbarkeit von %1$@";
+"RECIPIENT" = "EMPFÄNGER";
 "A crash was recorded on a previous run. Nothing is sent anywhere — you choose whether to share this file." = "Bei einem früheren Start wurde ein Absturz aufgezeichnet. Es wird nichts versendet – du entscheidest, ob du diese Datei teilst.";
 "A deterrent if your device is lost or borrowed. Not a substitute for full device encryption." = "Ein Schutz bei Verlust oder Ausleihe des Geräts. Kein Ersatz für die vollständige Geräteverschlüsselung.";
 "A local MGRS grid context is unavailable at this symbol's location. Enter a full MGRS reference." = "An der Position dieses Symbols ist kein lokaler MGRS-Gitterbezug verfügbar. Gib eine vollständige MGRS-Referenz ein.";

@@ -40,6 +40,7 @@ internal val localizedStringIds: Map<String, Int> = mapOf(
     "%1\$s task colour" to R.string.ui_1_task_colour_84558e29,
     "%1\$s Unlock mission data or free device storage, then tap Retry." to R.string.ui_1_unlock_mission_data_or_free_device_storage_the_dbe9b576,
     "%1\$s unread" to R.string.ui_1_unread_aa42ea97,
+    "RECIPIENT" to R.string.ui_1c10f5ffc2bd,
     "4, 6, 8, or 10 figures; shorthand uses this graphic's local grid square." to R.string.ui_4_6_8_or_10_figures_shorthand_uses_this_graphic__89ec0a8f,
     "A crash was recorded last run — nothing is sent anywhere." to R.string.ui_a_crash_was_recorded_last_run_nothing_is_sent_an_47ba86ab,
     "A deterrent if your device is lost or borrowed — not a substitute for device encryption." to R.string.ui_a_deterrent_if_your_device_is_lost_or_borrowed_n_ece71314,

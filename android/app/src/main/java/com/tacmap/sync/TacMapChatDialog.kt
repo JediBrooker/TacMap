@@ -168,7 +168,7 @@ fun TacMapChatDialog(
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("RECIPIENT", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                        Text(L10n.text("RECIPIENT"), fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (roomScope) {
                                 Button(onClick = { roomScope = true }, modifier = Modifier.weight(1f)) {

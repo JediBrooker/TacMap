@@ -146,7 +146,7 @@ struct TacMapChatView: View {
     @ViewBuilder
     private var recipientControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("RECIPIENT")
+            Text(L10n.text("RECIPIENT"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 

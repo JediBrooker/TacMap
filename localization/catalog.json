@@ -12029,5 +12029,13 @@
     "platforms": [
       "android"
     ]
+  },
+  "ui_1c10f5ffc2bd": {
+    "en": "RECIPIENT",
+    "de": "EMPFÄNGER",
+    "platforms": [
+      "ios",
+      "android"
+    ]
   }
 }
