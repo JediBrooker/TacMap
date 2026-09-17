@@ -129,6 +129,28 @@ def tap_hamburger(pause=2.0):
     print(f"  tapped menu (fallback) @ {x},{y}")
     return True
 
+def swipe_up():
+    # Scroll inside the actual accessibility viewport, not through system bars
+    # or outside a narrow menu/dialog on tablets.
+    candidates = []
+    for node in nodes():
+        if node.get("scrollable") != "true": continue
+        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
+        if not bounds: continue
+        left, top, right, bottom = map(int, bounds.groups())
+        bottom = min(bottom, int(SCREEN_H * .9))
+        if right > left and bottom - top > 80:
+            candidates.append((bottom - top, left, top, right, bottom))
+    if candidates:
+        _, left, top, right, bottom = max(candidates)
+        x = (left + right) // 2
+        start, end = top + (bottom - top) * .85, top + (bottom - top) * .2
+    else:
+        x, start, end = SCREEN_W * .3, SCREEN_H * .7, SCREEN_H * .3
+    adb("shell", "input", "swipe", str(int(x)), str(int(start)), str(int(end)), "500")
+    time.sleep(1)
+
+
 def back(n=1):
     for _ in range(n):
         adb("shell", "input", "keyevent", "4")
@@ -315,10 +337,15 @@ try:
             relaunch(wait_for_map=True)
             ensure_map()
             tap_hamburger()
-            for attempt in range(4):
-                if find(destination): break
-                adb("shell", "input", "swipe", str(CX), str(int(SCREEN_H * .8)), str(CX), str(int(SCREEN_H * .3)), "300")
-                time.sleep(.5)
+            for attempt in range(8):
+                location = find(destination)
+                # Compose may expose menu rows behind the system navigation bar.
+                if location and location[1] < SCREEN_H * .8: break
+                swipe_up()
+            location = find(destination)
+            if not location or location[1] >= SCREEN_H * .9:
+                print("MISSING VISIBLE SCREEN:", destination)
+                continue
             if not tap_text(destination, 2):
                 print("MISSING SCREEN:", destination)
                 continue
@@ -327,8 +354,7 @@ try:
             snap(name)
             Path(OUT, name + ".xml").write_text(ET.tostring(ET.Element("empty"), encoding="unicode") if not nodes() else "\n".join(ET.tostring(n, encoding="unicode") for n in nodes()))
             if destination in ("Settings, Privacy & OPSEC", "Import / Export", "Drawings"):
-                adb("shell", "input", "swipe", str(CX), str(int(SCREEN_H * .8)), str(CX), str(int(SCREEN_H * .35)), "400")
-                time.sleep(1)
+                swipe_up()
                 snap(name + "-scrolled")
     else:
         # 1) basemap -> Esri Satellite so the hero sits over real imagery, then HUD

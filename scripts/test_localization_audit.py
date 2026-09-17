@@ -74,6 +74,8 @@ class DisplayTextAuditTests(unittest.TestCase):
         self.assertEqual(self.literals('Button { save() } label: { Image(systemName: "trash") }'), [])
 
     def test_known_custom_helpers_and_property_assignments(self):
+        self.assertEqual(self.literals('FittedHudText("Online basemap")', 'android'), ['"Online basemap"'])
+        self.assertEqual(self.literals('FittedHudText(L10n.text("Online basemap"))', 'android'), [])
         self.assertEqual(self.literals('Caption("Help"); SettingRow(true, change, "Share")', 'android'), ['"Help"', '"Share"'])
         self.assertEqual(self.literals('label.text = "Updated"; statusMessage = "Failed"'), ['"Updated"', '"Failed"'])
 

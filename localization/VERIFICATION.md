@@ -22,11 +22,11 @@ A supplemental scan of prose outside the catalogue found diagnostic logs, SQL, G
 | Android recording notification | Live foreground service updated its existing notification to German while backgrounded; the same authorised recording generation remained active. A temporary recorder protected saved track data |
 | iPhone layouts | English, German and maximum accessibility text captures; smaller iPhone 17e German captures reviewed; settings switch/relaunch test passes |
 | Expanded text | Debug-only 50% padding test and captured iPhone screens pass; no synthetic language ships as a selectable release locale |
-| iPad | German iPad mini screenshots captured and reviewed; first-run permission prompt follows the OS language |
+| iPad | German iPad mini and English/German 13-inch iPad screenshots captured and reviewed; first-run permission prompt follows the OS language |
 | Website | Six security/CSP tests pass, including German help/privacy pages |
 | Store metadata | English/German titles, subtitles, descriptions, release notes, keywords and purchase descriptions validate against current field limits |
 
-Capture checks found and fixed German navigation-title clipping, large-text chat/weather compression, non-scrollable drawing controls, Android navigation-bar overlap, and the remaining recording “pt/pts” abbreviation. The import/export sheet now scrolls on Android. The screenshot tests include accessibility trees, but they do not replace a complete screen-reader usability session.
+Capture checks found and fixed German navigation-title clipping, large-text chat/weather compression, non-scrollable drawing controls, Android navigation-bar overlap, truncated large-text coordinates/status values, cramped German drawing-tool buttons, and the remaining recording “pt/pts” abbreviation. The import/export sheet now scrolls on Android. The screenshot tests include accessibility trees, but they do not replace a complete screen-reader usability session.
 
 ## Android system-language decision
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,12 +22,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.Role
@@ -35,7 +39,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.settings.CoordinateDisplayType
@@ -110,7 +115,7 @@ fun MgrsHeader(
     ) {
         // The old source title was redundant; the selected primary coordinate
         // now leads the card directly.
-        Text(
+        FittedHudText(
             text = primaryCoordinate,
             color = Color(0xFF8CF28C),
             fontFamily = FontFamily.Monospace,
@@ -121,9 +126,9 @@ fun MgrsHeader(
                 CoordinateDisplayType.UTM -> 18.sp
             },
             lineHeight = 26.sp,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
+
+
+
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
@@ -138,22 +143,22 @@ fun MgrsHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (distanceFromUserMetres != null) {
-                Text(
+                FittedHudText(
                     L10n.text("FROM ME %1\$s", MeasureFormat.distance(distanceFromUserMetres)),
                     color = Color.White.copy(alpha = 0.75f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = FontFamily.Monospace,
                     lineHeight = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+
+
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.size(8.dp))
             } else {
                 Spacer(Modifier.weight(1f))
             }
-            Text(
+            FittedHudText(
                 elevationText(elevation, elevationApprox),
                 color = Color.White.copy(alpha = 0.85f),
                 fontSize = 10.sp,
@@ -174,14 +179,14 @@ fun MgrsHeader(
                     contentAlignment = Alignment.CenterStart
                 ) {
                     if (basemapLabel != null) {
-                        Text(
+                        FittedHudText(
                             basemapLabel,
                             color = basemapColor,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             lineHeight = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+
+
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -199,13 +204,13 @@ fun MgrsHeader(
                                 modifier = Modifier.size(12.dp)
                             )
                             Spacer(Modifier.size(4.dp))
-                            Text(
+                            FittedHudText(
                                 L10n.text("Unit Sync"),
                                 color = SyncBlue,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 lineHeight = 12.sp,
-                                maxLines = 1
+
                             )
                         }
                     }
@@ -215,13 +220,13 @@ fun MgrsHeader(
                     contentAlignment = Alignment.CenterEnd
                 ) {
                     if (gridMagneticDegrees != null) {
-                        Text(
+                        FittedHudText(
                             formatGridMagnetic(gridMagneticDegrees, gmMils.value),
                             color = Color.White.copy(alpha = 0.75f),
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 12.sp,
-                            maxLines = 1,
+
                             textAlign = TextAlign.End,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -251,3 +256,65 @@ private fun elevationText(elevation: Double?, approx: Boolean): String {
 }
 
 private val SyncBlue = Color(0xFF4FA8FF)
+
+/** Keep complete operational values visible when the system font size grows.
+ * Text is measured with the actual font scale, rather than truncating coordinates.
+ */
+@Composable
+internal fun FittedHudText(
+    text: String,
+    color: Color,
+    fontSize: TextUnit,
+    lineHeight: TextUnit,
+    modifier: Modifier = Modifier,
+    fontFamily: FontFamily? = null,
+    fontWeight: FontWeight? = null,
+    textAlign: TextAlign = TextAlign.Unspecified,
+) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val style = LocalTextStyle.current.copy(
+        fontSize = fontSize,
+        fontFamily = fontFamily,
+        fontWeight = fontWeight,
+        lineHeight = lineHeight,
+        textAlign = textAlign,
+    )
+    BoxWithConstraints(
+        modifier = modifier.semantics(mergeDescendants = true) {},
+        contentAlignment = when (textAlign) {
+            TextAlign.End -> Alignment.CenterEnd
+            TextAlign.Center -> Alignment.Center
+            else -> Alignment.CenterStart
+        },
+    ) {
+        val availableWidth = constraints.maxWidth
+        val fittedSize = remember(text, style, availableWidth, measurer, density) {
+            fun fits(size: Float) = measurer.measure(
+                text = text,
+                style = style.copy(fontSize = size.sp),
+                softWrap = false,
+                maxLines = 1,
+            ).size.width <= availableWidth
+            if (fits(fontSize.value)) fontSize else {
+                var lower = 1f
+                var upper = fontSize.value
+                repeat(12) {
+                    val candidate = (lower + upper) / 2f
+                    if (fits(candidate)) lower = candidate else upper = candidate
+                }
+                lower.sp
+            }
+        }
+        Text(
+            text = text,
+            color = color,
+            style = style.copy(
+                fontSize = fittedSize,
+                lineHeight = (lineHeight.value * fittedSize.value / fontSize.value).sp,
+            ),
+            softWrap = false,
+            maxLines = 1,
+        )
+    }
+}

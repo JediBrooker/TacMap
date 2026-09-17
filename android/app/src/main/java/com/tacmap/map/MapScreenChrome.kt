@@ -296,15 +296,15 @@ internal fun CompassChip(
                 .background(Color.White.copy(alpha = 0.10f))
         )
 
-        Text(
+        FittedHudText(
             "%04d%s".format(mils, referenceSuffix),
             color = Color(0xFF8CF28C),
             fontSize = 11.sp,
+            lineHeight = 12.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp)
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.align(Alignment.BottomCenter).width(44.dp).padding(bottom = 5.dp)
         )
     }
 }

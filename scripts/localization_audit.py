@@ -23,7 +23,7 @@ GENERATED = {
     'ios/TacticalMaps/Util/Messages.swift',
     'ios/TacticalMaps/Util/SupportedLanguage.swift',
 }
-DISPLAY_CALLS = {'Text', 'Button', 'Label', 'Toggle', 'Picker', 'Section',
+DISPLAY_CALLS = {'Text', 'FittedHudText', 'Button', 'Label', 'Toggle', 'Picker', 'Section',
                  'TextField', 'SecureField', 'TextEditor', 'TextButton',
                  'navigationTitle', 'navigationSubtitle', 'accessibilityLabel',
                  'accessibilityHint', 'accessibilityValue', 'alert',
