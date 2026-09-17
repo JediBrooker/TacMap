@@ -1,6 +1,9 @@
 package com.tacmap.map
 
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
 
 import com.tacmap.localization.DisplayFormat
 
@@ -185,6 +188,8 @@ internal fun MapScreen(
     onUnlock: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    // Read activity insets before entering the popup, whose own insets can be zero.
+    val menuBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val rendererDensity = LocalDensity.current.density
     val scope = rememberCoroutineScope()
     val unitSyncRuntime = remember(context) {
@@ -1059,7 +1064,9 @@ internal fun MapScreen(
                 CircleHudButton(Icons.Default.Menu, L10n.text("Menu")) { hamburgerOpen = true }
                 DropdownMenu(
                     expanded = hamburgerOpen,
-                    onDismissRequest = { hamburgerOpen = false }
+                    onDismissRequest = { hamburgerOpen = false },
+                    // Keep the final menu rows above three-button navigation.
+                    modifier = Modifier.padding(bottom = menuBottomPadding),
                 ) {
                     if (!isPurchased) {
                         DropdownMenuItem(
