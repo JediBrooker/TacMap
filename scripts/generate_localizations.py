@@ -95,6 +95,15 @@ def outputs(root=ROOT, data=None):
             arguments = ', '.join(n + ': String' for n in names)
             kotlin += [f'    fun {name}({arguments}): String =',
                        f'        L10n.message({quoted("id." + key)}, {quoted(native(entry["en"], "android"), True)}' + ''.join(', ' + n for n in names) + ')']
+        if entry.get('deferred', False):
+            if 'ios' in entry['platforms']:
+                arguments = ', '.join('_ ' + n + ': String' for n in names)
+                swift += [f'    static func {name}Message({arguments}) -> LocalizedMessage {{',
+                          f'        LocalizedMessage(id: {quoted("id." + key)}, fallback: {quoted(native(entry["en"], "ios"))}, arguments: [' + ', '.join(names) + '])', '    }']
+            if 'android' in entry['platforms']:
+                arguments = ', '.join(n + ': String' for n in names)
+                kotlin += [f'    fun {name}Message({arguments}): LocalizedMessage =',
+                           f'        LocalizedMessage({quoted("id." + key)}, {quoted(native(entry["en"], "android"), True)}, listOf(' + ', '.join(names) + '))']
     for noun in plurals:
         accessor = ''.join(part.title() if i else part for i, part in enumerate(re.split('[-_]', noun))) + 'Count'
         if accessor in {e.get('accessor') for e in catalog.values()}: raise ValueError('Plural accessor collision: ' + accessor)

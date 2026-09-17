@@ -202,7 +202,8 @@ internal fun MapScreen(
     val trackRecordingState by vm.trackRecorder.uiState.collectAsState()
     val isRecordingTrack = trackRecordingState.showsRec
     val trackPoints by vm.trackRecorder.points.collectAsState()
-    val trackPersistError by vm.trackRecorder.persistError.collectAsState()
+    val trackPersistMessage by vm.trackRecorder.persistError.collectAsState()
+    val trackPersistError = trackPersistMessage?.text
     val mapSource by vm.mapSource.collectAsState()
     val retainedImportedMap by vm.retainedImportedMapSource.collectAsState()
     val mapSelectionPersistenceIssue by vm.mapSelectionPersistenceIssue.collectAsState()

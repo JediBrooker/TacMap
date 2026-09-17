@@ -22,6 +22,10 @@ enum L10n {
 
     /// Stable IDs for generated, typed messages. The legacy text API remains a bridge.
     static func message(_ id: String, fallback: String, _ arguments: String...) -> String {
+        resolveMessage(id, fallback: fallback, arguments: arguments)
+    }
+
+    static func resolveMessage(_ id: String, fallback: String, arguments: [String]) -> String {
         let language = AppLanguage.shared
         let format = bundle(for: language.selection).localizedString(forKey: id, value: fallback, table: nil)
         guard !arguments.isEmpty else { return format }

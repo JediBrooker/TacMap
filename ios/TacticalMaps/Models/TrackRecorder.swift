@@ -173,7 +173,11 @@ final class TrackRecorder: ObservableObject {
     /// Non-nil when a fix couldn't be written to disk. The UI has to say so: a
     /// recording that looks live but isn't hitting the disk is the worst
     /// possible failure for a field tool.
-    @Published var persistError: String?
+    @Published private var persistMessage: LocalizedMessage?
+    var persistError: String? {
+        get { persistMessage?.text }
+        set { persistMessage = newValue.map(LocalizedMessage.literal) }
+    }
     @Published private(set) var requiresUnlock = false
 
     /// Bound in as AEAD associated data. Matches Android's TrackLog.LABEL.
@@ -250,7 +254,7 @@ final class TrackRecorder: ObservableObject {
                     throw CocoaError(.fileReadUnknown)
                 }
                 guard size.int64Value == 0 else {
-                    persistError = L10n.text("A saved track already exists. Export or discard it before starting a new recording.")
+                    persistMessage = Messages.trackSavedExistsMessage()
                     return false
                 }
             } catch {
@@ -277,7 +281,7 @@ final class TrackRecorder: ObservableObject {
         } catch {
             recordingKey = nil
             isRecording = false
-            persistError = L10n.text("Recording did not start: %1$@", error.localizedDescription)
+            persistMessage = Messages.trackStartFailedMessage(error.localizedDescription)
             return false
         }
     }
@@ -321,7 +325,7 @@ final class TrackRecorder: ObservableObject {
             points.append(point)
             persistError = nil
         } catch {
-            persistError = L10n.text("Track recording stopped because a fix could not be saved.")
+            persistMessage = Messages.trackWriteFailedMessage()
             isRecording = false
             recordingKey = nil
         }
@@ -383,7 +387,7 @@ final class TrackRecorder: ObservableObject {
             return
         }
         guard size.int64Value <= Int64(maxRecoveryBytes) else {
-            persistError = L10n.text("Saved track is too large to recover safely.")
+            persistMessage = Messages.trackTooLargeMessage()
             return
         }
         let text: String
@@ -403,7 +407,7 @@ final class TrackRecorder: ObservableObject {
         } catch {
             // Locked. The log is intact, we just can't read it yet. Say nothing
             // about "no track" because we genuinely don't know.
-            persistError = L10n.text("Saved track is encrypted and locked. %1$@", error.localizedDescription)
+            persistMessage = Messages.trackLockedMessage(error.localizedDescription)
             requiresUnlock = true
             return
         }
@@ -429,7 +433,7 @@ final class TrackRecorder: ObservableObject {
         if sealedOnly && text.split(separator: "\n").contains(where: {
             !SealedEnvelope.isSealedLine(String($0))
         }) {
-            persistError = L10n.text("Saved track failed its sealed-only integrity check.")
+            persistMessage = Messages.trackIntegrityFailedMessage()
             return
         }
         var sawLegacyLine = false
@@ -445,7 +449,7 @@ final class TrackRecorder: ObservableObject {
             }
             guard let json, let sp = try? decoder.decode(StoredPoint.self, from: json) else {
                 if !SealedEnvelope.isSealedLine(line) { invalidLegacyLine = true }
-                else { persistError = L10n.text("Saved track contains an authenticated line that could not be recovered.") }
+                else { persistMessage = Messages.trackLineRecoveryFailedMessage() }
                 return nil
             }
             guard sp.lat.isFinite, sp.lon.isFinite, sp.t.isFinite,
@@ -460,7 +464,7 @@ final class TrackRecorder: ObservableObject {
         }
         if sawLegacyLine {
             if invalidLegacyLine {
-                persistError = L10n.text("Saved legacy track contains an invalid line and was preserved unchanged.")
+                persistMessage = Messages.trackLegacyLineInvalidMessage()
                 return
             } else {
                 guard reseal(restored, key: key) else { return }
@@ -511,7 +515,7 @@ final class TrackRecorder: ObservableObject {
             return true
         } catch {
             requiresUnlock = true
-            persistError = L10n.text("Could not encrypt the recovered track: %1$@", error.localizedDescription)
+            persistMessage = Messages.trackReencryptFailedMessage(error.localizedDescription)
             return false
         }
     }
@@ -524,7 +528,7 @@ final class TrackRecorder: ObservableObject {
 
     private func markRecoveryUnavailable(_ error: Error) {
         requiresUnlock = true
-        persistError = L10n.text("Saved track is protected or unavailable and was left untouched. Retry after unlocking the device. %1$@", error.localizedDescription)
+        persistMessage = Messages.trackRecoveryUnavailableMessage(error.localizedDescription)
     }
 
     private static func isNoSuchFile(_ error: Error) -> Bool {

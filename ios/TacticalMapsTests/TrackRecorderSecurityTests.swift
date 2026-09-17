@@ -284,6 +284,14 @@ final class TrackRecorderSecurityTests: XCTestCase {
         XCTAssertFalse(recorder.isRecording)
         XCTAssertFalse(recorder.hasScopedRecordingKeyForTesting)
         XCTAssertNotNil(recorder.persistError)
+        let originalLanguage = AppLanguage.shared.selection
+        defer { AppLanguage.shared.select(originalLanguage) }
+        AppLanguage.shared.select(.de)
+        XCTAssertEqual(recorder.persistError, "Die Trackaufzeichnung wurde gestoppt, weil eine Position nicht gespeichert werden konnte.")
+        AppLanguage.shared.select(.en)
+        XCTAssertEqual(recorder.persistError, "Track recording stopped because a fix could not be saved.")
+        recorder.persistError = nil
+        XCTAssertNil(recorder.persistError)
     }
 
     func testRecordingWaitsForPermissionThenStartsExactlyOnceAfterDurableSetup() {

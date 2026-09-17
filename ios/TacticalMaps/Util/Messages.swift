@@ -21,6 +21,66 @@ enum Messages {
     static func settingsLanguageTitle() -> String {
         L10n.message("id.settings_language_title", fallback: "Language")
     }
+    static func trackSavedExists() -> String {
+        L10n.message("id.ui_a_saved_track_already_exists_export_or_discard_i_a1920160", fallback: "A saved track already exists. Export or discard it before starting a new recording.")
+    }
+    static func trackSavedExistsMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_a_saved_track_already_exists_export_or_discard_i_a1920160", fallback: "A saved track already exists. Export or discard it before starting a new recording.", arguments: [])
+    }
+    static func trackReencryptFailed(_ detail: String) -> String {
+        L10n.message("id.ui_could_not_encrypt_the_recovered_track_1_1986bd1a", fallback: "Could not encrypt the recovered track: %1$@", detail)
+    }
+    static func trackReencryptFailedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_could_not_encrypt_the_recovered_track_1_1986bd1a", fallback: "Could not encrypt the recovered track: %1$@", arguments: [detail])
+    }
+    static func trackStartFailed(_ detail: String) -> String {
+        L10n.message("id.ui_recording_did_not_start_1_8940e9cc", fallback: "Recording did not start: %1$@", detail)
+    }
+    static func trackStartFailedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_recording_did_not_start_1_8940e9cc", fallback: "Recording did not start: %1$@", arguments: [detail])
+    }
+    static func trackLegacyLineInvalid() -> String {
+        L10n.message("id.ui_saved_legacy_track_contains_an_invalid_line_and__dfd76fd9", fallback: "Saved legacy track contains an invalid line and was preserved unchanged.")
+    }
+    static func trackLegacyLineInvalidMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_legacy_track_contains_an_invalid_line_and__dfd76fd9", fallback: "Saved legacy track contains an invalid line and was preserved unchanged.", arguments: [])
+    }
+    static func trackLineRecoveryFailed() -> String {
+        L10n.message("id.ui_saved_track_contains_an_authenticated_line_that__c692cd6b", fallback: "Saved track contains an authenticated line that could not be recovered.")
+    }
+    static func trackLineRecoveryFailedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_track_contains_an_authenticated_line_that__c692cd6b", fallback: "Saved track contains an authenticated line that could not be recovered.", arguments: [])
+    }
+    static func trackIntegrityFailed() -> String {
+        L10n.message("id.ui_saved_track_failed_its_sealed_only_integrity_che_5b3be2fb", fallback: "Saved track failed its sealed-only integrity check.")
+    }
+    static func trackIntegrityFailedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_track_failed_its_sealed_only_integrity_che_5b3be2fb", fallback: "Saved track failed its sealed-only integrity check.", arguments: [])
+    }
+    static func trackLocked(_ detail: String) -> String {
+        L10n.message("id.ui_saved_track_is_encrypted_and_locked_1_88ba20df", fallback: "Saved track is encrypted and locked. %1$@", detail)
+    }
+    static func trackLockedMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_track_is_encrypted_and_locked_1_88ba20df", fallback: "Saved track is encrypted and locked. %1$@", arguments: [detail])
+    }
+    static func trackRecoveryUnavailable(_ detail: String) -> String {
+        L10n.message("id.ui_saved_track_is_protected_or_unavailable_and_was__79ccf65d", fallback: "Saved track is protected or unavailable and was left untouched. Retry after unlocking the device. %1$@", detail)
+    }
+    static func trackRecoveryUnavailableMessage(_ detail: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_track_is_protected_or_unavailable_and_was__79ccf65d", fallback: "Saved track is protected or unavailable and was left untouched. Retry after unlocking the device. %1$@", arguments: [detail])
+    }
+    static func trackTooLarge() -> String {
+        L10n.message("id.ui_saved_track_is_too_large_to_recover_safely_87b7d3da", fallback: "Saved track is too large to recover safely.")
+    }
+    static func trackTooLargeMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_saved_track_is_too_large_to_recover_safely_87b7d3da", fallback: "Saved track is too large to recover safely.", arguments: [])
+    }
+    static func trackWriteFailed() -> String {
+        L10n.message("id.ui_track_recording_stopped_because_a_fix_could_not__28ce808b", fallback: "Track recording stopped because a fix could not be saved.")
+    }
+    static func trackWriteFailedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.ui_track_recording_stopped_because_a_fix_could_not__28ce808b", fallback: "Track recording stopped because a fix could not be saved.", arguments: [])
+    }
     static func dayCount(_ count: Int) -> String { L10n.quantity("day", count) }
     static func pointCount(_ count: Int) -> String { L10n.quantity("point", count) }
     static func drawingCount(_ count: Int) -> String { L10n.quantity("drawing", count) }

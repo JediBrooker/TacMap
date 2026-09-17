@@ -24,6 +24,22 @@ object Messages {
         L10n.message("id.settings_online_basemaps_help", "Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. While on, Esri or OpenTopoMap can see the ground you are looking at from your IP. Turn this off for a fully offline posture.")
     fun onlineLookupsHelp(): String =
         L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.")
+    fun trackDiscardFailed(detail: String): String =
+        L10n.message("id.ui_could_not_discard_the_saved_track_1_01f1dcdf", "Could not discard the saved track: %1\$s", detail)
+    fun trackDiscardFailedMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_discard_the_saved_track_1_01f1dcdf", "Could not discard the saved track: %1\$s", listOf(detail))
+    fun trackReencryptFailed(detail: String): String =
+        L10n.message("id.ui_could_not_encrypt_the_recovered_track_1_1986bd1a", "Could not encrypt the recovered track: %1\$s", detail)
+    fun trackReencryptFailedMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_encrypt_the_recovered_track_1_1986bd1a", "Could not encrypt the recovered track: %1\$s", listOf(detail))
+    fun trackReadFailed(detail: String): String =
+        L10n.message("id.ui_could_not_read_the_saved_track_1_fd3205b4", "Could not read the saved track: %1\$s", detail)
+    fun trackReadFailedMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_read_the_saved_track_1_fd3205b4", "Could not read the saved track: %1\$s", listOf(detail))
+    fun trackStopBeforeDiscard(): String =
+        L10n.message("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.")
+    fun trackStopBeforeDiscardMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.", listOf())
     fun dayCount(count: Int): String = L10n.quantity("day", count)
     fun pointCount(count: Int): String = L10n.quantity("point", count)
     fun drawingCount(count: Int): String = L10n.quantity("drawing", count)

@@ -62,6 +62,15 @@ class CatalogueTests(unittest.TestCase):
         self.assertIn('fun importFailed(detail: String)', generated[ROOT / 'android/app/src/main/java/com/tacmap/localization/Messages.kt'])
         self.assertIn('func pointCount(_ count: Int)', generated[ROOT / 'ios/TacticalMaps/Util/Messages.swift'])
 
+    def test_deferred_accessors_reject_invalid_flags_and_collisions(self):
+        data = fixture()
+        data['catalog']['common_ok']['deferred'] = 'yes'
+        self.assertTrue(any('Deferred message' in e for e in validate(data)))
+        data = fixture()
+        data['catalog']['common_ok']['deferred'] = True
+        data['catalog']['settings_language_title']['accessor'] = 'acknowledgeMessage'
+        self.assertTrue(any('collides' in e for e in validate(data)))
+
     def test_same_english_can_have_distinct_context_ids(self):
         data = fixture()
         entry = deepcopy(data['catalog']['common_ok'])

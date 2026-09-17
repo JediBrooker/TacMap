@@ -1696,5 +1696,17 @@
     "platform": "android",
     "area": "shared-infrastructure",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Util/LocalizedMessage.swift",
+    "platform": "ios",
+    "area": "shared-infrastructure",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/localization/LocalizedMessage.kt",
+    "platform": "android",
+    "area": "shared-infrastructure",
+    "reviewStatus": "manual-review-needed"
   }
 ]

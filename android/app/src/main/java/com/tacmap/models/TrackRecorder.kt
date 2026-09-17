@@ -1,5 +1,8 @@
 package com.tacmap.models
 
+import com.tacmap.localization.Messages
+import com.tacmap.localization.LocalizedMessage
+
 import com.tacmap.localization.L10n
 
 import android.content.Context
@@ -75,8 +78,8 @@ class TrackRecorder internal constructor(
     /** Non-null when a fix couldn't be written to disk. The UI has to say so:
      *  a recording that looks live but isn't hitting the disk is the worst
      *  possible failure for a field tool. */
-    private val _persistError = MutableStateFlow<String?>(null)
-    val persistError: StateFlow<String?> = _persistError.asStateFlow()
+    private val _persistError = MutableStateFlow<LocalizedMessage?>(null)
+    val persistError: StateFlow<LocalizedMessage?> = _persistError.asStateFlow()
 
     /** False until the existing log has been read and any legacy migration has
      *  durably completed. A failed verification must never be truncated by a
@@ -123,7 +126,7 @@ class TrackRecorder internal constructor(
                         .onSuccess { recoveryReady = true }
                         .onFailure {
                             recoveryReady = false
-                            _persistError.value = L10n.text("Could not encrypt the recovered track: %1\$s", it.message)
+                            _persistError.value = Messages.trackReencryptFailedMessage(it.message ?: "null")
                         }
                 } else {
                     recoveryReady = true
@@ -131,7 +134,7 @@ class TrackRecorder internal constructor(
             }
             .onFailure {
                 recoveryReady = false
-                _persistError.value = L10n.text("Could not read the saved track: %1\$s", it.message)
+                _persistError.value = Messages.trackReadFailedMessage(it.message ?: "null")
             }
     }
 
@@ -162,7 +165,7 @@ class TrackRecorder internal constructor(
         if (hasRetainedRecordingKey()) return false
         if (!recoveryReady) {
             failRecording(
-                _persistError.value ?: L10n.text("Could not verify the saved track before recording.")
+                _persistError.value?.text ?: L10n.text("Could not verify the saved track before recording.")
             )
             return false
         }
@@ -276,7 +279,7 @@ class TrackRecorder internal constructor(
      * encrypted log has actually been removed. */
     fun discard(): Boolean {
         if (_isRecording.value) {
-            _persistError.value = L10n.text("Stop recording before discarding the saved track.")
+            _persistError.value = Messages.trackStopBeforeDiscardMessage()
             return false
         }
         clearRecordingKey()
@@ -289,7 +292,7 @@ class TrackRecorder internal constructor(
                     true
                 },
                 onFailure = {
-                    _persistError.value = L10n.text("Could not discard the saved track: %1\$s", it.message)
+                    _persistError.value = Messages.trackDiscardFailedMessage(it.message ?: "null")
                     false
                 }
             )
@@ -346,7 +349,7 @@ class TrackRecorder internal constructor(
         if (next == _uiState.value) return
         _isRecording.value = false
         _uiState.value = next
-        _persistError.value = next.message
+        _persistError.value = next.message?.let(LocalizedMessage::literal)
         clearRecordingKey()
         stopRecordingService()
     }
@@ -382,7 +385,7 @@ class TrackRecorder internal constructor(
         requestServiceStop: Boolean,
     ) {
         _isRecording.value = false
-        _persistError.value = message
+        _persistError.value = LocalizedMessage.literal(message)
         _uiState.value = TrackRecordingReducer.reduce(
             _uiState.value,
             TrackRecordingEvent.Interrupted(message, settingsTarget),

@@ -144,6 +144,12 @@ class TrackRecorderLifecycleTest {
         recorder.recordPoint(TrackPoint(-33.86, 151.21, null, 1_700_000_000_000L))
 
         assertFalse(recorder.discard())
+        assertEquals(
+            com.tacmap.localization.Messages.trackStopBeforeDiscardMessage(),
+            recorder.persistError.value,
+        )
+        recorder.acknowledgePersistError()
+        assertEquals(null, recorder.persistError.value)
         assertTrue(recorder.isRecording.value)
         assertTrue(file.exists())
         assertTrue(recorder.points.value.isNotEmpty())

@@ -17,12 +17,14 @@ class LocalizationTest {
     @Test fun languageSelectionPersistsAndRefreshesTextAndPlurals() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         L10n.install(context)
+        val pending = Messages.trackReencryptFailedMessage("100% {1} / saved.gpx")
         val original = AppLanguage.selection
         try {
             org.junit.Assert.assertTrue(AppLanguage.select(context, SupportedLanguage.ENGLISH))
             assertEquals("Save", L10n.text("Save"))
             assertEquals("Language", Messages.settingsLanguageTitle())
             assertEquals("en", DisplayFormat.currentLocale.language)
+            assertEquals("Could not encrypt the recovered track: 100% {1} / saved.gpx", pending.text)
             assertEquals("Import failed: 100% {1}", Messages.importFailed("100% {1}"))
             assertEquals("None", ReinforcementStatus.NONE.displayName)
             assertEquals("Black", TaskColor.BLACK.displayName)
@@ -31,6 +33,7 @@ class LocalizationTest {
             assertEquals("Speichern", L10n.text("Save"))
             assertEquals("Sprache", Messages.settingsLanguageTitle())
             assertEquals("de", DisplayFormat.currentLocale.language)
+            assertEquals("Der wiederhergestellte Track konnte nicht verschlüsselt werden: 100% {1} / saved.gpx", pending.text)
             assertEquals("Import fehlgeschlagen: 100% {1}", Messages.importFailed("100% {1}"))
             assertEquals("2 Punkte", Messages.pointCount(2))
             assertEquals("Keine", ReinforcementStatus.NONE.displayName)
@@ -45,6 +48,7 @@ class LocalizationTest {
             assertEquals("Save", L10n.text("Save"))
             assertEquals("Language", Messages.settingsLanguageTitle())
             assertEquals("en", DisplayFormat.currentLocale.language)
+            assertEquals("Could not encrypt the recovered track: 100% {1} / saved.gpx", pending.text)
             assertEquals("Import failed: 100% {1}", Messages.importFailed("100% {1}"))
             assertEquals("None", ReinforcementStatus.NONE.displayName)
             assertEquals("Black", TaskColor.BLACK.displayName)

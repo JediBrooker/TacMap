@@ -82,6 +82,8 @@ def validate(data):
             if not isinstance(text, str) or not text.strip(): errors.append(f'Missing {tag} translation: {key}'); continue
             if placeholders(text) != expected: errors.append(f'Placeholder mismatch: {key}/{tag}')
             if re.search(r'%(?:\d+\$)?[@sdf]', text): errors.append(f'Use catalogue placeholders instead of printf syntax: {key}/{tag}')
+        if not isinstance(entry.get('deferred', False), bool) or (entry.get('deferred') and not entry.get('accessor')):
+            errors.append(f'Deferred message needs a typed accessor and boolean flag: {key}')
         if 'accessor' in entry:
             accessor = entry['accessor']
             if not re.fullmatch('[a-z][A-Za-z0-9]*', accessor) or accessor in accessors: errors.append(f'Invalid/duplicate accessor: {key}')
@@ -93,6 +95,9 @@ def validate(data):
                 if param['type'] != 'string' or not re.fullmatch('[a-z][A-Za-z0-9]*', param['name']):
                     errors.append(f'Invalid typed parameter: {key}; display arguments are strings, plural counts are integers')
             if not entry.get('context', '').strip(): errors.append(f'Typed message needs translator context: {key}')
+    for entry in data['catalog'].values():
+        if entry.get('deferred') and entry.get('accessor', '') + 'Message' in accessors:
+            errors.append('Deferred accessor collides with a message accessor')
     for noun, translations in data['plurals'].items():
         if not re.fullmatch('[a-z][a-z0-9_-]*', noun): errors.append(f'Invalid plural ID: {noun}')
         for locale in locales:

@@ -2638,56 +2638,98 @@
     "de": "Es gibt bereits einen gespeicherten Track. Exportiere oder verwirf ihn, bevor du eine neue Aufzeichnung startest.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackSavedExists",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [],
+    "deferred": true
   },
   "ui_recording_did_not_start_1_8940e9cc": {
     "en": "Recording did not start: {1}",
     "de": "Aufzeichnung nicht gestartet: {1}",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackStartFailed",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ],
+    "deferred": true
   },
   "ui_track_recording_stopped_because_a_fix_could_not__28ce808b": {
     "en": "Track recording stopped because a fix could not be saved.",
     "de": "Die Trackaufzeichnung wurde gestoppt, weil eine Position nicht gespeichert werden konnte.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackWriteFailed",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [],
+    "deferred": true
   },
   "ui_saved_track_is_too_large_to_recover_safely_87b7d3da": {
     "en": "Saved track is too large to recover safely.",
     "de": "Der gespeicherte Track ist zu groß für eine sichere Wiederherstellung.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackTooLarge",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [],
+    "deferred": true
   },
   "ui_saved_track_is_encrypted_and_locked_1_88ba20df": {
     "en": "Saved track is encrypted and locked. {1}",
     "de": "Der gespeicherte Track ist verschlüsselt und gesperrt. {1}",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackLocked",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ],
+    "deferred": true
   },
   "ui_saved_track_failed_its_sealed_only_integrity_che_5b3be2fb": {
     "en": "Saved track failed its sealed-only integrity check.",
     "de": "Die Integritätsprüfung des verschlüsselten Tracks ist fehlgeschlagen.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackIntegrityFailed",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [],
+    "deferred": true
   },
   "ui_saved_track_contains_an_authenticated_line_that__c692cd6b": {
     "en": "Saved track contains an authenticated line that could not be recovered.",
     "de": "Der gespeicherte Track enthält einen authentifizierten Eintrag, der nicht wiederhergestellt werden konnte.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackLineRecoveryFailed",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [],
+    "deferred": true
   },
   "ui_saved_legacy_track_contains_an_invalid_line_and__dfd76fd9": {
     "en": "Saved legacy track contains an invalid line and was preserved unchanged.",
     "de": "Der gespeicherte ältere Track enthält einen ungültigen Eintrag und wurde unverändert beibehalten.",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackLegacyLineInvalid",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [],
+    "deferred": true
   },
   "ui_could_not_encrypt_the_recovered_track_1_1986bd1a": {
     "en": "Could not encrypt the recovered track: {1}",
@@ -2695,14 +2737,32 @@
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "accessor": "trackReencryptFailed",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ],
+    "deferred": true
   },
   "ui_saved_track_is_protected_or_unavailable_and_was__79ccf65d": {
     "en": "Saved track is protected or unavailable and was left untouched. Retry after unlocking the device. {1}",
     "de": "Der gespeicherte Track ist geschützt oder nicht verfügbar und wurde nicht verändert. Entsperre das Gerät und versuche es erneut. {1}",
     "platforms": [
       "ios"
-    ]
+    ],
+    "accessor": "trackRecoveryUnavailable",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ],
+    "deferred": true
   },
   "ui_place_name_address_full_mgrs_or_4_6_8_10_figure__99822800": {
     "en": "Place name, address, full MGRS, or 4/6/8/10-figure grid",
@@ -5842,7 +5902,16 @@
     "de": "Der gespeicherte Track konnte nicht gelesen werden: {1}",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "trackReadFailed",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ],
+    "deferred": true
   },
   "ui_export_or_discard_the_saved_track_before_startin_11ec4f4c": {
     "en": "Export or discard the saved track before starting a new recording.",
@@ -5863,14 +5932,27 @@
     "de": "Stoppe die Aufzeichnung, bevor du den gespeicherten Track verwirfst.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "trackStopBeforeDiscard",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [],
+    "deferred": true
   },
   "ui_could_not_discard_the_saved_track_1_01f1dcdf": {
     "en": "Could not discard the saved track: {1}",
     "de": "Der gespeicherte Track konnte nicht verworfen werden: {1}",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "trackDiscardFailed",
+    "context": "Track persistence/recovery error, resolved when displayed. Keep any underlying diagnostic detail verbatim.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ],
+    "deferred": true
   },
   "ui_track_fix_not_saved_recording_stopped_1_7a513ad8": {
     "en": "Track fix not saved; recording stopped: {1}",

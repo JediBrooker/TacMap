@@ -55,6 +55,21 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(Set(bundled ?? []), Set(SupportedLanguage.resourceFolders.keys))
     }
 
+    func testPendingTrackMessageResolvesAfterLanguageSwitch() {
+        let original = AppLanguage.shared.selection
+        defer { AppLanguage.shared.select(original) }
+        let detail = "100% {1} %@ / saved.gpx"
+        let pending = Messages.trackReencryptFailedMessage(detail)
+        AppLanguage.shared.select(.en)
+        XCTAssertEqual(pending.text, "Could not encrypt the recovered track: " + detail)
+        AppLanguage.shared.select(.de)
+        XCTAssertEqual(pending.text, "Der wiederhergestellte Track konnte nicht verschlüsselt werden: " + detail)
+        XCTAssertEqual(pending.arguments, [detail])
+        XCTAssertEqual(LocalizedMessage.literal(detail).text, detail)
+        AppLanguage.shared.select(.en)
+        XCTAssertEqual(pending.text, "Could not encrypt the recovered track: " + detail)
+    }
+
     private func resources(_ language: String) throws -> Bundle {
         let path = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj"))
         return try XCTUnwrap(Bundle(path: path))

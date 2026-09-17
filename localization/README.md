@@ -135,3 +135,23 @@ report. Counts describe scanned source, not completed linguistic/device review.
 Use `DisplayFormat` for migrated presentation values. It follows the app language
 and device region/time zone while preserving units. See [FORMATTING.md](FORMATTING.md)
 for the policy, data boundaries, covered screens and remaining migration work.
+
+## Deferred display messages
+
+A typed catalogue entry may set `deferred: true`. The generator then also provides
+`Messages.<accessor>Message(...)`, returning a `LocalizedMessage` with the stable
+resource ID, English fallback and immutable string arguments. Store this value in
+in-memory UI/model state and read `.text` at display time. Normal accessors still
+return strings immediately. The containing view must observe language changes.
+
+Use `.literal(...)` only for already supplied text during incremental migration;
+it deliberately does not translate or reinterpret user/diagnostic content. These
+objects are not wire formats or persistence migrations. External diagnostic details
+remain in their original language even when the app-owned error prefix changes.
+
+The initial migration covers iOS track persistence errors and Android direct
+recovery/discard errors. Android recording permission/service/reducer messages
+still carry strings. In particular, copying a recovery failure into the start
+state machine currently resolves it at that transition; migrating that state
+machine is a separate follow-up. Existing error priorities and recording safety
+transitions are preserved.
