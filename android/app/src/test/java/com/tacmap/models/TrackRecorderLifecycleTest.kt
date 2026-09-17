@@ -183,7 +183,11 @@ class TrackRecorderLifecycleTest {
 
         val failed = prepared("recorder-fail")
         beginRecording(failed)
-        failed.failRecording("failure")
+        val failure = com.tacmap.localization.Messages.recordingStartFailedMessage("100% {1}")
+        failed.failRecording(failure, TrackRecordingSettingsTarget.AppPermissions)
+        org.junit.Assert.assertSame(failure, failed.persistError.value)
+        org.junit.Assert.assertSame(failure, failed.uiState.value.pendingMessage)
+        assertEquals(TrackRecordingSettingsTarget.AppPermissions, failed.uiState.value.settingsTarget)
         assertFalse(failed.hasRetainedRecordingKey())
 
         val discarded = prepared("recorder-discard")

@@ -5182,9 +5182,9 @@
     },
     "ui_could_not_start_background_recording_1_cdb42e3d": {
       "de": {
-        "source": "afaa4c407eb1530472f4c97d5330545b6cd19a33ee71e84f233f77f70f648570",
+        "source": "13344dc366514a70c8b1018a281c7c9a0644b2e36e6e1d9ff26717a3f912ef3a",
         "translation": "f42c39fbfef18a4cac4f865be633c02af7faa8426f46167f844a87a10c8d33a1",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_undo_last_point_5b4dc714": {
@@ -5546,16 +5546,16 @@
     },
     "ui_export_or_discard_the_saved_track_before_startin_11ec4f4c": {
       "de": {
-        "source": "7f0da03d31594fd8069a084864d2ab70ed9604993ff2e11dc855ba3fdc0a2edb",
+        "source": "98eb4a14bb6aacee2a3ac0faccbdd30faf06c1c07a0196810b092ab20eeae24d",
         "translation": "870041af0c0bcb802017f57ce919a9dbc35c2458e05357346b61d8767595fbe6",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_could_not_start_recording_safely_1_e3b8a79c": {
       "de": {
-        "source": "86ebe65d8ef60e06eadd7f342f82cef1a4ad27cbd5ce80ded8686a1abc4b0c34",
+        "source": "da69dfeccf2ffb5e4fbb62c16bc49dea76cdcc1bbe34cf2e3090422ab25a38ff",
         "translation": "dbefa416e3ce9179cc1350c701395266dad687ed8202d24245609c82703dbb05",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_stop_recording_before_discarding_the_saved_track_fba88fe8": {
@@ -5574,9 +5574,9 @@
     },
     "ui_track_fix_not_saved_recording_stopped_1_7a513ad8": {
       "de": {
-        "source": "79daa91cf848820009553e01438172c1393bbfe385b816f0d5555b2c0fdf2ede",
+        "source": "fb3cc5b88db43e4a8d64c810a075a36b01a4b526684a1d4a38228fd5091cb5d2",
         "translation": "1a5757e3d0b04a2470cc9b074fa41c83d5d90fba778de1a4d6c69c2df0a4c7e3",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_recording_stopped_when_mission_data_was_locked_t_e2cf431c": {
@@ -9179,23 +9179,23 @@
     },
     "ui_waiting_for_the_recording_notification_choice_b6d01585": {
       "de": {
-        "source": "742591a54029ad317edf7cd0613779fb57d492f139ea53da6a62537656eb3fa4",
+        "source": "53f026438240a10e46f6a67e525ccb197a8b2cf51464a45dd6376bd5c2907fcc",
         "translation": "afbd0533b86c7a5134a40ba15d3ac82d8f440ac917257a912a75a3322b16e9f4",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_waiting_for_precise_location_permission_9db6f154": {
       "de": {
-        "source": "1e78e40539f459da02d7b4f5efb7708f6649c129672d7f8b9fa14b85abc20ebe",
+        "source": "879a3e91f0b88a3e318c4d9bc2c7dcd7d44afe1c9a81925ad0cd909a0adc96a2",
         "translation": "0d42a64731eaa84213c802f5a06d5dd4782ca898769d14bf9284d1f9cdf5edb7",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_track_recording_prerequisites_are_unavailable_363d5a9f": {
       "de": {
-        "source": "2207783e128142535934cd2ea89c080792864298569c4e50874a4b31232cbb65",
+        "source": "451a0d74a70476ec8037bcc08d386d89160aaf46e3104453e4e322d99b1842cd",
         "translation": "96188b10b765deb11d3c746aab66beb960ab1c1bb15e135df9c9dfaf379926e8",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_app_lock_data_is_damaged_and_cannot_be_verified__88b245f1": {
@@ -9403,16 +9403,16 @@
     },
     "ui_precise_location_permission_is_required_to_recor_4e3a2e91": {
       "de": {
-        "source": "7d63b9e3db5420900b0642c9ee29400fab0572b71afe30014fe26e3bf2611b56",
+        "source": "e271df4a8c1db04c060da56eac3c58e6c0db375ad6e142ecf84ae800e10e0f2b",
         "translation": "93465b2a7b210013dfd2cd1800b505e01dfa3574ab9333b557836c855b4af113",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_gps_is_turned_off_turn_on_device_location_servic_645dc271": {
       "de": {
-        "source": "e206068e5054716520e73f007eb2395b2b424e7e01d15c58e642ad67f1e5e772",
+        "source": "9c1daa61acc808a76c3d5f4566ff95e9d59f90b9c103151d8dd83d4b8dc66cff",
         "translation": "5f74bbe65c9d07ee7a24a1d43340eb2107ab9eb9d6d7f398c56418694f08a247",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_precise_location_was_removed_recording_stopped_765c3808": {
@@ -9431,72 +9431,72 @@
     },
     "ui_location_permission_was_removed_recording_stoppe_4d281d01": {
       "de": {
-        "source": "e48c9ee09e3ac0a5f38b3166c63565729ca4cd154e22068f78bfb1bf765506a2",
+        "source": "9db989fe58e7729bfc766fe2dbf4b44ae778d470643305927c8c7e17675bef48",
         "translation": "b1a94ab9e88fed9c2253dfa177c6e4d04f2ec1977ed638dec11d9c278f8e56c9",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_could_not_verify_the_saved_track_before_recordin_74d65e13": {
       "de": {
-        "source": "add43dcebacfc76876e7e7d16fa58f9fbeb7bc691bc2b12a0bd497890ab04c1e",
+        "source": "3a2d4b90164bf568edff64e0b831fa3a940ae917ab9740d7d971ff5ba16775c5",
         "translation": "84b4fb639f2ee9868e93e999e028ce8688659528ac21602f8cfb5f7f38647b60",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_background_recording_did_not_activate_in_time_tr_7f76c35b": {
       "de": {
-        "source": "581b3c83e357c3576031b965e718991d76981987ba31c967dbcfd078d31b74a5",
+        "source": "f674902e578050ecaa04f1a92a2da4376b3075e18c91fabcc8d1c2974b01e249",
         "translation": "86380a52de2a42ad1c806f8862eacb68478c12a9d9a6804aa79991efeebaf523",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_background_recording_stopped_unexpectedly_your_s_4fb5f807": {
       "de": {
-        "source": "06116b51a24c9df53ecebd9e12e835b65f3903be0ce39a07becef82150938471",
+        "source": "cb66151b33ca85fb017fb3cff669caafb5ef768d962c0ce8496fd7f34dd900ea",
         "translation": "1027a5e6f1d5bc05911e671bc0cf45ab2bfbe8434bc6c391c5b010d07e3109fc",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_recording_stopped_because_its_session_key_was_un_6082de71": {
       "de": {
-        "source": "01e62b8ab357ef37640cca0303c3156916485199f83bc9c615e73ce312987f17",
+        "source": "13dd21b0309d830f8b5b1325c0f402d1a02cd0be56f5ba43b9f23cf9631342ff",
         "translation": "1ccaf005c9e8b7455a7c5d58674074a972bcc9987a020441ef60d7ead2f05bf0",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_track_recording_can_only_be_started_while_tacmap_3471f4ab": {
       "de": {
-        "source": "bf726468bfe59047369b9ccd4e89c5f34b9b9e52ac8fe6c36a89139859bbca75",
+        "source": "f1f7c7b6e26ab1c27b99b645ffc682bff29f29a84e41a231b209e11357257aab",
         "translation": "ef814c07dd02e05e84d4401cacc45b949910425cd2eed4929a28fa5da85084d2",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_approximate_location_cannot_provide_the_precise__fa2a6228": {
       "de": {
-        "source": "c80abdce98d872153d1059dce5916a54100874fbf846a6089a38d1e99b71c095",
+        "source": "1eff312fb7061c1850016fa14c28722e2e866211300ab39716cd89add9293fed",
         "translation": "a6b1f7519683cd6e3d8ee7d54b0be489af4a685b44a5d4a4ee92f952dd6748a3",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_this_build_is_missing_an_android_foreground_loca_d9bda81b": {
       "de": {
-        "source": "4d095a11da6494e2a1428401829307f646b9a7ffeb42bd39a54fa40edd865ac8",
+        "source": "b236fd7b3f7a8c81c11816c9defa9a9a0500cb380c9eed2f4d0f339d224692f8",
         "translation": "ded13482dceaa3d47400b8a62e144bb49af080bc677c1d289ff7d2299711f643",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_gps_was_turned_off_recording_stopped_d4078430": {
       "de": {
-        "source": "3ab6916800aef02a1d5db57e8259eaf76dc474b681afef5c515c15a5e6a22761",
+        "source": "f500f5afe51a00136dc5ed80e7e0cb3ee7e7395f8d34edf0c2784905aa482002",
         "translation": "5b760e7b5c3e91202dc026e149b08b800afe0c33cddad56dc8c24f219d8d08c9",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_gps_is_turned_off_recording_stopped_ee16972d": {
       "de": {
-        "source": "d8b4b00f4e22a87a39695a48c9666decb53913ed74ace041e86c7022bf0d5b49",
+        "source": "9d379b1b546789978f883d99eb47e7dc39a417f6fece7f59933352f96c4847f1",
         "translation": "5af4a9ed759b28b08c0a0fcd12a5cb98ccdf372570ae3d55d5930304c70248b4",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_could_not_activate_background_track_recording_8e937267": {
@@ -9508,16 +9508,16 @@
     },
     "ui_precise_location_was_removed_recording_stopped_a_00f6cc68": {
       "de": {
-        "source": "4c7dbeee8de1bc779b381a7b864f01107213dda33a331506d4c0180557cd26be",
+        "source": "8a3cf0ee4928f270fcc326a6d3df67eb3f43c5b3d453eaf118c70fe8a7c44fb2",
         "translation": "7fb97ad381b90892ca5b6bd786192b78644edd8c4fc3448e1ddc225db1d96e68",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_location_access_became_unavailable_recording_sto_3c08130f": {
       "de": {
-        "source": "b01f9b39eccbfa78b93c3895b79bf8ae647f05182c4df0f1c1f4e25b9e3fb45f",
+        "source": "f3b72ebe2d39e5040389b3c02e5bd5bcf45a82f21ca61280c2ea39065c73209d",
         "translation": "126e21629e83994893bbc7df7da440a08175bb759fd495deed6f7aeebdfad0fc",
-        "status": "baseline"
+        "status": "reviewed"
       }
     },
     "ui_edit_symbol_5986286b": {
@@ -11645,6 +11645,20 @@
       "de": {
         "source": "f7f8cc75379e3f2a663e10ca8d705ce952c8dccfc183441190dfcfea86c64f65",
         "translation": "aa7b387f4989f1616f38105f12628d5ab69840a0751eb8cb4bae281b783e16b6",
+        "status": "reviewed"
+      }
+    },
+    "recording_precise_required_retry": {
+      "de": {
+        "source": "38e04afba0c91a0cb88fe979ee64e962ca405e7105072b346da0415a9c875d78",
+        "translation": "1bd5f7e1aeeaa6b4209950451d0f5afdb50922eb3d3cfa9be866c2a0acf2edc6",
+        "status": "reviewed"
+      }
+    },
+    "recording_activation_failed": {
+      "de": {
+        "source": "ff0184216558aa68bfdef0179a1c40810d6b2a727c0455bce2e4ed15e24b1649",
+        "translation": "b407a646005843eb921665a67be0ba05c50897e51da08053d8f6a835c8220da7",
         "status": "reviewed"
       }
     }

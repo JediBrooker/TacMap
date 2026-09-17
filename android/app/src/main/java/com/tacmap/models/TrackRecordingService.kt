@@ -1,5 +1,9 @@
 package com.tacmap.models
 
+import com.tacmap.localization.LocalizedMessage
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.Manifest
@@ -100,7 +104,7 @@ class TrackRecordingService : Service() {
                         if (provider == LocationManager.GPS_PROVIDER) {
                             recorder.onServiceFailure(
                                 generation,
-                                L10n.text("GPS was turned off; recording stopped."),
+                                Messages.recordingGpsDisabledMessage(),
                                 TrackRecordingSettingsTarget.LocationServices,
                             )
                             stopSelf()
@@ -112,7 +116,7 @@ class TrackRecordingService : Service() {
                 if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     recorder.onServiceFailure(
                         generation,
-                        L10n.text("GPS is turned off; recording stopped."),
+                        Messages.recordingGpsOffMessage(),
                         TrackRecordingSettingsTarget.LocationServices,
                     )
                     stopSelf(startId)
@@ -131,8 +135,7 @@ class TrackRecordingService : Service() {
         } catch (failure: RuntimeException) {
             recorder.onServiceFailure(
                 generation,
-                L10n.text("Could not activate background track recording: ") +
-                    (failure.message ?: failure.javaClass.simpleName)
+                Messages.recordingActivationFailedMessage(failure.message ?: failure.javaClass.simpleName)
             )
             stopSelf(startId)
         }
@@ -170,11 +173,11 @@ class TrackRecordingService : Service() {
             PackageManager.PERMISSION_GRANTED,
     )
 
-    private fun permissionLossMessage(access: LocationAccess): String = when (access) {
+    private fun permissionLossMessage(access: LocationAccess): LocalizedMessage = when (access) {
         LocationAccess.ApproximateOnly ->
-            L10n.text("Precise location was removed; recording stopped. Approximate location is not accurate enough for a GPS track.")
-        LocationAccess.Denied -> L10n.text("Location permission was removed; recording stopped.")
-        LocationAccess.Precise -> L10n.text("Location access became unavailable; recording stopped.")
+            Messages.recordingPrecisionLostMessage()
+        LocationAccess.Denied -> Messages.recordingPermissionLostMessage()
+        LocationAccess.Precise -> Messages.recordingAccessUnavailableMessage()
     }
 
     private fun buildNotification(): Notification {

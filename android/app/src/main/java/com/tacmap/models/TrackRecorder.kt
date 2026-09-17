@@ -3,7 +3,6 @@ package com.tacmap.models
 import com.tacmap.localization.Messages
 import com.tacmap.localization.LocalizedMessage
 
-import com.tacmap.localization.L10n
 
 import android.content.Context
 import android.location.Location
@@ -139,7 +138,7 @@ class TrackRecorder internal constructor(
     }
 
     /** Resolve permission/GPS prerequisites before any file or key work begins. */
-    fun awaitPermissionRequest(message: String) {
+    fun awaitPermissionRequest(message: LocalizedMessage) {
         _uiState.value = TrackRecordingReducer.reduce(
             _uiState.value,
             TrackRecordingEvent.AwaitingPermission(message),
@@ -165,13 +164,13 @@ class TrackRecorder internal constructor(
         if (hasRetainedRecordingKey()) return false
         if (!recoveryReady) {
             failRecording(
-                _persistError.value?.text ?: L10n.text("Could not verify the saved track before recording.")
+                _persistError.value ?: Messages.recordingVerifyFailedMessage()
             )
             return false
         }
         _persistError.value = null
         if (_recovered.value || _points.value.isNotEmpty()) {
-            failRecording(L10n.text("Export or discard the saved track before starting a new recording."))
+            failRecording(Messages.recordingExistingTrackMessage())
             return false
         }
         var preparedGeneration: Long? = null
@@ -203,7 +202,7 @@ class TrackRecorder internal constructor(
                     true
                 },
                 onFailure = {
-                    failRecording(L10n.text("Could not start recording safely: %1\$s", it.message))
+                    failRecording(Messages.recordingStartFailedMessage(it.message ?: "null"))
                     false
                 }
             )
@@ -240,7 +239,7 @@ class TrackRecorder internal constructor(
             !isServiceSessionAuthorized(generation)
         ) return
         interruptRecording(
-            L10n.text("Background recording did not activate in time. Try starting it again."),
+            Messages.recordingActivationTimeoutMessage(),
             requestServiceStop = true,
         )
     }
@@ -249,14 +248,14 @@ class TrackRecorder internal constructor(
     internal fun onServiceDestroyed(generation: Long) {
         if (!isServiceSessionAuthorized(generation)) return
         interruptRecording(
-            L10n.text("Background recording stopped unexpectedly. Your saved track was preserved."),
+            Messages.recordingServiceStoppedMessage(),
             requestServiceStop = false,
         )
     }
 
     internal fun onServiceFailure(
         generation: Long,
-        message: String,
+        message: LocalizedMessage,
         settingsTarget: TrackRecordingSettingsTarget? = null,
     ) {
         if (!isServiceSessionAuthorized(generation)) return
@@ -330,12 +329,12 @@ class TrackRecorder internal constructor(
         if (failure == null) {
             _points.value = _points.value + point
         } else {
-            failRecording(L10n.text("Track fix not saved; recording stopped: %1\$s", failure.message))
+            failRecording(Messages.recordingFixFailedMessage(failure.message ?: "null"))
         }
     }
 
     fun failRecording(
-        message: String,
+        message: LocalizedMessage,
         settingsTarget: TrackRecordingSettingsTarget? = null,
     ) {
         interruptRecording(message, settingsTarget, requestServiceStop = true)
@@ -349,7 +348,7 @@ class TrackRecorder internal constructor(
         if (next == _uiState.value) return
         _isRecording.value = false
         _uiState.value = next
-        _persistError.value = next.message?.let(LocalizedMessage::literal)
+        _persistError.value = next.pendingMessage
         clearRecordingKey()
         stopRecordingService()
     }
@@ -362,7 +361,7 @@ class TrackRecorder internal constructor(
         if (authorized) return
         clearRecordingKey()
         if (_uiState.value.isAuthorizedSession) {
-            failRecording(L10n.text("Recording stopped because its session key was unavailable."))
+            failRecording(Messages.recordingSessionKeyUnavailableMessage())
         }
     }
 
@@ -380,12 +379,12 @@ class TrackRecorder internal constructor(
     }
 
     private fun interruptRecording(
-        message: String,
+        message: LocalizedMessage,
         settingsTarget: TrackRecordingSettingsTarget? = null,
         requestServiceStop: Boolean,
     ) {
         _isRecording.value = false
-        _persistError.value = LocalizedMessage.literal(message)
+        _persistError.value = message
         _uiState.value = TrackRecordingReducer.reduce(
             _uiState.value,
             TrackRecordingEvent.Interrupted(message, settingsTarget),

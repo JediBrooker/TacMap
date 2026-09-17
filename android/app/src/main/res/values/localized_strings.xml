@@ -5,6 +5,8 @@
     <string name="common_ok">"OK"</string>
     <string name="import_failed">"Import failed: %1$s"</string>
     <string name="input_decimal_hint">"Use a decimal point or your language’s decimal separator. Do not use thousands separators."</string>
+    <string name="recording_activation_failed">"Could not activate background track recording: %1$s"</string>
+    <string name="recording_precise_required_retry">"Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry."</string>
     <string name="settings_android_key_protection_help">"Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable."</string>
     <string name="settings_heading_help">"North Up starts north-facing and keeps two-finger rotation available. Heading Up uses the phone compass to keep your pointing direction at the top of the map. It uses true north when a recent location is available. The compass marks bearings T for true north, or M when it falls back to magnetic north, and ? while waiting for a valid reading."</string>
     <string name="settings_language_device">"Device language"</string>

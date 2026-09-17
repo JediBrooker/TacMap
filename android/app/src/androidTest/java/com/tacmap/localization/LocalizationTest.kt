@@ -14,6 +14,37 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalizationTest {
+    @Test fun retainedRecordingStatesRefreshWithoutChangingTransitions() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        L10n.install(context)
+        val original = AppLanguage.selection
+        val waiting = com.tacmap.models.TrackRecordingReducer.reduce(
+            com.tacmap.models.TrackRecordingUiState(),
+            com.tacmap.models.TrackRecordingEvent.StartRequested(com.tacmap.models.LocationAccess.Denied, true),
+        )
+        val detail = "100% {1} / recording.ndjson"
+        val error = Messages.recordingActivationFailedMessage(detail)
+        val stopped = com.tacmap.models.TrackRecordingReducer.reduce(
+            com.tacmap.models.TrackRecordingUiState(phase = com.tacmap.models.TrackRecordingPhase.Recording),
+            com.tacmap.models.TrackRecordingEvent.Interrupted(error),
+        )
+        try {
+            org.junit.Assert.assertTrue(AppLanguage.select(context, SupportedLanguage.ENGLISH))
+            assertEquals("Precise location permission is required to record a GPS track.", waiting.message)
+            assertEquals("Could not activate background track recording: " + detail, stopped.message)
+            org.junit.Assert.assertTrue(AppLanguage.select(context, SupportedLanguage.GERMAN))
+            assertEquals("Für die GPS-Trackaufzeichnung ist die Berechtigung für den genauen Standort nötig.", waiting.message)
+            assertEquals("Hintergrund-Trackaufzeichnung konnte nicht aktiviert werden: " + detail, stopped.message)
+            assertEquals(com.tacmap.models.TrackRecordingPhase.AwaitingPermission, waiting.phase)
+            assertEquals(com.tacmap.models.TrackRecordingSettingsTarget.AppPermissions, waiting.settingsTarget)
+            assertEquals(com.tacmap.models.TrackRecordingPhase.Interrupted, stopped.phase)
+            org.junit.Assert.assertSame(error, stopped.pendingMessage)
+            org.junit.Assert.assertFalse(stopped.isAuthorizedSession)
+        } finally {
+            AppLanguage.select(context, original)
+        }
+    }
+
     @Test fun languageSelectionPersistsAndRefreshesTextAndPlurals() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         L10n.install(context)

@@ -1,6 +1,9 @@
 package com.tacmap.models
 
-import com.tacmap.localization.L10n
+import com.tacmap.localization.LocalizedMessage
+
+import com.tacmap.localization.Messages
+
 
 import android.Manifest
 import android.content.ComponentName
@@ -21,32 +24,34 @@ data class TrackRecordingPrerequisites(
 
 data class TrackRecordingPreflightResult(
     val canStart: Boolean,
-    val message: String? = null,
+    val pendingMessage: LocalizedMessage? = null,
     val settingsTarget: TrackRecordingSettingsTarget? = null,
-)
+) {
+    val message: String? get() = pendingMessage?.text
+}
 
 object TrackRecordingPreflightPolicy {
     fun evaluate(value: TrackRecordingPrerequisites): TrackRecordingPreflightResult = when {
         !value.activityVisible -> TrackRecordingPreflightResult(
             false,
-            L10n.text("Track recording can only be started while TacMap is visible."),
+            Messages.recordingVisibleRequiredMessage(),
         )
 
         value.locationAccess == LocationAccess.ApproximateOnly -> TrackRecordingPreflightResult(
             false,
-            L10n.text("Approximate location cannot provide the precise GPS track TacMap records."),
+            Messages.recordingPreciseRequiredShortMessage(),
             TrackRecordingSettingsTarget.AppPermissions,
         )
 
         value.locationAccess == LocationAccess.Denied -> TrackRecordingPreflightResult(
             false,
-            L10n.text("Precise location permission is required to record a GPS track."),
+            Messages.recordingPreciseRequiredMessage(),
             TrackRecordingSettingsTarget.AppPermissions,
         )
 
         !value.gpsEnabled -> TrackRecordingPreflightResult(
             false,
-            L10n.text("GPS is turned off. Turn on device location services, then retry."),
+            Messages.recordingGpsRequiredMessage(),
             TrackRecordingSettingsTarget.LocationServices,
         )
 
@@ -55,7 +60,7 @@ object TrackRecordingPreflightPolicy {
                 !value.locationServicePermissionDeclared ||
                 !value.locationServiceTypeDeclared) -> TrackRecordingPreflightResult(
             false,
-            L10n.text("This build is missing an Android foreground-location service prerequisite."),
+            Messages.recordingBuildPrerequisiteMessage(),
         )
 
         else -> TrackRecordingPreflightResult(true)

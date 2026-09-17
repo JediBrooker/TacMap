@@ -5544,6 +5544,15 @@
     "de": "Hintergrundaufzeichnung konnte nicht gestartet werden: {1}",
     "platforms": [
       "android"
+    ],
+    "accessor": "recordingBackgroundStartFailed",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
     ]
   },
   "ui_undo_last_point_5b4dc714": {
@@ -5918,13 +5927,26 @@
     "de": "Exportiere oder verwirf den gespeicherten Track, bevor du eine neue Aufzeichnung startest.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingExistingTrack",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_could_not_start_recording_safely_1_e3b8a79c": {
     "en": "Could not start recording safely: {1}",
     "de": "Aufzeichnung konnte nicht sicher gestartet werden: {1}",
     "platforms": [
       "android"
+    ],
+    "accessor": "recordingStartFailed",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
     ]
   },
   "ui_stop_recording_before_discarding_the_saved_track_fba88fe8": {
@@ -5959,6 +5981,15 @@
     "de": "Trackposition nicht gespeichert; Aufzeichnung gestoppt: {1}",
     "platforms": [
       "android"
+    ],
+    "accessor": "recordingFixFailed",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
     ]
   },
   "ui_recording_stopped_when_mission_data_was_locked_t_e2cf431c": {
@@ -9679,21 +9710,33 @@
     "de": "Warte auf die Auswahl zur Aufzeichnungsbenachrichtigung …",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingAwaitingNotification",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_waiting_for_precise_location_permission_9db6f154": {
     "en": "Waiting for Precise location permission…",
     "de": "Warte auf Berechtigung für den genauen Standort …",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingAwaitingPermission",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_track_recording_prerequisites_are_unavailable_363d5a9f": {
     "en": "Track recording prerequisites are unavailable.",
     "de": "Voraussetzungen für die Trackaufzeichnung sind nicht verfügbar.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingPrerequisitesUnavailable",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_app_lock_data_is_damaged_and_cannot_be_verified__88b245f1": {
     "en": "App Lock data is damaged and cannot be verified. Clear TacMap's app data ",
@@ -9903,14 +9946,22 @@
     "de": "Für die GPS-Trackaufzeichnung ist die Berechtigung für den genauen Standort nötig.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingPreciseRequired",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_gps_is_turned_off_turn_on_device_location_servic_645dc271": {
     "en": "GPS is turned off. Turn on device location services, then retry.",
     "de": "GPS ist ausgeschaltet. Aktiviere die Standortdienste des Geräts und versuche es erneut.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingGpsRequired",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_precise_location_was_removed_recording_stopped_765c3808": {
     "en": "Precise location was removed; recording stopped. ",
@@ -9931,70 +9982,110 @@
     "de": "Die Standortberechtigung wurde entzogen; die Aufzeichnung wurde beendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingPermissionLost",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_could_not_verify_the_saved_track_before_recordin_74d65e13": {
     "en": "Could not verify the saved track before recording.",
     "de": "Der gespeicherte Track konnte vor der Aufzeichnung nicht überprüft werden.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingVerifyFailed",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_background_recording_did_not_activate_in_time_tr_7f76c35b": {
     "en": "Background recording did not activate in time. Try starting it again.",
     "de": "Die Hintergrundaufzeichnung wurde nicht rechtzeitig aktiv. Versuche sie erneut zu starten.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingActivationTimeout",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_background_recording_stopped_unexpectedly_your_s_4fb5f807": {
     "en": "Background recording stopped unexpectedly. Your saved track was preserved.",
     "de": "Die Hintergrundaufzeichnung wurde unerwartet beendet. Dein gespeicherter Track blieb erhalten.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingServiceStopped",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_recording_stopped_because_its_session_key_was_un_6082de71": {
     "en": "Recording stopped because its session key was unavailable.",
     "de": "Die Aufzeichnung wurde beendet, da ihr Sitzungsschlüssel nicht verfügbar war.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingSessionKeyUnavailable",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_track_recording_can_only_be_started_while_tacmap_3471f4ab": {
     "en": "Track recording can only be started while TacMap is visible.",
     "de": "Die Trackaufzeichnung kann nur gestartet werden, während TacMap sichtbar ist.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingVisibleRequired",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_approximate_location_cannot_provide_the_precise__fa2a6228": {
     "en": "Approximate location cannot provide the precise GPS track TacMap records.",
     "de": "Der ungefähre Standort reicht für TacMaps genaue GPS-Trackaufzeichnung nicht aus.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingPreciseRequiredShort",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_this_build_is_missing_an_android_foreground_loca_d9bda81b": {
     "en": "This build is missing an Android foreground-location service prerequisite.",
     "de": "Diesem Build fehlt eine Voraussetzung für Androids Standortdienst im Vordergrund.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingBuildPrerequisite",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_gps_was_turned_off_recording_stopped_d4078430": {
     "en": "GPS was turned off; recording stopped.",
     "de": "GPS wurde ausgeschaltet; die Aufzeichnung wurde beendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingGpsDisabled",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_gps_is_turned_off_recording_stopped_ee16972d": {
     "en": "GPS is turned off; recording stopped.",
     "de": "GPS ist ausgeschaltet; die Aufzeichnung wurde beendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingGpsOff",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_could_not_activate_background_track_recording_8e937267": {
     "en": "Could not activate background track recording: ",
@@ -10008,14 +10099,22 @@
     "de": "Der genaue Standort wurde entzogen; die Aufzeichnung wurde beendet. Der ungefähre Standort ist für einen GPS-Track nicht genau genug.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingPrecisionLost",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_location_access_became_unavailable_recording_sto_3c08130f": {
     "en": "Location access became unavailable; recording stopped.",
     "de": "Der Standortzugriff ist nicht mehr verfügbar; die Aufzeichnung wurde beendet.",
     "platforms": [
       "android"
-    ]
+    ],
+    "accessor": "recordingAccessUnavailable",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
   },
   "ui_edit_symbol_5986286b": {
     "en": "Edit symbol",
@@ -12206,5 +12305,34 @@
     "accessor": "androidKeyProtectionHelp",
     "context": "Complete Android settings explanation. Preserve all privacy/security limitations, provider names and numeric precision.",
     "parameters": []
+  },
+  "recording_precise_required_retry": {
+    "en": "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.",
+    "de": "Der ungefähre Standort reicht für TacMaps genaue GPS-Trackaufzeichnung nicht aus. Erlaube den genauen Standort und versuche es erneut.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "recordingPreciseRequiredRetry",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": []
+  },
+  "recording_activation_failed": {
+    "en": "Could not activate background track recording: {1}",
+    "de": "Hintergrund-Trackaufzeichnung konnte nicht aktiviert werden: {1}",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "recordingActivationFailed",
+    "deferred": true,
+    "context": "Android recording permission/start/service state. Keep the action, settings target, saved-track guarantee and any diagnostic detail unchanged.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
   }
 }

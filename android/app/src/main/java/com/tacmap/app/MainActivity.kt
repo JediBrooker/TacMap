@@ -1,5 +1,7 @@
 package com.tacmap.app
 
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 import android.content.ActivityNotFoundException
@@ -531,9 +533,9 @@ class MainActivity : ComponentActivity() {
                 }
                 (application as TacticalApp).trackRecorder.awaitPermissionRequest(
                     if (currentLocationAccess() == LocationAccess.Precise) {
-                        L10n.text("Waiting for the recording notification choice…")
+                        Messages.recordingAwaitingNotificationMessage()
                     } else {
-                        L10n.text("Waiting for Precise location permission…")
+                        Messages.recordingAwaitingPermissionMessage()
                     }
                 )
                 trackRecordingPermissionLauncher.launch(requests.toTypedArray())
@@ -596,7 +598,7 @@ class MainActivity : ComponentActivity() {
         )
         if (!preflight.canStart) {
             recorder.failRecording(
-                preflight.message ?: L10n.text("Track recording prerequisites are unavailable."),
+                preflight.pendingMessage ?: Messages.recordingPrerequisitesUnavailableMessage(),
                 preflight.settingsTarget,
             )
             return
@@ -604,7 +606,7 @@ class MainActivity : ComponentActivity() {
         if (!recorder.prepareStart()) return
         runCatching { TrackRecordingService.start(this) }
             .onFailure {
-                recorder.failRecording(L10n.text("Could not start background recording: %1\$s", it.message))
+                recorder.failRecording(Messages.recordingBackgroundStartFailedMessage(it.message ?: "null"))
             }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

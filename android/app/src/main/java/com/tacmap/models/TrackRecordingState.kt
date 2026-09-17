@@ -1,5 +1,9 @@
 package com.tacmap.models
 
+import com.tacmap.localization.LocalizedMessage
+
+import com.tacmap.localization.Messages
+
 import com.tacmap.localization.L10n
 
 /** The location grant states Android can return when fine and coarse are requested together. */
@@ -136,9 +140,10 @@ enum class TrackRecordingSettingsTarget {
 
 data class TrackRecordingUiState(
     val phase: TrackRecordingPhase = TrackRecordingPhase.Idle,
-    val message: String? = null,
+    val pendingMessage: LocalizedMessage? = null,
     val settingsTarget: TrackRecordingSettingsTarget? = null,
 ) {
+    val message: String? get() = pendingMessage?.text
     val showsRec: Boolean get() = phase == TrackRecordingPhase.Recording
     val isAuthorizedSession: Boolean
         get() = phase == TrackRecordingPhase.Starting || phase == TrackRecordingPhase.Recording
@@ -146,7 +151,7 @@ data class TrackRecordingUiState(
 
 sealed interface TrackRecordingEvent {
     data class AwaitingPermission(
-        val message: String,
+        val message: LocalizedMessage,
         val settingsTarget: TrackRecordingSettingsTarget? = null,
     ) : TrackRecordingEvent
 
@@ -158,7 +163,7 @@ sealed interface TrackRecordingEvent {
     data object ServiceActivated : TrackRecordingEvent
 
     data class Interrupted(
-        val message: String,
+        val message: LocalizedMessage,
         val settingsTarget: TrackRecordingSettingsTarget? = null,
     ) : TrackRecordingEvent
 
@@ -175,7 +180,7 @@ object TrackRecordingReducer {
     ): TrackRecordingUiState = when (event) {
         is TrackRecordingEvent.AwaitingPermission -> TrackRecordingUiState(
             phase = TrackRecordingPhase.AwaitingPermission,
-            message = event.message,
+            pendingMessage = event.message,
             settingsTarget = event.settingsTarget,
         )
 
@@ -184,20 +189,19 @@ object TrackRecordingReducer {
 
             event.locationAccess == LocationAccess.ApproximateOnly -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.AwaitingPermission,
-                message = L10n.text("Approximate location cannot provide the precise GPS track TacMap records. ") +
-                    L10n.text("Allow Precise location, then retry."),
+                pendingMessage = Messages.recordingPreciseRequiredRetryMessage(),
                 settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
             )
 
             event.locationAccess == LocationAccess.Denied -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.AwaitingPermission,
-                message = L10n.text("Precise location permission is required to record a GPS track."),
+                pendingMessage = Messages.recordingPreciseRequiredMessage(),
                 settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
             )
 
             !event.gpsEnabled -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.Interrupted,
-                message = L10n.text("GPS is turned off. Turn on device location services, then retry."),
+                pendingMessage = Messages.recordingGpsRequiredMessage(),
                 settingsTarget = TrackRecordingSettingsTarget.LocationServices,
             )
 
@@ -213,7 +217,7 @@ object TrackRecordingReducer {
 
         is TrackRecordingEvent.Interrupted -> TrackRecordingUiState(
             phase = TrackRecordingPhase.Interrupted,
-            message = event.message,
+            pendingMessage = event.message,
             settingsTarget = event.settingsTarget,
         )
 
@@ -222,14 +226,13 @@ object TrackRecordingReducer {
             !state.isAuthorizedSession -> state
             event.locationAccess == LocationAccess.ApproximateOnly -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.Interrupted,
-                message = L10n.text("Precise location was removed; recording stopped. ") +
-                    L10n.text("Approximate location is not accurate enough for a GPS track."),
+                pendingMessage = Messages.recordingPrecisionLostMessage(),
                 settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
             )
 
             else -> TrackRecordingUiState(
                 phase = TrackRecordingPhase.Interrupted,
-                message = L10n.text("Location permission was removed; recording stopped."),
+                pendingMessage = Messages.recordingPermissionLostMessage(),
                 settingsTarget = TrackRecordingSettingsTarget.AppPermissions,
             )
         }

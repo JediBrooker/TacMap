@@ -10,6 +10,14 @@ object Messages {
         L10n.message("id.import_failed", "Import failed: %1\$s", detail)
     fun decimalInputHint(): String =
         L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
+    fun recordingActivationFailed(detail: String): String =
+        L10n.message("id.recording_activation_failed", "Could not activate background track recording: %1\$s", detail)
+    fun recordingActivationFailedMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.recording_activation_failed", "Could not activate background track recording: %1\$s", listOf(detail))
+    fun recordingPreciseRequiredRetry(): String =
+        L10n.message("id.recording_precise_required_retry", "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.")
+    fun recordingPreciseRequiredRetryMessage(): LocalizedMessage =
+        LocalizedMessage("id.recording_precise_required_retry", "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.", listOf())
     fun androidKeyProtectionHelp(): String =
         L10n.message("id.settings_android_key_protection_help", "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.")
     fun headingHelp(): String =
@@ -24,6 +32,18 @@ object Messages {
         L10n.message("id.settings_online_basemaps_help", "Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. While on, Esri or OpenTopoMap can see the ground you are looking at from your IP. Turn this off for a fully offline posture.")
     fun onlineLookupsHelp(): String =
         L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.")
+    fun recordingPreciseRequiredShort(): String =
+        L10n.message("id.ui_approximate_location_cannot_provide_the_precise__fa2a6228", "Approximate location cannot provide the precise GPS track TacMap records.")
+    fun recordingPreciseRequiredShortMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_approximate_location_cannot_provide_the_precise__fa2a6228", "Approximate location cannot provide the precise GPS track TacMap records.", listOf())
+    fun recordingActivationTimeout(): String =
+        L10n.message("id.ui_background_recording_did_not_activate_in_time_tr_7f76c35b", "Background recording did not activate in time. Try starting it again.")
+    fun recordingActivationTimeoutMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_background_recording_did_not_activate_in_time_tr_7f76c35b", "Background recording did not activate in time. Try starting it again.", listOf())
+    fun recordingServiceStopped(): String =
+        L10n.message("id.ui_background_recording_stopped_unexpectedly_your_s_4fb5f807", "Background recording stopped unexpectedly. Your saved track was preserved.")
+    fun recordingServiceStoppedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_background_recording_stopped_unexpectedly_your_s_4fb5f807", "Background recording stopped unexpectedly. Your saved track was preserved.", listOf())
     fun trackDiscardFailed(detail: String): String =
         L10n.message("id.ui_could_not_discard_the_saved_track_1_01f1dcdf", "Could not discard the saved track: %1\$s", detail)
     fun trackDiscardFailedMessage(detail: String): LocalizedMessage =
@@ -36,10 +56,82 @@ object Messages {
         L10n.message("id.ui_could_not_read_the_saved_track_1_fd3205b4", "Could not read the saved track: %1\$s", detail)
     fun trackReadFailedMessage(detail: String): LocalizedMessage =
         LocalizedMessage("id.ui_could_not_read_the_saved_track_1_fd3205b4", "Could not read the saved track: %1\$s", listOf(detail))
+    fun recordingBackgroundStartFailed(detail: String): String =
+        L10n.message("id.ui_could_not_start_background_recording_1_cdb42e3d", "Could not start background recording: %1\$s", detail)
+    fun recordingBackgroundStartFailedMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_start_background_recording_1_cdb42e3d", "Could not start background recording: %1\$s", listOf(detail))
+    fun recordingStartFailed(detail: String): String =
+        L10n.message("id.ui_could_not_start_recording_safely_1_e3b8a79c", "Could not start recording safely: %1\$s", detail)
+    fun recordingStartFailedMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_start_recording_safely_1_e3b8a79c", "Could not start recording safely: %1\$s", listOf(detail))
+    fun recordingVerifyFailed(): String =
+        L10n.message("id.ui_could_not_verify_the_saved_track_before_recordin_74d65e13", "Could not verify the saved track before recording.")
+    fun recordingVerifyFailedMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_could_not_verify_the_saved_track_before_recordin_74d65e13", "Could not verify the saved track before recording.", listOf())
+    fun recordingExistingTrack(): String =
+        L10n.message("id.ui_export_or_discard_the_saved_track_before_startin_11ec4f4c", "Export or discard the saved track before starting a new recording.")
+    fun recordingExistingTrackMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_export_or_discard_the_saved_track_before_startin_11ec4f4c", "Export or discard the saved track before starting a new recording.", listOf())
+    fun recordingGpsOff(): String =
+        L10n.message("id.ui_gps_is_turned_off_recording_stopped_ee16972d", "GPS is turned off; recording stopped.")
+    fun recordingGpsOffMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_gps_is_turned_off_recording_stopped_ee16972d", "GPS is turned off; recording stopped.", listOf())
+    fun recordingGpsRequired(): String =
+        L10n.message("id.ui_gps_is_turned_off_turn_on_device_location_servic_645dc271", "GPS is turned off. Turn on device location services, then retry.")
+    fun recordingGpsRequiredMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_gps_is_turned_off_turn_on_device_location_servic_645dc271", "GPS is turned off. Turn on device location services, then retry.", listOf())
+    fun recordingGpsDisabled(): String =
+        L10n.message("id.ui_gps_was_turned_off_recording_stopped_d4078430", "GPS was turned off; recording stopped.")
+    fun recordingGpsDisabledMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_gps_was_turned_off_recording_stopped_d4078430", "GPS was turned off; recording stopped.", listOf())
+    fun recordingAccessUnavailable(): String =
+        L10n.message("id.ui_location_access_became_unavailable_recording_sto_3c08130f", "Location access became unavailable; recording stopped.")
+    fun recordingAccessUnavailableMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_location_access_became_unavailable_recording_sto_3c08130f", "Location access became unavailable; recording stopped.", listOf())
+    fun recordingPermissionLost(): String =
+        L10n.message("id.ui_location_permission_was_removed_recording_stoppe_4d281d01", "Location permission was removed; recording stopped.")
+    fun recordingPermissionLostMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_location_permission_was_removed_recording_stoppe_4d281d01", "Location permission was removed; recording stopped.", listOf())
+    fun recordingPreciseRequired(): String =
+        L10n.message("id.ui_precise_location_permission_is_required_to_recor_4e3a2e91", "Precise location permission is required to record a GPS track.")
+    fun recordingPreciseRequiredMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_precise_location_permission_is_required_to_recor_4e3a2e91", "Precise location permission is required to record a GPS track.", listOf())
+    fun recordingPrecisionLost(): String =
+        L10n.message("id.ui_precise_location_was_removed_recording_stopped_a_00f6cc68", "Precise location was removed; recording stopped. Approximate location is not accurate enough for a GPS track.")
+    fun recordingPrecisionLostMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_precise_location_was_removed_recording_stopped_a_00f6cc68", "Precise location was removed; recording stopped. Approximate location is not accurate enough for a GPS track.", listOf())
+    fun recordingSessionKeyUnavailable(): String =
+        L10n.message("id.ui_recording_stopped_because_its_session_key_was_un_6082de71", "Recording stopped because its session key was unavailable.")
+    fun recordingSessionKeyUnavailableMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_recording_stopped_because_its_session_key_was_un_6082de71", "Recording stopped because its session key was unavailable.", listOf())
     fun trackStopBeforeDiscard(): String =
         L10n.message("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.")
     fun trackStopBeforeDiscardMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_stop_recording_before_discarding_the_saved_track_fba88fe8", "Stop recording before discarding the saved track.", listOf())
+    fun recordingBuildPrerequisite(): String =
+        L10n.message("id.ui_this_build_is_missing_an_android_foreground_loca_d9bda81b", "This build is missing an Android foreground-location service prerequisite.")
+    fun recordingBuildPrerequisiteMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_this_build_is_missing_an_android_foreground_loca_d9bda81b", "This build is missing an Android foreground-location service prerequisite.", listOf())
+    fun recordingFixFailed(detail: String): String =
+        L10n.message("id.ui_track_fix_not_saved_recording_stopped_1_7a513ad8", "Track fix not saved; recording stopped: %1\$s", detail)
+    fun recordingFixFailedMessage(detail: String): LocalizedMessage =
+        LocalizedMessage("id.ui_track_fix_not_saved_recording_stopped_1_7a513ad8", "Track fix not saved; recording stopped: %1\$s", listOf(detail))
+    fun recordingVisibleRequired(): String =
+        L10n.message("id.ui_track_recording_can_only_be_started_while_tacmap_3471f4ab", "Track recording can only be started while TacMap is visible.")
+    fun recordingVisibleRequiredMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_track_recording_can_only_be_started_while_tacmap_3471f4ab", "Track recording can only be started while TacMap is visible.", listOf())
+    fun recordingPrerequisitesUnavailable(): String =
+        L10n.message("id.ui_track_recording_prerequisites_are_unavailable_363d5a9f", "Track recording prerequisites are unavailable.")
+    fun recordingPrerequisitesUnavailableMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_track_recording_prerequisites_are_unavailable_363d5a9f", "Track recording prerequisites are unavailable.", listOf())
+    fun recordingAwaitingPermission(): String =
+        L10n.message("id.ui_waiting_for_precise_location_permission_9db6f154", "Waiting for Precise location permission…")
+    fun recordingAwaitingPermissionMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_waiting_for_precise_location_permission_9db6f154", "Waiting for Precise location permission…", listOf())
+    fun recordingAwaitingNotification(): String =
+        L10n.message("id.ui_waiting_for_the_recording_notification_choice_b6d01585", "Waiting for the recording notification choice…")
+    fun recordingAwaitingNotificationMessage(): LocalizedMessage =
+        LocalizedMessage("id.ui_waiting_for_the_recording_notification_choice_b6d01585", "Waiting for the recording notification choice…", listOf())
     fun dayCount(count: Int): String = L10n.quantity("day", count)
     fun pointCount(count: Int): String = L10n.quantity("point", count)
     fun drawingCount(count: Int): String = L10n.quantity("drawing", count)

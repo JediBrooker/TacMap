@@ -149,9 +149,11 @@ it deliberately does not translate or reinterpret user/diagnostic content. These
 objects are not wire formats or persistence migrations. External diagnostic details
 remain in their original language even when the app-owned error prefix changes.
 
-The initial migration covers iOS track persistence errors and Android direct
-recovery/discard errors. Android recording permission/service/reducer messages
-still carry strings. In particular, copying a recovery failure into the start
-state machine currently resolves it at that transition; migrating that state
-machine is a separate follow-up. Existing error priorities and recording safety
-transitions are preserved.
+The migration covers iOS track persistence errors and Android track recovery,
+discard, permission, preflight, recorder and service interruption messages. Android
+state and preflight values retain `pendingMessage`; their `message` getters resolve
+current display text for existing UI callers. Recovery failures remain deferred
+when passed into recording-start failures. Events and recorder APIs accept typed
+messages, preserving the existing phase transitions, settings targets, key clearing
+and error priority. System notification refresh and live-map permission guidance
+outside the recording state machine remain separate follow-up work.
