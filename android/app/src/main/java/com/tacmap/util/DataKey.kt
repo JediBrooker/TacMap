@@ -216,6 +216,7 @@ object DataKey {
     /** Drop the in-memory DEK. AUTH mode will need a fresh auth after this. */
     @Synchronized
     fun lock() {
+        com.tacmap.waypoints.CustomSymbolStore.clear()
         cached?.fill(0)
         cached = null
     }

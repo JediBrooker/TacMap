@@ -498,7 +498,12 @@ object GeoJsonImporter {
             symbolId = props["tacticalmaps:marker_symbol"]?.jsonPrimitive?.contentOrNull
                 ?: MarkerSymbol().symbolId,
             colorHex = props["tacticalmaps:marker_color"]?.jsonPrimitive?.contentOrNull
-                ?: MarkerSymbol().colorHex
+                ?: MarkerSymbol().colorHex,
+            custom = runCatching {
+                val c = props["tacticalmaps:custom_symbol"]?.jsonObject ?: return@runCatching null
+                com.tacmap.waypoints.CustomSymbol(c.getValue("id").jsonPrimitive.content, c.getValue("name").jsonPrimitive.content, c.getValue("png").jsonPrimitive.content)
+                    .takeIf { it.id == props["tacticalmaps:marker_symbol"]?.jsonPrimitive?.contentOrNull && it.image() != null }
+            }.getOrNull()
         )
     }
 

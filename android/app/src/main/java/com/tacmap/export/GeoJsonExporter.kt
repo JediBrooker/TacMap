@@ -80,6 +80,11 @@ object GeoJsonExporter {
                     put("tacticalmaps:marker_set", kind.marker.set.name.lowercase())
                     put("tacticalmaps:marker_symbol", kind.marker.symbolId)
                     put("tacticalmaps:marker_color", kind.marker.colorHex)
+                    kind.marker.custom?.takeIf { it.image() != null }?.let { custom ->
+                        put("tacticalmaps:custom_symbol", buildJsonObject {
+                            put("id", custom.id); put("name", custom.name); put("png", custom.png)
+                        })
+                    }
                 }
                 is WaypointKind.Military -> {
                     put("tacticalmaps:affiliation", kind.spec.affiliation.exportValue)

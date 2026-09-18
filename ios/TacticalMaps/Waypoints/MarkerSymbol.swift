@@ -10,10 +10,17 @@ struct MarkerSymbol: Codable, Hashable {
     var set: MarkerSet
     var symbolID: String
     var colorHex: String
+    var custom: CustomSymbol?
+
+    init(set: MarkerSet, symbolID: String, colorHex: String, custom: CustomSymbol? = nil) {
+        self.set = set; self.symbolID = symbolID; self.colorHex = colorHex
+        self.custom = set == .custom ? (custom ?? CustomSymbolStore.shared.symbol(symbolID)) : nil
+    }
 
     /// The catalog entry, or a safe fallback if an unknown id was persisted.
     var entry: MarkerCatalog.Entry {
-        MarkerCatalog.entry(set: set, id: symbolID)
+        if set == .custom, let custom { return .init(id: symbolID, name: custom.name, sfSymbol: "photo", defaultColorHex: colorHex) }
+        return MarkerCatalog.entry(set: set, id: symbolID)
     }
 }
 
@@ -21,12 +28,14 @@ enum MarkerSet: String, Codable, CaseIterable, Hashable {
     case airsoft
     case sar
     case poi
+    case custom
 
     var displayName: String {
         switch self {
         case .airsoft: return L10n.text("Airsoft / Milsim")
         case .sar:     return L10n.text("Search & Rescue")
         case .poi:     return L10n.text("Points of Interest")
+        case .custom: return Messages.symbolsCustomSymbols()
         }
     }
 }
@@ -108,11 +117,12 @@ enum MarkerCatalog {
         case .airsoft: return airsoft
         case .sar:     return sar
         case .poi:     return poi
+        case .custom: return CustomSymbolStore.shared.entries
         }
     }
 
     static func entry(set: MarkerSet, id: String) -> Entry {
-        entries(for: set).first { $0.id == id } ?? entries(for: set)[0]
+        entries(for: set).first { $0.id == id } ?? .init(id: id, name: Messages.symbolsMissingSymbol(), sfSymbol: "questionmark", defaultColorHex: "#8A93A6")
     }
 }
 
@@ -120,6 +130,13 @@ enum MarkerCatalog {
 /// ring, so it reads on any basemap. One shared renderer for all three sets.
 enum MarkerSymbolRenderer {
     static func image(for marker: MarkerSymbol, size: CGFloat = 34) -> UIImage {
+        if marker.set == .custom, let image = marker.custom?.image() {
+            return UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in
+                let scale = min(size / image.size.width, size / image.size.height)
+                let w = image.size.width * scale, h = image.size.height * scale
+                image.draw(in: CGRect(x: (size-w)/2, y: (size-h)/2, width: w, height: h))
+            }
+        }
         let entry = marker.entry
         let color = UIColor(hex: marker.colorHex)
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))

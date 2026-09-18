@@ -199,14 +199,14 @@ internal fun SelectedSymbolEditorDialog(
                                     symbolId = kind.marker.symbolId,
                                     colorHex = kind.marker.colorHex,
                                     onSetChange = { set ->
-                                        val first = com.tacmap.waypoints.MarkerCatalog.entries(set).first()
+                                        val first = com.tacmap.waypoints.MarkerCatalog.entries(set).firstOrNull() ?: return@MarkerTypeFields
                                         draft = draft.changingKind(
                                             WaypointKind.Marker(MarkerSymbol(set, first.id, first.defaultColor))
                                         )
                                     },
                                     onSymbolChange = { id ->
                                         draft = draft.changingKind(
-                                            WaypointKind.Marker(kind.marker.copy(symbolId = id))
+                                            WaypointKind.Marker(MarkerSymbol(com.tacmap.waypoints.MarkerSet.CUSTOM.takeIf { com.tacmap.waypoints.CustomSymbolStore.symbol(id) != null } ?: kind.marker.set, id, kind.marker.colorHex))
                                         )
                                     },
                                     onColorChange = { color ->

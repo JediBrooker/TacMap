@@ -384,7 +384,7 @@ enum WaypointKind: Hashable, Codable {
         case .controlMeasure(let m):
             return "c|\(m.rawValue)"
         case .marker(let mk):
-            return "k|\(mk.set.rawValue)|\(mk.symbolID)|\(mk.colorHex)"
+            return "k|\(mk.set.rawValue)|\(mk.symbolID)|\(mk.colorHex)|\(mk.custom != nil)"
         }
     }
 }

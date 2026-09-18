@@ -35,6 +35,13 @@
 "Could not save the language setting. Try again." = "Could not save the language setting. Try again.";
 "id.settings_language_title" = "Language";
 "Language" = "Language";
+"id.symbols_custom_symbols" = "Custom Symbols";
+"id.symbols_import_symbol_pack" = "Import Symbol Pack…";
+"id.symbols_missing_symbol" = "Missing symbol";
+"id.symbols_no_matches" = "No matching symbols.";
+"id.symbols_symbol_pack_error" = "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.";
+"id.symbols_symbol_pack_failed" = "Symbol pack not imported";
+"id.symbols_symbol_pack_help" = "Choose a TacMap symbol pack (.json). Imported symbols work offline and travel with shared markers.";
 "id.sync_configured_relay_unavailable" = "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.";
 "id.sync_recovery_detail" = "%1$@ %2$@";
 "id.synced_layers_save_failed" = "Could not save synced layers to disk: %1$@";

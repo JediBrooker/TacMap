@@ -15112,5 +15112,82 @@
     "accessor": "aboutScreenTitle",
     "context": "Short navigation title; the full feature name remains in the main menu.",
     "parameters": []
+  },
+  "symbols_custom_symbols": {
+    "en": "Custom Symbols",
+    "de": "Eigene Symbole",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Custom symbol pack import and picker; packs contain offline PNG artwork.",
+    "legacy": false,
+    "accessor": "symbolsCustomSymbols"
+  },
+  "symbols_missing_symbol": {
+    "en": "Missing symbol",
+    "de": "Fehlendes Symbol",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Custom symbol pack import and picker; packs contain offline PNG artwork.",
+    "legacy": false,
+    "accessor": "symbolsMissingSymbol"
+  },
+  "symbols_import_symbol_pack": {
+    "en": "Import Symbol Pack…",
+    "de": "Symbolpaket importieren …",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Custom symbol pack import and picker; packs contain offline PNG artwork.",
+    "legacy": false,
+    "accessor": "symbolsImportSymbolPack"
+  },
+  "symbols_symbol_pack_help": {
+    "en": "Choose a TacMap symbol pack (.json). Imported symbols work offline and travel with shared markers.",
+    "de": "Wähle ein TacMap-Symbolpaket (.json). Importierte Symbole sind offline verfügbar und werden mit geteilten Markierungen übertragen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Custom symbol pack import and picker; packs contain offline PNG artwork.",
+    "legacy": false,
+    "accessor": "symbolsSymbolPackHelp"
+  },
+  "symbols_symbol_pack_failed": {
+    "en": "Symbol pack not imported",
+    "de": "Symbolpaket nicht importiert",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Custom symbol pack import and picker; packs contain offline PNG artwork.",
+    "legacy": false,
+    "accessor": "symbolsSymbolPackFailed"
+  },
+  "symbols_symbol_pack_error": {
+    "en": "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.",
+    "de": "Wähle ein gültiges TacMap-Symbolpaket mit PNG-Grafiken und maximal 16 MB. Entsperre vor dem Import die Einsatzdaten. Prüfe den freien Speicher und versuche es erneut.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Custom symbol pack import and picker; packs contain offline PNG artwork.",
+    "legacy": false,
+    "accessor": "symbolsSymbolPackError"
+  },
+  "symbols_no_matches": {
+    "en": "No matching symbols.",
+    "de": "Keine passenden Symbole.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "symbolsNoMatches",
+    "context": "Empty local symbol search results."
   }
 }

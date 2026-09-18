@@ -120,7 +120,7 @@ object SymbolIconFactory {
                 "ctrl|$density|${kind.measure.assetName}|$rot|$sx|$sy|${waypoint.taskColor.name}"
             }
             is WaypointKind.Marker ->
-                "mk|$density|${kind.marker.set}|${kind.marker.symbolId}|${kind.marker.colorHex}"
+                "mk|$density|${kind.marker.set}|${kind.marker.symbolId}|${kind.marker.colorHex}|${kind.marker.custom != null}"
         }
     }
 
@@ -132,6 +132,13 @@ object SymbolIconFactory {
     private fun renderMarker(context: Context, marker: MarkerSymbol): Bitmap {
         val density = context.resources.displayMetrics.density
         val size = (34f * density).toInt().coerceAtLeast(24)
+        if (marker.set == com.tacmap.waypoints.MarkerSet.CUSTOM) marker.custom?.image()?.let { source ->
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val scale = min(size.toFloat() / source.width, size.toFloat() / source.height)
+            val w = source.width * scale; val h = source.height * scale
+            Canvas(bitmap).drawBitmap(source, null, RectF((size-w)/2, (size-h)/2, (size+w)/2, (size+h)/2), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+            return bitmap
+        }
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val cx = size / 2f

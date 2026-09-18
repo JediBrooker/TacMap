@@ -48,6 +48,7 @@ TacMap treats the following as **untrusted** once data crosses into them:
 
 | Boundary | Trusted? | Why it matters |
 |---|---|---|
+| Imported symbol packs | **Untrusted** | User-selected bounded JSON and passive PNG artwork; labels and depicted meaning are not authenticated. |
 | Your device | Trusted (see §7 caveats) | Holds the at-rest key, and can decrypt mission data. |
 | The sync relay | **Untrusted** | Routes encrypted traffic; can see metadata. |
 | Basemap / lookup providers | **Untrusted** | See the coordinates you request. |
@@ -419,6 +420,24 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   *calibration sidecar* (which sheet, what ground it covers, the fitted affine) is
   sealed. Encrypting the packs themselves would mean SQLCipher and streaming
   decryption; it is not done.
+- **Custom symbol packs.** Pack import is an explicit local document-picker action.
+  The app does not fetch GitHub releases, follow artwork URLs, execute SVG/scripts,
+  or contact a pack author. A cloud-backed system document provider may download
+  the file selected by the user; that provider is outside TacMap's network gates.
+  Pack files are bounded to 16 MiB, 1,000 symbols, 32 KiB per PNG and 256 × 256
+  pixels. The installed library is capped at 32 packs / 32 MiB and sealed with
+  the mission-data key using a separate authenticated store label. Locked keys,
+  failed authentication and malformed existing stores block replacement rather
+  than silently starting an empty library. No original import copy is retained
+  by TacMap; the source file remains wherever the user selected it.
+  Placed custom markers embed their name and PNG in the encrypted waypoint store
+  and existing authenticated Unit Sync payload. Merely importing a pack does
+  not broadcast the library. Exported GeoJSON includes the placed artwork/name
+  as plaintext, like its other mission fields. Artwork increases traffic size,
+  still visible to the relay, and existing sync/import size limits still apply.
+  A content hash checks artwork identity, not author trust, operational accuracy
+  or official approval. Other members can copy or mislabel the symbols. Older
+  clients may show fallback markers; participating devices need compatible builds.
 - **Crash logs are local and plaintext.** An uncaught-exception / fatal-signal
   handler writes a short stack trace to app-private storage (never transmitted -
   you export it yourself from About). It is not sealed: the fatal-signal path has
@@ -533,8 +552,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   trade-off in §7 first, and on Android do not remove your lockscreen afterwards.
 - **Self-host the sync relay** so no traffic transits an account you do not
   control. The relay is a single Cloudflare Worker + Durable Object
-  (`sync/src/index.ts`); deploy it to your own account and point the app at it in
-  Settings → relay URL. It stores/forwards encrypted mission objects, but only
+  (`sync/src/index.ts`); deploy it to your own account and configure the relay endpoint in your
+  deployment/build. The distributed app has no user-editable relay URL setting. It stores/forwards encrypted mission objects, but only
   forwards live Chat frames. It still handles the clear admission, envelope,
   actor/session/key, Chat scope/selected-recipient, acknowledgement, and
   control metadata described in §4.

@@ -34,6 +34,7 @@ class TacticalApp : Application() {
         L10n.install(this)
         // Has to come before any store is constructed - they all seal through it.
         DataKey.install(this)
+        com.tacmap.waypoints.CustomSymbolStore.initialize(this)
         appLock = AppLock(this)
         cleanupExportArtifacts(this)
         opsec = OpsecSettings(this)

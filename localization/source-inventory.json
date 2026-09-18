@@ -1721,5 +1721,41 @@
     "platform": "android",
     "area": "shared-infrastructure",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/CustomSymbolPack.swift",
+    "platform": "ios",
+    "area": "symbols-drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/CustomSymbolImportButton.swift",
+    "platform": "ios",
+    "area": "symbols-drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/waypoints/CustomSymbolPack.kt",
+    "platform": "android",
+    "area": "symbols-drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CustomSymbolImportButton.kt",
+    "platform": "android",
+    "area": "symbols-drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CustomSymbolPicker.kt",
+    "platform": "android",
+    "area": "symbols-drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/CustomSymbolPicker.swift",
+    "platform": "ios",
+    "area": "symbols-drawings-layers",
+    "reviewStatus": "manual-review-needed"
   }
 ]

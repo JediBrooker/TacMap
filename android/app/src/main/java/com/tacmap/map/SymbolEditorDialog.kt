@@ -130,7 +130,7 @@ fun SymbolEditorDialog(
     val currentKind = when (mode) {
         SymbolEditorMode.MILITARY -> WaypointKind.Military(militarySpec)
         SymbolEditorMode.TASK -> WaypointKind.ControlMeasure(measure)
-        SymbolEditorMode.MARKER -> WaypointKind.Marker(MarkerSymbol(markerSet, markerSymbolId, markerColor))
+        SymbolEditorMode.MARKER -> WaypointKind.Marker(MarkerSymbol(markerSet, markerSymbolId, markerColor, initialMarker?.custom?.takeIf { it.id == markerSymbolId } ?: com.tacmap.waypoints.CustomSymbolStore.symbol(markerSymbolId)))
     }
 
     Dialog(
@@ -254,7 +254,7 @@ fun SymbolEditorDialog(
                                 colorHex = markerColor,
                                 onSetChange = { newSet ->
                                     markerSet = newSet
-                                    val first = MarkerCatalog.entries(newSet)[0]
+                                    val first = MarkerCatalog.entries(newSet).firstOrNull() ?: return@MarkerTypeFields
                                     markerSymbolId = first.id
                                     markerColor = first.defaultColor
                                 },
@@ -550,11 +550,20 @@ internal fun MarkerTypeFields(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        var packRevision by remember { mutableStateOf(0) }
+        CustomSymbolImportButton(onLoaded = { packRevision++ }) { symbol ->
+            packRevision++
+            onSetChange(MarkerSet.CUSTOM)
+            onSymbolChange(symbol.id)
+        }
         Text(L10n.text("Symbol Set"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        PickerField(L10n.text("Set"), set, MarkerSet.entries.toList(), { it.displayName }, onSetChange)
-        val entries = MarkerCatalog.entries(set)
+        PickerField(L10n.text("Set"), set, MarkerSet.entries.filter { it != MarkerSet.CUSTOM || com.tacmap.waypoints.CustomSymbolStore.entries().isNotEmpty() || set == it }, { it.displayName }, onSetChange)
+        val entries = remember(set, packRevision) { MarkerCatalog.entries(set) }.ifEmpty { listOf(MarkerCatalog.entry(set, symbolId)) }
         val selectedEntry = entries.firstOrNull { it.id == symbolId } ?: entries[0]
-        PickerField(L10n.text("Symbol"), selectedEntry, entries, { it.displayName }, { onSymbolChange(it.id) })
+        if (set == MarkerSet.CUSTOM) {
+            CustomSymbolPicker(entries, selectedEntry, onSymbolChange)
+        } else PickerField(L10n.text("Symbol"), selectedEntry, entries, { it.displayName }, { onSymbolChange(it.id) })
+        if (set != MarkerSet.CUSTOM) {
         Text(L10n.text("Colour"), color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
         val swatches = MarkerCatalog.teamColors.map { it.second } + listOf("#8A93A6", "#111417")
         FlowRow(
@@ -587,6 +596,7 @@ internal fun MarkerTypeFields(
                     )
                 }
             }
+        }
         }
     }
 }

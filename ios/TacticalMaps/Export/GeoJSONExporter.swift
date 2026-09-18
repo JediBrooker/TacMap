@@ -123,6 +123,9 @@ enum GeoJSONExporter {
             props["tacticalmaps:marker_set"] = mk.set.rawValue
             props["tacticalmaps:marker_symbol"] = mk.symbolID
             props["tacticalmaps:marker_color"] = mk.colorHex
+            if let custom = mk.custom, custom.image() != nil {
+                props["tacticalmaps:custom_symbol"] = ["id": custom.id, "name": custom.name, "png": custom.png]
+            }
         }
         if let n = wp.notes {
             props["description"] = n     // simplestyle uses "description"

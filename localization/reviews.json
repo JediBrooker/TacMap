@@ -12039,6 +12039,55 @@
         "translation": "ca64927e33516276b47482676b4991caf9a3fb4b5e234e209fbfe3c14a446a04",
         "status": "reviewed"
       }
+    },
+    "symbols_custom_symbols": {
+      "de": {
+        "source": "a7613ce14bf86302b8bffc07f8863cb405f003b09e825e8d571b9c19e309ba43",
+        "translation": "58b947b629519bca942042b381ba2ff7ddb2a0146753d831adecc274b6ad26cf",
+        "status": "reviewed"
+      }
+    },
+    "symbols_missing_symbol": {
+      "de": {
+        "source": "e5d4471f9db2ccc5bdd249208688c3faf966806c0dcc6ae3dd538ff674afcde0",
+        "translation": "62a6e165c4807d037b088313f0703d8f826bf06bdeadf04669acf20b263e8169",
+        "status": "reviewed"
+      }
+    },
+    "symbols_import_symbol_pack": {
+      "de": {
+        "source": "3b560c2a140e32c3380ff547da00ca901776b474c181e865c8e79fce21593f24",
+        "translation": "4ebb35bb07a803e0a8f8e5e15a4c05976b0c8aebe6a85acef9d0ae8d4e752f68",
+        "status": "reviewed"
+      }
+    },
+    "symbols_symbol_pack_help": {
+      "de": {
+        "source": "60897d98eba34cd80ba11ea5abf6b5941f1b1fe4095ee27a7ffcd3198bba35d9",
+        "translation": "04ab3c743b376f7cb41f09f67d6ba9f531aa15f8890bf4b4b7c71b2b0664a1e8",
+        "status": "reviewed"
+      }
+    },
+    "symbols_symbol_pack_failed": {
+      "de": {
+        "source": "6d88ad5a1e2380a2826a391ce1ef49501b68c185362c9d263071f768765ae08c",
+        "translation": "c401ed1ab14ad957bed369ade3080f1b1ee6b27c2ca7b0fe6d392f8590b49fd8",
+        "status": "reviewed"
+      }
+    },
+    "symbols_symbol_pack_error": {
+      "de": {
+        "source": "d0ebd1606a7ff91bc9a05f863a609843ea033d1189386134bd2254b997f4ea24",
+        "translation": "c5d5be0e6996864f71abd7b58da0c3dd2b511768894e6aaabe32fdd3b11ca3d1",
+        "status": "reviewed"
+      }
+    },
+    "symbols_no_matches": {
+      "de": {
+        "source": "aa885b031165528f968227e003739fb551ec0175f39195cca679a1ea831dff6f",
+        "translation": "be66bce910e0746ce684e05a915b24a19beb5202ad7e843f6dd312c8e1c245f2",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

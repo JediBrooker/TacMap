@@ -568,7 +568,11 @@ enum GeoJSONImporter {
                 .flatMap(MarkerSet.init(rawValue:)) ?? .airsoft
             let symbolID = (props["tacticalmaps:marker_symbol"] as? String) ?? "team"
             let colorHex = (props["tacticalmaps:marker_color"] as? String) ?? "#3B7BE0"
-            kind = .marker(MarkerSymbol(set: set, symbolID: symbolID, colorHex: colorHex))
+            var custom: CustomSymbol?
+            if let object = props["tacticalmaps:custom_symbol"] as? [String: Any],
+               let data = try? JSONSerialization.data(withJSONObject: object),
+               let decoded = try? JSONDecoder().decode(CustomSymbol.self, from: data), decoded.id == symbolID, decoded.image() != nil { custom = decoded }
+            kind = .marker(MarkerSymbol(set: set, symbolID: symbolID, colorHex: colorHex, custom: custom))
         default:
             kind = .generic
         }

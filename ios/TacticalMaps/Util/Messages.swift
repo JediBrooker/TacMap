@@ -156,6 +156,27 @@ enum Messages {
     static func settingsLanguageTitle() -> String {
         L10n.message("id.settings_language_title", fallback: "Language")
     }
+    static func symbolsCustomSymbols() -> String {
+        L10n.message("id.symbols_custom_symbols", fallback: "Custom Symbols")
+    }
+    static func symbolsImportSymbolPack() -> String {
+        L10n.message("id.symbols_import_symbol_pack", fallback: "Import Symbol Pack…")
+    }
+    static func symbolsMissingSymbol() -> String {
+        L10n.message("id.symbols_missing_symbol", fallback: "Missing symbol")
+    }
+    static func symbolsNoMatches() -> String {
+        L10n.message("id.symbols_no_matches", fallback: "No matching symbols.")
+    }
+    static func symbolsSymbolPackError() -> String {
+        L10n.message("id.symbols_symbol_pack_error", fallback: "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.")
+    }
+    static func symbolsSymbolPackFailed() -> String {
+        L10n.message("id.symbols_symbol_pack_failed", fallback: "Symbol pack not imported")
+    }
+    static func symbolsSymbolPackHelp() -> String {
+        L10n.message("id.symbols_symbol_pack_help", fallback: "Choose a TacMap symbol pack (.json). Imported symbols work offline and travel with shared markers.")
+    }
     static func syncConfiguredRelayUnavailable() -> String {
         L10n.message("id.sync_configured_relay_unavailable", fallback: "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.")
     }

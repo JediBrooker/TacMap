@@ -110,6 +110,20 @@ object Messages {
         L10n.message("id.settings_online_basemaps_help", "Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. While on, Esri or OpenTopoMap can see the ground you are looking at from your IP. Turn this off for a fully offline posture.")
     fun onlineLookupsHelp(): String =
         L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.")
+    fun symbolsCustomSymbols(): String =
+        L10n.message("id.symbols_custom_symbols", "Custom Symbols")
+    fun symbolsImportSymbolPack(): String =
+        L10n.message("id.symbols_import_symbol_pack", "Import Symbol Pack…")
+    fun symbolsMissingSymbol(): String =
+        L10n.message("id.symbols_missing_symbol", "Missing symbol")
+    fun symbolsNoMatches(): String =
+        L10n.message("id.symbols_no_matches", "No matching symbols.")
+    fun symbolsSymbolPackError(): String =
+        L10n.message("id.symbols_symbol_pack_error", "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.")
+    fun symbolsSymbolPackFailed(): String =
+        L10n.message("id.symbols_symbol_pack_failed", "Symbol pack not imported")
+    fun symbolsSymbolPackHelp(): String =
+        L10n.message("id.symbols_symbol_pack_help", "Choose a TacMap symbol pack (.json). Imported symbols work offline and travel with shared markers.")
     fun syncCodeTooShort(value: String): String =
         L10n.message("id.sync_code_too_short", "Too short to be safe. Use at least %1\$s characters, or tap Generate.", value)
     fun syncCodeTooShortMessage(value: String): LocalizedMessage =

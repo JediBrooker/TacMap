@@ -699,6 +699,7 @@ struct ContentView: View {
     }
 
     private func lockChatUIAndSecrets() {
+        CustomSymbolStore.shared.clear()
         chatRoute = nil
         pendingChatRoute = nil
         syncManager.lockChatForMissionData()

@@ -172,6 +172,7 @@ enum SymbolPickerOptions {
 /// Builder for a brand-new symbol. Existing symbols always use the
 /// transactional `SelectedSymbolEditSheet` below.
 struct WaypointCreationSheet: View {
+    @ObservedObject private var customSymbols = CustomSymbolStore.shared
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var waypointStore: WaypointStore
     let defaultCoordinate: CLLocationCoordinate2D
@@ -297,35 +298,54 @@ struct WaypointCreationSheet: View {
 
                 case .marker:
                     Section(L10n.text("Symbol Set")) {
+                        CustomSymbolImportButton { symbol in
+                            markerSet = .custom
+                            markerSymbolID = symbol.id
+                            markerColorHex = "#3B7BE0"
+                        }
                         Picker(L10n.text("Set"), selection: $markerSet) {
-                            ForEach(MarkerSet.allCases, id: \.self) { s in
+                            ForEach(MarkerSet.allCases.filter { $0 != .custom || !CustomSymbolStore.shared.entries.isEmpty }, id: \.self) { s in
                                 Text(s.displayName).tag(s)
                             }
                         }
                         .onChange(of: markerSet) { newSet in
                             // Snap to the new set's first symbol + its colour.
-                            let first = MarkerCatalog.entries(for: newSet)[0]
+                            guard let first = MarkerCatalog.entries(for: newSet).first else { return }
                             markerSymbolID = first.id
                             markerColorHex = first.defaultColorHex
                         }
                     }
                     Section(L10n.text("Symbol")) {
+                        if markerSet == .custom {
+                            NavigationLink {
+                                CustomSymbolPicker(selection: $markerSymbolID)
+                            } label: {
+                                Text(verbatim: MarkerCatalog.entry(set: markerSet, id: markerSymbolID).name)
+                            }
+                        } else {
                         Picker(L10n.text("Symbol"), selection: $markerSymbolID) {
                             ForEach(MarkerCatalog.entries(for: markerSet), id: \.id) { e in
-                                Label(e.name, systemImage: e.sfSymbol).tag(e.id)
+                                HStack {
+                                    if markerSet == .custom, let image = CustomSymbolStore.shared.symbol(e.id)?.image() {
+                                        Image(uiImage: image).resizable().scaledToFit().frame(width: 32, height: 32)
+                                    }
+                                    Text(verbatim: e.name)
+                                }.tag(e.id)
                             }
                         }
                         .pickerStyle(.navigationLink)
                         .onChange(of: markerSymbolID) { newID in
                             markerColorHex = MarkerCatalog.entry(set: markerSet, id: newID).defaultColorHex
                         }
+                        }
                     }
-                    Section(L10n.text("Colour")) {
+                    if markerSet != .custom { Section(L10n.text("Colour")) {
                         MarkerColorSwatches(selection: $markerColorHex)
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                     }
 
+                    }
                 case .controlMeasure:
                     Section(L10n.text("Tactical Task / Control Measure")) {
                         StableNavigationSelection(
@@ -577,6 +597,7 @@ struct WaypointCreationSheet: View {
 /// live on the selected-symbol quick-action card; Save and confirmed Delete
 /// each perform one durable-before-publish store mutation.
 struct SelectedSymbolEditSheet: View {
+    @ObservedObject private var customSymbols = CustomSymbolStore.shared
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var waypointStore: WaypointStore
     @ObservedObject var drawingStore: DrawingStore
@@ -839,17 +860,27 @@ struct SelectedSymbolEditSheet: View {
 
     @ViewBuilder
     private func markerPickers(_ marker: MarkerSymbol) -> some View {
+        CustomSymbolImportButton { symbol in
+            draft.kind = .marker(.init(set: .custom, symbolID: symbol.id, colorHex: "#3B7BE0", custom: symbol))
+        }
         Picker(L10n.text("Set"), selection: Binding(
             get: { marker.set },
             set: { newSet in
-                let first = MarkerCatalog.entries(for: newSet)[0]
+                guard let first = MarkerCatalog.entries(for: newSet).first else { return }
                 draft.kind = .marker(.init(set: newSet,
                                            symbolID: first.id,
                                            colorHex: first.defaultColorHex))
             }
         )) {
-            ForEach(MarkerSet.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            ForEach(MarkerSet.allCases.filter { $0 != .custom || !CustomSymbolStore.shared.entries.isEmpty }, id: \.self) { Text($0.displayName).tag($0) }
         }
+        if marker.set == .custom {
+            NavigationLink {
+                CustomSymbolPicker(selection: Binding(get: { marker.symbolID }, set: { id in
+                    draft.kind = .marker(.init(set: .custom, symbolID: id, colorHex: marker.colorHex))
+                }))
+            } label: { Text(verbatim: marker.entry.name) }
+        } else {
         Picker(L10n.text("Symbol"), selection: Binding(
             get: { marker.symbolID },
             set: { draft.kind = .marker(.init(set: marker.set,
@@ -857,16 +888,24 @@ struct SelectedSymbolEditSheet: View {
                                                colorHex: MarkerCatalog.entry(set: marker.set, id: $0).defaultColorHex)) }
         )) {
             ForEach(MarkerCatalog.entries(for: marker.set), id: \.id) {
-                Label($0.name, systemImage: $0.sfSymbol).tag($0.id)
+                HStack {
+                    if marker.set == .custom, let image = CustomSymbolStore.shared.symbol($0.id)?.image() {
+                        Image(uiImage: image).resizable().scaledToFit().frame(width: 32, height: 32)
+                    }
+                    Text(verbatim: $0.name)
+                }.tag($0.id)
             }
         }
         .pickerStyle(.navigationLink)
+        }
+        if marker.set != .custom {
         MarkerColorSwatches(selection: Binding(
             get: { marker.colorHex },
             set: { draft.kind = .marker(.init(set: marker.set,
                                                symbolID: marker.symbolID,
-                                               colorHex: $0)) }
+                                               colorHex: $0, custom: marker.custom)) }
         ))
+        }
     }
 
     private var taskColourSection: some View {

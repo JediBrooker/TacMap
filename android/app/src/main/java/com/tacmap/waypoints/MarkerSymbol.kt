@@ -1,6 +1,7 @@
 package com.tacmap.waypoints
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -15,18 +16,20 @@ import kotlinx.serialization.Serializable
 data class MarkerSymbol(
     val set: MarkerSet = MarkerSet.AIRSOFT,
     @SerialName("symbol_id") val symbolId: String = "team",
-    @SerialName("color") val colorHex: String = "#3B7BE0"
+    @SerialName("color") val colorHex: String = "#3B7BE0",
+    val custom: CustomSymbol? = if (set == MarkerSet.CUSTOM) CustomSymbolStore.symbol(symbolId) else null
 ) {
-    val entry: MarkerCatalog.Entry get() = MarkerCatalog.entry(set, symbolId)
+    val entry: MarkerCatalog.Entry get() = custom?.let { MarkerCatalog.Entry(symbolId, it.name, "?", colorHex, true) } ?: MarkerCatalog.entry(set, symbolId)
 }
 
 @Serializable
 enum class MarkerSet(private val displayNameKey: String) {
     @SerialName("airsoft") AIRSOFT("Airsoft / Milsim"),
     @SerialName("sar") SAR("Search & Rescue"),
-    @SerialName("poi") POI("Points of Interest");
+    @SerialName("poi") POI("Points of Interest"),
+    @SerialName("custom") CUSTOM("Custom Symbols");
 
-    val displayName: String get() = L10n.text(displayNameKey)
+    val displayName: String get() = if (this == CUSTOM) Messages.symbolsCustomSymbols() else L10n.text(displayNameKey)
 }
 
 /** The symbol catalog: for each set, an ordered list with a display name, a short
@@ -36,9 +39,10 @@ object MarkerCatalog {
         val id: String,
         private val displayNameKey: String,
         val code: String,
-        val defaultColor: String
+        val defaultColor: String,
+        val customName: Boolean = false
     ) {
-        val displayName: String get() = L10n.text(displayNameKey)
+        val displayName: String get() = if (customName) displayNameKey else L10n.text(displayNameKey)
     }
 
     /** Airsoft team colours the picker offers (the team IS the colour). */
@@ -103,8 +107,9 @@ object MarkerCatalog {
         MarkerSet.AIRSOFT -> airsoft
         MarkerSet.SAR -> sar
         MarkerSet.POI -> poi
+        MarkerSet.CUSTOM -> CustomSymbolStore.entries()
     }
 
     fun entry(set: MarkerSet, id: String): Entry =
-        entries(set).firstOrNull { it.id == id } ?: entries(set)[0]
+        entries(set).firstOrNull { it.id == id } ?: Entry(id, Messages.symbolsMissingSymbol(), "?", "#8A93A6", true)
 }
