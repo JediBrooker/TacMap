@@ -324,13 +324,8 @@ struct WaypointCreationSheet: View {
                             }
                         } else {
                         Picker(L10n.text("Symbol"), selection: $markerSymbolID) {
-                            ForEach(MarkerCatalog.entries(for: markerSet), id: \.id) { e in
-                                HStack {
-                                    if markerSet == .custom, let image = CustomSymbolStore.shared.symbol(e.id)?.image() {
-                                        Image(uiImage: image).resizable().scaledToFit().frame(width: 32, height: 32)
-                                    }
-                                    Text(verbatim: e.name)
-                                }.tag(e.id)
+                            ForEach(MarkerCatalog.entries(for: markerSet), id: \.id) { entry in
+                                Label(entry.name, systemImage: entry.sfSymbol).tag(entry.id)
                             }
                         }
                         .pickerStyle(.navigationLink)
@@ -887,13 +882,8 @@ struct SelectedSymbolEditSheet: View {
                                                symbolID: $0,
                                                colorHex: MarkerCatalog.entry(set: marker.set, id: $0).defaultColorHex)) }
         )) {
-            ForEach(MarkerCatalog.entries(for: marker.set), id: \.id) {
-                HStack {
-                    if marker.set == .custom, let image = CustomSymbolStore.shared.symbol($0.id)?.image() {
-                        Image(uiImage: image).resizable().scaledToFit().frame(width: 32, height: 32)
-                    }
-                    Text(verbatim: $0.name)
-                }.tag($0.id)
+            ForEach(MarkerCatalog.entries(for: marker.set), id: \.id) { entry in
+                Label(entry.name, systemImage: entry.sfSymbol).tag(entry.id)
             }
         }
         .pickerStyle(.navigationLink)
