@@ -16,6 +16,8 @@
 <meta name="twitter:card" content="summary_large_image">
 <style>
   :root{
+    --font-sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
     --void:#0E1519;        /* deep cool gunmetal ground */
     --void-2:#0B1013;      /* darker for bands */
     --panel:#141E24;       /* raised panel */
@@ -34,7 +36,7 @@
   body{
     background:var(--void);
     color:var(--ink);
-    font-family:"IBM Plex Sans",system-ui,sans-serif;
+    font-family:var(--font-sans);
     line-height:1.6;
     -webkit-font-smoothing:antialiased;
     overflow-x:hidden;
@@ -55,18 +57,18 @@
   .eyebrow.centered{justify-content:center;display:flex}
 
   a{color:inherit;text-decoration:none}
-  .mono{font-family:"IBM Plex Mono",monospace}
+  .mono{font-family:var(--font-mono)}
   /* the nav is sticky, so jump targets land under it without this */
   [id]{scroll-margin-top:80px}
 
   /* ---- shared type ---- */
   .eyebrow{
-    font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.22em;
+    font-family:var(--font-mono);font-size:12px;letter-spacing:.22em;
     text-transform:uppercase;color:var(--signal);
     display:inline-flex;align-items:center;gap:10px;
   }
   .eyebrow::before{content:"";width:22px;height:1px;background:var(--signal)}
-  h1,h2,h3{font-family:"Saira",sans-serif;line-height:1.02;letter-spacing:-.01em}
+  h1,h2,h3{font-family:var(--font-sans);line-height:1.02;letter-spacing:-.01em}
 
   /* ---- top nav ---- */
   header.nav{position:sticky;top:0;z-index:20;
@@ -74,7 +76,7 @@
     border-bottom:1px solid var(--line-2);}
   .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
     display:flex;align-items:center;justify-content:space-between;gap:20px}
-  .brand{display:flex;align-items:center;gap:11px;font-family:"Saira";font-weight:800;
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-sans);font-weight:800;
     font-size:19px;letter-spacing:.02em}
   /* the ios app icon, same file the favicon points at so its already cached.
      source png is a bare square because ios masks the corners itself, so we
@@ -83,7 +85,7 @@
   .nav-links{display:flex;gap:26px;align-items:center}
   .nav-links a{font-size:14px;color:var(--ink-dim)}
   .nav-links a:hover{color:var(--ink)}
-  .nav-cta{font-family:"IBM Plex Mono";font-size:13px;letter-spacing:.04em;
+  .nav-cta{font-family:var(--font-mono);font-size:13px;letter-spacing:.04em;
     border:1px solid var(--signal);color:var(--signal);
     padding:8px 16px;border-radius:2px;transition:.18s}
   .nav-cta:hover{background:var(--signal);color:var(--void)}
@@ -99,14 +101,14 @@
   .hero h1 em{font-style:normal;color:var(--signal)}
   .hero p.lead{font-size:19px;color:var(--ink-dim);max-width:33ch}
   .cta-row{display:flex;gap:14px;margin-top:34px;flex-wrap:wrap}
-  .btn{font-family:"IBM Plex Mono";font-size:14px;letter-spacing:.03em;
+  .btn{font-family:var(--font-mono);font-size:14px;letter-spacing:.03em;
     padding:14px 24px;border-radius:2px;transition:.18s;display:inline-flex;
     align-items:center;gap:10px;border:1px solid transparent}
   .btn-primary{background:var(--signal);color:var(--void);font-weight:500}
   .btn-primary:hover{background:var(--signal-soft);transform:translateY(-1px)}
   .btn-ghost{border-color:var(--line);color:var(--ink)}
   .btn-ghost:hover{border-color:var(--ink-dim)}
-  .hero-meta{margin-top:30px;font-family:"IBM Plex Mono";font-size:12.5px;
+  .hero-meta{margin-top:30px;font-family:var(--font-mono);font-size:12.5px;
     color:var(--ink-faint);letter-spacing:.04em}
   .hero-meta b{color:var(--ink-dim);font-weight:500}
 
@@ -123,7 +125,7 @@
        values come out of scripts/extract_site_hero.py */
     border-radius:9.513% / 4.4728%;
     box-shadow:0 40px 90px -34px #000, 0 0 0 1px rgba(231,237,236,.07)}
-  .device .caption{position:relative;font-family:"IBM Plex Mono";font-size:11px;
+  .device .caption{position:relative;font-family:var(--font-mono);font-size:11px;
     letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);text-align:center}
   @media(max-width:900px){
     .hero-grid{grid-template-columns:1fr;gap:40px}
@@ -136,7 +138,7 @@
     background:var(--void-2)}
   .strip-in{max-width:var(--maxw);margin:0 auto;padding:16px 28px;
     display:flex;flex-wrap:wrap;gap:10px 30px;justify-content:center;
-    font-family:"IBM Plex Mono";font-size:12.5px;letter-spacing:.1em;
+    font-family:var(--font-mono);font-size:12.5px;letter-spacing:.1em;
     text-transform:uppercase;color:var(--ink-dim)}
   .strip-in span{display:inline-flex;align-items:center;gap:12px}
   .strip-in span::before{content:"";width:5px;height:5px;background:var(--signal);
@@ -144,7 +146,7 @@
 
   /* ---- section scaffolding ---- */
   section.blk{padding:78px 0;position:relative}
-  .gridref{font-family:"IBM Plex Mono";font-size:12px;letter-spacing:.16em;
+  .gridref{font-family:var(--font-mono);font-size:12px;letter-spacing:.16em;
     text-transform:uppercase;color:var(--ink-faint);
     display:flex;align-items:center;gap:12px;margin-bottom:16px}
   .gridref b{color:var(--signal);font-weight:500}
@@ -160,11 +162,11 @@
   .cmp table{width:100%;border-collapse:collapse;font-size:15px}
   .cmp th,.cmp td{text-align:left;padding:15px 18px;border-bottom:1px solid var(--line-2);
     vertical-align:top}
-  .cmp thead th{font-family:"Saira";font-weight:700;font-size:16px;background:var(--void-2)}
-  .cmp thead th:first-child{color:var(--ink-faint);font-family:"IBM Plex Mono";
+  .cmp thead th{font-family:var(--font-sans);font-weight:700;font-size:16px;background:var(--void-2)}
+  .cmp thead th:first-child{color:var(--ink-faint);font-family:var(--font-mono);
     font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:500}
   .cmp thead th.us{color:var(--signal)}
-  .cmp td:first-child{color:var(--ink-dim);font-family:"IBM Plex Mono";font-size:13px}
+  .cmp td:first-child{color:var(--ink-dim);font-family:var(--font-mono);font-size:13px}
   .cmp td.us{color:var(--ink);font-weight:500}
   .cmp tr:last-child td{border-bottom:none}
   .cmp-note{margin-top:16px;font-size:14px;color:var(--ink-faint);max-width:62ch}
@@ -173,7 +175,7 @@
   .feats{margin-top:44px;display:grid;grid-template-columns:1fr 1fr;gap:2px;
     background:var(--line-2);border:1px solid var(--line-2);border-radius:6px;overflow:hidden}
   .feat{background:var(--void);padding:34px 30px}
-  .feat .fnum{font-family:"IBM Plex Mono";font-size:12px;color:var(--signal);letter-spacing:.1em}
+  .feat .fnum{font-family:var(--font-mono);font-size:12px;color:var(--signal);letter-spacing:.1em}
   .feat h3{font-size:22px;font-weight:600;margin:14px 0 10px}
   .feat p{color:var(--ink-dim);font-size:15.5px}
   @media(max-width:760px){.feats{grid-template-columns:1fr}}
@@ -191,10 +193,10 @@
   .shot{flex:0 0 auto;width:264px;scroll-snap-align:center}
   .shot img{display:block;width:100%;height:auto;border-radius:6px;
     border:1px solid var(--line);background:var(--void-2)}
-  .shot figcaption{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.12em;
+  .shot figcaption{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;
     text-transform:uppercase;color:var(--ink-faint);padding-top:8px;text-align:center}
   .shot figcaption b{color:var(--signal);font-weight:500}
-  .rail-hint{margin-top:6px;font-family:"IBM Plex Mono";font-size:11.5px;
+  .rail-hint{margin-top:6px;font-family:var(--font-mono);font-size:11.5px;
     letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
   @media(max-width:600px){.shot{width:228px}}
 
@@ -203,7 +205,7 @@
   .who-card{border:1px solid var(--line);border-radius:5px;padding:24px 20px;
     background:var(--panel);transition:.2s}
   .who-card:hover{border-color:var(--signal);transform:translateY(-3px)}
-  .who-card .tag{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.1em;
+  .who-card .tag{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;
     color:var(--signal);text-transform:uppercase}
   .who-card h3{font-size:18px;font-weight:600;margin:12px 0 8px}
   .who-card p{font-size:14px;color:var(--ink-dim)}
@@ -220,16 +222,16 @@
   .vlink{display:flex;align-items:center;justify-content:space-between;
     padding:20px 22px;background:var(--void);transition:.18s;gap:16px}
   .vlink:hover{background:var(--panel)}
-  .vlink .vt{font-family:"Saira";font-weight:600;font-size:17px}
+  .vlink .vt{font-family:var(--font-sans);font-weight:600;font-size:17px}
   .vlink .vd{font-size:13px;color:var(--ink-dim);margin-top:3px}
-  .vlink .arrow{color:var(--signal);font-family:"IBM Plex Mono";flex:none}
+  .vlink .arrow{color:var(--signal);font-family:var(--font-mono);flex:none}
   @media(max-width:900px){.verify .vgrid{grid-template-columns:1fr;gap:32px}}
 
   /* ---- faq ---- */
   .faq{margin-top:40px;border-top:1px solid var(--line-2)}
   .qa{border-bottom:1px solid var(--line-2);padding:24px 0;display:grid;
     grid-template-columns:.9fr 1.4fr;gap:30px}
-  .qa .q{font-family:"Saira";font-weight:600;font-size:19px;color:var(--ink)}
+  .qa .q{font-family:var(--font-sans);font-weight:600;font-size:19px;color:var(--ink)}
   .qa .a{color:var(--ink-dim);font-size:15.5px}
   .qa .a a{color:var(--signal);border-bottom:1px solid transparent}
   .qa .a a:hover{border-color:var(--signal)}
@@ -240,12 +242,12 @@
   .dl h2{font-size:clamp(32px,5vw,56px);font-weight:800;margin:18px auto 0;max-width:16ch}
   .dl p{color:var(--ink-dim);margin:18px auto 0;max-width:46ch;font-size:17px}
   .dl .cta-row{justify-content:center}
-  .store{display:inline-flex;align-items:center;gap:11px;border:1px solid var(--line);
-    padding:12px 22px;border-radius:3px;transition:.18s}
-  .store:hover{border-color:var(--ink-dim)}
-  .store .k{font-family:"IBM Plex Mono";font-size:10px;color:var(--ink-faint);
-    letter-spacing:.1em;text-transform:uppercase;display:block}
-  .store .v{font-family:"Saira";font-weight:600;font-size:16px;line-height:1.1}
+  .dl .cta-row{align-items:center}
+  .store{display:inline-flex;align-items:center;justify-content:center;
+    min-height:72px;border-radius:6px}
+  .store img{display:block;width:auto;height:48px}
+  .store.google-play img{height:72px}
+  .store:focus-visible{outline:2px solid var(--signal);outline-offset:4px}
 
   /* ---- footer ---- */
   footer{border-top:1px solid var(--line-2);padding:40px 0;background:var(--void-2)}
@@ -698,8 +700,8 @@
       for encrypted Unit Sync presence, mission objects, and TacMap Chat. No
       TacMap account.</p>
     <div class="cta-row">
-      <a class="store" href="https://apps.apple.com/au/app/tacmap/id6773175573"><span><span class="k">Download on the</span><span class="v">App Store</span></span></a>
-      <a class="store" href="https://play.google.com/store/apps/details?id=com.tacmap"><span><span class="k">Get it on</span><span class="v">Google Play</span></span></a>
+      <a class="store" href="https://apps.apple.com/au/app/tacmap/id6773175573"><img src="/assets/badges/app-store.svg" width="144" height="48" alt="Download on the App Store"></a>
+      <a class="store google-play" href="https://play.google.com/store/apps/details?id=com.tacmap"><img src="/assets/badges/google-play.png" width="186" height="72" alt="Get it on Google Play"></a>
       <a class="btn btn-ghost" href="https://github.com/JediBrooker/TacMap">View source</a>
     </div>
   </div>
