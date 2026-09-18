@@ -543,9 +543,11 @@ internal fun MapScreen(
             DocumentImportKind.SYMBOL_PACK -> {
                 val pack = withContext(Dispatchers.IO) {
                     requireNotNull(context.contentResolver.openInputStream(uri)).use {
-                        com.tacmap.waypoints.CustomSymbolStore.importPack(it)
+                        com.tacmap.waypoints.CustomSymbolStore.preparePack(it)
                     }
                 }
+                // Commit only after the live, unlocked composition resumes on Main.
+                com.tacmap.waypoints.CustomSymbolStore.installPack(pack)
                 Toast.makeText(context, Messages.symbolsPackImported(pack.name), Toast.LENGTH_LONG).show()
             }
             DocumentImportKind.PDF -> importSelectedPdf(uri, "pdf:${pending.token}")

@@ -36,7 +36,7 @@ data class CustomSymbol(val id: String, val name: String, val png: String) {
 }
 
 @Serializable
-data class CustomSymbolPack(val format: Int = 1, val name: String, val attribution: String = "", val symbols: List<CustomSymbol>)
+data class CustomSymbolPack(val format: Int, val name: String, val attribution: String, val symbols: List<CustomSymbol>)
 
 object CustomSymbolStore {
     private val json = Json { ignoreUnknownKeys = false }
@@ -93,11 +93,17 @@ object CustomSymbolStore {
         require(pack.symbols.size in 1..1000 && pack.symbols.map { it.id }.distinct().size == pack.symbols.size)
         pack.symbols.forEach { requireNotNull(it.image()).recycle() }
     }
-    @Synchronized fun importPack(input: InputStream): CustomSymbolPack {
-        reload() // A locked, corrupt or oversized existing store must never become an empty writable store.
+    fun preparePack(input: InputStream): CustomSymbolPack {
         val text = readBounded(input, 16 * 1024 * 1024).decodeToString()
         preflight(text)
         val pack = json.decodeFromString<CustomSymbolPack>(text)
+        validate(pack)
+        return pack
+    }
+    // Production commits on the Activity's main thread after background parsing returns.
+    // No suspension/key copy crosses the lifecycle lock boundary during the commit.
+    @Synchronized fun installPack(pack: CustomSymbolPack): CustomSymbolPack {
+        reload() // A locked, corrupt or oversized existing store must never become an empty writable store.
         validate(pack)
         val updated = packs.filterNot { it.name == pack.name } + pack
         val bytes = json.encodeToString(updated).toByteArray()
@@ -106,6 +112,7 @@ object CustomSymbolStore {
         packs = updated
         return pack
     }
+    fun importPack(input: InputStream): CustomSymbolPack = installPack(preparePack(input))
 }
 
 /** Case/diacritic-insensitive AND search across pack, category and symbol names. */

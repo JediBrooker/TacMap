@@ -30,7 +30,10 @@ class CustomSymbolPackTest {
             assertFalse(original.decodeToString().contains("Test Pack"))
             CustomSymbolStore.clear(); CustomSymbolStore.reload()
             assertEquals(pack, CustomSymbolStore.packs.first())
+            val prepared = CustomSymbolStore.preparePack(fixture.byteInputStream())
             SafeStore.keyProvider = SafeStore.KeyProvider { throw DataKey.LockedException() }
+            assertThrows(Exception::class.java) { CustomSymbolStore.installPack(prepared) }
+            assertArrayEquals(original, file.readBytes())
             assertThrows(Exception::class.java) { CustomSymbolStore.importPack(fixture.byteInputStream()) }
             assertArrayEquals(original, file.readBytes())
             SafeStore.keyProvider = old

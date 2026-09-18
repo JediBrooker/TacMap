@@ -21,6 +21,7 @@ internal fun CustomSymbolPicker(entries: List<MarkerCatalog.Entry>, selected: Ma
     var query by remember { mutableStateOf("") }
     TextButton(onClick = { open = true }) { Text(selected.displayName) }
     if (open) AlertDialog(
+        modifier = Modifier.imePadding(),
         onDismissRequest = { open = false },
         title = { Text(Messages.symbolsCustomSymbols()) },
         text = {
@@ -28,7 +29,7 @@ internal fun CustomSymbolPicker(entries: List<MarkerCatalog.Entry>, selected: Ma
                 OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text(L10n.text("Search")) })
                 val results = entries.filter { com.tacmap.waypoints.CustomSymbolSearch.matches(it.displayName, query) }
                 if (results.isEmpty()) Text(Messages.symbolsNoMatches())
-                LazyColumn(Modifier.heightIn(max = 400.dp)) {
+                LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 400.dp)) {
                     items(results, key = { it.id }) { entry ->
                         Row(Modifier.fillMaxWidth().clickable { onSelect(entry.id); open = false }.padding(8.dp)) {
                             val bitmap = remember(entry.id) { CustomSymbolStore.symbol(entry.id)?.image()?.asImageBitmap() }
