@@ -8,6 +8,10 @@ TacMap verbindet Offline-Karten, GPS, MGRS, Wegpunkte und Zeichnungen auf iOS un
 
 Wähle deine Sprache unter **Einstellungen, Datenschutz und OPSEC → Sprache**. Die Übersetzungen sind in der App enthalten und funktionieren offline. Eigene Inhalte und Kartenbeschriftungen externer Anbieter bleiben unverändert.
 
+## Eigene Symbole und Ebenen
+
+Erstelle eine eigene Ebene, importiere ein Symbolpaket und suche offline nach Grafiken deiner Organisation. Die [Anleitung für iOS und Android](/de/custom-symbols) enthält ein fertiges Paket mit **894 deutschen BOS-Symbolen** sowie Hilfe zum Import und Teilen. Benötigt wird TacMap 2.0.2 Build 68 oder neuer mit Unterstützung für eigene Symbole; dieser Build wird für die Store-Veröffentlichung vorbereitet.
+
 ## Optional gemeinsam arbeiten
 
 Einheitensynchronisierung und TacMap Chat teilen Inhalte Ende-zu-Ende-verschlüsselt. Der Relay sieht dennoch Verbindungs-, Routing- und weitere Metadaten. Eine Weiterleitungsbestätigung ist keine Zustell- oder Lesebestätigung. Online-Karten, Ortssuche, Wetter und Geländehöhen sind optional und können Informationen an ihre Anbieter übermitteln.

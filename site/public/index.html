@@ -152,6 +152,9 @@
   .blk h2{font-size:clamp(28px,3.8vw,44px);font-weight:700;max-width:20ch}
   .blk .sub{color:var(--ink-dim);margin-top:14px;max-width:56ch;font-size:17px}
 
+  #custom-symbols .feats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  @media(max-width:900px){#custom-symbols .feats{grid-template-columns:1fr}}
+
   /* ---- compare ---- */
   .cmp{margin-top:40px;border:1px solid var(--line);border-radius:5px;overflow:hidden}
   .cmp table{width:100%;border-collapse:collapse;font-size:15px}
@@ -285,7 +288,7 @@
     <nav class="nav-links">
       <a href="#compare">vs TAK</a>
       <a href="#capabilities">Capabilities</a>
-      <a href="#screens">Screens</a>
+      <a href="#custom-symbols">Custom symbols</a>
       <a href="#verify">Security</a>
       <a href="#faq">FAQ</a>
       <a class="nav-cta" href="#get">GET TACMAP</a>
@@ -426,6 +429,43 @@
           receiving mission or location payloads.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- CUSTOM SYMBOLS -->
+<section class="blk flush-top" id="custom-symbols" aria-labelledby="custom-symbols-title">
+  <div class="wrap rv">
+    <div class="gridref"><b>GUIDE</b> Custom symbols</div>
+    <h2 id="custom-symbols-title">Your symbols.<br>Your layer.</h2>
+    <p class="sub">Bring your organisation’s artwork to the map. Import a pack,
+      search it offline, and place symbols on your own layers.</p>
+    <div class="feats">
+      <div class="feat">
+        <div class="fnum">01 · PREPARE</div>
+        <h3>Create a layer</h3>
+        <p>Open Layers and Labels, add a named layer and select it as active.
+          Try the ready-to-import pack of 894 German emergency-services symbols.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">02 · IMPORT</div>
+        <h3>Choose your pack</h3>
+        <p>On Android, use Import / Export → Import Symbol Pack.
+          On iPhone or iPad, use Import Symbol Pack in the marker editor.
+          Choose the downloaded .json file.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">03 · PLACE</div>
+        <h3>Search and select</h3>
+        <p>Choose Custom Symbols and search by pack, category or name.
+          Select a preview, name your marker and place it on your layer.</p>
+      </div>
+    </div>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="/custom-symbols">Open the import guide →</a>
+      <a class="btn btn-ghost" href="/de/custom-symbols" lang="de" hreflang="de">Anleitung auf Deutsch →</a>
+    </div>
+    <p class="sub">Requires TacMap 2.0.2 build 68 or later with custom symbol support.
+      This build is being prepared for store release. The guide includes the pack download.</p>
   </div>
 </section>
 
@@ -673,6 +713,7 @@
       <a href="#verify">Security</a>
       <a href="/privacy">Privacy</a>
       <a href="/support">Help</a>
+      <a href="/custom-symbols">Custom symbols</a>
       <a href="/de" lang="de" hreflang="de">Deutsch</a>
       <a href="mailto:christianbrooker@gmail.com">Support</a>
       <a href="https://github.com/JediBrooker/TacMap">GitHub</a>

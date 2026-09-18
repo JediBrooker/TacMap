@@ -12,6 +12,7 @@ on:
       - 'docs/THREAT_MODEL.md'
       - 'docs/PRIVACY_POLICY.md'
       - 'docs/SUPPORT.md'
+      - 'docs/SYMBOL_PACK_GUIDE.md'
       - 'docs/de/**'
       - 'package.json'
       - 'package-lock.json'
@@ -24,6 +25,7 @@ on:
       - 'docs/THREAT_MODEL.md'
       - 'docs/PRIVACY_POLICY.md'
       - 'docs/SUPPORT.md'
+      - 'docs/SYMBOL_PACK_GUIDE.md'
       - 'docs/de/**'
       - 'package.json'
       - 'package-lock.json'
@@ -56,6 +58,8 @@ jobs:
           npm run build:site
           git diff --exit-code -- \
             site/public/de.html \
+            site/public/custom-symbols.html \
+            site/public/de/custom-symbols.html \
             site/public/de/privacy.html \
             site/public/de/support.html \
             site/public/support.html \

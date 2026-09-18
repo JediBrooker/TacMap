@@ -1,0 +1,14 @@
+{
+  "upstream": "https://github.com/jonas-koeritz/Taktische-Zeichen/releases/tag/v2.0.0",
+  "asset": "release.zip",
+  "upstream_sha256": "06071fda1481a7b465d9fa86b6dd9f960b0bf1b7dcd27721372f7d1f62142ec9",
+  "pack_sha256": "7b0de3f51506dfee69d1292a01671de355dd66ad268eddd157d116f6896d4f45",
+  "symbols": 894,
+  "format": 1,
+  "png_size": [
+    256,
+    256
+  ],
+  "verification": "All 894 normal-theme 256px PNGs preserve decoded RGBA pixels; metadata removed. Artwork hashes and file limits verified.",
+  "licence": "Upstream README identifies release artwork as CC0-1.0; source-code licence is separate."
+}

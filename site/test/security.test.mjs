@@ -55,11 +55,11 @@ test("CSP pins every inline block and permits no unsafe or third-party source", 
     readFile(new URL("../public/index.html", import.meta.url), "utf8"),
     readFile(new URL("../public/threat-model.html", import.meta.url), "utf8"),
     readFile(new URL("../public/privacy.html", import.meta.url), "utf8"),
-    ...["de/privacy.html", "de/support.html", "de.html", "support.html"].map(path => readFile(new URL("../public/" + path, import.meta.url), "utf8")),
+    ...["de/privacy.html", "de/support.html", "de.html", "support.html", "custom-symbols.html", "de/custom-symbols.html"].map(path => readFile(new URL("../public/" + path, import.meta.url), "utf8")),
   ]);
   const styleBlocks = documents.flatMap((document) => inlineBlocks(document, "style"));
   const scriptBlocks = documents.flatMap((document) => inlineBlocks(document, "script"));
-  assert.equal(styleBlocks.length, 8);
+  assert.equal(styleBlocks.length, 10);
   assert.equal(scriptBlocks.length, 1);
   for (const block of [...styleBlocks, ...scriptBlocks]) {
     assert.match(CONTENT_SECURITY_POLICY, new RegExp(sha256Source(block).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

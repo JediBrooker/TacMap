@@ -14,6 +14,10 @@ Online basemaps and lookups are off on a fresh installation. Use **Import / Expo
 
 Coordinate and mission-object search works locally. Place search, weather, elevation and online maps need the relevant online settings and a connection.
 
+## Import custom symbol packs
+
+Follow the [custom symbol pack guide](/custom-symbols) to create a layer, import on Android or iPhone/iPad, and search offline. It includes a ready-to-import German emergency services pack with 894 symbols. Requires 2.0.2 build 68 or later with custom symbol support; see the guide for availability.
+
 ## Add and export field data
 
 Move the crosshair to your target and use **Symbology** or the add control. Use **Drawings** for lines, areas and freehand work; organise objects into layers. Your saved names are not renamed when you switch languages.

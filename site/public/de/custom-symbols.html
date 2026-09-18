@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eigene Symbolpakete importieren — TacMap</title>
+<meta name="description" content="Eigene Ebenen erstellen, Symbolpakete auf iOS und Android importieren und offline suchen. Mit 894 deutschen BOS-Symbolen.">
+<link rel="canonical" href="https://tacmap.app/de/custom-symbols">
+<meta name="theme-color" content="#0E1519">
+<link rel="icon" type="image/png" href="/assets/brand/app-icon-512.png">
+<meta property="og:title" content="Eigene Symbole verwenden — TacMap">
+<meta property="og:description" content="Schritt für Schritt auf iOS und Android, mit einem fertigen deutschen BOS-Symbolpaket.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://tacmap.app/de/custom-symbols">
+<style>
+  :root{
+    --void:#0E1519; --void-2:#0B1013; --panel:#141E24;
+    --line:#243440; --line-2:#1B272E;
+    --ink:#E7EDEC; --ink-dim:#8DA2AA; --ink-faint:#5E727B;
+    --signal:#FF5A24; --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--void);color:var(--ink);
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.7;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--signal);text-decoration:none}
+  a:hover{text-decoration:underline}
+  main a{overflow-wrap:anywhere}
+
+  header.nav{position:sticky;top:0;z-index:20;
+    background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-2)}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:system-ui,sans-serif;
+    font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
+  .brand:hover{text-decoration:none}
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
+  .nav-in .back{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;color:var(--ink-dim)}
+  .nav-in .back:hover{color:var(--ink);text-decoration:none}
+
+  main{max-width:var(--maxw);margin:0 auto;padding:56px 28px 96px}
+  h1,h2,h3,h4{font-family:system-ui,sans-serif;line-height:1.15;letter-spacing:-.01em;
+    color:var(--ink);scroll-margin-top:80px}
+  h1{font-size:clamp(32px,5vw,46px);font-weight:800;margin-bottom:8px}
+  h2{font-size:clamp(22px,3vw,30px);font-weight:700;margin:52px 0 16px;
+    padding-top:24px;border-top:1px solid var(--line-2)}
+  h3{font-size:19px;font-weight:600;margin:32px 0 12px;color:var(--ink)}
+  h4{font-size:16px;font-weight:600;margin:24px 0 8px}
+  p{margin:14px 0;color:var(--ink-dim)}
+  strong{color:var(--ink);font-weight:600}
+  ul,ol{margin:14px 0 14px 22px;color:var(--ink-dim)}
+  li{margin:7px 0}
+  hr{border:none;border-top:1px solid var(--line-2);margin:40px 0}
+  blockquote{border-left:2px solid var(--signal);padding-left:18px;margin:18px 0;
+    color:var(--ink-dim)}
+
+  code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9em;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line-2);
+    border-radius:3px;padding:1px 5px}
+  pre{background:var(--void-2);border:1px solid var(--line);border-radius:5px;
+    padding:16px 18px;overflow-x:auto;margin:18px 0}
+  pre code{background:none;border:none;padding:0;font-size:13px;line-height:1.6}
+
+  .tablewrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:5px}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-2);
+    vertical-align:top}
+  thead th{font-family:system-ui,sans-serif;font-weight:700;background:var(--void-2);
+    color:var(--ink);white-space:nowrap}
+  td{color:var(--ink-dim)}
+  tbody tr:last-child td{border-bottom:none}
+
+  footer{border-top:1px solid var(--line-2);background:var(--void-2);padding:32px 0}
+  .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;
+    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:var(--ink-faint);
+    letter-spacing:.06em}
+  .foot-in a{color:var(--ink-dim)}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="/">
+      <img class="glyph" src="/assets/brand/app-icon-512.png" width="26" height="26" alt="">
+      TACMAP
+    </a>
+    <a class="back" href="/de">← Zur Website</a>
+  </div>
+</header>
+<main>
+<h1 id="eigene-symbole-verwenden">Eigene Symbole verwenden</h1>
+<p><a href="/custom-symbols">English</a> · <a href="/de/support">Hilfe</a> · <a href="/de">TacMap</a></p>
+<p>Verwende die Grafiken deiner Organisation auf eigenen Kartenebenen. Importiere ein Paket einmal, suche offline nach Symbolen und platziere sie neben deinen vorhandenen Markierungen.</p>
+<p><strong>Voraussetzung:</strong> TacMap 2.0.2 <strong>Build 68 oder neuer</strong> mit Unterstützung für eigene Symbole. Build 67 enthält diese Funktion noch nicht. Der neue Build wird für die Store-Veröffentlichung vorbereitet; ein hochgeladener Build ist nicht sofort für alle verfügbar.</p>
+<h2 id="1-symbolpaket-speichern">1. Symbolpaket speichern</h2>
+<p>Ein TacMap-Symbolpaket ist eine <strong>.json-Datei</strong> mit Symbolen und Grafiken. Speichere sie auf dem iPhone oder iPad in „Dateien“, auf Android unter „Downloads“. Wenn der Browser Text anzeigt, verwende seine Funktion zum Herunterladen oder Speichern und behalte die Dateiendung <code>.json</code> bei.</p>
+<p>Zum Ausprobieren: <strong>894 Symbole für deutsche Behörden und Organisationen mit Sicherheitsaufgaben (BOS), 5,4 MB</strong>, fertig zum Importieren:</p>
+<p><a href="/downloads/German-Emergency-Services.symbols.json" download="German-Emergency-Services.symbols.json">Deutsches BOS-Symbolpaket herunterladen (.json)</a></p>
+<p>Das Paket wurde aus <a href="https://github.com/jonas-koeritz/Taktische-Zeichen/releases/tag/v2.0.0">Taktische-Zeichen v2.0.0 von Jonas Koeritz und Mitwirkenden</a> konvertiert. Die Grafiken der ursprünglichen Veröffentlichung stehen unter CC0-1.0. Quellenangabe sowie deutsche Kategorien und Symbolnamen bleiben erhalten. <a href="/downloads/German-Emergency-Services.provenance.json">Herkunft und Datei-Prüfsumme herunterladen</a>.</p>
+<h2 id="2-eigene-ebene-erstellen">2. Eigene Ebene erstellen</h2>
+<p>Öffne <strong>Ebenen und Beschriftungen</strong>, erstelle eine neue Ebene und benenne sie, zum Beispiel „Feuerwehr“. Wähle sie als aktive Ebene, bevor du Markierungen platzierst. Du kannst auch eine vorhandene Ebene verwenden oder die Ebene einer Markierung im Editor ändern.</p>
+<h2 id="3-auf-deinem-gert-importieren">3. Auf deinem Gerät importieren</h2>
+<h3 id="android">Android</h3>
+<ol>
+<li>Öffne im Kartenmenü <strong>Importieren / Exportieren</strong>.</li>
+<li>Tippe auf <strong>Symbolpaket importieren …</strong>.</li>
+<li>Wähle die gespeicherte <code>.json</code>-Datei in der Dateiauswahl. Falls TacMap bei der Rückkehr zum Entsperren der Einsatzdaten auffordert, entsperre sie, um den Import abzuschließen.</li>
+<li>Öffne den Symboleditor einer Markierung und wähle <strong>Eigene Symbole</strong>.</li>
+</ol>
+<h3 id="iphone-und-ipad">iPhone und iPad</h3>
+<ol>
+<li>Öffne den Symboleditor einer Markierung.</li>
+<li>Tippe auf <strong>Symbolpaket importieren …</strong>.</li>
+<li>Wähle die gespeicherte <code>.json</code>-Datei in „Dateien“.</li>
+<li>Wähle im Editor <strong>Eigene Symbole</strong>.</li>
+</ol>
+<p>Das importierte Paket bleibt nach einem Neustart in deiner Bibliothek. Ist die Datei lokal gespeichert, funktionieren Import und Suche ohne Internet. Ein Cloud-Dateianbieter benötigt möglicherweise eine Verbindung, um die ausgewählte Datei herunterzuladen.</p>
+<h2 id="4-suchen-und-platzieren">4. Suchen und platzieren</h2>
+<p>Suche nach Paket, Kategorie oder Symbolname und wähle eine Vorschau. Mehrere Suchwörter sind möglich; Großschreibung und Akzente spielen keine Rolle. Probiere im deutschen Paket <strong>feuerwehr fuhr</strong>, um beispielsweise <strong>Führungsgruppe</strong> und <strong>Gruppenführer</strong> zu finden.</p>
+<p>Benenne die Markierung, prüfe ihre Ebene und speichere oder platziere sie. Die Grafiken behalten ihre ursprünglichen Farben und Proportionen. Die Sprachauswahl in TacMap ändert die Bedienelemente, nicht die Namen innerhalb deines Pakets.</p>
+<h2 id="markierungen-im-team-teilen">Markierungen im Team teilen</h2>
+<p>Eigene Markierungen enthalten ihre Grafik beim Teilen über die Einheitensynchronisierung oder beim Export als GeoJSON. Empfänger mit einer kompatiblen App-Version sehen sie, ohne das gesamte Paket zu importieren. Alle Beteiligten benötigen eine Version mit Unterstützung für eigene Symbole; ältere Versionen zeigen möglicherweise ein Ersatzsymbol.</p>
+<p>Der Import eines Pakets teilt die Bibliothek nicht automatisch. Ein erneuter Import mit demselben Paketnamen ersetzt nach erfolgreicher Prüfung diesen Bibliothekseintrag. Bereits platzierte Markierungen behalten ihre ursprüngliche Grafik.</p>
+<h2 id="wenn-der-import-nicht-klappt">Wenn der Import nicht klappt</h2>
+<ul>
+<li><strong>Importoption fehlt:</strong> Prüfe App-Version und Build. Benötigt wird Build 68 oder neuer mit Unterstützung für eigene Symbole.</li>
+<li><strong>Falsche Datei:</strong> Wähle das vorbereitete <code>.json</code>-Paket. Ein heruntergeladenes GitHub-Repository, ein ZIP-Archiv oder eine einzelne SVG-Datei lässt sich nicht direkt importieren.</li>
+<li><strong>Einsatzdaten gesperrt oder Speicher voll:</strong> Entsperre die Einsatzdaten, prüfe freien Speicher und versuche es erneut. Behalte die Originaldatei und lösche zur Fehlerbehebung keine App-Daten.</li>
+<li><strong>Ungültiges oder zu großes Paket:</strong> Bitte den Ersteller um ein TacMap-kompatibles Paket. Pro Paket sind bis zu 1.000 Symbole und 16 MiB Dateigröße erlaubt; auch die PNG-Grafiken unterliegen Größenbeschränkungen.</li>
+</ul>
+<h2 id="eigene-grafiken-vorbereiten">Eigene Grafiken vorbereiten</h2>
+<p>Bitte den Ersteller oder Administrator um ein TacMap-JSON-Paket aus PNG-Grafiken. Im Repository stehen ein Konverter für PNG-Ordner oder ZIP-Archive sowie eine <a href="https://github.com/JediBrooker/TacMap/blob/main/docs/CUSTOM_SYMBOL_PACKS.md#make-your-own-pack">englische Anleitung zur Paketerstellung</a> bereit. SVG-Grafiken müssen zuerst in PNG umgewandelt werden.</p>
+<h2 id="speicherung-und-datenschutz">Speicherung und Datenschutz</h2>
+<p>TacMap speichert importierte Bibliotheken verschlüsselt im privaten Einsatzdatenspeicher. Grafiken werden als Daten behandelt: Der Import führt keine Skripte aus und lädt keine verknüpften Bilder nach. Ein Symbol oder eine Prüfsumme bestätigt weder den Urheber noch die fachliche Richtigkeit.</p>
+<p>Die heruntergeladene Originaldatei liegt außerhalb dieser verschlüsselten Bibliothek. Bewusste GeoJSON-Exporte enthalten Namen und Grafiken im Klartext. Die Einheitensynchronisierung nutzt die bestehende verschlüsselte Übertragung von Einsatzdaten; die Metadaten-Grenzen des Relays beschreibt das <a href="/threat-model">Bedrohungsmodell auf Englisch</a>. Wähle Speicherort und Empfänger exportierter Dateien entsprechend.</p>
+
+</main>
+<footer>
+  <div class="foot-in">
+    <span>TACMAP · EIGENE SYMBOLE</span>
+    <span><a href="https://github.com/JediBrooker/TacMap/blob/main/docs/de/SYMBOL_PACK_GUIDE.md">Quelltext auf GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>

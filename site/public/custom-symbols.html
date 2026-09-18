@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Import custom symbol packs — TacMap</title>
+<meta name="description" content="Create a layer, import a custom symbol pack on iOS or Android, and search offline. Includes 894 German emergency-services symbols.">
+<link rel="canonical" href="https://tacmap.app/custom-symbols">
+<meta name="theme-color" content="#0E1519">
+<link rel="icon" type="image/png" href="/assets/brand/app-icon-512.png">
+<meta property="og:title" content="Bring your own symbols — TacMap">
+<meta property="og:description" content="A step-by-step guide for iOS and Android, with a ready-to-import German emergency-services pack.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://tacmap.app/custom-symbols">
+<style>
+  :root{
+    --void:#0E1519; --void-2:#0B1013; --panel:#141E24;
+    --line:#243440; --line-2:#1B272E;
+    --ink:#E7EDEC; --ink-dim:#8DA2AA; --ink-faint:#5E727B;
+    --signal:#FF5A24; --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--void);color:var(--ink);
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.7;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--signal);text-decoration:none}
+  a:hover{text-decoration:underline}
+  main a{overflow-wrap:anywhere}
+
+  header.nav{position:sticky;top:0;z-index:20;
+    background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-2)}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:system-ui,sans-serif;
+    font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
+  .brand:hover{text-decoration:none}
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
+  .nav-in .back{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;color:var(--ink-dim)}
+  .nav-in .back:hover{color:var(--ink);text-decoration:none}
+
+  main{max-width:var(--maxw);margin:0 auto;padding:56px 28px 96px}
+  h1,h2,h3,h4{font-family:system-ui,sans-serif;line-height:1.15;letter-spacing:-.01em;
+    color:var(--ink);scroll-margin-top:80px}
+  h1{font-size:clamp(32px,5vw,46px);font-weight:800;margin-bottom:8px}
+  h2{font-size:clamp(22px,3vw,30px);font-weight:700;margin:52px 0 16px;
+    padding-top:24px;border-top:1px solid var(--line-2)}
+  h3{font-size:19px;font-weight:600;margin:32px 0 12px;color:var(--ink)}
+  h4{font-size:16px;font-weight:600;margin:24px 0 8px}
+  p{margin:14px 0;color:var(--ink-dim)}
+  strong{color:var(--ink);font-weight:600}
+  ul,ol{margin:14px 0 14px 22px;color:var(--ink-dim)}
+  li{margin:7px 0}
+  hr{border:none;border-top:1px solid var(--line-2);margin:40px 0}
+  blockquote{border-left:2px solid var(--signal);padding-left:18px;margin:18px 0;
+    color:var(--ink-dim)}
+
+  code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9em;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line-2);
+    border-radius:3px;padding:1px 5px}
+  pre{background:var(--void-2);border:1px solid var(--line);border-radius:5px;
+    padding:16px 18px;overflow-x:auto;margin:18px 0}
+  pre code{background:none;border:none;padding:0;font-size:13px;line-height:1.6}
+
+  .tablewrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:5px}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-2);
+    vertical-align:top}
+  thead th{font-family:system-ui,sans-serif;font-weight:700;background:var(--void-2);
+    color:var(--ink);white-space:nowrap}
+  td{color:var(--ink-dim)}
+  tbody tr:last-child td{border-bottom:none}
+
+  footer{border-top:1px solid var(--line-2);background:var(--void-2);padding:32px 0}
+  .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;
+    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:var(--ink-faint);
+    letter-spacing:.06em}
+  .foot-in a{color:var(--ink-dim)}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="/">
+      <img class="glyph" src="/assets/brand/app-icon-512.png" width="26" height="26" alt="">
+      TACMAP
+    </a>
+    <a class="back" href="/">← Back to site</a>
+  </div>
+</header>
+<main>
+<h1 id="bring-your-own-symbols">Bring your own symbols</h1>
+<p><a href="/de/custom-symbols">Deutsch</a> · <a href="/support">Help</a> · <a href="/">TacMap</a></p>
+<p>Use your organisation’s artwork on your own map layers. Import a pack once, search its symbols offline, and place them alongside your existing markers.</p>
+<p><strong>Version requirement:</strong> TacMap 2.0.2 <strong>build 68 or later</strong> with custom symbol support. Build 67 does not include this feature. The new build is being prepared for store release; uploading a build does not make it immediately available to everyone.</p>
+<h2 id="1-save-a-symbol-pack">1. Save a symbol pack</h2>
+<p>A TacMap pack is a <strong>.json file</strong> containing the symbols and their artwork. Save it to Files on iPhone or iPad, or Downloads on Android. If a browser opens the file as text, use its download or save-file option and keep the <code>.json</code> extension.</p>
+<p>Try the <strong>German emergency services pack: 894 symbols, 5.4 MB</strong>, ready to import:</p>
+<p><a href="/downloads/German-Emergency-Services.symbols.json" download="German-Emergency-Services.symbols.json">Download the German emergency services pack (.json)</a></p>
+<p>It is converted from <a href="https://github.com/jonas-koeritz/Taktische-Zeichen/releases/tag/v2.0.0">Taktische-Zeichen v2.0.0 by Jonas Koeritz and contributors</a>. The upstream release artwork is CC0-1.0. Credits and German category/symbol names are retained in the pack. <a href="/downloads/German-Emergency-Services.provenance.json">Download provenance and file hash</a>.</p>
+<h2 id="2-create-your-layer">2. Create your layer</h2>
+<p>Open <strong>Layers and Labels</strong>, add a new layer and give it a name, such as “Fire service”. Select it as the active layer before placing your markers. You can also use an existing layer or change a marker’s layer in its editor.</p>
+<h2 id="3-import-on-your-device">3. Import on your device</h2>
+<h3 id="android">Android</h3>
+<ol>
+<li>Open TacMap’s map menu and <strong>Import / Export</strong>.</li>
+<li>Tap <strong>Import Symbol Pack…</strong>.</li>
+<li>Select the saved <code>.json</code> file in the system file picker. If TacMap asks you to unlock your mission data when you return, unlock it to complete the import.</li>
+<li>Open the marker symbol editor and choose <strong>Custom Symbols</strong>.</li>
+</ol>
+<h3 id="iphone-and-ipad">iPhone and iPad</h3>
+<ol>
+<li>Open a marker’s symbol editor.</li>
+<li>Tap <strong>Import Symbol Pack…</strong>.</li>
+<li>Choose the saved <code>.json</code> file in Files.</li>
+<li>Choose <strong>Custom Symbols</strong> in the editor.</li>
+</ol>
+<p>The imported pack stays in your library after restarting the app. Once the file is saved locally, importing and searching need no internet connection. A cloud file provider may need a connection to download a selected file.</p>
+<h2 id="4-search-and-place">4. Search and place</h2>
+<p>Search by pack, category or symbol name, then choose a preview. You can enter several words; capital letters and accents do not matter. With the German pack, try <strong>feuerwehr fuhr</strong> to find matches such as <strong>Führungsgruppe</strong> and <strong>Gruppenführer</strong>.</p>
+<p>Give the marker a name, check its layer and save or place it. Custom artwork keeps its original colours and proportions. The app’s English/German setting changes the controls; it does not translate names inside your pack.</p>
+<h2 id="share-markers-with-your-team">Share markers with your team</h2>
+<p>Placed custom markers carry their artwork when shared through Unit Sync or exported as GeoJSON. Recipients using a compatible app version can see them without importing the whole pack. Everyone needs a version with custom symbol support; older versions may show a fallback symbol.</p>
+<p>Importing a pack does not automatically share the library. Reimporting a pack with the same name replaces that library entry after validation; markers you already placed keep their original artwork.</p>
+<h2 id="if-the-pack-will-not-import">If the pack will not import</h2>
+<ul>
+<li><strong>No import option:</strong> check your app version and build. You need build 68 or later with custom symbol support.</li>
+<li><strong>Wrong file:</strong> choose the prepared <code>.json</code> pack. A GitHub repository download, ZIP archive or individual SVG cannot be imported directly.</li>
+<li><strong>Data locked or storage full:</strong> unlock mission data, check free storage and retry. Keep your original file; do not delete app data to troubleshoot an import.</li>
+<li><strong>Invalid or oversized pack:</strong> ask its author for a TacMap-compatible pack. The app accepts up to 1,000 symbols in one pack and a file up to 16 MiB, with bounded PNG artwork.</li>
+</ul>
+<h2 id="use-your-own-artwork">Use your own artwork</h2>
+<p>Ask your pack author or administrator for a TacMap JSON pack made from PNG artwork. The repository includes a converter for folders or ZIPs of PNG images and <a href="https://github.com/JediBrooker/TacMap/blob/main/docs/CUSTOM_SYMBOL_PACKS.md#make-your-own-pack">instructions for creating a pack</a>. SVG artwork must first be converted to PNG.</p>
+<h2 id="storage-and-privacy">Storage and privacy</h2>
+<p>TacMap stores imported libraries encrypted in its private mission storage. Artwork is treated as data; importing it does not run scripts or fetch linked images. A symbol or content hash does not prove its author or operational accuracy.</p>
+<p>The original downloaded file remains outside that encrypted library. Deliberate GeoJSON exports contain marker names and artwork in plaintext. Unit Sync uses the existing encrypted mission-sharing path, with the relay metadata limits described in the <a href="/threat-model">threat model</a>. Choose where you save and share exported files.</p>
+
+</main>
+<footer>
+  <div class="foot-in">
+    <span>TACMAP · CUSTOM SYMBOLS</span>
+    <span><a href="https://github.com/JediBrooker/TacMap/blob/main/docs/SYMBOL_PACK_GUIDE.md">Source on GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>

@@ -14,6 +14,10 @@ Online-Grundkarten und Online-Abfragen sind bei einer Neuinstallation ausgeschal
 
 Koordinaten und eigene Einsatzobjekte kannst du lokal suchen. Ortssuche, Wetter, Geländehöhen und Online-Karten benötigen die jeweils passenden Online-Schalter und eine Verbindung.
 
+## Eigene Symbolpakete importieren
+
+Die [Anleitung für eigene Symbolpakete](/de/custom-symbols) zeigt, wie du eine Ebene erstellst, auf Android oder iPhone/iPad importierst und offline suchst. Sie enthält ein fertiges Paket mit 894 deutschen BOS-Symbolen. Benötigt wird 2.0.2 Build 68 oder neuer mit Unterstützung für eigene Symbole; Hinweise zur Verfügbarkeit stehen in der Anleitung.
+
 ## Wegpunkte, Symbole und Zeichnungen
 
 Verschiebe das Fadenkreuz zum gewünschten Ort und nutze **Symbole** oder das Hinzufügen-Steuerelement. Über **Zeichnungen** kannst du Linien, Flächen und Freihandzeichnungen erstellen. Ebenen helfen bei der Organisation. Eigene Namen bleiben in der eingegebenen Sprache. Gespeicherte Einsatzdaten werden beim Sprachwechsel nicht umbenannt.

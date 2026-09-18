@@ -12,6 +12,24 @@ const INDEX = "site/public/index.html";
 const POLICY_OUT = "site/src/security-policy.mjs";
 const DOCUMENTS = [
   {
+    src: "docs/SYMBOL_PACK_GUIDE.md", out: "site/public/custom-symbols.html",
+    language: "en", title: "Import custom symbol packs — TacMap",
+    description: "Create a layer, import a custom symbol pack on iOS or Android, and search offline. Includes 894 German emergency-services symbols.",
+    canonical: "https://tacmap.app/custom-symbols", ogTitle: "Bring your own symbols — TacMap",
+    ogDescription: "A step-by-step guide for iOS and Android, with a ready-to-import German emergency-services pack.",
+    footerLabel: "TACMAP · CUSTOM SYMBOLS",
+    sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/SYMBOL_PACK_GUIDE.md", relayHeading: false,
+  },
+  {
+    src: "docs/de/SYMBOL_PACK_GUIDE.md", out: "site/public/de/custom-symbols.html",
+    language: "de", title: "Eigene Symbolpakete importieren — TacMap",
+    description: "Eigene Ebenen erstellen, Symbolpakete auf iOS und Android importieren und offline suchen. Mit 894 deutschen BOS-Symbolen.",
+    canonical: "https://tacmap.app/de/custom-symbols", ogTitle: "Eigene Symbole verwenden — TacMap",
+    ogDescription: "Schritt für Schritt auf iOS und Android, mit einem fertigen deutschen BOS-Symbolpaket.",
+    footerLabel: "TACMAP · EIGENE SYMBOLE",
+    sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/de/SYMBOL_PACK_GUIDE.md", relayHeading: false,
+  },
+  {
     src: "docs/THREAT_MODEL.md",
     out: "site/public/threat-model.html",
     title: "Threat model — TacMap",
