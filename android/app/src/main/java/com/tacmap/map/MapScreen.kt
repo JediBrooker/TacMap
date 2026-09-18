@@ -540,6 +540,14 @@ internal fun MapScreen(
     suspend fun processDocumentImport(pending: PendingDocumentImport) {
         val uri = Uri.parse(pending.uri)
         when (pending.kind) {
+            DocumentImportKind.SYMBOL_PACK -> {
+                val pack = withContext(Dispatchers.IO) {
+                    requireNotNull(context.contentResolver.openInputStream(uri)).use {
+                        com.tacmap.waypoints.CustomSymbolStore.importPack(it)
+                    }
+                }
+                Toast.makeText(context, Messages.symbolsPackImported(pack.name), Toast.LENGTH_LONG).show()
+            }
             DocumentImportKind.PDF -> importSelectedPdf(uri, "pdf:${pending.token}")
             DocumentImportKind.MBTILES -> {
                 val source = withContext(Dispatchers.IO) {
@@ -579,7 +587,7 @@ internal fun MapScreen(
             throw cancelled
         } catch (failure: Throwable) {
             terminal = true
-            val detail = failure.message?.takeIf { it.isNotBlank() }
+            val detail = if (pending.kind == DocumentImportKind.SYMBOL_PACK) Messages.symbolsSymbolPackError() else failure.message?.takeIf { it.isNotBlank() }
                 ?: L10n.text("The selected document could not be imported")
             Toast.makeText(context, Messages.importFailed(detail), Toast.LENGTH_LONG).show()
         } finally {
@@ -1880,6 +1888,10 @@ internal fun MapScreen(
 
     if (showImportExportSheet) {
         ImportExportSheet(
+            onImportSymbolPack = {
+                showImportExportSheet = false
+                onRequestDocumentImport(DocumentImportKind.SYMBOL_PACK)
+            },
             onImportPdf = {
                 showImportExportSheet = false
                 onRequestDocumentImport(DocumentImportKind.PDF)

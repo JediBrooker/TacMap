@@ -34,9 +34,11 @@
     <string name="settings_online_basemaps_help">"Standardmäßig aus. Solange die Option ausgeschaltet ist, zeigt die Karte nur importierte Offline-Karten an; keine Kachelanfrage verlässt das Gerät. Wenn aktiviert, können Esri oder OpenTopoMap anhand deiner IP-Adresse erkennen, welchen Kartenausschnitt du betrachtest. Schalte diese Option für einen vollständig offline betriebenen Einsatz aus."</string>
     <string name="settings_online_lookups_help">"Standardmäßig aus. Wenn aktiviert, kann die Ortsnamensuche den Geocoder des Geräts verwenden. Für Höhe und Wetter wird die Koordinate der Kartenmitte (auf etwa 110 m vergröbert) an Open-Meteo gesendet. Die Gelände-Heatmap sendet ein Raster aus 24 × 24 Koordinaten (auf etwa 11 m vergröbert), das den sichtbaren Kartenausschnitt abdeckt. Schalte diese Option für einen vollständig offline betriebenen Einsatz unter OPSEC-Gesichtspunkten aus."</string>
     <string name="symbols_custom_symbols">"Eigene Symbole"</string>
+    <string name="symbols_import_location">"Importiere Pakete über Import / Export → Symbolpaket importieren."</string>
     <string name="symbols_import_symbol_pack">"Symbolpaket importieren …"</string>
     <string name="symbols_missing_symbol">"Fehlendes Symbol"</string>
     <string name="symbols_no_matches">"Keine passenden Symbole."</string>
+    <string name="symbols_pack_imported">"Symbolpaket importiert: %1$s"</string>
     <string name="symbols_symbol_pack_error">"Wähle ein gültiges TacMap-Symbolpaket mit PNG-Grafiken und maximal 16 MB. Entsperre vor dem Import die Einsatzdaten. Prüfe den freien Speicher und versuche es erneut."</string>
     <string name="symbols_symbol_pack_failed">"Symbolpaket nicht importiert"</string>
     <string name="symbols_symbol_pack_help">"Wähle ein TacMap-Symbolpaket (.json). Importierte Symbole sind offline verfügbar und werden mit geteilten Markierungen übertragen."</string>

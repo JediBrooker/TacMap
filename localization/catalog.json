@@ -15189,5 +15189,34 @@
     "legacy": false,
     "accessor": "symbolsNoMatches",
     "context": "Empty local symbol search results."
+  },
+  "symbols_import_location": {
+    "en": "Import packs from Import / Export → Import Symbol Pack.",
+    "de": "Importiere Pakete über Import / Export → Symbolpaket importieren.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "symbolsImportLocation",
+    "parameters": [],
+    "context": "Local custom symbol pack import through the document picker."
+  },
+  "symbols_pack_imported": {
+    "en": "Imported symbol pack: {1}",
+    "de": "Symbolpaket importiert: {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "symbolsPackImported",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ],
+    "context": "Local custom symbol pack import through the document picker."
   }
 }

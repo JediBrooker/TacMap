@@ -12088,6 +12088,20 @@
         "translation": "be66bce910e0746ce684e05a915b24a19beb5202ad7e843f6dd312c8e1c245f2",
         "status": "reviewed"
       }
+    },
+    "symbols_import_location": {
+      "de": {
+        "source": "17f22824f60ad95212920230e00395ab4d1979eeb9d65e69259c9ecb859a33d9",
+        "translation": "bd96d30b9d24984d98eb61ba5f3742701bbf9055463c3d69480be73758175fa2",
+        "status": "reviewed"
+      }
+    },
+    "symbols_pack_imported": {
+      "de": {
+        "source": "05f69ba4d5c204723a9cf381c165110a09c26cb3ec19441ff256fabcf977bf46",
+        "translation": "6ba0993ad37207ee782ff7cff881c0908bbe3fa7fe368f26daaf60768d8bf92e",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

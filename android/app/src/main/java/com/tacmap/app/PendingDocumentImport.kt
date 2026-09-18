@@ -3,6 +3,7 @@ package com.tacmap.app
 import java.util.UUID
 
 internal enum class DocumentImportKind(val savedValue: String, val mimeTypes: Array<String>) {
+    SYMBOL_PACK("symbols", arrayOf("application/json", "application/octet-stream")),
     PDF("pdf", arrayOf("application/pdf")),
     GEO_JSON("geojson", arrayOf("application/geo+json", "application/json", "*/*")),
     MBTILES("mbtiles", arrayOf("*/*")),

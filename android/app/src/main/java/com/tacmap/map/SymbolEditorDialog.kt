@@ -551,11 +551,7 @@ internal fun MarkerTypeFields(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         var packRevision by remember { mutableStateOf(0) }
-        CustomSymbolImportButton(onLoaded = { packRevision++ }) { symbol ->
-            packRevision++
-            onSetChange(MarkerSet.CUSTOM)
-            onSymbolChange(symbol.id)
-        }
+        CustomSymbolLibraryInfo(onLoaded = { packRevision++ })
         Text(L10n.text("Symbol Set"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         PickerField(L10n.text("Set"), set, MarkerSet.entries.filter { it != MarkerSet.CUSTOM || com.tacmap.waypoints.CustomSymbolStore.entries().isNotEmpty() || set == it }, { it.displayName }, onSetChange)
         val entries = remember(set, packRevision) { MarkerCatalog.entries(set) }.ifEmpty { listOf(MarkerCatalog.entry(set, symbolId)) }

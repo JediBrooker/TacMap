@@ -159,6 +159,9 @@ enum Messages {
     static func symbolsCustomSymbols() -> String {
         L10n.message("id.symbols_custom_symbols", fallback: "Custom Symbols")
     }
+    static func symbolsImportLocation() -> String {
+        L10n.message("id.symbols_import_location", fallback: "Import packs from Import / Export → Import Symbol Pack.")
+    }
     static func symbolsImportSymbolPack() -> String {
         L10n.message("id.symbols_import_symbol_pack", fallback: "Import Symbol Pack…")
     }
@@ -167,6 +170,9 @@ enum Messages {
     }
     static func symbolsNoMatches() -> String {
         L10n.message("id.symbols_no_matches", fallback: "No matching symbols.")
+    }
+    static func symbolsPackImported(_ name: String) -> String {
+        L10n.message("id.symbols_pack_imported", fallback: "Imported symbol pack: %1$@", name)
     }
     static func symbolsSymbolPackError() -> String {
         L10n.message("id.symbols_symbol_pack_error", fallback: "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.")

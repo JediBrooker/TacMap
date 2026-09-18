@@ -36,9 +36,11 @@
 "id.settings_language_title" = "Sprache";
 "Language" = "Sprache";
 "id.symbols_custom_symbols" = "Eigene Symbole";
+"id.symbols_import_location" = "Importiere Pakete über Import / Export → Symbolpaket importieren.";
 "id.symbols_import_symbol_pack" = "Symbolpaket importieren …";
 "id.symbols_missing_symbol" = "Fehlendes Symbol";
 "id.symbols_no_matches" = "Keine passenden Symbole.";
+"id.symbols_pack_imported" = "Symbolpaket importiert: %1$@";
 "id.symbols_symbol_pack_error" = "Wähle ein gültiges TacMap-Symbolpaket mit PNG-Grafiken und maximal 16 MB. Entsperre vor dem Import die Einsatzdaten. Prüfe den freien Speicher und versuche es erneut.";
 "id.symbols_symbol_pack_failed" = "Symbolpaket nicht importiert";
 "id.symbols_symbol_pack_help" = "Wähle ein TacMap-Symbolpaket (.json). Importierte Symbole sind offline verfügbar und werden mit geteilten Markierungen übertragen.";

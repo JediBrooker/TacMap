@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
     private val missionKeyError = mutableStateOf<LocalizedMessage?>(null)
     private lateinit var credentialLauncher: ActivityResultLauncher<Intent>
     private lateinit var authBoundChangeLauncher: ActivityResultLauncher<Intent>
+    private lateinit var symbolPackImportLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var pdfImportLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var geoJsonImportLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var mbtilesImportLauncher: ActivityResultLauncher<Array<String>>
@@ -134,6 +135,9 @@ class MainActivity : ComponentActivity() {
         }
         // These launchers belong to the Activity because the document picker
         // pauses the app and MapScreen is removed while the mission key locks.
+        symbolPackImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            receiveDocumentImportResult(DocumentImportKind.SYMBOL_PACK, uri)
+        }
         pdfImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             receiveDocumentImportResult(DocumentImportKind.PDF, uri)
         }
@@ -383,6 +387,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestDocumentImport(kind: DocumentImportKind) {
         when (kind) {
+            DocumentImportKind.SYMBOL_PACK -> symbolPackImportLauncher.launch(kind.mimeTypes)
             DocumentImportKind.PDF -> pdfImportLauncher.launch(kind.mimeTypes)
             DocumentImportKind.GEO_JSON -> geoJsonImportLauncher.launch(kind.mimeTypes)
             DocumentImportKind.MBTILES -> mbtilesImportLauncher.launch(kind.mimeTypes)

@@ -112,12 +112,16 @@ object Messages {
         L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.")
     fun symbolsCustomSymbols(): String =
         L10n.message("id.symbols_custom_symbols", "Custom Symbols")
+    fun symbolsImportLocation(): String =
+        L10n.message("id.symbols_import_location", "Import packs from Import / Export → Import Symbol Pack.")
     fun symbolsImportSymbolPack(): String =
         L10n.message("id.symbols_import_symbol_pack", "Import Symbol Pack…")
     fun symbolsMissingSymbol(): String =
         L10n.message("id.symbols_missing_symbol", "Missing symbol")
     fun symbolsNoMatches(): String =
         L10n.message("id.symbols_no_matches", "No matching symbols.")
+    fun symbolsPackImported(name: String): String =
+        L10n.message("id.symbols_pack_imported", "Imported symbol pack: %1\$s", name)
     fun symbolsSymbolPackError(): String =
         L10n.message("id.symbols_symbol_pack_error", "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.")
     fun symbolsSymbolPackFailed(): String =

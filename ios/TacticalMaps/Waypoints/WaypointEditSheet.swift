@@ -310,7 +310,8 @@ struct WaypointCreationSheet: View {
                         }
                         .onChange(of: markerSet) { newSet in
                             // Snap to the new set's first symbol + its colour.
-                            guard let first = MarkerCatalog.entries(for: newSet).first else { return }
+                            let entries = MarkerCatalog.entries(for: newSet)
+                            guard !entries.contains(where: { $0.id == markerSymbolID }), let first = entries.first else { return }
                             markerSymbolID = first.id
                             markerColorHex = first.defaultColorHex
                         }
@@ -867,7 +868,7 @@ struct SelectedSymbolEditSheet: View {
                                            colorHex: first.defaultColorHex))
             }
         )) {
-            ForEach(MarkerSet.allCases.filter { $0 != .custom || !CustomSymbolStore.shared.entries.isEmpty }, id: \.self) { Text($0.displayName).tag($0) }
+            ForEach(MarkerSet.allCases.filter { $0 != .custom || $0 == marker.set || !CustomSymbolStore.shared.entries.isEmpty }, id: \.self) { Text($0.displayName).tag($0) }
         }
         if marker.set == .custom {
             NavigationLink {

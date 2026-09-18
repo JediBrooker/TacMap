@@ -7,6 +7,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PendingDocumentImportCoordinatorTest {
+    @Test fun symbolPackSurvivesEditorTeardownAndProcessRestoration() {
+        val original = PendingDocumentImportCoordinator()
+        val pending = original.publish(DocumentImportKind.SYMBOL_PACK, "content://documents/symbols", true)
+        assertEquals(pending, original.claim(pending.token))
+        val restored = PendingDocumentImportCoordinator(original.savedSnapshot())
+        assertEquals(DocumentImportKind.SYMBOL_PACK, DocumentImportKind.fromSavedValue("symbols"))
+        assertEquals(pending, restored.claim(pending.token))
+        assertEquals(pending, restored.complete(pending.token))
+        assertNull(restored.claim(pending.token))
+    }
+
     @Test
     fun pendingResultCanBeClaimedAndCompletedExactlyOnce() {
         val coordinator = PendingDocumentImportCoordinator()

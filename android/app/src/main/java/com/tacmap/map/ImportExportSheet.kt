@@ -55,6 +55,7 @@ import com.tacmap.export.MissionObjectExport
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportExportSheet(
+    onImportSymbolPack: () -> Unit,
     onImportPdf: () -> Unit,
     onImportTiles: () -> Unit,
     onImportGeoJson: () -> Unit,
@@ -79,6 +80,7 @@ fun ImportExportSheet(
             SheetRow(Icons.Default.Map, L10n.text("Offline Tiles"), onImportTiles)
             SheetRow(Icons.Default.FileDownload, "GeoJSON", onImportGeoJson)
             SheetRow(Icons.Default.FileDownload, "KML / KMZ", onImportKml)
+            SheetRow(Icons.Default.FileDownload, Messages.symbolsImportSymbolPack(), onImportSymbolPack)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionLabel(L10n.text("EXPORT"))
             SheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson)
