@@ -4,7 +4,7 @@
 
 Verwende die Grafiken deiner Organisation auf eigenen Kartenebenen. Importiere ein Paket einmal, suche offline nach Symbolen und platziere sie neben deinen vorhandenen Markierungen.
 
-**Voraussetzung:** TacMap 2.0.2 **Build 68 oder neuer** mit Unterstützung für eigene Symbole. Build 67 enthält diese Funktion noch nicht. Der neue Build wird für die Store-Veröffentlichung vorbereitet; ein hochgeladener Build ist nicht sofort für alle verfügbar.
+**Voraussetzung:** TacMap 2.0.2 oder neuer.
 
 ## 1. Symbolpaket speichern
 

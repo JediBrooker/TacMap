@@ -4,7 +4,7 @@
 
 Use your organisation’s artwork on your own map layers. Import a pack once, search its symbols offline, and place them alongside your existing markers.
 
-**Version requirement:** TacMap 2.0.2 **build 68 or later** with custom symbol support. Build 67 does not include this feature. The new build is being prepared for store release; uploading a build does not make it immediately available to everyone.
+**Version requirement:** TacMap 2.0.2 or later.
 
 ## 1. Save a symbol pack
 
