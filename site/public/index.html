@@ -89,7 +89,22 @@
     border:1px solid var(--signal);color:var(--signal);
     padding:8px 16px;border-radius:2px;transition:.18s}
   .nav-cta:hover{background:var(--signal);color:var(--void)}
-  @media(max-width:760px){.nav-links a:not(.nav-cta){display:none}}
+  .nav-toggle{display:none;align-items:center;justify-content:center;gap:9px;
+    min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:2px;
+    background:var(--panel);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+  .nav-toggle svg{width:20px;height:20px}
+  .nav-toggle:focus-visible,.nav-links a:focus-visible{outline:2px solid var(--signal);outline-offset:4px}
+  @media(max-width:900px){
+    .nav-in{flex-wrap:wrap;gap:12px;padding:12px 20px}
+    .nav-links{width:100%;flex-direction:column;align-items:stretch;gap:4px}
+    .nav-links a{display:flex;align-items:center;min-height:44px;padding:10px 12px}
+    .nav-links .nav-cta{margin-top:4px;justify-content:center}
+    .nav-ready .nav-toggle{display:inline-flex}
+    .nav-ready .nav-links{display:none;position:absolute;top:100%;left:0;right:0;
+      padding:12px 20px 20px;background:var(--void-2);border-bottom:1px solid var(--line);
+      max-height:calc(100dvh - 69px);overflow-y:auto}
+    .nav-ready .nav-links.is-open{display:flex}
+  }
 
   /* ---- hero ---- */
   /* clip-x only: the device bloom is wider than the column and would otherwise
@@ -287,7 +302,11 @@
       <img class="glyph" src="assets/brand/app-icon-512.png" width="26" height="26" alt="">
       TACMAP
     </a>
-    <nav class="nav-links">
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="section-navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      Menu
+    </button>
+    <nav class="nav-links" id="section-navigation" aria-label="Main navigation">
       <a href="#compare">vs TAK</a>
       <a href="#capabilities">Capabilities</a>
       <a href="#custom-symbols">Custom symbols</a>
@@ -725,6 +744,39 @@
 </footer>
 
 <script>
+  // Keep section links available without JavaScript; enhance to a mobile menu.
+  const header = document.querySelector('header.nav');
+  const menuButton = header.querySelector('.nav-toggle');
+  const menuLinks = header.querySelector('.nav-links');
+  const mobileNav = window.matchMedia('(max-width:900px)');
+  function setMenuOpen(open) {
+    menuButton.setAttribute('aria-expanded', String(open));
+    menuLinks.classList.toggle('is-open', open);
+  }
+  menuButton.addEventListener('click', () => {
+    setMenuOpen(menuButton.getAttribute('aria-expanded') !== 'true');
+  });
+  menuLinks.addEventListener('click', (event) => {
+    if (mobileNav.matches && event.target.closest('a')) {
+      setMenuOpen(false);
+      menuButton.focus({preventScroll:true});
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && menuButton.getAttribute('aria-expanded') === 'true') {
+      setMenuOpen(false);
+      menuButton.focus();
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!header.contains(event.target)) setMenuOpen(false);
+  });
+  header.addEventListener('focusout', (event) => {
+    if (!header.contains(event.relatedTarget)) setMenuOpen(false);
+  });
+  mobileNav.addEventListener('change', () => setMenuOpen(false));
+  header.classList.add('nav-ready');
+
   // scroll reveal
   var io=new IntersectionObserver(function(es){
     es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
