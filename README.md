@@ -1,7 +1,7 @@
 # TacMap
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![iOS](https://img.shields.io/badge/iOS-16.0%2B-blue.svg)](#)
+[![iOS](https://img.shields.io/badge/iOS-16.3%2B-blue.svg)](#)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](#)
 [![Android](https://img.shields.io/badge/Android-API%2026%2B-green.svg)](#)
 [![iOS Build](https://github.com/JediBrooker/TacMap/actions/workflows/ios.yml/badge.svg)](https://github.com/JediBrooker/TacMap/actions/workflows/ios.yml)
@@ -83,6 +83,17 @@ quadrangle (public domain) rendered live over the satellite. Run
   **width / height** scaling, and a **colour** — Black (default), Blue
   (Friendly), Red (Hostile), Green (Neutral) or Yellow (Unknown).
 - **Generic markers** with a name, notes and elevation.
+- **Custom symbol packs** (2.0.2+) — import a TacMap JSON pack of PNG artwork,
+  search pack/category/symbol names offline, and place previews on your own
+  layers. Search ignores case and accents and supports multiple words. Packs
+  persist in encrypted storage; placed markers retain their original colours
+  and proportions and carry their artwork through GeoJSON and Unit Sync, so
+  compatible recipients do not need the whole pack. See the
+  [import guide](docs/SYMBOL_PACK_GUIDE.md),
+  [German guide](docs/de/SYMBOL_PACK_GUIDE.md), and
+  [pack format and converter](docs/CUSTOM_SYMBOL_PACKS.md). A ready-to-import
+  [German emergency services pack](site/public/downloads/German-Emergency-Services.symbols.json)
+  contains 894 symbols.
 - **Draw polylines, polygons, points and free-hand** — tap successive points
   or drag to sketch, undo the last vertex, finish to commit. In-progress
   shapes render dashed; finished shapes carry an editable stroke colour,
@@ -101,6 +112,16 @@ quadrangle (public domain) rendered live over the satellite. Run
 [Mapbox simplestyle-spec]: https://github.com/mapbox/simplestyle-spec
 [Maki icon]: https://github.com/mapbox/maki
 
+### Measurement & route recording
+
+- **Measure distance, bearing and area** — tap successive map points to see
+  total distance, the latest segment's bearing in degrees or NATO mils, and
+  enclosed area for three or more points. Undo vertices or close the tool;
+  measurements are temporary and do not create saved drawings.
+- **Background route recording** stores each accepted fix in an encrypted track
+  log and exports the route separately as standard GPX. **Export All Mission
+  Objects** creates GeoJSON for waypoints, symbols, drawings, and layers.
+
 ### GeoPDF basemap
 
 - Import any **GeoPDF** through the system document picker. The private app copy
@@ -117,10 +138,8 @@ quadrangle (public domain) rendered live over the satellite. Run
 - **Fiduciary calibration UI** for any PDF without proper metadata — tap
   3 known features on the PDF, enter their MGRS, and `AffineFitter` solves
   a least-squares affine to re-derive bounds. Shows RMS residual in metres
-  to help you judge whether the fit is suitable for the task.
-- **Background route recording** stores each accepted fix in an encrypted track
-  log and exports the route separately as standard GPX. **Export All Mission
-  Objects** creates GeoJSON for waypoints, symbols, drawings, and layers.
+  to help you judge whether the fit is suitable for the task. Select WGS84,
+  GDA94 or GDA2020 as the sheet datum; calibration shifts fiduciaries to WGS84.
 
 ### Offline raster basemap (MBTiles)
 
@@ -147,6 +166,18 @@ Layers sheet lets you unload it. iOS + Android.
   (which used to `fatalError` on partial input).
 - Privacy-safe: coordinate-shaped input (including malformed or out-of-range
   text) is handled on-device and never forwarded to a place provider.
+
+### Language & regional formatting
+
+- **English, Deutsch or Device language** can be selected under
+  **Settings, Privacy & OPSEC → Language** on both platforms. The saved choice
+  updates app labels immediately without restarting the map or recording.
+- App-owned controls, messages and measurement/date displays follow the selected
+  language and regional formatting. User-created names, notes, pack labels,
+  coordinates and shared data keep their original values. Device language falls
+  back to English; no online translation service is used.
+- Contributors can update the shared catalogue and generate both platforms'
+  resources using the [localisation workflow](localization/README.md).
 
 ### Unit Sync & TacMap Chat
 
@@ -175,14 +206,17 @@ Layers sheet lets you unload it. iOS + Android.
 │   ├── TacticalMaps/               app source
 │   └── Vendor/mgrs-ios/            vendored fork with a 4-line Snyder UTM patch
 ├── android/                        Kotlin + Compose, Gradle
-├── docs/
-│   ├── ARCHITECTURE.md             shared design notes
-│   ├── PRIVACY_POLICY.md           source for tacmap.app/privacy
-│   ├── APPSTORE_CHECKLIST.md       submission checklist
-│   └── screenshots/                README hero images
-├── scripts/
-│   └── generate_icon.swift         re-generate the 1024×1024 App Store icon
-└── samples/                        (intentionally empty in the public repo)
+├── sync/                           encrypted Unit Sync / Chat relay and tests
+├── localization/                   shared English/German catalogue and generators
+├── site/                           bilingual website, downloads and site tests
+├── docs/                           architecture, security, user and release guides
+│   ├── CUSTOM_SYMBOL_PACKS.md      symbol-pack format and conversion instructions
+│   ├── SYMBOL_PACK_GUIDE.md        user-facing import guide (German in de/)
+│   ├── THREAT_MODEL.md             security boundaries and accepted limitations
+│   └── screenshots/               README hero images
+├── scripts/                        localisation, symbol-pack and store-asset tools
+├── testdata/                       shared cross-platform golden vectors
+└── samples/                        development sample instructions and downloads
 ```
 
 ---
@@ -195,7 +229,8 @@ brew install xcodegen
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 xcodebuild -runFirstLaunch
 
-# 2. Generate the Xcode project
+# 2. Prepare local configuration and generate the Xcode project
+./scripts/bootstrap_ios_secrets.sh
 cd ios
 xcodegen generate
 
@@ -203,8 +238,11 @@ xcodegen generate
 open TacticalMaps.xcodeproj
 ```
 
-First build resolves Swift packages (mgrs is vendored, but pure-Swift deps
-still download). Pick an iPhone simulator and press ▶.
+The MGRS Swift package is vendored locally. Pick an iPhone simulator running
+**iOS 16.3 or later** and press ▶. The bootstrap script creates
+`ios/Secrets.xcconfig` if missing and preserves an existing file. Its default
+empty Esri key supports offline use; add `ESRI_API_KEY` there to enable Esri
+styles when online basemaps are allowed.
 
 For repeatable command-line installs, pin one existing standard iPhone once and
 reuse it for every update:
@@ -257,7 +295,7 @@ provider availability.
 
 ## Testing
 
-Pure-logic unit tests run on both platforms and gate CI:
+Native test suites run on both platforms and gate CI. After the iOS setup above:
 
 ```bash
 # iOS — XCTest (affine fit, MGRS, GeoJSON geometry, MBTiles, map geometry, …)
@@ -280,6 +318,25 @@ Cross-platform invariants (the affine solve, MGRS formatting, GeoJSON geometry)
 are pinned by shared golden vectors in [`testdata/`](testdata/) that **both**
 suites load, so the Swift and Kotlin ports can't silently drift.
 
+Additional checks from the repository root:
+
+```bash
+# Shared localisation generation, coverage and regression checks
+python3 scripts/check_localizations.py
+python3 -m unittest discover -s scripts -p 'test_localization*.py'
+
+# Website generation and tests
+npm ci
+npm run test:site
+
+# Sync relay protocol tests and type checking
+(cd sync && npm ci && npm test && npm run typecheck)
+```
+
+See [localisation](localization/README.md) for translation and device checks,
+[the relay README](sync/README.md) for backend development, and
+[website deployment notes](site/DEPLOY.md) for site configuration.
+
 ---
 
 ## Architecture overview
@@ -300,9 +357,6 @@ Full design + math in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
   non-WGS84 datum shifts.
 - **Saved basemap library** — calibration can be recovered for an imported map;
   a richer multi-map library and management UI remain planned.
-- **Datum shift** — calibration now lets you flag the sheet's datum (WGS84 /
-  GDA94 / GDA2020) and shifts fiduciaries to WGS84 via the ICSM Helmert; Lambert
-  Conformal Conic + arbitrary-TM datum work remains (see Wave 2 above).
 - **iCloud sync** for waypoints + drawings.
 - **Encrypted mission packages** for transferring mission objects and related
   assets as one authenticated bundle.
