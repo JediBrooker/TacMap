@@ -75,6 +75,8 @@ enum class BackgroundUnitSyncInterval(val minutes: Int, private val displayNameK
  *    opts in or loads an imported offline map.
  *  - [backgroundUnitSyncLocation] OFF - screen-off location sharing requires
  *    explicit user consent.
+ *  - [keepScreenOn] OFF - the device dims and auto-locks normally until the
+ *    user opts in.
  *  Both network features remain independently switchable. Stored choices are
  *  read before these fallbacks, so an update never overwrites an existing
  *  user's explicit settings.
@@ -128,6 +130,11 @@ class OpsecSettings(context: Context) {
         MapOrientationMode.fromPersisted(prefs.getString(KEY_MAP_ORIENTATION, null))
     )
     val mapOrientationMode: StateFlow<MapOrientationMode> = _mapOrientationMode.asStateFlow()
+
+    private val _keepScreenOn = MutableStateFlow(
+        resolveKeepScreenOn(prefs.all)
+    )
+    val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
     private val _relayUrl = MutableStateFlow(persistedRelayPreference.endpoint)
     val relayUrl: StateFlow<String> = _relayUrl.asStateFlow()
@@ -201,6 +208,12 @@ class OpsecSettings(context: Context) {
             publish = { _mapOrientationMode.value = value },
         )
 
+    fun setKeepScreenOn(value: Boolean): Boolean = persistBoolean(
+        KEY_KEEP_SCREEN_ON,
+        value,
+        _keepScreenOn,
+    )
+
     fun setRelayUrl(value: String): Boolean {
         val clean = when (val result = RelayEndpointPolicy.normalize(value)) {
             is RelayEndpointPolicy.Result.Valid -> result.endpoint
@@ -266,6 +279,7 @@ class OpsecSettings(context: Context) {
         internal const val DEFAULT_ONLINE_LOOKUPS = false
         internal const val DEFAULT_ONLINE_BASEMAPS = false
         internal const val DEFAULT_BACKGROUND_UNIT_SYNC_LOCATION = false
+        internal const val DEFAULT_KEEP_SCREEN_ON = false
         private const val KEY_SCREEN = "block_screen_capture"
         private const val KEY_ONLINE = "online_lookups"
         private const val KEY_BASEMAPS = "online_basemaps"
@@ -275,6 +289,12 @@ class OpsecSettings(context: Context) {
         private const val KEY_COORDINATE_TYPE = "primary_coordinate_type"
         private const val KEY_MAP_ORIENTATION = "map_orientation_mode"
         private const val KEY_RELAY = "relay_url"
+        private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+
+        /** Stored choice wins; missing or malformed values leave the
+         * system's normal dimming and auto-lock in control. */
+        internal fun resolveKeepScreenOn(values: Map<String, *>): Boolean =
+            values[KEY_KEEP_SCREEN_ON] as? Boolean ?: DEFAULT_KEEP_SCREEN_ON
 
         internal data class NetworkPreferences(
             val onlineLookups: Boolean,

@@ -345,6 +345,53 @@ final class DrawingStore: ObservableObject {
         return true
     }
 
+    /// Persists several new drawings (e.g. range rings) as one durable write
+    /// and one undo step before publishing them to UI or Sync observers.
+    /// Existing IDs are skipped so a retried presentation cannot duplicate them.
+    @discardableResult
+    func addBatchDurably(_ newShapes: [DrawingShape], actionName: String) throws -> Int {
+        guard !locked else { throw DrawingMutationError.locked }
+        var shapeIDs = Set(shapes.map(\.id))
+        let inserted = newShapes.filter { shapeIDs.insert($0.id).inserted }
+        guard !inserted.isEmpty else { return 0 }
+        let candidate = shapes + inserted
+        do {
+            try write(layers: layers,
+                      shapes: candidate,
+                      activeLayerID: activeLayerID)
+        } catch {
+            pendingLoadError = Messages.couldNotSaveNewDrawingToDiskMessage("").withArgument(0, error.displayMessage)
+            throw DrawingMutationError.persistenceFailed(error)
+        }
+        shapes = candidate
+        if pendingLoadError?.id == "id.ui_could_not_save_new_drawing_to_disk_1_bf6693d3" { loadError = nil }
+        let insertedIDs = Set(inserted.map(\.id))
+        undoManager?.registerUndo(withTarget: self) { store in
+            store.removeBatchForUndo(insertedIDs, actionName: actionName)
+        }
+        undoManager?.setActionName(actionName)
+        return inserted.count
+    }
+
+    private func removeBatchForUndo(_ ids: Set<UUID>, actionName: String) {
+        let removed = shapes.filter { ids.contains($0.id) }
+        guard !removed.isEmpty else { return }
+        let remaining = shapes.filter { !ids.contains($0.id) }
+        do {
+            try write(layers: layers,
+                      shapes: remaining,
+                      activeLayerID: activeLayerID)
+        } catch {
+            pendingLoadError = Messages.couldNotDeleteDrawingFromDiskMessage("").withArgument(0, error.displayMessage)
+            return
+        }
+        shapes = remaining
+        undoManager?.registerUndo(withTarget: self) { store in
+            _ = try? store.addBatchDurably(removed, actionName: actionName)
+        }
+        undoManager?.setActionName(actionName)
+    }
+
     /// Persists an edited candidate before publishing it to UI or Sync.
     /// Returns false for an unchanged candidate and performs no write.
     @discardableResult

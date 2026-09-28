@@ -15,6 +15,9 @@ struct WaypointListSheet: View {
     @State private var creatingAt: CLLocationCoordinate2D? = nil
     @State private var pendingDelete: Waypoint? = nil
     @State private var errorMessage: LocalizedMessage?
+    @AppStorage(SymbolListOrder.defaultsKey) private var storedOrder = SymbolListOrder.defaultValue.rawValue
+
+    private var order: SymbolListOrder { SymbolListOrder.stored(storedOrder) }
 
     var body: some View {
         NavigationStack {
@@ -25,7 +28,22 @@ struct WaypointListSheet: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(waypointStore.waypoints) { wp in
+                        Picker(Messages.symbolsSortBy(), selection: Binding(
+                            get: { order },
+                            set: { storedOrder = $0.rawValue }
+                        )) {
+                            ForEach(SymbolListOrder.allCases) { option in
+                                Text(option.label).tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .accessibilityIdentifier("symbols.sortOrder")
+                    }
+                }
+
+                ForEach(sections) { section in
+                    Section {
+                        ForEach(section.waypoints) { wp in
                             Button {
                                 editing = wp
                             } label: {
@@ -46,6 +64,10 @@ struct WaypointListSheet: View {
                                     pendingDelete = wp
                                 } label: { Label(L10n.text("Delete"), systemImage: "trash") }
                             }
+                        }
+                    } header: {
+                        if let title = title(for: section.group) {
+                            Text(title)
                         }
                     }
                 }
@@ -107,6 +129,24 @@ struct WaypointListSheet: View {
         }
     }
 
+    private var sections: [SymbolListSection] {
+        SymbolListSorter.sections(
+            waypointStore.waypoints,
+            order: order,
+            layerOrder: drawingStore.layers.map(\.id),
+            reference: mapVM.cameraCentre
+        )
+    }
+
+    private func title(for group: SymbolListGroup) -> String? {
+        switch group {
+        case .all: return nil
+        case .affiliation(let affiliation): return affiliation.title
+        case .layer(let id): return drawingStore.layer(id: id)?.displayName
+        case .otherLayer: return Messages.symbolsGroupOther()
+        }
+    }
+
     @ViewBuilder
     private func row(for wp: Waypoint) -> some View {
         HStack {
@@ -126,6 +166,15 @@ struct WaypointListSheet: View {
                 }
             }
             Spacer()
+            if order == .distance {
+                let distance = DisplayFormat.distance(
+                    SymbolListSorter.distanceMetres(from: mapVM.cameraCentre, to: wp.coordinate)
+                )
+                Text(distance)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(Messages.symbolsDistanceFromCentre(distance))
+            }
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)

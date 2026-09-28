@@ -96,6 +96,31 @@ final class OpsecSettingsPersistenceTests: XCTestCase {
         XCTAssertTrue(restarted.backgroundUnitSyncLocation)
     }
 
+    func testKeepScreenOnDefaultsOffAndPersistsExplicitChoice() {
+        let settings = OpsecSettings(defaults: defaults, environment: [:])
+        XCTAssertFalse(settings.keepScreenOn)
+
+        XCTAssertTrue(settings.setKeepScreenOn(true))
+        XCTAssertTrue(settings.keepScreenOn)
+        XCTAssertTrue(OpsecSettings(defaults: defaults, environment: [:]).keepScreenOn)
+
+        XCTAssertTrue(settings.setKeepScreenOn(false))
+        XCTAssertFalse(OpsecSettings(defaults: defaults, environment: [:]).keepScreenOn)
+    }
+
+    func testFailedKeepScreenOnWriteDoesNotPublish() {
+        let settings = OpsecSettings(
+            defaults: defaults,
+            environment: [:],
+            synchronize: { _ in false }
+        )
+
+        XCTAssertFalse(settings.setKeepScreenOn(true))
+        XCTAssertFalse(settings.keepScreenOn)
+        XCTAssertNil(defaults.object(forKey: "display.keepScreenOn"))
+        XCTAssertNotNil(settings.persistenceIssue)
+    }
+
     func testPersistedUnsafeRelayFallsBackAndIsDurablyRepairedAtStartup() {
         defaults.set("wss://attacker.example/collect", forKey: "opsec.relayURL")
         XCTAssertTrue(defaults.synchronize())

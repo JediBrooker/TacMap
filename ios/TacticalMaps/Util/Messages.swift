@@ -147,6 +147,57 @@ enum Messages {
     static func recordingStatusStartingMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.recording_status_starting", fallback: "STARTING", arguments: [])
     }
+    static func ringsAdd() -> String {
+        L10n.message("id.rings_add", fallback: "Add range rings")
+    }
+    static func ringsCountValue(_ count: String) -> String {
+        L10n.message("id.rings_count_value", fallback: "Rings: %1$@", count)
+    }
+    static func ringsCreate() -> String {
+        L10n.message("id.rings_create", fallback: "Add Rings")
+    }
+    static func ringsHelp() -> String {
+        L10n.message("id.rings_help", fallback: "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings, but stay where they are if the symbol moves.")
+    }
+    static func ringsInvalid() -> String {
+        L10n.message("id.rings_invalid", fallback: "Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol.")
+    }
+    static func ringsNotCreated() -> String {
+        L10n.message("id.rings_not_created", fallback: "Range Rings Not Created")
+    }
+    static func ringsPreview() -> String {
+        L10n.message("id.rings_preview", fallback: "Rings at")
+    }
+    static func ringsRingName(_ distance: String, _ symbol: String) -> String {
+        L10n.message("id.rings_ring_name", fallback: "%1$@ around %2$@", distance, symbol)
+    }
+    static func ringsSpacing() -> String {
+        L10n.message("id.rings_spacing", fallback: "Ring spacing")
+    }
+    static func ringsTitle() -> String {
+        L10n.message("id.rings_title", fallback: "Range Rings")
+    }
+    static func ringsUndoAction() -> String {
+        L10n.message("id.rings_undo_action", fallback: "Add Range Rings")
+    }
+    static func ringsUnit() -> String {
+        L10n.message("id.rings_unit", fallback: "Unit")
+    }
+    static func ringsUnitKilometres() -> String {
+        L10n.message("id.rings_unit_kilometres", fallback: "km")
+    }
+    static func ringsUnitMetres() -> String {
+        L10n.message("id.rings_unit_metres", fallback: "m")
+    }
+    static func settingsDisplayTitle() -> String {
+        L10n.message("id.settings_display_title", fallback: "Display")
+    }
+    static func settingsKeepScreenOn() -> String {
+        L10n.message("id.settings_keep_screen_on", fallback: "Keep screen on")
+    }
+    static func settingsKeepScreenOnHelp() -> String {
+        L10n.message("id.settings_keep_screen_on_help", fallback: "Off by default. While TacMap is open, the screen stays on and the device does not lock automatically, for example when the map is mounted or left on a table. This uses more battery. Lock the device yourself before leaving it unattended.")
+    }
     static func deviceLanguage() -> String {
         L10n.message("id.settings_language_device", fallback: "Device language")
     }
@@ -156,8 +207,62 @@ enum Messages {
     static func settingsLanguageTitle() -> String {
         L10n.message("id.settings_language_title", fallback: "Language")
     }
+    static func sunMoonBmct() -> String {
+        L10n.message("id.sun_moon_bmct", fallback: "Civil dawn (BMCT)")
+    }
+    static func sunMoonBmnt() -> String {
+        L10n.message("id.sun_moon_bmnt", fallback: "Nautical dawn (BMNT)")
+    }
+    static func sunMoonEect() -> String {
+        L10n.message("id.sun_moon_eect", fallback: "Civil dusk (EECT)")
+    }
+    static func sunMoonEent() -> String {
+        L10n.message("id.sun_moon_eent", fallback: "Nautical dusk (EENT)")
+    }
+    static func sunMoonHelp(_ timeZone: String) -> String {
+        L10n.message("id.sun_moon_help", fallback: "Calculated on this device for the map centre; nothing is sent online. Times use this device’s time zone (%1$@). Sun times are accurate to about a minute and moon times to a few minutes. A dash means the event does not happen that day.", timeZone)
+    }
+    static func sunMoonIllumination() -> String {
+        L10n.message("id.sun_moon_illumination", fallback: "Moon illumination")
+    }
+    static func sunMoonMoonrise() -> String {
+        L10n.message("id.sun_moon_moonrise", fallback: "Moonrise")
+    }
+    static func sunMoonMoonset() -> String {
+        L10n.message("id.sun_moon_moonset", fallback: "Moonset")
+    }
+    static func sunMoonNoEvent() -> String {
+        L10n.message("id.sun_moon_no_event", fallback: "Does not occur")
+    }
+    static func sunMoonSunrise() -> String {
+        L10n.message("id.sun_moon_sunrise", fallback: "Sunrise")
+    }
+    static func sunMoonSunset() -> String {
+        L10n.message("id.sun_moon_sunset", fallback: "Sunset")
+    }
+    static func sunMoonTitle() -> String {
+        L10n.message("id.sun_moon_title", fallback: "Sun & Moon")
+    }
+    static func sunMoonToday() -> String {
+        L10n.message("id.sun_moon_today", fallback: "Today")
+    }
+    static func sunMoonTomorrow() -> String {
+        L10n.message("id.sun_moon_tomorrow", fallback: "Tomorrow")
+    }
+    static func sunMoonWaning(_ percent: String) -> String {
+        L10n.message("id.sun_moon_waning", fallback: "%1$@, waning", percent)
+    }
+    static func sunMoonWaxing(_ percent: String) -> String {
+        L10n.message("id.sun_moon_waxing", fallback: "%1$@, waxing", percent)
+    }
     static func symbolsCustomSymbols() -> String {
         L10n.message("id.symbols_custom_symbols", fallback: "Custom Symbols")
+    }
+    static func symbolsDistanceFromCentre(_ distance: String) -> String {
+        L10n.message("id.symbols_distance_from_centre", fallback: "%1$@ from crosshair", distance)
+    }
+    static func symbolsGroupOther() -> String {
+        L10n.message("id.symbols_group_other", fallback: "Other")
     }
     static func symbolsImportLocation() -> String {
         L10n.message("id.symbols_import_location", fallback: "Import packs from Import / Export → Import Symbol Pack.")
@@ -173,6 +278,27 @@ enum Messages {
     }
     static func symbolsPackImported(_ name: String) -> String {
         L10n.message("id.symbols_pack_imported", fallback: "Imported symbol pack: %1$@", name)
+    }
+    static func symbolsSortAffiliation() -> String {
+        L10n.message("id.symbols_sort_affiliation", fallback: "Affiliation")
+    }
+    static func symbolsSortBy() -> String {
+        L10n.message("id.symbols_sort_by", fallback: "Sort by")
+    }
+    static func symbolsSortByValue(_ value: String) -> String {
+        L10n.message("id.symbols_sort_by_value", fallback: "Sort: %1$@", value)
+    }
+    static func symbolsSortDistance() -> String {
+        L10n.message("id.symbols_sort_distance", fallback: "Distance from crosshair")
+    }
+    static func symbolsSortLayer() -> String {
+        L10n.message("id.symbols_sort_layer", fallback: "Layer")
+    }
+    static func symbolsSortName() -> String {
+        L10n.message("id.symbols_sort_name", fallback: "Name")
+    }
+    static func symbolsSortNewest() -> String {
+        L10n.message("id.symbols_sort_newest", fallback: "Newest first")
     }
     static func symbolsSymbolPackError() -> String {
         L10n.message("id.symbols_symbol_pack_error", fallback: "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.")

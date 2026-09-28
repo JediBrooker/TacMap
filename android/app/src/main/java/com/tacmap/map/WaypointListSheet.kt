@@ -9,6 +9,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -30,11 +35,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tacmap.drawings.DrawingLayer
+import com.tacmap.localization.DisplayFormat
 import com.tacmap.mgrs.MgrsFormatter
+import com.tacmap.waypoints.SymbolListGroup
+import com.tacmap.waypoints.SymbolListOrder
+import com.tacmap.waypoints.SymbolListSorter
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.WaypointStore
@@ -51,6 +63,7 @@ fun WaypointListSheet(
     crosshairLat: Double,
     crosshairLng: Double,
     activeLayerId: String,
+    layers: List<DrawingLayer>,
     store: WaypointStore,
     onDismiss: () -> Unit,
     onFlyTo: (lat: Double, lng: Double) -> Unit
@@ -58,6 +71,19 @@ fun WaypointListSheet(
     var pendingEditor by remember { mutableStateOf<SymbolEditorMode?>(null) }
     var creationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var storedOrder by rememberPersistedString(
+        SymbolListOrder.PREFERENCE_KEY,
+        SymbolListOrder.DEFAULT.persisted,
+    )
+    val order = SymbolListOrder.fromPersisted(storedOrder)
+    var orderMenuExpanded by remember { mutableStateOf(false) }
+    val sections = SymbolListSorter.sections(
+        waypoints = waypoints,
+        order = order,
+        layerOrder = layers.map { it.id },
+        referenceLat = crosshairLat,
+        referenceLng = crosshairLng,
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -87,12 +113,59 @@ fun WaypointListSheet(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
                 )
             } else {
+                Box(Modifier.padding(horizontal = 8.dp)) {
+                    TextButton(onClick = { orderMenuExpanded = true }) {
+                        Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(Messages.symbolsSortByValue(order.displayName))
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
+                    DropdownMenu(
+                        expanded = orderMenuExpanded,
+                        onDismissRequest = { orderMenuExpanded = false },
+                    ) {
+                        SymbolListOrder.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.displayName) },
+                                onClick = {
+                                    storedOrder = option.persisted
+                                    orderMenuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
                 LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                    items(waypoints, key = { it.id }) { wp ->
-                        WaypointRow(wp = wp, onTap = {
-                            onFlyTo(wp.latitude, wp.longitude)
-                            onDismiss()
-                        })
+                    sections.forEach { section ->
+                        sectionTitle(section.group, layers)?.let { title ->
+                            item(key = "group:${section.group}") {
+                                Text(
+                                    title,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp)
+                                )
+                            }
+                        }
+                        items(section.waypoints, key = { it.id }) { wp ->
+                            WaypointRow(
+                                wp = wp,
+                                distanceLabel = if (order == SymbolListOrder.DISTANCE) {
+                                    DisplayFormat.distance(
+                                        SymbolListSorter.distanceMetres(
+                                            crosshairLat, crosshairLng, wp.latitude, wp.longitude
+                                        )
+                                    )
+                                } else {
+                                    null
+                                },
+                                onTap = {
+                                    onFlyTo(wp.latitude, wp.longitude)
+                                    onDismiss()
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -195,8 +268,15 @@ private fun AddSymbolButton(
     }
 }
 
+private fun sectionTitle(group: SymbolListGroup, layers: List<DrawingLayer>): String? = when (group) {
+    SymbolListGroup.All -> null
+    is SymbolListGroup.Affiliation -> group.affiliation.title
+    is SymbolListGroup.Layer -> layers.firstOrNull { it.id == group.layerId }?.displayName
+    SymbolListGroup.OtherLayer -> Messages.symbolsGroupOther()
+}
+
 @Composable
-private fun WaypointRow(wp: Waypoint, onTap: () -> Unit) {
+private fun WaypointRow(wp: Waypoint, distanceLabel: String?, onTap: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -222,6 +302,17 @@ private fun WaypointRow(wp: Waypoint, onTap: () -> Unit) {
                 fontSize = 11.sp,
                 color = Color.Gray,
                 fontFamily = FontFamily.Monospace
+            )
+        }
+        distanceLabel?.let {
+            Text(
+                it,
+                fontSize = 12.sp,
+                color = Color.Gray,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .semantics { contentDescription = Messages.symbolsDistanceFromCentre(it) },
             )
         }
         Icon(Icons.Default.ChevronRight, contentDescription = null,

@@ -88,6 +88,18 @@ struct OpsecSettingsView: View {
 
                 Section {
                     Toggle(
+                        Messages.settingsKeepScreenOn(),
+                        isOn: settingBinding(\.keepScreenOn, set: opsec.setKeepScreenOn)
+                    )
+                    .accessibilityIdentifier("settings.keepScreenOn")
+                } header: {
+                    Text(Messages.settingsDisplayTitle())
+                } footer: {
+                    Text(Messages.settingsKeepScreenOnHelp())
+                }
+
+                Section {
+                    Toggle(
                         L10n.text("Privacy screen in app switcher"),
                         isOn: settingBinding(\.privacyScreen, set: opsec.setPrivacyScreen)
                     )

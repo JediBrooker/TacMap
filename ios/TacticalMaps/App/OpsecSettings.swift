@@ -128,6 +128,7 @@ enum BackgroundUnitSyncInterval: Int, CaseIterable, Identifiable {
 /// onlineLookups OFF - providers receive no query or coordinate until opt-in.
 /// onlineBasemaps OFF - providers receive no viewed tile until opt-in.
 /// backgroundUnitSyncLocation OFF - screen-off position egress requires opt-in.
+/// keepScreenOn OFF - the device dims and auto-locks normally until opt-in.
 /// Every network feature remains independently switchable. Existing UserDefaults
 /// values take precedence, so an update preserves each user's explicit choices.
 final class OpsecSettings: ObservableObject {
@@ -137,6 +138,8 @@ final class OpsecSettings: ObservableObject {
     /// Existing users must explicitly opt in before an update begins sharing
     /// their position after the app leaves the foreground.
     static let defaultBackgroundUnitSyncLocation = false
+    /// Auto-lock stays under the system's control unless the user opts in.
+    static let defaultKeepScreenOn = false
 
     @Published private(set) var privacyScreen: Bool
     @Published private(set) var onlineLookups: Bool
@@ -146,6 +149,7 @@ final class OpsecSettings: ObservableObject {
     @Published private(set) var relayURL: String
     @Published private(set) var coordinateDisplayFormat: CoordinateDisplayFormat
     @Published private(set) var mapOrientationMode: MapOrientationMode
+    @Published private(set) var keepScreenOn: Bool
     @Published private var pendingPersistenceIssue: LocalizedMessage?
     var persistenceMessage: LocalizedMessage? { pendingPersistenceIssue }
     var persistenceIssue: String? { pendingPersistenceIssue?.text }
@@ -183,6 +187,7 @@ final class OpsecSettings: ObservableObject {
         relayURL = relayResolution.endpoint
         coordinateDisplayFormat = CoordinateDisplayFormat.stored(in: defaults)
         mapOrientationMode = MapOrientationMode.stored(in: defaults)
+        keepScreenOn = defaults.object(forKey: Keys.keepScreenOn) as? Bool ?? Self.defaultKeepScreenOn
         // Marketing-screenshot mode: the store XCUITest sets this env var so the
         // shots explicitly request online tiles/lookups regardless of saved state.
         // Never set in production (env vars can't be injected into a
@@ -295,6 +300,15 @@ final class OpsecSettings: ObservableObject {
         return true
     }
 
+    @discardableResult
+    func setKeepScreenOn(_ value: Bool) -> Bool {
+        guard persist(value, key: Keys.keepScreenOn, verify: {
+            self.defaults.object(forKey: Keys.keepScreenOn) as? Bool == value
+        }) else { return false }
+        keepScreenOn = value
+        return true
+    }
+
     /// UserDefaults mutates its process cache before durability is known. Keep
     /// the prior exact object, require a synchronized readback, and roll back
     /// before publishing any setting to the rest of the app.
@@ -329,5 +343,6 @@ final class OpsecSettings: ObservableObject {
         static let basemaps = "opsec.onlineBasemaps"
         static let backgroundUnitSyncLocation = "opsec.backgroundUnitSyncLocation"
         static let relay = "opsec.relayURL"
+        static let keepScreenOn = "display.keepScreenOn"
     }
 }

@@ -96,10 +96,48 @@ object Messages {
         L10n.message("id.relay_recovery_failed", "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.")
     fun relayRecoveryFailedMessage(): LocalizedMessage =
         LocalizedMessage("id.relay_recovery_failed", "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.", listOf())
+    fun ringsAdd(): String =
+        L10n.message("id.rings_add", "Add range rings")
+    fun ringsCountValue(count: String): String =
+        L10n.message("id.rings_count_value", "Rings: %1\$s", count)
+    fun ringsCreate(): String =
+        L10n.message("id.rings_create", "Add Rings")
+    fun ringsFewer(): String =
+        L10n.message("id.rings_fewer", "Fewer rings")
+    fun ringsHelp(): String =
+        L10n.message("id.rings_help", "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings, but stay where they are if the symbol moves.")
+    fun ringsInvalid(): String =
+        L10n.message("id.rings_invalid", "Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol.")
+    fun ringsMore(): String =
+        L10n.message("id.rings_more", "More rings")
+    fun ringsNotCreated(): String =
+        L10n.message("id.rings_not_created", "Range Rings Not Created")
+    fun ringsPreview(): String =
+        L10n.message("id.rings_preview", "Rings at")
+    fun ringsRingName(distance: String, symbol: String): String =
+        L10n.message("id.rings_ring_name", "%1\$s around %2\$s", distance, symbol)
+    fun ringsSpacing(): String =
+        L10n.message("id.rings_spacing", "Ring spacing")
+    fun ringsTitle(): String =
+        L10n.message("id.rings_title", "Range Rings")
+    fun ringsUndoAction(): String =
+        L10n.message("id.rings_undo_action", "Add Range Rings")
+    fun ringsUnit(): String =
+        L10n.message("id.rings_unit", "Unit")
+    fun ringsUnitKilometres(): String =
+        L10n.message("id.rings_unit_kilometres", "km")
+    fun ringsUnitMetres(): String =
+        L10n.message("id.rings_unit_metres", "m")
     fun androidKeyProtectionHelp(): String =
         L10n.message("id.settings_android_key_protection_help", "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.")
+    fun settingsDisplayTitle(): String =
+        L10n.message("id.settings_display_title", "Display")
     fun headingHelp(): String =
         L10n.message("id.settings_heading_help", "North Up starts north-facing and keeps two-finger rotation available. Heading Up uses the phone compass to keep your pointing direction at the top of the map. It uses true north when a recent location is available. The compass marks bearings T for true north, or M when it falls back to magnetic north, and ? while waiting for a valid reading.")
+    fun settingsKeepScreenOn(): String =
+        L10n.message("id.settings_keep_screen_on", "Keep screen on")
+    fun settingsKeepScreenOnHelp(): String =
+        L10n.message("id.settings_keep_screen_on_help", "Off by default. While TacMap is open, the screen stays on and the device does not lock automatically, for example when the map is mounted or left on a table. This uses more battery. Lock the device yourself before leaving it unattended.")
     fun deviceLanguage(): String =
         L10n.message("id.settings_language_device", "Device language")
     fun languageSaveFailed(): String =
@@ -110,8 +148,44 @@ object Messages {
         L10n.message("id.settings_online_basemaps_help", "Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. While on, Esri or OpenTopoMap can see the ground you are looking at from your IP. Turn this off for a fully offline posture.")
     fun onlineLookupsHelp(): String =
         L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.")
+    fun sunMoonBmct(): String =
+        L10n.message("id.sun_moon_bmct", "Civil dawn (BMCT)")
+    fun sunMoonBmnt(): String =
+        L10n.message("id.sun_moon_bmnt", "Nautical dawn (BMNT)")
+    fun sunMoonEect(): String =
+        L10n.message("id.sun_moon_eect", "Civil dusk (EECT)")
+    fun sunMoonEent(): String =
+        L10n.message("id.sun_moon_eent", "Nautical dusk (EENT)")
+    fun sunMoonHelp(timeZone: String): String =
+        L10n.message("id.sun_moon_help", "Calculated on this device for the map centre; nothing is sent online. Times use this device’s time zone (%1\$s). Sun times are accurate to about a minute and moon times to a few minutes. A dash means the event does not happen that day.", timeZone)
+    fun sunMoonIllumination(): String =
+        L10n.message("id.sun_moon_illumination", "Moon illumination")
+    fun sunMoonMoonrise(): String =
+        L10n.message("id.sun_moon_moonrise", "Moonrise")
+    fun sunMoonMoonset(): String =
+        L10n.message("id.sun_moon_moonset", "Moonset")
+    fun sunMoonNoEvent(): String =
+        L10n.message("id.sun_moon_no_event", "Does not occur")
+    fun sunMoonSunrise(): String =
+        L10n.message("id.sun_moon_sunrise", "Sunrise")
+    fun sunMoonSunset(): String =
+        L10n.message("id.sun_moon_sunset", "Sunset")
+    fun sunMoonTitle(): String =
+        L10n.message("id.sun_moon_title", "Sun & Moon")
+    fun sunMoonToday(): String =
+        L10n.message("id.sun_moon_today", "Today")
+    fun sunMoonTomorrow(): String =
+        L10n.message("id.sun_moon_tomorrow", "Tomorrow")
+    fun sunMoonWaning(percent: String): String =
+        L10n.message("id.sun_moon_waning", "%1\$s, waning", percent)
+    fun sunMoonWaxing(percent: String): String =
+        L10n.message("id.sun_moon_waxing", "%1\$s, waxing", percent)
     fun symbolsCustomSymbols(): String =
         L10n.message("id.symbols_custom_symbols", "Custom Symbols")
+    fun symbolsDistanceFromCentre(distance: String): String =
+        L10n.message("id.symbols_distance_from_centre", "%1\$s from crosshair", distance)
+    fun symbolsGroupOther(): String =
+        L10n.message("id.symbols_group_other", "Other")
     fun symbolsImportLocation(): String =
         L10n.message("id.symbols_import_location", "Import packs from Import / Export → Import Symbol Pack.")
     fun symbolsImportSymbolPack(): String =
@@ -122,6 +196,20 @@ object Messages {
         L10n.message("id.symbols_no_matches", "No matching symbols.")
     fun symbolsPackImported(name: String): String =
         L10n.message("id.symbols_pack_imported", "Imported symbol pack: %1\$s", name)
+    fun symbolsSortAffiliation(): String =
+        L10n.message("id.symbols_sort_affiliation", "Affiliation")
+    fun symbolsSortBy(): String =
+        L10n.message("id.symbols_sort_by", "Sort by")
+    fun symbolsSortByValue(value: String): String =
+        L10n.message("id.symbols_sort_by_value", "Sort: %1\$s", value)
+    fun symbolsSortDistance(): String =
+        L10n.message("id.symbols_sort_distance", "Distance from crosshair")
+    fun symbolsSortLayer(): String =
+        L10n.message("id.symbols_sort_layer", "Layer")
+    fun symbolsSortName(): String =
+        L10n.message("id.symbols_sort_name", "Name")
+    fun symbolsSortNewest(): String =
+        L10n.message("id.symbols_sort_newest", "Newest first")
     fun symbolsSymbolPackError(): String =
         L10n.message("id.symbols_symbol_pack_error", "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.")
     fun symbolsSymbolPackFailed(): String =

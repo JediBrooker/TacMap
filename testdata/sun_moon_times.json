@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "description": "Offline sun and moon times for one local-day window [windowStartUnix, windowEndUnix). Sun: NOAA/Meeus low-precision apparent position; thresholds are the centre at -0.833 degrees (sunrise/sunset), -6 (civil: BMCT/EECT) and -12 (nautical: BMNT/EENT). Moon: Astronomical Almanac low-precision longitude/latitude/parallax, rising when the geocentric centre altitude crosses 0.7275 x parallax - 0.5667 degrees. Each event is the first upward (rise) or downward (set) crossing found by stepping 300 s and bisecting 16 times; null means none in the window. Illumination is evaluated at the window midpoint. Against PyEphem 4.2.1 across ten locations and 2026 the implementation stays within 30 seconds for the sun and twilight, 6 minutes for the moon and 0.001 for illumination.",
+  "stepSeconds": 300,
+  "bisections": 16,
+  "toleranceSeconds": 30,
+  "illuminationTolerance": 0.002,
+  "cases": [
+    {
+      "name": "sydney_spring",
+      "lat": -33.8688,
+      "lon": 151.2093,
+      "windowStartUnix": 1790517600.0,
+      "windowEndUnix": 1790604000.0,
+      "expectedUnix": {
+        "bmnt": 1790534571.0,
+        "bmct": 1790536322.8,
+        "sunrise": 1790537819.8,
+        "sunset": 1790582127.4,
+        "eect": 1790583627.1,
+        "eent": 1790585382.8,
+        "moonrise": 1790588458.8,
+        "moonset": 1790539347.6
+      },
+      "moonIllumination": 0.9755,
+      "moonWaxing": false
+    },
+    {
+      "name": "berlin_solstice",
+      "lat": 52.52,
+      "lon": 13.405,
+      "windowStartUnix": 1781992800.0,
+      "windowEndUnix": 1782079200.0,
+      "expectedUnix": {
+        "bmnt": 1782001762.3,
+        "bmct": 1782006771.2,
+        "sunrise": 1782009785.9,
+        "sunset": 1782070398.9,
+        "eect": 1782073413.5,
+        "eent": 1782078421.9,
+        "moonrise": 1782038650.4,
+        "moonset": 1781995282.6
+      },
+      "moonIllumination": 0.451,
+      "moonWaxing": true
+    },
+    {
+      "name": "tromso_midnight_sun",
+      "lat": 69.6492,
+      "lon": 18.9553,
+      "windowStartUnix": 1781992800.0,
+      "windowEndUnix": 1782079200.0,
+      "expectedUnix": {
+        "bmnt": null,
+        "bmct": null,
+        "sunrise": null,
+        "sunset": null,
+        "eect": null,
+        "eent": null,
+        "moonrise": 1782037114.3,
+        "moonset": 1781995086.2
+      },
+      "moonIllumination": 0.451,
+      "moonWaxing": true
+    },
+    {
+      "name": "tromso_polar_night",
+      "lat": 69.6492,
+      "lon": 18.9553,
+      "windowStartUnix": 1797807600.0,
+      "windowEndUnix": 1797894000.0,
+      "expectedUnix": {
+        "bmnt": 1797835602.0,
+        "bmct": 1797841873.2,
+        "sunrise": null,
+        "sunset": null,
+        "eect": 1797857593.5,
+        "eent": 1797863864.6,
+        "moonrise": null,
+        "moonset": null
+      },
+      "moonIllumination": 0.9005,
+      "moonWaxing": true
+    },
+    {
+      "name": "nairobi_equinox",
+      "lat": -1.2921,
+      "lon": 36.8219,
+      "windowStartUnix": 1773954000.0,
+      "windowEndUnix": 1774040400.0,
+      "expectedUnix": {
+        "bmnt": 1773975135.5,
+        "bmct": 1773976575.6,
+        "sunrise": 1773977815.8,
+        "sunset": 1774021407.7,
+        "eect": 1774022647.8,
+        "eent": 1774024087.8,
+        "moonrise": 1773981111.0,
+        "moonset": 1774025608.1
+      },
+      "moonIllumination": 0.0236,
+      "moonWaxing": true
+    },
+    {
+      "name": "washington_dst_end_25h",
+      "lat": 38.9072,
+      "lon": -77.0369,
+      "windowStartUnix": 1793505600.0,
+      "windowEndUnix": 1793595600.0,
+      "expectedUnix": {
+        "bmnt": 1793529379.5,
+        "bmct": 1793531269.3,
+        "sunrise": 1793532928.3,
+        "sunset": 1793570850.4,
+        "eect": 1793572508.4,
+        "eent": 1793574396.9,
+        "moonrise": 1793593831.5,
+        "moonset": 1793556897.9
+      },
+      "moonIllumination": 0.5206,
+      "moonWaxing": false
+    },
+    {
+      "name": "kabul_winter",
+      "lat": 34.5553,
+      "lon": 69.2075,
+      "windowStartUnix": 1768419000.0,
+      "windowEndUnix": 1768505400.0,
+      "expectedUnix": {
+        "bmnt": 1768440687.3,
+        "bmct": 1768442542.9,
+        "sunrise": 1768444184.3,
+        "sunset": 1768480533.2,
+        "eect": 1768482174.6,
+        "eent": 1768484030.4,
+        "moonrise": 1768434466.7,
+        "moonset": 1768468666.7
+      },
+      "moonIllumination": 0.1156,
+      "moonWaxing": false
+    }
+  ]
+}

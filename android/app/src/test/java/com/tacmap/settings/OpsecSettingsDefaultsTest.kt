@@ -37,4 +37,12 @@ class OpsecSettingsDefaultsTest {
         assertFalse(disabled.onlineBasemaps)
         assertFalse(disabled.backgroundUnitSyncLocation)
     }
+
+    @Test
+    fun keepScreenOnDefaultsOffAndHonoursStoredChoice() {
+        assertFalse(OpsecSettings.resolveKeepScreenOn(emptyMap<String, Any?>()))
+        assertFalse(OpsecSettings.resolveKeepScreenOn(mapOf("keep_screen_on" to "yes")))
+        assertTrue(OpsecSettings.resolveKeepScreenOn(mapOf("keep_screen_on" to true)))
+        assertFalse(OpsecSettings.resolveKeepScreenOn(mapOf("keep_screen_on" to false)))
+    }
 }

@@ -1757,5 +1757,65 @@
     "platform": "ios",
     "area": "symbols-drawings-layers",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Waypoints/SymbolListOrder.swift",
+    "platform": "ios",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/waypoints/SymbolListOrder.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/RangeRings.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/RangeRingsSheet.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/drawings/RangeRings.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/RangeRingsDialog.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/SunMoonSection.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/SunMoonSection.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/SunMoonCalculator.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/SunMoonCalculator.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
   }
 ]

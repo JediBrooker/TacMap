@@ -1,12 +1,14 @@
 package com.tacmap.map
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -40,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
@@ -57,10 +61,12 @@ fun SymbolControlsCard(
     crosshairTargetLat: Double,
     crosshairTargetLng: Double,
     store: WaypointStore,
+    onCreateRangeRings: (List<DrawingFeature>) -> Boolean,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showEditor by remember(waypoint.id) { mutableStateOf(false) }
+    var showRangeRings by remember(waypoint.id) { mutableStateOf(false) }
     var moveFailed by remember(waypoint.id) { mutableStateOf(false) }
 
     fun moveToCrosshair(): Boolean = store.update(
@@ -99,8 +105,28 @@ fun SymbolControlsCard(
                 Spacer(Modifier.size(6.dp))
                 Text(L10n.text("Move to crosshair"), maxLines = 1, fontSize = 12.sp)
             }
+            OutlinedButton(
+                onClick = { showRangeRings = true },
+                modifier = Modifier.height(48.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+            ) {
+                Icon(
+                    Icons.Default.TrackChanges,
+                    contentDescription = Messages.ringsAdd(),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
 
+    }
+
+    if (showRangeRings) {
+        RangeRingsDialog(
+            waypoint = waypoint,
+            layerColor = layers.firstOrNull { it.id == waypoint.layerId }?.color,
+            onCreate = onCreateRangeRings,
+            onDismiss = { showRangeRings = false },
+        )
     }
 
     if (showEditor) {

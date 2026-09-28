@@ -49,6 +49,8 @@ struct WeatherSheet: View {
                         }
                     }
                 }
+                Divider()
+                SunMoonSection(coordinate: coordinate)
                 Spacer()
             }
             .padding()
