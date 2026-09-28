@@ -217,7 +217,9 @@ internal fun MapItemTouchOverlayCustom(
                     // movement, second finger or release first disarms it.
                     var longPressArmed = itemId == null && peerHit == null && cOnLongPress.value != null
                     var longPressed = false
-                    val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+                    // A deliberate one-second hold, not the system's 400 ms: a drag
+                    // that pauses should keep moving the map rather than open the menu.
+                    val longPressTimeout = maxOf(viewConfiguration.longPressTimeoutMillis, MAP_MENU_HOLD_MS)
                     val downAt = SystemClock.uptimeMillis()
 
                     while (true) {
@@ -377,6 +379,9 @@ internal fun MapItemTouchOverlayCustom(
             }
     )
 }
+
+/** Still-hold time before the empty-map point menu opens (matches iOS). */
+internal const val MAP_MENU_HOLD_MS = 1_000L
 
 internal fun closestPresencePeer(
     point: Offset,

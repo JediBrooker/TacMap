@@ -194,6 +194,7 @@ jobs:
             -only-testing:TacticalMapsUITests/PDFPickerSmokeTests \
             -only-testing:TacticalMapsUITests/SettingsLanguageTests \
             -only-testing:TacticalMapsUITests/NightModeTests \
+            -only-testing:TacticalMapsUITests/MapLongPressTests \
             -parallel-testing-enabled NO \
             -resultBundlePath PDFSmokeResults.xcresult \
             test 2>&1 | tee pdf-smoke-test.log | xcbeautify --renderer github-actions
@@ -219,6 +220,17 @@ jobs:
           set -euo pipefail
           ./scripts/verify_simulator_app.sh \
             build/installable/Build/Products/Debug-iphonesimulator/TacticalMaps.app
+
+      - name: Upload UI test results
+        # Kept on success too: the night-mode screenshots in it are the only
+        # way to see what the Simulator actually rendered.
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-ui-test-results
+          path: ios/PDFSmokeResults.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload test diagnostics on failure
         if: failure()

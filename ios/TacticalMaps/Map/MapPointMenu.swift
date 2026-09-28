@@ -62,7 +62,9 @@ struct PointSunMoonSheet: View {
 }
 
 /// The long-press point menu and the sheets it opens. Actions that create
-/// mission objects are hidden while graphics are locked.
+/// mission objects are hidden while graphics are locked. The menu is drawn in
+/// the app's own view tree rather than as a system action sheet: iOS draws
+/// those outside the app's views, where night mode cannot turn them red.
 struct MapPointMenuModifier: ViewModifier {
     @Binding var point: MapPressPoint?
     @ObservedObject var drawingStore: DrawingStore
@@ -76,26 +78,19 @@ struct MapPointMenuModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog(
-                point?.coordinateText.text ?? "",
-                isPresented: Binding(get: { point != nil }, set: { if !$0 { point = nil } }),
-                titleVisibility: .visible,
-                presenting: point
-            ) { pressed in
-                if canEdit {
-                    Button(Messages.mapPointPlaceSymbol()) { onPlaceSymbol(pressed.coordinate) }
+            .overlay {
+                ZStack(alignment: .bottom) {
+                    if let pressed = point {
+                        Color.black.opacity(0.4)
+                            .ignoresSafeArea()
+                            .onTapGesture { point = nil }
+                            .accessibilityHidden(true)
+                            .transition(.opacity)
+                        MapPointMenuCard(point: pressed, actions: actions(for: pressed)) { point = nil }
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
-                Button(Messages.mapPointMeasure()) { onMeasure(pressed.coordinate) }
-                if canEdit {
-                    Button(Messages.mapPointRangeRings()) { ringCentre = centre(for: pressed) }
-                }
-                Button(Messages.mapPointSunMoon()) { sunMoonPoint = pressed }
-                Button(Messages.mapPointCopy()) {
-                    pressed.copyToPasteboard()
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onCopied(pressed.coordinateText.format)
-                }
-                Button(L10n.text("Cancel"), role: .cancel) {}
+                .animation(.easeOut(duration: 0.2), value: point?.id)
             }
             .nightSheet(item: $sunMoonPoint) { pressed in
                 PointSunMoonSheet(point: pressed)
@@ -104,6 +99,32 @@ struct MapPointMenuModifier: ViewModifier {
             .nightSheet(item: $ringCentre) { centre in
                 RangeRingsSheet(drawingStore: drawingStore, waypoint: centre, anchored: false)
             }
+    }
+
+    private func actions(for pressed: MapPressPoint) -> [MapPointMenuCard.Action] {
+        var actions: [MapPointMenuCard.Action] = []
+        if canEdit {
+            actions.append(.init(title: Messages.mapPointPlaceSymbol(), systemImage: "mappin.and.ellipse") {
+                onPlaceSymbol(pressed.coordinate)
+            })
+        }
+        actions.append(.init(title: Messages.mapPointMeasure(), systemImage: "ruler") {
+            onMeasure(pressed.coordinate)
+        })
+        if canEdit {
+            actions.append(.init(title: Messages.mapPointRangeRings(), systemImage: "scope") {
+                ringCentre = centre(for: pressed)
+            })
+        }
+        actions.append(.init(title: Messages.mapPointSunMoon(), systemImage: "sunrise") {
+            sunMoonPoint = pressed
+        })
+        actions.append(.init(title: Messages.mapPointCopy(), systemImage: "doc.on.doc") {
+            pressed.copyToPasteboard()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onCopied(pressed.coordinateText.format)
+        })
+        return actions
     }
 
     /// A stand-in symbol that only supplies the rings' centre, name and layer.
@@ -115,5 +136,70 @@ struct MapPointMenuModifier: ViewModifier {
                         latitude: pressed.coordinate.latitude,
                         longitude: pressed.coordinate.longitude,
                         layerID: layerID)
+    }
+}
+
+/// The point menu itself: the coordinate, one row per action, then Cancel,
+/// in a card at the bottom of the screen like a system action sheet.
+private struct MapPointMenuCard: View {
+    struct Action: Identifiable {
+        let title: String
+        let systemImage: String
+        let run: () -> Void
+        var id: String { title }
+    }
+
+    let point: MapPressPoint
+    let actions: [Action]
+    let dismiss: () -> Void
+
+    var body: some View {
+        // Scrolls only when the rows do not fit, e.g. landscape with large text.
+        ViewThatFits(in: .vertical) {
+            card
+            ScrollView { card }
+        }
+        .frame(maxWidth: 440)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape, dismiss)
+        .accessibilityIdentifier("map.pointMenu")
+    }
+
+    private var card: some View {
+        VStack(spacing: 8) {
+            VStack(spacing: 0) {
+                Text(point.coordinateText.text)
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                ForEach(actions) { action in
+                    Divider()
+                    Button {
+                        dismiss()
+                        action.run()
+                    } label: {
+                        Label(action.title, systemImage: action.systemImage)
+                            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .contentShape(Rectangle())
+                    }
+                }
+            }
+            .background(Color(uiColor: .secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            Button(action: dismiss) {
+                Text(L10n.text("Cancel"))
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .contentShape(Rectangle())
+            }
+            .background(Color(uiColor: .secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
     }
 }

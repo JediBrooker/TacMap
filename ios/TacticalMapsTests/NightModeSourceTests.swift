@@ -3,7 +3,7 @@ import XCTest
 
 /// Sheets are separate hosting controllers, so each needs night mode's
 /// luminance conversion. Every sheet must go through `nightSheet`; a plain
-/// `.sheet` would show blue and green content as black at night.
+/// `.sheet` would stay in full colour at night.
 final class NightModeSourceTests: XCTestCase {
     func testSheetsGoThroughNightSheet() throws {
         let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
