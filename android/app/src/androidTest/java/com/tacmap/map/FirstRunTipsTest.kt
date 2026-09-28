@@ -1,6 +1,7 @@
 package com.tacmap.map
 
 import android.Manifest
+import android.os.ParcelFileDescriptor
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -28,7 +29,9 @@ class FirstRunTipsTest {
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
         for (permission in listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)) {
-            instrumentation.uiAutomation.grantRuntimePermission(context.packageName, permission)
+            // UiAutomation.grantRuntimePermission needs API 28; CI also runs API 26.
+            instrumentation.uiAutomation.executeShellCommand("pm grant ${context.packageName} $permission")
+                .let { ParcelFileDescriptor.AutoCloseInputStream(it).use { stream -> stream.readBytes() } }
         }
 
         FirstRunTips.reset(context)
