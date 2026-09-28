@@ -33,7 +33,7 @@
     <string name="rings_count_value">"Ringe: %1$s"</string>
     <string name="rings_create">"Ringe hinzufügen"</string>
     <string name="rings_fewer">"Weniger Ringe"</string>
-    <string name="rings_help">"Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht, bleiben aber an ihrer Position, wenn das Symbol verschoben wird."</string>
+    <string name="rings_help">"Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht und bleiben auf das Symbol zentriert, wenn es verschoben wird."</string>
     <string name="rings_invalid">"Gib einen Abstand größer als null ein. Du kannst bis zu 10 Ringe hinzufügen; der äußere Ring darf höchstens 1000 km vom Symbol entfernt sein."</string>
     <string name="rings_more">"Mehr Ringe"</string>
     <string name="rings_not_created">"Entfernungsringe nicht erstellt"</string>

@@ -147,4 +147,93 @@ final class RangeRingsTests: XCTestCase {
         XCTAssertEqual(store.shapes, before)
         XCTAssertFalse(undo.canUndo)
     }
+
+    @MainActor
+    func testRingsFollowTheirSymbolAndUndoWithTheMove() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let drawings = DrawingStore(storageURL: dir.appendingPathComponent("drawings.json"),
+                                    persistenceWriter: { _, _, _ in })
+        let waypoints = WaypointStore(storageURL: dir.appendingPathComponent("waypoints.json"),
+                                      persistenceWriter: { _, _, _ in })
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        drawings.undoManager = undo
+        waypoints.undoManager = undo
+        let follower = RangeRingFollower()
+        follower.attach(waypointStore: waypoints, drawingStore: drawings)
+
+        let op = Waypoint(name: "OP", latitude: -33.8688, longitude: 151.2093, layerID: drawings.layers[0].id)
+        let other = Waypoint(name: "HQ", latitude: -33.9, longitude: 151.1, layerID: drawings.layers[0].id)
+        _ = try waypoints.addDurably(op)
+        _ = try waypoints.addDurably(other)
+        let rings = RangeRings.shapes(around: op, radii: [500, 1000], layerColorHex: nil)
+        let otherRing = RangeRings.shapes(around: other, radii: [250], layerColorHex: nil)
+        _ = try drawings.addBatchDurably(rings + otherRing, actionName: "Add Range Rings")
+        XCTAssertEqual(rings[0].anchorWaypointID, op.id)
+        XCTAssertEqual(rings[1].ringRadiusMetres, 1000)
+
+        var moved = op
+        moved.latitude = -33.85
+        moved.longitude = 151.25
+        undo.beginUndoGrouping()
+        _ = try waypoints.commitEdit(moved, actionName: "Move Waypoint")
+        undo.endUndoGrouping()
+
+        func ring(_ id: UUID) -> DrawingShape { drawings.shapes.first { $0.id == id }! }
+        let center = Coordinate2D(latitude: moved.latitude, longitude: moved.longitude)
+        XCTAssertEqual(ring(rings[0].id).coordinates, RangeRings.ring(center: center, radiusMetres: 500))
+        XCTAssertEqual(ring(rings[1].id).coordinates, RangeRings.ring(center: center, radiusMetres: 1000))
+        XCTAssertEqual(ring(otherRing[0].id), otherRing[0], "rings of other symbols stay put")
+
+        undo.undo()
+        XCTAssertEqual(waypoints.waypoints.first { $0.id == op.id }?.latitude, op.latitude)
+        XCTAssertEqual(ring(rings[0].id).coordinates, rings[0].coordinates)
+        XCTAssertEqual(ring(rings[1].id).coordinates, rings[1].coordinates)
+
+        undo.redo()
+        XCTAssertEqual(ring(rings[0].id).coordinates, RangeRings.ring(center: center, radiusMetres: 500))
+    }
+
+    func testFollowedSkipsUnanchoredAndUnmovedRings() {
+        let op = Waypoint(name: "OP", latitude: 10, longitude: 20)
+        let ring = RangeRings.shapes(around: op, radii: [300], layerColorHex: nil)[0]
+        XCTAssertNil(RangeRings.followed(ring, waypoint: op), "already centred")
+        var plain = ring
+        plain.anchorWaypointID = nil
+        var moved = op
+        moved.latitude = 11
+        XCTAssertNil(RangeRings.followed(plain, waypoint: moved), "not a ring of this symbol")
+        var rotated = ring
+        rotated.rotation = 45
+        XCTAssertEqual(RangeRings.followed(rotated, waypoint: op)?.rotation, 0)
+        XCTAssertEqual(RangeRings.followed(ring, waypoint: moved)?.coordinates,
+                       RangeRings.ring(center: Coordinate2D(latitude: 11, longitude: 20), radiusMetres: 300))
+    }
+
+    func testRingAnchorTravelsWithUnitSyncButNotFileImport() throws {
+        let layer = DrawingLayer(name: "Friendly", defaultColorHex: "#1E88E5")
+        let op = Waypoint(name: "OP", latitude: 10, longitude: 20, layerID: layer.id)
+        let ring = RangeRings.shapes(around: op, radii: [300], layerColorHex: nil)[0]
+        let json = try GeoJSONExporter.export(waypoints: [], drawings: [ring], layers: [layer])
+        XCTAssertTrue(json.contains("tacticalmaps:anchor_id"))
+
+        let synced = try GeoJSONImporter.parse(Data(json.utf8), existingLayers: [layer], fallbackLayerID: layer.id)
+        XCTAssertEqual(synced.drawings.first?.anchorWaypointID, op.id)
+        XCTAssertEqual(synced.drawings.first?.ringRadiusMetres, 300)
+
+        let imported = try GeoJSONImporter.parseExternal(Data(json.utf8),
+                                                         existingLayers: [layer],
+                                                         fallbackLayerID: layer.id,
+                                                         existingWaypointIDs: [],
+                                                         existingDrawingIDs: [],
+                                                         batchKey: "test")
+        XCTAssertNil(imported.result.drawings.first?.anchorWaypointID)
+        XCTAssertNil(imported.result.drawings.first?.ringRadiusMetres)
+
+        let plain = DrawingShape(kind: .polyline,
+                                 coordinates: [Coordinate2D(latitude: 0, longitude: 0), Coordinate2D(latitude: 1, longitude: 1)],
+                                 layerID: layer.id)
+        XCTAssertFalse(try GeoJSONExporter.export(drawings: [plain], layers: [layer]).contains("anchor_id"))
+    }
 }

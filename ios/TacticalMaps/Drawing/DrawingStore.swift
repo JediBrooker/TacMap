@@ -422,6 +422,38 @@ final class DrawingStore: ObservableObject {
         return true
     }
 
+    /// Persists several edited drawings (e.g. range rings following their
+    /// symbol) as one durable write and one undo registration. Missing and
+    /// unchanged drawings are skipped. Returns the number written.
+    @discardableResult
+    func commitEdits(_ edited: [DrawingShape], actionName: String) throws -> Int {
+        guard !locked else { throw DrawingMutationError.locked }
+        var candidate = shapes
+        var previous: [DrawingShape] = []
+        for shape in edited {
+            guard let index = candidate.firstIndex(where: { $0.id == shape.id }),
+                  candidate[index] != shape else { continue }
+            previous.append(candidate[index])
+            candidate[index] = shape
+        }
+        guard !previous.isEmpty else { return 0 }
+        do {
+            try write(layers: layers,
+                      shapes: candidate,
+                      activeLayerID: activeLayerID)
+        } catch {
+            pendingLoadError = Messages.couldNotSaveDrawingChangeToDiskMessage("").withArgument(0, error.displayMessage)
+            throw DrawingMutationError.persistenceFailed(error)
+        }
+        shapes = candidate
+        if pendingLoadError?.id == "id.ui_could_not_save_drawing_change_to_disk_1_951dd3f4" { loadError = nil }
+        undoManager?.registerUndo(withTarget: self) { store in
+            _ = try? store.commitEdits(previous, actionName: actionName)
+        }
+        undoManager?.setActionName(actionName)
+        return previous.count
+    }
+
     /// Persists a confirmed deletion before publishing it to UI or Sync.
     @discardableResult
     func deleteDurably(_ shape: DrawingShape) throws -> Bool {

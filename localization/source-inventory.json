@@ -1847,5 +1847,17 @@
     "platform": "ios",
     "area": "import-export",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/RangeRingFollower.swift",
+    "platform": "ios",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/drawings/RangeRingFollower.kt",
+    "platform": "android",
+    "area": "drawings-layers",
+    "reviewStatus": "manual-review-needed"
   }
 ]

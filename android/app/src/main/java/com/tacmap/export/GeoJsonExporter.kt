@@ -185,6 +185,14 @@ object GeoJsonExporter {
                 put("stroke_width", feature.strokeWidth)
                 put("stroke_style", feature.strokeStyle.name.lowercase())
                 feature.lineGraphic?.let { put("tacticalmaps:line_graphic", it.wire) }
+                // Range rings: the symbol they stay centred on. Unit Sync reads
+                // these; file imports drop them because object IDs may be remapped.
+                val anchor = feature.anchorId
+                val ringRadius = feature.ringRadiusMetres
+                if (anchor != null && ringRadius != null) {
+                    put("tacticalmaps:anchor_id", anchor)
+                    put("tacticalmaps:ring_radius_m", ringRadius)
+                }
                 // geometry is exported already baked (rotation/scale applied) so
                 // transform is identity on the wire, re-import must not apply
                 // it a second time

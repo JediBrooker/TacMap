@@ -15487,8 +15487,8 @@
     "parameters": []
   },
   "rings_help": {
-    "en": "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings, but stay where they are if the symbol moves.",
-    "de": "Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht, bleiben aber an ihrer Position, wenn das Symbol verschoben wird.",
+    "en": "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings and stay centred on the symbol when it moves.",
+    "de": "Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht und bleiben auf das Symbol zentriert, wenn es verschoben wird.",
     "platforms": [
       "ios",
       "android"

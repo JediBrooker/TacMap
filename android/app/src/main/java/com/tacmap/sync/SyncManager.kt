@@ -2105,6 +2105,7 @@ class SyncManager(
                 existingLayers = doc.layers,
                 fallbackLayerId = fallback,
                 density = displayDensity,
+                keepRingAnchors = true,
             )
         }.getOrNull() ?: return
         if (!isValidLegacySyncPut(id, kind, parsed)) return
@@ -2578,6 +2579,7 @@ class SyncManager(
                 existingLayers = doc.layers,
                 fallbackLayerId = fallback,
                 density = displayDensity,
+                keepRingAnchors = true,
             )
         }.getOrNull() ?: return null
         if (parsed.invalidSkipped != 0) return null

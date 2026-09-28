@@ -111,7 +111,7 @@ object Messages {
     fun ringsFewer(): String =
         L10n.message("id.rings_fewer", "Fewer rings")
     fun ringsHelp(): String =
-        L10n.message("id.rings_help", "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings, but stay where they are if the symbol moves.")
+        L10n.message("id.rings_help", "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings and stay centred on the symbol when it moves.")
     fun ringsInvalid(): String =
         L10n.message("id.rings_invalid", "Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol.")
     fun ringsMore(): String =

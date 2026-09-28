@@ -33,7 +33,7 @@
     <string name="rings_count_value">"Rings: %1$s"</string>
     <string name="rings_create">"Add Rings"</string>
     <string name="rings_fewer">"Fewer rings"</string>
-    <string name="rings_help">"Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings, but stay where they are if the symbol moves."</string>
+    <string name="rings_help">"Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings and stay centred on the symbol when it moves."</string>
     <string name="rings_invalid">"Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol."</string>
     <string name="rings_more">"More rings"</string>
     <string name="rings_not_created">"Range Rings Not Created"</string>

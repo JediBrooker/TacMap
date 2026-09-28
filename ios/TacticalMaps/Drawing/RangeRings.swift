@@ -2,6 +2,8 @@ import Foundation
 
 /// Range rings around a symbol, generated as ordinary closed line drawings so
 /// they sync, export, hide with their layer and undo like any other drawing.
+/// Each ring remembers its symbol and radius and is regenerated when the
+/// symbol moves (see `RangeRingFollower`).
 /// Android mirrors this in `RangeRings.kt`; `testdata/range_rings.json` pins both.
 enum RangeRings {
     /// Points per ring before the closing point (every 5 degrees).
@@ -67,9 +69,29 @@ enum RangeRings {
                 coordinates: ring(center: center, radiusMetres: radius),
                 style: style,
                 createdAt: createdAt,
-                layerID: waypoint.layerID
+                layerID: waypoint.layerID,
+                anchorWaypointID: waypoint.id,
+                ringRadiusMetres: radius
             )
         }
+    }
+
+    /// `shape` regenerated around its symbol's current position, or nil when
+    /// it is not a ring of `waypoint` or already sits exactly there.
+    static func followed(_ shape: DrawingShape, waypoint: Waypoint) -> DrawingShape? {
+        guard shape.anchorWaypointID == waypoint.id,
+              let radius = shape.ringRadiusMetres,
+              radius > 0, radius <= maxRadiusMetres else { return nil }
+        let center = Coordinate2D(latitude: waypoint.latitude, longitude: waypoint.longitude)
+        let points = ring(center: center, radiusMetres: radius)
+        guard shape.coordinates != points || shape.rotation != 0
+                || shape.scaleX != 1 || shape.scaleY != 1 else { return nil }
+        var moved = shape
+        moved.coordinates = points
+        moved.rotation = 0
+        moved.scaleX = 1
+        moved.scaleY = 1
+        return moved
     }
 
     // MARK: - WGS84 geodesic direct problem (Vincenty, 1975)

@@ -35,7 +35,7 @@
 "id.rings_add" = "Entfernungsringe hinzufügen";
 "id.rings_count_value" = "Ringe: %1$@";
 "id.rings_create" = "Ringe hinzufügen";
-"id.rings_help" = "Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht, bleiben aber an ihrer Position, wenn das Symbol verschoben wird.";
+"id.rings_help" = "Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht und bleiben auf das Symbol zentriert, wenn es verschoben wird.";
 "id.rings_invalid" = "Gib einen Abstand größer als null ein. Du kannst bis zu 10 Ringe hinzufügen; der äußere Ring darf höchstens 1000 km vom Symbol entfernt sein.";
 "id.rings_not_created" = "Entfernungsringe nicht erstellt";
 "id.rings_preview" = "Ringe bei";

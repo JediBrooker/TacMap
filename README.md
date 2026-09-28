@@ -106,7 +106,7 @@ quadrangle (public domain) rendered live over the satellite. Run
   concentric rings at a chosen spacing in metres or kilometres. Each ring is a
   true WGS84 geodesic circle, saved as a dashed line drawing on the symbol's
   layer in its affiliation colour, so rings sync, export, hide and undo (as one
-  step) like any drawing. They stay in place if the symbol later moves.
+  step) like any drawing. They stay centred on the symbol when it moves.
 - **Sortable symbol list** — **☰ → Symbology** sorts by newest first, name
   (numbers in numeric order), distance from the crosshair, or grouped by
   affiliation or layer. The choice is remembered.
@@ -120,6 +120,11 @@ quadrangle (public domain) rendered live over the satellite. Run
   (stroke / stroke-width / fill / fill-opacity / marker-color / marker-symbol
   with [Maki icon] names). Round-trips through **geojson.io, GitHub gists,
   Mapbox, Felt, Leaflet, QGIS, ArcGIS, Google Earth**.
+- **Export KML or KMZ** for Google Earth, ATAK and GIS tools. Layers become
+  folders (hidden layers export hidden), drawings keep their colours and
+  widths, and each symbol carries its MGRS grid. **KMZ with Symbols** also
+  bundles each symbol's map image, so APP-6 units, task graphics, markers and
+  custom symbols appear as they do in TacMap.
 
 [Mapbox simplestyle-spec]: https://github.com/mapbox/simplestyle-spec
 [Maki icon]: https://github.com/mapbox/maki

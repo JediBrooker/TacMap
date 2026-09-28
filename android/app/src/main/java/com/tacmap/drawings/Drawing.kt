@@ -91,7 +91,11 @@ data class DrawingFeature(
     @SerialName("scale_x") val scaleX: Double = 1.0,
     @SerialName("scale_y") val scaleY: Double = 1.0,
     @SerialName("rotation_degrees") val rotationDegrees: Double = 0.0,
-    @SerialName("created_at_epoch_ms") val createdAt: Long = System.currentTimeMillis()
+    @SerialName("created_at_epoch_ms") val createdAt: Long = System.currentTimeMillis(),
+    /** Range rings only: the symbol this ring stays centred on, and its
+     *  radius, so the ring can be regenerated when the symbol moves. */
+    @SerialName("anchor_id") val anchorId: String? = null,
+    @SerialName("ring_radius_m") val ringRadiusMetres: Double? = null,
 ) {
     // Coordinates with rotation + scale baked in around centroid.
     // Vertex-edit handles render against these so dots line up with

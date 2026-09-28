@@ -235,6 +235,11 @@ internal fun MapScreen(
     val waypointStore = remember(unitSyncForegroundEpoch) { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
     val drawingStore = remember(unitSyncForegroundEpoch) { DrawingStore(context) }
+    val ringFollower = remember(waypointStore, drawingStore) {
+        com.tacmap.drawings.RangeRingFollower(drawingStore).also { follower ->
+            waypointStore.committedChangeListener = follower::onWaypointsCommitted
+        }
+    }
     val importIdentityJournal = remember {
         com.tacmap.export.ExternalImportIdentityJournal(context)
     }
@@ -1305,8 +1310,20 @@ internal fun MapScreen(
                 UndoRedoButtons(
                     canUndo = canUndo,
                     canRedo = canRedo,
-                    onUndo = { if (drawingCanUndo) drawingStore.undo() else waypointStore.undo() },
-                    onRedo = { if (drawingCanRedo) drawingStore.redo() else waypointStore.redo() }
+                    onUndo = {
+                        if (drawingCanUndo) {
+                            if (drawingStore.undo()) ringFollower.realign(waypointStore.committedWaypoints.value)
+                        } else {
+                            waypointStore.undo()
+                        }
+                    },
+                    onRedo = {
+                        if (drawingCanRedo) {
+                            if (drawingStore.redo()) ringFollower.realign(waypointStore.committedWaypoints.value)
+                        } else {
+                            waypointStore.redo()
+                        }
+                    }
                 )
                 LockButton(
                     locked = graphicsLocked,

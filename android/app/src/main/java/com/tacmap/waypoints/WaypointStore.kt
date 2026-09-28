@@ -64,6 +64,11 @@ class WaypointStore private constructor(
     private val _canRedo = MutableStateFlow(false)
     val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
 
+    /** Called after each persisted change (including undo and redo) with the
+     *  state before and after it. Range rings use it to follow their symbol. */
+    @Volatile
+    var committedChangeListener: ((before: List<Waypoint>, after: List<Waypoint>, origin: ModelMutationOrigin) -> Unit)? = null
+
     init { load() }
 
     @Synchronized
@@ -173,6 +178,7 @@ class WaypointStore private constructor(
         _committedWaypoints.value = candidate
         _waypoints.value = candidate
         emit(setOf(wp.id), origin)
+        committedChangeListener?.invoke(before, candidate, origin)
         return true
     }
 
@@ -197,6 +203,7 @@ class WaypointStore private constructor(
         _canUndo.value = undoStack.isNotEmpty()
         _canRedo.value = true
         emit(changed, ModelMutationOrigin.LOCAL)
+        committedChangeListener?.invoke(before, snapshot, ModelMutationOrigin.LOCAL)
         return true
     }
 
@@ -214,6 +221,7 @@ class WaypointStore private constructor(
         _canUndo.value = true
         _canRedo.value = redoStack.isNotEmpty()
         emit(changed, ModelMutationOrigin.LOCAL)
+        committedChangeListener?.invoke(before, snapshot, ModelMutationOrigin.LOCAL)
         return true
     }
 
@@ -276,6 +284,7 @@ class WaypointStore private constructor(
         _committedWaypoints.value = candidate
         _waypoints.value = candidate
         emit(changed, origin)
+        committedChangeListener?.invoke(before, candidate, origin)
         return true
     }
 

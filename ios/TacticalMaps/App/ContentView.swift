@@ -477,6 +477,7 @@ struct ContentView: View {
     @StateObject private var locationService: LocationService
     @StateObject private var waypointStore   = WaypointStore()
     @StateObject private var drawingStore    = DrawingStore()
+    @State private var ringFollower = RangeRingFollower()
     @StateObject private var drawingSession  = DrawingSessionViewModel()
     @StateObject private var measureSession  = MeasureSession()
     @StateObject private var visibility      = LayerVisibility()
@@ -889,6 +890,7 @@ struct ContentView: View {
         .task {
             drawingStore.undoManager = undoManager
             waypointStore.undoManager = undoManager
+            ringFollower.attach(waypointStore: waypointStore, drawingStore: drawingStore)
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidCloseUndoGroup)) { _ in
             refreshUndoState()

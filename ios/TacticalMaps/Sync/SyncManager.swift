@@ -469,9 +469,16 @@ enum SyncRemoteModelMutationError: LocalizedError, LocalizedMessageError {
 /// changed, so observers cannot upload or display a write that failed on disk.
 @MainActor
 enum SyncRemoteModelApplier {
+    /// True while a remote object is being written. Local follow-up edits
+    /// (range rings following a symbol) must not run inside a remote apply:
+    /// the peer that moved the symbol sends its own ring updates.
+    private(set) static var isApplying = false
+
     static func apply(_ parsed: GeoJSONImporter.Result,
                       waypointStore: WaypointStore,
                       drawingStore: DrawingStore) throws {
+        isApplying = true
+        defer { isApplying = false }
         guard parsed.invalidSkipped == 0,
               parsed.waypoints.count + parsed.drawings.count == 1 else {
             throw SyncRemoteModelMutationError.invalidPayload
@@ -514,6 +521,8 @@ enum SyncRemoteModelApplier {
     static func delete(localID: String,
                        waypointStore: WaypointStore,
                        drawingStore: DrawingStore) throws {
+        isApplying = true
+        defer { isApplying = false }
         guard let uuid = UUID(uuidString: localID) else {
             throw SyncRemoteModelMutationError.invalidPayload
         }

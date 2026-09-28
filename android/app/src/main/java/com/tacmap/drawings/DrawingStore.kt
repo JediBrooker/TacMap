@@ -310,6 +310,23 @@ class DrawingStore private constructor(
         return commit(before, candidate, setOf(feature.id), origin, recordUndo = false)
     }
 
+    /** Replaces several existing features in one write without an undo entry
+     *  (range rings following their symbol). Unknown IDs are ignored. */
+    @Synchronized
+    fun updateFeaturesNoUndo(
+        features: List<DrawingFeature>,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean {
+        if (features.isEmpty()) return true
+        val before = stableDocument()
+        val replacements = features.associateBy { it.id }
+        val candidate = before.copy(
+            features = before.features.map { replacements[it.id] ?: it },
+        ).withDefaultLayers()
+        if (candidate == before) return true
+        return commit(before, candidate, changedIds(before, candidate), origin, recordUndo = false)
+    }
+
     /** In-memory-only gesture preview: no disk write, undo entry, or sync event. */
     @Synchronized
     fun previewFeature(feature: DrawingFeature): Boolean {

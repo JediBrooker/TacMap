@@ -26,6 +26,10 @@ struct DrawingShape: Identifiable, Codable, Hashable {
     var scaleX: Double
     /// Vertical scale around the centroid (1 = as drawn). Latitude axis.
     var scaleY: Double
+    /// Range rings only: the symbol this ring stays centred on, and its
+    /// radius, so the ring can be regenerated when the symbol moves.
+    var anchorWaypointID: UUID?
+    var ringRadiusMetres: Double?
 
     init(id: UUID = UUID(),
          name: String? = nil,
@@ -37,7 +41,9 @@ struct DrawingShape: Identifiable, Codable, Hashable {
          layerID: UUID = UUID(),
          rotation: Double = 0,
          scaleX: Double = 1,
-         scaleY: Double = 1) {
+         scaleY: Double = 1,
+         anchorWaypointID: UUID? = nil,
+         ringRadiusMetres: Double? = nil) {
         self.id = id
         self.name = name
         self.notes = notes
@@ -49,6 +55,8 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         self.rotation = rotation
         self.scaleX = scaleX
         self.scaleY = scaleY
+        self.anchorWaypointID = anchorWaypointID
+        self.ringRadiusMetres = ringRadiusMetres
     }
 
     var clCoordinates: [CLLocationCoordinate2D] {
@@ -180,6 +188,7 @@ struct DrawingShape: Identifiable, Codable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case id, name, notes, kind, coordinates, style, createdAt, layerID
         case rotation, scaleX, scaleY
+        case anchorWaypointID, ringRadiusMetres
     }
 
     init(from decoder: Decoder) throws {
@@ -195,6 +204,8 @@ struct DrawingShape: Identifiable, Codable, Hashable {
         self.rotation    = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
         self.scaleX      = try c.decodeIfPresent(Double.self, forKey: .scaleX)   ?? 1
         self.scaleY      = try c.decodeIfPresent(Double.self, forKey: .scaleY)   ?? 1
+        self.anchorWaypointID = try c.decodeIfPresent(UUID.self, forKey: .anchorWaypointID)
+        self.ringRadiusMetres = try c.decodeIfPresent(Double.self, forKey: .ringRadiusMetres)
     }
 }
 
