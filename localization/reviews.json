@@ -12102,6 +12102,314 @@
         "translation": "6ba0993ad37207ee782ff7cff881c0908bbe3fa7fe368f26daaf60768d8bf92e",
         "status": "reviewed"
       }
+    },
+    "settings_display_title": {
+      "de": {
+        "source": "52f5379ba58af6eaeb41316020f22926d41ef34f05422cdfb94e7f0bf16f3ce8",
+        "translation": "a6865f55201ff82945654c056f7b4714e8b6c1bcb2abb84cb9df635dd9aa26e6",
+        "status": "reviewed"
+      }
+    },
+    "settings_keep_screen_on": {
+      "de": {
+        "source": "00f70e36a9b6d1134706a3cfb54c1fd6e38aa07162940d553dee02354f47eb8e",
+        "translation": "3d77db9d26aa1b3eccf6437db400d60709bee3d7806cf9b2fe4c272fcd697c9b",
+        "status": "reviewed"
+      }
+    },
+    "settings_keep_screen_on_help": {
+      "de": {
+        "source": "3e89f6e4f07d1550a54c7ed2ed40509985c016290535ba898cdf89b8cbdf4778",
+        "translation": "92cdfceeb1aefd474b4c0e69b3ecff1a9f5410063ba640fc0196ff80ae5f93c5",
+        "status": "reviewed"
+      }
+    },
+    "symbols_sort_by": {
+      "de": {
+        "source": "676ef7aa29998f39cce98f4922a40b2b5ffd292161f3dde60e9ea36ce01d0a59",
+        "translation": "0ae5f54cde04ec91f4985249ccd6040343a7e9f1111fa5eca8434e99f85148e2",
+        "status": "reviewed"
+      }
+    },
+    "symbols_sort_by_value": {
+      "de": {
+        "source": "f3785b38ebcd4b4341d87c2db45f7be00548c496753d7243b14c845d1118f1c2",
+        "translation": "0384c3ed0adaf0df170e28158661d4d24a404d5acdc60a3c8483ded7eb3fb606",
+        "status": "reviewed"
+      }
+    },
+    "symbols_sort_newest": {
+      "de": {
+        "source": "49c1c0501a62597b36357a408b99fe9975cd12f916c843e58802f9754aeed0ef",
+        "translation": "b83e62d44f64d9c4f966f82b624c0d3964c235c91b8408713453ba0d63374bb0",
+        "status": "reviewed"
+      }
+    },
+    "symbols_sort_name": {
+      "de": {
+        "source": "deb99da5bb8004db24ea0496235453172f1f92461a5d6217c4439e3a00562169",
+        "translation": "6cc5df35f0338e230e9e633ead9991f08f62cab45a3264978daedc6747867305",
+        "status": "reviewed"
+      }
+    },
+    "symbols_sort_affiliation": {
+      "de": {
+        "source": "e464c8f49fbd0328b1c552f3d937b54a15f27f5beaef098b2a8b436685ad8a48",
+        "translation": "42085d2e47fcaa64b63fc06751f0208a44033a72d4339bb8aa568aa7882d2335",
+        "status": "reviewed"
+      }
+    },
+    "symbols_sort_layer": {
+      "de": {
+        "source": "8bdcb2afbf44b3da99227cfd56c65e29623c97f6dca847e4fe3fd008992452c2",
+        "translation": "a7e13a64af8ff2bf39e8885ae119d8c1c672b460b6cda132bdf62a862a9dca7b",
+        "status": "reviewed"
+      }
+    },
+    "symbols_sort_distance": {
+      "de": {
+        "source": "384b82324477898d3230e59b2181a3b671d4eea1891273f2171c3848f010e76e",
+        "translation": "e62f01f89b123d4b037dd952fb62fb479ab8c4de125dd02a3c5aa610642af4f8",
+        "status": "reviewed"
+      }
+    },
+    "symbols_group_other": {
+      "de": {
+        "source": "388daabb9fc7495d691bb57effe7b71d5ddc0adeddcca8c50c59f7db782f9af8",
+        "translation": "eb77d269645645a86ebb6fdb38710bb5e4dfd53e5c60f00876097df6e3f21019",
+        "status": "reviewed"
+      }
+    },
+    "symbols_distance_from_centre": {
+      "de": {
+        "source": "ab65a3a5acb424dbab3e8a3d645a3c72bfd9b83889eb92a5dcecfc8b4e814fc9",
+        "translation": "c6895ac0e7c83aaa08f270c9c9fa87cb39038ef7de6dadcf36ed4e06c52d2b4d",
+        "status": "reviewed"
+      }
+    },
+    "rings_title": {
+      "de": {
+        "source": "64a855fee9fb903c960fd71246073ea1b3a44e47c3da3a4144dc38111b0b2250",
+        "translation": "4fb598937094f3f54c74e57a4658dc6d8d68b482cb4c5a8c4fe188744ca97e92",
+        "status": "reviewed"
+      }
+    },
+    "rings_add": {
+      "de": {
+        "source": "b23c76d0c821c34869cad60ab4984d6a9f6a58a1b4c21322373855aa6e228f22",
+        "translation": "1b7abac9cc4b1f5375cb7ff32bb54eb04d4568c706a918e18105acc025f2aaae",
+        "status": "reviewed"
+      }
+    },
+    "rings_count_value": {
+      "de": {
+        "source": "89817796f05df3edff93e30f405350d1c2d2742b72922cb90a8216b6c2d539f3",
+        "translation": "d98c805491cf406f9ed19d43894244f2488c910d6caefe0e51c00db826694a68",
+        "status": "reviewed"
+      }
+    },
+    "rings_spacing": {
+      "de": {
+        "source": "5beb9906369cf871187d18e3574d492d148fc0af28d483cf55513f22aaba10e0",
+        "translation": "e93a2ab658dac865e19c9091b99629e67a93fe467425c05bbdae4e9ea2ad0ee2",
+        "status": "reviewed"
+      }
+    },
+    "rings_unit": {
+      "de": {
+        "source": "37c198338b1f26d2a99bd344627924e5ab23ebe60ae35ad9bf92d60815c104e5",
+        "translation": "b227066171450772655ce03ae95f6be4bc11daf9295a5c997d7e3c0043527160",
+        "status": "reviewed"
+      }
+    },
+    "rings_unit_metres": {
+      "de": {
+        "source": "8a90d8b2453a861810a8d3af120457e13a210dcee1ad13b08e208eaf45cdc23e",
+        "translation": "1d576f473e30e1b5828ea271d2a25598d6c7db12c47112c1ade052e2a6293fac",
+        "status": "reviewed"
+      }
+    },
+    "rings_unit_kilometres": {
+      "de": {
+        "source": "3e6af336ba5c3d847d1e289043042c505ed3fe8d054a833aef83c7ff17e7b6dc",
+        "translation": "bbbf842958717f43a816e7c0449a34e4f7c800dfb73f21ace78feb0d89a86237",
+        "status": "reviewed"
+      }
+    },
+    "rings_preview": {
+      "de": {
+        "source": "5c7c8011d6ab21a8c6625468f2d39da1ed99db2ec67b56005de7e9324364bc44",
+        "translation": "4224944503bf637749114d0bc959efacfa2a6cf03be8b78661fb03fe4da2e7e9",
+        "status": "reviewed"
+      }
+    },
+    "rings_invalid": {
+      "de": {
+        "source": "70a6a5ff5d1ae271966c2af54c36ab51171d64198db6b303a7e9df9c68f6ad4b",
+        "translation": "cc48bc26e00aae2d4030e5695b340986ee08842fdade4947537895bb599d42f0",
+        "status": "reviewed"
+      }
+    },
+    "rings_help": {
+      "de": {
+        "source": "625a9c9ba65de1cd29ec3664f366fda81b3cfac5f6257b2105e2981133bae2a3",
+        "translation": "4472718deac97efed94febf77bf836532c631e23c483c4c86bf69dc809e9934c",
+        "status": "reviewed"
+      }
+    },
+    "rings_create": {
+      "de": {
+        "source": "3b0f312d9bc5749deca5018c2d1c46a06538b8c6435539b3b7bfc4ede83494ba",
+        "translation": "692542e7c59e8765c9e891f9434502e4f3e6e3d8fafe261fca1c9fe34926e282",
+        "status": "reviewed"
+      }
+    },
+    "rings_ring_name": {
+      "de": {
+        "source": "d296803f89893289ea6aa8e405aad5aeb406387de711b44bc18d1770bfeb1073",
+        "translation": "760b95850bbf9ee3de990aeac6bbc710997a13cbab11ea6e221efd2c27d417d6",
+        "status": "reviewed"
+      }
+    },
+    "rings_undo_action": {
+      "de": {
+        "source": "0e69d3553722b0d791673a585a572ce792a5623b83af32518a5052028606af78",
+        "translation": "1b7abac9cc4b1f5375cb7ff32bb54eb04d4568c706a918e18105acc025f2aaae",
+        "status": "reviewed"
+      }
+    },
+    "rings_not_created": {
+      "de": {
+        "source": "ed4490769eb3aafb0bba632d2b681093d2ec3d56354a366c7711f3a7ee52a404",
+        "translation": "1fa7fb7ca4e6d61776bce858e0baef5b5d32e0cef6ceee9f7b2315834d5872e9",
+        "status": "reviewed"
+      }
+    },
+    "rings_fewer": {
+      "de": {
+        "source": "cfba249804af4330d9299b536c217cb9060f8fcd19821db947483c18af1e04e2",
+        "translation": "70418bf692d8f2d415cfa03de1fb989b4183e9accf882196f2a56d950f5a9165",
+        "status": "reviewed"
+      }
+    },
+    "rings_more": {
+      "de": {
+        "source": "58020c417f28f379b42cd2415568106b40826f2d7b2359a74df6dff41b86d163",
+        "translation": "a7fd61606c17eb93f9012c26264c7c6aa03eb96b38d6f2da65f51fca4d4b7ff2",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_title": {
+      "de": {
+        "source": "90e6b5f7029a99b48f8656207e5a4538f9f2bbf6f06e616ae3fba31f04e14534",
+        "translation": "598267fff641d4a110d59387fc450559ad474112ffdd0ca0409719d9c2cef9ce",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_today": {
+      "de": {
+        "source": "85760b9a7c35a2b3137d4f040974482f28828b844c0c387569e4a0316ffae3c0",
+        "translation": "45abc7b67e111709a41f4e9218709d33d881904b08997631b8106bf23892d304",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_tomorrow": {
+      "de": {
+        "source": "d195529cfbef9be688e6512ea0abb3730f6c3e4596a7d6d5b90b74478861b0f6",
+        "translation": "c28a6bce7cc997e9285c1ec650b6057a4d6a92414604e5f5c178382325b422a2",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_bmnt": {
+      "de": {
+        "source": "0f3486a4d9e5ab3d4a4b558198a6c518c63bc20332a2d8b6451e2a515e771aae",
+        "translation": "adcfdec766c948621c904cce5d6f9ad5d2c1472630b4d42b2a5ac5e9368854b3",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_bmct": {
+      "de": {
+        "source": "5b6d58408f9ff2f7be2dff816a26358b302ce5813d344ac0754f7f8c1f96e548",
+        "translation": "0ec64a9e5842a8bd2dc1e255e51c5f1064bcfb21811b84562e2c5e01e6a15d1e",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_sunrise": {
+      "de": {
+        "source": "a98bf85091128054c0f8f846584afae9447a3d301740c20e429385db32032a8b",
+        "translation": "6a709b5a42332733ad65a575030992316e99a0cd34aece3d62b8080ded324ecd",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_sunset": {
+      "de": {
+        "source": "b14bbfa5e37c3255786511decf7ff1e38c975ece5ae6009aab2eada030ee54a9",
+        "translation": "e25f5f002c370f4ab202dcc883f0725d31d11b85c55f54aae8c4bbc5bbd56b1f",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_eect": {
+      "de": {
+        "source": "06b19c6132f7c936782ad74c7b97b53ff0155b25abaf7e825837843cfb98debe",
+        "translation": "793ee4030182b811be2c272f5b8a22bf6ba50451ba4d769e43174e0a73b78909",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_eent": {
+      "de": {
+        "source": "b20caa4d6e99b7035c07dfddf5042a678df4c5bb529fc5f0e7d19b81226620d2",
+        "translation": "e3411d800e4485eb3b1516c5561fdc914cca3ba2864b229c76334bb500c2c22b",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_moonrise": {
+      "de": {
+        "source": "1c45ee77fa8d6e528f223658bc7f1c5c38d5cc7d437246394b542b2daabd29a7",
+        "translation": "1e1dc1787c5d21918b19386eaded70e3b98eef09c2c7a441cc92756f99a543d5",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_moonset": {
+      "de": {
+        "source": "f819ef14f5309776e5e9d1841301e141c39bb1ea67f332350f068c6c39aa29c4",
+        "translation": "37bee60dde7a5d4063738d1135dd0bc0a118474d77a29010fb6b480a45180163",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_illumination": {
+      "de": {
+        "source": "647041fe70f0907f4ebbe9f0e8fad2ceaf3f6e9b9b3f6989ed9a65d6c9826048",
+        "translation": "439f1014ebc1c18410db46f9f6f0066cb98c250fad311b4ea0be1fc8fa77e9f9",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_waxing": {
+      "de": {
+        "source": "8bf30b7e51eb675f1042935159250a39b0e4bebdc41f28227c2be05308aec5a9",
+        "translation": "5dcc1e0eec2dca64438f92abdf1e4f1ec0c927cef844afaeaf6f021a8e86941a",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_waning": {
+      "de": {
+        "source": "f00972c5ed1be667241e69be9d466efbf1636f74235451455a10dac69eb66389",
+        "translation": "2758a8a19b3dd4f1ef168a1af91efa44e43cb6861e0a5242583cd891705d176d",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_no_event": {
+      "de": {
+        "source": "6654276dbac7df2796ff1fea7a0468a07769dd093ee57123d533a4d1c6261999",
+        "translation": "22aeaad410f7e2f5f7e7ed1bedc103226251c0a13d2247a9fabacf8acb5062c9",
+        "status": "reviewed"
+      }
+    },
+    "sun_moon_help": {
+      "de": {
+        "source": "9476d84a4745c9fa1dd43d980cff3511780bab84f8abc95f1b96c8eb48975c15",
+        "translation": "5f6322b9899aae206231ab039760cb365b7f867a5dfc06f332cb9c50470866b3",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

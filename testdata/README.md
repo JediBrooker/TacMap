@@ -20,6 +20,9 @@ diverge:
 | `drawing_style.json` | density-independent stroke widths, Android px conversion, and independent polygon stroke/fill semantics |
 | `search_contract.json` | offline coordinate and mission-object search, deterministic ranking, selection behaviour, and opt-in Places states |
 | `symbol_edit_contract.json` | selected-symbol field order, normalization, kind resets, one-commit mutation semantics, and accessibility targets |
+| `symbol_list_order.json` | Symbology list sort orders and groups, natural name comparison, and haversine distances from the crosshair |
+| `range_rings.json` | range-ring point count, bearings and WGS84 geodesic positions (GeographicLib reference), radii and limits, and affiliation stroke colours |
+| `sun_moon_times.json` | offline twilight, sunrise/sunset, moonrise/moonset and moon illumination for local-day windows, including polar day/night and a 25-hour DST day |
 
 Both test suites load these same files and assert against them:
 

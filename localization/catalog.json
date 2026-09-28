@@ -15218,5 +15218,570 @@
       }
     ],
     "context": "Local custom symbol pack import through the document picker."
+  },
+  "settings_display_title": {
+    "en": "Display",
+    "de": "Anzeige",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Settings section heading for screen behaviour options such as Keep screen on.",
+    "legacy": false,
+    "accessor": "settingsDisplayTitle",
+    "parameters": []
+  },
+  "settings_keep_screen_on": {
+    "en": "Keep screen on",
+    "de": "Bildschirm eingeschaltet lassen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Settings switch that stops the screen dimming and the device auto-locking while TacMap is open.",
+    "legacy": false,
+    "accessor": "settingsKeepScreenOn",
+    "parameters": []
+  },
+  "settings_keep_screen_on_help": {
+    "en": "Off by default. While TacMap is open, the screen stays on and the device does not lock automatically, for example when the map is mounted or left on a table. This uses more battery. Lock the device yourself before leaving it unattended.",
+    "de": "Standardmäßig aus. Solange TacMap geöffnet ist, bleibt der Bildschirm eingeschaltet und das Gerät sperrt sich nicht automatisch, etwa wenn die Karte in einer Halterung steckt oder auf dem Tisch liegt. Das verbraucht mehr Akku. Sperre das Gerät selbst, bevor du es unbeaufsichtigt lässt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Explanation under the Keep screen on switch; mention battery use and the need to lock the device manually.",
+    "legacy": false,
+    "accessor": "settingsKeepScreenOnHelp",
+    "parameters": []
+  },
+  "symbols_sort_by": {
+    "en": "Sort by",
+    "de": "Sortieren nach",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Label of the sort-order picker in the Symbology list.",
+    "legacy": false,
+    "accessor": "symbolsSortBy",
+    "parameters": []
+  },
+  "symbols_sort_by_value": {
+    "en": "Sort: {1}",
+    "de": "Sortierung: {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Compact button in the Symbology list showing the current sort order; the argument is one of the sort option names.",
+    "legacy": false,
+    "accessor": "symbolsSortByValue",
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ]
+  },
+  "symbols_sort_newest": {
+    "en": "Newest first",
+    "de": "Neueste zuerst",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Symbology list sort option: most recently added symbols at the top.",
+    "legacy": false,
+    "accessor": "symbolsSortNewest",
+    "parameters": []
+  },
+  "symbols_sort_name": {
+    "en": "Name",
+    "de": "Name",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Symbology list sort option: alphabetical by symbol name, with numbers in numeric order.",
+    "legacy": false,
+    "accessor": "symbolsSortName",
+    "parameters": []
+  },
+  "symbols_sort_affiliation": {
+    "en": "Affiliation",
+    "de": "Zugehörigkeit",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Symbology list sort option grouping symbols as Friendly, Hostile, Neutral, Unknown and Other.",
+    "legacy": false,
+    "accessor": "symbolsSortAffiliation",
+    "parameters": []
+  },
+  "symbols_sort_layer": {
+    "en": "Layer",
+    "de": "Ebene",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Symbology list sort option grouping symbols by their map layer.",
+    "legacy": false,
+    "accessor": "symbolsSortLayer",
+    "parameters": []
+  },
+  "symbols_sort_distance": {
+    "en": "Distance from crosshair",
+    "de": "Entfernung zum Fadenkreuz",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Symbology list sort option: nearest to the map-centre crosshair first.",
+    "legacy": false,
+    "accessor": "symbolsSortDistance",
+    "parameters": []
+  },
+  "symbols_group_other": {
+    "en": "Other",
+    "de": "Sonstige",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Symbology list group heading for symbols without an affiliation colour or whose layer no longer exists.",
+    "legacy": false,
+    "accessor": "symbolsGroupOther",
+    "parameters": []
+  },
+  "symbols_distance_from_centre": {
+    "en": "{1} from crosshair",
+    "de": "{1} vom Fadenkreuz entfernt",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Accessibility description of a symbol row's distance when the list is sorted by distance; the argument is a formatted distance such as 1.20 km.",
+    "legacy": false,
+    "accessor": "symbolsDistanceFromCentre",
+    "parameters": [
+      {
+        "name": "distance",
+        "type": "string"
+      }
+    ]
+  },
+  "rings_title": {
+    "en": "Range Rings",
+    "de": "Entfernungsringe",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Title of the sheet that adds concentric distance rings around the selected symbol.",
+    "legacy": false,
+    "accessor": "ringsTitle",
+    "parameters": []
+  },
+  "rings_add": {
+    "en": "Add range rings",
+    "de": "Entfernungsringe hinzufügen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Accessibility label of the selected-symbol card button that opens the range rings sheet.",
+    "legacy": false,
+    "accessor": "ringsAdd",
+    "parameters": []
+  },
+  "rings_count_value": {
+    "en": "Rings: {1}",
+    "de": "Ringe: {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Stepper label showing how many range rings will be created; the argument is a formatted whole number.",
+    "legacy": false,
+    "accessor": "ringsCountValue",
+    "parameters": [
+      {
+        "name": "count",
+        "type": "string"
+      }
+    ]
+  },
+  "rings_spacing": {
+    "en": "Ring spacing",
+    "de": "Ringabstand",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Distance between consecutive range rings; also the placeholder of the spacing field.",
+    "legacy": false,
+    "accessor": "ringsSpacing",
+    "parameters": []
+  },
+  "rings_unit": {
+    "en": "Unit",
+    "de": "Einheit",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Label of the metres/kilometres choice for the ring spacing.",
+    "legacy": false,
+    "accessor": "ringsUnit",
+    "parameters": []
+  },
+  "rings_unit_metres": {
+    "en": "m",
+    "de": "m",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Unit symbol for metres in the ring spacing unit choice.",
+    "legacy": false,
+    "accessor": "ringsUnitMetres",
+    "parameters": []
+  },
+  "rings_unit_kilometres": {
+    "en": "km",
+    "de": "km",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Unit symbol for kilometres in the ring spacing unit choice.",
+    "legacy": false,
+    "accessor": "ringsUnitKilometres",
+    "parameters": []
+  },
+  "rings_preview": {
+    "en": "Rings at",
+    "de": "Ringe bei",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Heading above the comma-separated list of ring distances that will be created.",
+    "legacy": false,
+    "accessor": "ringsPreview",
+    "parameters": []
+  },
+  "rings_invalid": {
+    "en": "Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol.",
+    "de": "Gib einen Abstand größer als null ein. Du kannst bis zu 10 Ringe hinzufügen; der äußere Ring darf höchstens 1000 km vom Symbol entfernt sein.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Validation message when the ring spacing or count is outside the supported range.",
+    "legacy": false,
+    "accessor": "ringsInvalid",
+    "parameters": []
+  },
+  "rings_help": {
+    "en": "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings, but stay where they are if the symbol moves.",
+    "de": "Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht, bleiben aber an ihrer Position, wenn das Symbol verschoben wird.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Explanation under the range ring preview; rings are independent drawings, not attached to the symbol.",
+    "legacy": false,
+    "accessor": "ringsHelp",
+    "parameters": []
+  },
+  "rings_create": {
+    "en": "Add Rings",
+    "de": "Ringe hinzufügen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Confirm button that creates the range ring drawings.",
+    "legacy": false,
+    "accessor": "ringsCreate",
+    "parameters": []
+  },
+  "rings_ring_name": {
+    "en": "{1} around {2}",
+    "de": "{1} um {2}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Default name of a range ring drawing; the first argument is a formatted distance such as 500 m and the second is the symbol name entered by the user.",
+    "legacy": false,
+    "accessor": "ringsRingName",
+    "parameters": [
+      {
+        "name": "distance",
+        "type": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string"
+      }
+    ]
+  },
+  "rings_undo_action": {
+    "en": "Add Range Rings",
+    "de": "Entfernungsringe hinzufügen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Undo/redo action name shown by the system after range rings are created.",
+    "legacy": false,
+    "accessor": "ringsUndoAction",
+    "parameters": []
+  },
+  "rings_not_created": {
+    "en": "Range Rings Not Created",
+    "de": "Entfernungsringe nicht erstellt",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Alert title when the range ring drawings could not be saved; the message explains why.",
+    "legacy": false,
+    "accessor": "ringsNotCreated",
+    "parameters": []
+  },
+  "rings_fewer": {
+    "en": "Fewer rings",
+    "de": "Weniger Ringe",
+    "platforms": [
+      "android"
+    ],
+    "context": "Accessibility label of the minus button that removes one range ring from the count.",
+    "legacy": false,
+    "accessor": "ringsFewer",
+    "parameters": []
+  },
+  "rings_more": {
+    "en": "More rings",
+    "de": "Mehr Ringe",
+    "platforms": [
+      "android"
+    ],
+    "context": "Accessibility label of the plus button that adds one range ring to the count.",
+    "legacy": false,
+    "accessor": "ringsMore",
+    "parameters": []
+  },
+  "sun_moon_title": {
+    "en": "Sun & Moon",
+    "de": "Sonne & Mond",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Heading of the offline sun and moon times section in the Weather sheet; also the Today/Tomorrow picker label.",
+    "legacy": false,
+    "accessor": "sunMoonTitle",
+    "parameters": []
+  },
+  "sun_moon_today": {
+    "en": "Today",
+    "de": "Heute",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Choice showing sun and moon times for the current local day.",
+    "legacy": false,
+    "accessor": "sunMoonToday",
+    "parameters": []
+  },
+  "sun_moon_tomorrow": {
+    "en": "Tomorrow",
+    "de": "Morgen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Choice showing sun and moon times for the next local day (not 'morning').",
+    "legacy": false,
+    "accessor": "sunMoonTomorrow",
+    "parameters": []
+  },
+  "sun_moon_bmnt": {
+    "en": "Nautical dawn (BMNT)",
+    "de": "Beginn nautische Dämmerung (BMNT)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Begin morning nautical twilight: sun centre 12 degrees below the horizon. Keep the military abbreviation.",
+    "legacy": false,
+    "accessor": "sunMoonBmnt",
+    "parameters": []
+  },
+  "sun_moon_bmct": {
+    "en": "Civil dawn (BMCT)",
+    "de": "Beginn bürgerliche Dämmerung (BMCT)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Begin morning civil twilight: sun centre 6 degrees below the horizon. Keep the military abbreviation.",
+    "legacy": false,
+    "accessor": "sunMoonBmct",
+    "parameters": []
+  },
+  "sun_moon_sunrise": {
+    "en": "Sunrise",
+    "de": "Sonnenaufgang",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Time the upper edge of the sun appears above the horizon.",
+    "legacy": false,
+    "accessor": "sunMoonSunrise",
+    "parameters": []
+  },
+  "sun_moon_sunset": {
+    "en": "Sunset",
+    "de": "Sonnenuntergang",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Time the upper edge of the sun disappears below the horizon.",
+    "legacy": false,
+    "accessor": "sunMoonSunset",
+    "parameters": []
+  },
+  "sun_moon_eect": {
+    "en": "Civil dusk (EECT)",
+    "de": "Ende bürgerliche Dämmerung (EECT)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "End evening civil twilight: sun centre 6 degrees below the horizon. Keep the military abbreviation.",
+    "legacy": false,
+    "accessor": "sunMoonEect",
+    "parameters": []
+  },
+  "sun_moon_eent": {
+    "en": "Nautical dusk (EENT)",
+    "de": "Ende nautische Dämmerung (EENT)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "End evening nautical twilight: sun centre 12 degrees below the horizon. Keep the military abbreviation.",
+    "legacy": false,
+    "accessor": "sunMoonEent",
+    "parameters": []
+  },
+  "sun_moon_moonrise": {
+    "en": "Moonrise",
+    "de": "Mondaufgang",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Time the moon rises above the horizon.",
+    "legacy": false,
+    "accessor": "sunMoonMoonrise",
+    "parameters": []
+  },
+  "sun_moon_moonset": {
+    "en": "Moonset",
+    "de": "Monduntergang",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Time the moon sets below the horizon.",
+    "legacy": false,
+    "accessor": "sunMoonMoonset",
+    "parameters": []
+  },
+  "sun_moon_illumination": {
+    "en": "Moon illumination",
+    "de": "Mondbeleuchtung",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Percentage of the moon's disc that is lit, relevant to night visibility.",
+    "legacy": false,
+    "accessor": "sunMoonIllumination",
+    "parameters": []
+  },
+  "sun_moon_waxing": {
+    "en": "{1}, waxing",
+    "de": "{1}, zunehmend",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Moon illumination value while the moon is waxing; the argument is a formatted percentage.",
+    "legacy": false,
+    "accessor": "sunMoonWaxing",
+    "parameters": [
+      {
+        "name": "percent",
+        "type": "string"
+      }
+    ]
+  },
+  "sun_moon_waning": {
+    "en": "{1}, waning",
+    "de": "{1}, abnehmend",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Moon illumination value while the moon is waning; the argument is a formatted percentage.",
+    "legacy": false,
+    "accessor": "sunMoonWaning",
+    "parameters": [
+      {
+        "name": "percent",
+        "type": "string"
+      }
+    ]
+  },
+  "sun_moon_no_event": {
+    "en": "Does not occur",
+    "de": "Tritt nicht ein",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Spoken value for a sun or moon event that does not happen on the selected day; the screen shows a dash.",
+    "legacy": false,
+    "accessor": "sunMoonNoEvent",
+    "parameters": []
+  },
+  "sun_moon_help": {
+    "en": "Calculated on this device for the map centre; nothing is sent online. Times use this device’s time zone ({1}). Sun times are accurate to about a minute and moon times to a few minutes. A dash means the event does not happen that day.",
+    "de": "Auf diesem Gerät für die Kartenmitte berechnet; es werden keine Daten online gesendet. Die Zeiten verwenden die Zeitzone dieses Geräts ({1}). Sonnenzeiten sind auf etwa eine Minute genau, Mondzeiten auf wenige Minuten. Ein Strich bedeutet, dass das Ereignis an diesem Tag nicht eintritt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Explanation under the sun and moon times; the argument is the device time zone identifier such as Europe/Berlin.",
+    "legacy": false,
+    "accessor": "sunMoonHelp",
+    "parameters": [
+      {
+        "name": "timeZone",
+        "type": "string"
+      }
+    ]
   }
 }

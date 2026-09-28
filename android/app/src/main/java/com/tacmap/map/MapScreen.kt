@@ -1405,6 +1405,12 @@ internal fun MapScreen(
                 crosshairTargetLat = cameraLat,
                 crosshairTargetLng = cameraLng,
                 store = waypointStore,
+                onCreateRangeRings = { rings ->
+                    performDrawingMutation(
+                        intent = DrawingMutationIntent.CREATE,
+                        persist = { drawingStore.addFeatures(rings) },
+                    ).saved
+                },
                 onDismiss = { vm.selectWaypoint(null) },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1530,6 +1536,7 @@ internal fun MapScreen(
             crosshairLat = cameraLat,
             crosshairLng = cameraLng,
             activeLayerId = safeActiveLayerId,
+            layers = drawingDocument.layers,
             store = waypointStore,
             onDismiss = { showWaypointSheet = false },
             onFlyTo = { lat, lng ->

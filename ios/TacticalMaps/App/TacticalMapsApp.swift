@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct TacticalMapsApp: App {
@@ -84,6 +85,7 @@ private struct RootGate: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 now = Date()
+                applyKeepScreenOn()
                 Task { await store.appDidBecomeActive() }
             }
             if phase != .active && DataKey.isAuthBound {
@@ -96,7 +98,9 @@ private struct RootGate: View {
                 if AppLock.isEnabled { locked = true }
             }
         }
+        .onChange(of: opsec.keepScreenOn) { _ in applyKeepScreenOn() }
         .onAppear {
+            applyKeepScreenOn()
             if locked && DataKey.isAuthBound { DataKey.lockKey() }
             NotificationCenter.default.post(
                 name: AppLock.stateChanged,
@@ -121,6 +125,12 @@ private struct RootGate: View {
             }
             Button(L10n.text("Dismiss"), role: .cancel) { store.storeIssue = nil }
         } message: { Text($0.message) }
+    }
+
+    /// Keep Screen On only suppresses auto-lock while TacMap is frontmost;
+    /// iOS restores its normal idle timer whenever another app is active.
+    private func applyKeepScreenOn() {
+        UIApplication.shared.isIdleTimerDisabled = opsec.keepScreenOn
     }
 }
 

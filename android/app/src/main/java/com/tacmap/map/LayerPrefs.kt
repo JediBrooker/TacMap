@@ -35,3 +35,18 @@ fun rememberPersistedBoolean(key: String, default: Boolean): MutableState<Boolea
     }
     return state
 }
+
+/** String counterpart of [rememberPersistedBoolean] for small UI choices such
+ * as a list's sort order. Callers validate the restored value. */
+@Composable
+fun rememberPersistedString(key: String, default: String): MutableState<String> {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(LAYER_PREFS, Context.MODE_PRIVATE) }
+    val state = remember(key) { mutableStateOf(prefs.getString(key, null) ?: default) }
+    LaunchedEffect(key) {
+        snapshotFlow { state.value }
+            .drop(1) // skip the restored initial value
+            .collect { prefs.edit().putString(key, it).apply() }
+    }
+    return state
+}

@@ -70,6 +70,10 @@ quadrangle (public domain) rendered live over the satellite. Run
 - **Centre-pivot rotation** — the custom renderers spin the map in place around
   the screen centre on both platforms. Heading Up instead follows the phone's
   compass automatically as you turn.
+- **Keep screen on** — an opt-in switch under **Settings, Privacy & OPSEC →
+  Display** stops the screen dimming and the device locking automatically
+  while TacMap is open, for a map on a mount or table. It is off by default;
+  lock the device yourself before leaving it unattended.
 
 ### Symbology, drawing & waypoints
 
@@ -98,6 +102,14 @@ quadrangle (public domain) rendered live over the satellite. Run
   or drag to sketch, undo the last vertex, finish to commit. In-progress
   shapes render dashed; finished shapes carry an editable stroke colour,
   width and dash style.
+- **Range rings** — the target button on a selected symbol adds up to 10
+  concentric rings at a chosen spacing in metres or kilometres. Each ring is a
+  true WGS84 geodesic circle, saved as a dashed line drawing on the symbol's
+  layer in its affiliation colour, so rings sync, export, hide and undo (as one
+  step) like any drawing. They stay in place if the symbol later moves.
+- **Sortable symbol list** — **☰ → Symbology** sorts by newest first, name
+  (numbers in numeric order), distance from the crosshair, or grouped by
+  affiliation or layer. The choice is remembered.
 - **Layers & labels** — drawings and symbols share one layer model, so toggling
   a layer hides both at once. Per-feature labels are off by default and toggled
   from **☰ → Layers and Labels**.
@@ -121,6 +133,18 @@ quadrangle (public domain) rendered live over the satellite. Run
 - **Background route recording** stores each accepted fix in an encrypted track
   log and exports the route separately as standard GPX. **Export All Mission
   Objects** creates GeoJSON for waypoints, symbols, drawings, and layers.
+
+### Weather, sun & moon
+
+- **Weather & UAV safety** — with online lookups enabled, current wind, gusts,
+  visibility and temperature for the map centre from Open-Meteo, with an
+  advisory small-drone flight rating.
+- **Sun & moon times** in the same sheet, today or tomorrow, for the map
+  centre: nautical and civil dawn (BMNT/BMCT), sunrise, sunset, civil and
+  nautical dusk (EECT/EENT), moonrise, moonset and moon illumination. They are
+  calculated entirely on the device, work offline, and use the device's time
+  zone. Checked against PyEphem: within 30 seconds for the sun and a few
+  minutes for the moon.
 
 ### GeoPDF basemap
 

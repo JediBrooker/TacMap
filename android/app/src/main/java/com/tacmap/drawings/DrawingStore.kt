@@ -70,6 +70,13 @@ class DrawingStore private constructor(
         return commit(before, candidate, setOf(feature.id), origin, recordUndo = true)
     }
 
+    /** Several new drawings (e.g. range rings) as one undo snapshot and one
+     * atomic persistence write. Existing IDs are skipped for retry idempotence. */
+    fun addFeatures(
+        features: List<DrawingFeature>,
+        origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL,
+    ): Boolean = addImported(layers = emptyList(), features = features, origin = origin)
+
     /** One undo snapshot and one atomic persistence write for bounded imports. */
     @Synchronized
     fun addImported(

@@ -68,6 +68,7 @@ fun OpsecSettingsDialog(
     val backgroundUnitSyncInterval by opsec.backgroundUnitSyncInterval.collectAsState()
     val primaryCoordinateType by opsec.primaryCoordinateType.collectAsState()
     val mapOrientationMode by opsec.mapOrientationMode.collectAsState()
+    val keepScreenOn by opsec.keepScreenOn.collectAsState()
     val persistenceIssue by opsec.persistenceIssue.collectAsState()
     var backgroundIntervalExpanded by remember { mutableStateOf(false) }
     var authBound by remember { mutableStateOf(DataKey.isAuthBound) }
@@ -176,6 +177,10 @@ fun OpsecSettingsDialog(
                 )
 
                 SettingRow(blockCapture, { opsec.setBlockScreenCapture(it) }, L10n.text("Block screenshots & recents preview"))
+
+                Text(Messages.settingsDisplayTitle(), fontWeight = FontWeight.SemiBold)
+                SettingRow(keepScreenOn, { opsec.setKeepScreenOn(it) }, Messages.settingsKeepScreenOn())
+                Caption(Messages.settingsKeepScreenOnHelp())
 
                 Text(L10n.text("Unit Sync"), fontWeight = FontWeight.SemiBold)
                 SettingRow(

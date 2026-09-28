@@ -12,6 +12,7 @@ struct SymbolControlsCard: View {
     let onDismiss: () -> Void
 
     @State private var showingEdit = false
+    @State private var showingRangeRings = false
     @State private var mutationError: LocalizedMessage?
 
     var body: some View {
@@ -40,6 +41,16 @@ struct SymbolControlsCard: View {
                     }
                     .buttonStyle(.bordered)
                     .accessibilityLabel(L10n.text("Move symbol to crosshair"))
+
+                    Button {
+                        showingRangeRings = true
+                    } label: {
+                        Image(systemName: "target")
+                            .frame(minWidth: 28, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel(Messages.ringsAdd())
+                    .accessibilityIdentifier("symbol.rangeRings")
                 }
             }
             .padding(.horizontal, 12)
@@ -59,6 +70,11 @@ struct SymbolControlsCard: View {
                         waypoint: current,
                         onDeleted: onDismiss
                     )
+                }
+            }
+            .sheet(isPresented: $showingRangeRings) {
+                if let current = waypointStore.waypoints.first(where: { $0.id == waypointID }) {
+                    RangeRingsSheet(drawingStore: drawingStore, waypoint: current)
                 }
             }
             .alert(L10n.text("Symbol Not Moved"),

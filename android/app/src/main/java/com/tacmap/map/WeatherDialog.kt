@@ -12,9 +12,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,7 +58,10 @@ fun WeatherDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text(L10n.text("Done")) } },
         title = { Text(L10n.text("Weather & UAV Safety")) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 when {
                     loading -> Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -83,6 +89,8 @@ fun WeatherDialog(
                         )
                     }
                 }
+                HorizontalDivider()
+                SunMoonSection(lat, lng)
             }
         }
     )

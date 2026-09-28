@@ -192,6 +192,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        // Keep Screen On: the window flag only applies while this Activity is
+        // visible, so the system's normal dimming resumes in every other app.
+        lifecycleScope.launch {
+            opsec.keepScreenOn.collect { keepOn ->
+                if (keepOn) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+        }
 
         enableEdgeToEdge()
         setContent {
