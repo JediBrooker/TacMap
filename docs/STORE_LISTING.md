@@ -120,6 +120,97 @@ Same body as the App Store block above, with these platform swaps:
 
 ## What's New (release note snippet)
 
+The source of truth is `docs/store/localizations/en-US.json` and `de-DE.json`
+(`appStore.whatsNew` / `googlePlay.releaseNotes`); keep the blocks below in sync
+with them.
+
+### 2.2.0 — Apple App Store, English (623 / 4,000 characters; plain text)
+```
+• Night mode: turns the whole screen red and dims it to protect your night vision. Toggle it from the moon button on the map and set the brightness in Settings → Display.
+• KML and KMZ export: send layers, symbols and drawings to Google Earth, ATAK and GIS tools. KMZ with Symbols includes each symbol's image.
+• Long-press an empty spot on the map to place a symbol, measure from it, add range rings, see sun and moon times or copy the coordinate.
+• Range rings now follow their symbol when you move it.
+• First-run tips cover placing, editing, sharing and night mode. Reopen them any time with Settings → Show Tips Again.
+```
+
+### 2.2.0 — Google Play, English (341 / 500 Unicode characters)
+```
+• Night mode: a red, dimmed screen protects your night vision.
+• KML and KMZ export, with symbol images for Google Earth and ATAK.
+• Long-press the map to place a symbol, measure, add range rings, see sun and moon times or copy the coordinate.
+• Range rings follow their symbol when it moves.
+• First-run tips, available again from Settings.
+```
+
+### 2.2.0 — Apple App Store, German (de-DE) (791 / 4,000 characters)
+```
+• Nachtmodus: Färbt den ganzen Bildschirm rot und dunkelt ihn ab, um deine Nachtsicht zu schützen. Du schaltest ihn über die Mondtaste auf der Karte um und stellst die Helligkeit unter Einstellungen → Anzeige ein.
+• KML- und KMZ-Export: Gib Ebenen, Symbole und Zeichnungen an Google Earth, ATAK und GIS-Programme weiter. „KMZ mit Symbolen“ enthält das Bild jedes Symbols.
+• Halte eine freie Stelle der Karte gedrückt, um dort ein Symbol zu platzieren, von dort zu messen, Entfernungsringe hinzuzufügen, Sonnen- und Mondzeiten anzuzeigen oder die Koordinate zu kopieren.
+• Entfernungsringe folgen jetzt ihrem Symbol, wenn du es verschiebst.
+• Tipps für den Einstieg zu Platzieren, Bearbeiten, Teilen und Nachtmodus. Unter Einstellungen → Tipps erneut anzeigen öffnest du sie jederzeit wieder.
+```
+
+### 2.2.0 — Google Play, German (de-DE) (393 / 500 Unicode characters)
+```
+• Nachtmodus: Ein roter, abgedunkelter Bildschirm schützt deine Nachtsicht.
+• KML- und KMZ-Export, mit Symbolbildern für Google Earth und ATAK.
+• Freie Stelle der Karte gedrückt halten: Symbol platzieren, messen, Entfernungsringe, Sonne und Mond oder Koordinate kopieren.
+• Entfernungsringe folgen ihrem Symbol beim Verschieben.
+• Tipps für den Einstieg, jederzeit erneut in den Einstellungen.
+```
+
+### 2.1.0 — Apple App Store, English (470 / 4,000 characters; plain text)
+```
+• Range rings: add up to 10 rings at your chosen spacing around any symbol. They sync, export and undo like other drawings.
+• Sun & moon: nautical and civil twilight (BMNT/EENT, BMCT/EECT), sunrise, sunset, moonrise, moonset and moon illumination for the map centre, calculated offline.
+• Sort the symbol list by newest, name, distance from the crosshair, affiliation or layer.
+• Keep screen on: an optional Display setting stops the screen locking while TacMap is open.
+```
+
+### 2.1.0 — Google Play, English (277 / 500 Unicode characters)
+```
+• Range rings around any symbol: up to 10 at your chosen spacing.
+• Offline sun & moon times: BMNT/EENT, civil twilight, sunrise, sunset, moonrise, moonset and moon illumination.
+• Sort symbols by newest, name, distance, affiliation or layer.
+• Optional Keep screen on setting.
+```
+
+### 2.1.0 — Apple App Store, German (de-DE) (580 / 4,000 characters)
+```
+• Entfernungsringe: Bis zu 10 Ringe im gewählten Abstand um jedes Symbol. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht.
+• Sonne & Mond: Nautische und bürgerliche Dämmerung (BMNT/EENT, BMCT/EECT), Sonnenauf- und -untergang, Mondauf- und -untergang sowie Mondbeleuchtung für die Kartenmitte – offline berechnet.
+• Symbolliste nach Neueste, Name, Entfernung zum Fadenkreuz, Zugehörigkeit oder Ebene sortieren.
+• Bildschirm eingeschaltet lassen: Eine optionale Anzeige-Einstellung verhindert die automatische Sperre, solange TacMap geöffnet ist.
+```
+
+### 2.1.0 — Google Play, German (de-DE) (345 / 500 Unicode characters)
+```
+• Entfernungsringe um jedes Symbol: bis zu 10 im gewählten Abstand.
+• Offline-Zeiten für Sonne & Mond: BMNT/EENT, bürgerliche Dämmerung, Sonnenauf- und -untergang, Mondauf- und -untergang und Mondbeleuchtung.
+• Symbole nach Neueste, Name, Entfernung, Zugehörigkeit oder Ebene sortieren.
+• Optionale Einstellung „Bildschirm eingeschaltet lassen“.
+```
+
+### 2.0.2 — Apple App Store (as published; en-AU 66, de-DE 148 characters)
+Shipped as build 68 with custom symbol packs. The localisation-only draft that
+was in the JSON at the time was not used.
+```
+- Imports custom symbol packs.
+- Improved translations for German.
+```
+```
+Neu in TacMap: Mit eigenen Symbolpaketen passt du deine Karten an deine Bedürfnisse an. Außerdem ist TacMap jetzt vollständig auf Deutsch verfügbar.
+```
+
+### 2.0.1 — Apple App Store (as published; en-AU 32 characters)
+```
+German translation/localisation.
+```
+
+Google Play notes for 2.0.1 and 2.0.2 were entered in Play Console and not
+recorded here.
+
 ### 2.0.0 — Apple App Store (893 / 4,000 characters; plain text)
 ```
 • TacMap Chat: send end-to-end encrypted text or reports to the entire room or one selected live unit, with a map shortcut and unread indicator. “Routed” means relay-accepted, not delivered or read.
