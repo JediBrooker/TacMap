@@ -140,6 +140,9 @@ final class OpsecSettings: ObservableObject {
     static let defaultBackgroundUnitSyncLocation = false
     /// Auto-lock stays under the system's control unless the user opts in.
     static let defaultKeepScreenOn = false
+    /// Night mode brightness: the red level every pixel's luminance is scaled to.
+    static let defaultNightModeBrightness = 0.7
+    static let nightModeBrightnessRange: ClosedRange<Double> = 0.25...1.0
 
     @Published private(set) var privacyScreen: Bool
     @Published private(set) var onlineLookups: Bool
@@ -150,6 +153,8 @@ final class OpsecSettings: ObservableObject {
     @Published private(set) var coordinateDisplayFormat: CoordinateDisplayFormat
     @Published private(set) var mapOrientationMode: MapOrientationMode
     @Published private(set) var keepScreenOn: Bool
+    @Published private(set) var nightMode: Bool
+    @Published private(set) var nightModeBrightness: Double
     @Published private var pendingPersistenceIssue: LocalizedMessage?
     var persistenceMessage: LocalizedMessage? { pendingPersistenceIssue }
     var persistenceIssue: String? { pendingPersistenceIssue?.text }
@@ -188,6 +193,14 @@ final class OpsecSettings: ObservableObject {
         coordinateDisplayFormat = CoordinateDisplayFormat.stored(in: defaults)
         mapOrientationMode = MapOrientationMode.stored(in: defaults)
         keepScreenOn = defaults.object(forKey: Keys.keepScreenOn) as? Bool ?? Self.defaultKeepScreenOn
+        nightMode = defaults.object(forKey: Keys.nightMode) as? Bool ?? false
+        nightModeBrightness = Self.clampedNightBrightness(
+            defaults.object(forKey: Keys.nightModeBrightness) as? Double ?? Self.defaultNightModeBrightness
+        )
+        // Night-mode screenshot test: turn it on without persisting anything.
+        if environment["TACMAP_UITEST_NIGHT_MODE"] == "1" {
+            nightMode = true
+        }
         // Marketing-screenshot mode: the store XCUITest sets this env var so the
         // shots explicitly request online tiles/lookups regardless of saved state.
         // Never set in production (env vars can't be injected into a
@@ -309,6 +322,30 @@ final class OpsecSettings: ObservableObject {
         return true
     }
 
+    @discardableResult
+    func setNightMode(_ value: Bool) -> Bool {
+        guard persist(value, key: Keys.nightMode, verify: {
+            self.defaults.object(forKey: Keys.nightMode) as? Bool == value
+        }) else { return false }
+        nightMode = value
+        return true
+    }
+
+    @discardableResult
+    func setNightModeBrightness(_ value: Double) -> Bool {
+        let clamped = Self.clampedNightBrightness(value)
+        guard persist(clamped, key: Keys.nightModeBrightness, verify: {
+            self.defaults.object(forKey: Keys.nightModeBrightness) as? Double == clamped
+        }) else { return false }
+        nightModeBrightness = clamped
+        return true
+    }
+
+    static func clampedNightBrightness(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultNightModeBrightness }
+        return min(max(value, nightModeBrightnessRange.lowerBound), nightModeBrightnessRange.upperBound)
+    }
+
     /// UserDefaults mutates its process cache before durability is known. Keep
     /// the prior exact object, require a synchronized readback, and roll back
     /// before publishing any setting to the rest of the app.
@@ -344,5 +381,7 @@ final class OpsecSettings: ObservableObject {
         static let backgroundUnitSyncLocation = "opsec.backgroundUnitSyncLocation"
         static let relay = "opsec.relayURL"
         static let keepScreenOn = "display.keepScreenOn"
+        static let nightMode = "display.nightMode"
+        static let nightModeBrightness = "display.nightModeBrightness"
     }
 }

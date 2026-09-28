@@ -192,6 +192,14 @@
     "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
   },
   {
+    "id": "bf6abfa7cdf851b0",
+    "path": "ios/TacticalMaps/Map/MapSideToolbar.swift",
+    "sink": "row",
+    "literal": "\"KML…\"",
+    "occurrences": 1,
+    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
+  },
+  {
     "id": "3dac5939f895b9bb",
     "path": "ios/TacticalMaps/Map/MapSideToolbar.swift",
     "sink": "accessibilityLabel",

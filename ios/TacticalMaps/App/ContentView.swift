@@ -477,6 +477,7 @@ struct ContentView: View {
     @StateObject private var locationService: LocationService
     @StateObject private var waypointStore   = WaypointStore()
     @StateObject private var drawingStore    = DrawingStore()
+    @State private var ringFollower = RangeRingFollower()
     @StateObject private var drawingSession  = DrawingSessionViewModel()
     @StateObject private var measureSession  = MeasureSession()
     @StateObject private var visibility      = LayerVisibility()
@@ -522,6 +523,7 @@ struct ContentView: View {
     @State private var headingWatchdogTask: Task<Void, Never>?
     /// Share sheet URL for the combined mission-object GeoJSON action.
     @State private var missionObjectExportURL: URL? = nil
+    @State private var missionObjectExportTitle = ""
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
     @State private var showLayersSheet     = false
@@ -530,6 +532,8 @@ struct ContentView: View {
     @State private var showAboutSheet      = false
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
     @State private var quickSymbolDraft: QuickSymbolDraft? = nil
+    @State private var mapPressPoint: MapPressPoint? = nil
+    @State private var showTips = false
     /// View-owned drawing slider candidate. Rendered on the map without
     /// publishing through DrawingStore/Sync until the gesture ends.
     @State private var drawingControlsPreview: DrawingShape? = nil
@@ -746,7 +750,11 @@ struct ContentView: View {
                     drawingControlsPreview: drawingControlsPreview,
                     peers: syncManager.peers,
                     onPeerTap: presentDirectChat,
-                    onMutationError: { missionMutationMessage = $0 }
+                    onMutationError: { missionMutationMessage = $0 },
+                    onEmptyMapLongPress: { coordinate in
+                        mapPressPoint = MapPressPoint(coordinate: coordinate,
+                                                      format: opsec.coordinateDisplayFormat)
+                    }
                 )
                 .ignoresSafeArea()
                 .overlay {
@@ -845,6 +853,7 @@ struct ContentView: View {
                 lockChatUIAndSecrets()
             } else {
                 restoreChatIfSecurityAllows()
+                presentTipsIfNeeded()
             }
             refreshUnitSyncLifecycle()
         }
@@ -888,6 +897,9 @@ struct ContentView: View {
         .task {
             drawingStore.undoManager = undoManager
             waypointStore.undoManager = undoManager
+            ringFollower.attach(waypointStore: waypointStore, drawingStore: drawingStore)
+            NightModeController.shared.start()
+            presentTipsIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidCloseUndoGroup)) { _ in
             refreshUndoState()
@@ -933,13 +945,28 @@ struct ContentView: View {
 
     private var sheetContent: some View {
         lifecycleContent
-        .sheet(isPresented: $showWaypointSheet) {
+        .nightSheet(isPresented: $showWaypointSheet) {
             WaypointListSheet(waypointStore: waypointStore,
                               drawingStore: drawingStore,
                               mapVM: mapVM)
                 .padSheetSizing()
         }
-        .sheet(item: $quickSymbolDraft) { draft in
+        .modifier(MapPointMenuModifier(
+            point: $mapPressPoint,
+            drawingStore: drawingStore,
+            canEdit: !graphicsLocked,
+            onPlaceSymbol: { beginQuickSymbolCreation(at: $0) },
+            onMeasure: { coordinate in
+                drawingsPanelOpen = false
+                drawingSession.cancel()
+                measureSession.start()
+                measureSession.addPoint(coordinate)
+            },
+            onCopied: { format in
+                showTransientToast(L10n.text("%1$@ copied", format.label))
+            }
+        ))
+        .nightSheet(item: $quickSymbolDraft) { draft in
             WaypointCreationSheet(
                 waypointStore: waypointStore,
                 defaultCoordinate: draft.coordinate,
@@ -947,11 +974,11 @@ struct ContentView: View {
                 defaultLayerID: draft.layerID
             )
         }
-        .sheet(isPresented: $showDrawingsSheet) {
+        .nightSheet(isPresented: $showDrawingsSheet) {
             DrawingsSheet(drawingStore: drawingStore, session: drawingSession)
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showLayersSheet) {
+        .nightSheet(isPresented: $showLayersSheet) {
             LayersSheet(visibility: visibility,
                         mapVM: mapVM,
                         drawingStore: drawingStore,
@@ -959,7 +986,7 @@ struct ContentView: View {
                         onCalibrate: startCalibration)
                 .padSheetSizing()
         }
-        .sheet(isPresented: Binding(
+        .nightSheet(isPresented: Binding(
             get: { calibration.pendingTap != nil },
             set: { if !$0 { calibration.clearPendingTap() } }
         )) {
@@ -970,27 +997,31 @@ struct ContentView: View {
             )
             .padSheetSizing()
         }
-        .sheet(isPresented: $showExportSheet) {
+        .nightSheet(isPresented: $showExportSheet) {
             ExportSheet(waypointStore: waypointStore, drawingStore: drawingStore)
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showGPXExporter) {
+        .nightSheet(isPresented: $showGPXExporter) {
             GPXExportSheet(points: trackRecorder.points)
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showWeatherSheet) {
+        .nightSheet(isPresented: $showWeatherSheet) {
             WeatherSheet(coordinate: mapVM.cameraCentre)
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showAppLockSheet) {
+        .nightSheet(isPresented: $showAppLockSheet) {
             AppLockSetupView()
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showOpsecSheet) {
+        .nightSheet(isPresented: $showOpsecSheet, onDismiss: presentTipsIfNeeded) {
             OpsecSettingsView()
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showSyncSheet, onDismiss: {
+        .nightSheet(isPresented: $showTips) {
+            FirstRunTipsView()
+                .presentationDetents([.medium, .large])
+        }
+        .nightSheet(isPresented: $showSyncSheet, onDismiss: {
             guard let route = pendingChatRoute else { return }
             pendingChatRoute = nil
             presentChat(route)
@@ -1001,7 +1032,7 @@ struct ContentView: View {
             }
                 .padSheetSizing()
         }
-        .sheet(item: $chatRoute) { route in
+        .nightSheet(item: $chatRoute) { route in
             TacMapChatView(
                 manager: syncManager,
                 store: syncManager.chatStore,
@@ -1093,7 +1124,7 @@ struct ContentView: View {
                 )
             }
         }
-        .sheet(isPresented: $showSearchSheet) {
+        .nightSheet(isPresented: $showSearchSheet) {
             SearchSheet(
                 mapVM: mapVM,
                 waypointStore: waypointStore,
@@ -1101,11 +1132,11 @@ struct ContentView: View {
             )
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showAboutSheet) {
+        .nightSheet(isPresented: $showAboutSheet) {
             AcknowledgementsView()
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showPaywallSheet) {
+        .nightSheet(isPresented: $showPaywallSheet) {
             PaywallView(
                 store: store,
                 trialDaysRemaining: trial.daysRemaining(),
@@ -1223,12 +1254,12 @@ struct ContentView: View {
                 backgroundInterval: opsec.backgroundUnitSyncInterval.seconds
             )
         }
-        .sheet(isPresented: Binding(
+        .nightSheet(isPresented: Binding(
             get: { missionObjectExportURL != nil },
             set: { if !$0 { missionObjectExportURL = nil } }
         )) {
             if let url = missionObjectExportURL {
-                ShareSheetView(activityItems: [url], title: MissionObjectExport.shareTitle)
+                ShareSheetView(activityItems: [url], title: missionObjectExportTitle)
                     .padSheetSizing()
             }
         }
@@ -1380,6 +1411,14 @@ struct ContentView: View {
                             drawingsPanelOpen = false
                             exportAllMissionObjects()
                         },
+                        onExportKML: {
+                            drawingsPanelOpen = false
+                            exportKML(.kml)
+                        },
+                        onExportKMZ: {
+                            drawingsPanelOpen = false
+                            exportKML(.kmz)
+                        },
                         onChat:      {
                             drawingsPanelOpen = false
                             presentChat(.room)
@@ -1419,6 +1458,10 @@ struct ContentView: View {
 
                     UnitLabelsToggle(active: visibility.unitLabelsVisible) {
                         visibility.unitLabelsVisible.toggle()
+                    }
+
+                    NightModeToggle(active: opsec.nightMode) {
+                        _ = opsec.setNightMode(!opsec.nightMode)
                     }
 
                     if drawingsPanelOpen {
@@ -1611,13 +1654,24 @@ struct ContentView: View {
     /// Preserve an already-visible active layer; if it is hidden, prefer another
     /// visible layer without changing the user's active-layer selection.
     private func beginQuickSymbolCreation() {
+        beginQuickSymbolCreation(at: mapVM.cameraCentre)
+    }
+
+    /// First-run tips, once the map is visible and unlocked.
+    private func presentTipsIfNeeded() {
+        guard !appLockOverlayActive, !showTips, FirstRunTips.shouldShow() else { return }
+        showTips = true
+    }
+
+    /// Opens the symbol builder for a long-pressed map point.
+    private func beginQuickSymbolCreation(at coordinate: CLLocationCoordinate2D) {
         drawingsPanelOpen = false
         mapVM.selectedWaypointID = nil
         mapVM.selectedDrawingID = nil
         visibility.waypointsVisible = true
         guard let layerID = visibleLayerIDForQuickSymbol() else { return }
         quickSymbolDraft = QuickSymbolDraft(
-            coordinate: mapVM.cameraCentre,
+            coordinate: coordinate,
             layerID: layerID,
             scale: mapVM.defaultControlMeasureScale
         )
@@ -1701,7 +1755,22 @@ struct ContentView: View {
                 drawings: drawingStore.shapes,
                 layers: drawingStore.layers
             )
+            missionObjectExportTitle = MissionObjectExport.shareTitle
             missionObjectExportURL = url
+        } catch {
+            importMessage = Messages.displayExportFailedMessage("").withArgument(0, error.displayMessage)
+        }
+    }
+
+    private func exportKML(_ format: KMZExporter.Format) {
+        do {
+            missionObjectExportTitle = format.shareTitle
+            missionObjectExportURL = try KMZExporter.exportToFile(
+                format: format,
+                waypoints: waypointStore.waypoints,
+                drawings: drawingStore.shapes,
+                layers: drawingStore.layers
+            )
         } catch {
             importMessage = Messages.displayExportFailedMessage("").withArgument(0, error.displayMessage)
         }

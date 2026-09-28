@@ -87,14 +87,14 @@ struct WaypointListSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } }
             }
-            .sheet(item: $editing) { wp in
+            .nightSheet(item: $editing) { wp in
                 SelectedSymbolEditSheet(
                     waypointStore: waypointStore,
                     drawingStore: drawingStore,
                     waypoint: wp
                 )
             }
-            .sheet(item: $creatingAt) { coord in
+            .nightSheet(item: $creatingAt) { coord in
                 WaypointCreationSheet(
                     waypointStore: waypointStore,
                     defaultCoordinate: coord,

@@ -28,7 +28,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.AlertDialog
+import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -206,6 +206,13 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
+            val nightEnabled by opsec.nightMode.collectAsState()
+            val nightBrightness by opsec.nightModeBrightness.collectAsState()
+            androidx.compose.runtime.CompositionLocalProvider(
+                com.tacmap.ui.LocalNightMode provides com.tacmap.ui.NightModeState(nightEnabled, nightBrightness)
+            ) {
+            com.tacmap.ui.NightWindowFilter()
+            com.tacmap.ui.NightSystemBars(nightEnabled)
             MaterialTheme(colorScheme = darkColorScheme()) {
                 if (locked.value) {
                     AppLockScreen(appLock) {
@@ -305,6 +312,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
             }
         }
     }

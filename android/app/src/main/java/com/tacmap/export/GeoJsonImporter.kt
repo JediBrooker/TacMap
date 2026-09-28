@@ -104,11 +104,17 @@ object GeoJsonImporter {
         return parse(out.toString(Charsets.UTF_8.name()), existingLayers, fallbackLayerId, density)
     }
 
+    /**
+     * @param keepRingAnchors keep range rings' symbol anchors. Only Unit Sync
+     *   passes true: it preserves object IDs, while file imports may remap
+     *   them and an anchor could then point at an unrelated local symbol.
+     */
     fun parse(
         json: String,
         existingLayers: List<DrawingLayer>,
         fallbackLayerId: String,
-        density: Float = 1f
+        density: Float = 1f,
+        keepRingAnchors: Boolean = false,
     ): Result {
         preflight(json)
         val deadline = System.nanoTime() + DEADLINE_NANOS
@@ -163,7 +169,7 @@ object GeoJsonImporter {
 
             when {
                 isDrawing || (!isWaypoint && geomType != "Point") -> {
-                    parseDrawing(featureId, geometry, geomType, props, layerId, density)?.let {
+                    parseDrawing(featureId, geometry, geomType, props, layerId, density, keepRingAnchors)?.let {
                         val index = drawings.size
                         drawings += it
                         identityOrder += ParsedExternalImportIdentity(
@@ -287,7 +293,8 @@ object GeoJsonImporter {
         geomType: String,
         props: JsonObject,
         layerId: String,
-        density: Float
+        density: Float,
+        keepRingAnchors: Boolean,
     ): DrawingFeature? {
         val coords = geometry["coordinates"] ?: return null
         val (kind, points) = when (geomType) {
@@ -355,6 +362,13 @@ object GeoJsonImporter {
             props["tacticalmaps:line_graphic"]?.jsonPrimitive?.contentOrNull
         )
 
+        val anchor = props["tacticalmaps:anchor_id"]?.jsonPrimitive?.contentOrNull
+            ?.takeIf { keepRingAnchors && it.isNotBlank() }
+        val radius = props["tacticalmaps:ring_radius_m"]?.jsonPrimitive?.doubleOrNull
+            ?.takeIf { it.isFinite() && it >= 1.0 && it <= com.tacmap.drawings.RangeRings.MAX_RADIUS_METRES }
+        val anchorId = anchor?.takeIf { radius != null }
+        val ringRadius = radius?.takeIf { anchorId != null }
+
         return DrawingFeature(
             id = featureId,
             name = name,
@@ -367,7 +381,9 @@ object GeoJsonImporter {
             strokeWidth = strokeWidth,
             strokeStyle = if (dashed) DrawingStrokeStyle.DASHED else DrawingStrokeStyle.SOLID,
             lineGraphic = lineGraphic,
-            createdAt = parseCreatedAt(props) ?: System.currentTimeMillis()
+            createdAt = parseCreatedAt(props) ?: System.currentTimeMillis(),
+            anchorId = anchorId,
+            ringRadiusMetres = ringRadius,
         )
     }
 

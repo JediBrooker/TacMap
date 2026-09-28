@@ -136,6 +136,15 @@ class OpsecSettings(context: Context) {
     )
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
+    private val _nightMode = MutableStateFlow(prefs.all[KEY_NIGHT_MODE] as? Boolean ?: false)
+    /** Red night mode: the whole display, dialogs included, turns red and dims. */
+    val nightMode: StateFlow<Boolean> = _nightMode.asStateFlow()
+
+    private val _nightModeBrightness = MutableStateFlow(
+        resolveNightModeBrightness(prefs.all[KEY_NIGHT_MODE_BRIGHTNESS])
+    )
+    val nightModeBrightness: StateFlow<Float> = _nightModeBrightness.asStateFlow()
+
     private val _relayUrl = MutableStateFlow(persistedRelayPreference.endpoint)
     val relayUrl: StateFlow<String> = _relayUrl.asStateFlow()
 
@@ -214,6 +223,21 @@ class OpsecSettings(context: Context) {
         _keepScreenOn,
     )
 
+    fun setNightMode(value: Boolean): Boolean = persistBoolean(
+        KEY_NIGHT_MODE,
+        value,
+        _nightMode,
+    )
+
+    fun setNightModeBrightness(value: Float): Boolean {
+        val clamped = resolveNightModeBrightness(value)
+        return persist(
+            key = KEY_NIGHT_MODE_BRIGHTNESS,
+            mutate = { putFloat(KEY_NIGHT_MODE_BRIGHTNESS, clamped) },
+            publish = { _nightModeBrightness.value = clamped },
+        )
+    }
+
     fun setRelayUrl(value: String): Boolean {
         val clean = when (val result = RelayEndpointPolicy.normalize(value)) {
             is RelayEndpointPolicy.Result.Valid -> result.endpoint
@@ -290,6 +314,18 @@ class OpsecSettings(context: Context) {
         private const val KEY_MAP_ORIENTATION = "map_orientation_mode"
         private const val KEY_RELAY = "relay_url"
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        /** Also written by the night-mode instrumented test before launch. */
+        const val KEY_NIGHT_MODE = "night_mode"
+        private const val KEY_NIGHT_MODE_BRIGHTNESS = "night_mode_brightness"
+        const val DEFAULT_NIGHT_MODE_BRIGHTNESS = 0.7f
+        val NIGHT_MODE_BRIGHTNESS_RANGE = 0.25f..1f
+
+        /** Stored brightness clamped to the supported range; anything else uses the default. */
+        internal fun resolveNightModeBrightness(value: Any?): Float {
+            val stored = (value as? Number)?.toFloat() ?: return DEFAULT_NIGHT_MODE_BRIGHTNESS
+            if (!stored.isFinite()) return DEFAULT_NIGHT_MODE_BRIGHTNESS
+            return stored.coerceIn(NIGHT_MODE_BRIGHTNESS_RANGE)
+        }
 
         /** Stored choice wins; missing or malformed values leave the
          * system's normal dimming and auto-lock in control. */

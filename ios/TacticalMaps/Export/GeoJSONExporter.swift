@@ -184,6 +184,12 @@ enum GeoJSONExporter {
         if let lg = shape.style.lineGraphic, lg != .plain {
             props["tacticalmaps:line_graphic"] = lg.rawValue
         }
+        // Range rings: the symbol they stay centred on. Unit Sync reads these;
+        // file imports drop them because object IDs may be remapped.
+        if let anchor = shape.anchorWaypointID, let radius = shape.ringRadiusMetres {
+            props["tacticalmaps:anchor_id"] = wire(anchor)
+            props["tacticalmaps:ring_radius_m"] = radius
+        }
 
         // Export the RENDERED geometry, rotation + scale baked in (matching
         // Android). That way a rotated/stretched shape lands correctly in other

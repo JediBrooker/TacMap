@@ -100,6 +100,35 @@ struct OpsecSettingsView: View {
 
                 Section {
                     Toggle(
+                        Messages.nightModeTitle(),
+                        isOn: settingBinding(\.nightMode, set: opsec.setNightMode)
+                    )
+                    .accessibilityIdentifier("settings.nightMode")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(Messages.nightModeBrightness())
+                        Slider(
+                            value: Binding(
+                                get: { opsec.nightModeBrightness },
+                                set: { _ = opsec.setNightModeBrightness($0) }
+                            ),
+                            in: OpsecSettings.nightModeBrightnessRange
+                        )
+                        .accessibilityIdentifier("settings.nightModeBrightness")
+                    }
+                } footer: {
+                    Text(Messages.nightModeHelp())
+                }
+
+                Section {
+                    Button(Messages.tipsShowAgain()) {
+                        FirstRunTips.reset()
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("settings.showTips")
+                }
+
+                Section {
+                    Toggle(
                         L10n.text("Privacy screen in app switcher"),
                         isOn: settingBinding(\.privacyScreen, set: opsec.setPrivacyScreen)
                     )

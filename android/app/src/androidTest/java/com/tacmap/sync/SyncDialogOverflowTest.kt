@@ -33,6 +33,8 @@ class SyncDialogOverflowTest {
             Manifest.permission.ACCESS_FINE_LOCATION,
         )
 
+        // The first-run tips dialog would cover the map this test drives.
+        com.tacmap.map.FirstRunTips.markSeen(InstrumentationRegistry.getInstrumentation().targetContext)
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             waitFor(device, By.desc("Menu")).click()

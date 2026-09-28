@@ -153,6 +153,107 @@ class RangeRingsTest {
         assertFalse(store.canUndo.value)
     }
 
+    @Test
+    fun ringsFollowLocalMovesAndUndoButNotRemoteSync() {
+        val dir = Files.createTempDirectory("range-rings").toFile()
+        val drawings = DrawingStore.forTests(dir, CountingPersistence())
+        val waypoints = com.tacmap.waypoints.WaypointStore.forTests(dir, CountingPersistence())
+        val follower = RangeRingFollower(drawings)
+        waypoints.committedChangeListener = follower::onWaypointsCommitted
+
+        val op = Waypoint(name = "OP", latitude = -33.8688, longitude = 151.2093)
+        val other = Waypoint(name = "HQ", latitude = -33.9, longitude = 151.1)
+        assertTrue(waypoints.add(op))
+        assertTrue(waypoints.add(other))
+        val rings = RangeRings.features(op, listOf(500.0, 1000.0), layerColor = null, density = 1f)
+        val otherRing = RangeRings.features(other, listOf(250.0), layerColor = null, density = 1f)
+        assertTrue(drawings.addFeatures(rings + otherRing))
+        assertEquals(op.id, rings[0].anchorId)
+        assertEquals(1000.0, rings[1].ringRadiusMetres!!, 0.0)
+        fun ring(id: String) = drawings.document.value.features.first { it.id == id }
+
+        val moved = op.copy(latitude = -33.85, longitude = 151.25)
+        assertTrue(waypoints.update(moved))
+        assertEquals(RangeRings.ring(moved.latitude, moved.longitude, 500.0), ring(rings[0].id).points)
+        assertEquals(RangeRings.ring(moved.latitude, moved.longitude, 1000.0), ring(rings[1].id).points)
+        assertEquals("rings of other symbols stay put", otherRing[0], ring(otherRing[0].id))
+
+        assertTrue(waypoints.undo())
+        assertEquals(rings[0].points, ring(rings[0].id).points)
+        assertTrue(waypoints.redo())
+        assertEquals(RangeRings.ring(moved.latitude, moved.longitude, 500.0), ring(rings[0].id).points)
+
+        val remote = moved.copy(latitude = -33.8, longitude = 151.3)
+        assertTrue(waypoints.update(remote, com.tacmap.models.ModelMutationOrigin.REMOTE_SYNC))
+        assertEquals("the moving peer sends its own ring updates",
+            RangeRings.ring(moved.latitude, moved.longitude, 500.0), ring(rings[0].id).points)
+
+        // Following adds no undo entry: one drawing undo removes the rings.
+        assertTrue(drawings.undo())
+        assertTrue(drawings.document.value.features.none { it.anchorId != null })
+        assertFalse(drawings.canUndo.value)
+    }
+
+    @Test
+    fun realignFixesRingsRestoredByDrawingUndo() {
+        val dir = Files.createTempDirectory("range-rings").toFile()
+        val drawings = DrawingStore.forTests(dir, CountingPersistence())
+        val waypoints = com.tacmap.waypoints.WaypointStore.forTests(dir, CountingPersistence())
+        val follower = RangeRingFollower(drawings)
+        waypoints.committedChangeListener = follower::onWaypointsCommitted
+        val op = Waypoint(name = "OP", latitude = 10.0, longitude = 20.0)
+        assertTrue(waypoints.add(op))
+        val ring = RangeRings.features(op, listOf(300.0), layerColor = null, density = 1f).single()
+        assertTrue(drawings.addFeatures(listOf(ring)))
+        val line = DrawingFeature(
+            name = "PL", geometry = DrawingGeometry.LINE,
+            points = listOf(DrawingPoint(0.0, 0.0), DrawingPoint(1.0, 1.0)),
+        )
+        assertTrue(drawings.addFeature(line))
+        val moved = op.copy(latitude = 11.0)
+        assertTrue(waypoints.update(moved))
+
+        // Undoing the line restores a snapshot taken before the symbol moved.
+        assertTrue(drawings.undo())
+        assertEquals(ring.points, drawings.document.value.features.first { it.id == ring.id }.points)
+        follower.realign(waypoints.committedWaypoints.value)
+        assertEquals(RangeRings.ring(11.0, 20.0, 300.0), drawings.document.value.features.first { it.id == ring.id }.points)
+    }
+
+    @Test
+    fun followedSkipsUnanchoredAndUnmovedRings() {
+        val op = Waypoint(name = "OP", latitude = 10.0, longitude = 20.0)
+        val ring = RangeRings.features(op, listOf(300.0), layerColor = null, density = 1f).single()
+        assertNull("already centred", RangeRings.followed(ring, op))
+        val moved = op.copy(latitude = 11.0)
+        assertNull("not a ring of this symbol", RangeRings.followed(ring.copy(anchorId = null), moved))
+        assertEquals(0.0, RangeRings.followed(ring.copy(rotationDegrees = 45.0), op)!!.rotationDegrees, 0.0)
+        assertEquals(RangeRings.ring(11.0, 20.0, 300.0), RangeRings.followed(ring, moved)!!.points)
+    }
+
+    @Test
+    fun ringAnchorTravelsWithUnitSyncButNotFileImport() {
+        val op = Waypoint(name = "OP", latitude = 10.0, longitude = 20.0)
+        val ring = RangeRings.features(op, listOf(300.0), layerColor = null, density = 1f).single()
+        val json = com.tacmap.export.GeoJsonExporter.export(waypoints = emptyList(), drawings = listOf(ring))
+        assertTrue(json.contains("tacticalmaps:anchor_id"))
+
+        val synced = com.tacmap.export.GeoJsonImporter.parse(
+            json, existingLayers = emptyList(), fallbackLayerId = "default", keepRingAnchors = true,
+        ).drawings.single()
+        assertEquals(op.id, synced.anchorId)
+        assertEquals(300.0, synced.ringRadiusMetres!!, 0.0)
+
+        val imported = com.tacmap.export.GeoJsonImporter.parse(
+            json, existingLayers = emptyList(), fallbackLayerId = "default",
+        ).drawings.single()
+        assertNull(imported.anchorId)
+        assertNull(imported.ringRadiusMetres)
+
+        val plain = ring.copy(anchorId = null, ringRadiusMetres = null)
+        assertFalse(com.tacmap.export.GeoJsonExporter.export(emptyList(), listOf(plain)).contains("anchor_id"))
+    }
+
     private class CountingPersistence(var writes: Int = 0, var fail: Boolean = false) : MissionStorePersistence {
         override fun write(file: File, label: String, text: String) {
             writes++

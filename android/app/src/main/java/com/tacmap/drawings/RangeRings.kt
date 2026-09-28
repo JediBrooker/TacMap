@@ -14,7 +14,9 @@ import kotlin.math.tan
 /**
  * Range rings around a symbol, generated as ordinary closed line drawings so
  * they sync, export, hide with their layer and undo like any other drawing.
- * iOS mirrors this in `RangeRings.swift`; `testdata/range_rings.json` pins both.
+ * Each ring remembers its symbol and radius and is regenerated when the symbol
+ * moves (see [RangeRingFollower]). iOS mirrors this in `RangeRings.swift`;
+ * `testdata/range_rings.json` pins both.
  */
 object RangeRings {
     /** Points per ring before the closing point (every 5 degrees). */
@@ -78,8 +80,23 @@ object RangeRings {
                 strokeWidth = STROKE_WIDTH_DP * density.coerceAtLeast(0f),
                 strokeStyle = DrawingStrokeStyle.DASHED,
                 createdAt = createdAt,
+                anchorId = waypoint.id,
+                ringRadiusMetres = radius,
             )
         }
+    }
+
+    /** [feature] regenerated around its symbol's current position, or null when
+     * it is not a ring of [waypoint] or already sits exactly there. */
+    fun followed(feature: DrawingFeature, waypoint: Waypoint): DrawingFeature? {
+        if (feature.anchorId != waypoint.id) return null
+        val radius = feature.ringRadiusMetres ?: return null
+        if (!(radius > 0.0 && radius <= MAX_RADIUS_METRES)) return null
+        val points = ring(waypoint.latitude, waypoint.longitude, radius)
+        if (feature.points == points && feature.rotationDegrees == 0.0 &&
+            feature.scaleX == 1.0 && feature.scaleY == 1.0
+        ) return null
+        return feature.copy(points = points, rotationDegrees = 0.0, scaleX = 1.0, scaleY = 1.0)
     }
 
     // WGS84 geodesic direct problem (Vincenty, 1975).

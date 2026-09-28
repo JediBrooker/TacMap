@@ -269,7 +269,8 @@ enum GeoJSONImporter {
                                             geomType: geomType,
                                             props: props,
                                             layerID: layerID,
-                                            id: id) {
+                                            id: id,
+                                            keepAnchor: resolveExternalID == nil) {
                     result.drawings.append(shape)
                 }
             case "military", "controlMeasure", "generic", "marker":
@@ -431,7 +432,8 @@ enum GeoJSONImporter {
                                      geomType: String,
                                      props: [String: Any],
                                      layerID: UUID,
-                                     id: UUID) -> DrawingShape? {
+                                     id: UUID,
+                                     keepAnchor: Bool = false) -> DrawingShape? {
         let (kind, coords): (DrawingKind, [Coordinate2D])
         switch geomType {
         case "Point":
@@ -492,6 +494,16 @@ enum GeoJSONImporter {
         let notes = props["description"] as? String
         let createdAt = parseDate(props["tacticalmaps:created_at"]) ?? parseDate(props["created_at"])
 
+        // Ring anchors refer to object IDs, which only Unit Sync preserves.
+        var anchor: UUID?
+        var radius: Double?
+        if keepAnchor,
+           let anchorID = (props["tacticalmaps:anchor_id"] as? String).flatMap(UUID.init(uuidString:)),
+           let ringRadius = boundedDouble(props["tacticalmaps:ring_radius_m"], 1...RangeRings.maxRadiusMetres) {
+            anchor = anchorID
+            radius = ringRadius
+        }
+
         return DrawingShape(
             id: id,
             name: name,
@@ -500,7 +512,9 @@ enum GeoJSONImporter {
             coordinates: coords,
             style: style,
             createdAt: createdAt ?? .now,
-            layerID: layerID
+            layerID: layerID,
+            anchorWaypointID: anchor,
+            ringRadiusMetres: radius
         )
     }
 

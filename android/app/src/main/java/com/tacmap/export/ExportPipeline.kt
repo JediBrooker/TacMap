@@ -192,9 +192,9 @@ internal data class ExportPipelineResult(
 /** Small injectable boundary so every export stage has deterministic failure tests. */
 internal interface ExportPipelineDriver<ShareToken> {
     fun cleanupStaleArtifacts()
-    fun generateContent(): String
+    fun generateContent(): ByteArray
     fun prepareArtifact(): ExportArtifact
-    fun writeArtifact(artifact: ExportArtifact, content: String)
+    fun writeArtifact(artifact: ExportArtifact, content: ByteArray)
     fun createShareToken(artifact: ExportArtifact): ShareToken
     fun scheduleCleanup(artifact: ExportArtifact)
     fun launchShare(artifact: ExportArtifact, token: ShareToken)
@@ -206,6 +206,8 @@ internal suspend fun <ShareToken> executeExportPipeline(
     driver: ExportPipelineDriver<ShareToken>,
     fileDispatcher: CoroutineDispatcher = Dispatchers.IO,
     launchDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
+    // Generation that renders map symbols must share the UI thread's icon cache.
+    generationDispatcher: CoroutineDispatcher = fileDispatcher,
 ): ExportPipelineResult {
     var artifact: ExportArtifact? = null
     suspend fun <T> atStage(stage: ExportStage, operation: suspend () -> T): T = try {
@@ -218,7 +220,7 @@ internal suspend fun <ShareToken> executeExportPipeline(
             withContext(fileDispatcher) { driver.cleanupStaleArtifacts() }
         }
         val content = atStage(ExportStage.GENERATION) {
-            withContext(fileDispatcher) { driver.generateContent() }
+            withContext(generationDispatcher) { driver.generateContent() }
         }
         val prepared = atStage(ExportStage.CACHE_PREPARATION) {
             withContext(fileDispatcher) { driver.prepareArtifact() }

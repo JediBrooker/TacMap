@@ -5,6 +5,7 @@ import UIKit
 struct TacticalMapsApp: App {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @StateObject private var store = StoreManager()
+    @ObservedObject private var opsec = OpsecSettings.shared
     private let trial = TrialManager()
 
     init() {
@@ -30,7 +31,9 @@ struct TacticalMapsApp: App {
             RootGate(store: store, trial: trial)
                 .environment(\.locale, appLanguage.locale)
                 .preferredColorScheme(.dark)
-                .statusBar(hidden: false)
+                .nightModeContent()
+                // System status icons are drawn outside the app and would stay white.
+                .statusBar(hidden: opsec.nightMode)
         }
     }
 }

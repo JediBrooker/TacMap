@@ -290,6 +290,8 @@ class NativeLocalePrototypeTest {
         val manager = context.getSystemService(android.app.LocaleManager::class.java)
         val originalLocales = manager.applicationLocales
         val originalChoice = AppLanguage.selection
+        // The first-run tips dialog would cover the map this test drives.
+        com.tacmap.map.FirstRunTips.markSeen(InstrumentationRegistry.getInstrumentation().targetContext)
         val scenario = androidx.test.core.app.ActivityScenario.launch(com.tacmap.app.MainActivity::class.java)
         try {
             lateinit var original: com.tacmap.app.MainActivity
@@ -330,6 +332,8 @@ class RecordingNotificationLocaleTest {
         // Test-only substitution keeps production constructors and durable data untouched.
         val field = com.tacmap.app.TacticalApp::class.java.getDeclaredField("trackRecorder").apply { isAccessible = true }
         field.set(app, recorder)
+        // The first-run tips dialog would cover the map this test drives.
+        com.tacmap.map.FirstRunTips.markSeen(InstrumentationRegistry.getInstrumentation().targetContext)
         val scenario = androidx.test.core.app.ActivityScenario.launch(com.tacmap.app.MainActivity::class.java)
         val notifications = context.getSystemService(android.app.NotificationManager::class.java)
         fun awaitTitle(expected: String) {

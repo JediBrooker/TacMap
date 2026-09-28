@@ -82,6 +82,9 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
     /// A remote Unit Sync marker was tapped. Kept on the parent recognizer so
     /// marker views never steal map pan/pinch gestures.
     var onPresenceTap: ((String) -> Void)?
+    /// A long-press on empty map (no symbol, drawing, handle or unit marker)
+    /// outside drawing, measuring and calibration. Opens the point menu.
+    var onEmptyMapLongPress: ((CLLocationCoordinate2D) -> Void)?
 
     // Refreshed every updateUIView.
     var graphicsLocked = false
@@ -211,13 +214,33 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
 
     // MARK: - Long-press: whole-shape / waypoint drag, or vertex delete
 
+    /// True when a press at `pt` is not on anything the map already handles.
+    private func isEmptyMapPoint(_ pt: CGPoint) -> Bool {
+        guard drawingSession?.isDrawing != true,
+              measureSession?.isActive != true,
+              calibration?.isCalibrating != true,
+              onEmptyMapLongPress != nil else { return false }
+        return presenceView?.peerID(at: pt) == nil
+            && handleIndex(at: pt) == nil
+            && waypointHitTest(at: pt) == nil
+            && drawingHitTest(at: pt) == nil
+    }
+
+    private func beginEmptyMapPress(at coordinate: CLLocationCoordinate2D) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        onEmptyMapLongPress?(coordinate)
+    }
+
     @objc private func onLongPress(_ g: UILongPressGestureRecognizer) {
         guard let view else { return }
         let pt = g.location(in: view)
 
         switch g.state {
         case .began:
-            if graphicsLocked { return }
+            if graphicsLocked {
+                if isEmptyMapPoint(pt), let c = coord(pt) { beginEmptyMapPress(at: c) }
+                return
+            }
             pressMoved = false
             // A press on a vertex handle belongs to the pan (drag) / delete
             // path, not whole-shape drag. Remember a real handle so a hold
@@ -243,7 +266,9 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                 lastDragCoord = coord(pt)
                 view.setBrowseGesturesEnabled(false)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                return
             }
+            if isEmptyMapPoint(pt), let c = coord(pt) { beginEmptyMapPress(at: c) }
 
         case .changed:
             pressMoved = true

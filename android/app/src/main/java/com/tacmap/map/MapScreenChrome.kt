@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -30,7 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material3.AlertDialog
+import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -381,6 +383,29 @@ internal fun UnitLabelsToggle(
         Icon(
             Icons.Default.Flag,
             contentDescription = if (active) L10n.text("Hide unit labels") else L10n.text("Show unit labels"),
+            tint = Color.White,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+/** Red night mode on/off, next to the unit-label toggle. */
+@Composable
+internal fun NightModeToggle(
+    active: Boolean,
+    onToggle: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (active) Color(0xEB8C0000) else Color(0xCC000000))
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            if (active) Icons.Default.DarkMode else Icons.Outlined.DarkMode,
+            contentDescription = if (active) Messages.nightModeTurnOff() else Messages.nightModeTurnOn(),
             tint = Color.White,
             modifier = Modifier.size(18.dp)
         )

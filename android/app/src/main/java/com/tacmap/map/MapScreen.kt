@@ -65,11 +65,11 @@ import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material3.AlertDialog
+import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
+import com.tacmap.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -90,6 +90,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -158,7 +159,9 @@ import java.io.File
 private data class QuickAddTarget(
     val latitude: Double,
     val longitude: Double,
-    val layerId: String
+    val layerId: String,
+    /** Placed from the long-press point menu rather than at the crosshair. */
+    val fromPointMenu: Boolean = false,
 )
 
 private data class PendingDrawingMutation(
@@ -200,6 +203,7 @@ internal fun MapScreen(
     val onlineBasemapsEnabled by vm.opsec.onlineBasemaps.collectAsState()
     val onlineLookupsEnabled by vm.opsec.onlineLookups.collectAsState()
     val primaryCoordinateType by vm.opsec.primaryCoordinateType.collectAsState()
+    val nightModeOn by vm.opsec.nightMode.collectAsState()
     val mapOrientationMode by vm.opsec.mapOrientationMode.collectAsState()
     var headingSessionActive by remember { mutableStateOf(false) }
     val onlineTilesUnavailable by OnlineTileHealth.temporarilyUnavailable.collectAsState()
@@ -235,6 +239,11 @@ internal fun MapScreen(
     val waypointStore = remember(unitSyncForegroundEpoch) { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
     val drawingStore = remember(unitSyncForegroundEpoch) { DrawingStore(context) }
+    val ringFollower = remember(waypointStore, drawingStore) {
+        com.tacmap.drawings.RangeRingFollower(drawingStore).also { follower ->
+            waypointStore.committedChangeListener = follower::onWaypointsCommitted
+        }
+    }
     val importIdentityJournal = remember {
         com.tacmap.export.ExternalImportIdentityJournal(context)
     }
@@ -282,6 +291,10 @@ internal fun MapScreen(
     var quickAddMenuOpen by remember { mutableStateOf(false) }
     var quickAddTarget by remember { mutableStateOf<QuickAddTarget?>(null) }
     var quickAddEditorMode by remember { mutableStateOf<SymbolEditorMode?>(null) }
+    var mapPressPoint by remember { mutableStateOf<MapPressPoint?>(null) }
+    var showTips by rememberSaveable { mutableStateOf(FirstRunTips.shouldShow(context)) }
+    var pointSunMoon by remember { mutableStateOf<MapPressPoint?>(null) }
+    var pointRingsCentre by remember { mutableStateOf<Waypoint?>(null) }
     var quickAddCreationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     /// weather/UAV widget target = (lat, lng) of map centre, null when closed
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
@@ -976,8 +989,57 @@ internal fun MapScreen(
                 onMapTap = {
                     if (selectedWaypointId != null) vm.selectWaypoint(null)
                     selectedDrawingId = null
-                }
+                },
+                onMapLongPress = { lat, lng, screen ->
+                    mapPressPoint = MapPressPoint.at(lat, lng, screen, primaryCoordinateType)
+                },
             )
+            mapPressPoint?.let { point ->
+                MapPointMenu(
+                    point = point,
+                    canEdit = quickAddAllowed,
+                    onPlaceSymbol = { mode ->
+                        mapPressPoint = null
+                        quickAddCreationError = null
+                        quickAddTarget = QuickAddTarget(point.latitude, point.longitude, quickAddLayerId, fromPointMenu = true)
+                        quickAddEditorMode = mode
+                    },
+                    onMeasure = {
+                        mapPressPoint = null
+                        stopDrawing()
+                        measureSession.start()
+                        measureSession.addPoint(point.latitude, point.longitude)
+                    },
+                    onRangeRings = {
+                        mapPressPoint = null
+                        pointRingsCentre = Waypoint(
+                            name = point.coordinate.text,
+                            latitude = point.latitude,
+                            longitude = point.longitude,
+                            layerId = quickAddLayerId,
+                        )
+                    },
+                    onSunMoon = {
+                        mapPressPoint = null
+                        pointSunMoon = point
+                    },
+                    onCopy = {
+                        mapPressPoint = null
+                        val type = point.coordinate.type.displayName
+                        val copied = com.tacmap.util.copySensitivePlainText(
+                            context,
+                            L10n.text("%1\$s coordinate", type),
+                            point.coordinate.text,
+                        )
+                        Toast.makeText(
+                            context,
+                            if (copied) L10n.text("%1\$s copied", type) else L10n.text("Unable to copy %1\$s", type.lowercase()),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                    onDismiss = { mapPressPoint = null },
+                )
+            }
 
         // Crosshair now renders inside CustomMapScreen (under the user-location
         // dot) so the dot isn't swallowed when the map follows the user.
@@ -1289,6 +1351,7 @@ internal fun MapScreen(
                 }
             }
             UnitLabelsToggle(active = unitLabelsVisible) { unitLabelsVisible = !unitLabelsVisible }
+            NightModeToggle(active = nightModeOn) { vm.opsec.setNightMode(!nightModeOn) }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 MapCompassChip(
@@ -1305,8 +1368,20 @@ internal fun MapScreen(
                 UndoRedoButtons(
                     canUndo = canUndo,
                     canRedo = canRedo,
-                    onUndo = { if (drawingCanUndo) drawingStore.undo() else waypointStore.undo() },
-                    onRedo = { if (drawingCanRedo) drawingStore.redo() else waypointStore.redo() }
+                    onUndo = {
+                        if (drawingCanUndo) {
+                            if (drawingStore.undo()) ringFollower.realign(waypointStore.committedWaypoints.value)
+                        } else {
+                            waypointStore.undo()
+                        }
+                    },
+                    onRedo = {
+                        if (drawingCanRedo) {
+                            if (drawingStore.redo()) ringFollower.realign(waypointStore.committedWaypoints.value)
+                        } else {
+                            waypointStore.redo()
+                        }
+                    }
                 )
                 LockButton(
                     locked = graphicsLocked,
@@ -1519,7 +1594,12 @@ internal fun MapScreen(
                                 )
                             }
                         vm.selectWaypoint(result.waypoint.id)
-                        Toast.makeText(context, L10n.text("Added %1\$s at crosshair", name), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            context,
+                            if (capturedQuickTarget.fromPointMenu) Messages.mapPointSymbolAdded(name)
+                            else L10n.text("Added %1\$s at crosshair", name),
+                            Toast.LENGTH_SHORT,
+                        ).show()
                         quickAddCreationError = null
                         quickAddEditorMode = null
                         quickAddTarget = null
@@ -1637,6 +1717,32 @@ internal fun MapScreen(
         AboutDialog(onDismiss = { showAboutDialog = false })
     }
 
+    if (showTips) {
+        FirstRunTipsDialog(onFinished = {
+            FirstRunTips.markSeen(context)
+            showTips = false
+        })
+    }
+
+    pointSunMoon?.let { point ->
+        PointSunMoonDialog(point = point, onDismiss = { pointSunMoon = null })
+    }
+
+    pointRingsCentre?.let { centre ->
+        RangeRingsDialog(
+            waypoint = centre,
+            layerColor = drawingDocument.layers.firstOrNull { it.id == centre.layerId }?.color,
+            onCreate = { rings ->
+                performDrawingMutation(
+                    intent = DrawingMutationIntent.CREATE,
+                    persist = { drawingStore.addFeatures(rings) },
+                ).saved
+            },
+            onDismiss = { pointRingsCentre = null },
+            anchored = false,
+        )
+    }
+
     weatherTarget?.let { (lat, lng) ->
         WeatherDialog(
             lat = lat,
@@ -1655,6 +1761,10 @@ internal fun MapScreen(
             opsec = vm.opsec,
             headingAvailable = vm.headingService.isHeadingAvailable,
             onRequestAuthBoundChange = onRequestAuthBoundChange,
+            onShowTips = {
+                showOpsecSettings = false
+                showTips = true
+            },
             onDismiss = { showOpsecSettings = false },
         )
     }
@@ -1940,6 +2050,30 @@ internal fun MapScreen(
                         waypoints = waypoints,
                         drawings = drawingDocument.features,
                         layers = drawingDocument.layers,
+                    )
+                }
+            },
+            onExportKml = {
+                showImportExportSheet = false
+                scope.launch {
+                    exportMissionKml(
+                        context = context,
+                        waypoints = waypoints,
+                        drawings = drawingDocument.features,
+                        layers = drawingDocument.layers,
+                        withSymbols = false,
+                    )
+                }
+            },
+            onExportKmz = {
+                showImportExportSheet = false
+                scope.launch {
+                    exportMissionKml(
+                        context = context,
+                        waypoints = waypoints,
+                        drawings = drawingDocument.features,
+                        layers = drawingDocument.layers,
+                        withSymbols = true,
                     )
                 }
             },

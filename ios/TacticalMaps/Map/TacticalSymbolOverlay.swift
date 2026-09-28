@@ -488,7 +488,7 @@ final class BubbleView: UIView {
     }
 
     private static var genericImageCache: UIImage?
-    private static func genericImage() -> UIImage? {
+    static func genericImage() -> UIImage? {
         if let c = genericImageCache { return c }
         let size = CGSize(width: 34, height: 34)
         let renderer = UIGraphicsImageRenderer(size: size)

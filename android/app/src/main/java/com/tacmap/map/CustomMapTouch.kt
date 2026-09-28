@@ -23,7 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -34,6 +36,7 @@ import com.tacmap.map.render.MapCamera
 import com.tacmap.map.render.MapProjection
 import com.tacmap.sync.PresencePeer
 import com.tacmap.waypoints.Waypoint
+import android.os.SystemClock
 import kotlin.math.hypot
 import kotlin.math.log2
 import kotlin.math.roundToInt
@@ -120,7 +123,10 @@ internal fun MapItemTouchOverlayCustom(
     rotationEnabled: Boolean,
     onCameraChange: (MapCamera) -> Unit,
     onMapGestureStart: () -> Unit,
-    onEmptyTap: () -> Unit
+    onEmptyTap: () -> Unit,
+    /** Held still on empty map (no symbol, drawing or unit marker): the point
+     * and its screen position. Null disables the long-press menu. */
+    onEmptyLongPress: ((lat: Double, lng: Double, screen: Offset) -> Unit)? = null,
 ) {
     if (drawingInputEnabled || calibrationInputEnabled) return
     val proj = remember(camera, density) { MapProjection(camera, density) }
@@ -170,6 +176,8 @@ internal fun MapItemTouchOverlayCustom(
     val cOnCameraChange = rememberUpdatedState(onCameraChange)
     val cOnMapGestureStart = rememberUpdatedState(onMapGestureStart)
     val cLocked = rememberUpdatedState(locked)
+    val cOnLongPress = rememberUpdatedState(onEmptyLongPress)
+    val haptic = LocalHapticFeedback.current
 
     Box(
         modifier = Modifier
@@ -205,9 +213,33 @@ internal fun MapItemTouchOverlayCustom(
                     var lastDelta = Offset.Zero
                     var mapGestureStarted = false
                     var cancelled = false
+                    // A still hold on empty map opens the point menu. Any
+                    // movement, second finger or release first disarms it.
+                    var longPressArmed = itemId == null && peerHit == null && cOnLongPress.value != null
+                    var longPressed = false
+                    val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+                    val downAt = SystemClock.uptimeMillis()
 
-                    do {
-                        val event = awaitPointerEvent()
+                    while (true) {
+                        val event = if (longPressArmed) {
+                            val remaining = longPressTimeout - (SystemClock.uptimeMillis() - downAt)
+                            if (remaining > 0) withTimeoutOrNull(remaining) { awaitPointerEvent() } else null
+                        } else {
+                            awaitPointerEvent()
+                        }
+                        if (event == null) {
+                            longPressArmed = false
+                            longPressed = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val (lat, lng) = cProj.value.fromScreen(start.x, start.y)
+                            cOnLongPress.value?.invoke(lat, lng, start)
+                            // The rest of this touch belongs to the menu, not the map.
+                            do {
+                                val rest = awaitPointerEvent()
+                                rest.changes.forEach { it.consume() }
+                            } while (rest.changes.any { it.pressed })
+                            break
+                        }
                         if (event.changes.any { it.isConsumed }) {
                             cancelled = true
                             break
@@ -228,6 +260,9 @@ internal fun MapItemTouchOverlayCustom(
                             pointerCount = activePointerCount,
                             movedBeyondSlop = movedBeyondSlop
                         )
+                        if (mode != CustomMapGestureMode.MAP_PENDING || activePointerCount > 1) {
+                            longPressArmed = false
+                        }
 
                         when (mode) {
                             CustomMapGestureMode.ITEM_DRAG -> {
@@ -288,10 +323,11 @@ internal fun MapItemTouchOverlayCustom(
                             CustomMapGestureMode.ITEM_PENDING,
                             CustomMapGestureMode.MAP_PENDING -> Unit
                         }
-                    } while (event.changes.any { it.pressed })
+                        if (event.changes.none { it.pressed }) break
+                    }
 
                     cOnDrag.value(null)
-                    if (!cancelled) {
+                    if (!cancelled && !longPressed) {
                         when (arbitrator.mode) {
                             CustomMapGestureMode.ITEM_PENDING -> when (itemKind) {
                                 MapItemDrag.Kind.WAYPOINT ->

@@ -34,6 +34,12 @@ object Messages {
         L10n.message("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", value)
     fun drawingsQuarantinedMessage(value: String): LocalizedMessage =
         LocalizedMessage("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", listOf(value))
+    fun exportKmlTitle(): String =
+        L10n.message("id.export_kml_title", "Export KML")
+    fun exportKmzRow(): String =
+        L10n.message("id.export_kmz_row", "KMZ with Symbols")
+    fun exportKmzTitle(): String =
+        L10n.message("id.export_kmz_title", "Export KMZ with Symbols")
     fun importCollisionSummary(summary: String, count: String): String =
         L10n.message("id.import_collision_summary", "%1\$s Conflicting object IDs reassigned: %2\$s.", summary, count)
     fun importCollisionSummaryMessage(summary: String, count: String): LocalizedMessage =
@@ -60,6 +66,28 @@ object Messages {
         L10n.message("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.")
     fun liveLocationApproximateGuidanceMessage(): LocalizedMessage =
         LocalizedMessage("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.", listOf())
+    fun mapPointCopy(): String =
+        L10n.message("id.map_point_copy", "Copy Coordinates")
+    fun mapPointMeasure(): String =
+        L10n.message("id.map_point_measure", "Measure From Here")
+    fun mapPointPlaceSymbol(): String =
+        L10n.message("id.map_point_place_symbol", "Place Symbol Here")
+    fun mapPointRangeRings(): String =
+        L10n.message("id.map_point_range_rings", "Range Rings Here")
+    fun mapPointSunMoon(): String =
+        L10n.message("id.map_point_sun_moon", "Sun and Moon Here")
+    fun mapPointSymbolAdded(name: String): String =
+        L10n.message("id.map_point_symbol_added", "Added %1\$s", name)
+    fun nightModeBrightness(): String =
+        L10n.message("id.night_mode_brightness", "Night mode brightness")
+    fun nightModeHelp(): String =
+        L10n.message("id.night_mode_help", "Turns the whole screen, including menus and dialogs, red and dims it to protect night vision. The status bar is hidden while it is on. Toggle it from the moon button on the map.")
+    fun nightModeTitle(): String =
+        L10n.message("id.night_mode_title", "Night mode")
+    fun nightModeTurnOff(): String =
+        L10n.message("id.night_mode_turn_off", "Turn off night mode")
+    fun nightModeTurnOn(): String =
+        L10n.message("id.night_mode_turn_on", "Turn on night mode")
     fun onlineBasemapsDisabled(): String =
         L10n.message("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
     fun onlineBasemapsDisabledMessage(): LocalizedMessage =
@@ -105,7 +133,9 @@ object Messages {
     fun ringsFewer(): String =
         L10n.message("id.rings_fewer", "Fewer rings")
     fun ringsHelp(): String =
-        L10n.message("id.rings_help", "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings, but stay where they are if the symbol moves.")
+        L10n.message("id.rings_help", "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings and stay centred on the symbol when it moves.")
+    fun ringsHelpPoint(): String =
+        L10n.message("id.rings_help_point", "Rings are added as dashed line drawings on the active layer. They sync, export and undo like other drawings.")
     fun ringsInvalid(): String =
         L10n.message("id.rings_invalid", "Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol.")
     fun ringsMore(): String =
@@ -246,6 +276,34 @@ object Messages {
         L10n.message("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.")
     fun syncMetadataPrivacyMessage(): LocalizedMessage =
         LocalizedMessage("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.", listOf())
+    fun tipsDone(): String =
+        L10n.message("id.tips_done", "Get Started")
+    fun tipsEditBody(): String =
+        L10n.message("id.tips_edit_body", "Tap a symbol or drawing to edit it, or hold and drag it to move it. Undo and redo sit on the map, and the lock button prevents accidental edits.")
+    fun tipsEditTitle(): String =
+        L10n.message("id.tips_edit_title", "Move and Edit")
+    fun tipsNext(): String =
+        L10n.message("id.tips_next", "Next")
+    fun tipsNightBody(): String =
+        L10n.message("id.tips_night_body", "The night mode button on the map turns the whole screen red and dims it to protect your night vision. You can reopen these tips in Settings.")
+    fun tipsNightTitle(): String =
+        L10n.message("id.tips_night_title", "Work at Night")
+    fun tipsPage(current: String, total: String): String =
+        L10n.message("id.tips_page", "Tip %1\$s of %2\$s", current, total)
+    fun tipsPlaceBody(): String =
+        L10n.message("id.tips_place_body", "Tap + to place a unit, task or marker at the crosshair. Or hold an empty spot on the map to place one there, measure from it or add range rings.")
+    fun tipsPlaceTitle(): String =
+        L10n.message("id.tips_place_title", "Place Symbols")
+    fun tipsShareBody(): String =
+        L10n.message("id.tips_share_body", "Unit Sync shares symbols and drawings with your team, end-to-end encrypted. The menu also exports GeoJSON, KML, KMZ and GPX.")
+    fun tipsShareTitle(): String =
+        L10n.message("id.tips_share_title", "Share the Picture")
+    fun tipsShowAgain(): String =
+        L10n.message("id.tips_show_again", "Show Tips Again")
+    fun tipsSkip(): String =
+        L10n.message("id.tips_skip", "Skip")
+    fun tipsTitle(): String =
+        L10n.message("id.tips_title", "Tips")
     fun trialExpiredDetails(value: String): String =
         L10n.message("id.trial_expired_details", "Your %1\$s-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", value)
     fun trialExpiredDetailsMessage(value: String): LocalizedMessage =

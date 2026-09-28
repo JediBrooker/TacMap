@@ -108,7 +108,9 @@ fun CustomMapScreen(
     onVertexInserted: (featureId: String, atIndex: Int, lat: Double, lng: Double) -> Unit = { _, _, _, _ -> },
     onVertexDeleted: (featureId: String, vertexIndex: Int) -> Unit = { _, _ -> },
     onShapeMoved: (featureId: String, deltaLat: Double, deltaLng: Double) -> Unit = { _, _, _ -> },
-    onMapTap: () -> Unit = {}
+    onMapTap: () -> Unit = {},
+    /** Long-press on empty map: point and screen position. */
+    onMapLongPress: ((lat: Double, lng: Double, screen: androidx.compose.ui.geometry.Offset) -> Unit)? = null
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     val cameraEntry = remember {
@@ -309,7 +311,8 @@ fun CustomMapScreen(
                     cameraPublicationReady = true
                 },
                 onMapGestureStart = { browsing = true },
-                onEmptyTap = onMapTap
+                onEmptyTap = onMapTap,
+                onEmptyLongPress = onMapLongPress,
             )
             VertexHandlesOverlayCustom(
                 feature = selectedDrawing.takeUnless { graphicsLocked },

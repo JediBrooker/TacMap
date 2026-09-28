@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FolderZip
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -35,7 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.tacmap.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -63,6 +65,8 @@ fun ImportExportSheet(
     onExportGeoJson: () -> Unit,
     onExportGpx: () -> Unit,
     onExportAllData: () -> Unit,
+    onExportKml: () -> Unit,
+    onExportKmz: () -> Unit,
     hasSavedTrack: Boolean,
     isRecordingTrack: Boolean,
     onDiscardTrack: () -> Unit,
@@ -86,6 +90,8 @@ fun ImportExportSheet(
             SheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson)
             SheetRow(Icons.Default.Timeline, L10n.text("GPX Track"), onExportGpx)
             SheetRow(Icons.Default.SelectAll, MissionObjectExport.ACTION_TITLE, onExportAllData)
+            SheetRow(Icons.Default.Public, "KML", onExportKml)
+            SheetRow(Icons.Default.FolderZip, Messages.exportKmzRow(), onExportKmz)
             if (hasSavedTrack) {
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 SectionLabel(L10n.text("SAVED TRACK"))

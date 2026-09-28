@@ -9,6 +9,7 @@ final class PaywallScreenshotTests: XCTestCase {
 
     func testCapturePaywall() {
         let app = XCUIApplication()
+        app.launchEnvironment["TACMAP_UITEST_SKIP_TIPS"] = "1"
         app.launch()
         for label in ["Allow While Using App", "Allow Once"] {
             let b = springboard.buttons[label]
