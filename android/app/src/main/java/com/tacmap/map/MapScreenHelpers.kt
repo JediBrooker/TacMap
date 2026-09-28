@@ -31,8 +31,17 @@ import com.tacmap.export.ExportArtifact
 import com.tacmap.export.ExportArtifactWorkspace
 import com.tacmap.export.ExportPipelineDriver
 import com.tacmap.export.GeoJsonExporter
+import com.tacmap.export.KmlExporter
+import com.tacmap.export.KmzExporter
+import com.tacmap.export.KmzSymbolImage
 import com.tacmap.export.MissionObjectExport
 import com.tacmap.export.executeExportPipeline
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.AtomicMoveNotSupportedException
@@ -219,6 +228,61 @@ internal suspend fun exportAllMissionObjects(
     }
 }
 
+/** Export mission objects as KML, or as KMZ with each symbol's rendered image. */
+internal suspend fun exportMissionKml(
+    context: Context,
+    waypoints: List<com.tacmap.waypoints.Waypoint>,
+    drawings: List<DrawingFeature>,
+    layers: List<com.tacmap.drawings.DrawingLayer>,
+    withSymbols: Boolean,
+) {
+    if (waypoints.isEmpty() && drawings.isEmpty()) {
+        Toast.makeText(context, L10n.text("Nothing to export."), Toast.LENGTH_SHORT).show()
+        return
+    }
+    val density = context.resources.displayMetrics.density
+    if (!withSymbols) {
+        shareTextExport(
+            context = context,
+            exportLabel = "KML",
+            fileName = KmzExporter.KML_FILE_NAME,
+            mimeType = "application/vnd.google-earth.kml+xml",
+            chooserTitle = Messages.exportKmlTitle(),
+        ) { KmlExporter.export(waypoints, drawings, layers, density = density) }
+        return
+    }
+    shareExport(
+        context = context,
+        exportLabel = "KMZ",
+        fileName = KmzExporter.FILE_NAME,
+        mimeType = "application/vnd.google-earth.kmz",
+        chooserTitle = Messages.exportKmzTitle(),
+        // SymbolIconFactory's bitmap cache belongs to the UI thread.
+        generationDispatcher = Dispatchers.Main.immediate,
+    ) {
+        KmzExporter.export(waypoints, drawings, layers, density) { kmzSymbolImage(context, it) }
+    }
+}
+
+/** The map's own marker image for [waypoint] as PNG, anchored where the map anchors it. */
+private fun kmzSymbolImage(context: Context, waypoint: com.tacmap.waypoints.Waypoint): KmzSymbolImage? {
+    val drawable = SymbolIconFactory.drawableFor(context, waypoint)
+    val width = drawable.intrinsicWidth
+    val height = drawable.intrinsicHeight
+    if (width <= 0 || height <= 0) return null
+    val bitmap = (drawable as? BitmapDrawable)?.bitmap?.takeIf { it.width == width && it.height == height }
+        ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { target ->
+            drawable.setBounds(0, 0, width, height)
+            drawable.draw(Canvas(target))
+        }
+    val png = ByteArrayOutputStream().use { out ->
+        if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) return null
+        out.toByteArray()
+    }
+    val (anchorU, anchorV) = SymbolIconFactory.anchorFor(context, waypoint)
+    return KmzSymbolImage(png, hotSpotX = anchorU.toDouble(), hotSpotY = 1.0 - anchorV)
+}
+
 internal fun cleanupExportArtifacts(context: Context) {
     ExportArtifactWorkspace(File(context.cacheDir, "exports")).cleanupStaleArtifacts()
 }
@@ -230,28 +294,41 @@ private suspend fun shareTextExport(
     mimeType: String,
     chooserTitle: String,
     generate: () -> String,
+) = shareExport(context, exportLabel, fileName, mimeType, chooserTitle) {
+    generate().toByteArray(Charsets.UTF_8)
+}
+
+private suspend fun shareExport(
+    context: Context,
+    exportLabel: String,
+    fileName: String,
+    mimeType: String,
+    chooserTitle: String,
+    generationDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    generate: () -> ByteArray,
 ) {
     val outcome = executeExportPipeline(
         exportLabel = exportLabel,
-        driver = AndroidTextExportDriver(
+        driver = AndroidFileExportDriver(
             context = context,
             fileName = fileName,
             mimeType = mimeType,
             chooserTitle = chooserTitle,
             generate = generate,
         ),
+        generationDispatcher = generationDispatcher,
     )
     if (!outcome.succeeded) {
         Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
     }
 }
 
-private class AndroidTextExportDriver(
+private class AndroidFileExportDriver(
     private val context: Context,
     private val fileName: String,
     private val mimeType: String,
     private val chooserTitle: String,
-    private val generate: () -> String,
+    private val generate: () -> ByteArray,
 ) : ExportPipelineDriver<Uri> {
     private val appContext = context.applicationContext
     private val workspace = ExportArtifactWorkspace(File(appContext.cacheDir, "exports"))
@@ -259,13 +336,13 @@ private class AndroidTextExportDriver(
 
     override fun cleanupStaleArtifacts() = workspace.cleanupStaleArtifacts()
 
-    override fun generateContent(): String = generate()
+    override fun generateContent(): ByteArray = generate()
 
     override fun prepareArtifact(): ExportArtifact = workspace.prepareArtifact(fileName)
 
-    override fun writeArtifact(artifact: ExportArtifact, content: String) {
+    override fun writeArtifact(artifact: ExportArtifact, content: ByteArray) {
         FileOutputStream(artifact.partialFile).use { output ->
-            output.write(content.toByteArray(Charsets.UTF_8))
+            output.write(content)
             output.flush()
             output.fd.sync()
         }

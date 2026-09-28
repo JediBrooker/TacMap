@@ -15783,5 +15783,41 @@
         "type": "string"
       }
     ]
+  },
+  "export_kml_title": {
+    "en": "Export KML",
+    "de": "KML exportieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Share-sheet title for exporting symbols and drawings as a KML file for Google Earth, ATAK or GIS tools. KML is a file format name; keep it.",
+    "legacy": false,
+    "accessor": "exportKmlTitle",
+    "parameters": []
+  },
+  "export_kmz_title": {
+    "en": "Export KMZ with Symbols",
+    "de": "KMZ mit Symbolen exportieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Share-sheet title for exporting a KMZ archive that bundles the KML file with each symbol's rendered image. KMZ is a file format name; keep it.",
+    "legacy": false,
+    "accessor": "exportKmzTitle",
+    "parameters": []
+  },
+  "export_kmz_row": {
+    "en": "KMZ with Symbols",
+    "de": "KMZ mit Symbolen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Menu row under the Export heading that exports a KMZ archive including the real military symbol images (iOS appends an ellipsis).",
+    "legacy": false,
+    "accessor": "exportKmzRow",
+    "parameters": []
   }
 }

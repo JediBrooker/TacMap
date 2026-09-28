@@ -34,6 +34,12 @@ object Messages {
         L10n.message("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", value)
     fun drawingsQuarantinedMessage(value: String): LocalizedMessage =
         LocalizedMessage("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", listOf(value))
+    fun exportKmlTitle(): String =
+        L10n.message("id.export_kml_title", "Export KML")
+    fun exportKmzRow(): String =
+        L10n.message("id.export_kmz_row", "KMZ with Symbols")
+    fun exportKmzTitle(): String =
+        L10n.message("id.export_kmz_title", "Export KMZ with Symbols")
     fun importCollisionSummary(summary: String, count: String): String =
         L10n.message("id.import_collision_summary", "%1\$s Conflicting object IDs reassigned: %2\$s.", summary, count)
     fun importCollisionSummaryMessage(summary: String, count: String): LocalizedMessage =

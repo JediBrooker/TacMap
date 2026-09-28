@@ -12410,6 +12410,27 @@
         "translation": "94b73e5111ab8f54bb50765056c237944448ad0bd17971e3ec6c5548749f695d",
         "status": "reviewed"
       }
+    },
+    "export_kml_title": {
+      "de": {
+        "source": "2d177b2d8dbab3a9c08e87ca08b7ec916b558aed9532f7f8a182f0469f9491ec",
+        "translation": "e735d91d6096e3571eeb76c4b15b9a1456422dda6cccb72a925f65a4f9bae834",
+        "status": "reviewed"
+      }
+    },
+    "export_kmz_title": {
+      "de": {
+        "source": "38786143fec39c0dc8e39a39d720d28913a02f8c50382f7f2f37d1b1a825ab5b",
+        "translation": "d3b7a7286208073350183198120e989fdfc99e21abfb38a23ae04fc208d847cf",
+        "status": "reviewed"
+      }
+    },
+    "export_kmz_row": {
+      "de": {
+        "source": "ac1ac850c70f18ae8122dc587eaf2078098751fc931e113d2b4affd70ca21c23",
+        "translation": "9d3711aeb82da6aa7b6c0cdbe41c0ab7db7e2787ca79a43c6cd91441a09b7ec3",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

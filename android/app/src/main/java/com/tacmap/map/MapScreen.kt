@@ -1943,6 +1943,30 @@ internal fun MapScreen(
                     )
                 }
             },
+            onExportKml = {
+                showImportExportSheet = false
+                scope.launch {
+                    exportMissionKml(
+                        context = context,
+                        waypoints = waypoints,
+                        drawings = drawingDocument.features,
+                        layers = drawingDocument.layers,
+                        withSymbols = false,
+                    )
+                }
+            },
+            onExportKmz = {
+                showImportExportSheet = false
+                scope.launch {
+                    exportMissionKml(
+                        context = context,
+                        waypoints = waypoints,
+                        drawings = drawingDocument.features,
+                        layers = drawingDocument.layers,
+                        withSymbols = true,
+                    )
+                }
+            },
             hasSavedTrack = trackPoints.isNotEmpty(),
             isRecordingTrack = isRecordingTrack,
             onDiscardTrack = {

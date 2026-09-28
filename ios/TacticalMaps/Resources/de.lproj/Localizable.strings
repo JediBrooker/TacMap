@@ -7,6 +7,9 @@
 "id.coordinate_copy_hint" = "Tippen, um die angezeigte %1$@-Koordinate zu kopieren. Lange drücken, um hier einen Marker zu setzen.";
 "id.display_failure_context" = "%1$@ %2$@ %3$@";
 "id.drawings_quarantined" = "Gespeicherte Zeichnungen konnten nicht gelesen werden und wurden separat gesichert (%1$@). Die Karte startet ohne Zeichnungen.";
+"id.export_kml_title" = "KML exportieren";
+"id.export_kmz_row" = "KMZ mit Symbolen";
+"id.export_kmz_title" = "KMZ mit Symbolen exportieren";
 "id.import_complete_layers_skipped_summary" = "%1$@ und %2$@ auf %3$@ importiert; %4$@ bereits vorhandene Objekte übersprungen.";
 "id.import_complete_layers_summary" = "%1$@ und %2$@ auf %3$@ importiert.";
 "id.import_complete_skipped_summary" = "%1$@ und %2$@ importiert; %3$@ bereits vorhandene Objekte übersprungen.";

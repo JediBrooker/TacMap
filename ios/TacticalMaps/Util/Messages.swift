@@ -27,6 +27,15 @@ enum Messages {
     static func drawingsQuarantinedMessage(_ value: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.drawings_quarantined", fallback: "Saved drawings could not be read and were set aside (%1$@). Starting with an empty map.", arguments: [value])
     }
+    static func exportKmlTitle() -> String {
+        L10n.message("id.export_kml_title", fallback: "Export KML")
+    }
+    static func exportKmzRow() -> String {
+        L10n.message("id.export_kmz_row", fallback: "KMZ with Symbols")
+    }
+    static func exportKmzTitle() -> String {
+        L10n.message("id.export_kmz_title", fallback: "Export KMZ with Symbols")
+    }
     static func importCompleteLayersSkippedSummary(_ waypoints: String, _ drawings: String, _ layers: String, _ skipped: String) -> String {
         L10n.message("id.import_complete_layers_skipped_summary", fallback: "Imported %1$@ and %2$@ across %3$@; skipped %4$@ already-present objects.", waypoints, drawings, layers, skipped)
     }

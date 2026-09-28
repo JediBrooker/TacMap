@@ -522,6 +522,7 @@ struct ContentView: View {
     @State private var headingWatchdogTask: Task<Void, Never>?
     /// Share sheet URL for the combined mission-object GeoJSON action.
     @State private var missionObjectExportURL: URL? = nil
+    @State private var missionObjectExportTitle = ""
     @State private var showWaypointSheet   = false
     @State private var showDrawingsSheet   = false   // "All Drawings" list
     @State private var showLayersSheet     = false
@@ -1228,7 +1229,7 @@ struct ContentView: View {
             set: { if !$0 { missionObjectExportURL = nil } }
         )) {
             if let url = missionObjectExportURL {
-                ShareSheetView(activityItems: [url], title: MissionObjectExport.shareTitle)
+                ShareSheetView(activityItems: [url], title: missionObjectExportTitle)
                     .padSheetSizing()
             }
         }
@@ -1379,6 +1380,14 @@ struct ContentView: View {
                         onExportAll: {
                             drawingsPanelOpen = false
                             exportAllMissionObjects()
+                        },
+                        onExportKML: {
+                            drawingsPanelOpen = false
+                            exportKML(.kml)
+                        },
+                        onExportKMZ: {
+                            drawingsPanelOpen = false
+                            exportKML(.kmz)
                         },
                         onChat:      {
                             drawingsPanelOpen = false
@@ -1701,7 +1710,22 @@ struct ContentView: View {
                 drawings: drawingStore.shapes,
                 layers: drawingStore.layers
             )
+            missionObjectExportTitle = MissionObjectExport.shareTitle
             missionObjectExportURL = url
+        } catch {
+            importMessage = Messages.displayExportFailedMessage("").withArgument(0, error.displayMessage)
+        }
+    }
+
+    private func exportKML(_ format: KMZExporter.Format) {
+        do {
+            missionObjectExportTitle = format.shareTitle
+            missionObjectExportURL = try KMZExporter.exportToFile(
+                format: format,
+                waypoints: waypointStore.waypoints,
+                drawings: drawingStore.shapes,
+                layers: drawingStore.layers
+            )
         } catch {
             importMessage = Messages.displayExportFailedMessage("").withArgument(0, error.displayMessage)
         }

@@ -10,6 +10,9 @@
     <string name="chat_recipient_heading">"RECIPIENT"</string>
     <string name="common_ok">"OK"</string>
     <string name="drawings_quarantined">"Saved drawings could not be read and were set aside (%1$s). Starting with an empty map."</string>
+    <string name="export_kml_title">"Export KML"</string>
+    <string name="export_kmz_row">"KMZ with Symbols"</string>
+    <string name="export_kmz_title">"Export KMZ with Symbols"</string>
     <string name="import_collision_summary">"%1$s Conflicting object IDs reassigned: %2$s."</string>
     <string name="import_complete_summary">"Imported %1$s and %2$s."</string>
     <string name="import_failed">"Import failed: %1$s"</string>

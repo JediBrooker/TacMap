@@ -26,6 +26,8 @@ struct HamburgerMenu: View {
     let onToggleTrackRecording: () -> Void
     let onExportGPX:     () -> Void
     let onExportAll:     () -> Void
+    let onExportKML:     () -> Void
+    let onExportKMZ:     () -> Void
     let onChat:          () -> Void
     let onSync:          () -> Void
     let onAppLock:       () -> Void
@@ -214,6 +216,8 @@ struct HamburgerMenu: View {
                 sectionHeader(L10n.text("Export"))
                 row(L10n.text("GeoJSON…"), systemImage: "square.and.arrow.up")           { close(onExport) }
                 row("\(MissionObjectExport.actionTitle)…", systemImage: "square.and.arrow.up.on.square") { close(onExportAll) }
+                row("KML…", systemImage: "globe")                                         { close(onExportKML) }
+                row("\(Messages.exportKmzRow())…", systemImage: "doc.zipper")            { close(onExportKMZ) }
                 row(L10n.text("GPX Track…"), systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                     { close(onExportGPX) }
             }

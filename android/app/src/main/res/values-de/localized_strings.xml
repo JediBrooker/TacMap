@@ -10,6 +10,9 @@
     <string name="chat_recipient_heading">"EMPFÄNGER"</string>
     <string name="common_ok">"OK"</string>
     <string name="drawings_quarantined">"Gespeicherte Zeichnungen konnten nicht gelesen werden und wurden separat gesichert (%1$s). Die Karte startet ohne Zeichnungen."</string>
+    <string name="export_kml_title">"KML exportieren"</string>
+    <string name="export_kmz_row">"KMZ mit Symbolen"</string>
+    <string name="export_kmz_title">"KMZ mit Symbolen exportieren"</string>
     <string name="import_collision_summary">"%1$s Wegen Konflikten neu vergebene Objekt-IDs: %2$s."</string>
     <string name="import_complete_summary">"%1$s und %2$s importiert."</string>
     <string name="import_failed">"Import fehlgeschlagen: %1$s"</string>

@@ -1817,5 +1817,35 @@
     "platform": "android",
     "area": "weather-terrain",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/KMZExporter.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/KmlExporter.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/export/KmzExporter.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/KMLExporter.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Export/ZipArchiveWriter.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
   }
 ]

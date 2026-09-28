@@ -185,9 +185,9 @@ class ExportPipelineTest {
             called("cleanup-stale")
         }
 
-        override fun generateContent(): String {
+        override fun generateContent(): ByteArray {
             called("generate")
-            return "payload"
+            return "payload".toByteArray()
         }
 
         override fun prepareArtifact(): ExportArtifact {
@@ -196,8 +196,8 @@ class ExportPipelineTest {
             return artifact
         }
 
-        override fun writeArtifact(artifact: ExportArtifact, content: String) {
-            artifact.partialFile.writeText(content)
+        override fun writeArtifact(artifact: ExportArtifact, content: ByteArray) {
+            artifact.partialFile.writeBytes(content)
             called("write")
             artifact.partialFile.copyTo(artifact.finalFile, overwrite = true)
             artifact.partialFile.delete()
