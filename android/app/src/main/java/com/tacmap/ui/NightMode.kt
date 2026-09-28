@@ -32,7 +32,7 @@ val LocalNightMode = compositionLocalOf { NightModeState() }
  * bottom sheets and menus draw in their own windows, so each applies the same
  * layer through [NightWindowFilter]; the wrappers below do that for every
  * dialog type the app uses, and `NightModeSourceTest` keeps the app on them.
- * iOS mirrors this with blend-mode overlays.
+ * iOS gets the same result from SwiftUI's grayscale and colour-multiply effects.
  */
 object NightModeFilter {
     /** Rec. 601 luma weights into the red channel, scaled by [brightness]. */
