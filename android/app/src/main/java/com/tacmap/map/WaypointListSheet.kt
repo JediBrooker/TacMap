@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TextButton
@@ -115,7 +115,7 @@ fun WaypointListSheet(
             } else {
                 Box(Modifier.padding(horizontal = 8.dp)) {
                     TextButton(onClick = { orderMenuExpanded = true }) {
-                        Icon(Icons.Default.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(6.dp))
                         Text(Messages.symbolsSortByValue(order.displayName))
                         Icon(Icons.Default.ArrowDropDown, contentDescription = null)
