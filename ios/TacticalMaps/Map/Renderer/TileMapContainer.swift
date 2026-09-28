@@ -75,6 +75,7 @@ struct TileMapContainer: UIViewRepresentable {
     var peers: [String: PresencePeer] = [:]
     var onPeerTap: (String) -> Void
     var onMutationError: (LocalizedMessage) -> Void
+    var onEmptyMapLongPress: ((CLLocationCoordinate2D) -> Void)? = nil
 
     func makeUIView(context: Context) -> TileMapView {
         let start = locationService.lastLocation?.coordinate
@@ -94,6 +95,7 @@ struct TileMapContainer: UIViewRepresentable {
             drawingSession: drawingSession, measureSession: measureSession,
             calibration: calibration, onMutationError: onMutationError)
         context.coordinator.editing.onPresenceTap = onPeerTap
+        context.coordinator.editing.onEmptyMapLongPress = onEmptyMapLongPress
         return view
     }
 
@@ -101,6 +103,7 @@ struct TileMapContainer: UIViewRepresentable {
         // SwiftUI may replace the state-capturing closure between updates.
         context.coordinator.editing.onMutationError = onMutationError
         context.coordinator.editing.onPresenceTap = onPeerTap
+        context.coordinator.editing.onEmptyMapLongPress = onEmptyMapLongPress
         view.isRotationGestureEnabled = opsec.mapOrientationMode == .northUp
         // Only swap the source on an actual style change (assigning it clears the
         // tile cache), and only republish when the waypoint set changes - else

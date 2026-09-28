@@ -107,6 +107,10 @@ quadrangle (public domain) rendered live over the satellite. Run
   true WGS84 geodesic circle, saved as a dashed line drawing on the symbol's
   layer in its affiliation colour, so rings sync, export, hide and undo (as one
   step) like any drawing. They stay centred on the symbol when it moves.
+- **Long-press menu** — hold on an empty spot of the map to place a symbol
+  there, start a measurement from it, add range rings around it, see its sun
+  and moon times, or copy its coordinate (cleared from the clipboard after
+  two minutes). Placing symbols and rings is hidden while graphics are locked.
 - **Sortable symbol list** — **☰ → Symbology** sorts by newest first, name
   (numbers in numeric order), distance from the crosshair, or grouped by
   affiliation or layer. The choice is remembered.

@@ -20,6 +20,12 @@
     <string name="import_invalid_summary">"%1$s Invalid features skipped: %2$s."</string>
     <string name="input_decimal_hint">"Use a decimal point or your language’s decimal separator. Do not use thousands separators."</string>
     <string name="live_location_approximate_guidance">"Approximate location cannot provide TacMap\'s on-device GPS position. Allow Precise location, then try again."</string>
+    <string name="map_point_copy">"Copy Coordinates"</string>
+    <string name="map_point_measure">"Measure From Here"</string>
+    <string name="map_point_place_symbol">"Place Symbol Here"</string>
+    <string name="map_point_range_rings">"Range Rings Here"</string>
+    <string name="map_point_sun_moon">"Sun and Moon Here"</string>
+    <string name="map_point_symbol_added">"Added %1$s"</string>
     <string name="online_basemaps_disabled">"Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy &amp; OPSEC."</string>
     <string name="pdf_rotation_unsupported">"This PDF\'s first page is rotated %1$s°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy."</string>
     <string name="privacy_setting_save_failed">"Could not save this privacy setting. The previous setting remains active; check available storage and try again."</string>
@@ -34,6 +40,7 @@
     <string name="rings_create">"Add Rings"</string>
     <string name="rings_fewer">"Fewer rings"</string>
     <string name="rings_help">"Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings and stay centred on the symbol when it moves."</string>
+    <string name="rings_help_point">"Rings are added as dashed line drawings on the active layer. They sync, export and undo like other drawings."</string>
     <string name="rings_invalid">"Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol."</string>
     <string name="rings_more">"More rings"</string>
     <string name="rings_not_created">"Range Rings Not Created"</string>

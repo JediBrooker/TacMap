@@ -126,6 +126,21 @@ enum Messages {
     static func legacyLayerHistoryHelpMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.legacy_layer_history_help", fallback: "Some legacy layers have ambiguous default-layer history. Confirm each one as custom or default before renaming, recolouring, or deleting it.", arguments: [])
     }
+    static func mapPointCopy() -> String {
+        L10n.message("id.map_point_copy", fallback: "Copy Coordinates")
+    }
+    static func mapPointMeasure() -> String {
+        L10n.message("id.map_point_measure", fallback: "Measure From Here")
+    }
+    static func mapPointPlaceSymbol() -> String {
+        L10n.message("id.map_point_place_symbol", fallback: "Place Symbol Here")
+    }
+    static func mapPointRangeRings() -> String {
+        L10n.message("id.map_point_range_rings", fallback: "Range Rings Here")
+    }
+    static func mapPointSunMoon() -> String {
+        L10n.message("id.map_point_sun_moon", fallback: "Sun and Moon Here")
+    }
     static func newLayerSaveFailed(_ detail: String) -> String {
         L10n.message("id.new_layer_save_failed", fallback: "Could not save new layer to disk: %1$@", detail)
     }
@@ -167,6 +182,9 @@ enum Messages {
     }
     static func ringsHelp() -> String {
         L10n.message("id.rings_help", fallback: "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings and stay centred on the symbol when it moves.")
+    }
+    static func ringsHelpPoint() -> String {
+        L10n.message("id.rings_help_point", fallback: "Rings are added as dashed line drawings on the active layer. They sync, export and undo like other drawings.")
     }
     static func ringsInvalid() -> String {
         L10n.message("id.rings_invalid", fallback: "Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol.")

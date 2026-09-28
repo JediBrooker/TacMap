@@ -532,6 +532,7 @@ struct ContentView: View {
     @State private var showAboutSheet      = false
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
     @State private var quickSymbolDraft: QuickSymbolDraft? = nil
+    @State private var mapPressPoint: MapPressPoint? = nil
     /// View-owned drawing slider candidate. Rendered on the map without
     /// publishing through DrawingStore/Sync until the gesture ends.
     @State private var drawingControlsPreview: DrawingShape? = nil
@@ -748,7 +749,11 @@ struct ContentView: View {
                     drawingControlsPreview: drawingControlsPreview,
                     peers: syncManager.peers,
                     onPeerTap: presentDirectChat,
-                    onMutationError: { missionMutationMessage = $0 }
+                    onMutationError: { missionMutationMessage = $0 },
+                    onEmptyMapLongPress: { coordinate in
+                        mapPressPoint = MapPressPoint(coordinate: coordinate,
+                                                      format: opsec.coordinateDisplayFormat)
+                    }
                 )
                 .ignoresSafeArea()
                 .overlay {
@@ -942,6 +947,21 @@ struct ContentView: View {
                               mapVM: mapVM)
                 .padSheetSizing()
         }
+        .modifier(MapPointMenuModifier(
+            point: $mapPressPoint,
+            drawingStore: drawingStore,
+            canEdit: !graphicsLocked,
+            onPlaceSymbol: { beginQuickSymbolCreation(at: $0) },
+            onMeasure: { coordinate in
+                drawingsPanelOpen = false
+                drawingSession.cancel()
+                measureSession.start()
+                measureSession.addPoint(coordinate)
+            },
+            onCopied: { format in
+                showTransientToast(L10n.text("%1$@ copied", format.label))
+            }
+        ))
         .sheet(item: $quickSymbolDraft) { draft in
             WaypointCreationSheet(
                 waypointStore: waypointStore,
@@ -1622,13 +1642,18 @@ struct ContentView: View {
     /// Preserve an already-visible active layer; if it is hidden, prefer another
     /// visible layer without changing the user's active-layer selection.
     private func beginQuickSymbolCreation() {
+        beginQuickSymbolCreation(at: mapVM.cameraCentre)
+    }
+
+    /// Opens the symbol builder for a long-pressed map point.
+    private func beginQuickSymbolCreation(at coordinate: CLLocationCoordinate2D) {
         drawingsPanelOpen = false
         mapVM.selectedWaypointID = nil
         mapVM.selectedDrawingID = nil
         visibility.waypointsVisible = true
         guard let layerID = visibleLayerIDForQuickSymbol() else { return }
         quickSymbolDraft = QuickSymbolDraft(
-            coordinate: mapVM.cameraCentre,
+            coordinate: coordinate,
             layerID: layerID,
             scale: mapVM.defaultControlMeasureScale
         )

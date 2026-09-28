@@ -27,6 +27,11 @@
 "id.layer_waypoints_save_failed" = "Einsatzwegpunkte konnten nicht gespeichert werden: %1$@. Es wurde keine unsichere Ebenenänderung übernommen. Versuche es erneut.";
 "id.layers_screen_title" = "Ebenen";
 "id.legacy_layer_history_help" = "Bei einigen älteren Ebenen ist unklar, ob sie ursprünglich Standardebenen waren. Bestätige für jede Ebene, ob sie benutzerdefiniert oder eine Standardebene ist, bevor du sie umbenennst, umfärbst oder löschst.";
+"id.map_point_copy" = "Koordinaten kopieren";
+"id.map_point_measure" = "Von hier messen";
+"id.map_point_place_symbol" = "Symbol hier platzieren";
+"id.map_point_range_rings" = "Entfernungsringe hier";
+"id.map_point_sun_moon" = "Sonne und Mond hier";
 "id.new_layer_save_failed" = "Die neue Ebene konnte nicht gespeichert werden: %1$@";
 "id.online_basemaps_disabled" = "Online-Grundkarten sind deaktiviert. Importiere ein Offline-Kartenpaket oder aktiviere Online-Kartenkacheln unter „Einstellungen, Datenschutz und OPSEC“.";
 "id.recording_status_idle" = "INAKTIV";
@@ -36,6 +41,7 @@
 "id.rings_count_value" = "Ringe: %1$@";
 "id.rings_create" = "Ringe hinzufügen";
 "id.rings_help" = "Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht und bleiben auf das Symbol zentriert, wenn es verschoben wird.";
+"id.rings_help_point" = "Die Ringe werden als gestrichelte Linienzeichnungen auf der aktiven Ebene angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht.";
 "id.rings_invalid" = "Gib einen Abstand größer als null ein. Du kannst bis zu 10 Ringe hinzufügen; der äußere Ring darf höchstens 1000 km vom Symbol entfernt sein.";
 "id.rings_not_created" = "Entfernungsringe nicht erstellt";
 "id.rings_preview" = "Ringe bei";

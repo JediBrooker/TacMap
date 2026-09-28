@@ -1859,5 +1859,17 @@
     "platform": "android",
     "area": "drawings-layers",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/MapPointMenu.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapPointMenu.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
   }
 ]

@@ -66,6 +66,18 @@ object Messages {
         L10n.message("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.")
     fun liveLocationApproximateGuidanceMessage(): LocalizedMessage =
         LocalizedMessage("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.", listOf())
+    fun mapPointCopy(): String =
+        L10n.message("id.map_point_copy", "Copy Coordinates")
+    fun mapPointMeasure(): String =
+        L10n.message("id.map_point_measure", "Measure From Here")
+    fun mapPointPlaceSymbol(): String =
+        L10n.message("id.map_point_place_symbol", "Place Symbol Here")
+    fun mapPointRangeRings(): String =
+        L10n.message("id.map_point_range_rings", "Range Rings Here")
+    fun mapPointSunMoon(): String =
+        L10n.message("id.map_point_sun_moon", "Sun and Moon Here")
+    fun mapPointSymbolAdded(name: String): String =
+        L10n.message("id.map_point_symbol_added", "Added %1\$s", name)
     fun onlineBasemapsDisabled(): String =
         L10n.message("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
     fun onlineBasemapsDisabledMessage(): LocalizedMessage =
@@ -112,6 +124,8 @@ object Messages {
         L10n.message("id.rings_fewer", "Fewer rings")
     fun ringsHelp(): String =
         L10n.message("id.rings_help", "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings and stay centred on the symbol when it moves.")
+    fun ringsHelpPoint(): String =
+        L10n.message("id.rings_help_point", "Rings are added as dashed line drawings on the active layer. They sync, export and undo like other drawings.")
     fun ringsInvalid(): String =
         L10n.message("id.rings_invalid", "Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol.")
     fun ringsMore(): String =

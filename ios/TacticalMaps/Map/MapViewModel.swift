@@ -439,10 +439,13 @@ final class MapViewModel: ObservableObject {
     }
 
     var headerWGS84: String {
-        let c = headerCoordinate
-        return String(format: "%.5f° %@, %.5f° %@",
-                      abs(c.latitude),  c.latitude  >= 0 ? "N" : "S",
-                      abs(c.longitude), c.longitude >= 0 ? "E" : "W")
+        Self.wgs84Text(for: headerCoordinate)
+    }
+
+    static func wgs84Text(for c: CLLocationCoordinate2D) -> String {
+        String(format: "%.5f° %@, %.5f° %@",
+               abs(c.latitude),  c.latitude  >= 0 ? "N" : "S",
+               abs(c.longitude), c.longitude >= 0 ? "E" : "W")
     }
 
     var headerUTM: String {

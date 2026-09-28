@@ -67,6 +67,9 @@ fun RangeRingsDialog(
     layerColor: Int?,
     onCreate: (List<DrawingFeature>) -> Boolean,
     onDismiss: () -> Unit,
+    /** False for rings around a long-pressed map point: [waypoint] then only
+     * supplies the centre, name and layer, and the rings stay where drawn. */
+    anchored: Boolean = true,
 ) {
     val density = LocalDensity.current.density
     var storedCount by rememberPersistedString("range_rings_count", "3")
@@ -137,7 +140,11 @@ fun RangeRingsDialog(
                 } else {
                     Text(Messages.ringsInvalid(), color = Color(0xFFB00020))
                 }
-                Text(Messages.ringsHelp(), fontSize = 11.sp, color = Color.Gray)
+                Text(
+                    if (anchored) Messages.ringsHelp() else Messages.ringsHelpPoint(),
+                    fontSize = 11.sp,
+                    color = Color.Gray,
+                )
             }
         },
         confirmButton = {
@@ -146,6 +153,7 @@ fun RangeRingsDialog(
                 onClick = {
                     val selected = radii ?: return@TextButton
                     val rings = RangeRings.features(waypoint, selected, layerColor, density)
+                        .map { if (anchored) it else it.copy(anchorId = null, ringRadiusMetres = null) }
                     if (onCreate(rings)) onDismiss()
                 },
             ) {

@@ -12431,6 +12431,55 @@
         "translation": "9d3711aeb82da6aa7b6c0cdbe41c0ab7db7e2787ca79a43c6cd91441a09b7ec3",
         "status": "reviewed"
       }
+    },
+    "map_point_place_symbol": {
+      "de": {
+        "source": "8b0b0f5dfb5bc55f6eb00ef036702cc4ba8f5abb2fdc76511993ffb13aa48634",
+        "translation": "d6e49d20d920456f4eb23df0258230d5e73c2e06e2b129b72929bd0a813f8a9b",
+        "status": "reviewed"
+      }
+    },
+    "map_point_measure": {
+      "de": {
+        "source": "82e73ab57aa64a88eb98fb324f85291f2229d8b20527cce29f5d48a0bb53be62",
+        "translation": "400314e82f91284d87b477c16a7ad18b477a7ec4c664648d9a227a4708685d42",
+        "status": "reviewed"
+      }
+    },
+    "map_point_range_rings": {
+      "de": {
+        "source": "4f0345bd1495bb7afa7b538e9ac9201c821fe36f9bc8e8362f295a6bea20df14",
+        "translation": "1048998e99f75736487b38efd4c27dd099017e5f5bad73a4a3498d65e0e3eaf5",
+        "status": "reviewed"
+      }
+    },
+    "map_point_sun_moon": {
+      "de": {
+        "source": "f025f3ceb6b47755f5d0b8d4df95a95a3d67302368b27541844920262050131e",
+        "translation": "3711a1de3f6e25394796d167d1037f576b75fb7e5813166af2c9b6204f011ddf",
+        "status": "reviewed"
+      }
+    },
+    "map_point_copy": {
+      "de": {
+        "source": "dd3b8f6e6354fe8a5ef2251f4956b7d4de48f14ab53dcdb08282d366dac36f62",
+        "translation": "2811340a3c09332de12778dbd1b93d6262ff904cc581e6069f5e28f5240c7ae1",
+        "status": "reviewed"
+      }
+    },
+    "map_point_symbol_added": {
+      "de": {
+        "source": "c0755ee6fc26ad3694d23b6f201bb1f10896d96a274d917eae01637341fe71ec",
+        "translation": "6d3d93703b2d5a083e95c4aacf6a363398b75f165dfaa7ef204681de8b513c82",
+        "status": "reviewed"
+      }
+    },
+    "rings_help_point": {
+      "de": {
+        "source": "586f5e26115e421ef8c2c22dde99a89e3f8881d9a4b64893f5b2670d5af51386",
+        "translation": "2087f04329d4fece96feb4b17eb306540a9e1e484090ed47d9b5dc04ee023df0",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

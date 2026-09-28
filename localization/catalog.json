@@ -15819,5 +15819,93 @@
     "legacy": false,
     "accessor": "exportKmzRow",
     "parameters": []
+  },
+  "map_point_place_symbol": {
+    "en": "Place Symbol Here",
+    "de": "Symbol hier platzieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Long-press map menu: opens the symbol builder at the pressed point (on Android a heading above the unit, task and marker choices).",
+    "legacy": false,
+    "accessor": "mapPointPlaceSymbol",
+    "parameters": []
+  },
+  "map_point_measure": {
+    "en": "Measure From Here",
+    "de": "Von hier messen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Long-press map menu: starts a distance measurement with the pressed point as its first point.",
+    "legacy": false,
+    "accessor": "mapPointMeasure",
+    "parameters": []
+  },
+  "map_point_range_rings": {
+    "en": "Range Rings Here",
+    "de": "Entfernungsringe hier",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Long-press map menu: adds concentric range rings centred on the pressed point.",
+    "legacy": false,
+    "accessor": "mapPointRangeRings",
+    "parameters": []
+  },
+  "map_point_sun_moon": {
+    "en": "Sun and Moon Here",
+    "de": "Sonne und Mond hier",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Long-press map menu: shows offline twilight, sunrise/sunset and moon times for the pressed point.",
+    "legacy": false,
+    "accessor": "mapPointSunMoon",
+    "parameters": []
+  },
+  "map_point_copy": {
+    "en": "Copy Coordinates",
+    "de": "Koordinaten kopieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Long-press map menu: copies the pressed point's coordinate (in the chosen MGRS/WGS84/UTM format) to the clipboard for two minutes.",
+    "legacy": false,
+    "accessor": "mapPointCopy",
+    "parameters": []
+  },
+  "map_point_symbol_added": {
+    "en": "Added {1}",
+    "de": "{1} hinzugefügt",
+    "platforms": [
+      "android"
+    ],
+    "context": "Toast after placing a symbol from the long-press map menu. {1} is the symbol's name.",
+    "legacy": false,
+    "accessor": "mapPointSymbolAdded",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "rings_help_point": {
+    "en": "Rings are added as dashed line drawings on the active layer. They sync, export and undo like other drawings.",
+    "de": "Die Ringe werden als gestrichelte Linienzeichnungen auf der aktiven Ebene angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Help text in the range rings dialog when rings are drawn around a long-pressed map point rather than a symbol.",
+    "legacy": false,
+    "accessor": "ringsHelpPoint",
+    "parameters": []
   }
 }

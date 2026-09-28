@@ -648,10 +648,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     val headerWgs84: String get() {
         val (lat, lng) = headerCoordinate
-        return "%.5f° %s, %.5f° %s".format(
-            abs(lat), if (lat >= 0) "N" else "S",
-            abs(lng), if (lng >= 0) "E" else "W"
-        )
+        return wgs84Text(lat, lng)
     }
 
     val headerUtm: String get() {
@@ -681,3 +678,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
     }
 }
+
+/** Decimal-degree readout used by the header and the long-press point menu. */
+internal fun wgs84Text(lat: Double, lng: Double): String =
+    "%.5f° %s, %.5f° %s".format(
+        abs(lat), if (lat >= 0) "N" else "S",
+        abs(lng), if (lng >= 0) "E" else "W"
+    )

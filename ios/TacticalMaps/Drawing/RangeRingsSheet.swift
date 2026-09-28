@@ -23,11 +23,14 @@ enum RangeRingUnit: String, CaseIterable, Identifiable {
 }
 
 /// Adds range rings around the selected symbol as ordinary line drawings on
-/// its layer, committed as one undo step.
+/// its layer, committed as one undo step. With `anchored` false (rings around
+/// a long-pressed map point) `waypoint` only supplies the centre, name and
+/// layer, and the rings stay where they are drawn.
 struct RangeRingsSheet: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var drawingStore: DrawingStore
     let waypoint: Waypoint
+    var anchored = true
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("rangeRings.count") private var count = 3
@@ -77,7 +80,7 @@ struct RangeRingsSheet: View {
                 } header: {
                     Text(Messages.ringsPreview())
                 } footer: {
-                    Text(Messages.ringsHelp())
+                    Text(anchored ? Messages.ringsHelp() : Messages.ringsHelpPoint())
                 }
             }
             .navigationTitle(Messages.ringsTitle())
@@ -102,11 +105,17 @@ struct RangeRingsSheet: View {
 
     private func create() {
         guard let radii else { return }
-        let shapes = RangeRings.shapes(
+        var shapes = RangeRings.shapes(
             around: waypoint,
             radii: radii,
             layerColorHex: drawingStore.layer(id: waypoint.layerID)?.defaultColorHex
         )
+        if !anchored {
+            for index in shapes.indices {
+                shapes[index].anchorWaypointID = nil
+                shapes[index].ringRadiusMetres = nil
+            }
+        }
         do {
             _ = try drawingStore.addBatchDurably(shapes, actionName: Messages.ringsUndoAction())
             dismiss()

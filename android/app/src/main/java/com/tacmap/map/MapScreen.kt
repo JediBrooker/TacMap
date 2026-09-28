@@ -158,7 +158,9 @@ import java.io.File
 private data class QuickAddTarget(
     val latitude: Double,
     val longitude: Double,
-    val layerId: String
+    val layerId: String,
+    /** Placed from the long-press point menu rather than at the crosshair. */
+    val fromPointMenu: Boolean = false,
 )
 
 private data class PendingDrawingMutation(
@@ -287,6 +289,9 @@ internal fun MapScreen(
     var quickAddMenuOpen by remember { mutableStateOf(false) }
     var quickAddTarget by remember { mutableStateOf<QuickAddTarget?>(null) }
     var quickAddEditorMode by remember { mutableStateOf<SymbolEditorMode?>(null) }
+    var mapPressPoint by remember { mutableStateOf<MapPressPoint?>(null) }
+    var pointSunMoon by remember { mutableStateOf<MapPressPoint?>(null) }
+    var pointRingsCentre by remember { mutableStateOf<Waypoint?>(null) }
     var quickAddCreationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     /// weather/UAV widget target = (lat, lng) of map centre, null when closed
     var weatherTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
@@ -981,8 +986,57 @@ internal fun MapScreen(
                 onMapTap = {
                     if (selectedWaypointId != null) vm.selectWaypoint(null)
                     selectedDrawingId = null
-                }
+                },
+                onMapLongPress = { lat, lng, screen ->
+                    mapPressPoint = MapPressPoint.at(lat, lng, screen, primaryCoordinateType)
+                },
             )
+            mapPressPoint?.let { point ->
+                MapPointMenu(
+                    point = point,
+                    canEdit = quickAddAllowed,
+                    onPlaceSymbol = { mode ->
+                        mapPressPoint = null
+                        quickAddCreationError = null
+                        quickAddTarget = QuickAddTarget(point.latitude, point.longitude, quickAddLayerId, fromPointMenu = true)
+                        quickAddEditorMode = mode
+                    },
+                    onMeasure = {
+                        mapPressPoint = null
+                        stopDrawing()
+                        measureSession.start()
+                        measureSession.addPoint(point.latitude, point.longitude)
+                    },
+                    onRangeRings = {
+                        mapPressPoint = null
+                        pointRingsCentre = Waypoint(
+                            name = point.coordinate.text,
+                            latitude = point.latitude,
+                            longitude = point.longitude,
+                            layerId = quickAddLayerId,
+                        )
+                    },
+                    onSunMoon = {
+                        mapPressPoint = null
+                        pointSunMoon = point
+                    },
+                    onCopy = {
+                        mapPressPoint = null
+                        val type = point.coordinate.type.displayName
+                        val copied = com.tacmap.util.copySensitivePlainText(
+                            context,
+                            L10n.text("%1\$s coordinate", type),
+                            point.coordinate.text,
+                        )
+                        Toast.makeText(
+                            context,
+                            if (copied) L10n.text("%1\$s copied", type) else L10n.text("Unable to copy %1\$s", type.lowercase()),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                    onDismiss = { mapPressPoint = null },
+                )
+            }
 
         // Crosshair now renders inside CustomMapScreen (under the user-location
         // dot) so the dot isn't swallowed when the map follows the user.
@@ -1536,7 +1590,12 @@ internal fun MapScreen(
                                 )
                             }
                         vm.selectWaypoint(result.waypoint.id)
-                        Toast.makeText(context, L10n.text("Added %1\$s at crosshair", name), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            context,
+                            if (capturedQuickTarget.fromPointMenu) Messages.mapPointSymbolAdded(name)
+                            else L10n.text("Added %1\$s at crosshair", name),
+                            Toast.LENGTH_SHORT,
+                        ).show()
                         quickAddCreationError = null
                         quickAddEditorMode = null
                         quickAddTarget = null
@@ -1652,6 +1711,25 @@ internal fun MapScreen(
 
     if (showAboutDialog) {
         AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    pointSunMoon?.let { point ->
+        PointSunMoonDialog(point = point, onDismiss = { pointSunMoon = null })
+    }
+
+    pointRingsCentre?.let { centre ->
+        RangeRingsDialog(
+            waypoint = centre,
+            layerColor = drawingDocument.layers.firstOrNull { it.id == centre.layerId }?.color,
+            onCreate = { rings ->
+                performDrawingMutation(
+                    intent = DrawingMutationIntent.CREATE,
+                    persist = { drawingStore.addFeatures(rings) },
+                ).saved
+            },
+            onDismiss = { pointRingsCentre = null },
+            anchored = false,
+        )
     }
 
     weatherTarget?.let { (lat, lng) ->

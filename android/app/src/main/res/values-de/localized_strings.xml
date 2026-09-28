@@ -20,6 +20,12 @@
     <string name="import_invalid_summary">"%1$s Ungültige Objekte übersprungen: %2$s."</string>
     <string name="input_decimal_hint">"Verwende einen Dezimalpunkt oder das Dezimaltrennzeichen deiner Sprache. Verwende keine Tausendertrennzeichen."</string>
     <string name="live_location_approximate_guidance">"Der ungefähre Standort kann TacMaps GPS-Position auf diesem Gerät nicht liefern. Erlaube den genauen Standort und versuche es erneut."</string>
+    <string name="map_point_copy">"Koordinaten kopieren"</string>
+    <string name="map_point_measure">"Von hier messen"</string>
+    <string name="map_point_place_symbol">"Symbol hier platzieren"</string>
+    <string name="map_point_range_rings">"Entfernungsringe hier"</string>
+    <string name="map_point_sun_moon">"Sonne und Mond hier"</string>
+    <string name="map_point_symbol_added">"%1$s hinzugefügt"</string>
     <string name="online_basemaps_disabled">"Online-Grundkarten sind deaktiviert. Importiere ein Offline-Kartenpaket oder aktiviere Online-Kartenkacheln unter „Einstellungen, Datenschutz und OPSEC“."</string>
     <string name="pdf_rotation_unsupported">"Die erste Seite dieser PDF ist um %1$s° gedreht. TacMap kann gedrehte Seiten noch nicht sicher georeferenzieren. Entferne die Seitendrehung in einem PDF-Editor oder drucke sie in eine neue PDF-Datei und importiere diese Kopie."</string>
     <string name="privacy_setting_save_failed">"Diese Datenschutzeinstellung konnte nicht gespeichert werden. Die bisherige Einstellung bleibt aktiv. Prüfe den verfügbaren Speicherplatz und versuche es erneut."</string>
@@ -34,6 +40,7 @@
     <string name="rings_create">"Ringe hinzufügen"</string>
     <string name="rings_fewer">"Weniger Ringe"</string>
     <string name="rings_help">"Die Ringe werden als gestrichelte Linienzeichnungen auf der Ebene des Symbols angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht und bleiben auf das Symbol zentriert, wenn es verschoben wird."</string>
+    <string name="rings_help_point">"Die Ringe werden als gestrichelte Linienzeichnungen auf der aktiven Ebene angelegt. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht."</string>
     <string name="rings_invalid">"Gib einen Abstand größer als null ein. Du kannst bis zu 10 Ringe hinzufügen; der äußere Ring darf höchstens 1000 km vom Symbol entfernt sein."</string>
     <string name="rings_more">"Mehr Ringe"</string>
     <string name="rings_not_created">"Entfernungsringe nicht erstellt"</string>

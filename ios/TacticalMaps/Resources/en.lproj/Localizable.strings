@@ -27,6 +27,11 @@
 "id.layer_waypoints_save_failed" = "Could not save mission waypoints: %1$@. No unsafe layer change was published; try again.";
 "id.layers_screen_title" = "Layers";
 "id.legacy_layer_history_help" = "Some legacy layers have ambiguous default-layer history. Confirm each one as custom or default before renaming, recolouring, or deleting it.";
+"id.map_point_copy" = "Copy Coordinates";
+"id.map_point_measure" = "Measure From Here";
+"id.map_point_place_symbol" = "Place Symbol Here";
+"id.map_point_range_rings" = "Range Rings Here";
+"id.map_point_sun_moon" = "Sun and Moon Here";
 "id.new_layer_save_failed" = "Could not save new layer to disk: %1$@";
 "id.online_basemaps_disabled" = "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.";
 "id.recording_status_idle" = "IDLE";
@@ -36,6 +41,7 @@
 "id.rings_count_value" = "Rings: %1$@";
 "id.rings_create" = "Add Rings";
 "id.rings_help" = "Rings are added as dashed line drawings on the symbol’s layer. They sync, export and undo like other drawings and stay centred on the symbol when it moves.";
+"id.rings_help_point" = "Rings are added as dashed line drawings on the active layer. They sync, export and undo like other drawings.";
 "id.rings_invalid" = "Enter a spacing greater than zero. You can add up to 10 rings, and the outer ring can be at most 1000 km from the symbol.";
 "id.rings_not_created" = "Range Rings Not Created";
 "id.rings_preview" = "Rings at";
