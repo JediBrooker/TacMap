@@ -18,12 +18,13 @@ final class NightModeSourceTests: XCTestCase {
             let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
             for (index, line) in lines.enumerated() {
                 let code = line.components(separatedBy: "//").first ?? ""
-                for presenter in [".sheet(", ".fullScreenCover(", ".popover("] where code.contains(presenter) {
+                for presenter in [".sheet(", ".fullScreenCover(", ".popover(", ".presentationDragIndicator("]
+                where code.contains(presenter) {
                     offenders.append("\(file.lastPathComponent):\(index + 1) uses \(presenter)")
                 }
             }
         }
-        XCTAssertEqual(offenders, [], "Use nightSheet so sheets turn red in night mode")
+        XCTAssertEqual(offenders, [], "Use nightSheet and nightDragIndicator so sheets stay red in night mode")
     }
 
     func testBrightnessIsClampedToTheSupportedRange() {

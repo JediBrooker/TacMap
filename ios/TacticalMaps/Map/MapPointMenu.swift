@@ -95,6 +95,7 @@ struct MapPointMenuModifier: ViewModifier {
             .nightSheet(item: $sunMoonPoint) { pressed in
                 PointSunMoonSheet(point: pressed)
                     .presentationDetents([.medium, .large])
+                    .nightDragIndicator()
             }
             .nightSheet(item: $ringCentre) { centre in
                 RangeRingsSheet(drawingStore: drawingStore, waypoint: centre, anchored: false)

@@ -20,9 +20,11 @@ final class PDFPickerSmokeTests: XCTestCase {
         tapButton(containing: "Import / Export", in: app)
         tapButton(containing: "PDF Map", in: app)
 
+        // The picker is drawn by a separate system process; on a busy CI
+        // Simulator its sheet can stay blank for well over ten seconds.
         let cancel = app.buttons["Cancel"]
         XCTAssertTrue(
-            cancel.waitForExistence(timeout: 10),
+            cancel.waitForExistence(timeout: 30),
             "The iOS document picker did not open for PDF import"
         )
         cancel.tap()

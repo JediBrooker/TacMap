@@ -1020,6 +1020,7 @@ struct ContentView: View {
         .nightSheet(isPresented: $showTips) {
             FirstRunTipsView()
                 .presentationDetents([.medium, .large])
+                .nightDragIndicator()
         }
         .nightSheet(isPresented: $showSyncSheet, onDismiss: {
             guard let route = pendingChatRoute else { return }

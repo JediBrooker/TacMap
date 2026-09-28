@@ -11,18 +11,48 @@ import SwiftUI
 /// night mode is off so toggling never replaces the view tree.
 struct NightModeContent: ViewModifier {
     @ObservedObject private var opsec = OpsecSettings.shared
+    /// iOS draws a sheet's own background outside its content, where these
+    /// effects cannot reach, so a sheet gets a black one inside it at night.
+    private let isSheet: Bool
+
+    init(isSheet: Bool = false) {
+        self.isSheet = isSheet
+    }
 
     func body(content: Content) -> some View {
         let on = opsec.nightMode
         content
+            .background {
+                if isSheet && on { Color.black.ignoresSafeArea() }
+            }
             .grayscale(on ? 1 : 0)
             .colorMultiply(on ? Color(red: opsec.nightModeBrightness, green: 0, blue: 0) : .white)
+    }
+}
+
+/// Sheet grabbers are drawn by iOS outside the sheet's content too, so they
+/// are hidden while night mode is on.
+private struct NightDragIndicator: ViewModifier {
+    @ObservedObject private var opsec = OpsecSettings.shared
+    private let visibility: Visibility
+
+    init(visibility: Visibility) {
+        self.visibility = visibility
+    }
+
+    func body(content: Content) -> some View {
+        content.presentationDragIndicator(opsec.nightMode ? .hidden : visibility)
     }
 }
 
 extension View {
     func nightModeContent() -> some View {
         modifier(NightModeContent())
+    }
+
+    /// Use instead of `.presentationDragIndicator` on sheet content.
+    func nightDragIndicator(_ visibility: Visibility = .automatic) -> some View {
+        modifier(NightDragIndicator(visibility: visibility))
     }
 
     /// Use instead of `.sheet`: sheets are separate hosting controllers, so
@@ -34,7 +64,7 @@ extension View {
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         sheet(isPresented: isPresented, onDismiss: onDismiss) {
-            content().nightModeContent()
+            content().modifier(NightModeContent(isSheet: true))
         }
     }
 
@@ -44,7 +74,7 @@ extension View {
         @ViewBuilder content: @escaping (Item) -> Content
     ) -> some View {
         sheet(item: item, onDismiss: onDismiss) { value in
-            content(value).nightModeContent()
+            content(value).modifier(NightModeContent(isSheet: true))
         }
     }
 }
