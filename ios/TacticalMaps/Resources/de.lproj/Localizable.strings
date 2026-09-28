@@ -33,6 +33,11 @@
 "id.map_point_range_rings" = "Entfernungsringe hier";
 "id.map_point_sun_moon" = "Sonne und Mond hier";
 "id.new_layer_save_failed" = "Die neue Ebene konnte nicht gespeichert werden: %1$@";
+"id.night_mode_brightness" = "Helligkeit im Nachtmodus";
+"id.night_mode_help" = "Färbt den ganzen Bildschirm einschließlich Menüs und Dialogen rot und dunkelt ihn ab, um die Nachtsicht zu schützen. Die Statusleiste ist dabei ausgeblendet. Du schaltest ihn über die Mondtaste auf der Karte um.";
+"id.night_mode_title" = "Nachtmodus";
+"id.night_mode_turn_off" = "Nachtmodus ausschalten";
+"id.night_mode_turn_on" = "Nachtmodus einschalten";
 "id.online_basemaps_disabled" = "Online-Grundkarten sind deaktiviert. Importiere ein Offline-Kartenpaket oder aktiviere Online-Kartenkacheln unter „Einstellungen, Datenschutz und OPSEC“.";
 "id.recording_status_idle" = "INAKTIV";
 "id.recording_status_interrupted" = "UNTERBROCHEN";

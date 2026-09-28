@@ -147,6 +147,21 @@ enum Messages {
     static func newLayerSaveFailedMessage(_ detail: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.new_layer_save_failed", fallback: "Could not save new layer to disk: %1$@", arguments: [detail])
     }
+    static func nightModeBrightness() -> String {
+        L10n.message("id.night_mode_brightness", fallback: "Night mode brightness")
+    }
+    static func nightModeHelp() -> String {
+        L10n.message("id.night_mode_help", fallback: "Turns the whole screen, including menus and dialogs, red and dims it to protect night vision. The status bar is hidden while it is on. Toggle it from the moon button on the map.")
+    }
+    static func nightModeTitle() -> String {
+        L10n.message("id.night_mode_title", fallback: "Night mode")
+    }
+    static func nightModeTurnOff() -> String {
+        L10n.message("id.night_mode_turn_off", fallback: "Turn off night mode")
+    }
+    static func nightModeTurnOn() -> String {
+        L10n.message("id.night_mode_turn_on", fallback: "Turn on night mode")
+    }
     static func onlineBasemapsDisabled() -> String {
         L10n.message("id.online_basemaps_disabled", fallback: "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
     }

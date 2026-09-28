@@ -26,6 +26,11 @@
     <string name="map_point_range_rings">"Range Rings Here"</string>
     <string name="map_point_sun_moon">"Sun and Moon Here"</string>
     <string name="map_point_symbol_added">"Added %1$s"</string>
+    <string name="night_mode_brightness">"Night mode brightness"</string>
+    <string name="night_mode_help">"Turns the whole screen, including menus and dialogs, red and dims it to protect night vision. The status bar is hidden while it is on. Toggle it from the moon button on the map."</string>
+    <string name="night_mode_title">"Night mode"</string>
+    <string name="night_mode_turn_off">"Turn off night mode"</string>
+    <string name="night_mode_turn_on">"Turn on night mode"</string>
     <string name="online_basemaps_disabled">"Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy &amp; OPSEC."</string>
     <string name="pdf_rotation_unsupported">"This PDF\'s first page is rotated %1$s°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy."</string>
     <string name="privacy_setting_save_failed">"Could not save this privacy setting. The previous setting remains active; check available storage and try again."</string>

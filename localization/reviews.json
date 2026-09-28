@@ -12578,6 +12578,41 @@
         "translation": "08389e6e15c605d8f75fa517de6d26d63c5dddc4b3aa4062981f29434b4c1f1e",
         "status": "reviewed"
       }
+    },
+    "night_mode_title": {
+      "de": {
+        "source": "f04680dc5a6ece724cf470370e26cfa5733f785789c9c19fdd23a586f2fb304d",
+        "translation": "cc51d0cc5ff2460e6b32ae91df2f7f2ff209cf5ecb60b1e6373db972a83db952",
+        "status": "reviewed"
+      }
+    },
+    "night_mode_brightness": {
+      "de": {
+        "source": "0416f10be7fcdee22baee5673055fb5b5375374e5f8f9f6a0a14028a135d569e",
+        "translation": "737cf65696ac6d5f3587a92b3c0f3b5b3eaf2c114f9e9d872ed31f1b8192258d",
+        "status": "reviewed"
+      }
+    },
+    "night_mode_help": {
+      "de": {
+        "source": "ac01c828fd47a0670721f7bd45dbbb7b9fd0d760568acf1edd0bb7c30c02218d",
+        "translation": "fcc4edf14ccfbfc72cf562f4f9fe19a00c5f703e0a4f7e44b2e7055f0d3fc5c6",
+        "status": "reviewed"
+      }
+    },
+    "night_mode_turn_on": {
+      "de": {
+        "source": "3e4f8ac602927581e210c2bd3c96cf4291f110b70344b79d4a48089ccf31e84d",
+        "translation": "c47be11ca114eef43bbd3ba57b0898a2f302175be04da7c1fa8c29668aca80db",
+        "status": "reviewed"
+      }
+    },
+    "night_mode_turn_off": {
+      "de": {
+        "source": "6cfdf39d067d32b93515abb379b64e6c4eecaa4e7b7606a817de2a47ed293ddd",
+        "translation": "2e6aec3d12f7695eb5afd620e70788f386572a27f9a6d7eb1c2af7bacb4109d1",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

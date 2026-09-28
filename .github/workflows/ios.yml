@@ -193,6 +193,7 @@ jobs:
             -derivedDataPath build \
             -only-testing:TacticalMapsUITests/PDFPickerSmokeTests \
             -only-testing:TacticalMapsUITests/SettingsLanguageTests \
+            -only-testing:TacticalMapsUITests/NightModeTests \
             -parallel-testing-enabled NO \
             -resultBundlePath PDFSmokeResults.xcresult \
             test 2>&1 | tee pdf-smoke-test.log | xcbeautify --renderer github-actions

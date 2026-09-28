@@ -20,7 +20,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.tacmap.ui.AlertDialog
+import com.tacmap.ui.NightWindowFilter
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -28,6 +29,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -70,6 +72,8 @@ fun OpsecSettingsDialog(
     val primaryCoordinateType by opsec.primaryCoordinateType.collectAsState()
     val mapOrientationMode by opsec.mapOrientationMode.collectAsState()
     val keepScreenOn by opsec.keepScreenOn.collectAsState()
+    val nightMode by opsec.nightMode.collectAsState()
+    val nightModeBrightness by opsec.nightModeBrightness.collectAsState()
     val persistenceIssue by opsec.persistenceIssue.collectAsState()
     var backgroundIntervalExpanded by remember { mutableStateOf(false) }
     var authBound by remember { mutableStateOf(DataKey.isAuthBound) }
@@ -182,6 +186,14 @@ fun OpsecSettingsDialog(
                 Text(Messages.settingsDisplayTitle(), fontWeight = FontWeight.SemiBold)
                 SettingRow(keepScreenOn, { opsec.setKeepScreenOn(it) }, Messages.settingsKeepScreenOn())
                 Caption(Messages.settingsKeepScreenOnHelp())
+                SettingRow(nightMode, { opsec.setNightMode(it) }, Messages.nightModeTitle())
+                Text(Messages.nightModeBrightness())
+                Slider(
+                    value = nightModeBrightness,
+                    onValueChange = { opsec.setNightModeBrightness(it) },
+                    valueRange = OpsecSettings.NIGHT_MODE_BRIGHTNESS_RANGE,
+                )
+                Caption(Messages.nightModeHelp())
                 onShowTips?.let { showTips ->
                     TextButton(onClick = showTips) { Text(Messages.tipsShowAgain()) }
                 }
@@ -223,6 +235,7 @@ fun OpsecSettingsDialog(
                         expanded = backgroundIntervalExpanded,
                         onDismissRequest = { backgroundIntervalExpanded = false },
                     ) {
+                        NightWindowFilter() // menus draw in their own window
                         BackgroundUnitSyncInterval.entries.forEach { interval ->
                             DropdownMenuItem(
                                 text = { Text(interval.displayName) },

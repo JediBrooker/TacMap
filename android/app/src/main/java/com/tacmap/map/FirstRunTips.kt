@@ -11,7 +11,7 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.SettingsInputAntenna
-import androidx.compose.material3.AlertDialog
+import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text

@@ -894,10 +894,13 @@ struct ContentView: View {
         } message: { guidance in
             Text(guidance.message)
         }
+        // System status icons are drawn outside the app and would stay white.
+        .statusBarHidden(opsec.nightMode)
         .task {
             drawingStore.undoManager = undoManager
             waypointStore.undoManager = undoManager
             ringFollower.attach(waypointStore: waypointStore, drawingStore: drawingStore)
+            NightModeController.shared.start()
             presentTipsIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidCloseUndoGroup)) { _ in
@@ -1457,6 +1460,10 @@ struct ContentView: View {
 
                     UnitLabelsToggle(active: visibility.unitLabelsVisible) {
                         visibility.unitLabelsVisible.toggle()
+                    }
+
+                    NightModeToggle(active: opsec.nightMode) {
+                        _ = opsec.setNightMode(!opsec.nightMode)
                     }
 
                     if drawingsPanelOpen {

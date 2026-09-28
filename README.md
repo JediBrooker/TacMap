@@ -111,6 +111,10 @@ quadrangle (public domain) rendered live over the satellite. Run
   there, start a measurement from it, add range rings around it, see its sun
   and moon times, or copy its coordinate (cleared from the clipboard after
   two minutes). Placing symbols and rings is hidden while graphics are locked.
+- **Night mode** — the moon button on the map turns the whole display red,
+  including menus, sheets and dialogs, and dims it to protect night vision.
+  Brightness is adjustable in **Settings → Display**; the status bar is hidden
+  while it is on.
 - **First-run tips** — four short cards on first launch cover placing,
   editing, sharing and night mode; **Settings → Show Tips Again** reopens them.
 - **Sortable symbol list** — **☰ → Symbology** sorts by newest first, name

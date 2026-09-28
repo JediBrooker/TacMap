@@ -65,11 +65,11 @@ import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material3.AlertDialog
+import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
+import com.tacmap.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -203,6 +203,7 @@ internal fun MapScreen(
     val onlineBasemapsEnabled by vm.opsec.onlineBasemaps.collectAsState()
     val onlineLookupsEnabled by vm.opsec.onlineLookups.collectAsState()
     val primaryCoordinateType by vm.opsec.primaryCoordinateType.collectAsState()
+    val nightModeOn by vm.opsec.nightMode.collectAsState()
     val mapOrientationMode by vm.opsec.mapOrientationMode.collectAsState()
     var headingSessionActive by remember { mutableStateOf(false) }
     val onlineTilesUnavailable by OnlineTileHealth.temporarilyUnavailable.collectAsState()
@@ -1350,6 +1351,7 @@ internal fun MapScreen(
                 }
             }
             UnitLabelsToggle(active = unitLabelsVisible) { unitLabelsVisible = !unitLabelsVisible }
+            NightModeToggle(active = nightModeOn) { vm.opsec.setNightMode(!nightModeOn) }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 MapCompassChip(

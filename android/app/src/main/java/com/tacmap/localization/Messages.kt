@@ -78,6 +78,16 @@ object Messages {
         L10n.message("id.map_point_sun_moon", "Sun and Moon Here")
     fun mapPointSymbolAdded(name: String): String =
         L10n.message("id.map_point_symbol_added", "Added %1\$s", name)
+    fun nightModeBrightness(): String =
+        L10n.message("id.night_mode_brightness", "Night mode brightness")
+    fun nightModeHelp(): String =
+        L10n.message("id.night_mode_help", "Turns the whole screen, including menus and dialogs, red and dims it to protect night vision. The status bar is hidden while it is on. Toggle it from the moon button on the map.")
+    fun nightModeTitle(): String =
+        L10n.message("id.night_mode_title", "Night mode")
+    fun nightModeTurnOff(): String =
+        L10n.message("id.night_mode_turn_off", "Turn off night mode")
+    fun nightModeTurnOn(): String =
+        L10n.message("id.night_mode_turn_on", "Turn on night mode")
     fun onlineBasemapsDisabled(): String =
         L10n.message("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
     fun onlineBasemapsDisabledMessage(): LocalizedMessage =

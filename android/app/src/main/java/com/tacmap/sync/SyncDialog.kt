@@ -22,7 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.AlertDialog
+import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -575,6 +575,7 @@ private fun PresenceDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
+            com.tacmap.ui.NightWindowFilter() // menus draw in their own window
             options.forEachIndexed { index, option ->
                 DropdownMenuItem(
                     text = { Text(option) },

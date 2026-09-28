@@ -3,7 +3,7 @@ package com.tacmap.billing
 import com.tacmap.localization.Messages
 import com.tacmap.localization.LocalizedMessage
 
-import androidx.compose.material3.AlertDialog
+import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable

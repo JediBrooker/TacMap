@@ -16083,5 +16083,65 @@
     "legacy": false,
     "accessor": "tipsNightBody",
     "parameters": []
+  },
+  "night_mode_title": {
+    "en": "Night mode",
+    "de": "Nachtmodus",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Settings switch for red night mode (red-light display that preserves night vision).",
+    "legacy": false,
+    "accessor": "nightModeTitle",
+    "parameters": []
+  },
+  "night_mode_brightness": {
+    "en": "Night mode brightness",
+    "de": "Helligkeit im Nachtmodus",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Label above a slider setting how bright the red night-mode display is.",
+    "legacy": false,
+    "accessor": "nightModeBrightness",
+    "parameters": []
+  },
+  "night_mode_help": {
+    "en": "Turns the whole screen, including menus and dialogs, red and dims it to protect night vision. The status bar is hidden while it is on. Toggle it from the moon button on the map.",
+    "de": "Färbt den ganzen Bildschirm einschließlich Menüs und Dialogen rot und dunkelt ihn ab, um die Nachtsicht zu schützen. Die Statusleiste ist dabei ausgeblendet. Du schaltest ihn über die Mondtaste auf der Karte um.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Footer explaining night mode in Settings. The moon button is the map toolbar toggle.",
+    "legacy": false,
+    "accessor": "nightModeHelp",
+    "parameters": []
+  },
+  "night_mode_turn_on": {
+    "en": "Turn on night mode",
+    "de": "Nachtmodus einschalten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Accessibility label of the map's moon button while night mode is off.",
+    "legacy": false,
+    "accessor": "nightModeTurnOn",
+    "parameters": []
+  },
+  "night_mode_turn_off": {
+    "en": "Turn off night mode",
+    "de": "Nachtmodus ausschalten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Accessibility label of the map's moon button while night mode is on.",
+    "legacy": false,
+    "accessor": "nightModeTurnOff",
+    "parameters": []
   }
 }

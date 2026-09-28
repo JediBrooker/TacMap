@@ -26,6 +26,11 @@
     <string name="map_point_range_rings">"Entfernungsringe hier"</string>
     <string name="map_point_sun_moon">"Sonne und Mond hier"</string>
     <string name="map_point_symbol_added">"%1$s hinzugefügt"</string>
+    <string name="night_mode_brightness">"Helligkeit im Nachtmodus"</string>
+    <string name="night_mode_help">"Färbt den ganzen Bildschirm einschließlich Menüs und Dialogen rot und dunkelt ihn ab, um die Nachtsicht zu schützen. Die Statusleiste ist dabei ausgeblendet. Du schaltest ihn über die Mondtaste auf der Karte um."</string>
+    <string name="night_mode_title">"Nachtmodus"</string>
+    <string name="night_mode_turn_off">"Nachtmodus ausschalten"</string>
+    <string name="night_mode_turn_on">"Nachtmodus einschalten"</string>
     <string name="online_basemaps_disabled">"Online-Grundkarten sind deaktiviert. Importiere ein Offline-Kartenpaket oder aktiviere Online-Kartenkacheln unter „Einstellungen, Datenschutz und OPSEC“."</string>
     <string name="pdf_rotation_unsupported">"Die erste Seite dieser PDF ist um %1$s° gedreht. TacMap kann gedrehte Seiten noch nicht sicher georeferenzieren. Entferne die Seitendrehung in einem PDF-Editor oder drucke sie in eine neue PDF-Datei und importiere diese Kopie."</string>
     <string name="privacy_setting_save_failed">"Diese Datenschutzeinstellung konnte nicht gespeichert werden. Die bisherige Einstellung bleibt aktiv. Prüfe den verfügbaren Speicherplatz und versuche es erneut."</string>

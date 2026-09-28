@@ -33,6 +33,11 @@
 "id.map_point_range_rings" = "Range Rings Here";
 "id.map_point_sun_moon" = "Sun and Moon Here";
 "id.new_layer_save_failed" = "Could not save new layer to disk: %1$@";
+"id.night_mode_brightness" = "Night mode brightness";
+"id.night_mode_help" = "Turns the whole screen, including menus and dialogs, red and dims it to protect night vision. The status bar is hidden while it is on. Toggle it from the moon button on the map.";
+"id.night_mode_title" = "Night mode";
+"id.night_mode_turn_off" = "Turn off night mode";
+"id.night_mode_turn_on" = "Turn on night mode";
 "id.online_basemaps_disabled" = "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.";
 "id.recording_status_idle" = "IDLE";
 "id.recording_status_interrupted" = "INTERRUPTED";

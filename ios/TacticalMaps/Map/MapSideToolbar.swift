@@ -405,6 +405,31 @@ struct UnitLabelsToggle: View {
     }
 }
 
+/// Red night mode on/off, next to the unit-label toggle.
+struct NightModeToggle: View {
+    @ObservedObject private var appLanguage = AppLanguage.shared
+    let active: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            Image(systemName: active ? "moon.fill" : "moon")
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .background(
+                    (active ? Color(red: 0.55, green: 0, blue: 0).opacity(0.92) : Color.black.opacity(0.80)),
+                    in: Circle()
+                )
+                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                .foregroundStyle(.white)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(active ? Messages.nightModeTurnOff() : Messages.nightModeTurnOn())
+        .accessibilityIdentifier("map.nightMode")
+    }
+}
+
 /// Direct map entry to TacMap Chat while a secure Unit Sync room is active.
 /// Only the aggregate unread count leaves the sealed chat store; message IDs,
 /// conversation metadata and plaintext remain private to that store.
