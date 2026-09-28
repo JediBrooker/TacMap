@@ -2,11 +2,14 @@ import UIKit
 import Combine
 
 /// Red night mode for preserving night vision. Every window of the app gets
-/// an overlay above all of its content: one layer removes colour (saturation
-/// blend with grey) and the next multiplies by red at the chosen brightness,
-/// so each pixel becomes (brightness × luminance, 0, 0). Because the overlay
-/// lives inside each window, sheets, alerts, menus and share sheets presented
-/// there turn red as well. Android mirrors this with a colour-matrix layer.
+/// an overlay above all of its content that multiplies by red at the chosen
+/// brightness, so no green or blue light leaves the screen. Because the
+/// overlay lives inside each window, sheets, alerts, menus and share sheets
+/// presented there are covered too. SwiftUI content is first converted to
+/// luminance (`NightModeContent`), so each pixel becomes brightness ×
+/// luminance in red; iOS has no public non-separable blend mode that could do
+/// that step here. Window tint turns white so UIKit alert buttons, normally
+/// blue, stay readable. Android mirrors this with a colour-matrix layer.
 @MainActor
 final class NightModeController {
     static let shared = NightModeController()
@@ -48,9 +51,11 @@ final class NightModeController {
     private func update(_ window: UIWindow) {
         let existing = window.subviews.compactMap { $0 as? NightModeOverlayView }
         guard enabled else {
+            if !existing.isEmpty { window.tintColor = nil }
             existing.forEach { $0.removeFromSuperview() }
             return
         }
+        window.tintColor = .white
         let overlay = existing.first ?? {
             let view = NightModeOverlayView(frame: window.bounds)
             window.addSubview(view)
@@ -61,16 +66,13 @@ final class NightModeController {
     }
 }
 
-/// The two blend layers. Never takes touches or accessibility focus.
+/// The red multiply layer. Never takes touches or accessibility focus.
 final class NightModeOverlayView: UIView {
     /// Above every presentation container the window adds later.
     static let zPosition: CGFloat = 1_000_000
 
-    private let desaturate = UIView()
-    private let tint = UIView()
-
     var brightness: Double = OpsecSettings.defaultNightModeBrightness {
-        didSet { tint.backgroundColor = UIColor(red: brightness, green: 0, blue: 0, alpha: 1) }
+        didSet { backgroundColor = UIColor(red: brightness, green: 0, blue: 0, alpha: 1) }
     }
 
     override init(frame: CGRect) {
@@ -79,15 +81,8 @@ final class NightModeOverlayView: UIView {
         accessibilityElementsHidden = true
         autoresizingMask = [.flexibleWidth, .flexibleHeight]
         layer.zPosition = Self.zPosition
-        for (view, filter) in [(desaturate, "saturationBlendMode"), (tint, "multiplyBlendMode")] {
-            view.frame = bounds
-            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            view.isUserInteractionEnabled = false
-            view.layer.compositingFilter = filter
-            addSubview(view)
-        }
-        desaturate.backgroundColor = .gray
-        tint.backgroundColor = UIColor(red: brightness, green: 0, blue: 0, alpha: 1)
+        layer.compositingFilter = "multiplyBlendMode"
+        backgroundColor = UIColor(red: brightness, green: 0, blue: 0, alpha: 1)
     }
 
     @available(*, unavailable)

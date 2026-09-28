@@ -1895,5 +1895,11 @@
     "platform": "android",
     "area": "navigation-settings",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/NightModeContent.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
   }
 ]

@@ -58,7 +58,7 @@ struct HamburgerMenu: View {
         .accessibilityIdentifier("map.menu")
         /// Large detent only - medium sheet clips the bottom rows on
         /// shorter iPhones. ScrollView so everything's reachable.
-        .sheet(isPresented: $isOpen, onDismiss: runPendingAction) {
+        .nightSheet(isPresented: $isOpen, onDismiss: runPendingAction) {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {

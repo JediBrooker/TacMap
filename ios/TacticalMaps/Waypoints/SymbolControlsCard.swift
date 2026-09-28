@@ -62,7 +62,7 @@ struct SymbolControlsCard: View {
                     .stroke(.white.opacity(0.15), lineWidth: 0.5)
             )
             .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
-            .sheet(isPresented: $showingEdit) {
+            .nightSheet(isPresented: $showingEdit) {
                 if let current = waypointStore.waypoints.first(where: { $0.id == waypointID }) {
                     SelectedSymbolEditSheet(
                         waypointStore: waypointStore,
@@ -72,7 +72,7 @@ struct SymbolControlsCard: View {
                     )
                 }
             }
-            .sheet(isPresented: $showingRangeRings) {
+            .nightSheet(isPresented: $showingRangeRings) {
                 if let current = waypointStore.waypoints.first(where: { $0.id == waypointID }) {
                     RangeRingsSheet(drawingStore: drawingStore, waypoint: current)
                 }

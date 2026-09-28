@@ -62,12 +62,12 @@ struct LayersSheet: View {
                     Button(L10n.text("Done")) { dismiss() }
                 }
             }
-            .sheet(isPresented: $showingNewLayerSheet) {
+            .nightSheet(isPresented: $showingNewLayerSheet) {
                 NewLayerSheet { name, hex in
                     _ = try drawingStore.addLayer(name: name, defaultColorHex: hex)
                 }
             }
-            .sheet(item: $editingLayer) { layer in
+            .nightSheet(item: $editingLayer) { layer in
                 EditLayerSheet(layer: layer) { name, hex in
                     try drawingStore.updateLayer(
                         layer,

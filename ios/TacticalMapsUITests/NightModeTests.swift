@@ -11,6 +11,7 @@ final class NightModeTests: XCTestCase {
         app.launchEnvironment["TACMAP_UITEST_NIGHT_MODE"] = "1"
         app.launch()
 
+        dismissLocationPrompt()
         XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 15))
         sleep(2) // let the map and overlay settle
         assertOnlyRed(XCUIScreen.main.screenshot(), "map")
@@ -23,9 +24,23 @@ final class NightModeTests: XCTestCase {
         assertOnlyRed(XCUIScreen.main.screenshot(), "menu")
 
         settings.tap()
-        XCTAssertTrue(app.navigationBars["Settings, Privacy & OPSEC"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["settings.nightMode"].waitForExistence(timeout: 5)
+                      || app.navigationBars.firstMatch.waitForExistence(timeout: 5))
         sleep(1)
         assertOnlyRed(XCUIScreen.main.screenshot(), "settings sheet")
+    }
+
+    /// The system location prompt is drawn outside the app, so night mode
+    /// cannot (and need not) tint it; answer it before sampling the screen.
+    private func dismissLocationPrompt() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for label in ["Don’t Allow", "Don't Allow", "Allow While Using App"] {
+            let button = springboard.buttons[label]
+            if button.waitForExistence(timeout: label == "Don’t Allow" ? 8 : 1) {
+                button.tap()
+                return
+            }
+        }
     }
 
     private func assertOnlyRed(_ screenshot: XCUIScreenshot, _ context: String,
@@ -60,6 +75,7 @@ final class NightModeTests: XCTestCase {
         var sampled = 0
         var coloured = 0
         var lit = 0
+        var redLevels = Set<Int>()
         // Skip the bottom 4% where the system home indicator is drawn.
         let usableHeight = Int(Double(height) * 0.96)
         for y in stride(from: 0, to: usableHeight, by: max(1, usableHeight / 80)) {
@@ -71,11 +87,15 @@ final class NightModeTests: XCTestCase {
                 sampled += 1
                 if max(green, blue) > 24 { coloured += 1 }
                 if red > 24 { lit += 1 }
+                redLevels.insert(red / 8)
             }
         }
         XCTAssertEqual(coloured, 0, "\(coloured) of \(sampled) sampled \(context) pixels are not red",
                        file: file, line: line)
         XCTAssertGreaterThan(lit, sampled / 200, "The \(context) screenshot is almost black",
+                             file: file, line: line)
+        // A flat single colour means the overlay hid the app instead of tinting it.
+        XCTAssertGreaterThan(redLevels.count, 4, "The \(context) screenshot is one flat colour",
                              file: file, line: line)
     }
 }

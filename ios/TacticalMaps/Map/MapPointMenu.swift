@@ -97,11 +97,11 @@ struct MapPointMenuModifier: ViewModifier {
                 }
                 Button(L10n.text("Cancel"), role: .cancel) {}
             }
-            .sheet(item: $sunMoonPoint) { pressed in
+            .nightSheet(item: $sunMoonPoint) { pressed in
                 PointSunMoonSheet(point: pressed)
                     .presentationDetents([.medium, .large])
             }
-            .sheet(item: $ringCentre) { centre in
+            .nightSheet(item: $ringCentre) { centre in
                 RangeRingsSheet(drawingStore: drawingStore, waypoint: centre, anchored: false)
             }
     }

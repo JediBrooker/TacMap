@@ -894,8 +894,6 @@ struct ContentView: View {
         } message: { guidance in
             Text(guidance.message)
         }
-        // System status icons are drawn outside the app and would stay white.
-        .statusBarHidden(opsec.nightMode)
         .task {
             drawingStore.undoManager = undoManager
             waypointStore.undoManager = undoManager
@@ -947,7 +945,7 @@ struct ContentView: View {
 
     private var sheetContent: some View {
         lifecycleContent
-        .sheet(isPresented: $showWaypointSheet) {
+        .nightSheet(isPresented: $showWaypointSheet) {
             WaypointListSheet(waypointStore: waypointStore,
                               drawingStore: drawingStore,
                               mapVM: mapVM)
@@ -968,7 +966,7 @@ struct ContentView: View {
                 showTransientToast(L10n.text("%1$@ copied", format.label))
             }
         ))
-        .sheet(item: $quickSymbolDraft) { draft in
+        .nightSheet(item: $quickSymbolDraft) { draft in
             WaypointCreationSheet(
                 waypointStore: waypointStore,
                 defaultCoordinate: draft.coordinate,
@@ -976,11 +974,11 @@ struct ContentView: View {
                 defaultLayerID: draft.layerID
             )
         }
-        .sheet(isPresented: $showDrawingsSheet) {
+        .nightSheet(isPresented: $showDrawingsSheet) {
             DrawingsSheet(drawingStore: drawingStore, session: drawingSession)
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showLayersSheet) {
+        .nightSheet(isPresented: $showLayersSheet) {
             LayersSheet(visibility: visibility,
                         mapVM: mapVM,
                         drawingStore: drawingStore,
@@ -988,7 +986,7 @@ struct ContentView: View {
                         onCalibrate: startCalibration)
                 .padSheetSizing()
         }
-        .sheet(isPresented: Binding(
+        .nightSheet(isPresented: Binding(
             get: { calibration.pendingTap != nil },
             set: { if !$0 { calibration.clearPendingTap() } }
         )) {
@@ -999,31 +997,31 @@ struct ContentView: View {
             )
             .padSheetSizing()
         }
-        .sheet(isPresented: $showExportSheet) {
+        .nightSheet(isPresented: $showExportSheet) {
             ExportSheet(waypointStore: waypointStore, drawingStore: drawingStore)
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showGPXExporter) {
+        .nightSheet(isPresented: $showGPXExporter) {
             GPXExportSheet(points: trackRecorder.points)
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showWeatherSheet) {
+        .nightSheet(isPresented: $showWeatherSheet) {
             WeatherSheet(coordinate: mapVM.cameraCentre)
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showAppLockSheet) {
+        .nightSheet(isPresented: $showAppLockSheet) {
             AppLockSetupView()
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showOpsecSheet, onDismiss: presentTipsIfNeeded) {
+        .nightSheet(isPresented: $showOpsecSheet, onDismiss: presentTipsIfNeeded) {
             OpsecSettingsView()
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showTips) {
+        .nightSheet(isPresented: $showTips) {
             FirstRunTipsView()
                 .presentationDetents([.medium, .large])
         }
-        .sheet(isPresented: $showSyncSheet, onDismiss: {
+        .nightSheet(isPresented: $showSyncSheet, onDismiss: {
             guard let route = pendingChatRoute else { return }
             pendingChatRoute = nil
             presentChat(route)
@@ -1034,7 +1032,7 @@ struct ContentView: View {
             }
                 .padSheetSizing()
         }
-        .sheet(item: $chatRoute) { route in
+        .nightSheet(item: $chatRoute) { route in
             TacMapChatView(
                 manager: syncManager,
                 store: syncManager.chatStore,
@@ -1126,7 +1124,7 @@ struct ContentView: View {
                 )
             }
         }
-        .sheet(isPresented: $showSearchSheet) {
+        .nightSheet(isPresented: $showSearchSheet) {
             SearchSheet(
                 mapVM: mapVM,
                 waypointStore: waypointStore,
@@ -1134,11 +1132,11 @@ struct ContentView: View {
             )
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showAboutSheet) {
+        .nightSheet(isPresented: $showAboutSheet) {
             AcknowledgementsView()
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showPaywallSheet) {
+        .nightSheet(isPresented: $showPaywallSheet) {
             PaywallView(
                 store: store,
                 trialDaysRemaining: trial.daysRemaining(),
@@ -1256,7 +1254,7 @@ struct ContentView: View {
                 backgroundInterval: opsec.backgroundUnitSyncInterval.seconds
             )
         }
-        .sheet(isPresented: Binding(
+        .nightSheet(isPresented: Binding(
             get: { missionObjectExportURL != nil },
             set: { if !$0 { missionObjectExportURL = nil } }
         )) {
