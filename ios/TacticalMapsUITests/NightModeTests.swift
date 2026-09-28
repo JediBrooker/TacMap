@@ -13,8 +13,17 @@ final class NightModeTests: XCTestCase {
 
         dismissLocationPrompt()
         XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 15))
-        sleep(2) // let the map and overlay settle
+        sleep(2) // let the map settle
         assertOnlyRed(XCUIScreen.main.screenshot(), "map")
+
+        // The long-press point menu is drawn by the app, so it turns red too.
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58))
+            .press(forDuration: 1.6)
+        XCTAssertTrue(app.buttons["Copy Coordinates"].waitForExistence(timeout: 5))
+        sleep(1)
+        assertOnlyRed(XCUIScreen.main.screenshot(), "point menu")
+        app.buttons["Cancel"].tap()
+        sleep(1)
 
         app.buttons["Menu"].tap()
         let settings = app.buttons.matching(
@@ -94,7 +103,7 @@ final class NightModeTests: XCTestCase {
                        file: file, line: line)
         XCTAssertGreaterThan(lit, sampled / 200, "The \(context) screenshot is almost black",
                              file: file, line: line)
-        // A flat single colour means the overlay hid the app instead of tinting it.
+        // A flat single colour means night mode hid the app instead of tinting it.
         XCTAssertGreaterThan(redLevels.count, 4, "The \(context) screenshot is one flat colour",
                              file: file, line: line)
     }

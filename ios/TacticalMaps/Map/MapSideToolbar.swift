@@ -101,7 +101,7 @@ struct HamburgerMenu: View {
                 }
             }
             .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+            .nightDragIndicator(.visible)
             .padSheetSizing()
         }
     }

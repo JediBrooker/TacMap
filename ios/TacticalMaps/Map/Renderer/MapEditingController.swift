@@ -102,6 +102,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
     private var lastDragCoord: CLLocationCoordinate2D?
     private var pressedRealHandleIndex: Int?
     private var pressMoved = false
+    private var menuPressHoldsMap = false
 
     private let handleHitTolerance: CGFloat = 22
 
@@ -112,12 +113,22 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
         longPress.minimumPressDuration = 0.35
         longPress.allowableMovement = .greatestFiniteMagnitude
         let pan = UIPanGestureRecognizer(target: self, action: #selector(onVertexPan))
-        for g in [tap, longPress, pan] as [UIGestureRecognizer] {
+        // The point menu needs a deliberate, still hold: a drag that pauses
+        // or a slow pan must keep moving the map, never open the menu. Its
+        // own recognizer fails as soon as the finger moves a few points.
+        let menuPress = UILongPressGestureRecognizer(target: self, action: #selector(onMenuPress))
+        menuPress.minimumPressDuration = Self.menuPressDuration
+        menuPress.allowableMovement = Self.menuPressAllowableMovement
+        menuPress.numberOfTouchesRequired = 1
+        for g in [tap, longPress, pan, menuPress] as [UIGestureRecognizer] {
             g.delegate = self
             view.addGestureRecognizer(g)
         }
         vertexPan = pan
     }
+
+    static let menuPressDuration: TimeInterval = 1.0
+    static let menuPressAllowableMovement: CGFloat = 8
 
     // MARK: - Projection helpers
 
@@ -226,9 +237,26 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
             && drawingHitTest(at: pt) == nil
     }
 
-    private func beginEmptyMapPress(at coordinate: CLLocationCoordinate2D) {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        onEmptyMapLongPress?(coordinate)
+    /// A still hold on empty map opens the point menu (see `menuPress`).
+    @objc private func onMenuPress(_ g: UILongPressGestureRecognizer) {
+        guard let view else { return }
+        switch g.state {
+        case .began:
+            let pt = g.location(in: view)
+            guard isEmptyMapPoint(pt), let c = coord(pt) else { return }
+            // The rest of this touch belongs to the menu, not the map.
+            menuPressHoldsMap = true
+            view.setBrowseGesturesEnabled(false)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onEmptyMapLongPress?(c)
+        case .ended, .cancelled, .failed:
+            if menuPressHoldsMap {
+                menuPressHoldsMap = false
+                view.setBrowseGesturesEnabled(true)
+            }
+        default:
+            break
+        }
     }
 
     @objc private func onLongPress(_ g: UILongPressGestureRecognizer) {
@@ -237,10 +265,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
 
         switch g.state {
         case .began:
-            if graphicsLocked {
-                if isEmptyMapPoint(pt), let c = coord(pt) { beginEmptyMapPress(at: c) }
-                return
-            }
+            if graphicsLocked { return }
             pressMoved = false
             // A press on a vertex handle belongs to the pan (drag) / delete
             // path, not whole-shape drag. Remember a real handle so a hold
@@ -266,9 +291,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
                 lastDragCoord = coord(pt)
                 view.setBrowseGesturesEnabled(false)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                return
             }
-            if isEmptyMapPoint(pt), let c = coord(pt) { beginEmptyMapPress(at: c) }
 
         case .changed:
             pressMoved = true
