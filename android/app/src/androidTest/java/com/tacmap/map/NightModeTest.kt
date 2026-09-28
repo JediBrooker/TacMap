@@ -25,7 +25,7 @@ import org.junit.runner.RunWith
 
 /**
  * Night mode must turn everything the app draws red: the map in the activity
- * window, the menu popup and the symbol dialog, which both draw in their own
+ * window, the + menu popup and the symbol dialog, which both draw in their own
  * windows. Screenshots are sampled on a grid; no sampled pixel may carry
  * noticeable green or blue.
  */
@@ -59,21 +59,16 @@ class NightModeTest {
             Thread.sleep(1_500)
             assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "map", device)
 
-            // A popup window: the main menu (its first rows are always on screen).
-            waitFor(device, By.desc(L10n.text("Menu"))).click()
-            waitFor(device, By.text(L10n.text("Symbology")))
+            // A popup window (the + button's menu), then a dialog window (the
+            // symbol editor it opens). Neither needs closing mid-test.
+            waitFor(device, By.desc(L10n.text("Add symbol at crosshair"))).click()
+            val military = waitFor(device, By.text(L10n.text("Military Unit")))
             Thread.sleep(500)
             assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "menu", device)
-            device.pressBack()
-            device.wait(Until.gone(By.text(L10n.text("Symbology"))), 5_000)
-
-            // A dialog window: the symbol editor from the + button.
-            waitFor(device, By.desc(L10n.text("Add symbol at crosshair"))).click()
-            waitFor(device, By.text(L10n.text("Military Unit"))).click()
+            military.click()
             waitFor(device, By.text(L10n.text("New Military Unit")))
             Thread.sleep(500)
             assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "symbol dialog", device)
-            device.pressBack()
         } finally {
             scenario.close()
             opsec.setNightMode(false)
