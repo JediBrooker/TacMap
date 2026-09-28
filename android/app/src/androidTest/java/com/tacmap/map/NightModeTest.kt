@@ -81,6 +81,32 @@ class NightModeTest {
         }
     }
 
+    /** Reopening the app with night mode left on must show the map, red. */
+    @Test
+    fun appRelaunchedInNightModeShowsTheMap() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val opsec = (context.applicationContext as TacticalApp).opsec
+        val blockedCaptureBefore = opsec.blockScreenCapture.value
+        FirstRunTips.markSeen(context)
+        assertTrue(opsec.setBlockScreenCapture(false))
+        assertTrue(opsec.setNightMode(true))
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            dismissImmersiveConfirmation(device)
+            waitFor(device, By.desc(Messages.nightModeTurnOff()))
+            waitFor(device, By.desc(L10n.text("Menu")))
+            device.waitForIdle()
+            Thread.sleep(1_500)
+            assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "relaunched map", device)
+        } finally {
+            scenario.close()
+            opsec.setNightMode(false)
+            opsec.setBlockScreenCapture(blockedCaptureBefore)
+        }
+    }
+
     /** Some Android versions explain immersive mode the first time the bars hide. */
     private fun dismissImmersiveConfirmation(device: UiDevice) {
         device.wait(Until.findObject(By.text(Pattern.compile("(?i)got it"))), 2_000)?.click()
