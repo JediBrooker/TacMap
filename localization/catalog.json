@@ -15907,5 +15907,181 @@
     "legacy": false,
     "accessor": "ringsHelpPoint",
     "parameters": []
+  },
+  "tips_title": {
+    "en": "Tips",
+    "de": "Tipps",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Title of the first-run tips sheet.",
+    "legacy": false,
+    "accessor": "tipsTitle",
+    "parameters": []
+  },
+  "tips_next": {
+    "en": "Next",
+    "de": "Weiter",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Button that shows the next first-run tip.",
+    "legacy": false,
+    "accessor": "tipsNext",
+    "parameters": []
+  },
+  "tips_done": {
+    "en": "Get Started",
+    "de": "Los geht’s",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Button on the last first-run tip that closes the tips and shows the map.",
+    "legacy": false,
+    "accessor": "tipsDone",
+    "parameters": []
+  },
+  "tips_skip": {
+    "en": "Skip",
+    "de": "Überspringen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Closes the first-run tips before the last one.",
+    "legacy": false,
+    "accessor": "tipsSkip",
+    "parameters": []
+  },
+  "tips_show_again": {
+    "en": "Show Tips Again",
+    "de": "Tipps erneut anzeigen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Settings button that closes Settings and shows the first-run tips again.",
+    "legacy": false,
+    "accessor": "tipsShowAgain",
+    "parameters": []
+  },
+  "tips_page": {
+    "en": "Tip {1} of {2}",
+    "de": "Tipp {1} von {2}",
+    "platforms": [
+      "android"
+    ],
+    "context": "Position in the first-run tips, for example 'Tip 2 of 4'. Both values are formatted numbers.",
+    "legacy": false,
+    "accessor": "tipsPage",
+    "parameters": [
+      {
+        "name": "current",
+        "type": "string"
+      },
+      {
+        "name": "total",
+        "type": "string"
+      }
+    ]
+  },
+  "tips_place_title": {
+    "en": "Place Symbols",
+    "de": "Symbole platzieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First-run tip title about adding military symbols to the map.",
+    "legacy": false,
+    "accessor": "tipsPlaceTitle",
+    "parameters": []
+  },
+  "tips_place_body": {
+    "en": "Tap + to place a unit, task or marker at the crosshair. Or hold an empty spot on the map to place one there, measure from it or add range rings.",
+    "de": "Tippe auf +, um eine Einheit, einen Auftrag oder einen Marker am Fadenkreuz zu platzieren. Oder halte eine freie Stelle der Karte gedrückt, um dort etwas zu platzieren, von dort zu messen oder Entfernungsringe hinzuzufügen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First-run tip body. '+' is the round add button on the map; the crosshair marks the map centre.",
+    "legacy": false,
+    "accessor": "tipsPlaceBody",
+    "parameters": []
+  },
+  "tips_edit_title": {
+    "en": "Move and Edit",
+    "de": "Verschieben und bearbeiten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First-run tip title about selecting, moving and undoing.",
+    "legacy": false,
+    "accessor": "tipsEditTitle",
+    "parameters": []
+  },
+  "tips_edit_body": {
+    "en": "Tap a symbol or drawing to edit it, or hold and drag it to move it. Undo and redo sit on the map, and the lock button prevents accidental edits.",
+    "de": "Tippe auf ein Symbol oder eine Zeichnung, um es zu bearbeiten, oder halte es gedrückt und ziehe es, um es zu verschieben. Rückgängig und Wiederholen findest du direkt auf der Karte, und die Sperrtaste verhindert versehentliche Änderungen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First-run tip body. The lock button locks map graphics against edits.",
+    "legacy": false,
+    "accessor": "tipsEditBody",
+    "parameters": []
+  },
+  "tips_share_title": {
+    "en": "Share the Picture",
+    "de": "Lagebild teilen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First-run tip title about sharing the tactical picture with a team (situational awareness).",
+    "legacy": false,
+    "accessor": "tipsShareTitle",
+    "parameters": []
+  },
+  "tips_share_body": {
+    "en": "Unit Sync shares symbols and drawings with your team, end-to-end encrypted. The menu also exports GeoJSON, KML, KMZ and GPX.",
+    "de": "Unit Sync teilt Symbole und Zeichnungen Ende-zu-Ende-verschlüsselt mit deinem Team. Über das Menü exportierst du außerdem GeoJSON, KML, KMZ und GPX.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First-run tip body. Unit Sync is the feature name; file formats stay unchanged.",
+    "legacy": false,
+    "accessor": "tipsShareBody",
+    "parameters": []
+  },
+  "tips_night_title": {
+    "en": "Work at Night",
+    "de": "Nachts arbeiten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First-run tip title about night (red-light) mode.",
+    "legacy": false,
+    "accessor": "tipsNightTitle",
+    "parameters": []
+  },
+  "tips_night_body": {
+    "en": "The night mode button on the map turns the whole screen red and dims it to protect your night vision. You can reopen these tips in Settings.",
+    "de": "Die Nachtmodus-Taste auf der Karte färbt den ganzen Bildschirm rot und dunkelt ihn ab, um deine Nachtsicht zu schützen. In den Einstellungen kannst du diese Tipps erneut öffnen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First-run tip body about the red night mode toggle on the map toolbar.",
+    "legacy": false,
+    "accessor": "tipsNightBody",
+    "parameters": []
   }
 }

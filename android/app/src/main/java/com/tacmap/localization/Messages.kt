@@ -266,6 +266,34 @@ object Messages {
         L10n.message("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.")
     fun syncMetadataPrivacyMessage(): LocalizedMessage =
         LocalizedMessage("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.", listOf())
+    fun tipsDone(): String =
+        L10n.message("id.tips_done", "Get Started")
+    fun tipsEditBody(): String =
+        L10n.message("id.tips_edit_body", "Tap a symbol or drawing to edit it, or hold and drag it to move it. Undo and redo sit on the map, and the lock button prevents accidental edits.")
+    fun tipsEditTitle(): String =
+        L10n.message("id.tips_edit_title", "Move and Edit")
+    fun tipsNext(): String =
+        L10n.message("id.tips_next", "Next")
+    fun tipsNightBody(): String =
+        L10n.message("id.tips_night_body", "The night mode button on the map turns the whole screen red and dims it to protect your night vision. You can reopen these tips in Settings.")
+    fun tipsNightTitle(): String =
+        L10n.message("id.tips_night_title", "Work at Night")
+    fun tipsPage(current: String, total: String): String =
+        L10n.message("id.tips_page", "Tip %1\$s of %2\$s", current, total)
+    fun tipsPlaceBody(): String =
+        L10n.message("id.tips_place_body", "Tap + to place a unit, task or marker at the crosshair. Or hold an empty spot on the map to place one there, measure from it or add range rings.")
+    fun tipsPlaceTitle(): String =
+        L10n.message("id.tips_place_title", "Place Symbols")
+    fun tipsShareBody(): String =
+        L10n.message("id.tips_share_body", "Unit Sync shares symbols and drawings with your team, end-to-end encrypted. The menu also exports GeoJSON, KML, KMZ and GPX.")
+    fun tipsShareTitle(): String =
+        L10n.message("id.tips_share_title", "Share the Picture")
+    fun tipsShowAgain(): String =
+        L10n.message("id.tips_show_again", "Show Tips Again")
+    fun tipsSkip(): String =
+        L10n.message("id.tips_skip", "Skip")
+    fun tipsTitle(): String =
+        L10n.message("id.tips_title", "Tips")
     fun trialExpiredDetails(value: String): String =
         L10n.message("id.trial_expired_details", "Your %1\$s-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", value)
     fun trialExpiredDetailsMessage(value: String): LocalizedMessage =

@@ -533,6 +533,7 @@ struct ContentView: View {
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
     @State private var quickSymbolDraft: QuickSymbolDraft? = nil
     @State private var mapPressPoint: MapPressPoint? = nil
+    @State private var showTips = false
     /// View-owned drawing slider candidate. Rendered on the map without
     /// publishing through DrawingStore/Sync until the gesture ends.
     @State private var drawingControlsPreview: DrawingShape? = nil
@@ -852,6 +853,7 @@ struct ContentView: View {
                 lockChatUIAndSecrets()
             } else {
                 restoreChatIfSecurityAllows()
+                presentTipsIfNeeded()
             }
             refreshUnitSyncLifecycle()
         }
@@ -896,6 +898,7 @@ struct ContentView: View {
             drawingStore.undoManager = undoManager
             waypointStore.undoManager = undoManager
             ringFollower.attach(waypointStore: waypointStore, drawingStore: drawingStore)
+            presentTipsIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidCloseUndoGroup)) { _ in
             refreshUndoState()
@@ -1009,9 +1012,13 @@ struct ContentView: View {
             AppLockSetupView()
                 .padSheetSizing()
         }
-        .sheet(isPresented: $showOpsecSheet) {
+        .sheet(isPresented: $showOpsecSheet, onDismiss: presentTipsIfNeeded) {
             OpsecSettingsView()
                 .padSheetSizing()
+        }
+        .sheet(isPresented: $showTips) {
+            FirstRunTipsView()
+                .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showSyncSheet, onDismiss: {
             guard let route = pendingChatRoute else { return }
@@ -1643,6 +1650,12 @@ struct ContentView: View {
     /// visible layer without changing the user's active-layer selection.
     private func beginQuickSymbolCreation() {
         beginQuickSymbolCreation(at: mapVM.cameraCentre)
+    }
+
+    /// First-run tips, once the map is visible and unlocked.
+    private func presentTipsIfNeeded() {
+        guard !appLockOverlayActive, !showTips, FirstRunTips.shouldShow() else { return }
+        showTips = true
     }
 
     /// Opens the symbol builder for a long-pressed map point.

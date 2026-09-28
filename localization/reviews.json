@@ -12480,6 +12480,104 @@
         "translation": "2087f04329d4fece96feb4b17eb306540a9e1e484090ed47d9b5dc04ee023df0",
         "status": "reviewed"
       }
+    },
+    "tips_title": {
+      "de": {
+        "source": "64a6dcf775cf308ecb639c9d875c7b348237ea1a0e250336432b419c74af2e86",
+        "translation": "f1baf73f5c573b52bc534114a4a9b5c2e63aebbd26a4bd3c205e030ff56755ff",
+        "status": "reviewed"
+      }
+    },
+    "tips_next": {
+      "de": {
+        "source": "6da68bf5a3c6e25a9c1da4fb3ee73d566082c7d219701f975d34164c97fca9e2",
+        "translation": "7ec2d672d35e12a547be7bb95187cebcb3011228ca5859314443c34eee974306",
+        "status": "reviewed"
+      }
+    },
+    "tips_done": {
+      "de": {
+        "source": "4ace903f21567e9b573ff64929f45c1c71027b6a1f56bc54d20c4d3548fb9e6e",
+        "translation": "1e3a10a9be2c3bc76f003f984f1832d925e1b110bdb92f6b4fa01ae4069b910b",
+        "status": "reviewed"
+      }
+    },
+    "tips_skip": {
+      "de": {
+        "source": "0a838638fa94f1dcc52673733b03180f89969ccacecca74e8acbfaea402e5306",
+        "translation": "aa0d7bb0409055ee6ca1491fb5e4d82526b1a4b27228e74549b3826200661819",
+        "status": "reviewed"
+      }
+    },
+    "tips_show_again": {
+      "de": {
+        "source": "327fead59f68c5abad7c682066cbee66e1db14134585325950d1388254b71a89",
+        "translation": "ae904f0bbb23c44557f6d0e4499de8a55b09c9407906413204cfc48959ac2951",
+        "status": "reviewed"
+      }
+    },
+    "tips_page": {
+      "de": {
+        "source": "89505ea48651abd72d2161c747ea010d83576de68f909cc0a092a6d17b4b0c73",
+        "translation": "be1a6715942c1358a8bbff9fe1a038ebb5dee90cc79056e4979040f9d2375f5c",
+        "status": "reviewed"
+      }
+    },
+    "tips_place_title": {
+      "de": {
+        "source": "efcd434ed0dd56784af47bd796ca2a8119a432a8fb72f764a1cb105af3dbe1b8",
+        "translation": "cedaa5242bd91ff4d99a3c0482c88f72be9b257a7a78f2930ce66fbd230f3248",
+        "status": "reviewed"
+      }
+    },
+    "tips_place_body": {
+      "de": {
+        "source": "305a8dc4f38a84d48437d35a6148c7b16bebf92b43a167d1d484255485e11e64",
+        "translation": "634c3debeb6b4bfa5b5b5e3e6f1a57080cf05845ca873c750501efb34e244ee4",
+        "status": "reviewed"
+      }
+    },
+    "tips_edit_title": {
+      "de": {
+        "source": "1b15fb447828d4f6bf5513e7759a2d51ed328545f976481ca38905f0d46004cc",
+        "translation": "0f72b65942e906b0a78da2cf8a505656b76518e2535bcd906ef311208c2d1fa2",
+        "status": "reviewed"
+      }
+    },
+    "tips_edit_body": {
+      "de": {
+        "source": "b1a78ae1b6fab33b1204dc4d1909bd15c9f6811fd3c9ec8a7f3026f2b0c45613",
+        "translation": "ecb66006ebc63818f25f6f6fbb6fa3b80c2a9488b3ad1c899534b9be2e4aa02d",
+        "status": "reviewed"
+      }
+    },
+    "tips_share_title": {
+      "de": {
+        "source": "08b362045751e7f4431fab7720297cc0bff11afec3c8925bb0095df74e6e82ca",
+        "translation": "6e311687f0200f3b24d976fc9ec1b7166be7ad064915d1027a220402c34f66bb",
+        "status": "reviewed"
+      }
+    },
+    "tips_share_body": {
+      "de": {
+        "source": "661cc06231ebf551cf2b0ac99f2d39ea3c3a637dc222a75b49c9cc46ac88ff19",
+        "translation": "fef7a141c1a64196a1ac020294adf8f91321905b28233c13b183b27c84191268",
+        "status": "reviewed"
+      }
+    },
+    "tips_night_title": {
+      "de": {
+        "source": "e1ecb05cde22f62ebe537dee6d0afe327bb68fd1f26310cb2937717feee58298",
+        "translation": "d612f08ffc70952f34a856dffe6aa230db4cb3108d3928ea7658c90d0fab9428",
+        "status": "reviewed"
+      }
+    },
+    "tips_night_body": {
+      "de": {
+        "source": "e91841bddae8a4b1bbb95ea429ef4053271b85b5921a392339fd3594ea0bcbf0",
+        "translation": "08389e6e15c605d8f75fa517de6d26d63c5dddc4b3aa4062981f29434b4c1f1e",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

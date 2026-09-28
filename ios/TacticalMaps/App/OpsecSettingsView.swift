@@ -99,6 +99,14 @@ struct OpsecSettingsView: View {
                 }
 
                 Section {
+                    Button(Messages.tipsShowAgain()) {
+                        FirstRunTips.reset()
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("settings.showTips")
+                }
+
+                Section {
                     Toggle(
                         L10n.text("Privacy screen in app switcher"),
                         isOn: settingBinding(\.privacyScreen, set: opsec.setPrivacyScreen)

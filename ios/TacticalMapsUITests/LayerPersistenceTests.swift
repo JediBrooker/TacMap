@@ -8,6 +8,7 @@ final class LayerPersistenceTests: XCTestCase {
 
     func testPrivacyAndOpsecIsReachableFromMainMenu() {
         let app = XCUIApplication()
+        app.launchEnvironment["TACMAP_UITEST_SKIP_TIPS"] = "1"
         app.launch()
         XCTAssertTrue(app.buttons["Menu"].waitForExistence(timeout: 10))
         app.buttons["Menu"].tap()
@@ -44,6 +45,7 @@ final class LayerPersistenceTests: XCTestCase {
 
     func testFreshInstallCanPersistSigningIdentity() {
         let app = XCUIApplication()
+        app.launchEnvironment["TACMAP_UITEST_SKIP_TIPS"] = "1"
         let resetEnvironmentKey = "TACMAP_UITEST_RESET_SIGNING_IDENTITY"
         app.launchEnvironment[resetEnvironmentKey] = "1"
         app.launch()
@@ -88,6 +90,7 @@ final class LayerPersistenceTests: XCTestCase {
 
     func testUnitLabelsTogglePersistsAcrossRelaunch() {
         var app = XCUIApplication()
+        app.launchEnvironment["TACMAP_UITEST_SKIP_TIPS"] = "1"
         app.launch()
         allowLocation()
         sleep(3)
@@ -108,6 +111,7 @@ final class LayerPersistenceTests: XCTestCase {
         app.terminate()
         sleep(1)
         app = XCUIApplication()
+        app.launchEnvironment["TACMAP_UITEST_SKIP_TIPS"] = "1"
         app.launch()
         allowLocation()
         sleep(3)

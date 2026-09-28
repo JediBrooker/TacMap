@@ -255,7 +255,8 @@ def relaunch(wait_for_map=False):
 
 def disable_secure():
     """Temporarily configure the isolated screenshot emulator; preserve all prefs."""
-    originals = {name: read_preferences(name) for name in ("opsec", "app_language", "localization_qa")}
+    originals = {name: read_preferences(name)
+                 for name in ("opsec", "app_language", "localization_qa", "first_run_tips")}
     try:
         write_preferences("opsec", edited_preferences(originals["opsec"], {
             "block_screen_capture": ("boolean", "false"),
@@ -267,6 +268,10 @@ def disable_secure():
         }))
         write_preferences("localization_qa", edited_preferences(originals["localization_qa"], {
             "expanded_text": ("boolean", "true" if os.environ.get("TACMAP_SCREENSHOT_EXPANDED") == "1" else "false"),
+        }))
+        # Keep the first-run tips dialog off the captured map.
+        write_preferences("first_run_tips", edited_preferences(originals["first_run_tips"], {
+            "seen_version": ("int", "999"),
         }))
         relaunch()
         # A cold-start splash is also mostly black; allow the map to render.

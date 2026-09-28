@@ -165,6 +165,15 @@ def write_opsec(block):
     if err:
         print(f"  [!] run-as cp failed: {err} (build must be debuggable)")
         return False
+    # Keep the first-run tips dialog off the captured map.
+    tips = (
+        "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n"
+        '<map>\n    <int name="seen_version" value="999" />\n</map>\n'
+    )
+    tmp = "/data/local/tmp/first_run_tips.xml"
+    p = subprocess.Popen(["adb", "shell", "cat", ">", tmp], stdin=subprocess.PIPE)
+    p.communicate(tips.encode())
+    adb("shell", "run-as", PKG, "cp", tmp, "shared_prefs/first_run_tips.xml")
     return True
 def relaunch():
     adb("shell", "am", "force-stop", PKG)

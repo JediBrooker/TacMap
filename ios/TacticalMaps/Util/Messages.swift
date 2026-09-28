@@ -354,6 +354,45 @@ enum Messages {
     static func syncedLayersSaveFailedMessage(_ detail: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.synced_layers_save_failed", fallback: "Could not save synced layers to disk: %1$@", arguments: [detail])
     }
+    static func tipsDone() -> String {
+        L10n.message("id.tips_done", fallback: "Get Started")
+    }
+    static func tipsEditBody() -> String {
+        L10n.message("id.tips_edit_body", fallback: "Tap a symbol or drawing to edit it, or hold and drag it to move it. Undo and redo sit on the map, and the lock button prevents accidental edits.")
+    }
+    static func tipsEditTitle() -> String {
+        L10n.message("id.tips_edit_title", fallback: "Move and Edit")
+    }
+    static func tipsNext() -> String {
+        L10n.message("id.tips_next", fallback: "Next")
+    }
+    static func tipsNightBody() -> String {
+        L10n.message("id.tips_night_body", fallback: "The night mode button on the map turns the whole screen red and dims it to protect your night vision. You can reopen these tips in Settings.")
+    }
+    static func tipsNightTitle() -> String {
+        L10n.message("id.tips_night_title", fallback: "Work at Night")
+    }
+    static func tipsPlaceBody() -> String {
+        L10n.message("id.tips_place_body", fallback: "Tap + to place a unit, task or marker at the crosshair. Or hold an empty spot on the map to place one there, measure from it or add range rings.")
+    }
+    static func tipsPlaceTitle() -> String {
+        L10n.message("id.tips_place_title", fallback: "Place Symbols")
+    }
+    static func tipsShareBody() -> String {
+        L10n.message("id.tips_share_body", fallback: "Unit Sync shares symbols and drawings with your team, end-to-end encrypted. The menu also exports GeoJSON, KML, KMZ and GPX.")
+    }
+    static func tipsShareTitle() -> String {
+        L10n.message("id.tips_share_title", fallback: "Share the Picture")
+    }
+    static func tipsShowAgain() -> String {
+        L10n.message("id.tips_show_again", fallback: "Show Tips Again")
+    }
+    static func tipsSkip() -> String {
+        L10n.message("id.tips_skip", fallback: "Skip")
+    }
+    static func tipsTitle() -> String {
+        L10n.message("id.tips_title", fallback: "Tips")
+    }
     static func trialExpiredDetails(_ value: String) -> String {
         L10n.message("id.trial_expired_details", fallback: "Your %1$@-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", value)
     }

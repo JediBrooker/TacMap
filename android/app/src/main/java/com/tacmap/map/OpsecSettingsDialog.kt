@@ -58,6 +58,7 @@ fun OpsecSettingsDialog(
     opsec: OpsecSettings,
     headingAvailable: Boolean = true,
     onRequestAuthBoundChange: ((Boolean) -> Unit)? = null,
+    onShowTips: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -181,6 +182,9 @@ fun OpsecSettingsDialog(
                 Text(Messages.settingsDisplayTitle(), fontWeight = FontWeight.SemiBold)
                 SettingRow(keepScreenOn, { opsec.setKeepScreenOn(it) }, Messages.settingsKeepScreenOn())
                 Caption(Messages.settingsKeepScreenOnHelp())
+                onShowTips?.let { showTips ->
+                    TextButton(onClick = showTips) { Text(Messages.tipsShowAgain()) }
+                }
 
                 Text(L10n.text("Unit Sync"), fontWeight = FontWeight.SemiBold)
                 SettingRow(

@@ -90,6 +90,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -290,6 +291,7 @@ internal fun MapScreen(
     var quickAddTarget by remember { mutableStateOf<QuickAddTarget?>(null) }
     var quickAddEditorMode by remember { mutableStateOf<SymbolEditorMode?>(null) }
     var mapPressPoint by remember { mutableStateOf<MapPressPoint?>(null) }
+    var showTips by rememberSaveable { mutableStateOf(FirstRunTips.shouldShow(context)) }
     var pointSunMoon by remember { mutableStateOf<MapPressPoint?>(null) }
     var pointRingsCentre by remember { mutableStateOf<Waypoint?>(null) }
     var quickAddCreationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
@@ -1713,6 +1715,13 @@ internal fun MapScreen(
         AboutDialog(onDismiss = { showAboutDialog = false })
     }
 
+    if (showTips) {
+        FirstRunTipsDialog(onFinished = {
+            FirstRunTips.markSeen(context)
+            showTips = false
+        })
+    }
+
     pointSunMoon?.let { point ->
         PointSunMoonDialog(point = point, onDismiss = { pointSunMoon = null })
     }
@@ -1750,6 +1759,10 @@ internal fun MapScreen(
             opsec = vm.opsec,
             headingAvailable = vm.headingService.isHeadingAvailable,
             onRequestAuthBoundChange = onRequestAuthBoundChange,
+            onShowTips = {
+                showOpsecSettings = false
+                showTips = true
+            },
             onDismiss = { showOpsecSettings = false },
         )
     }
