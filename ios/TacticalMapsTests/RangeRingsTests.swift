@@ -156,10 +156,6 @@ final class RangeRingsTests: XCTestCase {
                                     persistenceWriter: { _, _, _ in })
         let waypoints = WaypointStore(storageURL: dir.appendingPathComponent("waypoints.json"),
                                       persistenceWriter: { _, _, _ in })
-        let undo = UndoManager()
-        undo.groupsByEvent = false
-        drawings.undoManager = undo
-        waypoints.undoManager = undo
         let follower = RangeRingFollower()
         follower.attach(waypointStore: waypoints, drawingStore: drawings)
 
@@ -173,6 +169,11 @@ final class RangeRingsTests: XCTestCase {
         XCTAssertEqual(rings[0].anchorWaypointID, op.id)
         XCTAssertEqual(rings[1].ringRadiusMetres, 1000)
 
+        // Undo covers only the move, grouped as one user action.
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        drawings.undoManager = undo
+        waypoints.undoManager = undo
         var moved = op
         moved.latitude = -33.85
         moved.longitude = 151.25
