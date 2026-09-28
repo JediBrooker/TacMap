@@ -15579,7 +15579,7 @@
   },
   "sun_moon_title": {
     "en": "Sun & Moon",
-    "de": "Sonne & Mond",
+    "de": "Sonne und Mond",
     "platforms": [
       "ios",
       "android"
@@ -15615,7 +15615,7 @@
   },
   "sun_moon_bmnt": {
     "en": "Nautical dawn (BMNT)",
-    "de": "Beginn nautische Dämmerung (BMNT)",
+    "de": "Beginn der nautischen Morgendämmerung (BMNT)",
     "platforms": [
       "ios",
       "android"
@@ -15627,7 +15627,7 @@
   },
   "sun_moon_bmct": {
     "en": "Civil dawn (BMCT)",
-    "de": "Beginn bürgerliche Dämmerung (BMCT)",
+    "de": "Beginn der bürgerlichen Morgendämmerung (BMCT)",
     "platforms": [
       "ios",
       "android"
@@ -15663,7 +15663,7 @@
   },
   "sun_moon_eect": {
     "en": "Civil dusk (EECT)",
-    "de": "Ende bürgerliche Dämmerung (EECT)",
+    "de": "Ende der bürgerlichen Abenddämmerung (EECT)",
     "platforms": [
       "ios",
       "android"
@@ -15675,7 +15675,7 @@
   },
   "sun_moon_eent": {
     "en": "Nautical dusk (EENT)",
-    "de": "Ende nautische Dämmerung (EENT)",
+    "de": "Ende der nautischen Abenddämmerung (EENT)",
     "platforms": [
       "ios",
       "android"
@@ -15711,7 +15711,7 @@
   },
   "sun_moon_illumination": {
     "en": "Moon illumination",
-    "de": "Mondbeleuchtung",
+    "de": "Beleuchteter Mondanteil",
     "platforms": [
       "ios",
       "android"
@@ -15769,7 +15769,7 @@
   },
   "sun_moon_help": {
     "en": "Calculated on this device for the map centre; nothing is sent online. Times use this device’s time zone ({1}). Sun times are accurate to about a minute and moon times to a few minutes. A dash means the event does not happen that day.",
-    "de": "Auf diesem Gerät für die Kartenmitte berechnet; es werden keine Daten online gesendet. Die Zeiten verwenden die Zeitzone dieses Geräts ({1}). Sonnenzeiten sind auf etwa eine Minute genau, Mondzeiten auf wenige Minuten. Ein Strich bedeutet, dass das Ereignis an diesem Tag nicht eintritt.",
+    "de": "Auf diesem Gerät für die Kartenmitte berechnet; es werden keine Daten online gesendet. Die Zeiten gelten für die Zeitzone dieses Geräts ({1}). Sonnenzeiten sind auf etwa eine Minute genau, Mondzeiten auf wenige Minuten. Ein Strich bedeutet, dass das Ereignis an diesem Tag nicht eintritt.",
     "platforms": [
       "ios",
       "android"

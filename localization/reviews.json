@@ -12302,7 +12302,7 @@
     "sun_moon_title": {
       "de": {
         "source": "90e6b5f7029a99b48f8656207e5a4538f9f2bbf6f06e616ae3fba31f04e14534",
-        "translation": "598267fff641d4a110d59387fc450559ad474112ffdd0ca0409719d9c2cef9ce",
+        "translation": "0f4ef50c2be4052dad92b4c2e06049ddeb109441ac72f7d3e0d101b7168fd797",
         "status": "reviewed"
       }
     },
@@ -12323,14 +12323,14 @@
     "sun_moon_bmnt": {
       "de": {
         "source": "0f3486a4d9e5ab3d4a4b558198a6c518c63bc20332a2d8b6451e2a515e771aae",
-        "translation": "adcfdec766c948621c904cce5d6f9ad5d2c1472630b4d42b2a5ac5e9368854b3",
+        "translation": "67080c4714c52cff01773cfc785a3a05dddd530c81f9ee818d0109f5ad7330e6",
         "status": "reviewed"
       }
     },
     "sun_moon_bmct": {
       "de": {
         "source": "5b6d58408f9ff2f7be2dff816a26358b302ce5813d344ac0754f7f8c1f96e548",
-        "translation": "0ec64a9e5842a8bd2dc1e255e51c5f1064bcfb21811b84562e2c5e01e6a15d1e",
+        "translation": "d1414961ed093c4adddee6c6243b5da2cef851e2a12a6995ac955ef2b3d0b30f",
         "status": "reviewed"
       }
     },
@@ -12351,14 +12351,14 @@
     "sun_moon_eect": {
       "de": {
         "source": "06b19c6132f7c936782ad74c7b97b53ff0155b25abaf7e825837843cfb98debe",
-        "translation": "793ee4030182b811be2c272f5b8a22bf6ba50451ba4d769e43174e0a73b78909",
+        "translation": "9bd35f58a7f824dc4b103080c9dd825bc4128451aa5855a03471f789ff80e4b4",
         "status": "reviewed"
       }
     },
     "sun_moon_eent": {
       "de": {
         "source": "b20caa4d6e99b7035c07dfddf5042a678df4c5bb529fc5f0e7d19b81226620d2",
-        "translation": "e3411d800e4485eb3b1516c5561fdc914cca3ba2864b229c76334bb500c2c22b",
+        "translation": "c66b4775f4c3f36e33fce2c47468aa9e70f940caaa6b3669da53f526ae71a724",
         "status": "reviewed"
       }
     },
@@ -12379,7 +12379,7 @@
     "sun_moon_illumination": {
       "de": {
         "source": "647041fe70f0907f4ebbe9f0e8fad2ceaf3f6e9b9b3f6989ed9a65d6c9826048",
-        "translation": "439f1014ebc1c18410db46f9f6f0066cb98c250fad311b4ea0be1fc8fa77e9f9",
+        "translation": "dfa40dbfdf28d13bb2fa76190befbe7596f944b5a6c092466ffd1e29e9bee09e",
         "status": "reviewed"
       }
     },
@@ -12407,7 +12407,7 @@
     "sun_moon_help": {
       "de": {
         "source": "9476d84a4745c9fa1dd43d980cff3511780bab84f8abc95f1b96c8eb48975c15",
-        "translation": "5f6322b9899aae206231ab039760cb365b7f867a5dfc06f332cb9c50470866b3",
+        "translation": "94b73e5111ab8f54bb50765056c237944448ad0bd17971e3ec6c5548749f695d",
         "status": "reviewed"
       }
     }
