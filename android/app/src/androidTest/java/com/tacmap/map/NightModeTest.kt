@@ -25,7 +25,7 @@ import org.junit.runner.RunWith
 
 /**
  * Night mode must turn everything the app draws red: the map in the activity
- * window, the menu popup and a settings dialog, which both draw in their own
+ * window, the menu popup and the symbol dialog, which both draw in their own
  * windows. Screenshots are sampled on a grid; no sampled pixel may carry
  * noticeable green or blue.
  */
@@ -59,19 +59,21 @@ class NightModeTest {
             Thread.sleep(1_500)
             assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "map", device)
 
+            // A popup window: the main menu (its first rows are always on screen).
             waitFor(device, By.desc(L10n.text("Menu"))).click()
-            val settings = waitFor(device, By.text(PRIVACY_OPSEC_LABEL))
+            waitFor(device, By.text(L10n.text("Symbology")))
             Thread.sleep(500)
             assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "menu", device)
+            device.pressBack()
+            device.wait(Until.gone(By.text(L10n.text("Symbology"))), 5_000)
 
-            settings.click()
-            assertTrue(
-                "Settings dialog did not open",
-                device.wait(Until.gone(By.text(L10n.text("About & Credits"))), 5_000),
-            )
-            waitFor(device, By.text(PRIVACY_OPSEC_LABEL))
+            // A dialog window: the symbol editor from the + button.
+            waitFor(device, By.desc(L10n.text("Add symbol at crosshair"))).click()
+            waitFor(device, By.text(L10n.text("Military Unit"))).click()
+            waitFor(device, By.text(L10n.text("New Military Unit")))
             Thread.sleep(500)
-            assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "settings dialog", device)
+            assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "symbol dialog", device)
+            device.pressBack()
         } finally {
             scenario.close()
             opsec.setNightMode(false)
@@ -105,17 +107,21 @@ class NightModeTest {
                 if (red > 24) lit++
             }
         }
-        assertEquals("$coloured of $sampled sampled $context pixels are not red. Screen:\n${hierarchy(device)}", 0, coloured)
-        assertTrue("The $context screenshot is almost black. Screen:\n${hierarchy(device)}", lit > sampled / 200)
+        assertEquals("$coloured of $sampled sampled $context pixels are not red. Screen: ${hierarchy(device)}", 0, coloured)
+        assertTrue("The $context screenshot is almost black. Screen: ${hierarchy(device)}", lit > sampled / 200)
     }
 
     private fun waitFor(device: UiDevice, selector: BySelector): UiObject2 =
         device.wait(Until.findObject(selector), 30_000)
-            ?: throw AssertionError("Timed out waiting for $selector. Screen:\n${hierarchy(device)}")
+            ?: throw AssertionError("Timed out waiting for $selector. Screen: ${hierarchy(device)}")
 
-    /** What UiAutomator sees, so a CI failure shows what was on screen. */
-    private fun hierarchy(device: UiDevice): String =
-        ByteArrayOutputStream().also { device.dumpWindowHierarchy(it) }.toString(Charsets.UTF_8.name())
-            .replace(Regex("""\s(checkable|checked|focusable|focused|scrollable|long-clickable|password|selected|enabled|NAF|clickable|index)="[^"]*""""), "")
-            .take(8_000)
+    /** Visible labels UiAutomator sees, on one line so CI logs keep it. */
+    private fun hierarchy(device: UiDevice): String {
+        val xml = ByteArrayOutputStream().also { device.dumpWindowHierarchy(it) }.toString(Charsets.UTF_8.name())
+        return Regex("""(?:text|content-desc|package)="([^"]+)"""").findAll(xml)
+            .map { it.groupValues[1] }
+            .distinct()
+            .joinToString(" | ")
+            .take(3_000)
+    }
 }
