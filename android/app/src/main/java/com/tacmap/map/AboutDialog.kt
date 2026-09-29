@@ -5,6 +5,16 @@ import com.tacmap.localization.L10n
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.Modifier
+import com.tacmap.localization.Messages
 import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,19 +31,29 @@ import com.tacmap.BuildConfig
 import com.tacmap.app.CrashReporter
 
 @Composable
-fun AboutDialog(onDismiss: () -> Unit) {
+fun AboutDialog(onDismiss: () -> Unit, onReplayTour: (() -> Unit)? = null) {
     val context = LocalContext.current
     var crashReport by remember { mutableStateOf(CrashReporter.lastReport(context)) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("TacMap") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 Text(
                     L10n.text("Version %1\$s (%2\$s)", BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
+                onReplayTour?.let { replay ->
+                    OutlinedButton(onClick = replay) {
+                        Icon(Icons.Default.PlayCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(Messages.tourReplay(), modifier = Modifier.padding(start = 8.dp))
+                    }
+                    Text(Messages.tourReplayHelp(), fontSize = 12.sp)
+                }
                 Text(L10n.text("Satellite: Esri World Imagery (Esri, Maxar, Earthstar Geographics)"), fontSize = 12.sp)
                 Text(L10n.text("Topographic / street: Esri basemap styles · map data © OpenStreetMap contributors"), fontSize = 12.sp)
                 Text(L10n.text("Terrain: OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors"), fontSize = 12.sp)
