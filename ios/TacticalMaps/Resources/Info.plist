@@ -24,7 +24,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>2.2.0</string>
 	<key>CFBundleVersion</key>
-	<string>71</string>
+	<string>72</string>
 	<key>ESRIApiKey</key>
 	<string>$(ESRI_API_KEY)</string>
 	<key>ESRIKeyExpiry</key>
