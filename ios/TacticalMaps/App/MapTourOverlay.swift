@@ -79,41 +79,22 @@ struct MapTourOverlay: View {
     @ViewBuilder
     private func callout(step: FirstRunTips.Step, spot: CGRect?, in proxy: GeometryProxy) -> some View {
         let size = proxy.size
-        let insets = proxy.safeAreaInsets
         let width = min(size.width - 32, 380)
         if let spot {
-            let below = size.height - spot.maxY - insets.bottom >= spot.minY - insets.top
-            let cardX = min(max(spot.midX - width / 2, 16), size.width - width - 16)
-            let arrowX = min(max(spot.midX - cardX, 26), width - 26)
-            VStack(spacing: 0) {
-                if below {
-                    Color.clear.frame(height: spot.maxY + 8)
-                    arrow(pointingUp: true, x: arrowX, width: width)
-                    card(step: step, width: width)
-                    Spacer(minLength: insets.bottom + 12)
-                } else {
-                    Spacer(minLength: insets.top + 12)
-                    card(step: step, width: width)
-                    arrow(pointingUp: false, x: arrowX, width: width)
-                    Color.clear.frame(height: max(size.height - spot.minY + 8, 0))
-                }
+            let cardX = min(max(spot.midX - width / 2, 16), max(16, size.width - width - 16))
+            let arrowX = min(max(spot.midX - cardX, 26), max(26, width - 26))
+            // The card is measured before it is placed, so it goes wherever it
+            // fits in full: below the control, above it, or on screen over it.
+            TourCalloutLayout(spot: spot, cardX: cardX, cardWidth: width, arrowX: arrowX,
+                              insets: proxy.safeAreaInsets) {
+                TourArrow().fill(cardFill).accessibilityHidden(true)
+                TourArrow().rotation(.degrees(180)).fill(cardFill).accessibilityHidden(true)
+                card(step: step, width: width)
             }
-            .frame(width: width, height: size.height)
-            .offset(x: cardX)
         } else {
             card(step: step, width: width)
                 .frame(width: size.width, height: size.height)
         }
-    }
-
-    private func arrow(pointingUp: Bool, x: CGFloat, width: CGFloat) -> some View {
-        TourArrow()
-            .fill(cardFill)
-            .frame(width: 22, height: 11)
-            .rotationEffect(.degrees(pointingUp ? 0 : 180))
-            .offset(x: x - 11)
-            .frame(width: width, alignment: .leading)
-            .accessibilityHidden(true)
     }
 
     private func card(step: FirstRunTips.Step, width: CGFloat) -> some View {
@@ -239,6 +220,42 @@ private struct SpotlightRing: View {
         }
         .frame(width: spot.rect.width, height: spot.rect.height)
         .position(x: spot.rect.midX, y: spot.rect.midY)
+    }
+}
+
+/// Places the card beside the spotlight using `TourCalloutPlacement`, with
+/// the matching arrow. Subviews: up arrow, down arrow, card.
+private struct TourCalloutLayout: Layout {
+    let spot: CGRect
+    let cardX: CGFloat
+    let cardWidth: CGFloat
+    let arrowX: CGFloat
+    let insets: EdgeInsets
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 3 else { return }
+        let arrowSize = CGSize(width: 22, height: 11)
+        let available = max(bounds.height - insets.top - insets.bottom, 0)
+        let natural = subviews[2].sizeThatFits(ProposedViewSize(width: cardWidth, height: nil))
+        let cardHeight = min(natural.height, available)
+        let placement = TourCalloutPlacement.compute(
+            spotTop: spot.minY, spotBottom: spot.maxY, cardHeight: cardHeight,
+            screenHeight: bounds.height, topInset: insets.top, bottomInset: insets.bottom,
+            gap: 8, arrowHeight: arrowSize.height
+        )
+        subviews[2].place(at: CGPoint(x: bounds.minX + cardX, y: bounds.minY + placement.cardY),
+                          anchor: .topLeading,
+                          proposal: ProposedViewSize(width: cardWidth, height: cardHeight))
+        let arrowOrigin = CGPoint(x: bounds.minX + cardX + arrowX - arrowSize.width / 2,
+                                  y: bounds.minY + placement.arrowY)
+        subviews[0].place(at: arrowOrigin, anchor: .topLeading,
+                          proposal: placement.arrow == .up ? ProposedViewSize(arrowSize) : .zero)
+        subviews[1].place(at: arrowOrigin, anchor: .topLeading,
+                          proposal: placement.arrow == .down ? ProposedViewSize(arrowSize) : .zero)
     }
 }
 

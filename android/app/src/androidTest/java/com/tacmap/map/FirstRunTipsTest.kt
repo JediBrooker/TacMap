@@ -2,6 +2,7 @@ package com.tacmap.map
 
 import android.Manifest
 import android.os.ParcelFileDescriptor
+import java.io.ByteArrayOutputStream
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -85,5 +86,15 @@ class FirstRunTipsTest {
 
     private fun waitFor(device: UiDevice, selector: BySelector): UiObject2 =
         device.wait(Until.findObject(selector), 30_000)
-            ?: throw AssertionError("Timed out waiting for $selector")
+            ?: throw AssertionError("Timed out waiting for $selector. Screen: ${hierarchy(device)}")
+
+    /** Visible labels UiAutomator sees, on one line so CI logs keep it. */
+    private fun hierarchy(device: UiDevice): String {
+        val xml = ByteArrayOutputStream().also { device.dumpWindowHierarchy(it) }.toString(Charsets.UTF_8.name())
+        return Regex("""(?:text|content-desc)="([^"]+)"[^>]*bounds="([^"]+)"""").findAll(xml)
+            .map { "${it.groupValues[1]}@${it.groupValues[2]}" }
+            .distinct()
+            .joinToString(" | ")
+            .take(3_000)
+    }
 }

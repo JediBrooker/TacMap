@@ -20,10 +20,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -59,6 +57,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
@@ -69,6 +68,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.tacmap.localization.DisplayFormat
@@ -208,30 +208,86 @@ internal fun MapTourOverlay(targets: TourTargets, onFinish: () -> Unit) {
             val rect = spot.rect
             val topInset = WindowInsets.safeDrawing.getTop(density).toFloat()
             val bottomInset = WindowInsets.safeDrawing.getBottom(density).toFloat()
-            val below = height - rect.bottom - bottomInset >= rect.top - topInset
             val margin = with(density) { 16.dp.toPx() }
             val cardX = (rect.center.x - cardWidthPx / 2).coerceIn(margin, maxOf(margin, width - cardWidthPx - margin))
             val arrowInset = with(density) { 26.dp.toPx() }
             val arrowX = (rect.center.x - cardX).coerceIn(arrowInset, maxOf(arrowInset, cardWidthPx - arrowInset))
-            val gap = with(density) { 8.dp.toPx() }
-            Column(
-                Modifier
-                    .fillMaxHeight()
-                    .width(cardWidth)
-                    .offset { IntOffset(cardX.roundToInt(), 0) },
-                verticalArrangement = if (below) Arrangement.Top else Arrangement.Bottom,
-            ) {
-                if (below) {
-                    Spacer(Modifier.height(with(density) { (rect.bottom + gap).toDp() }))
-                    TourArrow(pointingUp = true, x = arrowX)
-                    card()
-                } else {
-                    card()
-                    TourArrow(pointingUp = false, x = arrowX)
-                    Spacer(Modifier.height(with(density) { (height - rect.top + gap).coerceAtLeast(0f).toDp() }))
+            // The card is measured before it is placed, so it goes wherever it
+            // fits in full: below the control, above it, or on screen over it.
+            Layout(
+                content = {
+                    TourArrow(pointingUp = true)
+                    TourArrow(pointingUp = false)
+                    Box { card() }
+                },
+                modifier = Modifier.fillMaxSize(),
+            ) { measurables, constraints ->
+                val cardWidthInt = cardWidthPx.roundToInt()
+                val available = (height - topInset - bottomInset).roundToInt().coerceAtLeast(0)
+                val cardPlaceable = measurables[2].measure(
+                    Constraints(minWidth = cardWidthInt, maxWidth = cardWidthInt, maxHeight = available)
+                )
+                val arrowWidth = 22.dp.roundToPx()
+                val arrowHeight = 11.dp.roundToPx()
+                val up = measurables[0].measure(Constraints.fixed(arrowWidth, arrowHeight))
+                val down = measurables[1].measure(Constraints.fixed(arrowWidth, arrowHeight))
+                val placement = calloutPlacement(
+                    spotTop = rect.top,
+                    spotBottom = rect.bottom,
+                    cardHeight = cardPlaceable.height.toFloat(),
+                    screenHeight = height,
+                    topInset = topInset,
+                    bottomInset = bottomInset,
+                    gap = 8.dp.toPx(),
+                    arrowHeight = arrowHeight.toFloat(),
+                )
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    cardPlaceable.place(cardX.roundToInt(), placement.cardY.roundToInt())
+                    val arrowLeft = (cardX + arrowX - arrowWidth / 2f).roundToInt()
+                    when (placement.arrow) {
+                        CalloutArrow.UP -> up.place(arrowLeft, placement.arrowY.roundToInt())
+                        CalloutArrow.DOWN -> down.place(arrowLeft, placement.arrowY.roundToInt())
+                        CalloutArrow.NONE -> Unit
+                    }
                 }
             }
         }
+    }
+}
+
+internal enum class CalloutArrow { UP, DOWN, NONE }
+
+internal data class CalloutPlacement(val cardY: Float, val arrowY: Float, val arrow: CalloutArrow)
+
+/**
+ * Where the tour card goes for a highlighted area between [spotTop] and
+ * [spotBottom]: below it if the whole card fits there, otherwise above it,
+ * preferring the roomier side when both fit. When neither side has room
+ * (a small screen or large text) the card stays fully on screen on the
+ * roomier side, without an arrow. iOS uses the same rule.
+ */
+internal fun calloutPlacement(
+    spotTop: Float,
+    spotBottom: Float,
+    cardHeight: Float,
+    screenHeight: Float,
+    topInset: Float,
+    bottomInset: Float,
+    gap: Float,
+    arrowHeight: Float,
+): CalloutPlacement {
+    val belowY = spotBottom + gap + arrowHeight
+    val aboveY = spotTop - gap - arrowHeight - cardHeight
+    val fitsBelow = belowY + cardHeight <= screenHeight - bottomInset
+    val fitsAbove = aboveY >= topInset
+    val preferBelow = screenHeight - bottomInset - spotBottom >= spotTop - topInset
+    return when {
+        fitsBelow && (preferBelow || !fitsAbove) -> CalloutPlacement(belowY, spotBottom + gap, CalloutArrow.UP)
+        fitsAbove -> CalloutPlacement(aboveY, spotTop - gap - arrowHeight, CalloutArrow.DOWN)
+        preferBelow -> CalloutPlacement(
+            maxOf(topInset, screenHeight - bottomInset - cardHeight), 0f, CalloutArrow.NONE,
+        )
+        else -> CalloutPlacement(topInset, 0f, CalloutArrow.NONE)
     }
 }
 
@@ -306,20 +362,15 @@ private fun TourCard(
 
 /** The small triangle joining the card to the highlighted control. */
 @Composable
-private fun TourArrow(pointingUp: Boolean, x: Float) {
+private fun TourArrow(pointingUp: Boolean) {
     val color = MaterialTheme.colorScheme.surfaceContainerHigh
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(11.dp)
-    ) {
-        val half = 11.dp.toPx()
+    Canvas(Modifier.fillMaxSize()) {
         val tip = if (pointingUp) 0f else size.height
         val base = if (pointingUp) size.height else 0f
         val arrow = Path().apply {
-            moveTo(x, tip)
-            lineTo(x + half, base)
-            lineTo(x - half, base)
+            moveTo(size.width / 2, tip)
+            lineTo(size.width, base)
+            lineTo(0f, base)
             close()
         }
         drawPath(arrow, color)

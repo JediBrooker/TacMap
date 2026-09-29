@@ -51,6 +51,41 @@ enum FirstRunTips {
     }
 }
 
+/// Where the tour card goes beside a highlighted area between `spotTop` and
+/// `spotBottom`: below it if the whole card fits there, otherwise above it,
+/// preferring the roomier side when both fit. When neither side has room (a
+/// small screen or large text) the card stays fully on screen on the roomier
+/// side, without an arrow. Android uses the same rule.
+enum TourCalloutPlacement {
+    enum Arrow: Equatable { case up, down, none }
+
+    struct Result: Equatable {
+        let cardY: CGFloat
+        let arrowY: CGFloat
+        let arrow: Arrow
+    }
+
+    static func compute(spotTop: CGFloat, spotBottom: CGFloat, cardHeight: CGFloat,
+                        screenHeight: CGFloat, topInset: CGFloat, bottomInset: CGFloat,
+                        gap: CGFloat, arrowHeight: CGFloat) -> Result {
+        let belowY = spotBottom + gap + arrowHeight
+        let aboveY = spotTop - gap - arrowHeight - cardHeight
+        let fitsBelow = belowY + cardHeight <= screenHeight - bottomInset
+        let fitsAbove = aboveY >= topInset
+        let preferBelow = screenHeight - bottomInset - spotBottom >= spotTop - topInset
+        if fitsBelow && (preferBelow || !fitsAbove) {
+            return Result(cardY: belowY, arrowY: spotBottom + gap, arrow: .up)
+        }
+        if fitsAbove {
+            return Result(cardY: aboveY, arrowY: spotTop - gap - arrowHeight, arrow: .down)
+        }
+        if preferBelow {
+            return Result(cardY: max(topInset, screenHeight - bottomInset - cardHeight), arrowY: 0, arrow: .none)
+        }
+        return Result(cardY: topInset, arrowY: 0, arrow: .none)
+    }
+}
+
 /// Map controls the tour can point at. `crosshair` and `mapHold` are places
 /// on the map rather than views, so they have no anchor.
 enum TourTarget: Hashable {
