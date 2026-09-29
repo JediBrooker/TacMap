@@ -34,11 +34,23 @@ final class FirstRunTipsTests: XCTestCase {
                                                environment: ["TACMAP_UITEST_OFFLINE_BASEMAP": "1"]))
     }
 
-    func testEveryTipHasTitleAndBody() {
-        XCTAssertEqual(FirstRunTips.tips.count, 4)
-        for tip in FirstRunTips.tips {
-            XCTAssertFalse(tip.title.isEmpty)
-            XCTAssertFalse(tip.body.isEmpty)
+    func testTourUITestsCanAskForTheTour() {
+        FirstRunTips.markSeen(defaults: defaults)
+        XCTAssertTrue(FirstRunTips.shouldShow(defaults: defaults,
+                                              environment: ["TACMAP_UITEST_TOUR": "1",
+                                                            "TACMAP_UITEST_OFFLINE_BASEMAP": "1"]))
+    }
+
+    func testTourPointsAtEachMapControlOnce() {
+        let steps = FirstRunTips.steps
+        XCTAssertEqual(steps.map(\.id), Array(steps.indices))
+        for step in steps {
+            XCTAssertFalse(step.title.isEmpty)
+            XCTAssertFalse(step.body.isEmpty)
         }
+        let targets = steps.compactMap(\.target)
+        XCTAssertEqual(Set(targets).count, targets.count, "A control is highlighted twice")
+        XCTAssertEqual(Set(targets), [.crosshair, .header, .add, .mapHold, .menu, .labels, .night, .compass, .lock])
+        XCTAssertNil(steps.last?.target, "The tour ends on a card that points at nothing")
     }
 }

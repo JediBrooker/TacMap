@@ -533,7 +533,10 @@ struct ContentView: View {
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
     @State private var quickSymbolDraft: QuickSymbolDraft? = nil
     @State private var mapPressPoint: MapPressPoint? = nil
-    @State private var showTips = false
+    /// The guided tour's current step, or nil when it is closed.
+    @State private var tourStep: Int? = nil
+    /// Set by "Replay Tour" in About; the tour starts once the sheet is gone.
+    @State private var replayTourRequested = false
     /// View-owned drawing slider candidate. Rendered on the map without
     /// publishing through DrawingStore/Sync until the gesture ends.
     @State private var drawingControlsPreview: DrawingShape? = nil
@@ -824,6 +827,19 @@ struct ContentView: View {
 
                 syncToastOverlay
             }
+            .overlayPreferenceValue(TourAnchorKey.self) { anchors in
+                Group {
+                    if let step = tourStep {
+                        MapTourOverlay(
+                            steps: FirstRunTips.steps,
+                            index: Binding(get: { step }, set: { tourStep = $0 }),
+                            anchors: anchors,
+                            onFinish: finishTour
+                        )
+                        .transition(.opacity)
+                    }
+                }
+            }
         }
     }
 
@@ -1017,11 +1033,6 @@ struct ContentView: View {
             OpsecSettingsView()
                 .padSheetSizing()
         }
-        .nightSheet(isPresented: $showTips) {
-            FirstRunTipsView()
-                .presentationDetents([.medium, .large])
-                .nightDragIndicator()
-        }
         .nightSheet(isPresented: $showSyncSheet, onDismiss: {
             guard let route = pendingChatRoute else { return }
             pendingChatRoute = nil
@@ -1133,8 +1144,8 @@ struct ContentView: View {
             )
                 .padSheetSizing()
         }
-        .nightSheet(isPresented: $showAboutSheet) {
-            AcknowledgementsView()
+        .nightSheet(isPresented: $showAboutSheet, onDismiss: presentTipsIfNeeded) {
+            AcknowledgementsView(onReplayTour: { replayTourRequested = true })
                 .padSheetSizing()
         }
         .nightSheet(isPresented: $showPaywallSheet) {
@@ -1328,6 +1339,7 @@ struct ContentView: View {
                     }
                 }
             )
+            .tourTarget(.header)
             .padding(.horizontal, 12)
 
             // The online-tiles warning used to sit here under the header, but
@@ -1441,6 +1453,7 @@ struct ContentView: View {
                             showAboutSheet = true
                         }
                     )
+                    .tourTarget(.menu)
 
                     if syncManager.room?.hasPrefix("3:") == true {
                         TacMapChatShortcutButton(store: syncManager.chatStore) {
@@ -1455,15 +1468,18 @@ struct ContentView: View {
                        !graphicsLocked,
                        !missionDataLocked {
                         QuickAddSymbolButton(action: beginQuickSymbolCreation)
+                            .tourTarget(.add)
                     }
 
                     UnitLabelsToggle(active: visibility.unitLabelsVisible) {
                         visibility.unitLabelsVisible.toggle()
                     }
+                    .tourTarget(.labels)
 
                     NightModeToggle(active: opsec.nightMode) {
                         _ = opsec.setNightMode(!opsec.nightMode)
                     }
+                    .tourTarget(.night)
 
                     if drawingsPanelOpen {
                         DrawingsPanel(
@@ -1487,6 +1503,7 @@ struct ContentView: View {
                         northReference: locationService.headingNorthReference,
                         onTap: handleCompassTap
                     )
+                    .tourTarget(.compass)
                     if canUndo || canRedo {
                         UndoRedoButtons(
                             canUndo: canUndo,
@@ -1502,6 +1519,7 @@ struct ContentView: View {
                             mapVM.selectedDrawingID = nil
                         }
                     }
+                    .tourTarget(.lock)
                 }
             }
             .padding(.horizontal, 12)
@@ -1659,9 +1677,24 @@ struct ContentView: View {
     }
 
     /// First-run tips, once the map is visible and unlocked.
+    /// Starts the guided tour on first run, or when About asked to replay it.
     private func presentTipsIfNeeded() {
-        guard !appLockOverlayActive, !showTips, FirstRunTips.shouldShow() else { return }
-        showTips = true
+        guard !appLockOverlayActive, !missionDataLocked, tourStep == nil else { return }
+        if replayTourRequested {
+            replayTourRequested = false
+        } else if !FirstRunTips.shouldShow() {
+            return
+        }
+        drawingsPanelOpen = false
+        mapPressPoint = nil
+        mapVM.selectedWaypointID = nil
+        mapVM.selectedDrawingID = nil
+        withAnimation(.easeOut(duration: 0.25)) { tourStep = 0 }
+    }
+
+    private func finishTour() {
+        FirstRunTips.markSeen()
+        withAnimation(.easeOut(duration: 0.2)) { tourStep = nil }
     }
 
     /// Opens the symbol builder for a long-pressed map point.

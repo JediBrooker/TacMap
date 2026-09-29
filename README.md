@@ -118,8 +118,10 @@ quadrangle (public domain) rendered live over the satellite. Run
   while it is on. On iOS, system alerts and drop-down pickers are drawn by iOS
   outside the app and cannot be recoloured; they show white text instead of
   blue.
-- **First-run tips** — four short cards on first launch cover placing,
-  editing, sharing and night mode; **Settings → Show Tips Again** reopens them.
+- **Guided tour** — on first launch a short tour dims the map and points at
+  each control in turn (crosshair, grid reference, +, the long-press menu,
+  the menu, labels, night mode, compass and lock), with Back, Next and Skip.
+  **☰ → About & Credits → Replay Tour** (or Settings) runs it again.
 - **Sortable symbol list** — **☰ → Symbology** sorts by newest first, name
   (numbers in numeric order), distance from the crosshair, or grouped by
   affiliation or layer. The choice is remembered.

@@ -195,6 +195,7 @@ jobs:
             -only-testing:TacticalMapsUITests/SettingsLanguageTests \
             -only-testing:TacticalMapsUITests/NightModeTests \
             -only-testing:TacticalMapsUITests/MapLongPressTests \
+            -only-testing:TacticalMapsUITests/MapTourTests \
             -parallel-testing-enabled NO \
             -resultBundlePath PDFSmokeResults.xcresult \
             test 2>&1 | tee pdf-smoke-test.log | xcbeautify --renderer github-actions

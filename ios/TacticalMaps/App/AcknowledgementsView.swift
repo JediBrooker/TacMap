@@ -8,10 +8,26 @@ struct AcknowledgementsView: View {
     /// Captured once on appear so the "Clear" button can hide the section
     /// without a re-render fight.
     @State private var crashURL: URL? = CrashReporter.exportURL()
+    /// Closes About and replays the guided map tour.
+    var onReplayTour: (() -> Void)? = nil
 
     var body: some View {
         NavigationStack {
             List {
+                if let onReplayTour {
+                    Section {
+                        Button {
+                            onReplayTour()
+                            dismiss()
+                        } label: {
+                            Label(Messages.tourReplay(), systemImage: "play.circle")
+                        }
+                        .accessibilityIdentifier("about.replayTour")
+                    } footer: {
+                        Text(Messages.tourReplayHelp())
+                    }
+                }
+
                 Section(L10n.text("Map data")) {
                     LinkRow(
                         title: L10n.text("Esri World Imagery (Satellite basemap)"),
