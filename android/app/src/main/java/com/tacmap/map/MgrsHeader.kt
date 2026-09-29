@@ -69,6 +69,8 @@ fun MgrsHeader(
     gridMagneticDegrees: Double? = null,
     /// Straight-line distance from the latest user fix to the crosshair.
     distanceFromUserMetres: Double? = null,
+    /** Applied to the card itself, inside its side margins. */
+    highlightModifier: Modifier = Modifier,
     onDropPin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -77,6 +79,7 @@ fun MgrsHeader(
     Column(
         modifier = modifier
             .padding(horizontal = 16.dp)
+            .then(highlightModifier)
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xCC000000))
             .combinedClickable(

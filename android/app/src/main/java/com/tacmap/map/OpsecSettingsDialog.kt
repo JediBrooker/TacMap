@@ -195,7 +195,7 @@ fun OpsecSettingsDialog(
                 )
                 Caption(Messages.nightModeHelp())
                 onShowTips?.let { showTips ->
-                    TextButton(onClick = showTips) { Text(Messages.tipsShowAgain()) }
+                    TextButton(onClick = showTips) { Text(Messages.tourReplay()) }
                 }
 
                 Text(L10n.text("Unit Sync"), fontWeight = FontWeight.SemiBold)

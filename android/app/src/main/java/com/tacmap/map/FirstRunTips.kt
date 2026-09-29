@@ -1,50 +1,42 @@
 package com.tacmap.map
 
 import android.content.Context
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.PanTool
-import androidx.compose.material.icons.filled.SettingsInputAntenna
-import com.tacmap.ui.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import com.tacmap.localization.DisplayFormat
+import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.tacmap.localization.Messages
 
 /**
- * Four short tips shown once after the first unlock and reopenable from
- * Settings. Bump [CURRENT_VERSION] when the tips change enough to show again.
- * iOS mirrors this in `FirstRunTips.swift`.
+ * The guided map tour: shown once after the first unlock and replayable from
+ * About or Settings. Each step highlights one real map control. Bump
+ * [CURRENT_VERSION] when the tour changes enough to show again. iOS mirrors
+ * this in `FirstRunTips.swift`.
  */
 object FirstRunTips {
-    const val CURRENT_VERSION = 1
+    const val CURRENT_VERSION = 2
     private const val PREFS = "first_run_tips"
     private const val KEY_SEEN_VERSION = "seen_version"
 
-    class Tip(val icon: ImageVector, val title: String, val body: String)
+    /** [target] is the control to highlight; null shows the card in the middle. */
+    class Step(val target: TourTarget?, val title: String, val body: String)
 
-    val tips: List<Tip>
+    val steps: List<Step>
         get() = listOf(
-            Tip(Icons.Default.AddCircle, Messages.tipsPlaceTitle(), Messages.tipsPlaceBody()),
-            Tip(Icons.Default.PanTool, Messages.tipsEditTitle(), Messages.tipsEditBody()),
-            Tip(Icons.Default.SettingsInputAntenna, Messages.tipsShareTitle(), Messages.tipsShareBody()),
-            Tip(Icons.Default.DarkMode, Messages.tipsNightTitle(), Messages.tipsNightBody()),
+            Step(TourTarget.CROSSHAIR, Messages.tourWelcomeTitle(), Messages.tourWelcomeBody()),
+            Step(TourTarget.HEADER, Messages.tourHeaderTitle(), Messages.tourHeaderBody()),
+            Step(TourTarget.ADD, Messages.tourAddTitle(), Messages.tourAddBody()),
+            Step(TourTarget.MAP_HOLD, Messages.tourHoldTitle(), Messages.tourHoldBody()),
+            Step(TourTarget.MENU, Messages.tourMenuTitle(), Messages.tourMenuBody()),
+            Step(TourTarget.LABELS, Messages.tourLabelsTitle(), Messages.tourLabelsBody()),
+            Step(TourTarget.NIGHT, Messages.tourNightTitle(), Messages.tourNightBody()),
+            Step(TourTarget.COMPASS, Messages.tourCompassTitle(), Messages.tourCompassBody()),
+            Step(TourTarget.LOCK, Messages.tourLockTitle(), Messages.tourLockBody()),
+            Step(null, Messages.tourEditTitle(), Messages.tourEditBody()),
         )
 
     private fun prefs(context: Context) =
@@ -54,7 +46,7 @@ object FirstRunTips {
         prefs(context).getInt(KEY_SEEN_VERSION, 0) < CURRENT_VERSION
 
     /** Also used by instrumented tests before launching MainActivity, so the
-     * tips never cover the map they drive. */
+     * tour never covers the map they drive. */
     fun markSeen(context: Context) {
         prefs(context).edit().putInt(KEY_SEEN_VERSION, CURRENT_VERSION).apply()
     }
@@ -64,37 +56,25 @@ object FirstRunTips {
     }
 }
 
-@Composable
-internal fun FirstRunTipsDialog(onFinished: () -> Unit) {
-    val tips = FirstRunTips.tips
-    var page by rememberSaveable { mutableIntStateOf(0) }
-    val tip = tips[page.coerceIn(0, tips.lastIndex)]
-    val isLast = page >= tips.lastIndex
-    AlertDialog(
-        onDismissRequest = onFinished,
-        icon = { Icon(tip.icon, contentDescription = null, modifier = Modifier.size(36.dp)) },
-        title = { Text(tip.title) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(tip.body)
-                Text(
-                    Messages.tipsPage(
-                        DisplayFormat.number((page + 1).toDouble(), 0),
-                        DisplayFormat.number(tips.size.toDouble(), 0),
-                    ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { if (isLast) onFinished() else page += 1 }) {
-                Text(if (isLast) Messages.tipsDone() else Messages.tipsNext())
-            }
-        },
-        dismissButton = if (isLast) null else {
-            { TextButton(onClick = onFinished) { Text(Messages.tipsSkip()) } }
-        },
-    )
+/** Map controls the tour can point at. [CROSSHAIR] and [MAP_HOLD] are places
+ * on the map rather than controls, so nothing is tagged for them. */
+enum class TourTarget { CROSSHAIR, HEADER, ADD, MAP_HOLD, MENU, LABELS, NIGHT, COMPASS, LOCK }
+
+/** Where each tagged control is, in root coordinates, for the tour overlay. */
+@Stable
+class TourTargets {
+    val bounds = mutableStateMapOf<TourTarget, Rect>()
+}
+
+/** Marks this node as the control a tour step highlights. A control that
+ * leaves the screen (the + button while graphics are locked) drops out, and
+ * its step shows the card without a spotlight. */
+fun Modifier.tourTarget(targets: TourTargets, target: TourTarget): Modifier = composed {
+    DisposableEffect(targets, target) {
+        onDispose { targets.bounds.remove(target) }
+    }
+    onGloballyPositioned { coordinates ->
+        val rect = coordinates.boundsInRoot()
+        if (targets.bounds[target] != rect) targets.bounds[target] = rect
+    }
 }

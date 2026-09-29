@@ -120,7 +120,7 @@ struct OpsecSettingsView: View {
                 }
 
                 Section {
-                    Button(Messages.tipsShowAgain()) {
+                    Button(Messages.tourReplay()) {
                         FirstRunTips.reset()
                         dismiss()
                     }

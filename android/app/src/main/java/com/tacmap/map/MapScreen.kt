@@ -293,6 +293,7 @@ internal fun MapScreen(
     var quickAddEditorMode by remember { mutableStateOf<SymbolEditorMode?>(null) }
     var mapPressPoint by remember { mutableStateOf<MapPressPoint?>(null) }
     var showTips by rememberSaveable { mutableStateOf(FirstRunTips.shouldShow(context)) }
+    val tourTargets = remember { TourTargets() }
     var pointSunMoon by remember { mutableStateOf<MapPressPoint?>(null) }
     var pointRingsCentre by remember { mutableStateOf<Waypoint?>(null) }
     var quickAddCreationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
@@ -1071,6 +1072,7 @@ internal fun MapScreen(
             modifier = Modifier
                 .padding(top = 8.dp)
                 .fillMaxWidth(),
+            highlightModifier = Modifier.tourTarget(tourTargets, TourTarget.HEADER),
             onDropPin = {
                 val (lat, lng) = vm.headerCoordinate
                 val activeLayerId = drawingDocument.layers
@@ -1132,7 +1134,7 @@ internal fun MapScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box {
+            Box(Modifier.tourTarget(tourTargets, TourTarget.MENU)) {
                 CircleHudButton(Icons.Default.Menu, L10n.text("Menu")) { hamburgerOpen = true }
                 DropdownMenu(
                     expanded = hamburgerOpen,
@@ -1304,7 +1306,7 @@ internal fun MapScreen(
                 }
             }
             if (quickAddAllowed) {
-                Box {
+                Box(Modifier.tourTarget(tourTargets, TourTarget.ADD)) {
                     QuickAddSymbolButton {
                         // Freeze the placement target now. The user can spend
                         // time in the editor without a later camera update
@@ -1350,21 +1352,27 @@ internal fun MapScreen(
                     }
                 }
             }
-            UnitLabelsToggle(active = unitLabelsVisible) { unitLabelsVisible = !unitLabelsVisible }
-            NightModeToggle(active = nightModeOn) { vm.opsec.setNightMode(!nightModeOn) }
+            Box(Modifier.tourTarget(tourTargets, TourTarget.LABELS)) {
+                UnitLabelsToggle(active = unitLabelsVisible) { unitLabelsVisible = !unitLabelsVisible }
+            }
+            Box(Modifier.tourTarget(tourTargets, TourTarget.NIGHT)) {
+                NightModeToggle(active = nightModeOn) { vm.opsec.setNightMode(!nightModeOn) }
+            }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                MapCompassChip(
-                    vm = vm,
-                    orientationMode = mapOrientationMode,
-                    onHeadingUnavailable = {
-                        Toast.makeText(
-                            context,
-                            L10n.text("Heading Up is unavailable on this device."),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    },
-                )
+                Box(Modifier.tourTarget(tourTargets, TourTarget.COMPASS)) {
+                    MapCompassChip(
+                        vm = vm,
+                        orientationMode = mapOrientationMode,
+                        onHeadingUnavailable = {
+                            Toast.makeText(
+                                context,
+                                L10n.text("Heading Up is unavailable on this device."),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                    )
+                }
                 UndoRedoButtons(
                     canUndo = canUndo,
                     canRedo = canRedo,
@@ -1383,10 +1391,12 @@ internal fun MapScreen(
                         }
                     }
                 )
-                LockButton(
-                    locked = graphicsLocked,
-                    onToggle = { graphicsLocked = !graphicsLocked }
-                )
+                Box(Modifier.tourTarget(tourTargets, TourTarget.LOCK)) {
+                    LockButton(
+                        locked = graphicsLocked,
+                        onToggle = { graphicsLocked = !graphicsLocked }
+                    )
+                }
             }
         }
 
@@ -1543,6 +1553,16 @@ internal fun MapScreen(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 80.dp)
         )
+
+        if (showTips) {
+            MapTourOverlay(
+                targets = tourTargets,
+                onFinish = {
+                    FirstRunTips.markSeen(context)
+                    showTips = false
+                },
+            )
+        }
     }
 
     val quickMode = quickAddEditorMode
@@ -1713,15 +1733,24 @@ internal fun MapScreen(
         )
     }
 
-    if (showAboutDialog) {
-        AboutDialog(onDismiss = { showAboutDialog = false })
+    /** Opens the guided tour over a clear map. */
+    fun startTour() {
+        hamburgerOpen = false
+        quickAddMenuOpen = false
+        mapPressPoint = null
+        vm.selectWaypoint(null)
+        selectedDrawingId = null
+        showTips = true
     }
 
-    if (showTips) {
-        FirstRunTipsDialog(onFinished = {
-            FirstRunTips.markSeen(context)
-            showTips = false
-        })
+    if (showAboutDialog) {
+        AboutDialog(
+            onDismiss = { showAboutDialog = false },
+            onReplayTour = {
+                showAboutDialog = false
+                startTour()
+            },
+        )
     }
 
     pointSunMoon?.let { point ->
@@ -1763,7 +1792,7 @@ internal fun MapScreen(
             onRequestAuthBoundChange = onRequestAuthBoundChange,
             onShowTips = {
                 showOpsecSettings = false
-                showTips = true
+                startTour()
             },
             onDismiss = { showOpsecSettings = false },
         )

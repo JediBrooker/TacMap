@@ -372,41 +372,83 @@ enum Messages {
     static func tipsDone() -> String {
         L10n.message("id.tips_done", fallback: "Get Started")
     }
-    static func tipsEditBody() -> String {
-        L10n.message("id.tips_edit_body", fallback: "Tap a symbol or drawing to edit it, or hold and drag it to move it. Undo and redo sit on the map, and the lock button prevents accidental edits.")
-    }
-    static func tipsEditTitle() -> String {
-        L10n.message("id.tips_edit_title", fallback: "Move and Edit")
-    }
     static func tipsNext() -> String {
         L10n.message("id.tips_next", fallback: "Next")
-    }
-    static func tipsNightBody() -> String {
-        L10n.message("id.tips_night_body", fallback: "The night mode button on the map turns the whole screen red and dims it to protect your night vision. You can reopen these tips in Settings.")
-    }
-    static func tipsNightTitle() -> String {
-        L10n.message("id.tips_night_title", fallback: "Work at Night")
-    }
-    static func tipsPlaceBody() -> String {
-        L10n.message("id.tips_place_body", fallback: "Tap + to place a unit, task or marker at the crosshair. Or hold an empty spot on the map to place one there, measure from it or add range rings.")
-    }
-    static func tipsPlaceTitle() -> String {
-        L10n.message("id.tips_place_title", fallback: "Place Symbols")
-    }
-    static func tipsShareBody() -> String {
-        L10n.message("id.tips_share_body", fallback: "Unit Sync shares symbols and drawings with your team, end-to-end encrypted. The menu also exports GeoJSON, KML, KMZ and GPX.")
-    }
-    static func tipsShareTitle() -> String {
-        L10n.message("id.tips_share_title", fallback: "Share the Picture")
-    }
-    static func tipsShowAgain() -> String {
-        L10n.message("id.tips_show_again", fallback: "Show Tips Again")
     }
     static func tipsSkip() -> String {
         L10n.message("id.tips_skip", fallback: "Skip")
     }
-    static func tipsTitle() -> String {
-        L10n.message("id.tips_title", fallback: "Tips")
+    static func tourAddBody() -> String {
+        L10n.message("id.tour_add_body", fallback: "Tap + to place a unit, task or marker at the crosshair.")
+    }
+    static func tourAddTitle() -> String {
+        L10n.message("id.tour_add_title", fallback: "Place a Symbol")
+    }
+    static func tourBack() -> String {
+        L10n.message("id.tour_back", fallback: "Back")
+    }
+    static func tourCompassBody() -> String {
+        L10n.message("id.tour_compass_body", fallback: "Shows which way the map faces, in mils. Tap it to turn the map back to north, or to follow the way you are facing.")
+    }
+    static func tourCompassTitle() -> String {
+        L10n.message("id.tour_compass_title", fallback: "Compass")
+    }
+    static func tourEditBody() -> String {
+        L10n.message("id.tour_edit_body", fallback: "Tap a symbol or drawing to edit it, or hold and drag it to move it. You can replay this tour any time from About & Credits in the menu.")
+    }
+    static func tourEditTitle() -> String {
+        L10n.message("id.tour_edit_title", fallback: "Edit and Move")
+    }
+    static func tourHeaderBody() -> String {
+        L10n.message("id.tour_header_body", fallback: "Shows the grid reference under the crosshair. Tap it to copy it, or hold it to drop a pin there.")
+    }
+    static func tourHeaderTitle() -> String {
+        L10n.message("id.tour_header_title", fallback: "Grid Reference")
+    }
+    static func tourHoldBody() -> String {
+        L10n.message("id.tour_hold_body", fallback: "Hold a finger still on the map for a second to place a symbol, measure, add range rings or copy the grid reference for that spot.")
+    }
+    static func tourHoldTitle() -> String {
+        L10n.message("id.tour_hold_title", fallback: "Hold the Map")
+    }
+    static func tourLabelsBody() -> String {
+        L10n.message("id.tour_labels_body", fallback: "Shows or hides the names next to symbols.")
+    }
+    static func tourLabelsTitle() -> String {
+        L10n.message("id.tour_labels_title", fallback: "Unit Labels")
+    }
+    static func tourLockBody() -> String {
+        L10n.message("id.tour_lock_body", fallback: "Locks symbols and drawings so a stray touch can't change them. After an edit, undo and redo appear next to it.")
+    }
+    static func tourLockTitle() -> String {
+        L10n.message("id.tour_lock_title", fallback: "Lock")
+    }
+    static func tourMenuBody() -> String {
+        L10n.message("id.tour_menu_body", fallback: "Symbols, drawings, layers, measuring, weather, import and export, chat, Unit Sync and settings are all in here.")
+    }
+    static func tourMenuTitle() -> String {
+        L10n.message("id.tour_menu_title", fallback: "Menu")
+    }
+    static func tourNightBody() -> String {
+        L10n.message("id.tour_night_body", fallback: "Turns the screen red and dims it to protect your night vision. Tap again to turn it off.")
+    }
+    static func tourNightTitle() -> String {
+        L10n.message("id.tour_night_title", fallback: "Night Mode")
+    }
+    static func tourProgress(_ current: String, _ total: String) -> String {
+        L10n.message("id.tour_progress", fallback: "Step %1$@ of %2$@", current, total)
+    }
+    static func tourReplay() -> String {
+        L10n.message("id.tour_replay", fallback: "Replay Tour")
+    }
+    static func tourReplayHelp() -> String {
+        L10n.message("id.tour_replay_help", fallback: "A short guided tour of the map and its buttons.")
+    }
+    static func tourWelcomeBody() -> String {
+        L10n.message("id.tour_welcome_body", fallback: "This quick tour shows where everything is. The crosshair in the middle marks your working point: drag the map to move it and pinch to zoom.")
+    }
+    static func tourWelcomeTitle() -> String {
+        L10n.message("id.tour_welcome_title", fallback: "Welcome to TacMap")
     }
     static func trialExpiredDetails(_ value: String) -> String {
         L10n.message("id.trial_expired_details", fallback: "Your %1$@-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", value)

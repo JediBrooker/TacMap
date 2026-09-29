@@ -15908,18 +15908,6 @@
     "accessor": "ringsHelpPoint",
     "parameters": []
   },
-  "tips_title": {
-    "en": "Tips",
-    "de": "Tipps",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "Title of the first-run tips sheet.",
-    "legacy": false,
-    "accessor": "tipsTitle",
-    "parameters": []
-  },
   "tips_next": {
     "en": "Next",
     "de": "Weiter",
@@ -15954,134 +15942,6 @@
     "context": "Closes the first-run tips before the last one.",
     "legacy": false,
     "accessor": "tipsSkip",
-    "parameters": []
-  },
-  "tips_show_again": {
-    "en": "Show Tips Again",
-    "de": "Tipps erneut anzeigen",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "Settings button that closes Settings and shows the first-run tips again.",
-    "legacy": false,
-    "accessor": "tipsShowAgain",
-    "parameters": []
-  },
-  "tips_page": {
-    "en": "Tip {1} of {2}",
-    "de": "Tipp {1} von {2}",
-    "platforms": [
-      "android"
-    ],
-    "context": "Position in the first-run tips, for example 'Tip 2 of 4'. Both values are formatted numbers.",
-    "legacy": false,
-    "accessor": "tipsPage",
-    "parameters": [
-      {
-        "name": "current",
-        "type": "string"
-      },
-      {
-        "name": "total",
-        "type": "string"
-      }
-    ]
-  },
-  "tips_place_title": {
-    "en": "Place Symbols",
-    "de": "Symbole platzieren",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "First-run tip title about adding military symbols to the map.",
-    "legacy": false,
-    "accessor": "tipsPlaceTitle",
-    "parameters": []
-  },
-  "tips_place_body": {
-    "en": "Tap + to place a unit, task or marker at the crosshair. Or hold an empty spot on the map to place one there, measure from it or add range rings.",
-    "de": "Tippe auf +, um eine Einheit, einen Auftrag oder einen Marker am Fadenkreuz zu platzieren. Oder halte eine freie Stelle der Karte gedrückt, um dort etwas zu platzieren, von dort zu messen oder Entfernungsringe hinzuzufügen.",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "First-run tip body. '+' is the round add button on the map; the crosshair marks the map centre.",
-    "legacy": false,
-    "accessor": "tipsPlaceBody",
-    "parameters": []
-  },
-  "tips_edit_title": {
-    "en": "Move and Edit",
-    "de": "Verschieben und bearbeiten",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "First-run tip title about selecting, moving and undoing.",
-    "legacy": false,
-    "accessor": "tipsEditTitle",
-    "parameters": []
-  },
-  "tips_edit_body": {
-    "en": "Tap a symbol or drawing to edit it, or hold and drag it to move it. Undo and redo sit on the map, and the lock button prevents accidental edits.",
-    "de": "Tippe auf ein Symbol oder eine Zeichnung, um es zu bearbeiten, oder halte es gedrückt und ziehe es, um es zu verschieben. Rückgängig und Wiederholen findest du direkt auf der Karte, und die Sperrtaste verhindert versehentliche Änderungen.",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "First-run tip body. The lock button locks map graphics against edits.",
-    "legacy": false,
-    "accessor": "tipsEditBody",
-    "parameters": []
-  },
-  "tips_share_title": {
-    "en": "Share the Picture",
-    "de": "Lagebild teilen",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "First-run tip title about sharing the tactical picture with a team (situational awareness).",
-    "legacy": false,
-    "accessor": "tipsShareTitle",
-    "parameters": []
-  },
-  "tips_share_body": {
-    "en": "Unit Sync shares symbols and drawings with your team, end-to-end encrypted. The menu also exports GeoJSON, KML, KMZ and GPX.",
-    "de": "Unit Sync teilt Symbole und Zeichnungen Ende-zu-Ende-verschlüsselt mit deinem Team. Über das Menü exportierst du außerdem GeoJSON, KML, KMZ und GPX.",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "First-run tip body. Unit Sync is the feature name; file formats stay unchanged.",
-    "legacy": false,
-    "accessor": "tipsShareBody",
-    "parameters": []
-  },
-  "tips_night_title": {
-    "en": "Work at Night",
-    "de": "Nachts arbeiten",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "First-run tip title about night (red-light) mode.",
-    "legacy": false,
-    "accessor": "tipsNightTitle",
-    "parameters": []
-  },
-  "tips_night_body": {
-    "en": "The night mode button on the map turns the whole screen red and dims it to protect your night vision. You can reopen these tips in Settings.",
-    "de": "Die Nachtmodus-Taste auf der Karte färbt den ganzen Bildschirm rot und dunkelt ihn ab, um deine Nachtsicht zu schützen. In den Einstellungen kannst du diese Tipps erneut öffnen.",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "context": "First-run tip body about the red night mode toggle on the map toolbar.",
-    "legacy": false,
-    "accessor": "tipsNightBody",
     "parameters": []
   },
   "night_mode_title": {
@@ -16142,6 +16002,303 @@
     "context": "Accessibility label of the map's moon button while night mode is on.",
     "legacy": false,
     "accessor": "nightModeTurnOff",
+    "parameters": []
+  },
+  "tour_welcome_title": {
+    "en": "Welcome to TacMap",
+    "de": "Willkommen bei TacMap",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Title of the first step of the guided map tour; the crosshair in the middle of the map is highlighted.",
+    "legacy": false,
+    "accessor": "tourWelcomeTitle",
+    "parameters": []
+  },
+  "tour_welcome_body": {
+    "en": "This quick tour shows where everything is. The crosshair in the middle marks your working point: drag the map to move it and pinch to zoom.",
+    "de": "Diese kurze Tour zeigt dir, wo alles ist. Das Fadenkreuz in der Mitte markiert deinen Arbeitspunkt: Ziehe die Karte, um es zu verschieben, und zoome mit zwei Fingern.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour, first step. Explains the map-centre crosshair.",
+    "legacy": false,
+    "accessor": "tourWelcomeBody",
+    "parameters": []
+  },
+  "tour_header_title": {
+    "en": "Grid Reference",
+    "de": "Koordinate",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step title; highlights the coordinate readout at the top of the map (MGRS, WGS84 or UTM).",
+    "legacy": false,
+    "accessor": "tourHeaderTitle",
+    "parameters": []
+  },
+  "tour_header_body": {
+    "en": "Shows the grid reference under the crosshair. Tap it to copy it, or hold it to drop a pin there.",
+    "de": "Zeigt die Koordinate unter dem Fadenkreuz. Tippe darauf, um sie zu kopieren, oder halte sie gedrückt, um dort einen Marker zu setzen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step about the coordinate readout at the top of the map.",
+    "legacy": false,
+    "accessor": "tourHeaderBody",
+    "parameters": []
+  },
+  "tour_add_title": {
+    "en": "Place a Symbol",
+    "de": "Symbol platzieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step title; highlights the round + button.",
+    "legacy": false,
+    "accessor": "tourAddTitle",
+    "parameters": []
+  },
+  "tour_add_body": {
+    "en": "Tap + to place a unit, task or marker at the crosshair.",
+    "de": "Tippe auf +, um eine Einheit, einen Auftrag oder einen Marker am Fadenkreuz zu platzieren.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step about the + button, which places a military symbol at the map-centre crosshair.",
+    "legacy": false,
+    "accessor": "tourAddBody",
+    "parameters": []
+  },
+  "tour_hold_title": {
+    "en": "Hold the Map",
+    "de": "Karte gedrückt halten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step title; highlights an empty spot on the map with a finger icon.",
+    "legacy": false,
+    "accessor": "tourHoldTitle",
+    "parameters": []
+  },
+  "tour_hold_body": {
+    "en": "Hold a finger still on the map for a second to place a symbol, measure, add range rings or copy the grid reference for that spot.",
+    "de": "Halte einen Finger eine Sekunde lang still auf die Karte, um an dieser Stelle ein Symbol zu platzieren, zu messen, Entfernungsringe hinzuzufügen oder die Koordinate zu kopieren.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step about the long-press menu on empty map.",
+    "legacy": false,
+    "accessor": "tourHoldBody",
+    "parameters": []
+  },
+  "tour_menu_title": {
+    "en": "Menu",
+    "de": "Menü",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step title; highlights the menu (hamburger) button.",
+    "legacy": false,
+    "accessor": "tourMenuTitle",
+    "parameters": []
+  },
+  "tour_menu_body": {
+    "en": "Symbols, drawings, layers, measuring, weather, import and export, chat, Unit Sync and settings are all in here.",
+    "de": "Hier findest du Symbole, Zeichnungen, Ebenen, Messen, Wetter, Import und Export, Chat, Unit Sync und die Einstellungen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step about the main menu. Unit Sync is the team-sharing feature name.",
+    "legacy": false,
+    "accessor": "tourMenuBody",
+    "parameters": []
+  },
+  "tour_labels_title": {
+    "en": "Unit Labels",
+    "de": "Einheitenbeschriftungen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step title; highlights the tag button that shows or hides symbol labels.",
+    "legacy": false,
+    "accessor": "tourLabelsTitle",
+    "parameters": []
+  },
+  "tour_labels_body": {
+    "en": "Shows or hides the names next to symbols.",
+    "de": "Blendet die Namen neben den Symbolen ein oder aus.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step about the unit labels button.",
+    "legacy": false,
+    "accessor": "tourLabelsBody",
+    "parameters": []
+  },
+  "tour_night_title": {
+    "en": "Night Mode",
+    "de": "Nachtmodus",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step title; highlights the moon button.",
+    "legacy": false,
+    "accessor": "tourNightTitle",
+    "parameters": []
+  },
+  "tour_night_body": {
+    "en": "Turns the screen red and dims it to protect your night vision. Tap again to turn it off.",
+    "de": "Färbt den Bildschirm rot und dunkelt ihn ab, um deine Nachtsicht zu schützen. Tippe erneut, um ihn auszuschalten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step about the red night mode button.",
+    "legacy": false,
+    "accessor": "tourNightBody",
+    "parameters": []
+  },
+  "tour_compass_title": {
+    "en": "Compass",
+    "de": "Kompass",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step title; highlights the compass in the top-right corner.",
+    "legacy": false,
+    "accessor": "tourCompassTitle",
+    "parameters": []
+  },
+  "tour_compass_body": {
+    "en": "Shows which way the map faces, in mils. Tap it to turn the map back to north, or to follow the way you are facing.",
+    "de": "Zeigt die Kartenausrichtung in Strich. Tippe darauf, um die Karte wieder nach Norden auszurichten oder deiner Blickrichtung folgen zu lassen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step about the compass. Mils are NATO mils (6400 per circle); German uses Strich.",
+    "legacy": false,
+    "accessor": "tourCompassBody",
+    "parameters": []
+  },
+  "tour_lock_title": {
+    "en": "Lock",
+    "de": "Sperre",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step title; highlights the padlock button that locks map graphics.",
+    "legacy": false,
+    "accessor": "tourLockTitle",
+    "parameters": []
+  },
+  "tour_lock_body": {
+    "en": "Locks symbols and drawings so a stray touch can't change them. After an edit, undo and redo appear next to it.",
+    "de": "Sperrt Symbole und Zeichnungen, damit sie nicht versehentlich geändert werden. Nach einer Änderung erscheinen daneben Rückgängig und Wiederholen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Guided map tour step about the lock button and the undo/redo buttons beside it.",
+    "legacy": false,
+    "accessor": "tourLockBody",
+    "parameters": []
+  },
+  "tour_edit_title": {
+    "en": "Edit and Move",
+    "de": "Bearbeiten und verschieben",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Title of the last step of the guided map tour (no control highlighted).",
+    "legacy": false,
+    "accessor": "tourEditTitle",
+    "parameters": []
+  },
+  "tour_edit_body": {
+    "en": "Tap a symbol or drawing to edit it, or hold and drag it to move it. You can replay this tour any time from About & Credits in the menu.",
+    "de": "Tippe auf ein Symbol oder eine Zeichnung, um es zu bearbeiten, oder halte es gedrückt und ziehe es, um es zu verschieben. Du kannst diese Tour jederzeit im Menü unter „Über TacMap und Mitwirkende“ erneut abspielen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Last step of the guided map tour. 'About & Credits' is the menu item name (German: Über TacMap und Mitwirkende).",
+    "legacy": false,
+    "accessor": "tourEditBody",
+    "parameters": []
+  },
+  "tour_back": {
+    "en": "Back",
+    "de": "Zurück",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Button in the guided map tour that returns to the previous step.",
+    "legacy": false,
+    "accessor": "tourBack",
+    "parameters": []
+  },
+  "tour_progress": {
+    "en": "Step {1} of {2}",
+    "de": "Schritt {1} von {2}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Position in the guided map tour, for example 'Step 3 of 10'. Read by screen readers for the progress dots; both values are formatted numbers.",
+    "legacy": false,
+    "accessor": "tourProgress",
+    "parameters": [
+      {
+        "name": "current",
+        "type": "string"
+      },
+      {
+        "name": "total",
+        "type": "string"
+      }
+    ]
+  },
+  "tour_replay": {
+    "en": "Replay Tour",
+    "de": "Tour erneut abspielen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Button in About and in Settings that closes the screen and starts the guided map tour again.",
+    "legacy": false,
+    "accessor": "tourReplay",
+    "parameters": []
+  },
+  "tour_replay_help": {
+    "en": "A short guided tour of the map and its buttons.",
+    "de": "Eine kurze Führung durch die Karte und ihre Tasten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Footer under the Replay Tour button in About.",
+    "legacy": false,
+    "accessor": "tourReplayHelp",
     "parameters": []
   }
 }
