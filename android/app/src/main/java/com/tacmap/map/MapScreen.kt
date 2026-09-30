@@ -142,8 +142,10 @@ import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LiveMapLocationAction
 import com.tacmap.models.LiveMapLocationPermissionPolicy
 import com.tacmap.models.LiveMapLocationState
+import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.TrackRecordingPhase
 import com.tacmap.models.TrackRecordingSettingsTarget
+import com.tacmap.models.UndoTarget
 import com.tacmap.settings.MapOrientationMode
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
@@ -212,6 +214,7 @@ internal fun MapScreen(
     val cameraLng by vm.cameraLng.collectAsState()
     val cameraViewportState by vm.cameraViewportState.collectAsState()
     val centreElevation by vm.centreElevation.collectAsState()
+    val isBrowsing by vm.isBrowsing.collectAsState()
     val trackRecordingState by vm.trackRecorder.uiState.collectAsState()
     val isRecordingTrack = trackRecordingState.showsRec
     val trackPoints by vm.trackRecorder.points.collectAsState()
@@ -219,6 +222,7 @@ internal fun MapScreen(
     val trackPersistError = trackPersistMessage?.text
     val mapSource by vm.mapSource.collectAsState()
     val retainedImportedMap by vm.retainedImportedMapSource.collectAsState()
+    val retainedImportedMapIssue by vm.retainedImportedMapIssue.collectAsState()
     val mapSelectionPersistenceIssue by vm.mapSelectionPersistenceIssue.collectAsState()
 
     /// Is anything on screen actually pulling tiles off the internet right now?
@@ -244,23 +248,26 @@ internal fun MapScreen(
             waypointStore.committedChangeListener = follower::onWaypointsCommitted
         }
     }
+    // Symbols and drawings share one undo order, like iOS's single UndoManager.
+    val undoHistory = remember(waypointStore, drawingStore) {
+        MissionUndoHistory().also { history ->
+            waypointStore.undoStepListener = { history.recorded(UndoTarget.SYMBOLS) }
+            drawingStore.undoStepListener = { history.recorded(UndoTarget.DRAWINGS) }
+        }
+    }
     val importIdentityJournal = remember {
         com.tacmap.export.ExternalImportIdentityJournal(context)
     }
     val documentCopyJournal = remember { DocumentImportCopyJournal(context) }
     val drawingDocument by drawingStore.document.collectAsState()
-    val drawingCanUndo by drawingStore.canUndo.collectAsState()
-    val drawingCanRedo by drawingStore.canRedo.collectAsState()
-    val waypointCanUndo by waypointStore.canUndo.collectAsState()
-    val waypointCanRedo by waypointStore.canRedo.collectAsState()
+    val canUndo by undoHistory.canUndo.collectAsState()
+    val canRedo by undoHistory.canRedo.collectAsState()
     val waypointDataLocked by waypointStore.locked.collectAsState()
     val drawingDataLocked by drawingStore.locked.collectAsState()
     val waypointStoreMessage by waypointStore.loadError.collectAsState()
     val waypointStoreError = waypointStoreMessage?.text
     val drawingStoreMessage by drawingStore.loadError.collectAsState()
     val drawingStoreError = drawingStoreMessage?.text
-    val canUndo = drawingCanUndo || waypointCanUndo
-    val canRedo = drawingCanRedo || waypointCanRedo
     val lastLocation by vm.locationService.lastLocation.collectAsState()
     val distanceFromUserToCrosshair = lastLocation?.let { location ->
         crosshairDistanceMetres(
@@ -285,6 +292,7 @@ internal fun MapScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLayersSheet by remember { mutableStateOf(false) }
     var showImportExportSheet by remember { mutableStateOf(false) }
+    var exportPreview by remember { mutableStateOf<ExportPreviewKind?>(null) }
     var showOpsecSettings by remember { mutableStateOf(false) }
     var showDiscardTrackConfirmation by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
@@ -377,6 +385,9 @@ internal fun MapScreen(
 
     /// (done, total) while baking PDF into offline tiles, null when idle
     var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    /// the running bake, so the progress dialog's Cancel can stop it
+    var tilingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var tilingCancelling by remember { mutableStateOf(false) }
     /// lock toggle - when true no graphic can be moved. Extra guard
     /// against accidental drags in the field.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -406,6 +417,10 @@ internal fun MapScreen(
     var activeDrawingName by remember { mutableStateOf("") }
     var activeStrokeColor by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_COLOR) }
     var activeStrokeStyle by remember { mutableStateOf(DrawingStrokeStyle.SOLID) }
+    // Area fill is chosen independently of the stroke and kept between
+    // drawings, like the iOS drawing session.
+    var activeFillColor by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_COLOR) }
+    var activeFillAlpha by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_FILL_ALPHA) }
     var pendingDrawingMutation by remember { mutableStateOf<PendingDrawingMutation?>(null) }
 
     fun checkedDrawingMutation(
@@ -739,30 +754,27 @@ internal fun MapScreen(
             quickAddCreationError = null
         }
     }
+    // The measure line and its point dots draw in their own overlay (see
+    // CustomMapScreen.measurePoints), so hiding drawings never hides them.
     val draftDrawing = when {
-        // measure tool takes precedence - render its polyline as draft
-        // overlay so user can see the path they're laying down
-        measureSession.isActive && measureSession.points.size >= 1 -> newMapDrawingFeature(
-            name = "",
-            geometry = DrawingGeometry.LINE,
-            points = measureSession.points.map { DrawingPoint(it.first, it.second) },
-            layerId = safeActiveLayerId,
-            strokeColor = 0xFFFFA500.toInt(),
-            fillColor = 0,
-            strokeStyle = DrawingStrokeStyle.DASHED,
-            density = rendererDensity,
-        )
         draftGeometry != null -> newMapDrawingFeature(
             name = drawingNameOrDefault(activeDrawingName, draftGeometry!!, drawingDocument.features),
             geometry = draftGeometry!!,
             points = draftPoints,
             layerId = safeActiveLayerId,
             strokeColor = activeStrokeColor,
-            fillColor = activeStrokeColor.withAlpha(0x33),
+            fillColor = activeFillColor.withAlpha(activeFillAlpha),
             strokeStyle = activeStrokeStyle,
             density = rendererDensity,
         )
         else -> null
+    }
+
+    /** New drawings inherit the active layer's colour (e.g. Hostile starts
+     *  red), as on iOS; the draft bar can still change it. */
+    fun useActiveLayerStrokeColor() {
+        (drawingDocument.layers.firstOrNull { it.id == activeDrawingLayerId } ?: drawingDocument.layers.firstOrNull())
+            ?.let { activeStrokeColor = it.color or 0xFF000000.toInt() }
     }
 
     fun stopDrawing() {
@@ -783,7 +795,7 @@ internal fun MapScreen(
                     points = points,
                     layerId = safeActiveLayerId,
                     strokeColor = activeStrokeColor,
-                    fillColor = activeStrokeColor.withAlpha(0x33),
+                    fillColor = activeFillColor.withAlpha(activeFillAlpha),
                     strokeStyle = activeStrokeStyle,
                     density = rendererDensity,
                 )
@@ -876,6 +888,7 @@ internal fun MapScreen(
                 drawings = drawingDocument.features,
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,
+                measurePoints = if (measureSession.isActive) measureSession.points.toList() else emptyList(),
                 graphicsLocked = graphicsLocked,
                 userLocationVisible = userLocationVisible,
                 myLat = lastLocation?.latitude,
@@ -1060,7 +1073,10 @@ internal fun MapScreen(
         MgrsHeader(
             primaryCoordinate = primaryCoordinateDisplay.text,
             coordinateType = primaryCoordinateDisplay.type,
-            elevation = centreElevation?.metres,
+            // GPS altitude stands in only while the banner reads out your own
+            // position, never for a crosshair somewhere else (as on iOS).
+            elevation = centreElevation?.metres
+                ?: lastLocation?.takeIf { !isBrowsing && it.hasAltitude() }?.altitude,
             elevationApprox = centreElevation?.isStale == true,
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
             basemapLabel = basemapLabel,
@@ -1110,11 +1126,18 @@ internal fun MapScreen(
             )
         }
 
-        // live track-recording badge, only while recording. Tap to stop.
-        if (isRecordingTrack) {
+        // Track-recording pill: REC while recording, and also while awaiting
+        // location, starting or interrupted, as on iOS. What a tap does
+        // depends on the state (see recordingPillAction).
+        if (trackRecordingState.phase != TrackRecordingPhase.Idle) {
             RecordingIndicator(
+                phase = trackRecordingState.phase,
                 pointCount = trackPoints.size,
-                onStop = { vm.stopTrackRecording() },
+                onTap = when (recordingPillAction(trackRecordingState.phase)) {
+                    RecordingPillAction.STOP -> { { vm.stopTrackRecording() } }
+                    RecordingPillAction.DISMISS -> { { vm.trackRecorder.dismissRecordingMessage() } }
+                    RecordingPillAction.NONE -> null
+                },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
@@ -1378,24 +1401,39 @@ internal fun MapScreen(
                     canUndo = canUndo,
                     canRedo = canRedo,
                     onUndo = {
-                        if (drawingCanUndo) {
-                            if (drawingStore.undo()) ringFollower.realign(waypointStore.committedWaypoints.value)
-                        } else {
-                            waypointStore.undo()
+                        undoHistory.undo { target ->
+                            when (target) {
+                                UndoTarget.DRAWINGS -> drawingStore.undo().also { undone ->
+                                    if (undone) ringFollower.realign(waypointStore.committedWaypoints.value)
+                                }
+                                UndoTarget.SYMBOLS -> waypointStore.undo()
+                            }
                         }
                     },
                     onRedo = {
-                        if (drawingCanRedo) {
-                            if (drawingStore.redo()) ringFollower.realign(waypointStore.committedWaypoints.value)
-                        } else {
-                            waypointStore.redo()
+                        undoHistory.redo { target ->
+                            when (target) {
+                                UndoTarget.DRAWINGS -> drawingStore.redo().also { redone ->
+                                    if (redone) ringFollower.realign(waypointStore.committedWaypoints.value)
+                                }
+                                UndoTarget.SYMBOLS -> waypointStore.redo()
+                            }
                         }
                     }
                 )
                 Box(Modifier.tourTarget(tourTargets, TourTarget.LOCK)) {
                     LockButton(
                         locked = graphicsLocked,
-                        onToggle = { graphicsLocked = !graphicsLocked }
+                        onToggle = {
+                            graphicsLocked = !graphicsLocked
+                            // Locking closes any open symbol/drawing card so
+                            // nothing stays editable while locked (iOS parity).
+                            if (graphicsLocked) {
+                                if (selectedDrawingId != null) drawingStore.revertPreview()
+                                selectedDrawingId = null
+                                vm.selectWaypoint(null)
+                            }
+                        }
                     )
                 }
             }
@@ -1435,9 +1473,14 @@ internal fun MapScreen(
                 ),
                 strokeColor = activeStrokeColor,
                 strokeStyle = activeStrokeStyle,
+                fillColor = activeFillColor,
+                fillAlpha = activeFillAlpha,
                 onDrawingNameChange = { activeDrawingName = it },
                 onStrokeColorChange = { activeStrokeColor = it },
                 onStrokeStyleChange = { activeStrokeStyle = it },
+                onFillColorChange = { activeFillColor = it },
+                onFillAlphaChange = { activeFillAlpha = it },
+                onUndoPoint = { draftPoints = draftPoints.dropLast(1) },
                 onFinish = {
                     when (activeDrawTool) {
                         DrawingGeometry.POINT -> stopDrawing()
@@ -1581,40 +1624,27 @@ internal fun MapScreen(
     val quickMode = quickAddEditorMode
     val capturedQuickTarget = quickAddTarget
     if (quickMode != null && capturedQuickTarget != null) {
-        val initialKind = when (quickMode) {
-            SymbolEditorMode.MILITARY -> WaypointKind.Military()
-            SymbolEditorMode.TASK -> WaypointKind.ControlMeasure()
-            SymbolEditorMode.MARKER -> WaypointKind.Marker()
-        }
         SymbolEditorDialog(
             mode = quickMode,
-            initialKind = initialKind,
             initialName = "",
             crosshairLat = capturedQuickTarget.latitude,
             crosshairLng = capturedQuickTarget.longitude,
-            title = when (quickMode) {
-                SymbolEditorMode.MILITARY -> L10n.text("New Military Unit")
-                SymbolEditorMode.TASK -> L10n.text("New Tactical Task")
-                SymbolEditorMode.MARKER -> L10n.text("New Marker")
-            },
+            title = Messages.symbolsNewSymbolTitle(),
             actionLabel = L10n.text("Place"),
+            defaultTaskScale = TaskGraphicSizing.defaultScale(cameraViewportState),
             submissionError = quickAddCreationError?.text,
             onDismiss = {
                 quickAddEditorMode = null
                 quickAddTarget = null
                 quickAddCreationError = null
             },
-            onConfirm = { name, kind, higherFormation, uniqueIdentifier, reinforcementStatus ->
-                val added = Waypoint(
-                    name = name,
+            onConfirm = { draft ->
+                val added = draft.toWaypoint(
                     latitude = capturedQuickTarget.latitude,
                     longitude = capturedQuickTarget.longitude,
-                    kind = kind,
-                    higherFormation = higherFormation,
-                    uniqueIdentifier = uniqueIdentifier,
-                    reinforcementStatus = reinforcementStatus,
-                    layerId = capturedQuickTarget.layerId
+                    layerId = capturedQuickTarget.layerId,
                 )
+                val name = added.name
                 when (val result = persistNewSymbol(added) { waypointStore.add(it) }) {
                     is DurableSymbolCreation.Saved -> {
                         selectedDrawingId = null
@@ -1651,6 +1681,7 @@ internal fun MapScreen(
             activeLayerId = safeActiveLayerId,
             layers = drawingDocument.layers,
             store = waypointStore,
+            defaultTaskScale = TaskGraphicSizing.defaultScale(cameraViewportState),
             onDismiss = { showWaypointSheet = false },
             onFlyTo = { lat, lng ->
                 vm.flyTo(lat, lng)
@@ -1671,6 +1702,7 @@ internal fun MapScreen(
             onPlacePoint = {
                 vm.selectWaypoint(null)
                 selectedDrawingId = null
+                useActiveLayerStrokeColor()
                 activeDrawTool = DrawingGeometry.POINT
                 activeDrawingName = defaultDrawingName(DrawingGeometry.POINT, drawingDocument.features)
                 draftGeometry = null
@@ -1680,6 +1712,7 @@ internal fun MapScreen(
             onStartDraft = { geometry ->
                 vm.selectWaypoint(null)
                 selectedDrawingId = null
+                useActiveLayerStrokeColor()
                 activeDrawTool = geometry
                 isFreeDrawMode = false
                 activeDrawingName = defaultDrawingName(geometry, drawingDocument.features)
@@ -1690,6 +1723,7 @@ internal fun MapScreen(
             onStartFreeDraw = {
                 vm.selectWaypoint(null)
                 selectedDrawingId = null
+                useActiveLayerStrokeColor()
                 activeDrawTool = DrawingGeometry.LINE
                 isFreeDrawMode = true
                 activeDrawingName = defaultDrawingName(DrawingGeometry.LINE, drawingDocument.features)
@@ -1721,7 +1755,13 @@ internal fun MapScreen(
                 checkedDrawingMutation(DrawingMutationIntent.DELETE) {
                     drawingStore.removeFeature(id)
                 }
-            }
+            },
+            onRenameFeature = { id, name ->
+                checkedDrawingMutation(DrawingMutationIntent.EDIT) {
+                    val feature = drawingStore.document.value.features.firstOrNull { it.id == id }
+                    feature != null && drawingStore.updateFeature(feature.copy(name = name))
+                }
+            },
         )
     }
 
@@ -1949,8 +1989,18 @@ internal fun MapScreen(
 
     tilingProgress?.let { (done, total) ->
         AlertDialog(
-            onDismissRequest = { /* non-cancelable while baking */ },
-            confirmButton = {},
+            // Only the Cancel button stops the bake; a stray tap outside doesn't.
+            onDismissRequest = {},
+            confirmButton = {
+                // The dialog closes once the bake has stopped and cleaned up.
+                TextButton(
+                    onClick = {
+                        tilingCancelling = true
+                        tilingJob?.cancel()
+                    },
+                    enabled = !tilingCancelling,
+                ) { Text(L10n.text("Cancel")) }
+            },
             title = { Text(L10n.text("Generating offline tiles")) },
             text = {
                 Column {
@@ -1998,12 +2048,15 @@ internal fun MapScreen(
             activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
             retainedImportedMapName = retainedImportedMap?.displayName,
+            retainedImportedMapIssue = retainedImportedMapIssue?.text,
             importedMapActive = importedMapLoaded,
             onReturnToImportedMap = {
                 vm.restoreRetainedImportedMap()
                 showLayersSheet = false
             },
-            hasPdfMap = pdfSource != null,
+            onDeleteRetainedImportedMap = { vm.deleteRetainedImportedMap() },
+            onRemoveUnavailableRetainedMap = { vm.removeUnavailableRetainedMapEntry() },
+            pdfMap = pdfSource,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
             onCalibratePdf = {
                 showLayersSheet = false
@@ -2015,12 +2068,19 @@ internal fun MapScreen(
                 if (pdf == null) {
                     Toast.makeText(context, L10n.text("Load a PDF map first"), Toast.LENGTH_SHORT).show()
                 } else {
-                    scope.launch {
+                    tilingJob = scope.launch {
+                        tilingCancelling = false
                         tilingProgress = 0 to 0
-                        val path = com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
-                            tilingProgress = p.done to p.total
+                        // Cancel stops PdfTiler at the next tile; it deletes its
+                        // partial output before the cancellation reaches here.
+                        val path = try {
+                            com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
+                                tilingProgress = p.done to p.total
+                            }
+                        } finally {
+                            tilingProgress = null
+                            tilingJob = null
                         }
-                        tilingProgress = null
                         if (path != null) {
                             val activated = com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
                                 ?.let { vm.setMapSource(it) }
@@ -2075,18 +2135,11 @@ internal fun MapScreen(
             },
             onExportGeoJson = {
                 showImportExportSheet = false
-                scope.launch {
-                    shareGeoJson(
-                        context = context,
-                        waypoints = waypoints,
-                        drawings = drawingDocument.features,
-                        layers = drawingDocument.layers,
-                    )
-                }
+                exportPreview = ExportPreviewKind.GEOJSON
             },
             onExportGpx = {
                 showImportExportSheet = false
-                scope.launch { shareGpx(context = context, points = trackPoints) }
+                exportPreview = ExportPreviewKind.GPX
             },
             onExportAllData = {
                 showImportExportSheet = false
@@ -2133,10 +2186,25 @@ internal fun MapScreen(
         )
     }
 
+    when (exportPreview) {
+        ExportPreviewKind.GEOJSON -> GeoJsonExportPreviewDialog(
+            waypoints = waypoints,
+            drawings = drawingDocument.features,
+            layers = drawingDocument.layers,
+            onDismiss = { exportPreview = null },
+        )
+        ExportPreviewKind.GPX -> GpxExportPreviewDialog(
+            points = trackPoints,
+            onDismiss = { exportPreview = null },
+        )
+        null -> Unit
+    }
+
     pendingCalibrationTap?.let { tap ->
         CalibrationInputDialog(
             point = tap,
             fiduciaryNumber = calibrationFiduciaries.size + 1,
+            currentLocationMgrs = lastLocation?.let { calibrationMgrsForFix(it.latitude, it.longitude) },
             datum = calibrationDatum,
             onDatumChange = { calibrationDatum = it },
             onDismiss = { pendingCalibrationTap = null },

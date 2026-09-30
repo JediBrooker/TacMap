@@ -15,6 +15,7 @@ import android.graphics.Typeface
 import android.content.res.Resources
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.util.LruCache
 import androidx.core.content.ContextCompat
 import com.caverock.androidsvg.SVG
 import com.tacmap.R
@@ -28,7 +29,7 @@ import com.tacmap.waypoints.TaskColor
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import kotlin.math.ceil
-import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -37,7 +38,15 @@ import kotlin.math.min
  */
 object SymbolIconFactory {
     private const val MILSYMBOL_MARKER_SCALE = 1.0f
+    /** Longest side of a baked task icon. The map scales task artwork itself,
+     *  so this only bounds hit-test, preview and KMZ bitmaps of stretched tasks. */
+    private const val MAX_TASK_ICON_PX = 1024.0
+    /** iOS draws echelon marks in points on its 56 pt reference symbol. */
+    private const val ECHELON_REFERENCE_SYMBOL_POINTS = 56f
     private val cache = mutableMapOf<String, Bitmap>()
+    private val taskArtworkCache = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
     private val visibleBoundsCache = mutableMapOf<String, Rect>()
     private var milsymbolMetrics: Map<String, MilsymbolMetric>? = null
 
@@ -271,7 +280,8 @@ object SymbolIconFactory {
 
         drawFrame(canvas, frame, spec.affiliation, fill, stroke)
         drawFunction(context, canvas, spec.function, spec.affiliation, frame, stroke, textPaint)
-        drawEchelon(canvas, spec.echelon, RectF(0f, 0f, width.toFloat(), echelonH), density, textPaint)
+        drawEchelon(canvas, spec.echelon, RectF(0f, 0f, width.toFloat(), echelonH),
+            unit = width / ECHELON_REFERENCE_SYMBOL_POINTS)
 
         if (spec.isHeadquarters) {
             canvas.drawLine(frame.left, frame.bottom, frame.left, frame.bottom + poleReserve, stroke)
@@ -457,18 +467,133 @@ object SymbolIconFactory {
         }
     }
 
-    private fun drawEchelon(
-        canvas: Canvas,
-        echelon: SymbolEchelon,
-        rect: RectF,
-        density: Float,
-        textPaint: Paint
-    ) {
-        textPaint.textSize = 13f * density
-        val y = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2f
-        canvas.drawText(echelon.glyph, rect.centerX(), y, textPaint)
+    /// APP-6 echelon marks as vector shapes with the geometry of iOS
+    /// `MilitarySymbolView.drawEchelon`, so units match across platforms. iOS
+    /// gives dot, bar and stroke sizes in points on its 56 pt symbol; [unit]
+    /// is one of those points at this bitmap's size.
+    private fun drawEchelon(canvas: Canvas, echelon: SymbolEchelon, rect: RectF, unit: Float) {
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = Color.BLACK
+        }
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = Color.BLACK
+            strokeWidth = 2f * unit
+        }
+        when (echelon) {
+            SymbolEchelon.TEAM -> {
+                // Open ring with a diagonal slash through it.
+                val r = rect.height() * 0.42f
+                canvas.drawCircle(cx, cy, r, stroke)
+                val s = r * 1.2f
+                canvas.drawLine(cx - s, cy + s, cx + s, cy - s, stroke)
+            }
+            SymbolEchelon.SECTION ->
+                drawEchelonDots(canvas, 1, cx, cy, radius = 3.2f * unit, spacing = 0f, paint = fill)
+            SymbolEchelon.PLATOON ->
+                drawEchelonDots(canvas, 3, cx, cy, radius = 3.2f * unit, spacing = 9f * unit, paint = fill)
+            SymbolEchelon.COMPANY ->
+                drawEchelonBars(canvas, 1, cx, top = rect.top + unit, height = rect.height() - 2f * unit,
+                    barWidth = 3.2f * unit, spacing = 0f, paint = fill)
+            SymbolEchelon.BATTALION_REGIMENT ->
+                drawEchelonBars(canvas, 2, cx, top = rect.top + unit, height = rect.height() - 2f * unit,
+                    barWidth = 3.2f * unit, spacing = 8f * unit, paint = fill)
+            SymbolEchelon.BRIGADE ->
+                drawEchelonXs(canvas, 1, cx, top = rect.top + 2f * unit,
+                    size = (rect.height() - 4f * unit) * 0.85f, spacing = 0f, paint = stroke)
+            SymbolEchelon.DIVISION ->
+                drawEchelonXs(canvas, 2, cx, top = rect.top + 2f * unit,
+                    size = (rect.height() - 4f * unit) * 0.85f, spacing = 9f * unit, paint = stroke)
+        }
     }
 
+    private fun drawEchelonDots(
+        canvas: Canvas, count: Int, cx: Float, cy: Float, radius: Float, spacing: Float, paint: Paint
+    ) {
+        val totalWidth = (count - 1) * spacing
+        for (i in 0 until count) {
+            canvas.drawCircle(cx - totalWidth / 2f + i * spacing, cy, radius, paint)
+        }
+    }
+
+    private fun drawEchelonBars(
+        canvas: Canvas, count: Int, cx: Float, top: Float, height: Float,
+        barWidth: Float, spacing: Float, paint: Paint
+    ) {
+        val totalWidth = (count - 1) * spacing
+        for (i in 0 until count) {
+            val x = cx - totalWidth / 2f + i * spacing
+            canvas.drawRect(x - barWidth / 2f, top, x + barWidth / 2f, top + height, paint)
+        }
+    }
+
+    private fun drawEchelonXs(
+        canvas: Canvas, count: Int, cx: Float, top: Float, size: Float, spacing: Float, paint: Paint
+    ) {
+        val totalWidth = (count - 1) * spacing
+        for (i in 0 until count) {
+            val x = cx - totalWidth / 2f + i * spacing
+            canvas.drawLine(x - size / 2f, top, x + size / 2f, top + size, paint)
+            canvas.drawLine(x + size / 2f, top, x - size / 2f, top + size, paint)
+        }
+    }
+
+    /**
+     * Task artwork at its own aspect ratio, uncoloured and unrotated, like the
+     * iOS asset. The map draws it through [drawControlMeasure] at the task's
+     * zoom-dependent size, so one bitmap per measure serves every zoom.
+     */
+    fun controlMeasureArtwork(context: Context, measure: TacticalControlMeasure): Bitmap {
+        val key = "${context.resources.displayMetrics.densityDpi}|${measure.assetName}"
+        taskArtworkCache.get(key)?.let { return it }
+        return loadControlMeasureArtwork(context, measure).also { taskArtworkCache.put(key, it) }
+    }
+
+    /** Anti-aliased, filtered paint that recolours task line art to [color]. */
+    fun controlMeasurePaint(color: TaskColor): Paint =
+        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            // Black = asset's native colour, skip filter. Other colours recolour
+            // opaque pixels via SRC_IN, preserving alpha on the edges.
+            if (color != TaskColor.BLACK) {
+                colorFilter = PorterDuffColorFilter(color.argb, PorterDuff.Mode.SRC_IN)
+            }
+        }
+
+    /** Width over height of task [artwork], for [TaskGraphicSizing]. */
+    fun artworkAspect(artwork: Bitmap): Double =
+        artwork.width.toDouble() / artwork.height.coerceAtLeast(1)
+
+    /**
+     * Draws task [artwork] centred on ([cx], [cy]) for a [boxWidth] × [boxHeight]
+     * px task box, as iOS does: the artwork is fitted into the square symbol,
+     * rotated inside it, and the square is then stretched to the box.
+     */
+    fun drawControlMeasure(
+        canvas: Canvas,
+        artwork: Bitmap,
+        cx: Float,
+        cy: Float,
+        boxWidth: Float,
+        boxHeight: Float,
+        rotation: Double,
+        paint: Paint,
+    ) {
+        val unit = TaskGraphicSizing.artworkSize(TaskGraphicSize(1.0, 1.0), artworkAspect(artwork))
+        val halfW = (unit.width / 2).toFloat()
+        val halfH = (unit.height / 2).toFloat()
+        canvas.save()
+        canvas.translate(cx, cy)
+        canvas.scale(boxWidth, boxHeight)
+        canvas.rotate(rotation.toFloat())
+        canvas.drawBitmap(artwork, null, RectF(-halfW, -halfH, halfW, halfH), paint)
+        canvas.restore()
+    }
+
+    /** The task at the reference zoom (one dp per metre), for hit targets,
+     *  previews and KMZ images. The map itself draws the artwork directly. */
     private fun renderControlMeasure(
         context: Context,
         measure: TacticalControlMeasure,
@@ -478,91 +603,63 @@ object SymbolIconFactory {
         color: TaskColor = TaskColor.BLACK
     ): Bitmap {
         val density = context.resources.displayMetrics.density
-        val base = 64f * density
-        val symbolW = (base * scaleX.coerceIn(0.15, 6.0)).toFloat()
-        val symbolH = (base * scaleY.coerceIn(0.15, 6.0)).toFloat()
-        val canvasSide = ceil(hypot(symbolW, symbolH)).toInt().coerceAtLeast((base * 0.5f).toInt())
-        val bitmap = Bitmap.createBitmap(canvasSide, canvasSide, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        val cx = canvasSide / 2f
-        val cy = canvasSide / 2f
-        val dest = RectF(cx - symbolW / 2f, cy - symbolH / 2f, cx + symbolW / 2f, cy + symbolH / 2f)
-        val source = controlMeasureSource(context, measure)
-        // Black = asset's native colour, skip filter. Other colours recolour
-        // opaque pixels via SRC_IN, preserving alpha on the edges.
-        val tintPaint = if (color != TaskColor.BLACK) {
-            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-                colorFilter = PorterDuffColorFilter(color.argb, PorterDuff.Mode.SRC_IN)
-            }
-        } else null
-        canvas.save()
-        canvas.rotate(rotation.toFloat(), cx, cy)
-        canvas.drawBitmap(source, null, dest, tintPaint)
-        canvas.restore()
+        val artwork = controlMeasureArtwork(context, measure)
+        val base = TaskGraphicSizing.BASE_SIZE_POINTS * density
+        val boxW = base * scaleX.coerceIn(MIN_SYMBOL_SCALE, MAX_SYMBOL_SCALE)
+        val boxH = base * scaleY.coerceIn(MIN_SYMBOL_SCALE, MAX_SYMBOL_SCALE)
+        val bounds = TaskGraphicSizing.screenBounds(TaskGraphicSize(boxW, boxH), artworkAspect(artwork), rotation)
+        // A 20× task would be thousands of px wide; keep the bitmap bounded.
+        val shrink = min(1.0, MAX_TASK_ICON_PX / max(bounds.width, bounds.height))
+        val bitmapW = ceil(bounds.width * shrink).toInt().coerceAtLeast(1)
+        val bitmapH = ceil(bounds.height * shrink).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(bitmapW, bitmapH, Bitmap.Config.ARGB_8888)
+        drawControlMeasure(
+            canvas = Canvas(bitmap),
+            artwork = artwork,
+            cx = bitmapW / 2f,
+            cy = bitmapH / 2f,
+            boxWidth = (boxW * shrink).toFloat(),
+            boxHeight = (boxH * shrink).toFloat(),
+            rotation = rotation,
+            paint = controlMeasurePaint(color),
+        )
         return bitmap
     }
 
-    private fun controlMeasureSource(context: Context, measure: TacticalControlMeasure): Bitmap {
-        val sourceSize = (256f * context.resources.displayMetrics.density).toInt().coerceAtLeast(256)
-        if (measure == TacticalControlMeasure.LANDING_ZONE) {
-            return renderLandingZoneSource(sourceSize)
-        }
-
-        val raw = Bitmap.createBitmap(sourceSize, sourceSize, Bitmap.Config.ARGB_8888)
-        val rawCanvas = Canvas(raw)
-        if (!drawAsset(context, rawCanvas, measure.assetName, RectF(0f, 0f, sourceSize.toFloat(), sourceSize.toFloat()))) {
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.BLACK
-                textAlign = Paint.Align.CENTER
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    /// iOS fits the whole asset, transparent margin included, into the symbol
+    /// square, so the artwork is kept uncropped at its own aspect ratio.
+    private fun loadControlMeasureArtwork(context: Context, measure: TacticalControlMeasure): Bitmap {
+        val longSide = (256f * context.resources.displayMetrics.density).coerceAtLeast(256f)
+        runCatching {
+            val svg = SVG.getFromAsset(context.assets, "appsymbols/${measure.assetName}.svg")
+            val viewBox = svg.documentViewBox
+            val aspect = when {
+                viewBox != null && viewBox.height() > 0f -> viewBox.width() / viewBox.height()
+                svg.documentHeight > 0f -> svg.documentWidth / svg.documentHeight
+                else -> 1f
+            }.takeIf { it.isFinite() && it > 0f } ?: 1f
+            val width = ceil(if (aspect >= 1f) longSide else longSide * aspect).toInt().coerceAtLeast(1)
+            val height = ceil(if (aspect >= 1f) longSide / aspect else longSide).toInt().coerceAtLeast(1)
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+                svg.renderToCanvas(Canvas(bitmap), RectF(0f, 0f, width.toFloat(), height.toFloat()))
             }
-            drawFallbackText(rawCanvas, measure.displayName.initials(), RectF(0f, 0f, sourceSize.toFloat(), sourceSize.toFloat()), paint)
-        }
-        return cropVisible(raw)
-    }
+        }.getOrNull()?.let { return it }
 
-    private fun renderLandingZoneSource(size: Int): Bitmap {
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
+        // PNG line art is used at its native resolution.
+        runCatching {
+            context.assets.open("appsymbols/${measure.assetName}.png").use { BitmapFactory.decodeStream(it) }
+        }.getOrNull()?.let { return it }
+
+        val size = longSide.toInt()
+        val fallback = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textAlign = Paint.Align.CENTER
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = size * 0.42f
         }
-        val y = size / 2f - (paint.descent() + paint.ascent()) / 2f
-        canvas.drawText("LZ", size / 2f, y, paint)
-        return cropVisible(bitmap)
-    }
-
-    private fun cropVisible(bitmap: Bitmap): Bitmap {
-        val width = bitmap.width
-        val height = bitmap.height
-        var left = width
-        var top = height
-        var right = -1
-        var bottom = -1
-        val pixels = IntArray(width)
-        for (y in 0 until height) {
-            bitmap.getPixels(pixels, 0, width, 0, y, width, 1)
-            for (x in 0 until width) {
-                if ((pixels[x] ushr 24) > 8) {
-                    if (x < left) left = x
-                    if (x > right) right = x
-                    if (y < top) top = y
-                    if (y > bottom) bottom = y
-                }
-            }
-        }
-        if (right < left || bottom < top) return bitmap
-        val pad = 4
-        val crop = Rect(
-            (left - pad).coerceAtLeast(0),
-            (top - pad).coerceAtLeast(0),
-            (right + pad + 1).coerceAtMost(width),
-            (bottom + pad + 1).coerceAtMost(height)
-        )
-        return Bitmap.createBitmap(bitmap, crop.left, crop.top, crop.width(), crop.height())
+        val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
+        drawFallbackText(Canvas(fallback), measure.displayName.initials(), rect, paint)
+        return fallback
     }
 
     private fun drawAssetCentered(context: Context, canvas: Canvas, assetName: String, dest: RectF): Boolean {

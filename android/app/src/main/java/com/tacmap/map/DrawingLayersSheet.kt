@@ -89,11 +89,14 @@ fun DrawingLayersSheet(
     onAddLayer: (String) -> Boolean,
     onUpdateLayer: (String, String, Int) -> Boolean,
     onDeleteLayer: (String) -> Boolean,
-    onDeleteFeature: (String) -> DrawingMutationUiResult
+    onDeleteFeature: (String) -> DrawingMutationUiResult,
+    onRenameFeature: (String, String) -> DrawingMutationUiResult,
 ) {
     var newLayerName by remember { mutableStateOf("") }
     var editingLayer by remember { mutableStateOf<DrawingLayer?>(null) }
     var deletingLayer by remember { mutableStateOf<DrawingLayer?>(null) }
+    var deletingFeature by remember { mutableStateOf<DrawingFeature?>(null) }
+    var renamingFeature by remember { mutableStateOf<DrawingFeature?>(null) }
     var layerMutationError by remember { mutableStateOf<com.tacmap.localization.LocalizedMessage?>(null) }
     var pendingDrawingMutation by remember {
         mutableStateOf<PendingDrawingSheetMutation?>(null)
@@ -273,7 +276,8 @@ fun DrawingLayersSheet(
                         feature = feature,
                         layerName = safeLayers.firstOrNull { it.id == feature.layerId }?.displayName,
                         isVisible = feature.layerId in visibleLayerIds,
-                        onDelete = { attempt { onDeleteFeature(feature.id) } },
+                        onRename = { renamingFeature = feature },
+                        onDelete = { deletingFeature = feature },
                     )
                 }
                 item(key = "feature-bottom-space") { Spacer(Modifier.size(24.dp)) }
@@ -321,6 +325,34 @@ fun DrawingLayersSheet(
             },
             dismissButton = {
                 TextButton(onClick = { deletingLayer = null }) { Text(L10n.text("Cancel")) }
+            },
+        )
+    }
+
+    deletingFeature?.let { feature ->
+        AlertDialog(
+            onDismissRequest = { deletingFeature = null },
+            title = { Text(Messages.drawingsDeleteTitle()) },
+            text = { Text(Messages.drawingsDeleteBody(feature.name, Messages.pointCount(feature.points.size))) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deletingFeature = null
+                    attempt { onDeleteFeature(feature.id) }
+                }) { Text(L10n.text("Delete"), color = Color(0xFFD32F2F)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingFeature = null }) { Text(L10n.text("Cancel")) }
+            },
+        )
+    }
+
+    renamingFeature?.let { feature ->
+        DrawingRenameDialog(
+            feature = feature,
+            onDismiss = { renamingFeature = null },
+            onSave = { name ->
+                renamingFeature = null
+                attempt { onRenameFeature(feature.id, name) }
             },
         )
     }
@@ -515,10 +547,38 @@ internal fun layerColorAccessibilityLabel(color: Int): String =
     L10n.text("Layer colour #%1\$s", (color and 0xFFFFFF).toString(16).uppercase().padStart(6, '0'))
 
 @Composable
+private fun DrawingRenameDialog(
+    feature: DrawingFeature,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var name by remember(feature.id) { mutableStateOf(feature.name) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(Messages.drawingsRenameTitle()) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                label = { Text(L10n.text("Name")) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            // A blank name keeps the current one, as in the drawing card.
+            TextButton(onClick = { onSave(name.trim().ifBlank { feature.name }) }) { Text(L10n.text("Save")) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L10n.text("Cancel")) } },
+    )
+}
+
+@Composable
 private fun DrawingFeatureRow(
     feature: DrawingFeature,
     layerName: String?,
     isVisible: Boolean,
+    onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
     Row(
@@ -532,6 +592,9 @@ private fun DrawingFeatureRow(
                     if (isVisible) "" else L10n.text(" • hidden"),
                 fontSize = 11.sp
             )
+        }
+        IconButton(onClick = onRename) {
+            Icon(Icons.Default.Edit, contentDescription = Messages.drawingsRenameNamed(feature.name))
         }
         IconButton(onClick = onDelete) {
             Icon(Icons.Default.Delete, contentDescription = L10n.text("Delete %1\$s drawing", feature.name))

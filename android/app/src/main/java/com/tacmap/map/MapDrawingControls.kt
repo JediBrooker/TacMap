@@ -25,10 +25,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.LineWeight
+import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
@@ -42,6 +47,7 @@ import com.tacmap.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
@@ -66,6 +72,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +85,7 @@ import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.drawings.DrawingStrokeStyle
+import kotlin.math.roundToInt
 
 // Drawing-related controls (edit bar, draft bar, transform sliders, colour /
 // style pickers, name dialog, centre pill) extracted verbatim from MapScreen.kt.
@@ -108,6 +116,8 @@ internal fun DrawingFeatureEditBar(
     var fillColorMenuOpen by remember { mutableStateOf(false) }
     var lineGraphicMenuOpen by remember { mutableStateOf(false) }
     var nameDialogOpen by remember { mutableStateOf(false) }
+    var deleteConfirmOpen by remember(feature.id) { mutableStateOf(false) }
+    val density = LocalDensity.current.density
     var pendingMutation by remember(feature.id) {
         mutableStateOf<PendingDrawingControlMutation?>(null)
     }
@@ -228,6 +238,50 @@ internal fun DrawingFeatureEditBar(
 
         if (showEditor && hasTransforms && showTransforms) {
             CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+                // Stroke width is edited in portable points, like iOS; the
+                // feature stores renderer pixels.
+                val strokeWidthPoints = DrawingDefaults.portableStrokeWidth(feature.strokeWidth, density)
+                    .coerceIn(DrawingDefaults.MIN_STROKE_WIDTH_DP, DrawingDefaults.MAX_STROKE_WIDTH_DP)
+                fun withStrokeWidth(points: Float) =
+                    feature.copy(strokeWidth = DrawingDefaults.storedStrokeWidth(points, density))
+                DrawingTransformSliderRow(
+                    icon = Icons.Default.LineWeight,
+                    label = Messages.drawingsStrokeWidth(),
+                    value = strokeWidthPoints,
+                    valueLabel = Messages.drawingsStrokeWidthValue(DisplayFormat.number(strokeWidthPoints.toDouble(), 1)),
+                    range = DrawingDefaults.MIN_STROKE_WIDTH_DP..DrawingDefaults.MAX_STROKE_WIDTH_DP,
+                    steps = sliderSteps(
+                        DrawingDefaults.MIN_STROKE_WIDTH_DP,
+                        DrawingDefaults.MAX_STROKE_WIDTH_DP,
+                        DrawingDefaults.STROKE_WIDTH_STEP_DP,
+                    ),
+                    onChange = { onFeatureChangeDraft(withStrokeWidth(it)) },
+                    onCommit = { attempt { onFeatureChange(withStrokeWidth(it)) } },
+                    onReset = { attempt { onFeatureChange(withStrokeWidth(DrawingDefaults.STROKE_WIDTH_DP)) } }
+                )
+                if (feature.geometry == DrawingGeometry.POLYGON) {
+                    val fillPercent = DrawingDefaults.fillPercent((feature.fillColor ushr 24) and 0xFF)
+                    fun withFillPercent(percent: Float) = feature.copy(
+                        fillColor = feature.fillColor.withAlpha(DrawingDefaults.fillAlpha(percent.roundToInt()))
+                    )
+                    DrawingTransformSliderRow(
+                        icon = Icons.Default.Opacity,
+                        label = L10n.text("Fill opacity"),
+                        value = fillPercent.toFloat(),
+                        valueLabel = DisplayFormat.percent(fillPercent),
+                        range = 0f..100f,
+                        steps = sliderSteps(0f, 100f, 5f),
+                        onChange = { onFeatureChangeDraft(withFillPercent(it)) },
+                        onCommit = { attempt { onFeatureChange(withFillPercent(it)) } },
+                        onReset = {
+                            attempt {
+                                onFeatureChange(
+                                    feature.copy(fillColor = feature.fillColor.withAlpha(DrawingDefaults.DEFAULT_FILL_ALPHA))
+                                )
+                            }
+                        }
+                    )
+                }
                 DrawingTransformSliderRow(
                     icon = Icons.AutoMirrored.Filled.RotateRight,
                     label = L10n.text("Rotation"),
@@ -241,9 +295,9 @@ internal fun DrawingFeatureEditBar(
                 DrawingTransformSliderRow(
                     icon = Icons.Default.SwapHoriz,
                     label = L10n.text("Width scale"),
-                    value = feature.scaleX.toFloat().coerceIn(0.15f, 6f),
+                    value = feature.scaleX.toFloat().coerceIn(MIN_DRAWING_SCALE, MAX_DRAWING_SCALE),
                     valueLabel = DisplayFormat.number(feature.scaleX, 2) + "x",
-                    range = 0.15f..6f,
+                    range = MIN_DRAWING_SCALE..MAX_DRAWING_SCALE,
                     onChange = { onFeatureChangeDraft(feature.copy(scaleX = it.toDouble())) },
                     onCommit = { attempt { onFeatureChange(feature.copy(scaleX = it.toDouble())) } },
                     onReset = { attempt { onFeatureChange(feature.copy(scaleX = 1.0)) } }
@@ -251,9 +305,9 @@ internal fun DrawingFeatureEditBar(
                 DrawingTransformSliderRow(
                     icon = Icons.Default.SwapVert,
                     label = L10n.text("Height scale"),
-                    value = feature.scaleY.toFloat().coerceIn(0.15f, 6f),
+                    value = feature.scaleY.toFloat().coerceIn(MIN_DRAWING_SCALE, MAX_DRAWING_SCALE),
                     valueLabel = DisplayFormat.number(feature.scaleY, 2) + "x",
-                    range = 0.15f..6f,
+                    range = MIN_DRAWING_SCALE..MAX_DRAWING_SCALE,
                     onChange = { onFeatureChangeDraft(feature.copy(scaleY = it.toDouble())) },
                     onCommit = { attempt { onFeatureChange(feature.copy(scaleY = it.toDouble())) } },
                     onReset = { attempt { onFeatureChange(feature.copy(scaleY = 1.0)) } }
@@ -384,7 +438,7 @@ internal fun DrawingFeatureEditBar(
                 modifier = Modifier.weight(1f)
             )
             Button(
-                onClick = { attempt(retry = onDelete) },
+                onClick = { deleteConfirmOpen = true },
                 modifier = Modifier.height(48.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFE53935),
@@ -398,6 +452,25 @@ internal fun DrawingFeatureEditBar(
                 Text(L10n.text("Delete"), fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
+    if (deleteConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirmOpen = false },
+            title = { Text(Messages.drawingsDeleteTitle()) },
+            text = { Text(L10n.text("This will permanently remove \"%1\$s\".", feature.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deleteConfirmOpen = false
+                        attempt(retry = onDelete)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE53935)),
+                ) { Text(L10n.text("Delete")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmOpen = false }) { Text(L10n.text("Cancel")) }
+            },
+        )
     }
     if (nameDialogOpen) {
         DrawingNameDialog(
@@ -440,7 +513,8 @@ private fun DrawingTransformSliderRow(
     range: ClosedFloatingPointRange<Float>,
     onChange: (Float) -> Unit,
     onCommit: (Float) -> Unit = onChange,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    steps: Int = 0,
 ) {
     var latestValue by remember(value) { mutableFloatStateOf(value) }
     Row(
@@ -467,6 +541,7 @@ private fun DrawingTransformSliderRow(
             onValueChange = { latestValue = it; onChange(it) },
             onValueChangeFinished = { onCommit(latestValue) },
             valueRange = range,
+            steps = steps,
             modifier = Modifier
                 .weight(1f)
                 .heightIn(min = 48.dp)
@@ -508,6 +583,14 @@ private fun DrawingTransformSliderRow(
 private fun normalizedDrawingDegrees(degrees: Double): Double =
     ((degrees % 360.0) + 360.0) % 360.0
 
+/** Drawing width/height scale range, as on iOS. */
+private const val MIN_DRAWING_SCALE = 0.1f
+private const val MAX_DRAWING_SCALE = 10f
+
+/** Compose's `steps` counts the stops between the two ends. */
+private fun sliderSteps(start: Float, end: Float, step: Float): Int =
+    ((end - start) / step).roundToInt() - 1
+
 @Composable
 internal fun DrawingDraftBar(
     geometry: DrawingGeometry,
@@ -515,90 +598,132 @@ internal fun DrawingDraftBar(
     drawingName: String,
     strokeColor: Int,
     strokeStyle: DrawingStrokeStyle,
+    fillColor: Int,
+    fillAlpha: Int,
     onDrawingNameChange: (String) -> Unit,
     onStrokeColorChange: (Int) -> Unit,
     onStrokeStyleChange: (DrawingStrokeStyle) -> Unit,
+    onFillColorChange: (Int) -> Unit,
+    onFillAlphaChange: (Int) -> Unit,
+    onUndoPoint: () -> Unit,
     onFinish: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var colorMenuOpen by remember { mutableStateOf(false) }
     var nameDialogOpen by remember { mutableStateOf(false) }
+    var discardConfirmOpen by remember { mutableStateOf(false) }
     val canFinish = geometry == DrawingGeometry.POINT || pointCount >= geometry.minimumVertices
 
-    Row(
+    // Style controls on top, progress and actions below: one row of 48dp
+    // targets no longer fits a phone once undo and area fill are added.
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
             .background(Color(0xE6000000))
             .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        DrawingToolChip(geometry)
-        DrawingNameButton(
-            name = drawingName,
-            onClick = { nameDialogOpen = true }
-        )
-        Box {
-            DrawingColorSelectButton(
-                color = strokeColor,
-                onClick = { colorMenuOpen = true }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            DrawingToolChip(geometry)
+            DrawingNameButton(
+                name = drawingName,
+                onClick = { nameDialogOpen = true }
             )
-            DrawingColorMenu(
-                expanded = colorMenuOpen,
-                selectedColor = strokeColor,
-                onDismiss = { colorMenuOpen = false },
-                onColorSelected = { color ->
-                    onStrokeColorChange(color)
-                    colorMenuOpen = false
+            Box {
+                DrawingColorSelectButton(
+                    color = strokeColor,
+                    onClick = { colorMenuOpen = true }
+                )
+                DrawingColorMenu(
+                    expanded = colorMenuOpen,
+                    selectedColor = strokeColor,
+                    onDismiss = { colorMenuOpen = false },
+                    onColorSelected = { color ->
+                        onStrokeColorChange(color)
+                        colorMenuOpen = false
+                    }
+                )
+            }
+            if (geometry == DrawingGeometry.POLYGON) {
+                DrawingFillStyleButton(
+                    fillColor = fillColor,
+                    fillAlpha = fillAlpha,
+                    onFillColorChange = onFillColorChange,
+                    onFillAlphaChange = onFillAlphaChange,
+                )
+            }
+            DrawingStyleButton(
+                strokeStyle = strokeStyle,
+                onClick = { onStrokeStyleChange(strokeStyle.next()) }
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (geometry != DrawingGeometry.POINT) {
+                Text(
+                    pointCount.toString(),
+                    color = Color.White.copy(alpha = 0.82f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace
+                )
+                IconButton(
+                    onClick = onUndoPoint,
+                    enabled = pointCount > 0,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF202020))
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Undo,
+                        contentDescription = L10n.text("Undo last point"),
+                        tint = Color.White.copy(alpha = if (pointCount > 0) 1f else 0.4f),
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
-            )
-        }
-        DrawingStyleButton(
-            strokeStyle = strokeStyle,
-            onClick = { onStrokeStyleChange(strokeStyle.next()) }
-        )
-        if (geometry != DrawingGeometry.POINT) {
-            Text(
-                pointCount.toString(),
-                color = Color.White.copy(alpha = 0.82f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = FontFamily.Monospace
-            )
-        }
-        IconButton(
-            onClick = onCancel,
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF202020))
-        ) {
-            Icon(
-                Icons.Default.Close,
-                contentDescription = L10n.text("Cancel drawing"),
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Button(
-            onClick = onFinish,
-            enabled = canFinish,
-            shape = CircleShape,
-            modifier = Modifier.height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFFFA000),
-                contentColor = Color.Black,
-                disabledContainerColor = Color(0xFF4A4A4A),
-                disabledContentColor = Color.White.copy(alpha = 0.45f)
-            ),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
-        ) {
-            Text(
-                if (geometry == DrawingGeometry.POINT) L10n.text("Done") else L10n.text("Finish"),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
+            }
+            IconButton(
+                // Don't lose placed points to a stray tap: confirm first.
+                onClick = { if (pointCount == 0) onCancel() else discardConfirmOpen = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF202020))
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = L10n.text("Cancel drawing"),
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Button(
+                onClick = onFinish,
+                enabled = canFinish,
+                shape = CircleShape,
+                modifier = Modifier.height(48.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFFA000),
+                    contentColor = Color.Black,
+                    disabledContainerColor = Color(0xFF4A4A4A),
+                    disabledContentColor = Color.White.copy(alpha = 0.45f)
+                ),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+            ) {
+                Text(
+                    if (geometry == DrawingGeometry.POINT) L10n.text("Done") else L10n.text("Finish"),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
     if (nameDialogOpen) {
@@ -609,6 +734,25 @@ internal fun DrawingDraftBar(
                 true
             },
             onDismiss = { nameDialogOpen = false }
+        )
+    }
+    if (discardConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { discardConfirmOpen = false },
+            title = { Text(Messages.drawingsDiscardTitle()) },
+            text = { Text(Messages.drawingsDiscardBody(DisplayFormat.number(pointCount.toDouble(), 0))) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        discardConfirmOpen = false
+                        onCancel()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE53935)),
+                ) { Text(L10n.text("Discard")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { discardConfirmOpen = false }) { Text(Messages.drawingsKeepDrawing()) }
+            },
         )
     }
 }
@@ -735,22 +879,114 @@ private fun DrawingColorSelectButton(
 
 @Composable
 private fun DrawingOpacityButton(alpha: Int, onAlphaSelected: (Int) -> Unit) {
-    val choices = listOf(0x33, 0x66, 0x99, 0xCC)
-    val closestIndex = choices.indices.minByOrNull { kotlin.math.abs(choices[it] - alpha) } ?: 0
-    val percent = (alpha * 100f / 255f).toInt()
-    Box(
-        modifier = Modifier
-            .size(width = 56.dp, height = 48.dp)
-            .clip(CircleShape)
-            .background(Color(0xFF202020))
-            .semantics {
-                contentDescription = L10n.text("Fill opacity")
-                stateDescription = L10n.text("%1\$s percent", percent)
+    var menuOpen by remember { mutableStateOf(false) }
+    val percent = DrawingDefaults.fillPercent(alpha)
+    Box {
+        Box(
+            modifier = Modifier
+                .size(width = 56.dp, height = 48.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF202020))
+                .semantics {
+                    contentDescription = L10n.text("Fill opacity")
+                    stateDescription = L10n.text("%1\$s percent", percent)
+                }
+                .clickable { menuOpen = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(DisplayFormat.percent(percent), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DrawingFillOpacityItems(selectedAlpha = alpha) { selected ->
+                menuOpen = false
+                onAlphaSelected(selected)
             }
-            .clickable { onAlphaSelected(choices[(closestIndex + 1) % choices.size]) },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(DisplayFormat.percent(percent), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** Polygon fill colour and opacity for a new area, in one compact menu like
+ *  the iOS drawing toolbar. The fill is independent of the stroke colour. */
+@Composable
+private fun DrawingFillStyleButton(
+    fillColor: Int,
+    fillAlpha: Int,
+    onFillColorChange: (Int) -> Unit,
+    onFillAlphaChange: (Int) -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val percent = DrawingDefaults.fillPercent(fillAlpha)
+    Box {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF202020))
+                .semantics {
+                    contentDescription = Messages.drawingsFillStyle()
+                    stateDescription = L10n.text("%1\$s percent", percent)
+                }
+                .clickable { menuOpen = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(Color(fillColor.withAlpha(fillAlpha)))
+                    .border(1.dp, Color.White.copy(alpha = 0.85f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.FormatColorFill,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DrawingMenuHeading(L10n.text("Fill colour"))
+            DrawingColorGrid(selectedColor = fillColor or 0xFF000000.toInt()) { color ->
+                menuOpen = false
+                onFillColorChange(color)
+            }
+            HorizontalDivider()
+            DrawingMenuHeading(L10n.text("Fill opacity"))
+            DrawingFillOpacityItems(selectedAlpha = fillAlpha) { alpha ->
+                menuOpen = false
+                onFillAlphaChange(alpha)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrawingMenuHeading(text: String) {
+    Text(
+        text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+/** Fill opacity presets shared by the drawing card and the drawing toolbar. */
+@Composable
+private fun DrawingFillOpacityItems(selectedAlpha: Int, onAlphaSelected: (Int) -> Unit) {
+    val selectedPercent = DrawingDefaults.fillPercent(selectedAlpha)
+    DrawingDefaults.FILL_OPACITY_PRESETS.forEach { percent ->
+        DropdownMenuItem(
+            text = { Text(DisplayFormat.percent(percent)) },
+            leadingIcon = {
+                if (percent == selectedPercent) {
+                    Icon(Icons.Default.Check, contentDescription = null)
+                } else {
+                    Spacer(Modifier.size(24.dp))
+                }
+            },
+            onClick = { onAlphaSelected(DrawingDefaults.fillAlpha(percent)) },
+        )
     }
 }
 
@@ -762,19 +998,24 @@ private fun DrawingColorMenu(
     onColorSelected: (Int) -> Unit
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(8.dp)
-        ) {
-            DrawingDefaults.COLORS.chunked(4).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { color ->
-                        DrawingColorSwatch(
-                            color = color,
-                            selected = color == selectedColor,
-                            onClick = { onColorSelected(color) }
-                        )
-                    }
+        DrawingColorGrid(selectedColor = selectedColor, onColorSelected = onColorSelected)
+    }
+}
+
+@Composable
+private fun DrawingColorGrid(selectedColor: Int, onColorSelected: (Int) -> Unit) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(8.dp)
+    ) {
+        DrawingDefaults.COLORS.chunked(4).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { color ->
+                    DrawingColorSwatch(
+                        color = color,
+                        selected = color == selectedColor,
+                        onClick = { onColorSelected(color) }
+                    )
                 }
             }
         }

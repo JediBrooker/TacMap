@@ -32,6 +32,7 @@ import com.tacmap.map.render.DrawingsCanvas
 import com.tacmap.map.render.DrawingLabelsLayer
 import com.tacmap.map.render.MapCamera
 import com.tacmap.map.render.MapProjection
+import com.tacmap.map.render.MeasureOverlay
 import com.tacmap.map.render.MgrsGridCanvas
 import com.tacmap.map.render.OnlineRasterTileSource
 import com.tacmap.map.render.CalibrationFiduciariesLayer
@@ -67,6 +68,8 @@ fun CustomMapScreen(
     drawings: List<DrawingFeature> = emptyList(),
     drawingLayers: List<DrawingLayer> = emptyList(),
     draftDrawing: DrawingFeature? = null,
+    /** Active measure-tool points (lat, lng); drawn even with drawings hidden. */
+    measurePoints: List<Pair<Double, Double>> = emptyList(),
     graphicsLocked: Boolean = false,
     drawingInputEnabled: Boolean = false,
     freeDrawActive: Boolean = false,
@@ -258,6 +261,7 @@ fun CustomMapScreen(
             features = visibleDrawings, draft = draftDrawing.takeIf { drawingsVisible },
             selectedId = selectedDrawingId, projection = projection
         )
+        MeasureOverlay(points = measurePoints, projection = projection)
         WaypointSymbolsLayer(waypoints = visibleWaypoints, camera = camera, density = density)
         PresenceLayer(peers = peers, camera = camera, density = density)
         // Centre reticle sits under the user dot so "you are here" is never
