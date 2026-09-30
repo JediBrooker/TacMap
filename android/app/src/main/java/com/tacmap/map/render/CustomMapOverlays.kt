@@ -26,8 +26,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.unit.IntOffset
 import android.graphics.Bitmap
 import androidx.core.graphics.drawable.toBitmap
@@ -36,6 +40,8 @@ import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.drawings.LineGraphic
 import com.tacmap.map.SymbolIconFactory
+import com.tacmap.map.TaskGraphicSizing
+import com.tacmap.waypoints.TacticalControlMeasure
 import android.graphics.Matrix
 import android.graphics.Paint
 import androidx.compose.runtime.LaunchedEffect
@@ -434,8 +440,9 @@ fun CalibrationFiduciariesLayer(
 /**
  * Waypoint symbols (military / control measures / markers) on the SDK-free
  * renderer: SymbolIconFactory drawables placed at their projected screen coord,
- * upright. Replaces the GroundOverlay + native-marker path. Selection/labels/
- * touch are layered separately.
+ * upright. Task graphics keep a fixed ground size instead, so they grow and
+ * shrink with the zoom (see [TaskGraphicSizing]). Replaces the GroundOverlay +
+ * native-marker path. Selection/labels/touch are layered separately.
  */
 @Composable
 fun WaypointSymbolsLayer(
@@ -448,6 +455,11 @@ fun WaypointSymbolsLayer(
     val proj = remember(camera, density) { MapProjection(camera, density) }
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
         waypoints.forEach { wp ->
+            val kind = wp.kind
+            if (kind is WaypointKind.ControlMeasure) {
+                TaskGraphicC(wp, kind.measure, proj)
+                return@forEach
+            }
             val baked = remember(wp.kind, wp.rotation, wp.scaleX, wp.scaleY, wp.taskColor) {
                 val d = SymbolIconFactory.drawableFor(context, wp)
                 val bmp: Bitmap = d.toBitmap(
@@ -468,6 +480,54 @@ fun WaypointSymbolsLayer(
             )
         }
     }
+}
+
+/** Largest side of a task graphic's accessibility node; the drawing itself is unbounded. */
+private const val TASK_SEMANTICS_MAX_PX = 4096f
+
+/**
+ * One task graphic at its zoom-dependent ground size. The artwork bitmap is
+ * the same at every zoom and the canvas scales it, so zooming never re-renders
+ * or allocates, however large the task gets on screen. The node carries the
+ * task's name for TalkBack; its size is capped so a task that fills the screen
+ * still lays out, and the drawing is free to extend past it.
+ */
+@Composable
+private fun TaskGraphicC(wp: Waypoint, measure: TacticalControlMeasure, proj: MapProjection) {
+    val context = LocalContext.current
+    val artwork = remember(measure) { SymbolIconFactory.controlMeasureArtwork(context, measure) }
+    val paint = remember(wp.taskColor) { SymbolIconFactory.controlMeasurePaint(wp.taskColor) }
+    val box = TaskGraphicSizing.displaySize(wp.scaleX, wp.scaleY, proj.camera.metresPerPoint)
+    val bounds = TaskGraphicSizing.screenBounds(box, SymbolIconFactory.artworkAspect(artwork), wp.rotation)
+    val boxW = (box.width * proj.density).toFloat()
+    val boxH = (box.height * proj.density).toFloat()
+    val nodeW = (bounds.width * proj.density).toFloat().coerceIn(1f, TASK_SEMANTICS_MAX_PX)
+    val nodeH = (bounds.height * proj.density).toFloat().coerceIn(1f, TASK_SEMANTICS_MAX_PX)
+    val screen = proj.toScreen(wp.latitude, wp.longitude)
+    val localDensity = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.foundation.layout.Box(
+        Modifier
+            .offset { IntOffset((screen.x - nodeW / 2f).roundToInt(), (screen.y - nodeH / 2f).roundToInt()) }
+            .size(with(localDensity) { nodeW.toDp() }, with(localDensity) { nodeH.toDp() })
+            .semantics {
+                contentDescription = wp.name
+                role = Role.Image
+            }
+            .drawBehind {
+                drawIntoCanvas { canvas ->
+                    SymbolIconFactory.drawControlMeasure(
+                        canvas = canvas.nativeCanvas,
+                        artwork = artwork,
+                        cx = size.width / 2f,
+                        cy = size.height / 2f,
+                        boxWidth = boxW,
+                        boxHeight = boxH,
+                        rotation = wp.rotation,
+                        paint = paint,
+                    )
+                }
+            }
+    )
 }
 
 // MARK: - Labels + presence (SDK-free, projected via MapProjection)

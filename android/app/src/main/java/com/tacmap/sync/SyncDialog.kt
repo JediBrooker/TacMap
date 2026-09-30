@@ -364,6 +364,7 @@ fun SyncDialog(
                         modifier = Modifier.semantics { contentDescription = L10n.text("Share my location") },
                     )
                 }
+                Text(Messages.syncScreenOffSharingNote(), fontSize = 11.sp, color = Color.Gray)
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 if (room?.startsWith("2:") == true) {

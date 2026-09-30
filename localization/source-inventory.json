@@ -1949,5 +1949,47 @@
     "platform": "ios",
     "area": "weather-terrain",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/AppLockBiometric.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/MissionUndoHistory.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapExtentFit.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/MeasureOverlay.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/TaskGraphicSizing.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/WaypointKindIcon.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ExportPreviewDialog.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
   }
 ]

@@ -1,5 +1,6 @@
 package com.tacmap.util
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,6 +12,12 @@ class SensitiveClipboardPolicyTest {
         expiresElapsedMs = 61_000L,
         expiresWallMs = 161_000L,
     )
+
+    @Test
+    fun copiedCoordinatesAndCodesLastTwoMinutesLikeIos() {
+        // iOS pasteboard items expire after 120 s; the README promises two minutes.
+        assertEquals(120_000L, SENSITIVE_CLIP_TTL_MS)
+    }
 
     @Test
     fun exactExpiredClipIsCleared() {

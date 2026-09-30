@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -182,6 +183,7 @@ fun OpsecSettingsDialog(
                 )
 
                 SettingRow(blockCapture, { opsec.setBlockScreenCapture(it) }, L10n.text("Block screenshots & recents preview"))
+                Caption(Messages.settingsBlockCaptureHelp())
 
                 Text(Messages.settingsDisplayTitle(), fontWeight = FontWeight.SemiBold)
                 SettingRow(keepScreenOn, { opsec.setKeepScreenOn(it) }, Messages.settingsKeepScreenOn())
@@ -319,13 +321,17 @@ private fun CoordinateTypeRow(
     }
 }
 
+/** A switch and its label as one control: TalkBack reads the label, and tapping the text toggles it. */
 @Composable
 private fun SettingRow(checked: Boolean, onChange: (Boolean) -> Unit, label: String) {
     Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null)
         Text(label)
     }
 }
