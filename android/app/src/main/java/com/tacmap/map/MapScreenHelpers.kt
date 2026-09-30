@@ -561,5 +561,9 @@ internal fun importMBTilesMapSource(
     return OfflineTileMapSourceAndroid.open(dest.path)
 }
 
+// iOS accepts 512 MB, but only the copy here streams. The rotation and GeoPDF
+// checks open the file with PDFBox-Android 2.0, which parses every object on
+// load and buffers stream contents in heap memory, so a larger sheet would run
+// out of memory during import. Raise this once those checks stop doing that.
 private const val MAX_PDF_IMPORT_BYTES = 256L * 1024 * 1024
 private const val MAX_MBTILES_IMPORT_BYTES = 4L * 1024 * 1024 * 1024

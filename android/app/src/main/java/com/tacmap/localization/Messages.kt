@@ -92,6 +92,10 @@ object Messages {
         L10n.message("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.")
     fun basemapRecoveryRequiredMessage(): LocalizedMessage =
         LocalizedMessage("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.", listOf())
+    fun calibrationUseCurrentLocation(mgrs: String): String =
+        L10n.message("id.calibration_use_current_location", "Use my current location (%1\$s)", mgrs)
+    fun calibrationUseCurrentLocationNoFix(): String =
+        L10n.message("id.calibration_use_current_location_no_fix", "Use my current location")
     fun chatNewMessageNotice(sender: String): String =
         L10n.message("id.chat_new_message_notice", "New TacMap Chat message from %1\$s.", sender)
     fun chatNewReportNotice(sender: String): String =
@@ -152,6 +156,30 @@ object Messages {
         LocalizedMessage("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", listOf(summary, count))
     fun decimalInputHint(): String =
         L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
+    fun layersDeleteImportedConfirm(): String =
+        L10n.message("id.layers_delete_imported_confirm", "Delete Map")
+    fun layersDeleteImportedMessage(): String =
+        L10n.message("id.layers_delete_imported_message", "This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.")
+    fun layersDeleteImportedTitle(): String =
+        L10n.message("id.layers_delete_imported_title", "Delete imported map from this device?")
+    fun layersDeleteOfflineMap(): String =
+        L10n.message("id.layers_delete_offline_map", "Delete Offline Map…")
+    fun layersDeletePdfMap(): String =
+        L10n.message("id.layers_delete_pdf_map", "Delete PDF Map…")
+    fun layersDeleteSavedImportedMap(): String =
+        L10n.message("id.layers_delete_saved_imported_map", "Delete Saved Imported Map…")
+    fun layersPdfFiduciaryCount(count: String): String =
+        L10n.message("id.layers_pdf_fiduciary_count", "Currently calibrated with %1\$s fiduciaries", count)
+    fun layersPdfGeoreferenced(): String =
+        L10n.message("id.layers_pdf_georeferenced", "Georeferenced (GeoPDF LGIDict)")
+    fun layersPdfManualBounds(): String =
+        L10n.message("id.layers_pdf_manual_bounds", "Manually placed bounds")
+    fun layersPdfNoGeoreferencing(): String =
+        L10n.message("id.layers_pdf_no_georeferencing", "No georeferencing — using map-centre fallback")
+    fun layersRemoveSavedMapEntry(): String =
+        L10n.message("id.layers_remove_saved_map_entry", "Remove Saved Map Entry")
+    fun layersSavedMapUnavailable(): String =
+        L10n.message("id.layers_saved_map_unavailable", "Saved imported map unavailable")
     fun liveLocationApproximateGuidance(): String =
         L10n.message("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.")
     fun liveLocationApproximateGuidanceMessage(): LocalizedMessage =
@@ -260,10 +288,32 @@ object Messages {
         L10n.message("id.recording_notification_hidden", "Recording can continue, but Android may hide its ongoing notification from the notification drawer. You can still find TacMap in Active apps.")
     fun recordingNotificationHiddenMessage(): LocalizedMessage =
         LocalizedMessage("id.recording_notification_hidden", "Recording can continue, but Android may hide its ongoing notification from the notification drawer. You can still find TacMap in Active apps.", listOf())
+    fun recordingPillAwaitingA11y(): String =
+        L10n.message("id.recording_pill_awaiting_a11y", "Track recording awaiting Location permission. Tap to cancel.")
+    fun recordingPillInterruptedA11y(): String =
+        L10n.message("id.recording_pill_interrupted_a11y", "Track recording interrupted. Tap to dismiss.")
+    fun recordingPillRecordingA11y(points: String): String =
+        L10n.message("id.recording_pill_recording_a11y", "Recording track — %1\$s. Tap to stop.", points)
+    fun recordingPillStartingA11y(): String =
+        L10n.message("id.recording_pill_starting_a11y", "Track recording is starting.")
     fun recordingPreciseRequiredRetry(): String =
         L10n.message("id.recording_precise_required_retry", "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.")
     fun recordingPreciseRequiredRetryMessage(): LocalizedMessage =
         LocalizedMessage("id.recording_precise_required_retry", "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.", listOf())
+    fun recordingStatusAwaitingLocation(): String =
+        L10n.message("id.recording_status_awaiting_location", "AWAITING LOCATION")
+    fun recordingStatusIdle(): String =
+        L10n.message("id.recording_status_idle", "IDLE")
+    fun recordingStatusIdleMessage(): LocalizedMessage =
+        LocalizedMessage("id.recording_status_idle", "IDLE", listOf())
+    fun recordingStatusInterrupted(): String =
+        L10n.message("id.recording_status_interrupted", "INTERRUPTED")
+    fun recordingStatusInterruptedMessage(): LocalizedMessage =
+        LocalizedMessage("id.recording_status_interrupted", "INTERRUPTED", listOf())
+    fun recordingStatusStarting(): String =
+        L10n.message("id.recording_status_starting", "STARTING")
+    fun recordingStatusStartingMessage(): LocalizedMessage =
+        LocalizedMessage("id.recording_status_starting", "STARTING", listOf())
     fun relayRecoveryFailed(): String =
         L10n.message("id.relay_recovery_failed", "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.")
     fun relayRecoveryFailedMessage(): LocalizedMessage =
@@ -302,6 +352,10 @@ object Messages {
         L10n.message("id.rings_unit_kilometres", "km")
     fun ringsUnitMetres(): String =
         L10n.message("id.rings_unit_metres", "m")
+    fun savedImportedMapMissing(): String =
+        L10n.message("id.saved_imported_map_missing", "The saved imported map is missing or unreadable. Remove its saved entry, then import the source file again.")
+    fun savedImportedMapMissingMessage(): LocalizedMessage =
+        LocalizedMessage("id.saved_imported_map_missing", "The saved imported map is missing or unreadable. Remove its saved entry, then import the source file again.", listOf())
     fun androidKeyProtectionHelp(): String =
         L10n.message("id.settings_android_key_protection_help", "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.")
     fun settingsBlockCaptureHelp(): String =

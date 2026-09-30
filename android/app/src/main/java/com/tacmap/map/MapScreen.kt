@@ -221,6 +221,7 @@ internal fun MapScreen(
     val trackPersistError = trackPersistMessage?.text
     val mapSource by vm.mapSource.collectAsState()
     val retainedImportedMap by vm.retainedImportedMapSource.collectAsState()
+    val retainedImportedMapIssue by vm.retainedImportedMapIssue.collectAsState()
     val mapSelectionPersistenceIssue by vm.mapSelectionPersistenceIssue.collectAsState()
 
     /// Is anything on screen actually pulling tiles off the internet right now?
@@ -382,6 +383,9 @@ internal fun MapScreen(
 
     /// (done, total) while baking PDF into offline tiles, null when idle
     var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    /// the running bake, so the progress dialog's Cancel can stop it
+    var tilingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var tilingCancelling by remember { mutableStateOf(false) }
     /// lock toggle - when true no graphic can be moved. Extra guard
     /// against accidental drags in the field.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -748,19 +752,9 @@ internal fun MapScreen(
             quickAddCreationError = null
         }
     }
+    // The measure line and its point dots draw in their own overlay (see
+    // CustomMapScreen.measurePoints), so hiding drawings never hides them.
     val draftDrawing = when {
-        // measure tool takes precedence - render its polyline as draft
-        // overlay so user can see the path they're laying down
-        measureSession.isActive && measureSession.points.size >= 1 -> newMapDrawingFeature(
-            name = "",
-            geometry = DrawingGeometry.LINE,
-            points = measureSession.points.map { DrawingPoint(it.first, it.second) },
-            layerId = safeActiveLayerId,
-            strokeColor = 0xFFFFA500.toInt(),
-            fillColor = 0,
-            strokeStyle = DrawingStrokeStyle.DASHED,
-            density = rendererDensity,
-        )
         draftGeometry != null -> newMapDrawingFeature(
             name = drawingNameOrDefault(activeDrawingName, draftGeometry!!, drawingDocument.features),
             geometry = draftGeometry!!,
@@ -892,6 +886,7 @@ internal fun MapScreen(
                 drawings = drawingDocument.features,
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,
+                measurePoints = if (measureSession.isActive) measureSession.points.toList() else emptyList(),
                 graphicsLocked = graphicsLocked,
                 userLocationVisible = userLocationVisible,
                 myLat = lastLocation?.latitude,
@@ -1126,11 +1121,18 @@ internal fun MapScreen(
             )
         }
 
-        // live track-recording badge, only while recording. Tap to stop.
-        if (isRecordingTrack) {
+        // Track-recording pill: REC while recording, and also while awaiting
+        // location, starting or interrupted, as on iOS. What a tap does
+        // depends on the state (see recordingPillAction).
+        if (trackRecordingState.phase != TrackRecordingPhase.Idle) {
             RecordingIndicator(
+                phase = trackRecordingState.phase,
                 pointCount = trackPoints.size,
-                onStop = { vm.stopTrackRecording() },
+                onTap = when (recordingPillAction(trackRecordingState.phase)) {
+                    RecordingPillAction.STOP -> { { vm.stopTrackRecording() } }
+                    RecordingPillAction.DISMISS -> { { vm.trackRecorder.dismissRecordingMessage() } }
+                    RecordingPillAction.NONE -> null
+                },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
@@ -1417,7 +1419,16 @@ internal fun MapScreen(
                 Box(Modifier.tourTarget(tourTargets, TourTarget.LOCK)) {
                     LockButton(
                         locked = graphicsLocked,
-                        onToggle = { graphicsLocked = !graphicsLocked }
+                        onToggle = {
+                            graphicsLocked = !graphicsLocked
+                            // Locking closes any open symbol/drawing card so
+                            // nothing stays editable while locked (iOS parity).
+                            if (graphicsLocked) {
+                                if (selectedDrawingId != null) drawingStore.revertPreview()
+                                selectedDrawingId = null
+                                vm.selectWaypoint(null)
+                            }
+                        }
                     )
                 }
             }
@@ -1985,8 +1996,18 @@ internal fun MapScreen(
 
     tilingProgress?.let { (done, total) ->
         AlertDialog(
-            onDismissRequest = { /* non-cancelable while baking */ },
-            confirmButton = {},
+            // Only the Cancel button stops the bake; a stray tap outside doesn't.
+            onDismissRequest = {},
+            confirmButton = {
+                // The dialog closes once the bake has stopped and cleaned up.
+                TextButton(
+                    onClick = {
+                        tilingCancelling = true
+                        tilingJob?.cancel()
+                    },
+                    enabled = !tilingCancelling,
+                ) { Text(L10n.text("Cancel")) }
+            },
             title = { Text(L10n.text("Generating offline tiles")) },
             text = {
                 Column {
@@ -2034,12 +2055,15 @@ internal fun MapScreen(
             activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
             retainedImportedMapName = retainedImportedMap?.displayName,
+            retainedImportedMapIssue = retainedImportedMapIssue?.text,
             importedMapActive = importedMapLoaded,
             onReturnToImportedMap = {
                 vm.restoreRetainedImportedMap()
                 showLayersSheet = false
             },
-            hasPdfMap = pdfSource != null,
+            onDeleteRetainedImportedMap = { vm.deleteRetainedImportedMap() },
+            onRemoveUnavailableRetainedMap = { vm.removeUnavailableRetainedMapEntry() },
+            pdfMap = pdfSource,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
             onCalibratePdf = {
                 showLayersSheet = false
@@ -2051,12 +2075,19 @@ internal fun MapScreen(
                 if (pdf == null) {
                     Toast.makeText(context, L10n.text("Load a PDF map first"), Toast.LENGTH_SHORT).show()
                 } else {
-                    scope.launch {
+                    tilingJob = scope.launch {
+                        tilingCancelling = false
                         tilingProgress = 0 to 0
-                        val path = com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
-                            tilingProgress = p.done to p.total
+                        // Cancel stops PdfTiler at the next tile; it deletes its
+                        // partial output before the cancellation reaches here.
+                        val path = try {
+                            com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
+                                tilingProgress = p.done to p.total
+                            }
+                        } finally {
+                            tilingProgress = null
+                            tilingJob = null
                         }
-                        tilingProgress = null
                         if (path != null) {
                             val activated = com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
                                 ?.let { vm.setMapSource(it) }
@@ -2173,6 +2204,7 @@ internal fun MapScreen(
         CalibrationInputDialog(
             point = tap,
             fiduciaryNumber = calibrationFiduciaries.size + 1,
+            currentLocationMgrs = lastLocation?.let { calibrationMgrsForFix(it.latitude, it.longitude) },
             datum = calibrationDatum,
             onDatumChange = { calibrationDatum = it },
             onDismiss = { pendingCalibrationTap = null },

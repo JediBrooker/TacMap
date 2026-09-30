@@ -161,6 +161,12 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     val retainedImportedMapSource: StateFlow<MapSource?> =
         _retainedImportedMapSource.asStateFlow()
 
+    private val _retainedImportedMapIssue = MutableStateFlow<LocalizedMessage?>(null)
+    /** Set when a saved imported map is recorded but its file can't be opened,
+     * so Layers can offer to remove the stale entry (iOS parity). */
+    val retainedImportedMapIssue: StateFlow<LocalizedMessage?> =
+        _retainedImportedMapIssue.asStateFlow()
+
     private val _mapSelectionPersistenceIssue = MutableStateFlow<MapSelectionPersistenceIssue?>(null)
     val mapSelectionPersistenceIssue: StateFlow<MapSelectionPersistenceIssue?> =
         _mapSelectionPersistenceIssue.asStateFlow()
@@ -187,6 +193,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                 RetainedMapPublication.Keep -> Unit
                 RetainedMapPublication.Clear -> _retainedImportedMapSource.value = null
                 is RetainedMapPublication.Set -> _retainedImportedMapSource.value = retained.source
+            }
+            // A new or cleared retained entry replaces any unreadable one.
+            if (publication.retained != RetainedMapPublication.Keep) {
+                _retainedImportedMapIssue.value = null
             }
             closeSupersededOfflineSources(
                 candidates = listOf(previousActive, previousRetained),
@@ -217,14 +227,27 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     fun setMapSource(source: MapSource): Boolean = activateAndPersist(source)
 
     /** Frame camera for a new or restored map source. If user's last fix
-     *  is inside the coverage, centre on them. Otherwise centre on the
-     *  coverage centre so they at least see the page. No-op for unbounded
-     *  sources like OSM. */
+     *  is inside the coverage, centre on them. Otherwise fit the whole
+     *  coverage so they see the entire sheet, as iOS does. No-op for
+     *  unbounded sources like OSM. */
     private fun frameCameraFor(source: MapSource) {
         val coverage = source.coverage ?: return
         val userLoc = lastUserLocation
         if (userLoc != null && coverage.contains(userLoc.latitude, userLoc.longitude)) {
             flyTo(userLoc.latitude, userLoc.longitude, 15f)
+        } else {
+            fitCoverage(coverage)
+        }
+    }
+
+    /** Fly to the zoom that shows all of [coverage]. Before the map has laid
+     *  out, the screen size stands in for the viewport (the map is full-screen). */
+    private fun fitCoverage(coverage: com.tacmap.calibration.Wgs84Bounds) {
+        val (width, height) = lastViewportSize ?: getApplication<Application>().resources.displayMetrics
+            .let { it.widthPixels / it.density.toDouble() to it.heightPixels / it.density.toDouble() }
+        val fit = fitExtent(coverage, width, height)
+        if (fit != null) {
+            flyTo(fit.latitude, fit.longitude, fit.zoom.toFloat())
         } else {
             val centre = coverage.center
             flyTo(centre.latitude, centre.longitude, 13f)
@@ -257,6 +280,40 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         )
     )
 
+    /** Delete the saved imported map while an online basemap is showing. The
+     *  managed-file reconcile then removes its private copy. */
+    fun deleteRetainedImportedMap(): Boolean {
+        val retained = _retainedImportedMapSource.value ?: return false
+        val active = _mapSource.value as? OnlineRasterMapSourceAndroid ?: return false
+        val succeeded = executeMapSelectionTransition(
+            PendingMapSelectionTransition.UnloadImported(
+                onlineSource = active,
+                style = active.style,
+                clearRetained = true,
+            )
+        )
+        if (succeeded && retained is PdfMapSource && !pdfSessionStore.clear()) {
+            reportMapSelectionIssue(
+                transition = PendingMapSelectionTransition.ClearPdfSession,
+                message = Messages.displayThePdfMapWasUnloadedButItsPrivateSessionMessage(),
+            )
+        }
+        return succeeded
+    }
+
+    /** Drop a saved imported-map entry whose file is missing or unreadable. */
+    fun removeUnavailableRetainedMapEntry(): Boolean {
+        if (_retainedImportedMapIssue.value == null) return false
+        val active = _mapSource.value as? OnlineRasterMapSourceAndroid ?: return false
+        return executeMapSelectionTransition(
+            PendingMapSelectionTransition.UnloadImported(
+                onlineSource = active,
+                style = active.style,
+                clearRetained = true,
+            )
+        )
+    }
+
     fun restoreRetainedImportedMap(): Boolean {
         val retained = _retainedImportedMapSource.value ?: return false
         return when (retained) {
@@ -287,6 +344,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private var lastUserLocation: Location? = null
     private var hasInitialFix = false
+    /** Last laid-out map viewport (dp), for fitting an imported map's extent. */
+    private var lastViewportSize: Pair<Double, Double>? = null
 
     init {
         restoreRetainedImportedSource()
@@ -351,7 +410,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private fun restoreRetainedImportedSource() {
         val selection = savedRetainedMapSelection ?: return
         if (selection.kind == ActiveMapKind.ONLINE) return
-        _retainedImportedMapSource.value = restoreSelection(selection)
+        val restored = restoreSelection(selection)
+        _retainedImportedMapSource.value = restored
+        if (restored == null) {
+            _retainedImportedMapIssue.value = Messages.savedImportedMapMissingMessage()
+        }
     }
 
     private fun restoreSelection(selection: ActiveMapSelection): MapSource? =
@@ -526,6 +589,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     /** Called on every camera idle. byUser distinguishes gestures from
      *  programmatic moves. */
     fun onCameraIdle(camera: MapCamera, byUser: Boolean) {
+        if (camera.viewportWidth > 0.0 && camera.viewportHeight > 0.0) {
+            lastViewportSize = camera.viewportWidth to camera.viewportHeight
+        }
         val viewport = MapViewportState.from(camera)
         if (!viewport.isUsable()) return
         _cameraLat.value = viewport.latitude
@@ -608,14 +674,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Re-frame the loaded offline/imported map's coverage. Paired with
+    /** Re-frame the loaded offline/imported map's whole coverage. Paired with
      *  centreOnUser so that after panning off (or centring on a distant live
      *  location) the user can jump straight back to where the map actually is.
      *  No-op for unbounded online basemaps. */
     fun centreOnMap() {
         val coverage = _mapSource.value.coverage ?: return
-        val c = coverage.center
-        flyTo(c.latitude, c.longitude, 13f)
+        fitCoverage(coverage)
     }
 
     /** Fly camera to arbitrary coord. Used by waypoint list's "fly to"

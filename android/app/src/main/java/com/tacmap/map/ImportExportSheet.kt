@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.DeleteForever
@@ -46,10 +48,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.export.MissionObjectExport
+import com.tacmap.models.TrackRecordingPhase
 
 /// One bottom sheet that gathers every file import/export action, so the main
 /// hamburger menu stays short. The launchers/share intents live in MapScreen;
@@ -130,15 +137,36 @@ private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     }
 }
 
-/// Red "REC" pill shown while a GPX track is recording, so the live state is
-/// obvious without opening the menu. The dot pulses; tapping stops recording
-/// (the menu can also start/stop it).
+/** What tapping the on-map recording pill does in each state. */
+internal enum class RecordingPillAction { STOP, DISMISS, NONE }
+
+/**
+ * iOS stops recording from the pill, and cancels or dismisses the
+ * awaiting-location and interrupted states. While starting, the foreground
+ * service may not have called startForeground yet, and stopping it then
+ * crashes the app, so the pill (like the menu item) ignores taps until
+ * recording is live.
+ */
+internal fun recordingPillAction(phase: TrackRecordingPhase): RecordingPillAction = when (phase) {
+    TrackRecordingPhase.Recording -> RecordingPillAction.STOP
+    TrackRecordingPhase.AwaitingPermission,
+    TrackRecordingPhase.Interrupted -> RecordingPillAction.DISMISS
+    TrackRecordingPhase.Starting,
+    TrackRecordingPhase.Idle -> RecordingPillAction.NONE
+}
+
+/// GPX recording pill under the header. Only a live recording shows the red,
+/// pulsing "REC" with its point count; awaiting location, starting and
+/// interrupted get their own orange label, so the pill never implies a
+/// recording that isn't happening. Mirrors iOS RecordingIndicator.
 @Composable
 fun RecordingIndicator(
+    phase: TrackRecordingPhase,
     pointCount: Int,
-    onStop: () -> Unit,
+    onTap: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
+    val recording = phase == TrackRecordingPhase.Recording
     val transition = rememberInfiniteTransition(label = "rec")
     val dotAlpha by transition.animateFloat(
         initialValue = 1f,
@@ -146,32 +174,58 @@ fun RecordingIndicator(
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
         label = "dot"
     )
+    val title = when (phase) {
+        TrackRecordingPhase.Recording -> L10n.text("REC")
+        TrackRecordingPhase.AwaitingPermission -> Messages.recordingStatusAwaitingLocation()
+        TrackRecordingPhase.Starting -> Messages.recordingStatusStarting()
+        TrackRecordingPhase.Interrupted -> Messages.recordingStatusInterrupted()
+        TrackRecordingPhase.Idle -> Messages.recordingStatusIdle()
+    }
+    val description = when (phase) {
+        TrackRecordingPhase.Recording -> Messages.recordingPillRecordingA11y(Messages.pointCount(pointCount))
+        TrackRecordingPhase.AwaitingPermission -> Messages.recordingPillAwaitingA11y()
+        TrackRecordingPhase.Starting -> Messages.recordingPillStartingA11y()
+        TrackRecordingPhase.Interrupted -> Messages.recordingPillInterruptedA11y()
+        TrackRecordingPhase.Idle -> title
+    }
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(50))
-            .background(Color(0xF2D6362F))
-            .clickable(onClick = onStop)
+            .background(if (recording) Color(0xF2D6362F) else Color(0xF2D1731A))
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .clearAndSetSemantics {
+                contentDescription = description
+                if (onTap != null) role = Role.Button
+            }
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp)
     ) {
-        Box(
-            Modifier
-                .size(9.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = dotAlpha))
-        )
+        when (phase) {
+            TrackRecordingPhase.Recording -> Box(
+                Modifier
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = dotAlpha))
+            )
+            TrackRecordingPhase.Interrupted ->
+                Icon(Icons.Default.Warning, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+            else ->
+                Icon(Icons.Default.HourglassTop, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+        }
         Text(
-            L10n.text("REC"),
+            title,
             color = Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.sp
         )
-        Text(
-            "· " + Messages.pointCount(pointCount),
-            color = Color.White.copy(alpha = 0.85f),
-            fontSize = 12.sp
-        )
+        if (recording) {
+            Text(
+                "· " + Messages.pointCount(pointCount),
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 12.sp
+            )
+        }
     }
 }
