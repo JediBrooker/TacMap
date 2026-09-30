@@ -14273,7 +14273,8 @@
     "en": "STARTING",
     "de": "WIRD GESTARTET",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ],
     "legacy": false,
     "accessor": "recordingStatusStarting",
@@ -14285,7 +14286,8 @@
     "en": "INTERRUPTED",
     "de": "UNTERBROCHEN",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ],
     "legacy": false,
     "accessor": "recordingStatusInterrupted",
@@ -14297,7 +14299,8 @@
     "en": "IDLE",
     "de": "INAKTIV",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ],
     "legacy": false,
     "accessor": "recordingStatusIdle",
@@ -16669,6 +16672,242 @@
     "context": "Complete iOS settings explanation under the online lookups switch. Preserve all privacy/security limitations, provider names and numeric precision.",
     "legacy": false,
     "accessor": "onlineLookupsPrivacyHelp",
+    "parameters": []
+  },
+  "layers_pdf_georeferenced": {
+    "en": "Georeferenced (GeoPDF LGIDict)",
+    "de": "Georeferenziert (GeoPDF LGIDict)",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet, under the imported PDF's name: the PDF carries its own georeferencing (GeoPDF), so it is placed automatically. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersPdfGeoreferenced",
+    "parameters": []
+  },
+  "layers_pdf_manual_bounds": {
+    "en": "Manually placed bounds",
+    "de": "Manuell gesetzte Grenzen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet, under the imported PDF's name: the user placed the PDF by calibrating it with fiduciaries. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersPdfManualBounds",
+    "parameters": []
+  },
+  "layers_pdf_no_georeferencing": {
+    "en": "No georeferencing — using map-centre fallback",
+    "de": "Keine Georeferenzierung – Kartenmitte als Ersatz verwendet",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet, under the imported PDF's name: the PDF has no georeferencing yet and is shown around the map centre where it was imported. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersPdfNoGeoreferencing",
+    "parameters": []
+  },
+  "layers_pdf_fiduciary_count": {
+    "en": "Currently calibrated with {1} fiduciaries",
+    "de": "Derzeit mit {1} Passpunkten kalibriert",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet, under a manually calibrated PDF. {1} is the number of calibration points (always 3 or more). Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersPdfFiduciaryCount",
+    "parameters": [
+      {
+        "name": "count",
+        "type": "string"
+      }
+    ]
+  },
+  "layers_delete_imported_title": {
+    "en": "Delete imported map from this device?",
+    "de": "Importierte Karte von diesem Gerät löschen?",
+    "platforms": [
+      "android"
+    ],
+    "context": "Title of the confirmation before an imported PDF or offline tile map is deleted from the device. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersDeleteImportedTitle",
+    "parameters": []
+  },
+  "layers_delete_imported_message": {
+    "en": "This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.",
+    "de": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Einsatzobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Body of the confirmation before an imported map is deleted. Symbols and drawings stay. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersDeleteImportedMessage",
+    "parameters": []
+  },
+  "layers_delete_imported_confirm": {
+    "en": "Delete Map",
+    "de": "Karte löschen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Destructive button in the confirmation that deletes an imported map from the device. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersDeleteImportedConfirm",
+    "parameters": []
+  },
+  "layers_delete_pdf_map": {
+    "en": "Delete PDF Map…",
+    "de": "PDF-Karte löschen …",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet button that asks to delete the active imported PDF map from the device. The ellipsis means a confirmation follows. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersDeletePdfMap",
+    "parameters": []
+  },
+  "layers_delete_offline_map": {
+    "en": "Delete Offline Map…",
+    "de": "Offline-Karte löschen …",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet button that asks to delete the active offline (MBTiles) map from the device. The ellipsis means a confirmation follows. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersDeleteOfflineMap",
+    "parameters": []
+  },
+  "layers_delete_saved_imported_map": {
+    "en": "Delete Saved Imported Map…",
+    "de": "Gespeicherte importierte Karte löschen …",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet button that asks to delete an imported map that is saved on the device but not currently shown. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersDeleteSavedImportedMap",
+    "parameters": []
+  },
+  "layers_saved_map_unavailable": {
+    "en": "Saved imported map unavailable",
+    "de": "Gespeicherte importierte Karte nicht verfügbar",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet warning heading when the saved imported map can no longer be opened. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersSavedMapUnavailable",
+    "parameters": []
+  },
+  "layers_remove_saved_map_entry": {
+    "en": "Remove Saved Map Entry",
+    "de": "Gespeicherten Karteneintrag entfernen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet button that forgets a saved imported map whose file is missing or unreadable. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "layersRemoveSavedMapEntry",
+    "parameters": []
+  },
+  "saved_imported_map_missing": {
+    "en": "The saved imported map is missing or unreadable. Remove its saved entry, then import the source file again.",
+    "de": "Die gespeicherte importierte Karte fehlt oder ist unlesbar. Entferne ihren gespeicherten Eintrag und importiere die Quelldatei erneut.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Layers sheet explanation under 'Saved imported map unavailable'. Retained until the entry is removed or replaced. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "savedImportedMapMissing",
+    "parameters": [],
+    "deferred": true
+  },
+  "calibration_use_current_location": {
+    "en": "Use my current location ({1})",
+    "de": "Meinen aktuellen Standort verwenden ({1})",
+    "platforms": [
+      "android"
+    ],
+    "context": "Button in the PDF calibration point dialog that fills the MGRS field from the last GPS fix. {1} is that MGRS grid reference. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "calibrationUseCurrentLocation",
+    "parameters": [
+      {
+        "name": "mgrs",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_use_current_location_no_fix": {
+    "en": "Use my current location",
+    "de": "Meinen aktuellen Standort verwenden",
+    "platforms": [
+      "android"
+    ],
+    "context": "The same calibration button, disabled because there is no GPS fix yet.",
+    "legacy": false,
+    "accessor": "calibrationUseCurrentLocationNoFix",
+    "parameters": []
+  },
+  "recording_status_awaiting_location": {
+    "en": "AWAITING LOCATION",
+    "de": "WARTE AUF STANDORT",
+    "platforms": [
+      "android"
+    ],
+    "context": "Short upper-case status on the map's track-recording pill while the app waits for Location permission. Never imply an active recording. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "recordingStatusAwaitingLocation",
+    "parameters": []
+  },
+  "recording_pill_recording_a11y": {
+    "en": "Recording track — {1}. Tap to stop.",
+    "de": "Trackaufzeichnung – {1}. Zum Stoppen tippen.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Screen-reader label of the map's track-recording pill while recording. {1} is the recorded point count, e.g. '12 points'.",
+    "legacy": false,
+    "accessor": "recordingPillRecordingA11y",
+    "parameters": [
+      {
+        "name": "points",
+        "type": "string"
+      }
+    ]
+  },
+  "recording_pill_awaiting_a11y": {
+    "en": "Track recording awaiting Location permission. Tap to cancel.",
+    "de": "Trackaufzeichnung wartet auf Standortberechtigung. Zum Abbrechen tippen.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Screen-reader label of the map's track-recording pill while waiting for Location permission. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "recordingPillAwaitingA11y",
+    "parameters": []
+  },
+  "recording_pill_starting_a11y": {
+    "en": "Track recording is starting.",
+    "de": "Trackaufzeichnung wird gestartet.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Screen-reader label of the map's track-recording pill while recording starts; tapping does nothing yet. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "recordingPillStartingA11y",
+    "parameters": []
+  },
+  "recording_pill_interrupted_a11y": {
+    "en": "Track recording interrupted. Tap to dismiss.",
+    "de": "Trackaufzeichnung unterbrochen. Zum Schließen tippen.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Screen-reader label of the map's track-recording pill after recording stopped unexpectedly. Same wording as iOS.",
+    "legacy": false,
+    "accessor": "recordingPillInterruptedA11y",
     "parameters": []
   }
 }

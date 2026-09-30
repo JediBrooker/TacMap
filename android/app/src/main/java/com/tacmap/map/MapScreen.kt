@@ -219,6 +219,7 @@ internal fun MapScreen(
     val trackPersistError = trackPersistMessage?.text
     val mapSource by vm.mapSource.collectAsState()
     val retainedImportedMap by vm.retainedImportedMapSource.collectAsState()
+    val retainedImportedMapIssue by vm.retainedImportedMapIssue.collectAsState()
     val mapSelectionPersistenceIssue by vm.mapSelectionPersistenceIssue.collectAsState()
 
     /// Is anything on screen actually pulling tiles off the internet right now?
@@ -377,6 +378,9 @@ internal fun MapScreen(
 
     /// (done, total) while baking PDF into offline tiles, null when idle
     var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    /// the running bake, so the progress dialog's Cancel can stop it
+    var tilingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var tilingCancelling by remember { mutableStateOf(false) }
     /// lock toggle - when true no graphic can be moved. Extra guard
     /// against accidental drags in the field.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -1949,8 +1953,18 @@ internal fun MapScreen(
 
     tilingProgress?.let { (done, total) ->
         AlertDialog(
-            onDismissRequest = { /* non-cancelable while baking */ },
-            confirmButton = {},
+            // Only the Cancel button stops the bake; a stray tap outside doesn't.
+            onDismissRequest = {},
+            confirmButton = {
+                // The dialog closes once the bake has stopped and cleaned up.
+                TextButton(
+                    onClick = {
+                        tilingCancelling = true
+                        tilingJob?.cancel()
+                    },
+                    enabled = !tilingCancelling,
+                ) { Text(L10n.text("Cancel")) }
+            },
             title = { Text(L10n.text("Generating offline tiles")) },
             text = {
                 Column {
@@ -1998,12 +2012,15 @@ internal fun MapScreen(
             activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
             retainedImportedMapName = retainedImportedMap?.displayName,
+            retainedImportedMapIssue = retainedImportedMapIssue?.text,
             importedMapActive = importedMapLoaded,
             onReturnToImportedMap = {
                 vm.restoreRetainedImportedMap()
                 showLayersSheet = false
             },
-            hasPdfMap = pdfSource != null,
+            onDeleteRetainedImportedMap = { vm.deleteRetainedImportedMap() },
+            onRemoveUnavailableRetainedMap = { vm.removeUnavailableRetainedMapEntry() },
+            pdfMap = pdfSource,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
             onCalibratePdf = {
                 showLayersSheet = false
@@ -2015,12 +2032,19 @@ internal fun MapScreen(
                 if (pdf == null) {
                     Toast.makeText(context, L10n.text("Load a PDF map first"), Toast.LENGTH_SHORT).show()
                 } else {
-                    scope.launch {
+                    tilingJob = scope.launch {
+                        tilingCancelling = false
                         tilingProgress = 0 to 0
-                        val path = com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
-                            tilingProgress = p.done to p.total
+                        // Cancel stops PdfTiler at the next tile; it deletes its
+                        // partial output before the cancellation reaches here.
+                        val path = try {
+                            com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
+                                tilingProgress = p.done to p.total
+                            }
+                        } finally {
+                            tilingProgress = null
+                            tilingJob = null
                         }
-                        tilingProgress = null
                         if (path != null) {
                             val activated = com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
                                 ?.let { vm.setMapSource(it) }
