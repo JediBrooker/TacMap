@@ -132,6 +132,25 @@ enum ElevationProfile {
         )
     }
 
+    /// Heights the chart spans: all of the terrain, the eye and the target,
+    /// and the sight line only as far as one terrain span (at least 50 m)
+    /// beyond the terrain, so on a long line the Earth's curvature doesn't
+    /// flatten the terrain into a strip. Nil without elevations.
+    static func chartRange(elevations: [Double], sightHeights: [Double]) -> ClosedRange<Double>? {
+        guard let terrainLow = elevations.min(), let terrainHigh = elevations.max() else { return nil }
+        let pad = max(terrainHigh - terrainLow, 50)
+        var low = terrainLow
+        var high = terrainHigh
+        for height in sightHeights {
+            low = min(low, max(height, terrainLow - pad))
+            high = max(high, min(height, terrainHigh + pad))
+        }
+        if let eye = sightHeights.first, let target = sightHeights.last {
+            high = max(high, eye, target)
+        }
+        return low...high
+    }
+
     /// Great-circle distance, metres.
     static func distance(_ a: Coordinate, _ b: Coordinate) -> Double {
         let phi1 = a.latitude * .pi / 180

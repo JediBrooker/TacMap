@@ -90,6 +90,20 @@ final class ElevationProfileTests: XCTestCase {
         }
     }
 
+    func testChartRangeKeepsTheTerrainReadableOnLongLines() {
+        XCTAssertNil(ElevationProfile.chartRange(elevations: [], sightHeights: []))
+        // No sight line: just the terrain.
+        XCTAssertEqual(ElevationProfile.chartRange(elevations: [120, 80, 150], sightHeights: []), 80...150)
+        // A 100 m mast and a target above the terrain are always shown.
+        XCTAssertEqual(ElevationProfile.chartRange(elevations: [100, 130, 110], sightHeights: [200, 160, 115]), 100...200)
+        // Curvature drops a long sight line far below: clipped one terrain
+        // span (70 m) under the lowest ground.
+        XCTAssertEqual(ElevationProfile.chartRange(elevations: [180, 250, 206], sightHeights: [182, -40_000, 208]),
+                       110...250)
+        // Flat ground still leaves at least 50 m.
+        XCTAssertEqual(ElevationProfile.chartRange(elevations: [10, 10, 10], sightHeights: [12, -900, 12]), -40...12)
+    }
+
     func testRequestsGoOutInBatchesRoundedToFourDecimals() throws {
         for testCase in fixture["requests"] as! [[String: Any]] {
             let name = testCase["name"] as! String

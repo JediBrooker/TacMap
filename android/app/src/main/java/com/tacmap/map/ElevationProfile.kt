@@ -3,6 +3,8 @@ package com.tacmap.map
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -134,6 +136,26 @@ object ElevationProfile {
             visible = visible,
             heights = line.indices.map { line[it] + drops[it] },
         )
+    }
+
+    /**
+     * Heights the chart spans: all of the terrain, the eye and the target,
+     * and the sight line only as far as one terrain span (at least 50 m)
+     * beyond the terrain, so on a long line the Earth's curvature doesn't
+     * flatten the terrain into a strip. Null without elevations.
+     */
+    fun chartRange(elevations: List<Double>, sightHeights: List<Double>): ClosedFloatingPointRange<Double>? {
+        val terrainLow = elevations.minOrNull() ?: return null
+        val terrainHigh = elevations.maxOrNull() ?: return null
+        val pad = max(terrainHigh - terrainLow, 50.0)
+        var low = terrainLow
+        var high = terrainHigh
+        for (height in sightHeights) {
+            low = min(low, max(height, terrainLow - pad))
+            high = max(high, min(height, terrainHigh + pad))
+        }
+        if (sightHeights.isNotEmpty()) high = maxOf(high, sightHeights.first(), sightHeights.last())
+        return low..high
     }
 
     /** Great-circle distance, metres. */

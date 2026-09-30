@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -191,6 +192,14 @@ private fun ProfileContent(
             Text(Messages.profileDeadGround(), style = MaterialTheme.typography.bodySmall, color = muted)
         }
     }
+    if (straightLine) {
+        Text(Messages.profileLosTitle(), style = MaterialTheme.typography.titleMedium)
+        HeightStepper(Messages.profileObserverHeight(), observerHeight, onObserverHeight)
+        HeightStepper(Messages.profileTargetHeight(), targetHeight, onTargetHeight)
+        sight?.let { LineOfSightVerdict(it, distances) }
+    } else {
+        Text(Messages.profileLosNeedsTwoPoints(), style = MaterialTheme.typography.bodySmall, color = muted)
+    }
     ElevationProfile.stats(elevations)?.let { stats ->
         val items = listOf(
             Messages.profileLength() to DisplayFormat.distance(distances.last()),
@@ -214,14 +223,6 @@ private fun ProfileContent(
                 }
             }
         }
-    }
-    if (straightLine) {
-        Text(Messages.profileLosTitle(), style = MaterialTheme.typography.titleMedium)
-        HeightStepper(Messages.profileObserverHeight(), observerHeight, onObserverHeight)
-        HeightStepper(Messages.profileTargetHeight(), targetHeight, onTargetHeight)
-        sight?.let { LineOfSightVerdict(it, distances) }
-    } else {
-        Text(Messages.profileLosNeedsTwoPoints(), style = MaterialTheme.typography.bodySmall, color = muted)
     }
     Text(Messages.profileSource(), style = MaterialTheme.typography.bodySmall, color = muted)
 }
@@ -276,15 +277,15 @@ private class ProfilePlot(width: Float, height: Float, density: Density) {
 }
 
 /** Maps distances and heights into the plot, with round-number height lines. */
-private class ProfileScale(val distances: List<Double>, heights: List<Double>, val plot: Rect) {
+private class ProfileScale(val distances: List<Double>, range: ClosedFloatingPointRange<Double>, val plot: Rect) {
     private val total = max(distances.lastOrNull() ?: 1.0, 1.0)
     val low: Double
     val high: Double
     val gridLevels: List<Double>
 
     init {
-        val minimum = heights.minOrNull() ?: 0.0
-        val maximum = heights.maxOrNull() ?: 1.0
+        val minimum = range.start
+        val maximum = range.endInclusive
         val step = niceStep(max(maximum - minimum, 10.0) / 3)
         low = floor(minimum / step) * step
         high = max(ceil(maximum / step) * step, low + step)
@@ -326,7 +327,9 @@ private fun ProfileChart(
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
     val lineColour = MaterialTheme.colorScheme.onSurface
     val gridColour = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-    val heights = remember(elevations, sight) { elevations + (sight?.heights ?: emptyList()) }
+    val range = remember(elevations, sight) {
+        ElevationProfile.chartRange(elevations, sight?.heights.orEmpty()) ?: 0.0..1.0
+    }
     val summary = ElevationProfile.stats(elevations)?.let {
         listOf(
             "${Messages.profileLength()} ${DisplayFormat.distance(distances.last())}",
@@ -346,19 +349,19 @@ private fun ProfileChart(
             }
             .pointerInput(distances) {
                 val plot = ProfilePlot(size.width.toFloat(), size.height.toFloat(), this)
-                val scale = ProfileScale(distances, heights, plot.rect)
+                val scale = ProfileScale(distances, range, plot.rect)
                 detectTapGestures { offset -> scale.indexAt(offset.x)?.let(onSelect) }
             }
             .pointerInput(distances) {
                 val plot = ProfilePlot(size.width.toFloat(), size.height.toFloat(), this)
-                val scale = ProfileScale(distances, heights, plot.rect)
+                val scale = ProfileScale(distances, range, plot.rect)
                 detectHorizontalDragGestures(
                     onDragStart = { offset -> scale.indexAt(offset.x)?.let(onSelect) },
                 ) { change, _ -> scale.indexAt(change.position.x)?.let(onSelect) }
             }
     ) {
         val plot = ProfilePlot(size.width, size.height, this).rect
-        val scale = ProfileScale(distances, heights, plot)
+        val scale = ProfileScale(distances, range, plot)
 
         for (level in scale.gridLevels) {
             val y = scale.y(level)
@@ -371,57 +374,61 @@ private fun ProfileChart(
             Offset(plot.right, plot.bottom + 4.dp.toPx()), alignEnd = true, centreY = false,
         )
 
-        for (i in 0 until distances.size - 1) {
-            val column = Path().apply {
-                moveTo(scale.x(distances[i]), plot.bottom)
-                lineTo(scale.x(distances[i]), scale.y(elevations[i]))
-                lineTo(scale.x(distances[i + 1]), scale.y(elevations[i + 1]))
-                lineTo(scale.x(distances[i + 1]), plot.bottom)
-                close()
+        // A sight line far below the terrain runs off the chart.
+        val edge = 5.dp.toPx()
+        clipRect(plot.left - edge, plot.top - edge, plot.right + edge, plot.bottom + edge) {
+            for (i in 0 until distances.size - 1) {
+                val column = Path().apply {
+                    moveTo(scale.x(distances[i]), plot.bottom)
+                    lineTo(scale.x(distances[i]), scale.y(elevations[i]))
+                    lineTo(scale.x(distances[i + 1]), scale.y(elevations[i + 1]))
+                    lineTo(scale.x(distances[i + 1]), plot.bottom)
+                    close()
+                }
+                val hidden = sight?.let { !it.visible[i + 1] } ?: false
+                drawPath(column, if (hidden) DeadGroundFill else TerrainFill)
             }
-            val hidden = sight?.let { !it.visible[i + 1] } ?: false
-            drawPath(column, if (hidden) DeadGroundFill else TerrainFill)
-        }
-        val ridge = Path().apply {
-            distances.indices.forEach { i ->
-                val x = scale.x(distances[i])
-                val y = scale.y(elevations[i])
-                if (i == 0) moveTo(x, y) else lineTo(x, y)
-            }
-        }
-        drawPath(ridge, lineColour, style = Stroke(width = 1.5.dp.toPx()))
-
-        if (sight != null) {
-            val colour = if (sight.blocked) SightBlocked else SightClear
-            val line = Path().apply {
+            val ridge = Path().apply {
                 distances.indices.forEach { i ->
                     val x = scale.x(distances[i])
-                    val y = scale.y(sight.heights[i])
+                    val y = scale.y(elevations[i])
                     if (i == 0) moveTo(x, y) else lineTo(x, y)
                 }
             }
-            drawPath(
-                line, colour,
-                style = Stroke(
-                    width = 1.5.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())),
-                ),
-            )
-            for (end in listOf(0, distances.lastIndex)) {
-                drawCircle(colour, 4.dp.toPx(), Offset(scale.x(distances[end]), scale.y(sight.heights[end])))
-            }
-            sight.worstIndex?.let { i ->
-                drawCircle(
-                    colour, 6.dp.toPx(), Offset(scale.x(distances[i]), scale.y(elevations[i])),
-                    style = Stroke(width = 2.dp.toPx()),
-                )
-            }
-        }
+            drawPath(ridge, lineColour, style = Stroke(width = 1.5.dp.toPx()))
 
-        if (selected != null && selected in distances.indices) {
-            val x = scale.x(distances[selected])
-            drawLine(lineColour.copy(alpha = 0.6f), Offset(x, plot.top), Offset(x, plot.bottom), strokeWidth = 1.dp.toPx())
-            drawCircle(lineColour, 5.dp.toPx(), Offset(x, scale.y(elevations[selected])))
+            if (sight != null) {
+                val colour = if (sight.blocked) SightBlocked else SightClear
+                val line = Path().apply {
+                    distances.indices.forEach { i ->
+                        val x = scale.x(distances[i])
+                        val y = scale.y(sight.heights[i])
+                        if (i == 0) moveTo(x, y) else lineTo(x, y)
+                    }
+                }
+                drawPath(
+                    line, colour,
+                    style = Stroke(
+                        width = 1.5.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())),
+                    ),
+                )
+                for (end in listOf(0, distances.lastIndex)) {
+                    drawCircle(colour, 4.dp.toPx(), Offset(scale.x(distances[end]), scale.y(sight.heights[end])))
+                }
+                sight.worstIndex?.let { i ->
+                    drawCircle(
+                        colour, 6.dp.toPx(), Offset(scale.x(distances[i]), scale.y(elevations[i])),
+                        style = Stroke(width = 2.dp.toPx()),
+                    )
+                }
+            }
+
+            if (selected != null && selected in distances.indices) {
+                val x = scale.x(distances[selected])
+                drawLine(lineColour.copy(alpha = 0.6f), Offset(x, plot.top), Offset(x, plot.bottom), strokeWidth = 1.dp.toPx())
+                drawCircle(lineColour, 5.dp.toPx(), Offset(x, scale.y(elevations[selected])))
+            }
         }
     }
 }

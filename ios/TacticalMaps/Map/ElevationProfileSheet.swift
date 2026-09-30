@@ -99,16 +99,16 @@ struct ElevationProfileSheet: View {
                 .foregroundStyle(.secondary)
                 .labelStyle(DeadGroundLegendStyle())
         }
-        if let stats = ElevationProfile.stats(elevations: elevations) {
-            ProfileStatsGrid(length: distances.last ?? 0, start: elevations.first ?? 0,
-                             end: elevations.last ?? 0, stats: stats)
-        }
         if request.path.count == 2 {
             lineOfSightSection(sight: sight, distances: distances)
         } else {
             Text(Messages.profileLosNeedsTwoPoints())
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        }
+        if let stats = ElevationProfile.stats(elevations: elevations) {
+            ProfileStatsGrid(length: distances.last ?? 0, start: elevations.first ?? 0,
+                             end: elevations.last ?? 0, stats: stats)
         }
         Text(Messages.profileSource())
             .font(.caption)
@@ -267,9 +267,12 @@ struct ElevationProfileChart: View {
         GeometryReader { geo in
             let plot = CGRect(x: leftInset, y: 6, width: max(geo.size.width - leftInset - 6, 1),
                               height: max(geo.size.height - bottomInset - 6, 1))
-            let scale = ChartScale(distances: distances, heights: elevations + (sight?.heights ?? []), plot: plot)
+            let range = ElevationProfile.chartRange(elevations: elevations, sightHeights: sight?.heights ?? []) ?? 0...1
+            let scale = ChartScale(distances: distances, range: range, plot: plot)
             Canvas { context, _ in
                 drawGrid(in: &context, scale: scale, plot: plot)
+                // A sight line far below the terrain runs off the chart.
+                context.clip(to: Path(plot.insetBy(dx: -5, dy: -5)))
                 drawTerrain(in: &context, scale: scale, plot: plot)
                 drawSight(in: &context, scale: scale)
                 drawSelection(in: &context, scale: scale, plot: plot)
@@ -374,12 +377,12 @@ private struct ChartScale {
     let gridLevels: [Double]
     let distances: [Double]
 
-    init(distances: [Double], heights: [Double], plot: CGRect) {
+    init(distances: [Double], range: ClosedRange<Double>, plot: CGRect) {
         self.plot = plot
         self.distances = distances
         total = max(distances.last ?? 1, 1)
-        let minimum = heights.min() ?? 0
-        let maximum = heights.max() ?? 1
+        let minimum = range.lowerBound
+        let maximum = range.upperBound
         let step = ChartScale.niceStep(for: max(maximum - minimum, 10) / 3)
         low = (minimum / step).rounded(.down) * step
         high = max((maximum / step).rounded(.up) * step, low + step)

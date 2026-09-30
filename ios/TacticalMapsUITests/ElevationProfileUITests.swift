@@ -8,13 +8,27 @@ final class ElevationProfileUITests: XCTestCase {
 
     func testMeasuredLineShowsProfileAndLineOfSight() {
         let app = launch(fakeTerrain: true)
+        // The map opens on the whole world; zoom in so the line is a few
+        // kilometres, not a continent where curvature swamps the terrain.
+        for _ in 0..<3 { app.pinch(withScale: 6, velocity: 3) }
+        sleep(1)
         measureTwoPoints(in: app)
 
-        XCTAssertTrue(app.otherElements["profile.chart"].waitForExistence(timeout: 10), "No profile chart")
+        let chart = app.otherElements["profile.chart"]
+        XCTAssertTrue(chart.waitForExistence(timeout: 10), "No profile chart")
         let verdict = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Blocked' OR label BEGINSWITH 'Clear'")).firstMatch
         XCTAssertTrue(verdict.waitForExistence(timeout: 5), "No line of sight verdict")
+        // Full height, so the chart and the verdict are on screen together.
+        app.navigationBars.firstMatch.swipeUp()
         sleep(1)
         attachScreenshot("profile-2m-observer")
+
+        // Touch the chart to read a height.
+        chart.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: chart.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)))
+        let readout = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'from the start'")).firstMatch
+        XCTAssertTrue(readout.waitForExistence(timeout: 5), "Touching the chart shows no readout")
+        attachScreenshot("profile-readout")
 
         // Raise the observer to a 100 m mast.
         let stepper = app.steppers["profile.observerHeight"]
@@ -22,14 +36,6 @@ final class ElevationProfileUITests: XCTestCase {
         for _ in 0..<9 { stepper.buttons.element(boundBy: 1).tap() }
         sleep(1)
         attachScreenshot("profile-100m-observer")
-
-        // Drag across the chart to read a height.
-        let chart = app.otherElements["profile.chart"]
-        chart.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
-            .press(forDuration: 0.1, thenDragTo: chart.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)))
-        let readout = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'from the start'")).firstMatch
-        XCTAssertTrue(readout.waitForExistence(timeout: 5), "Dragging the chart shows no readout")
-        attachScreenshot("profile-readout")
     }
 
     func testProfileExplainsWhenOnlineLookupsAreOff() {

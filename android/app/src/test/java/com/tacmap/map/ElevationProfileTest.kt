@@ -105,6 +105,20 @@ class ElevationProfileTest {
     }
 
     @Test
+    fun chartRangeKeepsTheTerrainReadableOnLongLines() {
+        assertNull(ElevationProfile.chartRange(emptyList(), emptyList()))
+        // No sight line: just the terrain.
+        assertEquals(80.0..150.0, ElevationProfile.chartRange(listOf(120.0, 80.0, 150.0), emptyList()))
+        // A 100 m mast and a target above the terrain are always shown.
+        assertEquals(100.0..200.0, ElevationProfile.chartRange(listOf(100.0, 130.0, 110.0), listOf(200.0, 160.0, 115.0)))
+        // Curvature drops a long sight line far below: clipped one terrain
+        // span (70 m) under the lowest ground.
+        assertEquals(110.0..250.0, ElevationProfile.chartRange(listOf(180.0, 250.0, 206.0), listOf(182.0, -40_000.0, 208.0)))
+        // Flat ground still leaves at least 50 m.
+        assertEquals(-40.0..12.0, ElevationProfile.chartRange(listOf(10.0, 10.0, 10.0), listOf(12.0, -900.0, 12.0)))
+    }
+
+    @Test
     fun requestsGoOutInBatchesRoundedToFourDecimals() {
         for (element in fixture["requests"]!!.jsonArray) {
             val case = element.jsonObject
