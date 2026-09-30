@@ -29,7 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.tacmap.mgrs.MgrsFormatter
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -62,6 +64,13 @@ fun WeatherDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // Which point these conditions are for, as on iOS.
+                Text(
+                    MgrsFormatter.format(lat, lng),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color.Gray
+                )
                 when {
                     loading -> Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)

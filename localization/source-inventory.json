@@ -1955,5 +1955,11 @@
     "platform": "android",
     "area": "map-navigation",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/MeasureOverlay.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
   }
 ]

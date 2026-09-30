@@ -743,19 +743,9 @@ internal fun MapScreen(
             quickAddCreationError = null
         }
     }
+    // The measure line and its point dots draw in their own overlay (see
+    // CustomMapScreen.measurePoints), so hiding drawings never hides them.
     val draftDrawing = when {
-        // measure tool takes precedence - render its polyline as draft
-        // overlay so user can see the path they're laying down
-        measureSession.isActive && measureSession.points.size >= 1 -> newMapDrawingFeature(
-            name = "",
-            geometry = DrawingGeometry.LINE,
-            points = measureSession.points.map { DrawingPoint(it.first, it.second) },
-            layerId = safeActiveLayerId,
-            strokeColor = 0xFFFFA500.toInt(),
-            fillColor = 0,
-            strokeStyle = DrawingStrokeStyle.DASHED,
-            density = rendererDensity,
-        )
         draftGeometry != null -> newMapDrawingFeature(
             name = drawingNameOrDefault(activeDrawingName, draftGeometry!!, drawingDocument.features),
             geometry = draftGeometry!!,
@@ -880,6 +870,7 @@ internal fun MapScreen(
                 drawings = drawingDocument.features,
                 drawingLayers = drawingDocument.layers,
                 draftDrawing = draftDrawing,
+                measurePoints = if (measureSession.isActive) measureSession.points.toList() else emptyList(),
                 graphicsLocked = graphicsLocked,
                 userLocationVisible = userLocationVisible,
                 myLat = lastLocation?.latitude,
@@ -1399,7 +1390,16 @@ internal fun MapScreen(
                 Box(Modifier.tourTarget(tourTargets, TourTarget.LOCK)) {
                     LockButton(
                         locked = graphicsLocked,
-                        onToggle = { graphicsLocked = !graphicsLocked }
+                        onToggle = {
+                            graphicsLocked = !graphicsLocked
+                            // Locking closes any open symbol/drawing card so
+                            // nothing stays editable while locked (iOS parity).
+                            if (graphicsLocked) {
+                                if (selectedDrawingId != null) drawingStore.revertPreview()
+                                selectedDrawingId = null
+                                vm.selectWaypoint(null)
+                            }
+                        }
                     )
                 }
             }
