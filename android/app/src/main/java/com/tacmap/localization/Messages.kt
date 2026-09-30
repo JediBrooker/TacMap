@@ -92,6 +92,10 @@ object Messages {
         L10n.message("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.")
     fun basemapRecoveryRequiredMessage(): LocalizedMessage =
         LocalizedMessage("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.", listOf())
+    fun calibrationUseCurrentLocation(mgrs: String): String =
+        L10n.message("id.calibration_use_current_location", "Use my current location (%1\$s)", mgrs)
+    fun calibrationUseCurrentLocationNoFix(): String =
+        L10n.message("id.calibration_use_current_location_no_fix", "Use my current location")
     fun chatNewMessageNotice(sender: String): String =
         L10n.message("id.chat_new_message_notice", "New TacMap Chat message from %1\$s.", sender)
     fun chatNewReportNotice(sender: String): String =
@@ -100,16 +104,50 @@ object Messages {
         L10n.message("id.chat_recipient_heading", "RECIPIENT")
     fun acknowledge(): String =
         L10n.message("id.common_ok", "OK")
+    fun drawingsDeleteBody(name: String, points: String): String =
+        L10n.message("id.drawings_delete_body", "This will permanently remove “%1\$s” — %2\$s.", name, points)
+    fun drawingsDeleteTitle(): String =
+        L10n.message("id.drawings_delete_title", "Delete drawing?")
+    fun drawingsDiscardBody(count: String): String =
+        L10n.message("id.drawings_discard_body", "This will discard the %1\$s point(s) you've placed.", count)
+    fun drawingsDiscardTitle(): String =
+        L10n.message("id.drawings_discard_title", "Discard drawing?")
+    fun drawingsFillStyle(): String =
+        L10n.message("id.drawings_fill_style", "Fill style")
+    fun drawingsKeepDrawing(): String =
+        L10n.message("id.drawings_keep_drawing", "Keep drawing")
     fun drawingsQuarantined(value: String): String =
         L10n.message("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", value)
     fun drawingsQuarantinedMessage(value: String): LocalizedMessage =
         LocalizedMessage("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", listOf(value))
+    fun drawingsRenameNamed(name: String): String =
+        L10n.message("id.drawings_rename_named", "Rename %1\$s", name)
+    fun drawingsRenameTitle(): String =
+        L10n.message("id.drawings_rename_title", "Rename drawing")
+    fun drawingsStrokeWidth(): String =
+        L10n.message("id.drawings_stroke_width", "Stroke width")
+    fun drawingsStrokeWidthValue(width: String): String =
+        L10n.message("id.drawings_stroke_width_value", "%1\$s pt", width)
+    fun exportGeojsonFormat(): String =
+        L10n.message("id.export_geojson_format", "Format: GeoJSON FeatureCollection (RFC 7946) with simplestyle-spec styling. Opens in geojson.io, GitHub, Mapbox, Felt, QGIS, ArcGIS, Google Earth (via the GeoJSON-to-KML converter).")
+    fun exportGpxEmpty(): String =
+        L10n.message("id.export_gpx_empty", "No track recorded yet. Start recording from the menu, move, then export.")
+    fun exportGpxFormat(): String =
+        L10n.message("id.export_gpx_format", "Format: GPX 1.1 - opens in Garmin, Strava, Gaia GPS, QGIS, Google Earth, and most GPS tools.")
     fun exportKmlTitle(): String =
         L10n.message("id.export_kml_title", "Export KML")
     fun exportKmzRow(): String =
         L10n.message("id.export_kmz_row", "KMZ with Symbols")
     fun exportKmzTitle(): String =
         L10n.message("id.export_kmz_title", "Export KMZ with Symbols")
+    fun exportPreviewHeading(): String =
+        L10n.message("id.export_preview_heading", "Preview")
+    fun exportPreviewTruncated(): String =
+        L10n.message("id.export_preview_truncated", "… (truncated, full file in Share)")
+    fun exportShareGeojson(): String =
+        L10n.message("id.export_share_geojson", "Share GeoJSON file")
+    fun exportShareGpx(): String =
+        L10n.message("id.export_share_gpx", "Share GPX file")
     fun importCollisionSummary(summary: String, count: String): String =
         L10n.message("id.import_collision_summary", "%1\$s Conflicting object IDs reassigned: %2\$s.", summary, count)
     fun importCollisionSummaryMessage(summary: String, count: String): LocalizedMessage =
@@ -132,6 +170,30 @@ object Messages {
         LocalizedMessage("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", listOf(summary, count))
     fun decimalInputHint(): String =
         L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
+    fun layersDeleteImportedConfirm(): String =
+        L10n.message("id.layers_delete_imported_confirm", "Delete Map")
+    fun layersDeleteImportedMessage(): String =
+        L10n.message("id.layers_delete_imported_message", "This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.")
+    fun layersDeleteImportedTitle(): String =
+        L10n.message("id.layers_delete_imported_title", "Delete imported map from this device?")
+    fun layersDeleteOfflineMap(): String =
+        L10n.message("id.layers_delete_offline_map", "Delete Offline Map…")
+    fun layersDeletePdfMap(): String =
+        L10n.message("id.layers_delete_pdf_map", "Delete PDF Map…")
+    fun layersDeleteSavedImportedMap(): String =
+        L10n.message("id.layers_delete_saved_imported_map", "Delete Saved Imported Map…")
+    fun layersPdfFiduciaryCount(count: String): String =
+        L10n.message("id.layers_pdf_fiduciary_count", "Currently calibrated with %1\$s fiduciaries", count)
+    fun layersPdfGeoreferenced(): String =
+        L10n.message("id.layers_pdf_georeferenced", "Georeferenced (GeoPDF LGIDict)")
+    fun layersPdfManualBounds(): String =
+        L10n.message("id.layers_pdf_manual_bounds", "Manually placed bounds")
+    fun layersPdfNoGeoreferencing(): String =
+        L10n.message("id.layers_pdf_no_georeferencing", "No georeferencing — using map-centre fallback")
+    fun layersRemoveSavedMapEntry(): String =
+        L10n.message("id.layers_remove_saved_map_entry", "Remove Saved Map Entry")
+    fun layersSavedMapUnavailable(): String =
+        L10n.message("id.layers_saved_map_unavailable", "Saved imported map unavailable")
     fun liveLocationApproximateGuidance(): String =
         L10n.message("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.")
     fun liveLocationApproximateGuidanceMessage(): LocalizedMessage =
@@ -240,10 +302,32 @@ object Messages {
         L10n.message("id.recording_notification_hidden", "Recording can continue, but Android may hide its ongoing notification from the notification drawer. You can still find TacMap in Active apps.")
     fun recordingNotificationHiddenMessage(): LocalizedMessage =
         LocalizedMessage("id.recording_notification_hidden", "Recording can continue, but Android may hide its ongoing notification from the notification drawer. You can still find TacMap in Active apps.", listOf())
+    fun recordingPillAwaitingA11y(): String =
+        L10n.message("id.recording_pill_awaiting_a11y", "Track recording awaiting Location permission. Tap to cancel.")
+    fun recordingPillInterruptedA11y(): String =
+        L10n.message("id.recording_pill_interrupted_a11y", "Track recording interrupted. Tap to dismiss.")
+    fun recordingPillRecordingA11y(points: String): String =
+        L10n.message("id.recording_pill_recording_a11y", "Recording track — %1\$s. Tap to stop.", points)
+    fun recordingPillStartingA11y(): String =
+        L10n.message("id.recording_pill_starting_a11y", "Track recording is starting.")
     fun recordingPreciseRequiredRetry(): String =
         L10n.message("id.recording_precise_required_retry", "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.")
     fun recordingPreciseRequiredRetryMessage(): LocalizedMessage =
         LocalizedMessage("id.recording_precise_required_retry", "Approximate location cannot provide the precise GPS track TacMap records. Allow Precise location, then retry.", listOf())
+    fun recordingStatusAwaitingLocation(): String =
+        L10n.message("id.recording_status_awaiting_location", "AWAITING LOCATION")
+    fun recordingStatusIdle(): String =
+        L10n.message("id.recording_status_idle", "IDLE")
+    fun recordingStatusIdleMessage(): LocalizedMessage =
+        LocalizedMessage("id.recording_status_idle", "IDLE", listOf())
+    fun recordingStatusInterrupted(): String =
+        L10n.message("id.recording_status_interrupted", "INTERRUPTED")
+    fun recordingStatusInterruptedMessage(): LocalizedMessage =
+        LocalizedMessage("id.recording_status_interrupted", "INTERRUPTED", listOf())
+    fun recordingStatusStarting(): String =
+        L10n.message("id.recording_status_starting", "STARTING")
+    fun recordingStatusStartingMessage(): LocalizedMessage =
+        LocalizedMessage("id.recording_status_starting", "STARTING", listOf())
     fun relayRecoveryFailed(): String =
         L10n.message("id.relay_recovery_failed", "The saved Unit Sync relay was unsafe or obsolete. TacMap is using its secure default for this run, but could not repair the saved setting.")
     fun relayRecoveryFailedMessage(): LocalizedMessage =
@@ -282,6 +366,10 @@ object Messages {
         L10n.message("id.rings_unit_kilometres", "km")
     fun ringsUnitMetres(): String =
         L10n.message("id.rings_unit_metres", "m")
+    fun savedImportedMapMissing(): String =
+        L10n.message("id.saved_imported_map_missing", "The saved imported map is missing or unreadable. Remove its saved entry, then import the source file again.")
+    fun savedImportedMapMissingMessage(): LocalizedMessage =
+        LocalizedMessage("id.saved_imported_map_missing", "The saved imported map is missing or unreadable. Remove its saved entry, then import the source file again.", listOf())
     fun androidKeyProtectionHelp(): String =
         L10n.message("id.settings_android_key_protection_help", "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.")
     fun settingsBlockCaptureHelp(): String =
@@ -336,22 +424,48 @@ object Messages {
         L10n.message("id.sun_moon_waning", "%1\$s, waning", percent)
     fun sunMoonWaxing(percent: String): String =
         L10n.message("id.sun_moon_waxing", "%1\$s, waxing", percent)
+    fun symbolsBothScales(): String =
+        L10n.message("id.symbols_both_scales", "Both:")
     fun symbolsCustomSymbols(): String =
         L10n.message("id.symbols_custom_symbols", "Custom Symbols")
     fun symbolsDistanceFromCentre(distance: String): String =
         L10n.message("id.symbols_distance_from_centre", "%1\$s from crosshair", distance)
+    fun symbolsFlyTo(): String =
+        L10n.message("id.symbols_fly_to", "Fly to")
     fun symbolsGroupOther(): String =
         L10n.message("id.symbols_group_other", "Other")
     fun symbolsImportLocation(): String =
         L10n.message("id.symbols_import_location", "Import packs from Import / Export → Import Symbol Pack.")
     fun symbolsImportSymbolPack(): String =
         L10n.message("id.symbols_import_symbol_pack", "Import Symbol Pack…")
+    fun symbolsKindMarkers(): String =
+        L10n.message("id.symbols_kind_markers", "Markers")
+    fun symbolsKindMilitary(): String =
+        L10n.message("id.symbols_kind_military", "Military")
+    fun symbolsKindTasks(): String =
+        L10n.message("id.symbols_kind_tasks", "Tasks")
     fun symbolsMissingSymbol(): String =
         L10n.message("id.symbols_missing_symbol", "Missing symbol")
+    fun symbolsNewSymbolTitle(): String =
+        L10n.message("id.symbols_new_symbol_title", "New Symbol")
     fun symbolsNoMatches(): String =
         L10n.message("id.symbols_no_matches", "No matching symbols.")
+    fun symbolsOrientation(): String =
+        L10n.message("id.symbols_orientation", "Orientation")
+    fun symbolsOrientationHelp(): String =
+        L10n.message("id.symbols_orientation_help", "Rotate the symbol to indicate direction (e.g. axis of advance, ambush facing).")
     fun symbolsPackImported(name: String): String =
         L10n.message("id.symbols_pack_imported", "Imported symbol pack: %1\$s", name)
+    fun symbolsPreview(): String =
+        L10n.message("id.symbols_preview", "Preview")
+    fun symbolsSetBothScales(factor: String): String =
+        L10n.message("id.symbols_set_both_scales", "Set width and height to %1\$s times", factor)
+    fun symbolsSetRotation(degrees: String): String =
+        L10n.message("id.symbols_set_rotation", "Set rotation to %1\$s degrees", degrees)
+    fun symbolsSize(): String =
+        L10n.message("id.symbols_size", "Size")
+    fun symbolsSizeHelp(): String =
+        L10n.message("id.symbols_size_help", "Independent width and height multipliers — stretch the symbol wider/thinner or longer/shorter. The geographic footprint scales with the map zoom.")
     fun symbolsSortAffiliation(): String =
         L10n.message("id.symbols_sort_affiliation", "Affiliation")
     fun symbolsSortBy(): String =
@@ -366,6 +480,8 @@ object Messages {
         L10n.message("id.symbols_sort_name", "Name")
     fun symbolsSortNewest(): String =
         L10n.message("id.symbols_sort_newest", "Newest first")
+    fun symbolsSwipeHelp(): String =
+        L10n.message("id.symbols_swipe_help", "Swipe right on a symbol to fly to it; swipe left to delete.")
     fun symbolsSymbolPackError(): String =
         L10n.message("id.symbols_symbol_pack_error", "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.")
     fun symbolsSymbolPackFailed(): String =

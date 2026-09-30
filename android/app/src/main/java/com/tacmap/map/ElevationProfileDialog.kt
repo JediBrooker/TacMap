@@ -24,13 +24,15 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,11 +64,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import com.tacmap.localization.DisplayFormat
 import com.tacmap.localization.L10n
 import com.tacmap.localization.Messages
-import com.tacmap.ui.Dialog
+import com.tacmap.ui.ModalBottomSheet
+import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -86,7 +89,12 @@ internal val ProfileHeightSteps = listOf(0.0, 1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 20
  * between two points it also checks line of sight from an observer at the
  * start to a target at the end and shades the dead ground between them.
  * iOS mirrors this in `ElevationProfileSheet.swift`.
+ *
+ * A bottom sheet, like iOS: it opens full height so the chart, verdict and
+ * steppers show together, and drags down to half height to see the line on
+ * the map.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ElevationProfileDialog(
     path: List<ElevationProfile.Coordinate>,
@@ -106,50 +114,54 @@ internal fun ElevationProfileDialog(
         if (samples.size >= 2) result = service.elevations(samples)
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth(0.94f).heightIn(max = 760.dp),
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    // Material opens a tall sheet at half height; go on to full height once,
+    // as iOS does. A short sheet (still loading) has no half step and opens
+    // fully anyway. Later drags to half height are left alone.
+    LaunchedEffect(sheetState) {
+        val opening = snapshotFlow { sheetState.targetValue }.first { it != SheetValue.Hidden }
+        if (opening == SheetValue.PartiallyExpanded) sheetState.expand()
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(
-                Modifier
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(Messages.profileTitle(), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text(L10n.text("Done")) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(Messages.profileTitle(), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text(L10n.text("Done")) }
+            }
+            val current = result
+            when {
+                samples.size < 2 -> Text(Messages.profileTooShort())
+                current == null -> Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.heightIn(min = 120.dp),
+                ) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(Messages.profileLoading(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                val current = result
-                when {
-                    samples.size < 2 -> Text(Messages.profileTooShort())
-                    current == null -> Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.heightIn(min = 120.dp),
-                    ) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text(Messages.profileLoading(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    current is ElevationProfileService.Result.LookupsOff -> Text(Messages.profileLookupsOff())
-                    current is ElevationProfileService.Result.NetworkFailed -> {
-                        Text(Messages.profileFailed())
-                        OutlinedButton(onClick = { attempt++ }) { Text(Messages.profileRetry()) }
-                    }
-                    current is ElevationProfileService.Result.Heights -> ProfileContent(
-                        straightLine = path.size == 2,
-                        distances = distances,
-                        elevations = current.metres,
-                        observerHeight = observerHeight,
-                        targetHeight = targetHeight,
-                        onObserverHeight = { observerHeight = it },
-                        onTargetHeight = { targetHeight = it },
-                        selected = selected,
-                        onSelect = { selected = it },
-                    )
+                current is ElevationProfileService.Result.LookupsOff -> Text(Messages.profileLookupsOff())
+                current is ElevationProfileService.Result.NetworkFailed -> {
+                    Text(Messages.profileFailed())
+                    OutlinedButton(onClick = { attempt++ }) { Text(Messages.profileRetry()) }
                 }
+                current is ElevationProfileService.Result.Heights -> ProfileContent(
+                    straightLine = path.size == 2,
+                    distances = distances,
+                    elevations = current.metres,
+                    observerHeight = observerHeight,
+                    targetHeight = targetHeight,
+                    onObserverHeight = { observerHeight = it },
+                    onTargetHeight = { targetHeight = it },
+                    selected = selected,
+                    onSelect = { selected = it },
+                )
             }
         }
     }

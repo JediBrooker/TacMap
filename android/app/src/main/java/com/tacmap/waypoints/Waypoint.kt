@@ -250,14 +250,14 @@ enum class SymbolAffiliation(private val displayNameKey: String, val fillColor: 
 }
 
 @Serializable
-enum class SymbolEchelon(private val displayNameKey: String, val glyph: String) {
-    @SerialName("team") TEAM("Team / Crew", "Ø"),
-    @SerialName("section") SECTION("Section", "●"),
-    @SerialName("platoon") PLATOON("Platoon", "●●●"),
-    @SerialName("company") COMPANY("Company", "I"),
-    @SerialName("battalionRegiment") BATTALION_REGIMENT("Battalion / Regiment", "II"),
-    @SerialName("brigade") BRIGADE("Brigade", "X"),
-    @SerialName("division") DIVISION("Division", "XX");
+enum class SymbolEchelon(private val displayNameKey: String) {
+    @SerialName("team") TEAM("Team / Crew"),
+    @SerialName("section") SECTION("Section"),
+    @SerialName("platoon") PLATOON("Platoon"),
+    @SerialName("company") COMPANY("Company"),
+    @SerialName("battalionRegiment") BATTALION_REGIMENT("Battalion / Regiment"),
+    @SerialName("brigade") BRIGADE("Brigade"),
+    @SerialName("division") DIVISION("Division");
 
     val displayName: String get() = L10n.text(displayNameKey)
 }

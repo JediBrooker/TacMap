@@ -36,6 +36,7 @@ import com.tacmap.map.render.MapCamera
 import com.tacmap.map.render.MapProjection
 import com.tacmap.sync.PresencePeer
 import com.tacmap.waypoints.Waypoint
+import com.tacmap.waypoints.WaypointKind
 import android.os.SystemClock
 import kotlin.math.hypot
 import kotlin.math.log2
@@ -138,6 +139,20 @@ internal fun MapItemTouchOverlayCustom(
 
     val projectedWaypoints = remember(waypoints, camera) {
         waypoints.map { wp ->
+            val kind = wp.kind
+            if (kind is WaypointKind.ControlMeasure) {
+                // Tasks keep their ground size, so the target follows the zoom.
+                val s = proj.toScreen(wp.latitude, wp.longitude)
+                val artwork = SymbolIconFactory.controlMeasureArtwork(context, kind.measure)
+                val bounds = TaskGraphicSizing.screenBounds(
+                    TaskGraphicSizing.displaySize(wp.scaleX, wp.scaleY, camera.metresPerPoint),
+                    SymbolIconFactory.artworkAspect(artwork),
+                    wp.rotation,
+                )
+                val halfW = (bounds.width * density / 2).toFloat()
+                val halfH = (bounds.height * density / 2).toFloat()
+                return@map CProjWaypoint(wp, s.x, s.y, s.x - halfW, s.y - halfH, s.x + halfW, s.y + halfH)
+            }
             val drawable = SymbolIconFactory.drawableFor(context, wp)
             val anchor = SymbolIconFactory.anchorFor(context, wp)
             val s = proj.toScreen(wp.latitude, wp.longitude)
