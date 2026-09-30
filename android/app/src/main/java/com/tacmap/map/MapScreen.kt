@@ -214,6 +214,7 @@ internal fun MapScreen(
     val cameraLng by vm.cameraLng.collectAsState()
     val cameraViewportState by vm.cameraViewportState.collectAsState()
     val centreElevation by vm.centreElevation.collectAsState()
+    val isBrowsing by vm.isBrowsing.collectAsState()
     val trackRecordingState by vm.trackRecorder.uiState.collectAsState()
     val isRecordingTrack = trackRecordingState.showsRec
     val trackPoints by vm.trackRecorder.points.collectAsState()
@@ -1071,7 +1072,10 @@ internal fun MapScreen(
         MgrsHeader(
             primaryCoordinate = primaryCoordinateDisplay.text,
             coordinateType = primaryCoordinateDisplay.type,
-            elevation = centreElevation?.metres,
+            // GPS altitude stands in only while the banner reads out your own
+            // position, never for a crosshair somewhere else (as on iOS).
+            elevation = centreElevation?.metres
+                ?: lastLocation?.takeIf { !isBrowsing && it.hasAltitude() }?.altitude,
             elevationApprox = centreElevation?.isStale == true,
             syncConnected = syncStatus == com.tacmap.sync.SyncManager.Status.CONNECTED,
             basemapLabel = basemapLabel,
