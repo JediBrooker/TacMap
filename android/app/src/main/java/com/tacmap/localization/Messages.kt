@@ -30,10 +30,30 @@ object Messages {
         L10n.message("id.chat_recipient_heading", "RECIPIENT")
     fun acknowledge(): String =
         L10n.message("id.common_ok", "OK")
+    fun drawingsDeleteBody(name: String, points: String): String =
+        L10n.message("id.drawings_delete_body", "This will permanently remove “%1\$s” — %2\$s.", name, points)
+    fun drawingsDeleteTitle(): String =
+        L10n.message("id.drawings_delete_title", "Delete drawing?")
+    fun drawingsDiscardBody(count: String): String =
+        L10n.message("id.drawings_discard_body", "This will discard the %1\$s point(s) you've placed.", count)
+    fun drawingsDiscardTitle(): String =
+        L10n.message("id.drawings_discard_title", "Discard drawing?")
+    fun drawingsFillStyle(): String =
+        L10n.message("id.drawings_fill_style", "Fill style")
+    fun drawingsKeepDrawing(): String =
+        L10n.message("id.drawings_keep_drawing", "Keep drawing")
     fun drawingsQuarantined(value: String): String =
         L10n.message("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", value)
     fun drawingsQuarantinedMessage(value: String): LocalizedMessage =
         LocalizedMessage("id.drawings_quarantined", "Saved drawings could not be read and were set aside (%1\$s). Starting with an empty map.", listOf(value))
+    fun drawingsRenameNamed(name: String): String =
+        L10n.message("id.drawings_rename_named", "Rename %1\$s", name)
+    fun drawingsRenameTitle(): String =
+        L10n.message("id.drawings_rename_title", "Rename drawing")
+    fun drawingsStrokeWidth(): String =
+        L10n.message("id.drawings_stroke_width", "Stroke width")
+    fun drawingsStrokeWidthValue(width: String): String =
+        L10n.message("id.drawings_stroke_width_value", "%1\$s pt", width)
     fun exportKmlTitle(): String =
         L10n.message("id.export_kml_title", "Export KML")
     fun exportKmzRow(): String =

@@ -9,7 +9,17 @@
     <string name="basemap_recovery_required">"Die gespeicherten Grundkartendetails konnten nicht authentifiziert werden. Eine Wiederherstellungskopie und alle importierten Karten blieben erhalten. Tippe auf „Erneut versuchen“, um die gespeicherte Auswahl auf die Online-Karte zurückzusetzen, oder importiere/wähle eine Ersatzkarte."</string>
     <string name="chat_recipient_heading">"EMPFÄNGER"</string>
     <string name="common_ok">"OK"</string>
+    <string name="drawings_delete_body">"„%1$s“ wird dauerhaft entfernt – %2$s."</string>
+    <string name="drawings_delete_title">"Zeichnung löschen?"</string>
+    <string name="drawings_discard_body">"Die gesetzten Punkte (%1$s) werden verworfen."</string>
+    <string name="drawings_discard_title">"Zeichnung verwerfen?"</string>
+    <string name="drawings_fill_style">"Füllstil"</string>
+    <string name="drawings_keep_drawing">"Weiterzeichnen"</string>
     <string name="drawings_quarantined">"Gespeicherte Zeichnungen konnten nicht gelesen werden und wurden separat gesichert (%1$s). Die Karte startet ohne Zeichnungen."</string>
+    <string name="drawings_rename_named">"%1$s umbenennen"</string>
+    <string name="drawings_rename_title">"Zeichnung umbenennen"</string>
+    <string name="drawings_stroke_width">"Linienbreite"</string>
+    <string name="drawings_stroke_width_value">"%1$s pt"</string>
     <string name="export_kml_title">"KML exportieren"</string>
     <string name="export_kmz_row">"KMZ mit Symbolen"</string>
     <string name="export_kmz_title">"KMZ mit Symbolen exportieren"</string>
