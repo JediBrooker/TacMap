@@ -3,35 +3,195 @@
   "cases": [
     {
       "name": "SF North sheet, 1 km + 10 km (zone 10, northern hemisphere)",
-      "bounds": { "south": 37.73, "west": -122.53, "north": 37.89, "east": -122.35 },
+      "bounds": {
+        "south": 37.73,
+        "west": -122.53,
+        "north": 37.89,
+        "east": -122.35
+      },
       "mapWidth": 4000,
       "lines": [
-        { "gridType": "KILOMETER", "vertical": false, "mgrs": "10SEG5077887000", "label": "87" },
-        { "gridType": "KILOMETER", "vertical": true, "mgrs": "10SEG5100086744", "label": "51" },
-        { "gridType": "KILOMETER", "vertical": false, "mgrs": "10SEG4500091000", "label": "91" },
-        { "gridType": "KILOMETER", "vertical": true, "mgrs": "10SEG4500091000", "label": "45" },
-        { "gridType": "TEN_KILOMETER", "vertical": true, "mgrs": "10SEG5000086744", "label": "5" },
-        { "gridType": "TEN_KILOMETER", "vertical": false, "mgrs": "10SEG4800090000", "label": "9" }
+        {
+          "gridType": "KILOMETER",
+          "vertical": false,
+          "mgrs": "10SEG5077887000",
+          "label": "87"
+        },
+        {
+          "gridType": "KILOMETER",
+          "vertical": true,
+          "mgrs": "10SEG5100086744",
+          "label": "51"
+        },
+        {
+          "gridType": "KILOMETER",
+          "vertical": false,
+          "mgrs": "10SEG4500091000",
+          "label": "91"
+        },
+        {
+          "gridType": "KILOMETER",
+          "vertical": true,
+          "mgrs": "10SEG4500091000",
+          "label": "45"
+        },
+        {
+          "gridType": "TEN_KILOMETER",
+          "vertical": true,
+          "mgrs": "10SEG5000086744",
+          "label": "5"
+        },
+        {
+          "gridType": "TEN_KILOMETER",
+          "vertical": false,
+          "mgrs": "10SEG4800090000",
+          "label": "9"
+        }
       ]
     },
     {
       "name": "Canberra, 1 km + 10 km (zone 55, southern hemisphere)",
-      "bounds": { "south": -35.35, "west": 149.05, "north": -35.2, "east": 149.2 },
+      "bounds": {
+        "south": -35.35,
+        "west": 149.05,
+        "north": -35.2,
+        "east": 149.2
+      },
       "mapWidth": 4000,
       "lines": [
-        { "gridType": "KILOMETER", "vertical": false, "mgrs": "55HFA9371694000", "label": "94" },
-        { "gridType": "KILOMETER", "vertical": true, "mgrs": "55HFA9300093825", "label": "93" },
-        { "gridType": "TEN_KILOMETER", "vertical": true, "mgrs": "55HFA9000093825", "label": "9" },
-        { "gridType": "TEN_KILOMETER", "vertical": false, "mgrs": "55HFA9371690000", "label": "9" }
+        {
+          "gridType": "KILOMETER",
+          "vertical": false,
+          "mgrs": "55HFA9371694000",
+          "label": "94"
+        },
+        {
+          "gridType": "KILOMETER",
+          "vertical": true,
+          "mgrs": "55HFA9300093825",
+          "label": "93"
+        },
+        {
+          "gridType": "TEN_KILOMETER",
+          "vertical": true,
+          "mgrs": "55HFA9000093825",
+          "label": "9"
+        },
+        {
+          "gridType": "TEN_KILOMETER",
+          "vertical": false,
+          "mgrs": "55HFA9371690000",
+          "label": "9"
+        }
       ]
     },
     {
       "name": "Bay Area, 100 km letters (zone 10 central meridian and the G/H row boundary)",
-      "bounds": { "south": 37.5, "west": -123.5, "north": 38.5, "east": -122.0 },
+      "bounds": {
+        "south": 37.5,
+        "west": -123.5,
+        "north": 38.5,
+        "east": -122.0
+      },
       "mapWidth": 1500,
       "lines": [
-        { "gridType": "HUNDRED_KILOMETER", "vertical": true, "mgrs": "10SEG0000086744", "label": "E" },
-        { "gridType": "HUNDRED_KILOMETER", "vertical": false, "mgrs": "10SEH5077800000", "label": "H" }
+        {
+          "gridType": "HUNDRED_KILOMETER",
+          "vertical": true,
+          "mgrs": "10SEG0000086744",
+          "label": "E"
+        },
+        {
+          "gridType": "HUNDRED_KILOMETER",
+          "vertical": false,
+          "mgrs": "10SEH5077800000",
+          "label": "H"
+        }
+      ]
+    }
+  ],
+  "placementDescription": "Label placement (placeLabels). Each view projects with a test-only equirectangular projection about `centre`: dx = (lng - lng0) * cos(lat0) * 111320 m, dy = (lat - lat0) * 110574 m, rotated so `heading` (degrees clockwise from north) points up, then x = width/2 + dx'/metresPerPoint, y = height/2 - dy'/metresPerPoint. The grid is built for the heading-proof square around the viewport (half-diagonal radius) at mapWidth = viewport diagonal, like both map hosts. Lines running across the screen are labelled where they cross x = 0.3 * width, lines running up/down where they cross y = 0.7 * height, one label per physical line (a 100 km line shows its square letter, otherwise the 1 km value wins over the 10 km digit), nothing within 12 of the sides, 140 of the top (header) or 100 of the bottom (bottom buttons), and a column label within 16 of the row is dropped when a row label sits within 16 of the column. `column` lists the across-the-screen labels top to bottom, `row` the up/down labels left to right.",
+  "placement": [
+    {
+      "name": "Alcatraz, north up, 1 km",
+      "centre": "10SEG5077886744",
+      "metresPerPoint": 1.8,
+      "heading": 0,
+      "width": 390,
+      "height": 844,
+      "column": [
+        "87"
+      ],
+      "row": [
+        "51"
+      ]
+    },
+    {
+      "name": "Alcatraz, north up, zoomed out to 26 m/pt (82 dropped at the corner by 49)",
+      "centre": "10SEG5077886744",
+      "metresPerPoint": 26,
+      "heading": 0,
+      "width": 390,
+      "height": 844,
+      "column": [
+        "94",
+        "93",
+        "92",
+        "91",
+        "90",
+        "89",
+        "88",
+        "87",
+        "86",
+        "85",
+        "84",
+        "83",
+        "81",
+        "80",
+        "79"
+      ],
+      "row": [
+        "47",
+        "48",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55"
+      ]
+    },
+    {
+      "name": "Alcatraz, east up (heading 90), 1 km",
+      "centre": "10SEG5077886744",
+      "metresPerPoint": 1.8,
+      "heading": 90,
+      "width": 390,
+      "height": 844,
+      "column": [
+        "51"
+      ],
+      "row": [
+        "87"
+      ]
+    },
+    {
+      "name": "Canberra, north up, 10 km + 100 km",
+      "centre": "55HFA9371693825",
+      "metresPerPoint": 60,
+      "heading": 0,
+      "width": 390,
+      "height": 844,
+      "column": [
+        "1",
+        "B",
+        "9",
+        "8"
+      ],
+      "row": [
+        "9",
+        "G"
       ]
     }
   ]

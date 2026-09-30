@@ -18,14 +18,25 @@ enum MGRSGridRenderer {
         let gridType: GridType
     }
 
-    /// Label for one axis, centred on a grid line. `isVertical` controls
-    /// render orientation - vertical lines get easting label rotated,
-    /// horizontal ones stay flat.
+    /// Label for one grid segment. `isVertical` is the grid axis (easting
+    /// line). Every segment along the same grid line shares `lineKey`, and
+    /// `start`/`end` let placeLabels find where the line crosses the screen.
     struct LabelMark {
         let text: String
         let coordinate: CLLocationCoordinate2D
         let gridType: GridType
         let isVertical: Bool
+        let lineKey: String
+        let start: CLLocationCoordinate2D
+        let end: CLLocationCoordinate2D
+    }
+
+    /// A label positioned on screen. `runsUpDown` is the line's direction on
+    /// screen (not the grid axis), so text follows the line on a rotated map.
+    struct PlacedLabel {
+        let mark: LabelMark
+        let point: CGPoint
+        let runsUpDown: Bool
     }
 
     /// Neutral dark-grey ink for lines and labels in tactical mode.
@@ -105,18 +116,20 @@ enum MGRSGridRenderer {
                     // they sit on the line to ~1 cm. The lat/lon midpoint sags
                     // off it (1.5 m on a 10 km line, ~150 m on 100 km) and
                     // MGRS.from() truncates, so the 87000 line read "86".
-                    let text = lineLabelText(
+                    if let label = lineLabel(
                         gridType: type,
                         start: UTM.from(p1, zone.number(), zone.hemisphere()),
                         end: UTM.from(p2, zone.number(), zone.hemisphere()),
                         isVertical: isVertical
-                    )
-                    if !text.isEmpty {
+                    ) {
                         labelOut.append(LabelMark(
-                            text: text,
+                            text: label.text,
                             coordinate: midCoord,
                             gridType: type,
-                            isVertical: isVertical
+                            isVertical: isVertical,
+                            lineKey: label.key,
+                            start: coords[0],
+                            end: coords[1]
                         ))
                     }
                 }
@@ -131,28 +144,35 @@ enum MGRSGridRenderer {
     /// ID off the intersection. The letter is the square east of a
     /// vertical line / north of a horizontal one, same side the numbers
     /// count from (line 87 is the bottom edge of square 87).
-    private static func lineLabelText(gridType: GridType, start: UTM, end: UTM, isVertical: Bool) -> String {
+    ///
+    /// Also returns a key naming the physical line (zone, axis, metres), so
+    /// every segment copy along it groups together, including the same line
+    /// drawn as 1 km, 10 km and 100 km.
+    private static func lineLabel(gridType: GridType, start: UTM, end: UTM,
+                                  isVertical: Bool) -> (text: String, key: String)? {
         let interval: Int
         switch gridType {
         case .HUNDRED_KILOMETER: interval = 100_000
         case .TEN_KILOMETER: interval = 10_000
         case .KILOMETER: interval = 1_000
-        default: return ""
+        default: return nil
         }
         let easting = (start.easting + end.easting) / 2
         let northing = (start.northing + end.northing) / 2
         let index = lineIndex(isVertical ? easting : northing, interval: interval)
+        let hemisphere = start.hemisphere == .NORTH ? "N" : "S"
+        let key = "\(start.zone)\(hemisphere)|\(isVertical ? "E" : "N")|\(index * interval)"
         switch gridType {
         case .HUNDRED_KILOMETER:
             let inSquare = Double(index * interval + interval / 2)
             let square = (isVertical
                 ? UTM(start.zone, start.hemisphere, inSquare, northing)
                 : UTM(start.zone, start.hemisphere, easting, inSquare)).toMGRS()
-            return isVertical ? String(square.column) : String(square.row)
+            return (isVertical ? String(square.column) : String(square.row), key)
         case .TEN_KILOMETER:
-            return String(index % 10)
+            return (String(index % 10), key)
         default:
-            return String(format: "%02d", index % 100)
+            return (String(format: "%02d", index % 100), key)
         }
     }
 
@@ -168,6 +188,98 @@ enum MGRSGridRenderer {
     }
 
     private static let lineSnapMetres = 1.0
+
+    /// Where grid labels sit. The renderer hands back a copy of each label
+    /// for every 1 km (or 10 / 100 km) segment, and the geometry covers a
+    /// square well past the screen edges, so "keep the copy nearest the
+    /// top/left margin" usually picked one that was off screen or under the
+    /// button column. Instead each visible line gets one label where it
+    /// crosses a fixed column (lines running across the screen) or row (lines
+    /// running up/down). 30% in from the left clears the button column and the
+    /// crosshair, 70% down sits under the header and side buttons and above
+    /// the bottom button. Labels also stay out of the top band (status bar +
+    /// MGRS header, ~135 pt) and the bottom band (Centre / Map buttons, ~75 pt),
+    /// both measured from the screen edge since the map runs full screen.
+    static let labelColumnFraction: CGFloat = 0.3
+    static let labelRowFraction: CGFloat = 0.7
+    static let labelEdgeMargin: CGFloat = 12
+    static let labelTopInset: CGFloat = 140
+    static let labelBottomInset: CGFloat = 100
+    /// Where the column meets the row, a column label this close to a row
+    /// label gets dropped so the two don't print over each other.
+    static let labelCornerGap: CGFloat = 16
+
+    /// One label per visible grid line, positioned on screen. Direction is
+    /// judged on screen, so a heading-up (rotated) map still gets labels.
+    static func placeLabels(_ labels: [LabelMark], in size: CGSize,
+                            project: (CLLocationCoordinate2D) -> CGPoint) -> [PlacedLabel] {
+        guard size.width > 2 * labelEdgeMargin,
+              size.height > labelTopInset + labelBottomInset else { return [] }
+        let column = size.width * labelColumnFraction
+        let row = size.height * labelRowFraction
+        let visible = CGRect(x: labelEdgeMargin, y: labelTopInset,
+                             width: size.width - 2 * labelEdgeMargin,
+                             height: size.height - labelTopInset - labelBottomInset)
+
+        var order: [String] = []
+        var lines: [String: (mark: LabelMark, segments: [(CGPoint, CGPoint)])] = [:]
+        for mark in labels {
+            let segment = (project(mark.start), project(mark.end))
+            if let current = lines[mark.lineKey]?.mark {
+                lines[mark.lineKey]?.segments.append(segment)
+                if labelPriority(mark.gridType) > labelPriority(current.gridType) {
+                    lines[mark.lineKey]?.mark = mark
+                }
+            } else {
+                order.append(mark.lineKey)
+                lines[mark.lineKey] = (mark, [segment])
+            }
+        }
+        let placed: [PlacedLabel] = order.compactMap { key in
+            guard let line = lines[key],
+                  let hit = crossing(line.segments, column: column, row: row),
+                  visible.contains(hit.point) else { return nil }
+            return PlacedLabel(mark: line.mark, point: hit.point, runsUpDown: hit.runsUpDown)
+        }
+        let rowNearCorner = placed.contains { $0.runsUpDown && abs($0.point.x - column) < labelCornerGap }
+        return placed.filter { label in
+            label.runsUpDown || !rowNearCorner || abs(label.point.y - row) >= labelCornerGap
+        }
+    }
+
+    /// A 100 km line is also a 10 km and a 1 km line. Show its square letter
+    /// (the digits would just be 0 / 00), otherwise the 1 km value, which
+    /// already carries the 10 km digit ("50" beats "5").
+    private static func labelPriority(_ type: GridType) -> Int {
+        switch type {
+        case .HUNDRED_KILOMETER: return 3
+        case .KILOMETER: return 2
+        case .TEN_KILOMETER: return 1
+        default: return 0
+        }
+    }
+
+    /// Where a projected grid line crosses the label column (if it runs across
+    /// the screen) or the label row (if it runs up/down). nil when it doesn't
+    /// reach it, e.g. a line that stops at a zone edge.
+    private static func crossing(_ segments: [(CGPoint, CGPoint)],
+                                 column: CGFloat, row: CGFloat) -> (point: CGPoint, runsUpDown: Bool)? {
+        let across = segments.reduce(CGFloat(0)) { $0 + abs($1.1.x - $1.0.x) }
+        let upDown = segments.reduce(CGFloat(0)) { $0 + abs($1.1.y - $1.0.y) }
+        let runsUpDown = upDown > across
+        for (a, b) in segments {
+            if runsUpDown {
+                guard a.y != b.y, min(a.y, b.y) <= row, row <= max(a.y, b.y) else { continue }
+                let t = (row - a.y) / (b.y - a.y)
+                return (CGPoint(x: a.x + t * (b.x - a.x), y: row), true)
+            } else {
+                guard a.x != b.x, min(a.x, b.x) <= column, column <= max(a.x, b.x) else { continue }
+                let t = (column - a.x) / (b.x - a.x)
+                return (CGPoint(x: column, y: a.y + t * (b.y - a.y)), false)
+            }
+        }
+        return nil
+    }
 
     /// Stroke width per grid type. Coarser grids get thicker lines so
     /// 100km cells don't get lost in the 10km / 1km sub-grids.

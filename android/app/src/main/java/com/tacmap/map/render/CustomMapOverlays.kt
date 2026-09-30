@@ -298,19 +298,17 @@ fun MgrsGridCanvas(camera: MapCamera, density: Float, modifier: Modifier = Modif
                 cap = StrokeCap.Round)
         }
 
-        // Declutter to one label per grid line (bucket by perpendicular screen
-        // axis, keep nearest the top/left margin) - matches the MgrsGridLabelsOverlay fix.
-        val bucketPx = 55f
-        val kept = HashMap<String, Pair<MgrsGridRenderer.LabelMark, Offset>>()
-        labels.forEach { mark ->
-            val p = proj.toScreen(mark.lat, mark.lng)
-            val b = Math.round((if (mark.isVertical) p.x else p.y) / bucketPx)
-            val key = "${if (mark.isVertical) "v" else "h"}|$b|${mark.text}"
-            val ex = kept[key]
-            val margin = if (mark.isVertical) p.y else p.x
-            if (ex == null || margin < (if (mark.isVertical) ex.second.y else ex.second.x)) {
-                kept[key] = mark to p
-            }
+        // One label per visible grid line, where it crosses a fixed column /
+        // row so it stays on screen and out from under the buttons (same
+        // placement as iOS).
+        val placed = MgrsGridRenderer.placeLabels(
+            labels,
+            width = size.width,
+            height = size.height,
+            density = density,
+        ) { lat, lng ->
+            val p = proj.toScreen(lat, lng)
+            MgrsGridRenderer.ScreenPoint(p.x, p.y)
         }
         val main = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -323,17 +321,18 @@ fun MgrsGridCanvas(camera: MapCamera, density: Float, modifier: Modifier = Modif
             color = 0xE6FFFFFF.toInt()
         }
         val nc = drawContext.canvas.nativeCanvas
-        kept.values.forEach { (mark, p) ->
+        placed.forEach { label ->
+            val mark = label.mark
             val ts = MgrsGridRenderer.labelTextSp(mark.type) * density
             main.textSize = ts; halo.textSize = ts
             val fm = main.fontMetrics
-            val textY = p.y - (fm.ascent + fm.descent) / 2f
+            val textY = label.y - (fm.ascent + fm.descent) / 2f
             val off = ts * 0.07f
-            if (mark.isVertical) { nc.save(); nc.rotate(-90f, p.x, p.y) }
-            nc.drawText(mark.text, p.x - off, textY - off, halo)
-            nc.drawText(mark.text, p.x + off, textY + off, halo)
-            nc.drawText(mark.text, p.x, textY, main)
-            if (mark.isVertical) nc.restore()
+            if (label.runsUpDown) { nc.save(); nc.rotate(-90f, label.x, label.y) }
+            nc.drawText(mark.text, label.x - off, textY - off, halo)
+            nc.drawText(mark.text, label.x + off, textY + off, halo)
+            nc.drawText(mark.text, label.x, textY, main)
+            if (label.runsUpDown) nc.restore()
         }
     }
 }

@@ -10,6 +10,7 @@ import XCTest
 /// "86" because the label came from truncating a round-tripped 86999.99.
 final class MGRSGridLabelTests: XCTestCase {
     private var cases: [[String: Any]] = []
+    private var placementViews: [[String: Any]] = []
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -21,6 +22,7 @@ final class MGRSGridLabelTests: XCTestCase {
                     JSONSerialization.jsonObject(with: Data(contentsOf: candidate)) as? [String: Any]
                 )
                 cases = try XCTUnwrap(json["cases"] as? [[String: Any]])
+                placementViews = try XCTUnwrap(json["placement"] as? [[String: Any]])
                 return
             }
             dir = dir.deletingLastPathComponent()
@@ -70,6 +72,53 @@ final class MGRSGridLabelTests: XCTestCase {
                 checked += 1
             }
             XCTAssertGreaterThan(checked, 0, "\(name): no numeric labels checked")
+        }
+    }
+
+    func testOneLabelPerVisibleLineOnTheColumnAndRow() throws {
+        XCTAssertFalse(placementViews.isEmpty)
+        for view in placementViews {
+            let name = view["name"] as? String ?? "?"
+            let centre = try XCTUnwrap(MGRSFormatter.coordinate(from: try XCTUnwrap(view["centre"] as? String)))
+            let mpp = try XCTUnwrap(view["metresPerPoint"] as? Double)
+            let heading = try XCTUnwrap(view["heading"] as? Double) * .pi / 180
+            let width = try XCTUnwrap(view["width"] as? Double)
+            let height = try XCTUnwrap(view["height"] as? Double)
+            let cosLat = cos(centre.latitude * .pi / 180)
+            let project: (CLLocationCoordinate2D) -> CGPoint = { c in
+                let dx = (c.longitude - centre.longitude) * cosLat * 111_320
+                let dy = (c.latitude - centre.latitude) * 110_574
+                let rx = dx * cos(heading) - dy * sin(heading)
+                let ry = dx * sin(heading) + dy * cos(heading)
+                return CGPoint(x: width / 2 + rx / mpp, y: height / 2 - ry / mpp)
+            }
+            // Same heading-proof square the map hosts build for.
+            let diagonal = hypot(width, height)
+            let half = diagonal / 2 * mpp
+            let region = MKCoordinateRegion(
+                center: centre,
+                span: MKCoordinateSpan(latitudeDelta: 2 * half / 110_574,
+                                       longitudeDelta: 2 * half / (111_320 * cosLat))
+            )
+            let labels = MGRSGridRenderer.build(for: region, mapWidthPoints: CGFloat(diagonal)).labels
+
+            let placed = MGRSGridRenderer.placeLabels(labels, in: CGSize(width: width, height: height), project: project)
+            let column = placed.filter { !$0.runsUpDown }.sorted { $0.point.y < $1.point.y }
+            let row = placed.filter { $0.runsUpDown }.sorted { $0.point.x < $1.point.x }
+            XCTAssertEqual(column.map(\.mark.text), view["column"] as? [String], "\(name) column")
+            XCTAssertEqual(row.map(\.mark.text), view["row"] as? [String], "\(name) row")
+            for label in column {
+                XCTAssertEqual(Double(label.point.x), width * Double(MGRSGridRenderer.labelColumnFraction), accuracy: 0.01, name)
+                XCTAssertTrue(
+                    (Double(MGRSGridRenderer.labelTopInset)...(height - Double(MGRSGridRenderer.labelBottomInset)))
+                        .contains(Double(label.point.y)),
+                    "\(name) \(label.mark.text)"
+                )
+            }
+            for label in row {
+                XCTAssertEqual(Double(label.point.y), height * Double(MGRSGridRenderer.labelRowFraction), accuracy: 0.01, name)
+                XCTAssertTrue((12...(width - 12)).contains(Double(label.point.x)), "\(name) \(label.mark.text)")
+            }
         }
     }
 
