@@ -142,8 +142,10 @@ import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LiveMapLocationAction
 import com.tacmap.models.LiveMapLocationPermissionPolicy
 import com.tacmap.models.LiveMapLocationState
+import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.TrackRecordingPhase
 import com.tacmap.models.TrackRecordingSettingsTarget
+import com.tacmap.models.UndoTarget
 import com.tacmap.settings.MapOrientationMode
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
@@ -244,23 +246,26 @@ internal fun MapScreen(
             waypointStore.committedChangeListener = follower::onWaypointsCommitted
         }
     }
+    // Symbols and drawings share one undo order, like iOS's single UndoManager.
+    val undoHistory = remember(waypointStore, drawingStore) {
+        MissionUndoHistory().also { history ->
+            waypointStore.undoStepListener = { history.recorded(UndoTarget.SYMBOLS) }
+            drawingStore.undoStepListener = { history.recorded(UndoTarget.DRAWINGS) }
+        }
+    }
     val importIdentityJournal = remember {
         com.tacmap.export.ExternalImportIdentityJournal(context)
     }
     val documentCopyJournal = remember { DocumentImportCopyJournal(context) }
     val drawingDocument by drawingStore.document.collectAsState()
-    val drawingCanUndo by drawingStore.canUndo.collectAsState()
-    val drawingCanRedo by drawingStore.canRedo.collectAsState()
-    val waypointCanUndo by waypointStore.canUndo.collectAsState()
-    val waypointCanRedo by waypointStore.canRedo.collectAsState()
+    val canUndo by undoHistory.canUndo.collectAsState()
+    val canRedo by undoHistory.canRedo.collectAsState()
     val waypointDataLocked by waypointStore.locked.collectAsState()
     val drawingDataLocked by drawingStore.locked.collectAsState()
     val waypointStoreMessage by waypointStore.loadError.collectAsState()
     val waypointStoreError = waypointStoreMessage?.text
     val drawingStoreMessage by drawingStore.loadError.collectAsState()
     val drawingStoreError = drawingStoreMessage?.text
-    val canUndo = drawingCanUndo || waypointCanUndo
-    val canRedo = drawingCanRedo || waypointCanRedo
     val lastLocation by vm.locationService.lastLocation.collectAsState()
     val distanceFromUserToCrosshair = lastLocation?.let { location ->
         crosshairDistanceMetres(
@@ -1378,17 +1383,23 @@ internal fun MapScreen(
                     canUndo = canUndo,
                     canRedo = canRedo,
                     onUndo = {
-                        if (drawingCanUndo) {
-                            if (drawingStore.undo()) ringFollower.realign(waypointStore.committedWaypoints.value)
-                        } else {
-                            waypointStore.undo()
+                        undoHistory.undo { target ->
+                            when (target) {
+                                UndoTarget.DRAWINGS -> drawingStore.undo().also { undone ->
+                                    if (undone) ringFollower.realign(waypointStore.committedWaypoints.value)
+                                }
+                                UndoTarget.SYMBOLS -> waypointStore.undo()
+                            }
                         }
                     },
                     onRedo = {
-                        if (drawingCanRedo) {
-                            if (drawingStore.redo()) ringFollower.realign(waypointStore.committedWaypoints.value)
-                        } else {
-                            waypointStore.redo()
+                        undoHistory.redo { target ->
+                            when (target) {
+                                UndoTarget.DRAWINGS -> drawingStore.redo().also { redone ->
+                                    if (redone) ringFollower.realign(waypointStore.committedWaypoints.value)
+                                }
+                                UndoTarget.SYMBOLS -> waypointStore.redo()
+                            }
                         }
                     }
                 )
