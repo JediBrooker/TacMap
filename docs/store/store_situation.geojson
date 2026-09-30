@@ -1,0 +1,564 @@
+{
+  "type": "FeatureCollection",
+  "generator": "TacMap",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "8f2c793f-1901-442a-b399-58a84876e262",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              150.3034,
+              -33.6948
+            ],
+            [
+              150.303278,
+              -33.694417
+            ],
+            [
+              150.302931,
+              -33.694093
+            ],
+            [
+              150.302412,
+              -33.693876
+            ],
+            [
+              150.3018,
+              -33.6938
+            ],
+            [
+              150.301188,
+              -33.693876
+            ],
+            [
+              150.300669,
+              -33.694093
+            ],
+            [
+              150.300322,
+              -33.694417
+            ],
+            [
+              150.3002,
+              -33.6948
+            ],
+            [
+              150.300322,
+              -33.695183
+            ],
+            [
+              150.300669,
+              -33.695507
+            ],
+            [
+              150.301188,
+              -33.695724
+            ],
+            [
+              150.3018,
+              -33.6958
+            ],
+            [
+              150.302412,
+              -33.695724
+            ],
+            [
+              150.302931,
+              -33.695507
+            ],
+            [
+              150.303278,
+              -33.695183
+            ],
+            [
+              150.3034,
+              -33.6948
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "name": "OBJ FALCON",
+        "source": "drawing",
+        "kind": "polygon",
+        "tacticalmaps:category": "drawing",
+        "tacticalmaps:kind": "polygon",
+        "stroke": "#E2A400",
+        "stroke-width": 3,
+        "fill": "#E2A400",
+        "fill-opacity": 0.16
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "dc224557-02a7-4797-9b00-7b42b4f8befc",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              150.3102,
+              -33.6948
+            ],
+            [
+              150.310078,
+              -33.694417
+            ],
+            [
+              150.309731,
+              -33.694093
+            ],
+            [
+              150.309212,
+              -33.693876
+            ],
+            [
+              150.3086,
+              -33.6938
+            ],
+            [
+              150.307988,
+              -33.693876
+            ],
+            [
+              150.307469,
+              -33.694093
+            ],
+            [
+              150.307122,
+              -33.694417
+            ],
+            [
+              150.307,
+              -33.6948
+            ],
+            [
+              150.307122,
+              -33.695183
+            ],
+            [
+              150.307469,
+              -33.695507
+            ],
+            [
+              150.307988,
+              -33.695724
+            ],
+            [
+              150.3086,
+              -33.6958
+            ],
+            [
+              150.309212,
+              -33.695724
+            ],
+            [
+              150.309731,
+              -33.695507
+            ],
+            [
+              150.310078,
+              -33.695183
+            ],
+            [
+              150.3102,
+              -33.6948
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "name": "OBJ HILL 223",
+        "source": "drawing",
+        "kind": "polygon",
+        "tacticalmaps:category": "drawing",
+        "tacticalmaps:kind": "polygon",
+        "stroke": "#E2A400",
+        "stroke-width": 3,
+        "fill": "#E2A400",
+        "fill-opacity": 0.16
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "40df2496-e4a2-4778-94a8-da9d7c1702b7",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            150.305,
+            -33.7058
+          ],
+          [
+            150.305,
+            -33.7008
+          ]
+        ]
+      },
+      "properties": {
+        "name": "BDRY",
+        "source": "drawing",
+        "kind": "polyline",
+        "tacticalmaps:category": "drawing",
+        "tacticalmaps:kind": "polyline",
+        "stroke": "#E9F0E8",
+        "stroke-width": 3,
+        "tacticalmaps:line_graphic": "boundary"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "9e6708f1-c537-4dde-8628-f783adbb900e",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            150.2998,
+            -33.7028
+          ],
+          [
+            150.3102,
+            -33.7028
+          ]
+        ]
+      },
+      "properties": {
+        "name": "LD / LC",
+        "source": "drawing",
+        "kind": "polyline",
+        "tacticalmaps:category": "drawing",
+        "tacticalmaps:kind": "polyline",
+        "stroke": "#E2A400",
+        "stroke-width": 3,
+        "tacticalmaps:line_graphic": "phaseLine"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "cee68cb2-fb4b-4ebb-a7d4-d205ab962585",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            150.2996,
+            -33.7006
+          ],
+          [
+            150.302,
+            -33.7
+          ],
+          [
+            150.3052,
+            -33.701
+          ],
+          [
+            150.3082,
+            -33.7
+          ],
+          [
+            150.3104,
+            -33.7006
+          ]
+        ]
+      },
+      "properties": {
+        "name": "FEBA",
+        "source": "drawing",
+        "kind": "polyline",
+        "tacticalmaps:category": "drawing",
+        "tacticalmaps:kind": "polyline",
+        "stroke": "#5AA0FF",
+        "stroke-width": 4,
+        "tacticalmaps:line_graphic": "forwardEdge"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "2223583b-3e44-4178-8732-c9c511dd1b86",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            150.3104,
+            -33.697
+          ],
+          [
+            150.3082,
+            -33.6964
+          ],
+          [
+            150.305,
+            -33.6974
+          ],
+          [
+            150.302,
+            -33.6964
+          ],
+          [
+            150.2996,
+            -33.697
+          ]
+        ]
+      },
+      "properties": {
+        "name": "EN FLOT",
+        "source": "drawing",
+        "kind": "polyline",
+        "tacticalmaps:category": "drawing",
+        "tacticalmaps:kind": "polyline",
+        "stroke": "#FF5A4A",
+        "stroke-width": 4,
+        "tacticalmaps:line_graphic": "forwardEdge"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "3c4176f8-dfef-4981-8619-fc0e026fbe43",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.3024,
+          -33.6992
+        ]
+      },
+      "properties": {
+        "name": "AXIS DAGGER",
+        "source": "symbol",
+        "kind": "control_measure",
+        "tacticalmaps:category": "controlMeasure",
+        "tacticalmaps:tcm_asset": "axisOfMainAttack",
+        "tacticalmaps:tcm_name": "AXIS DAGGER",
+        "rotation": 270,
+        "scale_x": 11,
+        "scale_y": 11,
+        "tacticalmaps:rotation_deg": 270,
+        "tacticalmaps:scale_x": 11,
+        "tacticalmaps:scale_y": 11
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "7553e245-f129-4781-8e47-aa7023db6106",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.3078,
+          -33.6992
+        ]
+      },
+      "properties": {
+        "name": "AXIS SABRE",
+        "source": "symbol",
+        "kind": "control_measure",
+        "tacticalmaps:category": "controlMeasure",
+        "tacticalmaps:tcm_asset": "axisOfSupportingAttack",
+        "tacticalmaps:tcm_name": "AXIS SABRE",
+        "rotation": 270,
+        "scale_x": 10,
+        "scale_y": 10,
+        "tacticalmaps:rotation_deg": 270,
+        "tacticalmaps:scale_x": 10,
+        "tacticalmaps:scale_y": 10
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "3c061b69-e4f6-4f05-b776-634481a4a135",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.2996,
+          -33.6946
+        ]
+      },
+      "properties": {
+        "name": "SBF 1",
+        "source": "symbol",
+        "kind": "control_measure",
+        "tacticalmaps:category": "controlMeasure",
+        "tacticalmaps:tcm_asset": "supportByFire",
+        "tacticalmaps:tcm_name": "SBF 1",
+        "rotation": 0,
+        "scale_x": 3,
+        "scale_y": 3,
+        "tacticalmaps:rotation_deg": 0,
+        "tacticalmaps:scale_x": 3,
+        "tacticalmaps:scale_y": 3
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "32978298-cc0f-4b1f-bc57-4fef90c0d0a0",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.309,
+          -33.6948
+        ]
+      },
+      "properties": {
+        "name": "SEIZE",
+        "source": "symbol",
+        "kind": "control_measure",
+        "tacticalmaps:category": "controlMeasure",
+        "tacticalmaps:tcm_asset": "seize",
+        "tacticalmaps:tcm_name": "SEIZE",
+        "rotation": 0,
+        "scale_x": 8,
+        "scale_y": 8,
+        "tacticalmaps:rotation_deg": 0,
+        "tacticalmaps:scale_x": 8,
+        "tacticalmaps:scale_y": 8
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "f6c4334e-e81c-4fb6-a76f-de3d4be0aea8",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.2992,
+          -33.7008
+        ]
+      },
+      "properties": {
+        "name": "GUARD",
+        "source": "symbol",
+        "kind": "control_measure",
+        "tacticalmaps:category": "controlMeasure",
+        "tacticalmaps:tcm_asset": "guard",
+        "tacticalmaps:tcm_name": "GUARD",
+        "rotation": 90,
+        "scale_x": 9,
+        "scale_y": 9,
+        "tacticalmaps:rotation_deg": 90,
+        "tacticalmaps:scale_x": 9,
+        "tacticalmaps:scale_y": 9
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "e493d248-6824-4ff6-b5dd-cfe3a33acf7b",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.3018,
+          -33.6946
+        ]
+      },
+      "properties": {
+        "name": "EN",
+        "source": "symbol",
+        "kind": "military",
+        "tacticalmaps:category": "military",
+        "tacticalmaps:affiliation": "hostile",
+        "tacticalmaps:echelon": "company",
+        "tacticalmaps:function": "infantry"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "e4cd4b88-b04a-4678-a70d-bd58256ff1a6",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.3086,
+          -33.6946
+        ]
+      },
+      "properties": {
+        "name": "EN",
+        "source": "symbol",
+        "kind": "military",
+        "tacticalmaps:category": "military",
+        "tacticalmaps:affiliation": "hostile",
+        "tacticalmaps:echelon": "company",
+        "tacticalmaps:function": "infantry"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "bb4fb6e9-71d0-4971-a25d-7a878f7a8edf",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.305,
+          -33.7056
+        ]
+      },
+      "properties": {
+        "name": "BN HQ",
+        "source": "symbol",
+        "kind": "military",
+        "tacticalmaps:category": "military",
+        "tacticalmaps:affiliation": "friend",
+        "tacticalmaps:echelon": "battalionRegiment",
+        "tacticalmaps:function": "infantry",
+        "tacticalmaps:is_hq": true
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "abf3e4e6-2839-491e-87fd-8f495b3eeb4a",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.3024,
+          -33.704
+        ]
+      },
+      "properties": {
+        "name": "A COY",
+        "source": "symbol",
+        "kind": "military",
+        "tacticalmaps:category": "military",
+        "tacticalmaps:affiliation": "friend",
+        "tacticalmaps:echelon": "company",
+        "tacticalmaps:function": "infantry"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "abd797ce-2e07-42ea-a6a7-064938cd68ab",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.3076,
+          -33.704
+        ]
+      },
+      "properties": {
+        "name": "B COY",
+        "source": "symbol",
+        "kind": "military",
+        "tacticalmaps:category": "military",
+        "tacticalmaps:affiliation": "friend",
+        "tacticalmaps:echelon": "company",
+        "tacticalmaps:function": "infantry"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "0384f44d-d140-4d6a-b72a-d90342212878",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          150.3098,
+          -33.7048
+        ]
+      },
+      "properties": {
+        "name": "C SQN",
+        "source": "symbol",
+        "kind": "military",
+        "tacticalmaps:category": "military",
+        "tacticalmaps:affiliation": "friend",
+        "tacticalmaps:echelon": "company",
+        "tacticalmaps:function": "armour"
+      }
+    }
+  ]
+}

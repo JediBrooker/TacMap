@@ -8,7 +8,11 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { marked } from "marked";
 
-const INDEX = "site/public/index.html";
+// hand written landing pages, english + german. they share one inline style
+// and script (byte for byte, the test checks) so the CSP hashes dont double up.
+// de.html used to be rendered from docs/de/OVERVIEW.md, its hand written now
+// so it can mirror the english page section for section.
+const HOMEPAGES = ["site/public/index.html", "site/public/de.html"];
 const POLICY_OUT = "site/src/security-policy.mjs";
 const DOCUMENTS = [
   {
@@ -55,11 +59,10 @@ const DOCUMENTS = [
   },
   {"src": "docs/de/PRIVACY_POLICY.md", "out": "site/public/de/privacy.html", "language": "de", "title": "Datenschutzerklärung — TacMap", "description": "Datenschutzerklärung", "canonical": "https://tacmap.app/de/privacy", "ogTitle": "TacMap — Datenschutzerklärung", "ogDescription": "Datenschutzerklärung", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/de/PRIVACY_POLICY.md", "relayHeading": false},
   {"src": "docs/de/HELP.md", "out": "site/public/de/support.html", "language": "de", "title": "Hilfe und Kontakt — TacMap", "description": "Hilfe und Kontakt", "canonical": "https://tacmap.app/de/support", "ogTitle": "TacMap — Hilfe und Kontakt", "ogDescription": "Hilfe und Kontakt", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/de/HELP.md", "relayHeading": false},
-  {"src": "docs/de/OVERVIEW.md", "out": "site/public/de.html", "language": "de", "title": "Offline-Karten für unterwegs — TacMap", "description": "Offline-Karten für unterwegs", "canonical": "https://tacmap.app/de", "ogTitle": "TacMap — Offline-Karten für unterwegs", "ogDescription": "Offline-Karten für unterwegs", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/de/OVERVIEW.md", "relayHeading": false},
   {"src": "docs/SUPPORT.md", "out": "site/public/support.html", "language": "en", "title": "Help and contact — TacMap", "description": "Help and contact", "canonical": "https://tacmap.app/support", "ogTitle": "TacMap — Help and contact", "ogDescription": "Help and contact", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/SUPPORT.md", "relayHeading": false},
 ];
 
-// keep these in sync with the :root block in site/public/index.html
+// keep these in sync with the :root block in site/public/index.html (and de.html)
 const CSS = `
   :root{
     --font-sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -205,8 +208,8 @@ const inlineBlocks = (document, tag) => {
 const hashSource = (value) =>
   `'sha256-${createHash("sha256").update(value, "utf8").digest("base64")}'`;
 
-const index = readFileSync(INDEX, "utf8");
-for (const [name, document] of [[INDEX, index], ...generatedDocuments]) {
+const homepages = HOMEPAGES.map((path) => [path, readFileSync(path, "utf8")]);
+for (const [name, document] of [...homepages, ...generatedDocuments]) {
   if (/\\sstyle=/.test(document)) {
     throw new Error(`${name} contains an inline style attribute; CSP requires CSS classes`);
   }
@@ -216,16 +219,17 @@ for (const [name, document] of [[INDEX, index], ...generatedDocuments]) {
 }
 
 const styleBlocks = [
-  ...inlineBlocks(index, "style"),
+  ...homepages.flatMap(([, document]) => inlineBlocks(document, "style")),
   ...generatedDocuments.flatMap(([, document]) => inlineBlocks(document, "style")),
 ];
 const scriptBlocks = [
-  ...inlineBlocks(index, "script"),
+  ...homepages.flatMap(([, document]) => inlineBlocks(document, "script")),
   ...generatedDocuments.flatMap(([, document]) => inlineBlocks(document, "script")),
 ];
-if (styleBlocks.length !== DOCUMENTS.length + 2 || scriptBlocks.length !== 1) {
+if (styleBlocks.length !== DOCUMENTS.length + 2 * HOMEPAGES.length
+    || scriptBlocks.length !== HOMEPAGES.length) {
   throw new Error(
-    `Expected one style block per document and two homepage style blocks and one inline script; found ${styleBlocks.length} and ${scriptBlocks.length}`,
+    `Expected one style block per document, two style blocks and one inline script per homepage; found ${styleBlocks.length} and ${scriptBlocks.length}`,
   );
 }
 // Both generated document pages intentionally share byte-identical CSS. One CSP

@@ -82,6 +82,12 @@ final class ScreenshotTests: XCTestCase {
         att.name = name
         att.lifetime = .keepAlways
         add(att)
+        // Sim runners can write straight to the host, which saves digging the
+        // PNG back out of the xcresult (and survives a run that wedges).
+        if let dir = ProcessInfo.processInfo.environment["STORE_OUT"] {
+            let url = URL(fileURLWithPath: dir).appendingPathComponent(name + ".png")
+            try? shot.pngRepresentation.write(to: url)
+        }
     }
 
     private func tap(_ label: String, timeout: TimeInterval = 10) -> Bool {
@@ -585,8 +591,20 @@ final class ScreenshotTests: XCTestCase {
         // Zoom out so more of the imported sheet is in frame (was street-level
         // before). Pinch keeps the PDF centred; don't recentre after or it snaps
         // the zoom back.
-        app.pinch(withScale: 0.5, velocity: -1.5); sleep(2)
-        app.pinch(withScale: 0.6, velocity: -1.2); sleep(2)
+        for scale in (ProcessInfo.processInfo.environment["STORE_PDF_PINCH"]?
+            .split(separator: ",").compactMap { Double($0) } ?? [0.5, 0.6]) {
+            app.pinch(withScale: CGFloat(scale), velocity: scale > 1 ? 1.5 : -1.5); sleep(2)
+        }
+        // A rerun on the same sim already has the markers from last time.
+        if ProcessInfo.processInfo.environment["STORE_PDF_NO_MARKERS"] == "1" {
+            // iPad pinches drift, so hop back to the location (= the markers).
+            if ProcessInfo.processInfo.environment["STORE_PDF_RECENTRE"] == "1" {
+                _ = requireTapContaining("My Location")
+            }
+            sleep(3)
+            snap("pdf-hero")
+            return
+        }
         // Drop a small search-and-rescue picture on the imported sheet: an ICP,
         // point last seen, a helispot and a casualty - panning between each so
         // they don't stack. Shows marking up a brought-your-own map for the SAR
@@ -620,6 +638,455 @@ final class ScreenshotTests: XCTestCase {
         }
         sleep(2)
         snap("measure")
+    }
+
+    // ============================================================
+    // 2.2 store set. 8 slides, same order on iPhone, iPad and Android:
+    // hero, line-of-sight, night-mode, unit-sync, sun-moon, pdf-hero (the
+    // GeoPDF test above), symbol-builder, export. Run the testStore* ones in
+    // name order on a fresh-ish sim: 01 imports the situation and the rest
+    // reuse it since the app keeps its data between launches.
+    //
+    // Host setup before running:
+    //   - xcrun simctl location <udid> set -33.700,150.305   (situation centre)
+    //   - copy docs/store/store_situation.geojson into the sim's
+    //     "On My iPhone" (FileProvider.LocalStorage group, File Provider Storage)
+    // Tweaks can be passed without editing code via TEST_RUNNER_STORE_* env
+    // (xcodebuild strips the TEST_RUNNER_ prefix for the runner).
+    // ============================================================
+
+    private func storeEnv(_ key: String) -> String? {
+        ProcessInfo.processInfo.environment["STORE_" + key]
+    }
+
+    private func storeDoubles(_ key: String, _ fallback: [Double]) -> [Double] {
+        guard let raw = storeEnv(key) else { return fallback }
+        let vals = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        return vals.isEmpty ? fallback : vals
+    }
+
+    // Same Files dance as the GeoPDF import, just the GeoJSON row. Import is
+    // the first "GeoJSON…" row on the page (export has one too, further down).
+    private func importSeededGeoJSON(_ fileName: String) {
+        openMenu()
+        guard requireTapContaining("Import / Export") else { return }
+        sleep(2)
+        let rows = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "GeoJSON"))
+        guard rows.firstMatch.waitForExistence(timeout: 6) else {
+            XCTFail("GeoJSON import row is missing")
+            return
+        }
+        rows.element(boundBy: 0).tap()
+        sleep(3)
+
+        let file = descendant(containing: fileName)
+        if !file.waitForExistence(timeout: 4) {
+            let browse = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Browse")).firstMatch
+            if browse.waitForExistence(timeout: 4), browse.isHittable { browse.tap(); sleep(1) }
+            let location = descendant(containing: "On My i")
+            guard location.waitForExistence(timeout: 5), location.isHittable else {
+                XCTFail("Files is missing its On My iPhone/iPad location")
+                return
+            }
+            location.tap()
+            sleep(1)
+        }
+        guard file.waitForExistence(timeout: 8), file.isHittable else {
+            XCTFail("Seeded \(fileName) is missing from On My iPhone")
+            return
+        }
+        file.tap()
+        sleep(3)
+        // Some builds confirm the import first, some just do it.
+        for label in ["Import", "Add", "OK"] {
+            let b = app.buttons[label]
+            if b.exists && b.isHittable { b.tap(); sleep(2); break }
+        }
+        dismissSheet()
+    }
+
+    private func centreAndZoom() {
+        // After the GeoPDF slide the imported sheet is still the active map,
+        // so put a named basemap back first when asked.
+        if let basemap = storeEnv("BASEMAP") {
+            openMenu()
+            if tap("Layers and Labels") {
+                sleep(1)
+                let row = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", basemap)).firstMatch
+                var tries = 0
+                while !(row.exists && row.isHittable) && tries < 6 { app.swipeUp(); sleep(1); tries += 1 }
+                if row.exists { row.tap(); sleep(1) }
+                dismissSheet()
+                sleep(4)
+            }
+        }
+        _ = tapContaining("My Location")
+        sleep(3)
+        // First fix can land after the tap on a fresh sim, so have another go
+        // while the recentre pill is still up.
+        let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Centre on My Location")).firstMatch
+        if pill.exists && pill.isHittable { pill.tap(); sleep(3) }
+        for scale in storeDoubles("PINCH", [0.6]) {
+            app.pinch(withScale: CGFloat(scale), velocity: scale > 1 ? 1.5 : -1.5)
+            sleep(2)
+        }
+        // iPad pinches drift the camera, so snap back onto the location after.
+        if storeEnv("RECENTRE_AFTER") == "1", pill.exists, pill.isHittable {
+            pill.tap()
+            sleep(3)
+            // Recentre resets the zoom, so a slow zoom-out afterwards (slow so
+            // it doesn't drift).
+            let v = CGFloat(storeDoubles("PINCH2_V", [-0.3])[0])
+            for scale in storeDoubles("PINCH2", []) {
+                app.pinch(withScale: CGFloat(scale), velocity: v)
+                sleep(2)
+            }
+        }
+        // Measured drift correction, dx/dy in screen fractions.
+        let pan = storeDoubles("PAN_AFTER", [])
+        if pan.count == 2 { panMap(dx: CGFloat(pan[0]), dy: CGFloat(pan[1])); sleep(2) }
+    }
+
+    private func labelsOn() {
+        openMenu()
+        guard tap("Layers and Labels") else { return }
+        sleep(2)
+        for label in storeEnv("LABELS")?.split(separator: "|").map(String.init)
+                ?? ["Unit Labels", "Task Labels", "Drawing Labels"] {
+            let sw = app.switches[label]
+            guard sw.waitForExistence(timeout: 3) else { continue }
+            if (sw.value as? String) == "0" {
+                // Newer iOS lands a centre tap on the row label, not the switch.
+                sw.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+                sleep(1)
+            }
+        }
+        dismissSheet()
+    }
+
+    /// Long-press a normalised map point and pick a row off the point menu.
+    /// The menu wants a still 1 s hold, so press a bit longer than that.
+    @discardableResult
+    private func pointMenu(at p: CGVector, choose row: String) -> Bool {
+        app.windows.firstMatch.coordinate(withNormalizedOffset: p).press(forDuration: 1.6)
+        let b = app.buttons[row]
+        guard b.waitForExistence(timeout: 5) else {
+            // Soft fail: a hard XCTFail here leaves xcodebuild hanging on this
+            // Xcode and the whole result bundle is lost.
+            NSLog("[store] point menu row missing: \(row)")
+            snap("debug-point-menu")
+            return false
+        }
+        b.tap()
+        sleep(1)
+        return true
+    }
+
+    private func fillRingSheet() {
+        if let spacing = storeEnv("RING_SPACING") {
+            let field = app.textFields["rangeRings.spacing"]
+            if field.waitForExistence(timeout: 3) {
+                field.tap()
+                let current = (field.value as? String) ?? ""
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2) + spacing)
+            }
+        }
+        // Default is 3 rings; RING_COUNT nudges the stepper up or down.
+        if let want = storeEnv("RING_COUNT").flatMap(Int.init) {
+            let stepper = app.steppers.firstMatch
+            if stepper.waitForExistence(timeout: 2) {
+                let delta = want - 3
+                let button = stepper.buttons.element(boundBy: delta > 0 ? 1 : 0)
+                for _ in 0..<abs(delta) { button.tap() }
+            }
+        }
+        let add = app.buttons["Add Rings"]
+        if add.waitForExistence(timeout: 3) { add.tap(); sleep(2) }
+        else { NSLog("[store] Add Rings missing"); snap("debug-ring-sheet") }
+    }
+
+    private func closeSelection() {
+        for label in ["Close symbol editor", "Close drawing editor"] {
+            let b = app.buttons[label]
+            if b.exists && b.isHittable { b.tap(); sleep(1) }
+        }
+    }
+
+    func testStore01Hero() {
+        if storeEnv("SKIP_IMPORT") != "1" {
+            importSeededGeoJSON("store_situation")
+        }
+        centreAndZoom()
+        labelsOn()
+        // Framing pass: no ring target means just show me the map so I can
+        // pick a spot. RING_SYMBOL_AT taps a symbol and adds rings from its
+        // editor (so they follow it), RING_AT long-presses empty ground.
+        if let at = storeEnv("RING_SYMBOL_AT") {
+            let p = at.split(separator: ",").compactMap { Double($0) }
+            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: p[0], dy: p[1])).tap()
+            sleep(2)
+            let rings = app.buttons["symbol.rangeRings"]
+            if rings.waitForExistence(timeout: 5) { rings.tap(); sleep(1); fillRingSheet() }
+            else { NSLog("[store] no rings button after tapping symbol at \(at)"); snap("debug-ring-symbol") }
+        } else if storeEnv("RING_AT") != nil {
+            let ring = storeDoubles("RING_AT", [0.5, 0.5])
+            if pointMenu(at: CGVector(dx: ring[0], dy: ring[1]), choose: "Range Rings Here") { fillRingSheet() }
+        } else {
+            sleep(6)
+            snap("hero-pre")
+            return
+        }
+        closeSelection()
+        sleep(6)
+        snap("hero")
+    }
+
+    func testStore02LineOfSight() {
+        centreAndZoom()
+        if storeEnv("LOS_PRE") == "1" { sleep(6); snap("los-pre"); return }
+        let a = storeDoubles("LOS_FROM", [0.28, 0.62])
+        let b = storeDoubles("LOS_TO", [0.74, 0.40])
+        guard pointMenu(at: CGVector(dx: a[0], dy: a[1]), choose: "Measure From Here") else { return }
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: b[0], dy: b[1])).tap()
+        sleep(1)
+        let profile = app.buttons["measure.profile"]
+        guard profile.waitForExistence(timeout: 5) else { XCTFail("No profile button"); return }
+        profile.tap()
+        let chart = app.otherElements["profile.chart"]
+        XCTAssertTrue(chart.waitForExistence(timeout: 20), "No profile chart")
+        sleep(3)
+        if let h = storeEnv("OBSERVER_TAPS"), let n = Int(h) {
+            let stepper = app.steppers["profile.observerHeight"]
+            if stepper.waitForExistence(timeout: 3) {
+                for _ in 0..<n { stepper.buttons.element(boundBy: 1).tap() }
+            }
+            sleep(1)
+        }
+        if storeEnv("TOUCH_CHART") != "0" {
+            chart.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+                .press(forDuration: 0.1, thenDragTo: chart.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)))
+            sleep(1)
+        }
+        snap("line-of-sight")
+    }
+
+    func testStore03NightMode() {
+        centreAndZoom()
+        closeSelection()
+        let moon = app.buttons["map.nightMode"]
+        guard moon.waitForExistence(timeout: 6), moon.isHittable else {
+            XCTFail("Night mode button is missing from the map")
+            return
+        }
+        moon.tap()
+        sleep(3)
+        snap("night-mode")
+        // Put it back so the next launch isn't all red.
+        moon.tap()
+        sleep(1)
+    }
+
+    /// Chat needs a second chat-ready unit or Send stays disabled, so this is
+    /// run on two sims: one generates the room (or it's joined by hand), the
+    /// other gets STORE_JOIN_CODE and they talk. STORE_CHAT is "|" separated,
+    /// STORE_CHAT_GAP is the pause after each send so the other side can reply.
+    func testStore04UnitSync() {
+        if storeEnv("CHAT_ONLY") != "1" { joinStoreRoom() }
+        openMenu()
+        guard requireTapContaining("TacMap Chat") else { return }
+        sleep(2)
+        let gap = UInt32(storeEnv("CHAT_GAP") ?? "3") ?? 3
+        let messages = (storeEnv("CHAT") ?? "").split(separator: "|").map(String.init)
+        let placeholder = NSPredicate(format: "placeholderValue ==[c] %@", "Message")
+        for text in messages {
+            var field = app.textFields.matching(placeholder).firstMatch
+            if !field.waitForExistence(timeout: 3) { field = app.textViews.matching(placeholder).firstMatch }
+            guard field.waitForExistence(timeout: 20) else { NSLog("[store] no chat field"); snap("debug-chat"); return }
+            field.tap()
+            field.typeText(text)
+            let review = app.buttons["Review room send"]
+            // Stays disabled until the other sim is chat-ready.
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: review)
+            _ = XCTWaiter().wait(for: [enabled], timeout: TimeInterval(storeEnv("READY_WAIT") ?? "180") ?? 180)
+            review.tap()
+            let send = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Send to")).firstMatch
+            if send.waitForExistence(timeout: 5) { send.tap() } else { snap("debug-send") }
+            sleep(gap)
+        }
+        if app.keyboards.count > 0 { app.swipeDown(); sleep(1) }
+        sleep(UInt32(storeEnv("CHAT_HOLD") ?? "2") ?? 2)
+        snap("unit-sync")
+    }
+
+    private func joinStoreRoom() {
+        openMenu()
+        _ = tapContaining("Unit Sync")
+        sleep(2)
+        let nameField = app.textFields.matching(
+            NSPredicate(format: "placeholderValue BEGINSWITH[c] %@", "Room name")
+        ).firstMatch
+        if nameField.waitForExistence(timeout: 4), nameField.isHittable {
+            nameField.tap()
+            nameField.typeText(storeEnv("ROOM_NAME") ?? "WOLFPACK")
+        }
+        if let code = storeEnv("JOIN_CODE") {
+            let codeField = app.textFields.matching(
+                NSPredicate(format: "placeholderValue ==[c] %@", "Unit join code")
+            ).firstMatch
+            guard codeField.waitForExistence(timeout: 4) else { NSLog("[store] no join code field"); return }
+            codeField.tap()
+            codeField.typeText(code)
+        } else {
+            guard requireTapContaining("Generate strong code") else { return }
+            sleep(1)
+        }
+        // The keyboard can sit on top of the join row.
+        if app.keyboards.count > 0 { app.swipeDown(); sleep(1) }
+        guard requireTapContaining("Join / create room") else { return }
+        if app.buttons["Enable & Join"].waitForExistence(timeout: 3) { app.buttons["Enable & Join"].tap() }
+        sleep(8)
+        if let callsign = storeEnv("CALLSIGN") {
+            let cs = app.textFields.matching(NSPredicate(format: "placeholderValue ==[c] %@", "Callsign")).firstMatch
+            if cs.waitForExistence(timeout: 4) {
+                cs.tap()
+                // Earlier runs leave the old callsign in there, clear it first.
+                let current = (cs.value as? String) ?? ""
+                let stale = current == cs.placeholderValue ? 0 : current.count
+                cs.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: stale) + callsign + "\n")
+                sleep(1)
+            }
+        }
+        dismissSheet()
+    }
+
+    /// Shared-picture version of the Unit Sync slide: already connected (room
+    /// persists between launches), a second sim sharing its location, map at
+    /// the hero framing with the chat shortcut showing.
+    func testStore04bSyncMap() {
+        if storeEnv("JOIN_CODE") != nil { joinStoreRoom() }
+        if storeEnv("SYNC_SHEET") == "1" {
+            // Members view: scroll the sheet past the join code so it's not
+            // readable, leaving status, identity and the relay-reported units.
+            sleep(UInt32(storeEnv("SYNC_WAIT") ?? "10") ?? 10)
+            openMenu()
+            _ = tapContaining("Unit Sync")
+            sleep(2)
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: CGFloat(storeDoubles("SYNC_SCROLL", [0.45])[0])))
+            from.press(forDuration: 0.1, thenDragTo: to)
+            sleep(2)
+            snap("unit-sync")
+            return
+        }
+        centreAndZoom()
+        closeSelection()
+        sleep(UInt32(storeEnv("SYNC_WAIT") ?? "10") ?? 10)
+        snap("unit-sync")
+    }
+
+    /// Keeps this sim online in the room (chat sheet open) so the other sim
+    /// can see it. Nothing is captured.
+    func testStoreStayOnline() {
+        if storeEnv("JOIN_CODE") != nil { joinStoreRoom() }
+        sleep(UInt32(storeEnv("STAY") ?? "300") ?? 300)
+    }
+
+    func testStore05SunMoon() {
+        centreAndZoom()
+        closeSelection()
+        let at = storeDoubles("SUNMOON_AT", [0.3, 0.85])
+        guard pointMenu(at: CGVector(dx: at[0], dy: at[1]), choose: "Sun and Moon Here") else { return }
+        sleep(2)
+        // iPad opens this at the medium detent and the moon rows fall off the
+        // bottom, so pull the grabber up to full height.
+        if let grab = storeEnv("SUNMOON_GRAB").map({ $0.split(separator: ",").compactMap { Double($0) } }), grab.count == 2 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: grab[0], dy: grab[1]))
+            from.press(forDuration: 0.2, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: grab[0], dy: 0.08)))
+            sleep(2)
+        }
+        snap("sun-moon")
+        dismissSheet()
+    }
+
+    func testStore07SymbolBuilder() {
+        openMenu()
+        guard tap("Symbology") else { return }
+        guard tapAddAtCrosshair() else { return }
+        sleep(2)
+        snap("symbol-builder")
+        _ = tap("Cancel")
+        sleep(1)
+        dismissSheet()
+    }
+
+    func testStore08Export() {
+        openMenu()
+        guard requireTapContaining("Import / Export") else { return }
+        sleep(2)
+        snap("export")
+        dismissSheet()
+    }
+
+    /// 2.2 app preview driver. Record the sim with `simctl io recordVideo`
+    /// while this runs, then cut the beats out with ffmpeg. Beats, in order:
+    /// the picture, night mode on/off, line of sight, sun & moon, export.
+    /// Paced with sleeps so each beat has a clean second or two to cut.
+    func testStorePreview() {
+        centreAndZoom()
+        closeSelection()
+        // Just hold on the picture, a pan from the centre grabs whatever
+        // drawing runs under the crosshair.
+        sleep(5)
+
+        let moon = app.buttons["map.nightMode"]
+        if moon.waitForExistence(timeout: 5) {
+            moon.tap(); sleep(3)
+            moon.tap(); sleep(2)
+        }
+
+        for scale in storeDoubles("PREVIEW_PINCH", []) {
+            app.pinch(withScale: CGFloat(scale), velocity: scale > 1 ? 1.5 : -1.5)
+            sleep(2)
+        }
+        let a = storeDoubles("LOS_FROM", [0.28, 0.62])
+        let b = storeDoubles("LOS_TO", [0.74, 0.40])
+        if pointMenu(at: CGVector(dx: a[0], dy: a[1]), choose: "Measure From Here") {
+            sleep(1)
+            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: b[0], dy: b[1])).tap()
+            sleep(2)
+            let profile = app.buttons["measure.profile"]
+            if profile.waitForExistence(timeout: 5) {
+                profile.tap()
+                let chart = app.otherElements["profile.chart"]
+                if chart.waitForExistence(timeout: 20) {
+                    sleep(3)
+                    chart.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
+                        .press(forDuration: 0.3, thenDragTo: chart.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)),
+                               withVelocity: .slow, thenHoldForDuration: 1.0)
+                    sleep(1)
+                    let stepper = app.steppers["profile.observerHeight"]
+                    if stepper.waitForExistence(timeout: 3) {
+                        for _ in 0..<9 { stepper.buttons.element(boundBy: 1).tap() }
+                    }
+                    sleep(3)
+                }
+                dismissSheet()
+            }
+            // Measure mode keeps its own Done on the bar.
+            let done = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Done")).firstMatch
+            if done.exists && done.isHittable { done.tap(); sleep(1) }
+        }
+
+        let at = storeDoubles("SUNMOON_AT", [0.3, 0.85])
+        if pointMenu(at: CGVector(dx: at[0], dy: at[1]), choose: "Sun and Moon Here") {
+            sleep(4)
+            dismissSheet()
+        }
+
+        openMenu()
+        if requireTapContaining("Import / Export") { sleep(4) }
+        dismissSheet()
+        sleep(2)
     }
 
     // ============================================================

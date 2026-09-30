@@ -8,7 +8,7 @@ export const SECURITY_HEADERS = Object.freeze({
   "Cross-Origin-Resource-Policy": "same-origin",
   "Permissions-Policy": [
     "accelerometer=()",
-    "autoplay=()",
+    "autoplay=(self)",
     "camera=()",
     "display-capture=()",
     "encrypted-media=()",
