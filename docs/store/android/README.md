@@ -16,9 +16,9 @@ Location featured: **Shoalwater Bay Training Area, QLD** (Australian Army).
 
 Real captures from the debug build on the `TacMap_API_36` emulator (tablet via
 `wm size 1600x2560` + `wm density 320` on the same AVD), framed by
-`scripts/compose_store_set.py`. Hero and night mode use the shared situation with
-task graphics at 0.25× scale because Android draws task graphics at a fixed
-screen size rather than scaling them with zoom.
+`scripts/compose_store_set.py`, from the build that includes #46 and #47 (task
+graphics keep their ground size, profile is a bottom sheet). The hero uses the
+shared `docs/store/store_situation.geojson`, same as iOS.
 
 1. `01-hero.png` — the shared NATO situation with range rings on the enemy position
 2. `02-line-of-sight.png` — elevation profile and line of sight (real Copernicus DEM heights)
