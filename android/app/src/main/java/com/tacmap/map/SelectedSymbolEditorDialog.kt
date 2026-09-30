@@ -186,6 +186,13 @@ internal fun SelectedSymbolEditorDialog(
                                     if (category != draft.kind.selectedCategory) draft = draft.changingKind(kind)
                                 },
                             )
+                            // Live preview: the edited kind with its rotation and colour.
+                            val isTask = draft.kind is WaypointKind.ControlMeasure
+                            SymbolPreviewPanel(
+                                kind = draft.kind,
+                                rotation = if (isTask) draft.rotationDegrees else 0.0,
+                                taskColor = if (isTask) draft.taskColor else TaskColor.BLACK,
+                            )
                             when (val kind = draft.kind) {
                                 WaypointKind.Generic -> Unit
                                 is WaypointKind.Military -> MilitaryTypeFields(kind.spec) {
@@ -413,7 +420,7 @@ private fun TaskColorPicker(selectedColor: TaskColor, onSelect: (TaskColor) -> U
 }
 
 @Composable
-private fun DraftSlider(
+internal fun DraftSlider(
     label: String,
     value: Float,
     valueLabel: String,

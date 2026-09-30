@@ -184,44 +184,43 @@ internal fun DrawingPoint.isSameLocation(other: DrawingPoint): Boolean =
     kotlin.math.abs(latitude - other.latitude) < 0.0000001 &&
         kotlin.math.abs(longitude - other.longitude) < 0.0000001
 
-internal suspend fun shareGeoJson(
+/** The GeoJSON export file's text; [GeoJsonExportPreviewDialog] previews it before sharing. */
+internal fun geoJsonExportText(
     context: Context,
     waypoints: List<com.tacmap.waypoints.Waypoint>,
     drawings: List<DrawingFeature>,
     layers: List<com.tacmap.drawings.DrawingLayer>
-) {
+): String = GeoJsonExporter.export(
+    waypoints,
+    drawings,
+    layers,
+    density = context.resources.displayMetrics.density,
+)
+
+/** Shares [content], the previewed GeoJSON export, as a file. */
+internal suspend fun shareGeoJson(context: Context, content: String) {
     shareTextExport(
         context = context,
-        exportLabel = "GeoJSON",
+        exportLabel = GEOJSON_EXPORT_LABEL,
         fileName = "TacMap.geojson",
         mimeType = "application/geo+json",
         chooserTitle = L10n.text("Export GeoJSON"),
-    ) {
-        GeoJsonExporter.export(
-            waypoints,
-            drawings,
-            layers,
-            density = context.resources.displayMetrics.density,
-        )
-    }
+    ) { content }
 }
 
-internal suspend fun shareGpx(
-    context: Context,
-    points: List<com.tacmap.models.TrackPoint>
-) {
-    if (points.isEmpty()) {
-        Toast.makeText(context, L10n.text("No track recorded yet."), Toast.LENGTH_SHORT).show()
-        return
-    }
+/** Shares [content], the previewed GPX track export, as a file. */
+internal suspend fun shareGpx(context: Context, content: String) {
     shareTextExport(
         context = context,
         exportLabel = L10n.text("GPX track"),
         fileName = "TacMap-track.gpx",
         mimeType = "application/gpx+xml",
         chooserTitle = L10n.text("Export GPX"),
-    ) { com.tacmap.export.GpxExporter.export(points) }
+    ) { content }
 }
+
+/** File-format name used in export status messages; not translated. */
+internal const val GEOJSON_EXPORT_LABEL = "GeoJSON"
 
 /** Export all mission objects + their layer metadata as GeoJSON. Tracks stay in GPX. */
 internal suspend fun exportAllMissionObjects(

@@ -12187,6 +12187,104 @@
         "status": "reviewed"
       }
     },
+    "symbols_new_symbol_title": {
+      "de": {
+        "source": "f58723f9e349853122a9fabb4b3af1229ea56ef878673d7f0fcb338fd029682f",
+        "translation": "e3a0268344861d73cf1b9b24a43d882e2a3a54843899aff1cd429062ee64f88b",
+        "status": "reviewed"
+      }
+    },
+    "symbols_kind_military": {
+      "de": {
+        "source": "81862d46f69ff98fdd970caeb873ccede6dee838c2f3f96c5c072579f399e9d4",
+        "translation": "3bc91d8aa120cc5e5e9a52e8bb35fdad90f01448abff05b5ab1c94496a0de151",
+        "status": "reviewed"
+      }
+    },
+    "symbols_kind_tasks": {
+      "de": {
+        "source": "450f283cb753c389fa1bd31ee99015ed7c758123e1237ec324574ea19ec84a59",
+        "translation": "096a59301c3e808e988d68323ec4e4ddc382f07953e1ab55898bb13aa33aad30",
+        "status": "reviewed"
+      }
+    },
+    "symbols_kind_markers": {
+      "de": {
+        "source": "d42c1c8f0868d2dac2f17e2fedfc5c745a016f00698d5d008481ef79f6e48df3",
+        "translation": "6f64510d854505b66a568a98b6b027665558062fa47bc71a4cf598ddc2f9ac06",
+        "status": "reviewed"
+      }
+    },
+    "symbols_preview": {
+      "de": {
+        "source": "5690aac37fecfcd889cc97911f23da8ae0f6c64ac59d72860ee7c1828cfcc548",
+        "translation": "97f72f64fe22f5eea1b72debd6317c3b26a84c957d1b94c7b6e7b3a618df45fb",
+        "status": "reviewed"
+      }
+    },
+    "symbols_orientation": {
+      "de": {
+        "source": "b333ec3c964b04a49e2143930e091bf6f15abfac76828db263878d3610b8031a",
+        "translation": "0c8b883283a9c5bab4ace4d97594007da0e564effe4f97088c203f37ee917125",
+        "status": "reviewed"
+      }
+    },
+    "symbols_orientation_help": {
+      "de": {
+        "source": "538a488acb19656fe3e1513397026d7abe3427b65d7b3b1c0fbe520fc01a63eb",
+        "translation": "004ba8d4ce17c842ff2de597b0348804b0cf0695e2f8acc4f06c946fb3176633",
+        "status": "reviewed"
+      }
+    },
+    "symbols_size": {
+      "de": {
+        "source": "e7bd6b9e9e63cf5f8670938a4a190102ef8ccfaa2e5066d07ea7b06ece2173e3",
+        "translation": "dc469e97d6927b3271654c1b50013d132924bea342185034746eb46ed618748c",
+        "status": "reviewed"
+      }
+    },
+    "symbols_size_help": {
+      "de": {
+        "source": "a3285a6fa977b432ad96538b1e014d46380e405ce7d2f06883889a4c27757c54",
+        "translation": "7d7fe1be482052ced94257db1141a06c49282ce14da35e2e565a7ced12690ecb",
+        "status": "reviewed"
+      }
+    },
+    "symbols_both_scales": {
+      "de": {
+        "source": "1a0c754c1129144c4d1ef842b54e8efdb4ab654b3cec1c1f8a08a024c2f7324a",
+        "translation": "5e0bbb51bde3faf3dd03cae73645f986d6d724df39df0aaf230e49278cb187f3",
+        "status": "reviewed"
+      }
+    },
+    "symbols_set_rotation": {
+      "de": {
+        "source": "0ee2fa645c5c0f01ca2bcd46cc130de1f6e62b7d2b3ec3d02984ff76332ff147",
+        "translation": "cd681a1912cc5f0c18e5a1864aacc77d58c60d0cef33afeeb03dea34eef2107b",
+        "status": "reviewed"
+      }
+    },
+    "symbols_set_both_scales": {
+      "de": {
+        "source": "f885129fcefe64728699ec98e24abc36d48b9b7254b6d8a8c9fc36187308034a",
+        "translation": "ce4f0e1c96961640295d501686231f724db65a03bdd3e05650d9628b0744987a",
+        "status": "reviewed"
+      }
+    },
+    "symbols_fly_to": {
+      "de": {
+        "source": "ca5cd5a951f83fde60e79772f1af9a2afb397ed7578a86b420bbc3971e88e114",
+        "translation": "9ea8774ba46d8339b4d9415650aff7431e01038e81ad8dab2eeb0e6bb4def38d",
+        "status": "reviewed"
+      }
+    },
+    "symbols_swipe_help": {
+      "de": {
+        "source": "1cc91bcbb0322c497d9d8fa1944612a09976094f49a6eb51508f36d749c270e4",
+        "translation": "0b4ac5379369ae99f89b321e360ff73bc9ec239f65b9cb9ccaa5a93135a31254",
+        "status": "reviewed"
+      }
+    },
     "rings_title": {
       "de": {
         "source": "64a855fee9fb903c960fd71246073ea1b3a44e47c3da3a4144dc38111b0b2250",
@@ -12429,6 +12527,55 @@
       "de": {
         "source": "ac1ac850c70f18ae8122dc587eaf2078098751fc931e113d2b4affd70ca21c23",
         "translation": "9d3711aeb82da6aa7b6c0cdbe41c0ab7db7e2787ca79a43c6cd91441a09b7ec3",
+        "status": "reviewed"
+      }
+    },
+    "export_preview_heading": {
+      "de": {
+        "source": "af5aa813fa0884424defa75071591533fe8da2f7df3d5783aafd03b46daaf560",
+        "translation": "97f72f64fe22f5eea1b72debd6317c3b26a84c957d1b94c7b6e7b3a618df45fb",
+        "status": "reviewed"
+      }
+    },
+    "export_preview_truncated": {
+      "de": {
+        "source": "6cad8c7a6dd95ae0a4f6a502f45f26cab75211078662a23f6ff59932c0fa8844",
+        "translation": "8933bea28151529ef444f00f3f5da89ba250087d8bcc251c22f8f5bb077cba47",
+        "status": "reviewed"
+      }
+    },
+    "export_share_geojson": {
+      "de": {
+        "source": "68b8db33bb2c418432f5e72f95131c96573e291be6acb48bf2fc691a39d70398",
+        "translation": "7af5223327906538b87bfc2ef63af2821b4565cf7cc9c9ecb8e15cc1298be047",
+        "status": "reviewed"
+      }
+    },
+    "export_share_gpx": {
+      "de": {
+        "source": "56147e8920026615926cabeb50ed7b6d51f035dab9224d8ce9cd8f060a73a29c",
+        "translation": "93c92c237c830f35818fdb7203cc621de6255c9c9aeb7e32c838901ffd0203d8",
+        "status": "reviewed"
+      }
+    },
+    "export_geojson_format": {
+      "de": {
+        "source": "9a6587a469e2308bfe112671210418df1394bdcce4d7efe465e007e974ea53bf",
+        "translation": "966cd95aff2fb675d95e17e07c5c9ff947c881a3f582f617b28e9314179366da",
+        "status": "reviewed"
+      }
+    },
+    "export_gpx_format": {
+      "de": {
+        "source": "c1435a4b70235161e591925e780273633b52ee2303ac94a1532edcb734299c0d",
+        "translation": "19c6b066fe1b76f237b4cb160faeda013ba5fe3dbd1d8f598342247da1234172",
+        "status": "reviewed"
+      }
+    },
+    "export_gpx_empty": {
+      "de": {
+        "source": "6cb6e321b374f3035ee70b8465272655df375aa4b80cc5c44f9bde4e01610c06",
+        "translation": "ab39b0311916689330e4e1b3121c52fbf30451193db318e9bab5835066716f4d",
         "status": "reviewed"
       }
     },

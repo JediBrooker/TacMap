@@ -128,12 +128,26 @@ object Messages {
         L10n.message("id.drawings_stroke_width", "Stroke width")
     fun drawingsStrokeWidthValue(width: String): String =
         L10n.message("id.drawings_stroke_width_value", "%1\$s pt", width)
+    fun exportGeojsonFormat(): String =
+        L10n.message("id.export_geojson_format", "Format: GeoJSON FeatureCollection (RFC 7946) with simplestyle-spec styling. Opens in geojson.io, GitHub, Mapbox, Felt, QGIS, ArcGIS, Google Earth (via the GeoJSON-to-KML converter).")
+    fun exportGpxEmpty(): String =
+        L10n.message("id.export_gpx_empty", "No track recorded yet. Start recording from the menu, move, then export.")
+    fun exportGpxFormat(): String =
+        L10n.message("id.export_gpx_format", "Format: GPX 1.1 - opens in Garmin, Strava, Gaia GPS, QGIS, Google Earth, and most GPS tools.")
     fun exportKmlTitle(): String =
         L10n.message("id.export_kml_title", "Export KML")
     fun exportKmzRow(): String =
         L10n.message("id.export_kmz_row", "KMZ with Symbols")
     fun exportKmzTitle(): String =
         L10n.message("id.export_kmz_title", "Export KMZ with Symbols")
+    fun exportPreviewHeading(): String =
+        L10n.message("id.export_preview_heading", "Preview")
+    fun exportPreviewTruncated(): String =
+        L10n.message("id.export_preview_truncated", "… (truncated, full file in Share)")
+    fun exportShareGeojson(): String =
+        L10n.message("id.export_share_geojson", "Share GeoJSON file")
+    fun exportShareGpx(): String =
+        L10n.message("id.export_share_gpx", "Share GPX file")
     fun importCollisionSummary(summary: String, count: String): String =
         L10n.message("id.import_collision_summary", "%1\$s Conflicting object IDs reassigned: %2\$s.", summary, count)
     fun importCollisionSummaryMessage(summary: String, count: String): LocalizedMessage =
@@ -410,22 +424,48 @@ object Messages {
         L10n.message("id.sun_moon_waning", "%1\$s, waning", percent)
     fun sunMoonWaxing(percent: String): String =
         L10n.message("id.sun_moon_waxing", "%1\$s, waxing", percent)
+    fun symbolsBothScales(): String =
+        L10n.message("id.symbols_both_scales", "Both:")
     fun symbolsCustomSymbols(): String =
         L10n.message("id.symbols_custom_symbols", "Custom Symbols")
     fun symbolsDistanceFromCentre(distance: String): String =
         L10n.message("id.symbols_distance_from_centre", "%1\$s from crosshair", distance)
+    fun symbolsFlyTo(): String =
+        L10n.message("id.symbols_fly_to", "Fly to")
     fun symbolsGroupOther(): String =
         L10n.message("id.symbols_group_other", "Other")
     fun symbolsImportLocation(): String =
         L10n.message("id.symbols_import_location", "Import packs from Import / Export → Import Symbol Pack.")
     fun symbolsImportSymbolPack(): String =
         L10n.message("id.symbols_import_symbol_pack", "Import Symbol Pack…")
+    fun symbolsKindMarkers(): String =
+        L10n.message("id.symbols_kind_markers", "Markers")
+    fun symbolsKindMilitary(): String =
+        L10n.message("id.symbols_kind_military", "Military")
+    fun symbolsKindTasks(): String =
+        L10n.message("id.symbols_kind_tasks", "Tasks")
     fun symbolsMissingSymbol(): String =
         L10n.message("id.symbols_missing_symbol", "Missing symbol")
+    fun symbolsNewSymbolTitle(): String =
+        L10n.message("id.symbols_new_symbol_title", "New Symbol")
     fun symbolsNoMatches(): String =
         L10n.message("id.symbols_no_matches", "No matching symbols.")
+    fun symbolsOrientation(): String =
+        L10n.message("id.symbols_orientation", "Orientation")
+    fun symbolsOrientationHelp(): String =
+        L10n.message("id.symbols_orientation_help", "Rotate the symbol to indicate direction (e.g. axis of advance, ambush facing).")
     fun symbolsPackImported(name: String): String =
         L10n.message("id.symbols_pack_imported", "Imported symbol pack: %1\$s", name)
+    fun symbolsPreview(): String =
+        L10n.message("id.symbols_preview", "Preview")
+    fun symbolsSetBothScales(factor: String): String =
+        L10n.message("id.symbols_set_both_scales", "Set width and height to %1\$s times", factor)
+    fun symbolsSetRotation(degrees: String): String =
+        L10n.message("id.symbols_set_rotation", "Set rotation to %1\$s degrees", degrees)
+    fun symbolsSize(): String =
+        L10n.message("id.symbols_size", "Size")
+    fun symbolsSizeHelp(): String =
+        L10n.message("id.symbols_size_help", "Independent width and height multipliers — stretch the symbol wider/thinner or longer/shorter. The geographic footprint scales with the map zoom.")
     fun symbolsSortAffiliation(): String =
         L10n.message("id.symbols_sort_affiliation", "Affiliation")
     fun symbolsSortBy(): String =
@@ -440,6 +480,8 @@ object Messages {
         L10n.message("id.symbols_sort_name", "Name")
     fun symbolsSortNewest(): String =
         L10n.message("id.symbols_sort_newest", "Newest first")
+    fun symbolsSwipeHelp(): String =
+        L10n.message("id.symbols_swipe_help", "Swipe right on a symbol to fly to it; swipe left to delete.")
     fun symbolsSymbolPackError(): String =
         L10n.message("id.symbols_symbol_pack_error", "Choose a valid TacMap PNG symbol pack, up to 16 MB. Unlock mission data before importing. Check available storage and try again.")
     fun symbolsSymbolPackFailed(): String =

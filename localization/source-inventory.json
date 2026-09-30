@@ -1973,5 +1973,23 @@
     "platform": "android",
     "area": "map-navigation",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/TaskGraphicSizing.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/WaypointKindIcon.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ExportPreviewDialog.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
   }
 ]
