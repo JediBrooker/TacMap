@@ -25,6 +25,7 @@ diverge:
 | `sun_moon_times.json` | offline twilight, sunrise/sunset, moonrise/moonset and moon illumination for local-day windows, including polar day/night and a 25-hour DST day |
 | `elevation_profile.json` | elevation-profile sampling along a path, 4-decimal Open-Meteo request batches, climb/descent stats, and line of sight with curvature, refraction and dead ground |
 | `kml_export.json` | exact KML export text: layer folders and hidden-layer visibility, style order and `aabbggrr` colours, symbol MGRS data, drawing geometry, escaping and coordinate rounding |
+| `mgrs_grid_labels.json` | MGRS grid line labels: 1 km / 10 km lines carry their own value (the 87000 N line reads 87) in both hemispheres, 100 km letters name the square east / north of the line. Read by Android `MgrsGridLabelsTest` and iOS `MGRSGridLabelTests` |
 
 Both test suites load these same files and assert against them:
 
