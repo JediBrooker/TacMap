@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.MyLocation
 import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.calibration.Datum
+import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.HeadingNorthReference
 import com.tacmap.settings.MapOrientationMode
 import kotlin.math.roundToInt
@@ -492,10 +494,17 @@ private fun calibrationStatus(fiduciaryCount: Int): String =
         else -> L10n.text("%1\$s fiduciaries placed. Finish or add more for accuracy.", fiduciaryCount)
     }
 
+/** MGRS of a GPS fix for the fiduciary field, or null where MGRS isn't
+ *  defined (polar fixes format as an "N/A" marker the parser rejects). */
+internal fun calibrationMgrsForFix(latitude: Double, longitude: Double): String? =
+    MgrsFormatter.format(latitude, longitude).takeIf { MgrsFormatter.parse(it) != null }
+
 @Composable
 internal fun CalibrationInputDialog(
     point: PendingCalibrationTap,
     fiduciaryNumber: Int,
+    /** Last GPS fix as MGRS; null disables "Use my current location". */
+    currentLocationMgrs: String?,
     datum: Datum,
     onDatumChange: (Datum) -> Unit,
     onDismiss: () -> Unit,
@@ -528,6 +537,22 @@ internal fun CalibrationInputDialog(
                     placeholder = { Text("56HLH 12345 67890") },
                     singleLine = true
                 )
+                // Standing on the feature: one tap fills its MGRS from GPS (iOS parity).
+                TextButton(
+                    onClick = {
+                        currentLocationMgrs?.let { mgrs = it }
+                        error = null
+                    },
+                    enabled = currentLocationMgrs != null,
+                ) {
+                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(
+                        currentLocationMgrs?.let { Messages.calibrationUseCurrentLocation(it) }
+                            ?: Messages.calibrationUseCurrentLocationNoFix(),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },

@@ -1105,11 +1105,18 @@ internal fun MapScreen(
             )
         }
 
-        // live track-recording badge, only while recording. Tap to stop.
-        if (isRecordingTrack) {
+        // Track-recording pill: REC while recording, and also while awaiting
+        // location, starting or interrupted, as on iOS. What a tap does
+        // depends on the state (see recordingPillAction).
+        if (trackRecordingState.phase != TrackRecordingPhase.Idle) {
             RecordingIndicator(
+                phase = trackRecordingState.phase,
                 pointCount = trackPoints.size,
-                onStop = { vm.stopTrackRecording() },
+                onTap = when (recordingPillAction(trackRecordingState.phase)) {
+                    RecordingPillAction.STOP -> { { vm.stopTrackRecording() } }
+                    RecordingPillAction.DISMISS -> { { vm.trackRecorder.dismissRecordingMessage() } }
+                    RecordingPillAction.NONE -> null
+                },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
@@ -2161,6 +2168,7 @@ internal fun MapScreen(
         CalibrationInputDialog(
             point = tap,
             fiduciaryNumber = calibrationFiduciaries.size + 1,
+            currentLocationMgrs = lastLocation?.let { calibrationMgrsForFix(it.latitude, it.longitude) },
             datum = calibrationDatum,
             onDatumChange = { calibrationDatum = it },
             onDismiss = { pendingCalibrationTap = null },
