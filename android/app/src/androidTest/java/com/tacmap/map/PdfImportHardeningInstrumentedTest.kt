@@ -327,7 +327,8 @@ class PdfImportHardeningInstrumentedTest {
             .getDictionaryObject(COSName.getPDFName("Measure")) as COSDictionary
         measure.setItem(
             COSName.getPDFName("LPTS"),
-            numbers(0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.1),
+            // 2.5 is past the one-viewport overshoot allowance. 1.1 is fine now, USGS sheets do that.
+            numbers(0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 2.5),
         )
         page.cosObject.setItem(
             COSName.getPDFName("VP"),

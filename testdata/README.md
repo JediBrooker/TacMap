@@ -25,6 +25,7 @@ diverge:
 | `sun_moon_times.json` | offline twilight, sunrise/sunset, moonrise/moonset and moon illumination for local-day windows, including polar day/night and a 25-hour DST day |
 | `elevation_profile.json` | elevation-profile sampling along a path, 4-decimal Open-Meteo request batches, climb/descent stats, and line of sight with curvature, refraction and dead ground |
 | `kml_export.json` | exact KML export text: layer folders and hidden-layer visibility, style order and `aabbggrr` colours, symbol MGRS data, drawing geometry, escaping and coordinate rounding |
+| `geopdf_usgs_sf_north.json` + `usgs_sf_north_viewports.pdf` | GeoPDF `/VP` parsing on a real USGS US Topo sheet (page trimmed to its viewports): map body picked over insets despite slightly out-of-unit-square LPTS, quad bounds/centre, 1:24k scale, and printed UTM grid crossings. Read by Android `GeoPdfParserTest` and iOS `PDFImportSmokeTests` |
 
 Both test suites load these same files and assert against them:
 

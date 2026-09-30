@@ -201,7 +201,7 @@ final class PDFImportSmokeTests: XCTestCase {
         << /BBox [0 0 600 400]
            /Measure << /Subtype /GEO
                        /GPTS [-34 150 -34 151 -33 151 -33 150]
-                       /LPTS [0 0 1 0 1 1 0 1.1] >> >>
+                       /LPTS [0 0 1 0 1 1 0 2.5] >> >>
         """
 
         for (index, viewports) in [
@@ -224,7 +224,7 @@ final class PDFImportSmokeTests: XCTestCase {
         << /BBox [0 0 50 50]
            /Measure << /Subtype /GEO
                        /GPTS [10 10 10 11 11 11 11 10]
-                       /LPTS [0 0 1 0 1 1 0 1.1] >> >>
+                       /LPTS [0 0 1 0 1 1 0 2.5] >> >>
         """
         let validMapBody = adobeViewport(
             bbox: "0 0 600 400",
@@ -240,6 +240,78 @@ final class PDFImportSmokeTests: XCTestCase {
         XCTAssertEqual(bounds.southWest.longitude, 150, accuracy: 1e-9)
         XCTAssertEqual(bounds.northEast.latitude, -33, accuracy: 1e-9)
         XCTAssertEqual(bounds.northEast.longitude, 151, accuracy: 1e-9)
+    }
+
+    /// Real USGS US Topo viewports (testdata/geopdf_usgs_sf_north.json, same
+    /// vectors as Android GeoPdfParserTest). The map body's LPTS overshoot the
+    /// unit square slightly, which used to reject the whole sheet.
+    func testUSGSUSTopoViewportsPlaceSheetOnPrintedUTMGrid() throws {
+        let vectors = try sharedVectors("geopdf_usgs_sf_north.json")
+        let fixture = try testdataURL(try XCTUnwrap(vectors["fixture"] as? String))
+        let bounds = try XCTUnwrap(GeoPDFReader.bounds(from: fixture))
+
+        // Map body, not the 32-42N quadrangle-location inset.
+        let body = try XCTUnwrap(vectors["mapBody"] as? [String: Any])
+        let latRange = try XCTUnwrap(body["latRange"] as? [Double])
+        let lonRange = try XCTUnwrap(body["lonRange"] as? [Double])
+        for corner in [bounds.southWest, bounds.northEast] {
+            XCTAssertTrue((latRange[0]...latRange[1]).contains(corner.latitude), "\(corner)")
+            XCTAssertTrue((lonRange[0]...lonRange[1]).contains(corner.longitude), "\(corner)")
+        }
+
+        // Whole page incl. collar, so it has to contain the 7.5' quad and be
+        // centred on it.
+        let quad = try XCTUnwrap(vectors["quad"] as? [String: Double])
+        let south = try XCTUnwrap(quad["south"]), north = try XCTUnwrap(quad["north"])
+        let west = try XCTUnwrap(quad["west"]), east = try XCTUnwrap(quad["east"])
+        XCTAssertLessThan(bounds.southWest.latitude, south)
+        XCTAssertGreaterThan(bounds.northEast.latitude, north)
+        XCTAssertLessThan(bounds.southWest.longitude, west)
+        XCTAssertGreaterThan(bounds.northEast.longitude, east)
+        let quadCentre = CLLocationCoordinate2D(latitude: (south + north) / 2, longitude: (west + east) / 2)
+        XCTAssertLessThan(
+            metres(bounds.centre, quadCentre),
+            try XCTUnwrap(vectors["centreToleranceMetres"] as? Double)
+        )
+
+        // 1:24,000 is ~8.47 m of ground per PDF point.
+        let affine = try XCTUnwrap(bounds.placementAffine)
+        let scale = try XCTUnwrap(vectors["scale"] as? [String: Any])
+        let expectedScale = try XCTUnwrap(scale["metresPerPdfPoint"] as? Double)
+        let scaleTolerance = try XCTUnwrap(scale["tolerance"] as? Double)
+        let from = try point(scale["from"])
+        for axis in ["alongX", "alongY"] {
+            let to = try point(scale[axis])
+            let perPoint = metres(affine.apply(from), affine.apply(to)) / Double(hypot(to.x - from.x, to.y - from.y))
+            XCTAssertEqual(perPoint, expectedScale, accuracy: expectedScale * scaleTolerance, axis)
+        }
+
+        // Printed 1 km grid crossings, measured off the rendered sheet.
+        let gridTolerance = try XCTUnwrap(vectors["gridToleranceMetres"] as? Double)
+        for crossing in try XCTUnwrap(vectors["printedGridCrossings"] as? [[String: Any]]) {
+            let mgrs = try XCTUnwrap(crossing["mgrs"] as? String)
+            let expected = try XCTUnwrap(MGRSFormatter.coordinate(from: mgrs))
+            let miss = metres(affine.apply(try point(crossing)), expected)
+            XCTAssertLessThan(miss, gridTolerance, "\(crossing["name"] ?? mgrs) is \(miss) m off \(mgrs)")
+        }
+    }
+
+    func testSmallLPTSOvershootIsAcceptedOnGeneratedSheet() throws {
+        let fixture = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tacmap-adobe-lpts-overshoot-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let viewport = """
+        << /BBox [0 0 600 400]
+           /Measure << /Subtype /GEO
+                       /GPTS [-34 150 -34 151 -33 151 -33 150]
+                       /LPTS [-0.01 0 1 -0.01 1.01 1 0 1.01] >> >>
+        """
+        try makeRawPDF(at: fixture, pageExtras: "/VP [\(viewport)]")
+
+        let bounds = try XCTUnwrap(GeoPDFReader.bounds(from: fixture))
+        XCTAssertEqual(bounds.southWest.latitude, -34, accuracy: 1e-9)
+        XCTAssertEqual(bounds.northEast.longitude, 151, accuracy: 1e-9)
+        XCTAssertNotNil(bounds.placementAffine)
     }
 
     func testGeneratedLegacyLGIDictProducesGeographicBoundsAndCrop() throws {
@@ -334,9 +406,11 @@ final class PDFImportSmokeTests: XCTestCase {
             "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [-34 150 -34 151 -33 151 -33] /LPTS [0 0 1 0 1 1 0] >> >>]",
             "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [\(validGPTS) /Bad] /LPTS [\(validLPTS) 0] >> >>]",
             "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [91 150 -34 151 -33 151 -33 150] /LPTS [\(validLPTS)] >> >>]",
-            // GPTS/LPTS cardinality must agree and LPTS must stay normalised.
+            // GPTS/LPTS cardinality must agree and LPTS must stay near the
+            // unit square (small overshoot is fine, see the USGS test).
             "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [\(validGPTS)] /LPTS [0 0 1 0 1 1] >> >>]",
-            "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [\(validGPTS)] /LPTS [0 0 1 0 1 1 0 1.1] >> >>]",
+            "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [\(validGPTS)] /LPTS [0 0 1 0 1 1 0 2.5] >> >>]",
+            "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [\(validGPTS)] /LPTS [0 0 600 0 600 400 0 400] >> >>]",
             "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [\(validGPTS)] /LPTS [0 0 1 0 1 1 0 /Bad] >> >>]",
             // Explicit prime-meridian metadata may not silently become Greenwich.
             "/VP [<< /BBox [0 0 600 400] /Measure << /Subtype /GEO /GPTS [\(validGPTS)] /LPTS [\(validLPTS)] /GCS << /WKT (GEOGCS[\"x\",PRIMEM[\"bad\",not-a-number]]) >> >> >>]",
@@ -524,6 +598,35 @@ final class PDFImportSmokeTests: XCTestCase {
         context.fill(mediaBox)
         context.endPDFPage()
         context.closePDF()
+    }
+
+    private func testdataURL(_ name: String) throws -> URL {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            let candidate = dir.appendingPathComponent("testdata/\(name)")
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            dir = dir.deletingLastPathComponent()
+        }
+        return try XCTUnwrap(nil as URL?, "Could not locate testdata/\(name)")
+    }
+
+    private func sharedVectors(_ name: String) throws -> [String: Any] {
+        try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: try testdataURL(name))) as? [String: Any]
+        )
+    }
+
+    private func point(_ value: Any?) throws -> CGPoint {
+        let dict = try XCTUnwrap(value as? [String: Any])
+        return CGPoint(
+            x: try XCTUnwrap(dict["pdfX"] as? Double),
+            y: try XCTUnwrap(dict["pdfY"] as? Double)
+        )
+    }
+
+    private func metres(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        CLLocation(latitude: a.latitude, longitude: a.longitude)
+            .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
     }
 
     private func adobeViewport(bbox: String, gpts: String) -> String {

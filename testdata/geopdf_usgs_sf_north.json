@@ -1,0 +1,25 @@
+{
+  "description": "Adobe/ISO 32000 GeoPDF viewport parsing against a real USGS US Topo sheet. `fixture` is samples/USGS_SF_North.pdf (CA_San_Francisco_North_20211230_TM_geo.pdf, public domain) cut down to a blank page of the same size that keeps page 0's three /VP viewports verbatim: the map body plus the quadrangle-location and adjoining-sheet insets. The map body's LPTS overshoot the unit square slightly (-0.00708, 1.00514) because its GPTS are a UTM rectangle sitting rotated by grid convergence on a true-north-up page. Both GeoPdfParser (Android) and GeoPDFReader (iOS) must pick the map body, and the affine fitted from its control points must put the sheet's printed 1 km UTM grid crossings on their MGRS coordinates. Grid crossing page positions were measured by rendering the real PDF at 8x, independently of either parser.",
+  "fixture": "usgs_sf_north_viewports.pdf",
+  "pageWidth": 1728,
+  "pageHeight": 2088,
+  "mapBody": {
+    "controlPoints": 4,
+    "latRange": [37.73, 37.89],
+    "lonRange": [-122.53, -122.35]
+  },
+  "quad": { "south": 37.75, "north": 37.875, "west": -122.5, "east": -122.375 },
+  "centreToleranceMetres": 300,
+  "scale": {
+    "metresPerPdfPoint": 8.466667,
+    "tolerance": 0.01,
+    "from": { "pdfX": 200, "pdfY": 1000 },
+    "alongX": { "pdfX": 1200, "pdfY": 1000 },
+    "alongY": { "pdfX": 200, "pdfY": 2000 }
+  },
+  "printedGridCrossings": [
+    { "name": "just NE of Alcatraz", "pdfX": 1036.00, "pdfY": 1311.94, "mgrs": "10SEG5100087000" },
+    { "name": "Marin side near Sausalito", "pdfX": 330.27, "pdfY": 1788.66, "mgrs": "10SEG4500091000" }
+  ],
+  "gridToleranceMetres": 20
+}
