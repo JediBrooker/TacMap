@@ -295,8 +295,8 @@ enum GeoPDFReader {
     }
 
     /// /Measure -> least-squares affine (PDF user-space -> WGS84) fitted from
-    /// GPTS/LPTS control points. LPTS are normalised (0-1) within viewport BBox
-    /// so each PDF-space control point is crop.origin + lpts * crop.size - same
+    /// GPTS/LPTS control points. LPTS are normalised (roughly 0-1) within viewport
+    /// BBox so each PDF-space control point is crop.origin + lpts * crop.size - same
     /// crop the page is rasterised against, keeps the fit and render consistent.
     /// Returns nil if LPTS is absent or points are degenerate.
     private static func viewportAffine(_ viewport: CGPDFDictionaryRef, crop: CGRect) -> AffineTransform2D? {
@@ -346,8 +346,8 @@ enum GeoPDFReader {
             let normalY = Double(ny)
             guard isEarthCoordinate(latitude: latitude, longitude: longitude),
                   normalX.isFinite, normalY.isFinite,
-                  (0.0...1.0).contains(normalX),
-                  (0.0...1.0).contains(normalY) else { return nil }
+                  controlPointRange.contains(normalX),
+                  controlPointRange.contains(normalY) else { return nil }
             fiducials.append(Fiduciary(
                 pdfX: originX + normalX * deltaX,
                 pdfY: originY + normalY * deltaY,
@@ -361,6 +361,16 @@ enum GeoPDFReader {
 
     private static let maximumGeoControlValues = 8_192
     private static let maximumMetadataEntries = 64
+
+    /// ISO 32000-2 says LPTS live in the viewport's unit square but real sheets
+    /// overshoot it. USGS US Topo pages are true-north up while their GPTS are
+    /// the corners of a UTM rectangle, which sits rotated on the page by grid
+    /// convergence, so the LPTS come out like -0.00708 / 1.00514. A strict 0...1
+    /// check threw away the map body on every US Topo sheet. Allow control
+    /// points up to one viewport outside the box: way more than any convergence
+    /// or neatline rotation needs, but LPTS written in user-space points
+    /// (e.g. 600) still fail closed. Same limit as Android GeoPdfParser.
+    private static let controlPointRange: ClosedRange<Double> = -1.0...2.0
 
     private static func pdfRectangleValues(_ array: CGPDFArrayRef) -> [Double]? {
         guard CGPDFArrayGetCount(array) == 4 else { return nil }

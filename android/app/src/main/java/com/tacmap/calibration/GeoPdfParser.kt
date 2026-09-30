@@ -38,6 +38,17 @@ object GeoPdfParser {
     private const val MAX_METADATA_ENTRIES = 64
     private const val MAX_GEO_CONTROL_VALUES = 8_192
 
+    // ISO 32000-2 says LPTS live in the viewport's unit square but real sheets
+    // overshoot it. USGS US Topo pages are true-north up while their GPTS are
+    // the corners of a UTM rectangle, which sits rotated on the page by grid
+    // convergence, so the LPTS come out like -0.00708 / 1.00514. A strict 0..1
+    // check threw away the map body on every US Topo sheet. Allow control
+    // points up to one viewport outside the box: way more than any convergence
+    // or neatline rotation needs, but LPTS written in user-space points
+    // (e.g. 600) still fail closed.
+    private const val LPTS_OVERSHOOT = 1.0
+    private val LPTS_RANGE = -LPTS_OVERSHOOT..(1.0 + LPTS_OVERSHOOT)
+
     private sealed class AdobeViewportSelection {
         data object Absent : AdobeViewportSelection()
         data object Rejected : AdobeViewportSelection()
@@ -62,34 +73,44 @@ object GeoPdfParser {
         ensureInit(context)
         val file = uriToFile(uri) ?: return null
         if (!file.exists()) return null
-        return runCatching {
-            PDDocument.load(file).use { doc ->
-                val page = doc.getPage(0) ?: return@use null
-                val pageW = page.mediaBox.width.toDouble()
-                val pageH = page.mediaBox.height.toDouble()
-                val pageAdobe = selectAdobeViewports(page)
-                val adobe = if (pageAdobe == AdobeViewportSelection.Absent) {
-                    selectAdobeViewports(doc.documentCatalog.cosObject)
+        return runCatching { parseFile(file) }
+            .onSuccess { result ->
+                if (result != null) {
+                    Log.i(TAG, "GeoPDF parsed: ${result.correspondences.size} correspondences")
                 } else {
-                    pageAdobe
+                    Log.i(TAG, "No usable GeoPDF georeference, needs manual calibration")
                 }
-                val correspondences = when (adobe) {
-                    is AdobeViewportSelection.Accepted -> adobe.correspondences
-                    AdobeViewportSelection.Rejected -> return@use null
-                    AdobeViewportSelection.Absent -> extractLegacyLgiDict(page)
-                }
-                if (!pageW.isFinite() || !pageH.isFinite() || pageW <= 0.0 || pageH <= 0.0 ||
-                    correspondences == null || correspondences.size < 3 ||
-                    correspondences.any { !it.isValid() }
-                ) return@use null
-                Log.i(TAG, "GeoPDF parsed: ${correspondences.size} correspondences")
-                GeoPdfResult(
-                    pageWidth = pageW,
-                    pageHeight = pageH,
-                    correspondences = correspondences
-                )
             }
-        }.onFailure { Log.w(TAG, "GeoPDF parse failed") }.getOrNull()
+            .onFailure { Log.w(TAG, "GeoPDF parse failed") }
+            .getOrNull()
+    }
+
+    // No Context/Log in here so the JVM unit tests can run it on real fixtures.
+    // PDFBox only needs its resource loader for fonts/rendering, not COS reads.
+    internal fun parseFile(file: File): GeoPdfResult? = PDDocument.load(file).use { doc ->
+        val page = doc.getPage(0) ?: return@use null
+        val pageW = page.mediaBox.width.toDouble()
+        val pageH = page.mediaBox.height.toDouble()
+        val pageAdobe = selectAdobeViewports(page)
+        val adobe = if (pageAdobe == AdobeViewportSelection.Absent) {
+            selectAdobeViewports(doc.documentCatalog.cosObject)
+        } else {
+            pageAdobe
+        }
+        val correspondences = when (adobe) {
+            is AdobeViewportSelection.Accepted -> adobe.correspondences
+            AdobeViewportSelection.Rejected -> return@use null
+            AdobeViewportSelection.Absent -> extractLegacyLgiDict(page)
+        }
+        if (!pageW.isFinite() || !pageH.isFinite() || pageW <= 0.0 || pageH <= 0.0 ||
+            correspondences == null || correspondences.size < 3 ||
+            correspondences.any { !it.isValid() }
+        ) return@use null
+        GeoPdfResult(
+            pageWidth = pageW,
+            pageHeight = pageH,
+            correspondences = correspondences
+        )
     }
 
     /**
@@ -203,7 +224,7 @@ object GeoPdfParser {
                 val nx = lpts.numAt(j * 2)
                 val ny = lpts.numAt(j * 2 + 1)
                 if (lat == null || lon == null || nx == null || ny == null ||
-                    lat !in -90.0..90.0 || nx !in 0.0..1.0 || ny !in 0.0..1.0
+                    lat !in -90.0..90.0 || nx !in LPTS_RANGE || ny !in LPTS_RANGE
                 ) {
                     malformed = true
                     break
