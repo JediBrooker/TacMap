@@ -102,6 +102,7 @@ Die Ausrichtung nach Blickrichtung liest den Gerätekompass nur, solange dieser 
 - **Vordergrunddienst (Standort)** setzt eine von dir gestartete Aufzeichnung oder ausdrücklich aktivierte v3-Standortfreigabe im Hintergrund bei minimierter App oder gesperrtem Bildschirm fort. Der Dienst zeigt eine dauerhafte Benachrichtigung für die aktive Funktion.
 - **Benachrichtigungen** wird ab Android 13 für diese Dienstbenachrichtigung angefordert.
 - **Internet/Netzwerkstatus** ermöglicht die beschriebenen optionalen Dienste und Store-Kontakte. **Abrechnung** ermöglicht die einmalige Freischaltung.
+- **Biometrie** erlaubt ab Android 10, die App-Sperre per Fingerabdruck oder Gesicht zu entsperren. Das System prüft die Übereinstimmung; TacMap erhält keine biometrischen Daten, und die PIN bleibt als Alternative erhalten.
 
 Android verlangt weder umfassenden Datei-/Medienspeicherzugriff noch `ACCESS_BACKGROUND_LOCATION`. Du kannst Berechtigungen in den Systemeinstellungen entziehen; die betroffene Funktion steht dann nicht zur Verfügung.
 

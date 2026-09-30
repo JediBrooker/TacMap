@@ -183,6 +183,7 @@ fun OpsecSettingsDialog(
                 )
 
                 SettingRow(blockCapture, { opsec.setBlockScreenCapture(it) }, L10n.text("Block screenshots & recents preview"))
+                Caption(Messages.settingsBlockCaptureHelp())
 
                 Text(Messages.settingsDisplayTitle(), fontWeight = FontWeight.SemiBold)
                 SettingRow(keepScreenOn, { opsec.setKeepScreenOn(it) }, Messages.settingsKeepScreenOn())

@@ -16702,5 +16702,390 @@
         "type": "string"
       }
     ]
+  },
+  "about_map_data": {
+    "en": "Map data",
+    "de": "Kartendaten",
+    "platforms": [
+      "android"
+    ],
+    "context": "Section heading in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutMapData",
+    "parameters": []
+  },
+  "about_open_source": {
+    "en": "Open source libraries",
+    "de": "Open-Source-Bibliotheken",
+    "platforms": [
+      "android"
+    ],
+    "context": "Section heading in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutOpenSource",
+    "parameters": []
+  },
+  "about_standards": {
+    "en": "Standards & specifications",
+    "de": "Standards und Spezifikationen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Section heading in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutStandards",
+    "parameters": []
+  },
+  "about_esri_imagery_title": {
+    "en": "Esri World Imagery (Satellite basemap)",
+    "de": "Esri World Imagery (Satellitenkarte)",
+    "platforms": [
+      "android"
+    ],
+    "context": "Credit title in About; product name stays English.",
+    "legacy": false,
+    "accessor": "aboutEsriImageryTitle",
+    "parameters": []
+  },
+  "about_esri_imagery_detail": {
+    "en": "Esri, Maxar, Earthstar Geographics, and the GIS User Community.",
+    "de": "Esri, Maxar, Earthstar Geographics und die GIS-Nutzergemeinschaft.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Attribution line in About.",
+    "legacy": false,
+    "accessor": "aboutEsriImageryDetail",
+    "parameters": []
+  },
+  "about_esri_styles_title": {
+    "en": "Esri Basemap Styles (Topographic + Street)",
+    "de": "Esri Basemap Styles (Topografie + Straßen)",
+    "platforms": [
+      "android"
+    ],
+    "context": "Credit title in About; product name stays English.",
+    "legacy": false,
+    "accessor": "aboutEsriStylesTitle",
+    "parameters": []
+  },
+  "about_esri_styles_detail": {
+    "en": "Esri, TomTom, Garmin, FAO, NOAA, USGS · map data © OpenStreetMap contributors.",
+    "de": "Esri, TomTom, Garmin, FAO, NOAA, USGS · Kartendaten © OpenStreetMap-Mitwirkende.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Attribution line in About.",
+    "legacy": false,
+    "accessor": "aboutEsriStylesDetail",
+    "parameters": []
+  },
+  "about_opentopomap_title": {
+    "en": "OpenTopoMap (Topographic basemap)",
+    "de": "OpenTopoMap (topografische Karte)",
+    "platforms": [
+      "android"
+    ],
+    "context": "Credit title in About.",
+    "legacy": false,
+    "accessor": "aboutOpentopomapTitle",
+    "parameters": []
+  },
+  "about_opentopomap_detail": {
+    "en": "© OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors (ODbL).",
+    "de": "© OpenTopoMap (CC-BY-SA) · Kartendaten © OpenStreetMap-Mitwirkende (ODbL).",
+    "platforms": [
+      "android"
+    ],
+    "context": "Attribution line in About.",
+    "legacy": false,
+    "accessor": "aboutOpentopomapDetail",
+    "parameters": []
+  },
+  "about_osm_detail": {
+    "en": "Map data © OpenStreetMap contributors, ODbL.",
+    "de": "Kartendaten © OpenStreetMap-Mitwirkende, ODbL.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Attribution line in About.",
+    "legacy": false,
+    "accessor": "aboutOsmDetail",
+    "parameters": []
+  },
+  "about_open_meteo_title": {
+    "en": "Open-Meteo Elevation API",
+    "de": "Open-Meteo-Höhen-API",
+    "platforms": [
+      "android"
+    ],
+    "context": "Credit title in About.",
+    "legacy": false,
+    "accessor": "aboutOpenMeteoTitle",
+    "parameters": []
+  },
+  "about_open_meteo_detail": {
+    "en": "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.",
+    "de": "Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Attribution line in About.",
+    "legacy": false,
+    "accessor": "aboutOpenMeteoDetail",
+    "parameters": []
+  },
+  "about_geopdf_detail": {
+    "en": "OGC 08-139r3. Used for reading LGIDict georeferencing.",
+    "de": "OGC 08-139r3. Zum Lesen der LGIDict-Georeferenzierung.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What a standard is used for, in About.",
+    "legacy": false,
+    "accessor": "aboutGeopdfDetail",
+    "parameters": []
+  },
+  "about_geojson_detail": {
+    "en": "Export format for waypoints + drawings.",
+    "de": "Exportformat für Wegpunkte und Zeichnungen.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What a standard is used for, in About.",
+    "legacy": false,
+    "accessor": "aboutGeojsonDetail",
+    "parameters": []
+  },
+  "about_simplestyle_detail": {
+    "en": "GeoJSON styling keys (stroke, fill, marker-color, marker-symbol).",
+    "de": "GeoJSON-Stilattribute (stroke, fill, marker-color, marker-symbol).",
+    "platforms": [
+      "android"
+    ],
+    "context": "What a standard is used for, in About; keep the key names in English.",
+    "legacy": false,
+    "accessor": "aboutSimplestyleDetail",
+    "parameters": []
+  },
+  "about_maki_detail": {
+    "en": "Marker icon names referenced in GeoJSON output (campsite, drinking-water, etc.).",
+    "de": "In GeoJSON verwendete Markersymbolnamen (campsite, drinking-water usw.).",
+    "platforms": [
+      "android"
+    ],
+    "context": "What a standard is used for, in About; keep the icon names in English.",
+    "legacy": false,
+    "accessor": "aboutMakiDetail",
+    "parameters": []
+  },
+  "about_privacy_note": {
+    "en": "TacMap adds no analytics or remote crash telemetry. Optional online basemaps and lookups are off on a fresh install; if you enable them, the provider receives your IP plus the requested tile area, place query, or lookup coordinate. Unit Sync payload content is end-to-end encrypted, while its relay still sees routing and traffic metadata.",
+    "de": "TacMap verwendet keine Analyse- oder ferngesendeten Absturzdaten. Optionale Online-Grundkarten und Abfragen sind nach einer Neuinstallation deaktiviert. Wenn du sie aktivierst, erhält der Anbieter deine IP-Adresse sowie den angeforderten Kartenausschnitt, Suchbegriff oder die abgefragte Koordinate. Unit-Sync-Inhalte sind Ende-zu-Ende-verschlüsselt; das Relay sieht weiterhin Weiterleitungs- und Verkehrsmetadaten.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Privacy paragraph in About. Preserve every privacy limitation.",
+    "legacy": false,
+    "accessor": "aboutPrivacyNote",
+    "parameters": []
+  },
+  "about_lib_mgrs_detail": {
+    "en": "MGRS ↔ lat/lon conversions.",
+    "de": "Umrechnung zwischen MGRS und Breite/Länge.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibMgrsDetail",
+    "parameters": []
+  },
+  "about_lib_grid_detail": {
+    "en": "Grid primitives used by mgrs-java.",
+    "de": "Gitter-Grundbausteine für mgrs-java.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibGridDetail",
+    "parameters": []
+  },
+  "about_lib_milsymbol_detail": {
+    "en": "APP-6(C) military symbol artwork.",
+    "de": "Grafiken für militärische Symbole nach APP-6(C).",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibMilsymbolDetail",
+    "parameters": []
+  },
+  "about_lib_androidsvg_detail": {
+    "en": "Draws the symbol artwork.",
+    "de": "Zeichnet die Symbolgrafiken.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibAndroidsvgDetail",
+    "parameters": []
+  },
+  "about_lib_pdfbox_detail": {
+    "en": "Reads GeoPDF georeferencing.",
+    "de": "Liest die Georeferenzierung von GeoPDFs.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibPdfboxDetail",
+    "parameters": []
+  },
+  "about_lib_okhttp_detail": {
+    "en": "HTTPS for online tiles and lookups.",
+    "de": "HTTPS für Online-Kacheln und -Abfragen.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibOkhttpDetail",
+    "parameters": []
+  },
+  "about_lib_websocket_detail": {
+    "en": "Unit Sync transport, with SLF4J (MIT).",
+    "de": "Transport für Unit Sync, mit SLF4J (MIT).",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibWebsocketDetail",
+    "parameters": []
+  },
+  "about_lib_bouncycastle_detail": {
+    "en": "Signatures and encryption for Unit Sync and TacMap Chat.",
+    "de": "Signaturen und Verschlüsselung für Unit Sync und TacMap Chat.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibBouncycastleDetail",
+    "parameters": []
+  },
+  "about_lib_serialization_detail": {
+    "en": "JSON encoding.",
+    "de": "JSON-Kodierung.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibSerializationDetail",
+    "parameters": []
+  },
+  "about_lib_androidx_detail": {
+    "en": "Android Jetpack and the Jetpack Compose user interface.",
+    "de": "Android Jetpack und die Oberfläche mit Jetpack Compose.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibAndroidxDetail",
+    "parameters": []
+  },
+  "about_lib_billing_detail": {
+    "en": "The one-time in-app purchase.",
+    "de": "Der einmalige In-App-Kauf.",
+    "platforms": [
+      "android"
+    ],
+    "context": "What an open-source library is used for, in About & Credits.",
+    "legacy": false,
+    "accessor": "aboutLibBillingDetail",
+    "parameters": []
+  },
+  "about_notices_button": {
+    "en": "Licence texts",
+    "de": "Lizenztexte",
+    "platforms": [
+      "android"
+    ],
+    "context": "Button in About that opens the full licence texts of bundled libraries.",
+    "legacy": false,
+    "accessor": "aboutNoticesButton",
+    "parameters": []
+  },
+  "about_notices_title": {
+    "en": "Third-party notices",
+    "de": "Hinweise zu Drittanbietern",
+    "platforms": [
+      "android"
+    ],
+    "context": "Title of the dialog showing the bundled licence texts.",
+    "legacy": false,
+    "accessor": "aboutNoticesTitle",
+    "parameters": []
+  },
+  "settings_block_capture_help": {
+    "en": "Hides the map in the recent-apps preview and blocks screenshots and screen recordings, so your position isn't captured.",
+    "de": "Verbirgt die Karte in der Vorschau der zuletzt verwendeten Apps und blockiert Screenshots und Bildschirmaufnahmen, damit dein Standort nicht erfasst wird.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Help text under the Android setting 'Block screenshots & recents preview' in Settings, Privacy & OPSEC.",
+    "legacy": false,
+    "accessor": "settingsBlockCaptureHelp",
+    "parameters": []
+  },
+  "sync_screen_off_sharing_note": {
+    "en": "Screen-off sharing is controlled separately in Settings, Privacy & OPSEC.",
+    "de": "Die Freigabe bei ausgeschaltetem Bildschirm wird separat unter Einstellungen, Datenschutz und OPSEC gesteuert.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Small note under the 'Share my location' switch in the Unit Sync dialog. 'Settings, Privacy & OPSEC' is the menu entry name.",
+    "legacy": false,
+    "accessor": "syncScreenOffSharingNote",
+    "parameters": []
+  },
+  "app_lock_biometric_title": {
+    "en": "Unlock TacMap",
+    "de": "TacMap entsperren",
+    "platforms": [
+      "android"
+    ],
+    "context": "Title of the system fingerprint/face prompt shown on the App Lock screen.",
+    "legacy": false,
+    "accessor": "appLockBiometricTitle",
+    "parameters": []
+  },
+  "app_lock_use_pin": {
+    "en": "Use PIN",
+    "de": "PIN verwenden",
+    "platforms": [
+      "android"
+    ],
+    "context": "Button in the fingerprint/face prompt that closes it so the user can type the App Lock PIN instead.",
+    "legacy": false,
+    "accessor": "appLockUsePin",
+    "parameters": []
+  },
+  "app_lock_use_biometric": {
+    "en": "Use fingerprint or face unlock",
+    "de": "Fingerabdruck oder Gesichtsentsperrung verwenden",
+    "platforms": [
+      "android"
+    ],
+    "context": "Button on the App Lock screen that opens the system fingerprint/face prompt.",
+    "legacy": false,
+    "accessor": "appLockUseBiometric",
+    "parameters": []
   }
 }
