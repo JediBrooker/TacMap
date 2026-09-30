@@ -1,6 +1,7 @@
 package com.tacmap.map
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,7 +37,9 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun MeasureToolbar(
     session: MeasureSession,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Opens the elevation profile for the measured line. */
+    onProfile: (() -> Unit)? = null,
 ) {
     if (!session.isActive) return
     val distance = MeasureFormat.distance(session.totalDistanceMeters)
@@ -78,6 +82,18 @@ fun MeasureToolbar(
             }
         }
         Spacer(Modifier.weight(1f))
+        if (onProfile != null) {
+            IconButton(
+                onClick = onProfile,
+                enabled = session.points.size >= 2,
+                modifier = Modifier
+                    .size(30.dp)
+                    .background(Color.White.copy(alpha = 0.10f), CircleShape)
+            ) {
+                Icon(Icons.Default.Terrain, contentDescription = Messages.profileTitle(), tint = Color.White,
+                     modifier = Modifier.size(16.dp))
+            }
+        }
         IconButton(
             onClick = { session.undo() },
             enabled = session.points.isNotEmpty(),

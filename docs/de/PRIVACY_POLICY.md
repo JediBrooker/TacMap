@@ -49,7 +49,7 @@ Beide Plattformen verwenden denselben eigenen Kartenrenderer. TacMap verwendet w
 
 Bei aktivierten **Online-Abfragen**:
 
-- erhält Open-Meteo die Koordinate der Kartenmitte für Höhe und Wetter (auf etwa 110 m vergröbert) oder ein Raster von 24 × 24 Koordinaten über dem sichtbaren Kartenausschnitt für die Gelände-Höhenkarte (auf etwa 11 m vergröbert);
+- erhält Open-Meteo die Koordinate der Kartenmitte für Höhe und Wetter (auf etwa 110 m vergröbert) oder ein Raster von 24 × 24 Koordinaten über dem sichtbaren Kartenausschnitt für die Gelände-Höhenkarte (auf etwa 11 m vergröbert) oder bis zu 200 Punkte entlang einer gemessenen oder gezeichneten Linie für ein Höhenprofil (auf etwa 11 m vergröbert);
 - kann iOS einen eingegebenen Ortsnamen bzw. eine Adresse und die Kartenregion über `MKLocalSearch` an Apples Ortssuche senden;
 - kann Android einen eingegebenen Ortsnamen bzw. eine Adresse und eine räumliche Suchpräferenz über den `Geocoder`-Anbieter des Geräts senden (auf Geräten mit Google-Diensten häufig Google oder der Gerätehersteller).
 

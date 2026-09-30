@@ -11629,8 +11629,8 @@
     },
     "settings_online_lookups_help": {
       "de": {
-        "source": "bcd38442e45b28612f320c9fea35af29771311ba25f956f8838802804358916d",
-        "translation": "977616c1a6c591cb0539bf4e444e3b0e4769651f28efd1710628660d9f2cbf5d",
+        "source": "ad82519e9abc80f9b6d72f07c0b2161a5e58a8519983f56b1b7a98539e2d6783",
+        "translation": "e082447225c765ac206ff88862b34f54d825e1ced1333d6ff913e32a596d9019",
         "status": "reviewed"
       }
     },
@@ -12702,6 +12702,202 @@
       "de": {
         "source": "93abdaaa56ae15baed9e00e9fd414f8309ae01365e135c2da595c09278f01fb6",
         "translation": "02e76f6309b8fc953e100362b04ca6541a8d79fdfa1bec0944f88535ecbb6b47",
+        "status": "reviewed"
+      }
+    },
+    "profile_title": {
+      "de": {
+        "source": "8038b4db4c4c75f9cc755e0a748b3049b2ab87ff17c3df17f0740c7502d9750b",
+        "translation": "e81c5d81fe5b52bc4a2e8efb5da5a1d8469c939700b99696c635f476bb214cef",
+        "status": "reviewed"
+      }
+    },
+    "profile_loading": {
+      "de": {
+        "source": "5b97f93fb2f1f113c54bc8796b57d83ea878f7b83afc0125a1d72460da6864a0",
+        "translation": "36ae0028e728dcc070ce91e3dcd73ac480905523cfbc089832f4c112d9a03ded",
+        "status": "reviewed"
+      }
+    },
+    "profile_lookups_off": {
+      "de": {
+        "source": "752d99d1ebd7d079adcc780dfc815fe39bc2e3ca0fd418608f7bb2c3090f2cbc",
+        "translation": "5888e23e26e6a46476c68a92558e8108555dade6ddf54eefbe31df48e4a25070",
+        "status": "reviewed"
+      }
+    },
+    "profile_failed": {
+      "de": {
+        "source": "6caeb34c9e294f1db9b23d262f2310919e5e402d88c179c69e5a4de85a8cfbbc",
+        "translation": "ca874eb317e973a66bf0fff4ca00f0ab24093abe8c9c25edfa41300458ce188c",
+        "status": "reviewed"
+      }
+    },
+    "profile_retry": {
+      "de": {
+        "source": "3127a6b2976a71c3c34cffcba8768efa55db5d1f97d465685ceb5edb39c57842",
+        "translation": "6f817b78d98170251d9b4cb200de10b3fd3c3c2f806d74fc72b825e43c6aaf8c",
+        "status": "reviewed"
+      }
+    },
+    "profile_too_short": {
+      "de": {
+        "source": "7b1d12b799a5b59a57755337171d22c2b38204ae9279ac49446e8e13b4d1aca0",
+        "translation": "47f7188a0c5fb8a7c6b43202f37bfbc69f640929ea6242cd482f84dcd11048d4",
+        "status": "reviewed"
+      }
+    },
+    "profile_hint": {
+      "de": {
+        "source": "0c90073eef8dfcb3a03cf95bc937925cc7476eb3a2f576cacd27e4a9376f586f",
+        "translation": "7aa495f09e13bdd5a42b27bbf294548e9dc382343cc3744b44aee09582448efc",
+        "status": "reviewed"
+      }
+    },
+    "profile_readout": {
+      "de": {
+        "source": "249022a78a9e80711c2177def476e682a6c4a44529fff74bcb6649ad780b93e0",
+        "translation": "b7b37a57e66c55835819be96a8a001f90c509df5e5445d94174cf8eb7df1bc1f",
+        "status": "reviewed"
+      }
+    },
+    "profile_readout_hidden": {
+      "de": {
+        "source": "f14895f31bd21d4db23c597270c41298fd6803fcba1a9ccc490a374151d7daa2",
+        "translation": "d4b6da622037d075ea5cb3bdf69d72340c726a82827c09eec2548bde6971e687",
+        "status": "reviewed"
+      }
+    },
+    "profile_length": {
+      "de": {
+        "source": "cdf2b102a3771f1a2fa41512f7fead1b89d3c92b7b9458b18ac199f550adadb0",
+        "translation": "53eeb74677a3ebe796e13728069ea4951c59daf49580c4f434f35df3847ea8ee",
+        "status": "reviewed"
+      }
+    },
+    "profile_start": {
+      "de": {
+        "source": "894005489d7cfe3f5d1a76bd674e6baaa2105befe8d9d59618fccab68dc1ad89",
+        "translation": "9d900f0f09ab7a3172a43e3c0470ec2d666116a693e01ec67bec089d3b99cb49",
+        "status": "reviewed"
+      }
+    },
+    "profile_end": {
+      "de": {
+        "source": "aa45c946546d08995c58be7ceebba7d5393aa17af7637ca4f8fd30d4d8eb18a5",
+        "translation": "64679b69637c1ccbb1d57ab6fbf656c84e22e55b671380ddc890a203d361aa6f",
+        "status": "reviewed"
+      }
+    },
+    "profile_lowest": {
+      "de": {
+        "source": "befde9896acaab169e3406b39683c85735e2de3c3cda822f2549aaeffe372ecc",
+        "translation": "1bb253fab2403a9f68fdbd95ac555933cbda6e7667a41a6ae41347c1d299c564",
+        "status": "reviewed"
+      }
+    },
+    "profile_highest": {
+      "de": {
+        "source": "c8b9bd045b72be66028b072584624c0b3598df78fe97e4a06e8d7e6924638dc8",
+        "translation": "2d41677649f14c70b7dfb77df2601f3def25aacc2b6769e0de8a0d190aaba186",
+        "status": "reviewed"
+      }
+    },
+    "profile_climb": {
+      "de": {
+        "source": "4627881f73b02925b2bea35e62474b0b82413bb9f997a80fc1d8a11ffcbf49ed",
+        "translation": "aabbb69bf1f7649870c633ceda7e03e96501d0b7fcd037a4d2d525eadbccbc8b",
+        "status": "reviewed"
+      }
+    },
+    "profile_descent": {
+      "de": {
+        "source": "65713291d94391e580743a826e5cbdfd623de0ebc9d5f45b288ebf0c43ea259d",
+        "translation": "675ae3fc235c8a2793cf313b71262bcec355957be0edd6e2e96cf68efaf5efbb",
+        "status": "reviewed"
+      }
+    },
+    "profile_los_title": {
+      "de": {
+        "source": "0e1dd61ff3d87b201f4af5b23ce2e314a8e7ed06a853c5889840aed03e989876",
+        "translation": "e5895559649bb290df9685c142900f1c7c3ae9ee0c77f1740a6ae190c5984dff",
+        "status": "reviewed"
+      }
+    },
+    "profile_observer_height": {
+      "de": {
+        "source": "dcc7ff9d3f9db6c56da9ce2f35d5923909d15f20f20e9f03c1f35f867eb9e9de",
+        "translation": "26be2750d8b77ed66c2c9895c187fb8e9c582f1bb7075a8f8d71881362c13bdc",
+        "status": "reviewed"
+      }
+    },
+    "profile_target_height": {
+      "de": {
+        "source": "2ffd10b207813a586fc9847e7998b4cc40acf2616157e9bf011ae525bf7565ad",
+        "translation": "87a1e50b30abb74c69ad828433bde17b2ce891f56acb05090c4be847e152de48",
+        "status": "reviewed"
+      }
+    },
+    "profile_los_clear": {
+      "de": {
+        "source": "86f41a90632a66fa132255ae804421a77c499319ac7d102910302b79cd4e7c3c",
+        "translation": "72e30623a3fcfa57d0008da05874a2855c7acdf3bd7526cc57d1cbfacfa9ed0c",
+        "status": "reviewed"
+      }
+    },
+    "profile_los_clear_short": {
+      "de": {
+        "source": "e9691fa504253ef5e215e5855a6eaa07f00b270c3c924455c3c720ce379f462b",
+        "translation": "d8077a6b5bf8b5dc460cb73149f2cd925779c1663ebaa9e2a951bfb2e216b2c7",
+        "status": "reviewed"
+      }
+    },
+    "profile_los_blocked": {
+      "de": {
+        "source": "14b5a658aac9e7c161e35e0183b58c428df990f934496a1b6357df432926682a",
+        "translation": "b3d7d35505c0b176b6c2270ea4dba145c2c51509192c356b119d90c63ff0912f",
+        "status": "reviewed"
+      }
+    },
+    "profile_dead_ground": {
+      "de": {
+        "source": "cbdb12dbef313d7002aebc5347e76e42f742283b475a88130e137407d649979b",
+        "translation": "b477929cef5764a22aedc13c3baf9fb007510482e26d4594d4f13f97a89767f5",
+        "status": "reviewed"
+      }
+    },
+    "profile_los_needs_two_points": {
+      "de": {
+        "source": "bb00e7900e8575e91a20286aec7a2cb1c605bd932c1cbfed48ca1fac3656a720",
+        "translation": "ce46f213172686752ce20d83a1e1e37c02e90087c9fe8817a2a44f84d5891fda",
+        "status": "reviewed"
+      }
+    },
+    "profile_source": {
+      "de": {
+        "source": "f37b0b552045f03b4aaa53082da0c9a21643f4c53e8350d598fb838e1c35ece2",
+        "translation": "445b8cbe8e7c4a732f8d02ad25017ea21dfb07030e1d1206192c97f5f4316a12",
+        "status": "reviewed"
+      }
+    },
+    "profile_height_down": {
+      "de": {
+        "source": "c4a2d9b7b546c5c7d50d818b57ec61fd238ae860f2359bc5d3e8baa9c414dedb",
+        "translation": "b5712dd34573b010eaddd422043297ec97e54491979a072fcc16e6eb8c61ec46",
+        "status": "reviewed"
+      }
+    },
+    "profile_height_up": {
+      "de": {
+        "source": "577ccbbd9aa3097f1d7b2d5aa7d49df6e62992b2e6faeec1cecabe892ef5c7ba",
+        "translation": "81ea4b8a363236f09c393aecf0643cb9e4229c9e0057927e916ca76628583f96",
+        "status": "reviewed"
+      }
+    },
+    "settings_online_lookups_help_ios": {
+      "de": {
+        "source": "4bfa13c886a425e20d1de372cd2d5062b42a86f7a20d745e992647e9c1013aac",
+        "translation": "65a5e85b56b3f97bfb54cc900019a544f292629062fa1ca6b72781a5ea9017c3",
         "status": "reviewed"
       }
     }

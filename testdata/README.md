@@ -23,6 +23,7 @@ diverge:
 | `symbol_list_order.json` | Symbology list sort orders and groups, natural name comparison, and haversine distances from the crosshair |
 | `range_rings.json` | range-ring point count, bearings and WGS84 geodesic positions (GeographicLib reference), radii and limits, and affiliation stroke colours |
 | `sun_moon_times.json` | offline twilight, sunrise/sunset, moonrise/moonset and moon illumination for local-day windows, including polar day/night and a 25-hour DST day |
+| `elevation_profile.json` | elevation-profile sampling along a path, 4-decimal Open-Meteo request batches, climb/descent stats, and line of sight with curvature, refraction and dead ground |
 | `kml_export.json` | exact KML export text: layer folders and hidden-layer visibility, style order and `aabbggrr` colours, symbol MGRS data, drawing geometry, escaping and coordinate rounding |
 
 Both test suites load these same files and assert against them:

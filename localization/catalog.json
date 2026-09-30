@@ -14196,8 +14196,8 @@
     "parameters": []
   },
   "settings_online_lookups_help": {
-    "en": "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.",
-    "de": "Standardmäßig aus. Wenn aktiviert, kann die Ortsnamensuche den Geocoder des Geräts verwenden. Für Höhe und Wetter wird die Koordinate der Kartenmitte (auf etwa 110 m vergröbert) an Open-Meteo gesendet. Die Gelände-Heatmap sendet ein Raster aus 24 × 24 Koordinaten (auf etwa 11 m vergröbert), das den sichtbaren Kartenausschnitt abdeckt. Schalte diese Option für einen vollständig offline betriebenen Einsatz unter OPSEC-Gesichtspunkten aus.",
+    "en": "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. An elevation profile sends up to 200 points along the line (coarsened to ~11 m). Turn this off when you need a fully offline/OPSEC posture.",
+    "de": "Standardmäßig aus. Wenn aktiviert, kann die Ortsnamensuche den Geocoder des Geräts verwenden. Für Höhe und Wetter wird die Koordinate der Kartenmitte (auf etwa 110 m vergröbert) an Open-Meteo gesendet. Die Gelände-Heatmap sendet ein Raster aus 24 × 24 Koordinaten (auf etwa 11 m vergröbert), das den sichtbaren Kartenausschnitt abdeckt. Ein Höhenprofil sendet bis zu 200 Punkte entlang der Linie (auf etwa 11 m vergröbert). Schalte diese Option für einen vollständig offline betriebenen Einsatz unter OPSEC-Gesichtspunkten aus.",
     "platforms": [
       "android"
     ],
@@ -16299,6 +16299,376 @@
     "context": "Footer under the Replay Tour button in About.",
     "legacy": false,
     "accessor": "tourReplayHelp",
+    "parameters": []
+  },
+  "profile_title": {
+    "en": "Elevation Profile",
+    "de": "Höhenprofil",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Title of the sheet showing terrain height along a measured line or line drawing; also the label of the button that opens it.",
+    "legacy": false,
+    "accessor": "profileTitle",
+    "parameters": []
+  },
+  "profile_loading": {
+    "en": "Fetching heights…",
+    "de": "Höhen werden abgerufen …",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Shown while terrain heights for the elevation profile are downloaded.",
+    "legacy": false,
+    "accessor": "profileLoading",
+    "parameters": []
+  },
+  "profile_lookups_off": {
+    "en": "Elevation profiles use Open-Meteo, and online lookups are off. Turn them on in Settings, Privacy & OPSEC.",
+    "de": "Höhenprofile nutzen Open-Meteo, und Online-Abfragen sind deaktiviert. Aktiviere sie unter „Einstellungen, Datenschutz und OPSEC“.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile sheet when the online-lookups privacy setting is off. 'Settings, Privacy & OPSEC' is the settings screen name (German: Einstellungen, Datenschutz und OPSEC).",
+    "legacy": false,
+    "accessor": "profileLookupsOff",
+    "parameters": []
+  },
+  "profile_failed": {
+    "en": "Couldn't fetch heights. Check your connection and try again.",
+    "de": "Die Höhen konnten nicht abgerufen werden. Prüfe deine Verbindung und versuche es erneut.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile sheet when the height download failed.",
+    "legacy": false,
+    "accessor": "profileFailed",
+    "parameters": []
+  },
+  "profile_retry": {
+    "en": "Try Again",
+    "de": "Erneut versuchen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Button that retries downloading heights for the elevation profile.",
+    "legacy": false,
+    "accessor": "profileRetry",
+    "parameters": []
+  },
+  "profile_too_short": {
+    "en": "The line is too short for a profile.",
+    "de": "Die Linie ist für ein Profil zu kurz.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile sheet when the line has no length.",
+    "legacy": false,
+    "accessor": "profileTooShort",
+    "parameters": []
+  },
+  "profile_hint": {
+    "en": "Drag across the chart to read the height at any point.",
+    "de": "Ziehe über das Diagramm, um die Höhe an jeder Stelle abzulesen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Hint above the elevation profile chart.",
+    "legacy": false,
+    "accessor": "profileHint",
+    "parameters": []
+  },
+  "profile_readout": {
+    "en": "{1} from the start · {2}",
+    "de": "{1} vom Anfang · {2}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Readout for the point touched on the elevation profile chart. {1} is a distance such as '1.25 km', {2} a height such as '412 m'.",
+    "legacy": false,
+    "accessor": "profileReadout",
+    "parameters": [
+      {
+        "name": "distance",
+        "type": "string"
+      },
+      {
+        "name": "height",
+        "type": "string"
+      }
+    ]
+  },
+  "profile_readout_hidden": {
+    "en": "Hidden from the observer",
+    "de": "Für den Beobachter nicht einsehbar",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Added to the chart readout when the touched ground cannot be seen from the observer (dead ground).",
+    "legacy": false,
+    "accessor": "profileReadoutHidden",
+    "parameters": []
+  },
+  "profile_length": {
+    "en": "Length",
+    "de": "Länge",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile statistic: length of the line.",
+    "legacy": false,
+    "accessor": "profileLength",
+    "parameters": []
+  },
+  "profile_start": {
+    "en": "Start",
+    "de": "Anfang",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile statistic: ground height at the first point.",
+    "legacy": false,
+    "accessor": "profileStart",
+    "parameters": []
+  },
+  "profile_end": {
+    "en": "End",
+    "de": "Ende",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile statistic: ground height at the last point.",
+    "legacy": false,
+    "accessor": "profileEnd",
+    "parameters": []
+  },
+  "profile_lowest": {
+    "en": "Lowest",
+    "de": "Tiefster Punkt",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile statistic: lowest ground height along the line.",
+    "legacy": false,
+    "accessor": "profileLowest",
+    "parameters": []
+  },
+  "profile_highest": {
+    "en": "Highest",
+    "de": "Höchster Punkt",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile statistic: highest ground height along the line.",
+    "legacy": false,
+    "accessor": "profileHighest",
+    "parameters": []
+  },
+  "profile_climb": {
+    "en": "Total climb",
+    "de": "Gesamtanstieg",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile statistic: sum of all rises along the line.",
+    "legacy": false,
+    "accessor": "profileClimb",
+    "parameters": []
+  },
+  "profile_descent": {
+    "en": "Total descent",
+    "de": "Gesamtabstieg",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Elevation profile statistic: sum of all drops along the line.",
+    "legacy": false,
+    "accessor": "profileDescent",
+    "parameters": []
+  },
+  "profile_los_title": {
+    "en": "Line of Sight",
+    "de": "Sichtlinie",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Section heading in the elevation profile: whether an observer at the start can see a target at the end.",
+    "legacy": false,
+    "accessor": "profileLosTitle",
+    "parameters": []
+  },
+  "profile_observer_height": {
+    "en": "Observer height",
+    "de": "Beobachterhöhe",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Line of sight setting: eye height of the observer above the ground at the start of the line.",
+    "legacy": false,
+    "accessor": "profileObserverHeight",
+    "parameters": []
+  },
+  "profile_target_height": {
+    "en": "Target height",
+    "de": "Zielhöhe",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Line of sight setting: height of the target above the ground at the end of the line.",
+    "legacy": false,
+    "accessor": "profileTargetHeight",
+    "parameters": []
+  },
+  "profile_los_clear": {
+    "en": "Clear: the target can be seen. The closest the ground comes is {1} below the sight line, {2} from the observer.",
+    "de": "Frei: Das Ziel ist sichtbar. Am knappsten liegt das Gelände {1} unter der Sichtlinie, {2} vom Beobachter entfernt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Line of sight result when nothing blocks the view. {1} is a height such as '12 m', {2} a distance such as '1.40 km'.",
+    "legacy": false,
+    "accessor": "profileLosClear",
+    "parameters": [
+      {
+        "name": "clearance",
+        "type": "string"
+      },
+      {
+        "name": "distance",
+        "type": "string"
+      }
+    ]
+  },
+  "profile_los_clear_short": {
+    "en": "Clear: the target can be seen.",
+    "de": "Frei: Das Ziel ist sichtbar.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Line of sight result for a very short line with no ground between the ends.",
+    "legacy": false,
+    "accessor": "profileLosClearShort",
+    "parameters": []
+  },
+  "profile_los_blocked": {
+    "en": "Blocked: the ground rises {1} above the sight line, {2} from the observer.",
+    "de": "Verdeckt: Das Gelände liegt {1} über der Sichtlinie, {2} vom Beobachter entfernt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Line of sight result when terrain blocks the view. {1} is a height such as '38 m', {2} a distance such as '2.00 km'.",
+    "legacy": false,
+    "accessor": "profileLosBlocked",
+    "parameters": [
+      {
+        "name": "height",
+        "type": "string"
+      },
+      {
+        "name": "distance",
+        "type": "string"
+      }
+    ]
+  },
+  "profile_dead_ground": {
+    "en": "Grey ground on the chart is hidden from the observer (dead ground).",
+    "de": "Grau dargestelltes Gelände ist für den Beobachter nicht einsehbar.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Legend under the elevation profile chart explaining the grey shading for dead ground.",
+    "legacy": false,
+    "accessor": "profileDeadGround",
+    "parameters": []
+  },
+  "profile_los_needs_two_points": {
+    "en": "Line of sight is checked on a straight line between two points.",
+    "de": "Die Sichtlinie wird auf einer geraden Linie zwischen zwei Punkten geprüft.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Shown instead of the line of sight section when the measured path has more than two points.",
+    "legacy": false,
+    "accessor": "profileLosNeedsTwoPoints",
+    "parameters": []
+  },
+  "profile_source": {
+    "en": "Heights come from the Copernicus elevation model via Open-Meteo, about 30 m apart, so trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.",
+    "de": "Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 30 m, daher sind Bäume und Gebäude nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Footnote in the elevation profile sheet: data source, privacy note and what line of sight accounts for.",
+    "legacy": false,
+    "accessor": "profileSource",
+    "parameters": []
+  },
+  "profile_height_down": {
+    "en": "Lower {1}",
+    "de": "{1} verringern",
+    "platforms": [
+      "android"
+    ],
+    "context": "Accessibility label of the minus button next to a line of sight height. {1} is 'Observer height' or 'Target height'.",
+    "legacy": false,
+    "accessor": "profileHeightDown",
+    "parameters": [
+      {
+        "name": "setting",
+        "type": "string"
+      }
+    ]
+  },
+  "profile_height_up": {
+    "en": "Raise {1}",
+    "de": "{1} erhöhen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Accessibility label of the plus button next to a line of sight height. {1} is 'Observer height' or 'Target height'.",
+    "legacy": false,
+    "accessor": "profileHeightUp",
+    "parameters": [
+      {
+        "name": "setting",
+        "type": "string"
+      }
+    ]
+  },
+  "settings_online_lookups_help_ios": {
+    "en": "Off by default. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. An elevation profile sends up to 200 points along the line (coarsened to ~11 m). Place-name search uses Apple's MKLocalSearch and may send the typed place-name or address query and camera region to Apple. Leave this off for a fully offline/OPSEC posture.",
+    "de": "Standardmäßig aus. Höhen- und Wetterabfragen senden die Kartenmittelpunkt-Koordinate (auf etwa 110 m vergröbert) an Open-Meteo. Die Gelände-Heatmap sendet ein 24 × 24-Koordinatenraster (auf etwa 11 m vergröbert) für den sichtbaren Kartenausschnitt. Ein Höhenprofil sendet bis zu 200 Punkte entlang der Linie (auf etwa 11 m vergröbert). Die Ortssuche verwendet Apples MKLocalSearch und kann die eingegebene Orts- oder Adressabfrage und den Kartenausschnitt an Apple senden. Lass dies für vollständig offline betriebene bzw. OPSEC-geschützte Nutzung ausgeschaltet.",
+    "platforms": [
+      "ios"
+    ],
+    "context": "Complete iOS settings explanation under the online lookups switch. Preserve all privacy/security limitations, provider names and numeric precision.",
+    "legacy": false,
+    "accessor": "onlineLookupsPrivacyHelp",
     "parameters": []
   }
 }

@@ -100,6 +100,60 @@ object Messages {
         L10n.message("id.privacy_setting_save_failed", "Could not save this privacy setting. The previous setting remains active; check available storage and try again.")
     fun privacySettingSaveFailedMessage(): LocalizedMessage =
         LocalizedMessage("id.privacy_setting_save_failed", "Could not save this privacy setting. The previous setting remains active; check available storage and try again.", listOf())
+    fun profileClimb(): String =
+        L10n.message("id.profile_climb", "Total climb")
+    fun profileDeadGround(): String =
+        L10n.message("id.profile_dead_ground", "Grey ground on the chart is hidden from the observer (dead ground).")
+    fun profileDescent(): String =
+        L10n.message("id.profile_descent", "Total descent")
+    fun profileEnd(): String =
+        L10n.message("id.profile_end", "End")
+    fun profileFailed(): String =
+        L10n.message("id.profile_failed", "Couldn't fetch heights. Check your connection and try again.")
+    fun profileHeightDown(setting: String): String =
+        L10n.message("id.profile_height_down", "Lower %1\$s", setting)
+    fun profileHeightUp(setting: String): String =
+        L10n.message("id.profile_height_up", "Raise %1\$s", setting)
+    fun profileHighest(): String =
+        L10n.message("id.profile_highest", "Highest")
+    fun profileHint(): String =
+        L10n.message("id.profile_hint", "Drag across the chart to read the height at any point.")
+    fun profileLength(): String =
+        L10n.message("id.profile_length", "Length")
+    fun profileLoading(): String =
+        L10n.message("id.profile_loading", "Fetching heights…")
+    fun profileLookupsOff(): String =
+        L10n.message("id.profile_lookups_off", "Elevation profiles use Open-Meteo, and online lookups are off. Turn them on in Settings, Privacy & OPSEC.")
+    fun profileLosBlocked(height: String, distance: String): String =
+        L10n.message("id.profile_los_blocked", "Blocked: the ground rises %1\$s above the sight line, %2\$s from the observer.", height, distance)
+    fun profileLosClear(clearance: String, distance: String): String =
+        L10n.message("id.profile_los_clear", "Clear: the target can be seen. The closest the ground comes is %1\$s below the sight line, %2\$s from the observer.", clearance, distance)
+    fun profileLosClearShort(): String =
+        L10n.message("id.profile_los_clear_short", "Clear: the target can be seen.")
+    fun profileLosNeedsTwoPoints(): String =
+        L10n.message("id.profile_los_needs_two_points", "Line of sight is checked on a straight line between two points.")
+    fun profileLosTitle(): String =
+        L10n.message("id.profile_los_title", "Line of Sight")
+    fun profileLowest(): String =
+        L10n.message("id.profile_lowest", "Lowest")
+    fun profileObserverHeight(): String =
+        L10n.message("id.profile_observer_height", "Observer height")
+    fun profileReadout(distance: String, height: String): String =
+        L10n.message("id.profile_readout", "%1\$s from the start · %2\$s", distance, height)
+    fun profileReadoutHidden(): String =
+        L10n.message("id.profile_readout_hidden", "Hidden from the observer")
+    fun profileRetry(): String =
+        L10n.message("id.profile_retry", "Try Again")
+    fun profileSource(): String =
+        L10n.message("id.profile_source", "Heights come from the Copernicus elevation model via Open-Meteo, about 30 m apart, so trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.")
+    fun profileStart(): String =
+        L10n.message("id.profile_start", "Start")
+    fun profileTargetHeight(): String =
+        L10n.message("id.profile_target_height", "Target height")
+    fun profileTitle(): String =
+        L10n.message("id.profile_title", "Elevation Profile")
+    fun profileTooShort(): String =
+        L10n.message("id.profile_too_short", "The line is too short for a profile.")
     fun recordingActivationFailed(detail: String): String =
         L10n.message("id.recording_activation_failed", "Could not activate background track recording: %1\$s", detail)
     fun recordingActivationFailedMessage(detail: String): LocalizedMessage =
@@ -177,7 +231,7 @@ object Messages {
     fun onlineBasemapsHelp(): String =
         L10n.message("id.settings_online_basemaps_help", "Off by default. While off the map only draws imported offline maps, and no tile request leaves the device. While on, Esri or OpenTopoMap can see the ground you are looking at from your IP. Turn this off for a fully offline posture.")
     fun onlineLookupsHelp(): String =
-        L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Turn this off when you need a fully offline/OPSEC posture.")
+        L10n.message("id.settings_online_lookups_help", "Off by default. When you turn this on, place-name search may use the device's geocoder. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. An elevation profile sends up to 200 points along the line (coarsened to ~11 m). Turn this off when you need a fully offline/OPSEC posture.")
     fun sunMoonBmct(): String =
         L10n.message("id.sun_moon_bmct", "Civil dawn (BMCT)")
     fun sunMoonBmnt(): String =

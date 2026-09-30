@@ -35,6 +35,9 @@ object DisplayFormat {
         else -> number(metres / 1000, if (metres < 100_000) 2 else 0, locale) + " km"
     }
 
+    /** A terrain or eye height in whole metres, which can be negative. */
+    fun height(metres: Double, locale: Locale = currentLocale): String = number(metres, 0, locale) + " m"
+
     fun area(squareMetres: Double, locale: Locale = currentLocale): String = when {
         squareMetres < 10_000 -> number(squareMetres, 0, locale) + " m²"
         squareMetres < 1_000_000 -> number(squareMetres / 10_000, 2, locale) + " ha"
