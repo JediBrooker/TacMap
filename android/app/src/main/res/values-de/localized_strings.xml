@@ -7,6 +7,8 @@
     <string name="background_sync_location_stopped">"Unit-Sync-Standort im Hintergrund beendet: %1$s"</string>
     <string name="background_sync_start_failed">"Unit Sync im Hintergrund konnte nicht gestartet werden: %1$s"</string>
     <string name="basemap_recovery_required">"Die gespeicherten Grundkartendetails konnten nicht authentifiziert werden. Eine Wiederherstellungskopie und alle importierten Karten blieben erhalten. Tippe auf „Erneut versuchen“, um die gespeicherte Auswahl auf die Online-Karte zurückzusetzen, oder importiere/wähle eine Ersatzkarte."</string>
+    <string name="chat_new_message_notice">"Neue TacMap-Chat-Nachricht von %1$s."</string>
+    <string name="chat_new_report_notice">"Neue TacMap-Chat-Meldung von %1$s."</string>
     <string name="chat_recipient_heading">"EMPFÄNGER"</string>
     <string name="common_ok">"OK"</string>
     <string name="drawings_quarantined">"Gespeicherte Zeichnungen konnten nicht gelesen werden und wurden separat gesichert (%1$s). Die Karte startet ohne Zeichnungen."</string>

@@ -11,6 +11,8 @@ internal val localizedStringIds: Map<String, Int> = mapOf(
     "id.background_sync_location_stopped" to R.string.background_sync_location_stopped,
     "id.background_sync_start_failed" to R.string.background_sync_start_failed,
     "id.basemap_recovery_required" to R.string.basemap_recovery_required,
+    "id.chat_new_message_notice" to R.string.chat_new_message_notice,
+    "id.chat_new_report_notice" to R.string.chat_new_report_notice,
     "id.chat_recipient_heading" to R.string.chat_recipient_heading,
     "RECIPIENT" to R.string.chat_recipient_heading,
     "id.common_ok" to R.string.common_ok,

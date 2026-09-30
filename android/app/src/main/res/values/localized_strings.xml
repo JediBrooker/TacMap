@@ -7,6 +7,8 @@
     <string name="background_sync_location_stopped">"Background Unit Sync location stopped: %1$s"</string>
     <string name="background_sync_start_failed">"Background Unit Sync could not start: %1$s"</string>
     <string name="basemap_recovery_required">"The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map."</string>
+    <string name="chat_new_message_notice">"New TacMap Chat message from %1$s."</string>
+    <string name="chat_new_report_notice">"New TacMap Chat report from %1$s."</string>
     <string name="chat_recipient_heading">"RECIPIENT"</string>
     <string name="common_ok">"OK"</string>
     <string name="drawings_quarantined">"Saved drawings could not be read and were set aside (%1$s). Starting with an empty map."</string>

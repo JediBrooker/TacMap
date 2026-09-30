@@ -12900,6 +12900,20 @@
         "translation": "65a5e85b56b3f97bfb54cc900019a544f292629062fa1ca6b72781a5ea9017c3",
         "status": "reviewed"
       }
+    },
+    "chat_new_message_notice": {
+      "de": {
+        "source": "e05cc0020101b8c662b60cd238c8b678d40d632e0bcdd11d4cd8043362e3986d",
+        "translation": "653d8f1e741d213f03b732e8bcf66a549817ae113106b7eadee2d10bb832a511",
+        "status": "reviewed"
+      }
+    },
+    "chat_new_report_notice": {
+      "de": {
+        "source": "b1b900593ae47e73e4e1c4232ad77947fee7c2eaf5e66b58b03a2172d3ca238e",
+        "translation": "5d3f3ff3ece42748a86ed27eedbdab118d771a9a38a1da695127645d4512ea3e",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

@@ -16670,5 +16670,37 @@
     "legacy": false,
     "accessor": "onlineLookupsPrivacyHelp",
     "parameters": []
+  },
+  "chat_new_message_notice": {
+    "en": "New TacMap Chat message from {1}.",
+    "de": "Neue TacMap-Chat-Nachricht von {1}.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Short notice at the bottom of the map when a chat message arrives. {1} is the sender's callsign.",
+    "legacy": false,
+    "accessor": "chatNewMessageNotice",
+    "parameters": [
+      {
+        "name": "sender",
+        "type": "string"
+      }
+    ]
+  },
+  "chat_new_report_notice": {
+    "en": "New TacMap Chat report from {1}.",
+    "de": "Neue TacMap-Chat-Meldung von {1}.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Short notice at the bottom of the map when a chat report arrives. {1} is the sender's callsign.",
+    "legacy": false,
+    "accessor": "chatNewReportNotice",
+    "parameters": [
+      {
+        "name": "sender",
+        "type": "string"
+      }
+    ]
   }
 }

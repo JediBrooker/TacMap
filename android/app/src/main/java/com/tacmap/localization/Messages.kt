@@ -26,6 +26,10 @@ object Messages {
         L10n.message("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.")
     fun basemapRecoveryRequiredMessage(): LocalizedMessage =
         LocalizedMessage("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.", listOf())
+    fun chatNewMessageNotice(sender: String): String =
+        L10n.message("id.chat_new_message_notice", "New TacMap Chat message from %1\$s.", sender)
+    fun chatNewReportNotice(sender: String): String =
+        L10n.message("id.chat_new_report_notice", "New TacMap Chat report from %1\$s.", sender)
     fun chatRecipientHeading(): String =
         L10n.message("id.chat_recipient_heading", "RECIPIENT")
     fun acknowledge(): String =
