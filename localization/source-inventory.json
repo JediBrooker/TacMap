@@ -1949,5 +1949,11 @@
     "platform": "ios",
     "area": "weather-terrain",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/TaskGraphicSizing.kt",
+    "platform": "android",
+    "area": "symbols-waypoints",
+    "reviewStatus": "manual-review-needed"
   }
 ]
