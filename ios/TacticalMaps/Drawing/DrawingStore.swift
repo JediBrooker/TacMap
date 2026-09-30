@@ -92,6 +92,13 @@ final class DrawingStore: ObservableObject {
     /// appears. Weak so we don't extend the window's lifetime.
     weak var undoManager: UndoManager?
 
+    /// Bumped per shape each time a Unit Sync peer's write changes it (see
+    /// SyncRemoteModelApplier). Undoing a local edit checks it so the undo never
+    /// clobbers a newer peer version, their edit wins. Same as Android.
+    private var peerWriteMarks: [UUID: Int] = [:]
+
+    func notePeerWrite(_ id: UUID) { peerWriteMarks[id, default: 0] += 1 }
+
     typealias PersistenceWriter = (Data, URL, String) throws -> Void
 
     private static let defaultURL: URL = {
@@ -415,7 +422,9 @@ final class DrawingStore: ObservableObject {
         }
         shapes = candidate
         if pendingLoadError?.id == "id.ui_could_not_save_drawing_change_to_disk_1_951dd3f4" { loadError = nil }
+        let peerMark = peerWriteMarks[shape.id, default: 0]
         undoManager?.registerUndo(withTarget: self) { store in
+            guard store.peerWriteMarks[shape.id, default: 0] == peerMark else { return }
             _ = try? store.commitEdit(old, actionName: actionName)
         }
         undoManager?.setActionName(actionName)
@@ -447,8 +456,12 @@ final class DrawingStore: ObservableObject {
         }
         shapes = candidate
         if pendingLoadError?.id == "id.ui_could_not_save_drawing_change_to_disk_1_951dd3f4" { loadError = nil }
+        let peerMarks = Dictionary(previous.map { ($0.id, peerWriteMarks[$0.id, default: 0]) },
+                                   uniquingKeysWith: { first, _ in first })
         undoManager?.registerUndo(withTarget: self) { store in
-            _ = try? store.commitEdits(previous, actionName: actionName)
+            // e.g. a ring the peer moved since, leave theirs alone and put the rest back
+            let untouched = previous.filter { store.peerWriteMarks[$0.id, default: 0] == peerMarks[$0.id] }
+            _ = try? store.commitEdits(untouched, actionName: actionName)
         }
         undoManager?.setActionName(actionName)
         return previous.count
