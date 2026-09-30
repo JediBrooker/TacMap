@@ -15373,6 +15373,170 @@
       }
     ]
   },
+  "symbols_new_symbol_title": {
+    "en": "New Symbol",
+    "de": "Neues Symbol",
+    "platforms": [
+      "android"
+    ],
+    "context": "Title of the full-screen builder for a new symbol placed at the crosshair; the kind (point, unit, task, marker) is chosen inside it.",
+    "legacy": false,
+    "accessor": "symbolsNewSymbolTitle",
+    "parameters": []
+  },
+  "symbols_kind_military": {
+    "en": "Military",
+    "de": "Militär",
+    "platforms": [
+      "android"
+    ],
+    "context": "Segment of the new-symbol kind picker for APP-6 military unit symbols. Keep short: four segments share one row.",
+    "legacy": false,
+    "accessor": "symbolsKindMilitary",
+    "parameters": []
+  },
+  "symbols_kind_tasks": {
+    "en": "Tasks",
+    "de": "Aufträge",
+    "platforms": [
+      "android"
+    ],
+    "context": "Segment of the new-symbol kind picker for tactical task graphics / control measures. Keep short: four segments share one row.",
+    "legacy": false,
+    "accessor": "symbolsKindTasks",
+    "parameters": []
+  },
+  "symbols_kind_markers": {
+    "en": "Markers",
+    "de": "Marker",
+    "platforms": [
+      "android"
+    ],
+    "context": "Segment of the new-symbol kind picker for airsoft, search-and-rescue and point-of-interest markers. Keep short: four segments share one row.",
+    "legacy": false,
+    "accessor": "symbolsKindMarkers",
+    "parameters": []
+  },
+  "symbols_preview": {
+    "en": "Preview",
+    "de": "Vorschau",
+    "platforms": [
+      "android"
+    ],
+    "context": "Heading above the live rendering of the symbol being created or edited.",
+    "legacy": false,
+    "accessor": "symbolsPreview",
+    "parameters": []
+  },
+  "symbols_orientation": {
+    "en": "Orientation",
+    "de": "Ausrichtung",
+    "platforms": [
+      "android"
+    ],
+    "context": "Heading of the rotation controls for a new tactical task graphic.",
+    "legacy": false,
+    "accessor": "symbolsOrientation",
+    "parameters": []
+  },
+  "symbols_orientation_help": {
+    "en": "Rotate the symbol to indicate direction (e.g. axis of advance, ambush facing).",
+    "de": "Drehe das Symbol, um eine Richtung anzugeben (z. B. Vormarschachse oder Hinterhaltsrichtung).",
+    "platforms": [
+      "android"
+    ],
+    "context": "Help text under the rotation controls for a new tactical task graphic.",
+    "legacy": false,
+    "accessor": "symbolsOrientationHelp",
+    "parameters": []
+  },
+  "symbols_size": {
+    "en": "Size",
+    "de": "Größe",
+    "platforms": [
+      "android"
+    ],
+    "context": "Heading of the width and height scale controls for a new tactical task graphic.",
+    "legacy": false,
+    "accessor": "symbolsSize",
+    "parameters": []
+  },
+  "symbols_size_help": {
+    "en": "Independent width and height multipliers — stretch the symbol wider/thinner or longer/shorter. The geographic footprint scales with the map zoom.",
+    "de": "Unabhängige Faktoren für Breite und Höhe – strecke das Symbol breiter/schmaler oder länger/kürzer. Seine geografische Ausdehnung skaliert mit dem Kartenzoom.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Help text under the width and height scale controls; the task graphic keeps a fixed size on the ground, so it grows and shrinks as the map zooms.",
+    "legacy": false,
+    "accessor": "symbolsSizeHelp",
+    "parameters": []
+  },
+  "symbols_both_scales": {
+    "en": "Both:",
+    "de": "Beide:",
+    "platforms": [
+      "android"
+    ],
+    "context": "Label before the preset buttons (0.5×, 1×, 2×, 5×, 10×) that set width and height scale to the same value.",
+    "legacy": false,
+    "accessor": "symbolsBothScales",
+    "parameters": []
+  },
+  "symbols_set_rotation": {
+    "en": "Set rotation to {1} degrees",
+    "de": "Drehung auf {1} Grad setzen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Accessibility label of a rotation preset button; {1} is a whole number of degrees such as 90.",
+    "legacy": false,
+    "accessor": "symbolsSetRotation",
+    "parameters": [
+      {
+        "name": "degrees",
+        "type": "string"
+      }
+    ]
+  },
+  "symbols_set_both_scales": {
+    "en": "Set width and height to {1} times",
+    "de": "Breite und Höhe auf das {1}-Fache setzen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Accessibility label of a size preset button; {1} is a formatted multiplier such as 0.5 or 2.",
+    "legacy": false,
+    "accessor": "symbolsSetBothScales",
+    "parameters": [
+      {
+        "name": "factor",
+        "type": "string"
+      }
+    ]
+  },
+  "symbols_fly_to": {
+    "en": "Fly to",
+    "de": "Anzeigen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Symbology list: swipe-right action and TalkBack action that closes the list and centres the map on the symbol.",
+    "legacy": false,
+    "accessor": "symbolsFlyTo",
+    "parameters": []
+  },
+  "symbols_swipe_help": {
+    "en": "Swipe right on a symbol to fly to it; swipe left to delete.",
+    "de": "Wische auf einem Symbol nach rechts, um es anzuzeigen, oder nach links, um es zu löschen.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Footnote under the Symbology list explaining the row swipe actions; tapping a row edits the symbol.",
+    "legacy": false,
+    "accessor": "symbolsSwipeHelp",
+    "parameters": []
+  },
   "rings_title": {
     "en": "Range Rings",
     "de": "Entfernungsringe",
@@ -15818,6 +15982,83 @@
     "context": "Menu row under the Export heading that exports a KMZ archive including the real military symbol images (iOS appends an ellipsis).",
     "legacy": false,
     "accessor": "exportKmzRow",
+    "parameters": []
+  },
+  "export_preview_heading": {
+    "en": "Preview",
+    "de": "Vorschau",
+    "platforms": [
+      "android"
+    ],
+    "context": "Heading above the start of the export file's text, shown before sharing.",
+    "legacy": false,
+    "accessor": "exportPreviewHeading",
+    "parameters": []
+  },
+  "export_preview_truncated": {
+    "en": "… (truncated, full file in Share)",
+    "de": "… (gekürzt; vollständige Datei über „Teilen“)",
+    "platforms": [
+      "android"
+    ],
+    "context": "Appended on its own line when the export text preview shows only the start of the file; the Share button sends the whole file.",
+    "legacy": false,
+    "accessor": "exportPreviewTruncated",
+    "parameters": []
+  },
+  "export_share_geojson": {
+    "en": "Share GeoJSON file",
+    "de": "GeoJSON-Datei teilen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Button in the GeoJSON export preview that opens the system share sheet. GeoJSON is a file format name; keep it.",
+    "legacy": false,
+    "accessor": "exportShareGeojson",
+    "parameters": []
+  },
+  "export_share_gpx": {
+    "en": "Share GPX file",
+    "de": "GPX-Datei teilen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Button in the GPX track export preview that opens the system share sheet. GPX is a file format name; keep it.",
+    "legacy": false,
+    "accessor": "exportShareGpx",
+    "parameters": []
+  },
+  "export_geojson_format": {
+    "en": "Format: GeoJSON FeatureCollection (RFC 7946) with simplestyle-spec styling. Opens in geojson.io, GitHub, Mapbox, Felt, QGIS, ArcGIS, Google Earth (via the GeoJSON-to-KML converter).",
+    "de": "Format: GeoJSON FeatureCollection (RFC 7946) mit simplestyle-spec-Stilen. Kann in geojson.io, GitHub, Mapbox, Felt, QGIS, ArcGIS und Google Earth (über einen GeoJSON-KML-Konverter) geöffnet werden.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Note under the per-type counts in the GeoJSON export preview. Format, standard and product names stay as they are.",
+    "legacy": false,
+    "accessor": "exportGeojsonFormat",
+    "parameters": []
+  },
+  "export_gpx_format": {
+    "en": "Format: GPX 1.1 - opens in Garmin, Strava, Gaia GPS, QGIS, Google Earth, and most GPS tools.",
+    "de": "Format: GPX 1.1 – kompatibel mit Garmin, Strava, Gaia GPS, QGIS, Google Earth und den meisten GPS-Anwendungen.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Note in the GPX track export preview. Format and product names stay as they are.",
+    "legacy": false,
+    "accessor": "exportGpxFormat",
+    "parameters": []
+  },
+  "export_gpx_empty": {
+    "en": "No track recorded yet. Start recording from the menu, move, then export.",
+    "de": "Noch kein Track aufgezeichnet. Starte die Aufzeichnung im Menü, bewege dich und exportiere anschließend den Track.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Shown in the GPX export preview instead of a Share button when there is no recorded track.",
+    "legacy": false,
+    "accessor": "exportGpxEmpty",
     "parameters": []
   },
   "map_point_place_symbol": {

@@ -285,6 +285,7 @@ internal fun MapScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLayersSheet by remember { mutableStateOf(false) }
     var showImportExportSheet by remember { mutableStateOf(false) }
+    var exportPreview by remember { mutableStateOf<ExportPreviewKind?>(null) }
     var showOpsecSettings by remember { mutableStateOf(false) }
     var showDiscardTrackConfirmation by remember { mutableStateOf(false) }
     var hamburgerOpen by remember { mutableStateOf(false) }
@@ -1581,40 +1582,27 @@ internal fun MapScreen(
     val quickMode = quickAddEditorMode
     val capturedQuickTarget = quickAddTarget
     if (quickMode != null && capturedQuickTarget != null) {
-        val initialKind = when (quickMode) {
-            SymbolEditorMode.MILITARY -> WaypointKind.Military()
-            SymbolEditorMode.TASK -> WaypointKind.ControlMeasure()
-            SymbolEditorMode.MARKER -> WaypointKind.Marker()
-        }
         SymbolEditorDialog(
             mode = quickMode,
-            initialKind = initialKind,
             initialName = "",
             crosshairLat = capturedQuickTarget.latitude,
             crosshairLng = capturedQuickTarget.longitude,
-            title = when (quickMode) {
-                SymbolEditorMode.MILITARY -> L10n.text("New Military Unit")
-                SymbolEditorMode.TASK -> L10n.text("New Tactical Task")
-                SymbolEditorMode.MARKER -> L10n.text("New Marker")
-            },
+            title = Messages.symbolsNewSymbolTitle(),
             actionLabel = L10n.text("Place"),
+            defaultTaskScale = TaskGraphicSizing.defaultScale(cameraViewportState),
             submissionError = quickAddCreationError?.text,
             onDismiss = {
                 quickAddEditorMode = null
                 quickAddTarget = null
                 quickAddCreationError = null
             },
-            onConfirm = { name, kind, higherFormation, uniqueIdentifier, reinforcementStatus ->
-                val added = Waypoint(
-                    name = name,
+            onConfirm = { draft ->
+                val added = draft.toWaypoint(
                     latitude = capturedQuickTarget.latitude,
                     longitude = capturedQuickTarget.longitude,
-                    kind = kind,
-                    higherFormation = higherFormation,
-                    uniqueIdentifier = uniqueIdentifier,
-                    reinforcementStatus = reinforcementStatus,
-                    layerId = capturedQuickTarget.layerId
+                    layerId = capturedQuickTarget.layerId,
                 )
+                val name = added.name
                 when (val result = persistNewSymbol(added) { waypointStore.add(it) }) {
                     is DurableSymbolCreation.Saved -> {
                         selectedDrawingId = null
@@ -1651,6 +1639,7 @@ internal fun MapScreen(
             activeLayerId = safeActiveLayerId,
             layers = drawingDocument.layers,
             store = waypointStore,
+            defaultTaskScale = TaskGraphicSizing.defaultScale(cameraViewportState),
             onDismiss = { showWaypointSheet = false },
             onFlyTo = { lat, lng ->
                 vm.flyTo(lat, lng)
@@ -2075,18 +2064,11 @@ internal fun MapScreen(
             },
             onExportGeoJson = {
                 showImportExportSheet = false
-                scope.launch {
-                    shareGeoJson(
-                        context = context,
-                        waypoints = waypoints,
-                        drawings = drawingDocument.features,
-                        layers = drawingDocument.layers,
-                    )
-                }
+                exportPreview = ExportPreviewKind.GEOJSON
             },
             onExportGpx = {
                 showImportExportSheet = false
-                scope.launch { shareGpx(context = context, points = trackPoints) }
+                exportPreview = ExportPreviewKind.GPX
             },
             onExportAllData = {
                 showImportExportSheet = false
@@ -2131,6 +2113,20 @@ internal fun MapScreen(
             },
             onDismiss = { showImportExportSheet = false }
         )
+    }
+
+    when (exportPreview) {
+        ExportPreviewKind.GEOJSON -> GeoJsonExportPreviewDialog(
+            waypoints = waypoints,
+            drawings = drawingDocument.features,
+            layers = drawingDocument.layers,
+            onDismiss = { exportPreview = null },
+        )
+        ExportPreviewKind.GPX -> GpxExportPreviewDialog(
+            points = trackPoints,
+            onDismiss = { exportPreview = null },
+        )
+        null -> Unit
     }
 
     pendingCalibrationTap?.let { tap ->
