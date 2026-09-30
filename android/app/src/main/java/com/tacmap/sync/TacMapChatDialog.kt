@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -23,6 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Button
@@ -44,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -122,6 +128,15 @@ fun TacMapChatDialog(
     }
     val canSend = sessionReady && blockReason == null && body.isNotBlank()
 
+    // Open on, and follow, the newest message in the visible thread.
+    val historyState = rememberLazyListState()
+    LaunchedEffect(roomScope, selectedSnapshot?.actorId, visibleMessages.lastOrNull()?.id) {
+        if (visibleMessages.isNotEmpty()) historyState.scrollToItem(visibleMessages.lastIndex)
+    }
+    // At the largest text sizes the header and composer would squeeze the
+    // history out, so the whole dialog scrolls and the history keeps a height.
+    val largeText = LocalDensity.current.fontScale >= LARGE_TEXT_FONT_SCALE
+
     fun performSend() {
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return
@@ -155,7 +170,11 @@ fun TacMapChatDialog(
                 tonalElevation = 6.dp,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (largeText) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -252,7 +271,7 @@ fun TacMapChatDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .then(if (largeText) Modifier.height(LARGE_TEXT_HISTORY_HEIGHT_DP.dp) else Modifier.weight(1f)),
                     ) {
                         if (visibleMessages.isEmpty()) {
                             Column(
@@ -273,6 +292,7 @@ fun TacMapChatDialog(
                             }
                         } else {
                             LazyColumn(
+                                state = historyState,
                                 modifier = Modifier.fillMaxSize().padding(vertical = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
@@ -352,6 +372,10 @@ fun TacMapChatDialog(
 
 internal const val TACMAP_CHAT_OUTER_MARGIN_DP = 12
 
+/** Font scale from which the chat scrolls as a whole (Android's largest text sizes). */
+private const val LARGE_TEXT_FONT_SCALE = 1.5f
+private const val LARGE_TEXT_HISTORY_HEIGHT_DP = 320
+
 /**
  * Keep encrypted historical direct threads readable after their sender leaves.
  * Historical targets deliberately have no live session/key tuple, so the
@@ -411,7 +435,9 @@ private fun TacMapChatMessageRow(message: TacMapChatMessage) {
                     Text(L10n.text("  REPORT"), color = Color(0xFFEF6C00), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            Text(message.body, modifier = Modifier.padding(vertical = 4.dp))
+            SelectionContainer {
+                Text(message.body, modifier = Modifier.padding(vertical = 4.dp))
+            }
             val delivery = when (message.deliveryState) {
                 TacMapChatDeliveryState.SENT -> L10n.text("Sending…")
                 TacMapChatDeliveryState.ROUTED -> if (message.scope == TacMapChatScope.ROOM) {

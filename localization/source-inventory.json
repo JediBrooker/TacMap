@@ -1949,5 +1949,11 @@
     "platform": "ios",
     "area": "weather-terrain",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/AppLockBiometric.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
   }
 ]

@@ -2,6 +2,68 @@
 package com.tacmap.localization
 
 object Messages {
+    fun aboutEsriImageryDetail(): String =
+        L10n.message("id.about_esri_imagery_detail", "Esri, Maxar, Earthstar Geographics, and the GIS User Community.")
+    fun aboutEsriImageryTitle(): String =
+        L10n.message("id.about_esri_imagery_title", "Esri World Imagery (Satellite basemap)")
+    fun aboutEsriStylesDetail(): String =
+        L10n.message("id.about_esri_styles_detail", "Esri, TomTom, Garmin, FAO, NOAA, USGS · map data © OpenStreetMap contributors.")
+    fun aboutEsriStylesTitle(): String =
+        L10n.message("id.about_esri_styles_title", "Esri Basemap Styles (Topographic + Street)")
+    fun aboutGeojsonDetail(): String =
+        L10n.message("id.about_geojson_detail", "Export format for waypoints + drawings.")
+    fun aboutGeopdfDetail(): String =
+        L10n.message("id.about_geopdf_detail", "OGC 08-139r3. Used for reading LGIDict georeferencing.")
+    fun aboutLibAndroidsvgDetail(): String =
+        L10n.message("id.about_lib_androidsvg_detail", "Draws the symbol artwork.")
+    fun aboutLibAndroidxDetail(): String =
+        L10n.message("id.about_lib_androidx_detail", "Android Jetpack and the Jetpack Compose user interface.")
+    fun aboutLibBillingDetail(): String =
+        L10n.message("id.about_lib_billing_detail", "The one-time in-app purchase.")
+    fun aboutLibBouncycastleDetail(): String =
+        L10n.message("id.about_lib_bouncycastle_detail", "Signatures and encryption for Unit Sync and TacMap Chat.")
+    fun aboutLibGridDetail(): String =
+        L10n.message("id.about_lib_grid_detail", "Grid primitives used by mgrs-java.")
+    fun aboutLibMgrsDetail(): String =
+        L10n.message("id.about_lib_mgrs_detail", "MGRS ↔ lat/lon conversions.")
+    fun aboutLibMilsymbolDetail(): String =
+        L10n.message("id.about_lib_milsymbol_detail", "APP-6(C) military symbol artwork.")
+    fun aboutLibOkhttpDetail(): String =
+        L10n.message("id.about_lib_okhttp_detail", "HTTPS for online tiles and lookups.")
+    fun aboutLibPdfboxDetail(): String =
+        L10n.message("id.about_lib_pdfbox_detail", "Reads GeoPDF georeferencing.")
+    fun aboutLibSerializationDetail(): String =
+        L10n.message("id.about_lib_serialization_detail", "JSON encoding.")
+    fun aboutLibWebsocketDetail(): String =
+        L10n.message("id.about_lib_websocket_detail", "Unit Sync transport, with SLF4J (MIT).")
+    fun aboutMakiDetail(): String =
+        L10n.message("id.about_maki_detail", "Marker icon names referenced in GeoJSON output (campsite, drinking-water, etc.).")
+    fun aboutMapData(): String =
+        L10n.message("id.about_map_data", "Map data")
+    fun aboutNoticesButton(): String =
+        L10n.message("id.about_notices_button", "Licence texts")
+    fun aboutNoticesTitle(): String =
+        L10n.message("id.about_notices_title", "Third-party notices")
+    fun aboutOpenMeteoDetail(): String =
+        L10n.message("id.about_open_meteo_detail", "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.")
+    fun aboutOpenMeteoTitle(): String =
+        L10n.message("id.about_open_meteo_title", "Open-Meteo Elevation API")
+    fun aboutOpenSource(): String =
+        L10n.message("id.about_open_source", "Open source libraries")
+    fun aboutOpentopomapDetail(): String =
+        L10n.message("id.about_opentopomap_detail", "© OpenTopoMap (CC-BY-SA) · map data © OpenStreetMap contributors (ODbL).")
+    fun aboutOpentopomapTitle(): String =
+        L10n.message("id.about_opentopomap_title", "OpenTopoMap (Topographic basemap)")
+    fun aboutOsmDetail(): String =
+        L10n.message("id.about_osm_detail", "Map data © OpenStreetMap contributors, ODbL.")
+    fun aboutPrivacyNote(): String =
+        L10n.message("id.about_privacy_note", "TacMap adds no analytics or remote crash telemetry. Optional online basemaps and lookups are off on a fresh install; if you enable them, the provider receives your IP plus the requested tile area, place query, or lookup coordinate. Unit Sync payload content is end-to-end encrypted, while its relay still sees routing and traffic metadata.")
+    fun aboutSimplestyleDetail(): String =
+        L10n.message("id.about_simplestyle_detail", "GeoJSON styling keys (stroke, fill, marker-color, marker-symbol).")
+    fun aboutStandards(): String =
+        L10n.message("id.about_standards", "Standards & specifications")
+    fun appLockBiometricTitle(): String =
+        L10n.message("id.app_lock_biometric_title", "Unlock TacMap")
     fun appLockDataDamaged(): String =
         L10n.message("id.app_lock_data_damaged", "App Lock data is damaged and cannot be verified. Clear TacMap's app data in Android Settings to recover.")
     fun appLockDataDamagedMessage(): LocalizedMessage =
@@ -10,6 +72,10 @@ object Messages {
         L10n.message("id.app_lock_update_failed", "App Lock storage could not be updated. The lock remains armed; enter your existing PIN.")
     fun appLockUpdateFailedMessage(): LocalizedMessage =
         LocalizedMessage("id.app_lock_update_failed", "App Lock storage could not be updated. The lock remains armed; enter your existing PIN.", listOf())
+    fun appLockUseBiometric(): String =
+        L10n.message("id.app_lock_use_biometric", "Use fingerprint or face unlock")
+    fun appLockUsePin(): String =
+        L10n.message("id.app_lock_use_pin", "Use PIN")
     fun backgroundSyncDisableFailed(): String =
         L10n.message("id.background_sync_disable_failed", "Background Unit Sync stopped, but its OFF setting could not be saved. Check available storage and turn it off again in Privacy & OPSEC.")
     fun backgroundSyncDisableFailedMessage(): LocalizedMessage =
@@ -26,6 +92,10 @@ object Messages {
         L10n.message("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.")
     fun basemapRecoveryRequiredMessage(): LocalizedMessage =
         LocalizedMessage("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.", listOf())
+    fun chatNewMessageNotice(sender: String): String =
+        L10n.message("id.chat_new_message_notice", "New TacMap Chat message from %1\$s.", sender)
+    fun chatNewReportNotice(sender: String): String =
+        L10n.message("id.chat_new_report_notice", "New TacMap Chat report from %1\$s.", sender)
     fun chatRecipientHeading(): String =
         L10n.message("id.chat_recipient_heading", "RECIPIENT")
     fun acknowledge(): String =
@@ -214,6 +284,8 @@ object Messages {
         L10n.message("id.rings_unit_metres", "m")
     fun androidKeyProtectionHelp(): String =
         L10n.message("id.settings_android_key_protection_help", "Off: waypoints, drawings and tracks are encrypted with a key the device Keystore releases to this app automatically. Copied app files contain ciphertext, but code running as this app on a compromised device may ask the Keystore to decrypt.\n\nOn: Android Keystore requires a recent device credential or strong biometric before key use. Hardware backing varies by device and TacMap does not verify it, so a fully compromised system remains outside this protection. After the app is killed, nothing can read or write mission data until you unlock, including background track recording. Removing your device lockscreen can invalidate the key and make mission data unrecoverable.")
+    fun settingsBlockCaptureHelp(): String =
+        L10n.message("id.settings_block_capture_help", "Hides the map in the recent-apps preview and blocks screenshots and screen recordings, so your position isn't captured.")
     fun settingsDisplayTitle(): String =
         L10n.message("id.settings_display_title", "Display")
     fun headingHelp(): String =
@@ -330,6 +402,8 @@ object Messages {
         L10n.message("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.")
     fun syncMetadataPrivacyMessage(): LocalizedMessage =
         LocalizedMessage("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.", listOf())
+    fun syncScreenOffSharingNote(): String =
+        L10n.message("id.sync_screen_off_sharing_note", "Screen-off sharing is controlled separately in Settings, Privacy & OPSEC.")
     fun tipsDone(): String =
         L10n.message("id.tips_done", "Get Started")
     fun tipsNext(): String =

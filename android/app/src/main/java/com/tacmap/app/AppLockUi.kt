@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Icon
@@ -19,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -28,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -55,6 +58,23 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
         }
     }
     val lockedOut = lockoutMs > 0L
+
+    // Fingerprint or face, offered straight away and from a button, as iOS
+    // does with Face ID / Touch ID. Not while the PIN is locked out.
+    val context = LocalContext.current
+    val biometricAvailable = remember { AppLockBiometric.isAvailable(context) }
+    var biometricPrompt by remember { mutableStateOf<android.os.CancellationSignal?>(null) }
+    fun tryBiometric() {
+        if (!biometricAvailable || appLock.lockoutRemainingMs() > 0L) return
+        biometricPrompt?.cancel()
+        biometricPrompt = AppLockBiometric.authenticate(
+            context,
+            title = Messages.appLockBiometricTitle(),
+            usePinLabel = Messages.appLockUsePin(),
+        ) { ok -> if (ok) onUnlocked() }
+    }
+    LaunchedEffect(Unit) { tryBiometric() }
+    DisposableEffect(Unit) { onDispose { biometricPrompt?.cancel() } }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
@@ -107,6 +127,16 @@ fun AppLockScreen(appLock: AppLock, onUnlocked: () -> Unit) {
                 )
             } else if (error) {
                 Text(L10n.text("Incorrect PIN"), color = Color(0xFFEF5350), fontSize = 12.sp)
+            }
+            if (biometricAvailable) {
+                TextButton(onClick = ::tryBiometric, enabled = !lockedOut) {
+                    Icon(Icons.Default.Fingerprint, contentDescription = null, tint = Color.White.copy(alpha = 0.85f))
+                    Text(
+                        Messages.appLockUseBiometric(),
+                        color = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
         }
     }

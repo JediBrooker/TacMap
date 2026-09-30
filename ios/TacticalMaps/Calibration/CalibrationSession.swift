@@ -37,10 +37,10 @@ final class CalibrationSession: ObservableObject {
     func start(for source: PDFMapSource) {
         self.source = source
         // Seed with existing fiduciaries so user can refine instead of
-        // starting over.
+        // starting over, and show how good that earlier fit was.
         self.fiduciaries = source.fiduciaries ?? []
         self.pendingTap = nil
-        self.lastFitRMSMetres = nil
+        self.lastFitRMSMetres = Self.fitRMS(of: fiduciaries)
         self.isCalibrating = true
     }
 
@@ -89,17 +89,19 @@ final class CalibrationSession: ObservableObject {
 
     var canFinish: Bool { fiduciaries.count >= 3 }
 
-    /// Fit an affine to the current fiduciaries. Returns nil if fewer than 3
-    /// are placed or the points are degenerate.
-    func finish() -> AffineFitter.Result? {
-        guard canFinish else { return nil }
-        do {
-            let result = try AffineFitter.fit(fiduciaries)
-            lastFitRMSMetres = result.rmsMetres
-            return result
-        } catch {
-            print("[Calibration] affine fit failed")
-            return nil
-        }
+    /// Fit an affine to the current fiduciaries. Throws `AffineFitError`,
+    /// e.g. `.degenerate` when the points lie in a line, so the caller can
+    /// say why instead of doing nothing.
+    func finish() throws -> AffineFitter.Result {
+        let result = try AffineFitter.fit(fiduciaries)
+        lastFitRMSMetres = result.rmsMetres
+        return result
+    }
+
+    /// RMS error of the fit through `fiduciaries`, or nil when they can't
+    /// be fitted (fewer than 3, or in a line).
+    static func fitRMS(of fiduciaries: [Fiduciary]) -> Double? {
+        guard fiduciaries.count >= 3 else { return nil }
+        return try? AffineFitter.fit(fiduciaries).rmsMetres
     }
 }

@@ -199,6 +199,9 @@ north. Without one, the compass remains explicitly marked as magnetic north.
   service notification.
 - **Internet/network state** supports the optional services and store contacts
   described above. **Billing** supports the one-time unlock.
+- **Biometrics** lets Android 10 and later unlock App Lock with a fingerprint
+  or face. The system checks the match; TacMap never receives biometric data,
+  and the PIN stays the fallback.
 
 Android does not request broad file/media storage access or the
 `ACCESS_BACKGROUND_LOCATION` permission. You can revoke granted permissions in
