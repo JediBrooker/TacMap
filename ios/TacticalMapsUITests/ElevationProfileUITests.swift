@@ -50,7 +50,7 @@ final class ElevationProfileUITests: XCTestCase {
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.62)).press(forDuration: 1.6)
         let measure = app.buttons["Measure From Here"]
         XCTAssertTrue(measure.waitForExistence(timeout: 5), "No point menu")
-        measure.tap()
+        tapWhenSettled(measure)
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.66)).tap()
         let profile = app.buttons["measure.profile"]
         XCTAssertTrue(profile.waitForExistence(timeout: 5), "No profile button on the Measure bar")
@@ -58,6 +58,19 @@ final class ElevationProfileUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 5), .completed, "Profile stays disabled after two points")
         attachScreenshot("measure-two-points")
         profile.tap()
+    }
+
+    /// The point menu slides up as it appears; a tap aimed while it moves
+    /// can land on the row above. Tap once its frame has stopped changing.
+    private func tapWhenSettled(_ element: XCUIElement) {
+        var frame = element.frame
+        for _ in 0..<20 {
+            usleep(100_000)
+            let next = element.frame
+            if next == frame { break }
+            frame = next
+        }
+        element.tap()
     }
 
     private func launch(fakeTerrain: Bool) -> XCUIApplication {
