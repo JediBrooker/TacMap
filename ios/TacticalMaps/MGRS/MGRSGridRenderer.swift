@@ -100,9 +100,17 @@ enum MGRSGridRenderer {
                     let midLat = (p1.latitude  + p2.latitude)  / 2
                     let midLng = (p1.longitude + p2.longitude) / 2
                     let midCoord = CLLocationCoordinate2D(latitude: midLat, longitude: midLng)
-                    let mgrs = MGRS.from(midCoord)
 
-                    let text = lineLabelText(gridType: type, mgrs: mgrs, isVertical: isVertical)
+                    // Label value comes from the endpoints in this zone's UTM,
+                    // they sit on the line to ~1 cm. The lat/lon midpoint sags
+                    // off it (1.5 m on a 10 km line, ~150 m on 100 km) and
+                    // MGRS.from() truncates, so the 87000 line read "86".
+                    let text = lineLabelText(
+                        gridType: type,
+                        start: UTM.from(p1, zone.number(), zone.hemisphere()),
+                        end: UTM.from(p2, zone.number(), zone.hemisphere()),
+                        isVertical: isVertical
+                    )
                     if !text.isEmpty {
                         labelOut.append(LabelMark(
                             text: text,
@@ -120,21 +128,46 @@ enum MGRSGridRenderer {
     /// Format easting/northing for a single grid line. 1km lines get
     /// 2-digit numbers (e.g. "20"), 10km get a single digit, 100km
     /// get the column or row letter so you can read the full square
-    /// ID off the intersection.
-    private static func lineLabelText(gridType: GridType, mgrs: MGRS, isVertical: Bool) -> String {
+    /// ID off the intersection. The letter is the square east of a
+    /// vertical line / north of a horizontal one, same side the numbers
+    /// count from (line 87 is the bottom edge of square 87).
+    private static func lineLabelText(gridType: GridType, start: UTM, end: UTM, isVertical: Bool) -> String {
+        let interval: Int
+        switch gridType {
+        case .HUNDRED_KILOMETER: interval = 100_000
+        case .TEN_KILOMETER: interval = 10_000
+        case .KILOMETER: interval = 1_000
+        default: return ""
+        }
+        let easting = (start.easting + end.easting) / 2
+        let northing = (start.northing + end.northing) / 2
+        let index = lineIndex(isVertical ? easting : northing, interval: interval)
         switch gridType {
         case .HUNDRED_KILOMETER:
-            return isVertical ? String(mgrs.column) : String(mgrs.row)
+            let inSquare = Double(index * interval + interval / 2)
+            let square = (isVertical
+                ? UTM(start.zone, start.hemisphere, inSquare, northing)
+                : UTM(start.zone, start.hemisphere, easting, inSquare)).toMGRS()
+            return isVertical ? String(square.column) : String(square.row)
         case .TEN_KILOMETER:
-            let value = isVertical ? mgrs.easting : mgrs.northing
-            return String((value / 10_000) % 10)
-        case .KILOMETER:
-            let value = isVertical ? mgrs.easting : mgrs.northing
-            return String(format: "%02d", (value / 1_000) % 100)
+            return String(index % 10)
         default:
-            return ""
+            return String(format: "%02d", index % 100)
         }
     }
+
+    /// Which grid line this is, in units of the interval. The endpoints went
+    /// UTM -> lat/lon -> UTM and land a hair either side of the line, so snap
+    /// when we're within a metre. Anything that isn't on the interval at all
+    /// (e.g. a clipped zone edge) keeps the old floor, i.e. the square it's in.
+    private static func lineIndex(_ value: Double, interval: Int) -> Int {
+        let step = Double(interval)
+        let nearest = (value / step).rounded()
+        if abs(value - nearest * step) < lineSnapMetres { return Int(nearest) }
+        return Int((value / step).rounded(.down))
+    }
+
+    private static let lineSnapMetres = 1.0
 
     /// Stroke width per grid type. Coarser grids get thicker lines so
     /// 100km cells don't get lost in the 10km / 1km sub-grids.

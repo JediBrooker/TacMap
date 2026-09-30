@@ -2,11 +2,12 @@ package com.tacmap.mgrs
 
 import mil.nga.grid.features.Bounds
 import mil.nga.grid.features.Point
-import mil.nga.mgrs.MGRS
 import mil.nga.mgrs.grid.GridType
 import mil.nga.mgrs.grid.Grids
 import mil.nga.mgrs.gzd.GridZones
+import mil.nga.mgrs.utm.UTM
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.log2
 import kotlin.math.roundToInt
 
@@ -104,8 +105,16 @@ object MgrsGridRenderer {
 
                     val midLat = (p1.latitude  + p2.latitude)  / 2.0
                     val midLng = (p1.longitude + p2.longitude) / 2.0
-                    val mgrs = MGRS.from(Point.point(midLng, midLat))
-                    val text = lineLabelText(type, mgrs, isVertical)
+                    // Label value comes from the endpoints in this zone's UTM,
+                    // they sit on the line to ~1 cm. The lat/lon midpoint sags
+                    // off it (1.5 m on a 10 km line, ~150 m on 100 km) and
+                    // MGRS.from() truncates, so the 87000 line read "86".
+                    val text = lineLabelText(
+                        type,
+                        UTM.from(p1, zone.number, zone.hemisphere),
+                        UTM.from(p2, zone.number, zone.hemisphere),
+                        isVertical,
+                    )
                     if (text.isNotEmpty()) {
                         labelOut += LabelMark(
                             text = text,
@@ -122,20 +131,46 @@ object MgrsGridRenderer {
     }
 
     /// Format easting/northing for a grid line. 1km = 2-digit ("20"),
-    /// 10km = single digit, 100km = column/row letter.
-    private fun lineLabelText(gridType: GridType, mgrs: MGRS, isVertical: Boolean): String {
+    /// 10km = single digit, 100km = column/row letter of the square east of
+    /// a vertical line / north of a horizontal one (same side the numbers
+    /// count from, line 87 is the bottom edge of square 87).
+    private fun lineLabelText(gridType: GridType, start: UTM, end: UTM, isVertical: Boolean): String {
+        val interval = when (gridType) {
+            GridType.HUNDRED_KILOMETER -> 100_000L
+            GridType.TEN_KILOMETER -> 10_000L
+            GridType.KILOMETER -> 1_000L
+            else -> return ""
+        }
+        val easting = (start.easting + end.easting) / 2
+        val northing = (start.northing + end.northing) / 2
+        val index = lineIndex(if (isVertical) easting else northing, interval)
         return when (gridType) {
-            GridType.HUNDRED_KILOMETER ->
-                if (isVertical) mgrs.column.toString() else mgrs.row.toString()
-            GridType.TEN_KILOMETER -> {
-                val value = if (isVertical) mgrs.easting else mgrs.northing
-                ((value / 10_000) % 10).toString()
+            GridType.HUNDRED_KILOMETER -> {
+                val inSquare = (index * interval + interval / 2).toDouble()
+                val square = if (isVertical) {
+                    UTM(start.zone, start.hemisphere, inSquare, northing)
+                } else {
+                    UTM(start.zone, start.hemisphere, easting, inSquare)
+                }.toMGRS()
+                if (isVertical) square.column.toString() else square.row.toString()
             }
-            GridType.KILOMETER -> {
-                val value = if (isVertical) mgrs.easting else mgrs.northing
-                "%02d".format((value / 1_000) % 100)
-            }
-            else -> ""
+            GridType.TEN_KILOMETER -> (index % 10).toString()
+            else -> "%02d".format(index % 100)
         }
     }
+
+    // Which grid line this is, in units of the interval. The endpoints went
+    // UTM -> lat/lon -> UTM and land a hair either side of the line, so snap
+    // when we're within a metre. Anything that isn't on the interval at all
+    // (e.g. a clipped zone edge) keeps the old floor, i.e. the square it's in.
+    private fun lineIndex(value: Double, interval: Long): Long {
+        val nearest = Math.round(value / interval)
+        return if (abs(value - nearest * interval) < LINE_SNAP_METRES) {
+            nearest
+        } else {
+            floor(value / interval).toLong()
+        }
+    }
+
+    private const val LINE_SNAP_METRES = 1.0
 }
