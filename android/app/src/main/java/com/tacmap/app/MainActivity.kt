@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.UserManager
 import android.provider.Settings
+import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -41,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
@@ -63,7 +65,7 @@ import com.tacmap.models.TrackRecordingSettingsTarget
 import com.tacmap.util.DataKey
 import com.tacmap.util.retryExpiredSensitiveClipboard
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), OwnShareSheetHost {
 
     private lateinit var trial: TrialManager
     private lateinit var billing: BillingManager
@@ -104,6 +106,7 @@ class MainActivity : ComponentActivity() {
     // (e.g. days later) without a cold restart
     private val resumeTick = mutableLongStateOf(System.currentTimeMillis())
     private var restoreAfterRedeem = false
+    private val shareSheetLock = ShareSheetLockDeferral()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -319,6 +322,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (shareSheetLock.onPause()) lockForBackground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (shareSheetLock.onStop()) {
+            lockForBackground()
+            // compose pauses recomposition at ON_STOP, so flipping missionKeyReady cant tear
+            // MapScreen + its stores down from here like it does from onPause. Nuke the
+            // composition by hand, ComposeView rebuilds it on the next measure once visible
+            (findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as? ComposeView)
+                ?.disposeComposition()
+        }
+    }
+
+    override fun willShowOwnShareSheet() = shareSheetLock.shareSheetRequested()
+
+    override fun ownShareSheetLaunchFailed() = shareSheetLock.shareSheetLaunchFailed()
+
+    private fun lockForBackground() {
         // Reduce an eligible v3 client to egress-only presence before the
         // mission key and its screen-owned stores are torn down.
         (application as TacticalApp).unitSyncRuntime.onActivityPausing()
@@ -347,6 +370,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        shareSheetLock.onResume()
         // Stop background egress now; Unit Sync reconnects only after the
         // mission key is available and MapScreen attaches fresh stores.
         (application as TacticalApp).unitSyncRuntime.onActivityForegrounded()

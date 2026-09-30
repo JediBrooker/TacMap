@@ -1,5 +1,6 @@
 package com.tacmap.map
 
+import com.tacmap.app.startOwnShareSheet
 import com.tacmap.localization.DisplayFormat
 
 import com.tacmap.localization.Messages
@@ -418,7 +419,7 @@ private class AndroidFileExportDriver(
             clipData = ClipData.newUri(context.contentResolver, artifact.finalFile.name, token)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, chooserTitle))
+        context.startOwnShareSheet(Intent.createChooser(intent, chooserTitle))
     }
 
     override fun cleanupFailedArtifact(artifact: ExportArtifact?) {

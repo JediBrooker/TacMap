@@ -12,6 +12,7 @@ import com.tacmap.util.MissionStorePersistence
 import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.ModelMutationEvent
 import com.tacmap.models.ModelMutationOrigin
+import com.tacmap.models.RemoteChangeFold
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -180,7 +181,8 @@ class WaypointStore private constructor(
             _waypoints.value = before
             return false
         }
-        pushUndo(before)
+        if (origin == ModelMutationOrigin.REMOTE_SYNC) foldRemoteIntoHistory(before, candidate)
+        else pushUndo(before)
         _committedWaypoints.value = candidate
         _waypoints.value = candidate
         emit(setOf(wp.id), origin)
@@ -287,12 +289,22 @@ class WaypointStore private constructor(
         recordUndo: Boolean,
     ): Boolean {
         if (!persistCandidate(candidate)) return false
-        if (recordUndo) pushUndo(before)
+        // peer edits arent ours to undo, see RemoteChangeFold
+        if (origin == ModelMutationOrigin.REMOTE_SYNC) foldRemoteIntoHistory(before, candidate)
+        else if (recordUndo) pushUndo(before)
         _committedWaypoints.value = candidate
         _waypoints.value = candidate
         emit(changed, origin)
         committedChangeListener?.invoke(before, candidate, origin)
         return true
+    }
+
+    private fun foldRemoteIntoHistory(before: List<Waypoint>, after: List<Waypoint>) {
+        if (undoStack.isEmpty() && redoStack.isEmpty()) return
+        val fold = RemoteChangeFold(before, after, Waypoint::id)
+        if (fold.isEmpty) return
+        for (i in undoStack.indices) undoStack[i] = fold.applyTo(undoStack[i])
+        for (i in redoStack.indices) redoStack[i] = fold.applyTo(redoStack[i])
     }
 
     private fun stableState(): List<Waypoint> {

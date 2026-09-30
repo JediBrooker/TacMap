@@ -12,6 +12,7 @@ import com.tacmap.util.MissionStorePersistence
 import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.ModelMutationEvent
 import com.tacmap.models.ModelMutationOrigin
+import com.tacmap.models.RemoteChangeFold
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -371,7 +372,8 @@ class DrawingStore private constructor(
             _document.value = before
             return false
         }
-        pushUndo(before)
+        if (origin == ModelMutationOrigin.REMOTE_SYNC) foldRemoteIntoHistory(before, candidate)
+        else pushUndo(before)
         _committedDocument.value = candidate
         _document.value = candidate
         emit(setOf(feature.id), origin)
@@ -476,11 +478,26 @@ class DrawingStore private constructor(
         recordUndo: Boolean,
     ): Boolean {
         if (!persistCandidate(candidate)) return false
-        if (recordUndo) pushUndo(before)
+        // peer edits arent ours to undo, see RemoteChangeFold
+        if (origin == ModelMutationOrigin.REMOTE_SYNC) foldRemoteIntoHistory(before, candidate)
+        else if (recordUndo) pushUndo(before)
         _committedDocument.value = candidate
         _document.value = candidate
         emit(changed, origin)
         return true
+    }
+
+    private fun foldRemoteIntoHistory(before: DrawingDocument, after: DrawingDocument) {
+        if (undoStack.isEmpty() && redoStack.isEmpty()) return
+        val layers = RemoteChangeFold(before.layers, after.layers, DrawingLayer::id)
+        val features = RemoteChangeFold(before.features, after.features, DrawingFeature::id)
+        if (layers.isEmpty && features.isEmpty) return
+        fun fold(snapshot: DrawingDocument) = snapshot.copy(
+            layers = layers.applyTo(snapshot.layers),
+            features = features.applyTo(snapshot.features),
+        )
+        for (i in undoStack.indices) undoStack[i] = fold(undoStack[i])
+        for (i in redoStack.indices) redoStack[i] = fold(redoStack[i])
     }
 
     private fun stableDocument(): DrawingDocument {
