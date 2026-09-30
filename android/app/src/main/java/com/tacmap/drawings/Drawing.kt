@@ -214,26 +214,28 @@ data class DrawingFeature(
     }
 
     // Anchor point for name-label on the map. Centroid for polygons,
-    // mid-segment for polylines, single coordinate for points.
-    // Null if no usable coordinates.
+    // mid-segment for polylines, single coordinate for points. Uses the
+    // rendered (rotated/scaled) shape so a transformed line keeps its label
+    // on the line, as iOS does. Null if no usable coordinates.
     val labelAnchor: DrawingPoint?
         get() {
-            if (points.isEmpty()) return null
+            val rendered = effectivePoints
+            if (rendered.isEmpty()) return null
             return when (geometry) {
-                DrawingGeometry.POINT -> points.first()
+                DrawingGeometry.POINT -> rendered.first()
                 DrawingGeometry.LINE -> {
-                    if (points.size < 2) return null
-                    val mid = points.size / 2
-                    val a = points[mid - 1]
-                    val b = points[mid]
+                    if (rendered.size < 2) return null
+                    val mid = rendered.size / 2
+                    val a = rendered[mid - 1]
+                    val b = rendered[mid]
                     DrawingPoint(
                         latitude  = (a.latitude  + b.latitude ) / 2.0,
                         longitude = (a.longitude + b.longitude) / 2.0
                     )
                 }
                 DrawingGeometry.POLYGON -> {
-                    val lat = points.sumOf { it.latitude  } / points.size
-                    val lon = points.sumOf { it.longitude } / points.size
+                    val lat = rendered.sumOf { it.latitude  } / rendered.size
+                    val lon = rendered.sumOf { it.longitude } / rendered.size
                     DrawingPoint(latitude = lat, longitude = lon)
                 }
             }
