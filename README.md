@@ -150,6 +150,13 @@ quadrangle (public domain) rendered live over the satellite. Run
   total distance, the latest segment's bearing in degrees or NATO mils, and
   enclosed area for three or more points. Undo vertices or close the tool;
   measurements are temporary and do not create saved drawings.
+- **Elevation profile & line of sight** — the terrain button on the Measure bar
+  or on a selected line plots the ground along it (lowest, highest, climb and
+  descent), with a draggable height readout. For two points it checks line of
+  sight from an observer height to a target height, allowing for earth
+  curvature and refraction, marks where the view is blocked and greys out dead
+  ground. Heights come from Open-Meteo's Copernicus DEM, so it needs online
+  lookups.
 - **Background route recording** stores each accepted fix in an encrypted track
   log and exports the route separately as standard GPX. **Export All Mission
   Objects** creates GeoJSON for waypoints, symbols, drawings, and layers.

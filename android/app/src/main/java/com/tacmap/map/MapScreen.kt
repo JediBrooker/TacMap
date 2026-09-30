@@ -292,6 +292,7 @@ internal fun MapScreen(
     var quickAddTarget by remember { mutableStateOf<QuickAddTarget?>(null) }
     var quickAddEditorMode by remember { mutableStateOf<SymbolEditorMode?>(null) }
     var mapPressPoint by remember { mutableStateOf<MapPressPoint?>(null) }
+    var profilePath by remember { mutableStateOf<List<ElevationProfile.Coordinate>?>(null) }
     var showTips by rememberSaveable { mutableStateOf(FirstRunTips.shouldShow(context)) }
     val tourTargets = remember { TourTargets() }
     var pointSunMoon by remember { mutableStateOf<MapPressPoint?>(null) }
@@ -1418,7 +1419,10 @@ internal fun MapScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 16.dp)
+                    .padding(horizontal = 12.dp, vertical = 16.dp),
+                onProfile = {
+                    profilePath = measureSession.points.map { (lat, lng) -> ElevationProfile.Coordinate(lat, lng) }
+                },
             )
         } else if (activeDrawTool != null) {
             DrawingDraftBar(
@@ -1471,6 +1475,15 @@ internal fun MapScreen(
                     }
                     if (result.saved) selectedDrawingId = null
                     result
+                },
+                onElevationProfile = if (selectedDrawing.geometry == DrawingGeometry.LINE) {
+                    {
+                        profilePath = selectedDrawing.effectivePoints.map {
+                            ElevationProfile.Coordinate(it.latitude, it.longitude)
+                        }
+                    }
+                } else {
+                    null
                 },
                 onDismiss = {
                     drawingStore.revertPreview()
@@ -1751,6 +1764,10 @@ internal fun MapScreen(
                 startTour()
             },
         )
+    }
+
+    profilePath?.let { path ->
+        ElevationProfileDialog(path = path, onDismiss = { profilePath = null })
     }
 
     pointSunMoon?.let { point ->

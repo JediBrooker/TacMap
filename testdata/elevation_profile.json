@@ -1,0 +1,750 @@
+{
+  "schemaVersion": 1,
+  "description": "Elevation profile sampling, statistics, line of sight (Earth curvature with refraction k=0.13) and dead ground. Shared by iOS ElevationProfile.swift and Android ElevationProfile.kt.",
+  "earthRadiusMetres": 6371008.8,
+  "refractionCoefficient": 0.13,
+  "maxSamples": 200,
+  "targetSpacingMetres": 30.0,
+  "requestBatchSize": 100,
+  "requestDecimals": 4,
+  "toleranceMetres": 0.01,
+  "toleranceDegrees": 1e-09,
+  "sampling": [
+    {
+      "name": "two points about 1 km apart",
+      "path": [
+        {
+          "lat": 51.5,
+          "lon": -0.12
+        },
+        {
+          "lat": 51.509,
+          "lon": -0.12
+        }
+      ],
+      "count": 34,
+      "lengthMetres": 1000.7557,
+      "samples": [
+        {
+          "index": 0,
+          "distance": 0.0,
+          "lat": 51.5,
+          "lon": -0.12
+        },
+        {
+          "index": 1,
+          "distance": 30.3259,
+          "lat": 51.5002727273,
+          "lon": -0.12
+        },
+        {
+          "index": 17,
+          "distance": 515.5408,
+          "lat": 51.5046363636,
+          "lon": -0.12
+        },
+        {
+          "index": 32,
+          "distance": 970.4298,
+          "lat": 51.5087272727,
+          "lon": -0.12
+        },
+        {
+          "index": 33,
+          "distance": 1000.7557,
+          "lat": 51.509,
+          "lon": -0.12
+        }
+      ]
+    },
+    {
+      "name": "three-point path",
+      "path": [
+        {
+          "lat": 48.0,
+          "lon": 11.0
+        },
+        {
+          "lat": 48.004,
+          "lon": 11.0
+        },
+        {
+          "lat": 48.004,
+          "lon": 11.006
+        }
+      ],
+      "count": 30,
+      "lengthMetres": 891.1699,
+      "samples": [
+        {
+          "index": 0,
+          "distance": 0.0,
+          "lat": 48.0,
+          "lon": 11.0
+        },
+        {
+          "index": 1,
+          "distance": 30.73,
+          "lat": 48.0002763611,
+          "lon": 11.0
+        },
+        {
+          "index": 15,
+          "distance": 460.9499,
+          "lat": 48.004,
+          "lon": 11.0002173387
+        },
+        {
+          "index": 28,
+          "distance": 860.4399,
+          "lat": 48.004,
+          "lon": 11.0055869528
+        },
+        {
+          "index": 29,
+          "distance": 891.1699,
+          "lat": 48.004,
+          "lon": 11.006
+        }
+      ]
+    },
+    {
+      "name": "long line capped at the sample limit",
+      "path": [
+        {
+          "lat": 40.0,
+          "lon": -3.0
+        },
+        {
+          "lat": 40.4,
+          "lon": -3.0
+        }
+      ],
+      "count": 200,
+      "lengthMetres": 44478.0321,
+      "samples": [
+        {
+          "index": 0,
+          "distance": 0.0,
+          "lat": 40.0,
+          "lon": -3.0
+        },
+        {
+          "index": 1,
+          "distance": 223.5077,
+          "lat": 40.0020100503,
+          "lon": -3.0
+        },
+        {
+          "index": 100,
+          "distance": 22350.7699,
+          "lat": 40.2010050251,
+          "lon": -3.0
+        },
+        {
+          "index": 198,
+          "distance": 44254.5244,
+          "lat": 40.3979899497,
+          "lon": -3.0
+        },
+        {
+          "index": 199,
+          "distance": 44478.0321,
+          "lat": 40.4,
+          "lon": -3.0
+        }
+      ]
+    },
+    {
+      "name": "across the antimeridian",
+      "path": [
+        {
+          "lat": 10.0,
+          "lon": 179.99
+        },
+        {
+          "lat": 10.0,
+          "lon": -179.99
+        }
+      ],
+      "count": 74,
+      "lengthMetres": 2190.1155,
+      "samples": [
+        {
+          "index": 0,
+          "distance": 0.0,
+          "lat": 10.0,
+          "lon": 179.99
+        },
+        {
+          "index": 1,
+          "distance": 30.0016,
+          "lat": 10.0,
+          "lon": 179.9902739726
+        },
+        {
+          "index": 37,
+          "distance": 1110.0586,
+          "lat": 10.0,
+          "lon": -179.9998630137
+        },
+        {
+          "index": 72,
+          "distance": 2160.114,
+          "lat": 10.0,
+          "lon": -179.9902739726
+        },
+        {
+          "index": 73,
+          "distance": 2190.1155,
+          "lat": 10.0,
+          "lon": -179.99
+        }
+      ]
+    },
+    {
+      "name": "repeated point is skipped over",
+      "path": [
+        {
+          "lat": 0.5,
+          "lon": 20.0
+        },
+        {
+          "lat": 0.5,
+          "lon": 20.0
+        },
+        {
+          "lat": 0.51,
+          "lon": 20.0
+        }
+      ],
+      "count": 38,
+      "lengthMetres": 1111.9508,
+      "samples": [
+        {
+          "index": 0,
+          "distance": 0.0,
+          "lat": 0.5,
+          "lon": 20.0
+        },
+        {
+          "index": 1,
+          "distance": 30.0527,
+          "lat": 0.5002702703,
+          "lon": 20.0
+        },
+        {
+          "index": 19,
+          "distance": 571.0018,
+          "lat": 0.5051351351,
+          "lon": 20.0
+        },
+        {
+          "index": 36,
+          "distance": 1081.8981,
+          "lat": 0.5097297297,
+          "lon": 20.0
+        },
+        {
+          "index": 37,
+          "distance": 1111.9508,
+          "lat": 0.51,
+          "lon": 20.0
+        }
+      ]
+    },
+    {
+      "name": "single point",
+      "path": [
+        {
+          "lat": 10.0,
+          "lon": 10.0
+        }
+      ],
+      "count": 0,
+      "lengthMetres": 0,
+      "samples": []
+    },
+    {
+      "name": "zero length",
+      "path": [
+        {
+          "lat": 10.0,
+          "lon": 10.0
+        },
+        {
+          "lat": 10.0,
+          "lon": 10.0
+        }
+      ],
+      "count": 0,
+      "lengthMetres": 0,
+      "samples": []
+    }
+  ],
+  "analysis": [
+    {
+      "name": "flat ground over 5 km is clear",
+      "distances": [
+        0.0,
+        500.0,
+        1000.0,
+        1500.0,
+        2000.0,
+        2500.0,
+        3000.0,
+        3500.0,
+        4000.0,
+        4500.0,
+        5000.0
+      ],
+      "elevations": [
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "observerHeight": 2.0,
+      "targetHeight": 2.0,
+      "stats": {
+        "min": 100.0,
+        "max": 100.0,
+        "ascent": 0.0,
+        "descent": 0.0
+      },
+      "blocked": false,
+      "worstIndex": 5,
+      "worstMargin": -1.573262,
+      "visible": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "sightLine": [
+        102.0,
+        101.846374,
+        101.726888,
+        101.64154,
+        101.590332,
+        101.573262,
+        101.590332,
+        101.64154,
+        101.726888,
+        101.846374,
+        102.0
+      ]
+    },
+    {
+      "name": "hill in the middle blocks",
+      "distances": [
+        0.0,
+        500.0,
+        1000.0,
+        1500.0,
+        2000.0,
+        2500.0,
+        3000.0,
+        3500.0,
+        4000.0
+      ],
+      "elevations": [
+        120,
+        121,
+        123,
+        130,
+        160,
+        131,
+        124,
+        122,
+        120
+      ],
+      "observerHeight": 2.0,
+      "targetHeight": 2.0,
+      "stats": {
+        "min": 120,
+        "max": 160,
+        "ascent": 40.0,
+        "descent": 40.0
+      },
+      "blocked": true,
+      "worstIndex": 4,
+      "worstMargin": 38.273112,
+      "visible": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false
+      ],
+      "sightLine": [
+        122.0,
+        121.880513,
+        121.795166,
+        121.743957,
+        121.726888,
+        121.743957,
+        121.795166,
+        121.880513,
+        122.0
+      ]
+    },
+    {
+      "name": "a 100 m mast sees over the hill",
+      "distances": [
+        0.0,
+        500.0,
+        1000.0,
+        1500.0,
+        2000.0,
+        2500.0,
+        3000.0,
+        3500.0,
+        4000.0
+      ],
+      "elevations": [
+        120,
+        121,
+        123,
+        130,
+        160,
+        131,
+        124,
+        122,
+        120
+      ],
+      "observerHeight": 100.0,
+      "targetHeight": 2.0,
+      "stats": {
+        "min": 120,
+        "max": 160,
+        "ascent": 40.0,
+        "descent": 40.0
+      },
+      "blocked": false,
+      "worstIndex": 4,
+      "worstMargin": -10.726888,
+      "visible": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        true,
+        true
+      ],
+      "sightLine": [
+        220.0,
+        207.630513,
+        195.295166,
+        182.993957,
+        170.726888,
+        158.493957,
+        146.295166,
+        134.130513,
+        122.0
+      ]
+    },
+    {
+      "name": "Earth curvature blocks 30 km over flat ground",
+      "distances": [
+        0.0,
+        1000.0,
+        2000.0,
+        3000.0,
+        4000.0,
+        5000.0,
+        6000.0,
+        7000.0,
+        8000.0,
+        9000.0,
+        10000.0,
+        11000.0,
+        12000.0,
+        13000.0,
+        14000.0,
+        15000.0,
+        16000.0,
+        17000.0,
+        18000.0,
+        19000.0,
+        20000.0,
+        21000.0,
+        22000.0,
+        23000.0,
+        24000.0,
+        25000.0,
+        26000.0,
+        27000.0,
+        28000.0,
+        29000.0,
+        30000.0
+      ],
+      "elevations": [
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0
+      ],
+      "observerHeight": 2.0,
+      "targetHeight": 2.0,
+      "stats": {
+        "min": 50.0,
+        "max": 50.0,
+        "ascent": 0.0,
+        "descent": 0.0
+      },
+      "blocked": true,
+      "worstIndex": 15,
+      "worstMargin": 13.362559,
+      "visible": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "sightLine": [
+        52.0,
+        50.019937,
+        48.17643,
+        46.469479,
+        44.899084,
+        43.465245,
+        42.167962,
+        41.007235,
+        39.983065,
+        39.09545,
+        38.344392,
+        37.729889,
+        37.251943,
+        36.910553,
+        36.705719,
+        36.637441,
+        36.705719,
+        36.910553,
+        37.251943,
+        37.729889,
+        38.344392,
+        39.09545,
+        39.983065,
+        41.007235,
+        42.167962,
+        43.465245,
+        44.899084,
+        46.469479,
+        48.17643,
+        50.019937,
+        52.0
+      ]
+    },
+    {
+      "name": "dead ground behind a ridge",
+      "distances": [
+        0.0,
+        250.0,
+        500.0,
+        750.0,
+        1000.0,
+        1250.0,
+        1500.0,
+        1750.0,
+        2000.0,
+        2250.0,
+        2500.0,
+        2750.0,
+        3000.0
+      ],
+      "elevations": [
+        200,
+        205,
+        212,
+        225,
+        240,
+        232,
+        215,
+        205,
+        220,
+        250,
+        280,
+        305,
+        330
+      ],
+      "observerHeight": 2.0,
+      "targetHeight": 2.0,
+      "stats": {
+        "min": 200,
+        "max": 330,
+        "ascent": 165.0,
+        "descent": 35.0
+      },
+      "blocked": false,
+      "worstIndex": 4,
+      "worstMargin": -5.196777,
+      "visible": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true
+      ],
+      "sightLine": [
+        202.0,
+        212.786392,
+        223.581319,
+        234.384781,
+        245.196777,
+        256.017308,
+        266.846374,
+        277.683975,
+        288.530111,
+        299.384781,
+        310.247986,
+        321.119726,
+        332.0
+      ]
+    },
+    {
+      "name": "two samples only",
+      "distances": [
+        0.0,
+        800.0
+      ],
+      "elevations": [
+        10.0,
+        40.0
+      ],
+      "observerHeight": 2.0,
+      "targetHeight": 0.0,
+      "stats": {
+        "min": 10.0,
+        "max": 40.0,
+        "ascent": 30.0,
+        "descent": 0.0
+      },
+      "blocked": false,
+      "worstIndex": null,
+      "worstMargin": null,
+      "visible": [
+        true,
+        true
+      ],
+      "sightLine": [
+        12.0,
+        40.0
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "name": "151 samples go out in two batches rounded to 4 dp",
+      "path": [
+        {
+          "lat": 51.5,
+          "lon": -0.12
+        },
+        {
+          "lat": 51.5405,
+          "lon": -0.12
+        }
+      ],
+      "batches": [
+        {
+          "count": 100,
+          "latitudeFirst": "51.5000",
+          "longitudeFirst": "-0.1200",
+          "latitudeLast": "51.5267",
+          "longitudeLast": "-0.1200"
+        },
+        {
+          "count": 51,
+          "latitudeFirst": "51.5270",
+          "longitudeFirst": "-0.1200",
+          "latitudeLast": "51.5405",
+          "longitudeLast": "-0.1200"
+        }
+      ]
+    }
+  ]
+}

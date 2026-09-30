@@ -168,6 +168,81 @@ enum Messages {
     static func onlineBasemapsDisabledMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.online_basemaps_disabled", fallback: "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", arguments: [])
     }
+    static func profileClimb() -> String {
+        L10n.message("id.profile_climb", fallback: "Total climb")
+    }
+    static func profileDeadGround() -> String {
+        L10n.message("id.profile_dead_ground", fallback: "Grey ground on the chart is hidden from the observer (dead ground).")
+    }
+    static func profileDescent() -> String {
+        L10n.message("id.profile_descent", fallback: "Total descent")
+    }
+    static func profileEnd() -> String {
+        L10n.message("id.profile_end", fallback: "End")
+    }
+    static func profileFailed() -> String {
+        L10n.message("id.profile_failed", fallback: "Couldn't fetch heights. Check your connection and try again.")
+    }
+    static func profileHighest() -> String {
+        L10n.message("id.profile_highest", fallback: "Highest")
+    }
+    static func profileHint() -> String {
+        L10n.message("id.profile_hint", fallback: "Drag across the chart to read the height at any point.")
+    }
+    static func profileLength() -> String {
+        L10n.message("id.profile_length", fallback: "Length")
+    }
+    static func profileLoading() -> String {
+        L10n.message("id.profile_loading", fallback: "Fetching heights…")
+    }
+    static func profileLookupsOff() -> String {
+        L10n.message("id.profile_lookups_off", fallback: "Elevation profiles use Open-Meteo, and online lookups are off. Turn them on in Settings, Privacy & OPSEC.")
+    }
+    static func profileLosBlocked(_ height: String, _ distance: String) -> String {
+        L10n.message("id.profile_los_blocked", fallback: "Blocked: the ground rises %1$@ above the sight line, %2$@ from the observer.", height, distance)
+    }
+    static func profileLosClear(_ clearance: String, _ distance: String) -> String {
+        L10n.message("id.profile_los_clear", fallback: "Clear: the target can be seen. The closest the ground comes is %1$@ below the sight line, %2$@ from the observer.", clearance, distance)
+    }
+    static func profileLosClearShort() -> String {
+        L10n.message("id.profile_los_clear_short", fallback: "Clear: the target can be seen.")
+    }
+    static func profileLosNeedsTwoPoints() -> String {
+        L10n.message("id.profile_los_needs_two_points", fallback: "Line of sight is checked on a straight line between two points.")
+    }
+    static func profileLosTitle() -> String {
+        L10n.message("id.profile_los_title", fallback: "Line of Sight")
+    }
+    static func profileLowest() -> String {
+        L10n.message("id.profile_lowest", fallback: "Lowest")
+    }
+    static func profileObserverHeight() -> String {
+        L10n.message("id.profile_observer_height", fallback: "Observer height")
+    }
+    static func profileReadout(_ distance: String, _ height: String) -> String {
+        L10n.message("id.profile_readout", fallback: "%1$@ from the start · %2$@", distance, height)
+    }
+    static func profileReadoutHidden() -> String {
+        L10n.message("id.profile_readout_hidden", fallback: "Hidden from the observer")
+    }
+    static func profileRetry() -> String {
+        L10n.message("id.profile_retry", fallback: "Try Again")
+    }
+    static func profileSource() -> String {
+        L10n.message("id.profile_source", fallback: "Heights come from the Copernicus elevation model via Open-Meteo, about 30 m apart, so trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.")
+    }
+    static func profileStart() -> String {
+        L10n.message("id.profile_start", fallback: "Start")
+    }
+    static func profileTargetHeight() -> String {
+        L10n.message("id.profile_target_height", fallback: "Target height")
+    }
+    static func profileTitle() -> String {
+        L10n.message("id.profile_title", fallback: "Elevation Profile")
+    }
+    static func profileTooShort() -> String {
+        L10n.message("id.profile_too_short", fallback: "The line is too short for a profile.")
+    }
     static func recordingStatusIdle() -> String {
         L10n.message("id.recording_status_idle", fallback: "IDLE")
     }
@@ -248,6 +323,9 @@ enum Messages {
     }
     static func settingsLanguageTitle() -> String {
         L10n.message("id.settings_language_title", fallback: "Language")
+    }
+    static func onlineLookupsPrivacyHelp() -> String {
+        L10n.message("id.settings_online_lookups_help_ios", fallback: "Off by default. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. An elevation profile sends up to 200 points along the line (coarsened to ~11 m). Place-name search uses Apple's MKLocalSearch and may send the typed place-name or address query and camera region to Apple. Leave this off for a fully offline/OPSEC posture.")
     }
     static func sunMoonBmct() -> String {
         L10n.message("id.sun_moon_bmct", fallback: "Civil dawn (BMCT)")

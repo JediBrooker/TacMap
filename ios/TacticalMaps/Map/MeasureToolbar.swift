@@ -5,6 +5,8 @@ import SwiftUI
 struct MeasureToolbar: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var session: MeasureSession
+    /// Opens the elevation profile for the measured line.
+    var onProfile: (() -> Void)? = nil
 
     var body: some View {
         if session.isActive {
@@ -34,6 +36,21 @@ struct MeasureToolbar: View {
                 }
 
                 Spacer(minLength: 0)
+
+                if let onProfile {
+                    Button(action: onProfile) {
+                        Image(systemName: "chart.xyaxis.line")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(width: 30, height: 30)
+                            .background(.white.opacity(0.10), in: Circle())
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(session.points.count < 2)
+                    .opacity(session.points.count < 2 ? 0.4 : 1)
+                    .accessibilityLabel(Messages.profileTitle())
+                    .accessibilityIdentifier("measure.profile")
+                }
 
                 // Undo (last vertex)
                 Button {

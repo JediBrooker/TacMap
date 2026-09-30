@@ -53,6 +53,7 @@ struct DrawingControlsCard: View {
     /// the card's vertical space so they hide behind a toggle.
     @State private var showTransforms    = false
     @State private var showEditor        = false
+    @State private var profileRequest: ElevationProfileRequest?
 
     var body: some View {
         if let durable = drawingStore.shapes.first(where: { $0.id == drawingID }) {
@@ -150,6 +151,23 @@ struct DrawingControlsCard: View {
             }
             .buttonStyle(.bordered)
             .accessibilityLabel(L10n.text("Move drawing to crosshair"))
+
+            if shape.kind == .polyline || shape.kind == .freedraw {
+                Button {
+                    profileRequest = ElevationProfileRequest(shape.effectiveCoordinates)
+                } label: {
+                    Image(systemName: "chart.xyaxis.line")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(Messages.profileTitle())
+                .accessibilityIdentifier("drawing.profile")
+            }
+        }
+        .nightSheet(item: $profileRequest) { request in
+            ElevationProfileSheet(request: request)
+                .presentationDetents([.medium, .large])
+                .nightDragIndicator()
         }
     }
 

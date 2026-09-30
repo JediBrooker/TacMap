@@ -533,6 +533,7 @@ struct ContentView: View {
     @State private var drawingsPanelOpen   = false   // inline panel below hamburger
     @State private var quickSymbolDraft: QuickSymbolDraft? = nil
     @State private var mapPressPoint: MapPressPoint? = nil
+    @State private var profileRequest: ElevationProfileRequest? = nil
     /// The guided tour's current step, or nil when it is closed.
     @State private var tourStep: Int? = nil
     /// Set by "Replay Tour" in About; the tour starts once the sheet is gone.
@@ -1028,6 +1029,11 @@ struct ContentView: View {
         .nightSheet(isPresented: $showAppLockSheet) {
             AppLockSetupView()
                 .padSheetSizing()
+        }
+        .nightSheet(item: $profileRequest) { request in
+            ElevationProfileSheet(request: request)
+                .presentationDetents([.medium, .large])
+                .nightDragIndicator()
         }
         .nightSheet(isPresented: $showOpsecSheet, onDismiss: presentTipsIfNeeded) {
             OpsecSettingsView()
@@ -1561,7 +1567,9 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, max(bottomInset, 8) + 6)
         } else if measureSession.isActive {
-            MeasureToolbar(session: measureSession)
+            MeasureToolbar(session: measureSession) {
+                profileRequest = ElevationProfileRequest(measureSession.points)
+            }
                 .padding(.horizontal, 12)
                 .padding(.bottom, max(bottomInset, 8) + 6)
         } else {

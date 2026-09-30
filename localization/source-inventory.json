@@ -1913,5 +1913,41 @@
     "platform": "android",
     "area": "navigation-settings",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/ElevationProfileSheet.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ElevationProfileDialog.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ElevationProfile.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ElevationProfileService.kt",
+    "platform": "android",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/ElevationProfile.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/ElevationProfileService.swift",
+    "platform": "ios",
+    "area": "weather-terrain",
+    "reviewStatus": "manual-review-needed"
   }
 ]

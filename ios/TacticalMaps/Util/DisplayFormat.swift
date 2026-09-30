@@ -31,6 +31,11 @@ enum DisplayFormat {
         return number(metres / 1000, decimals: metres < 100_000 ? 2 : 0, locale: locale) + " km"
     }
 
+    /// A terrain or eye height in whole metres, which can be negative.
+    static func height(_ metres: Double, locale: Locale = currentLocale) -> String {
+        number(metres, decimals: 0, locale: locale) + " m"
+    }
+
     static func area(_ squareMetres: Double, locale: Locale = currentLocale) -> String {
         if squareMetres < 10_000 { return number(squareMetres, decimals: 0, locale: locale) + " m²" }
         if squareMetres < 1_000_000 { return number(squareMetres / 10_000, decimals: 2, locale: locale) + " ha" }

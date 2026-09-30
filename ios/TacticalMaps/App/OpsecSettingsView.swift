@@ -169,7 +169,7 @@ struct OpsecSettingsView: View {
                         isOn: settingBinding(\.onlineLookups, set: opsec.setOnlineLookups)
                     )
                 } footer: {
-                    Text(L10n.text("Off by default. Elevation and weather send the map-centre coordinate (coarsened to ~110 m) to Open-Meteo. The terrain heat-map sends a 24 × 24 coordinate grid (coarsened to ~11 m) covering the visible map area. Place-name search uses Apple's MKLocalSearch and may send the typed place-name or address query and camera region to Apple. Leave this off for a fully offline/OPSEC posture."))
+                    Text(Messages.onlineLookupsPrivacyHelp())
                 }
 
                 Section {

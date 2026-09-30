@@ -3,6 +3,7 @@ package com.tacmap.map
 import com.tacmap.localization.DisplayFormat
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Tune
 import com.tacmap.ui.AlertDialog
@@ -39,6 +41,7 @@ import androidx.compose.material3.ButtonDefaults
 import com.tacmap.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
@@ -97,7 +100,9 @@ internal fun DrawingFeatureEditBar(
     onMoveToCrosshair: () -> DrawingMutationUiResult,
     onDelete: () -> DrawingMutationUiResult,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Opens the elevation profile along a line drawing; null for other shapes. */
+    onElevationProfile: (() -> Unit)? = null,
 ) {
     var colorMenuOpen by remember { mutableStateOf(false) }
     var fillColorMenuOpen by remember { mutableStateOf(false) }
@@ -213,6 +218,11 @@ internal fun DrawingFeatureEditBar(
                 Icon(Icons.Default.GpsFixed, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(6.dp))
                 Text(L10n.text("Move to crosshair"), maxLines = 1, fontSize = 12.sp)
+            }
+            if (onElevationProfile != null) {
+                FilledTonalIconButton(onClick = onElevationProfile, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.Terrain, contentDescription = Messages.profileTitle())
+                }
             }
         }
 
