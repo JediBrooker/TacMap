@@ -13180,6 +13180,76 @@
         "translation": "35f41f31f4691e03118f65daa710919e57d6da42e2a7468df575243d71e029ab",
         "status": "reviewed"
       }
+    },
+    "drawings_delete_title": {
+      "de": {
+        "source": "842b3a23fc7ff64115be9e32e85a1f1c5d43c2a7082915450b58d35ae3fb097d",
+        "translation": "3b657d54ee81a5f42b7d381b8ecb071c117071750d23014bec13b4f8ecbc28e3",
+        "status": "reviewed"
+      }
+    },
+    "drawings_delete_body": {
+      "de": {
+        "source": "890a0576dc971a78af1912af1275ad17af757d6e08ea5b3860c93b336d5f9d07",
+        "translation": "ad914c1d26f9cb0992e1c212790c0e164cb1c3ed75be23ed1b00598ae74e4080",
+        "status": "reviewed"
+      }
+    },
+    "drawings_discard_title": {
+      "de": {
+        "source": "79862b50bc9f0259ea0bd4d53806f19f6443d0c5e94ce043cdb34b6c5c772935",
+        "translation": "ad1df746215240cbbb6fc15f86c38db94dae38f857a9addf2b2d78b02ba15cf1",
+        "status": "reviewed"
+      }
+    },
+    "drawings_discard_body": {
+      "de": {
+        "source": "746c42f3572919053f69337c5d05a9c228514e4a91897d3eb9b4f5d4fbf3f8b7",
+        "translation": "bb230a00263326d04e0c1b513387d747eecc6526cfe783c792c47ac38ee9321b",
+        "status": "reviewed"
+      }
+    },
+    "drawings_keep_drawing": {
+      "de": {
+        "source": "e08e0cbf9ca42736981d15c948217a3c4e693cbba2d9967cc7771ff4ba868179",
+        "translation": "ed04a37f20c6e482848ca843167bbf02f302528c4e5c334c13ef76e34af8ccc4",
+        "status": "reviewed"
+      }
+    },
+    "drawings_rename_title": {
+      "de": {
+        "source": "84d884ed8f64c274284f4c1b6213a64e65eea2671ff2d0f69d986eae86083686",
+        "translation": "1dc7ced665f49d51c51647a4e5d814dfd12b9bf70d0b6047c481d18767a3aaeb",
+        "status": "reviewed"
+      }
+    },
+    "drawings_rename_named": {
+      "de": {
+        "source": "337254b03096972be8d99b67af5dd1fada372cb33bd9da6f0ffb7c97b5674176",
+        "translation": "d376db370d44a26ff4307b5e8ea3ce3d62038c95967c626d967f7f532fdd9649",
+        "status": "reviewed"
+      }
+    },
+    "drawings_stroke_width": {
+      "de": {
+        "source": "540e5a88fa4a0b94434058a7918ffd08c400ff396eed9e556a7d1967dd0accbe",
+        "translation": "fb1a6e779598ddac88d254a134f6577e9a2f1c6b78471a273f1e4fc8e953daf6",
+        "status": "reviewed"
+      }
+    },
+    "drawings_stroke_width_value": {
+      "de": {
+        "source": "bd8c7b9ae875443482747a46086b9b82369432a37e2190690250054b79d0dfb0",
+        "translation": "d7c881b5ef64295baa68520d125f6fd57de101b52babe52f53f2740086151882",
+        "status": "reviewed"
+      }
+    },
+    "drawings_fill_style": {
+      "de": {
+        "source": "f10d42e468bdb48a9247eb749e8e7e8f6026086435591c7c38929bfa493802dc",
+        "translation": "89175eb37ab9972a7794a1a8440da8158014a55d682f70a490d43efb08a43109",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

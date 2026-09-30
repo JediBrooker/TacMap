@@ -1398,6 +1398,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/models/MissionUndoHistory.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/models/TrackLog.kt",
     "platform": "android",
     "area": "shared-data-security",

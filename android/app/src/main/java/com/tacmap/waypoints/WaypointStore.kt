@@ -9,6 +9,7 @@ import com.tacmap.localization.L10n
 import android.content.Context
 import com.tacmap.util.SafeStore
 import com.tacmap.util.MissionStorePersistence
+import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.ModelMutationEvent
 import com.tacmap.models.ModelMutationOrigin
 import kotlinx.coroutines.channels.Channel
@@ -68,6 +69,11 @@ class WaypointStore private constructor(
      *  state before and after it. Range rings use it to follow their symbol. */
     @Volatile
     var committedChangeListener: ((before: List<Waypoint>, after: List<Waypoint>, origin: ModelMutationOrigin) -> Unit)? = null
+
+    /** Called whenever a change records a new undo step, so the map can keep
+     *  one undo order across symbols and drawings ([MissionUndoHistory]). */
+    @Volatile
+    var undoStepListener: (() -> Unit)? = null
 
     init { load() }
 
@@ -226,11 +232,12 @@ class WaypointStore private constructor(
     }
 
     private fun pushUndo(snapshot: List<Waypoint>) {
-        if (undoStack.size >= 50) undoStack.removeFirst()
+        if (undoStack.size >= MissionUndoHistory.STORE_UNDO_LIMIT) undoStack.removeFirst()
         undoStack.addLast(snapshot)
         redoStack.clear()
         _canUndo.value = true
         _canRedo.value = false
+        undoStepListener?.invoke()
     }
 
     /** True when the store couldn't be opened b/c the at-rest key is locked.

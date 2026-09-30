@@ -142,8 +142,10 @@ import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LiveMapLocationAction
 import com.tacmap.models.LiveMapLocationPermissionPolicy
 import com.tacmap.models.LiveMapLocationState
+import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.TrackRecordingPhase
 import com.tacmap.models.TrackRecordingSettingsTarget
+import com.tacmap.models.UndoTarget
 import com.tacmap.settings.MapOrientationMode
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
@@ -244,23 +246,26 @@ internal fun MapScreen(
             waypointStore.committedChangeListener = follower::onWaypointsCommitted
         }
     }
+    // Symbols and drawings share one undo order, like iOS's single UndoManager.
+    val undoHistory = remember(waypointStore, drawingStore) {
+        MissionUndoHistory().also { history ->
+            waypointStore.undoStepListener = { history.recorded(UndoTarget.SYMBOLS) }
+            drawingStore.undoStepListener = { history.recorded(UndoTarget.DRAWINGS) }
+        }
+    }
     val importIdentityJournal = remember {
         com.tacmap.export.ExternalImportIdentityJournal(context)
     }
     val documentCopyJournal = remember { DocumentImportCopyJournal(context) }
     val drawingDocument by drawingStore.document.collectAsState()
-    val drawingCanUndo by drawingStore.canUndo.collectAsState()
-    val drawingCanRedo by drawingStore.canRedo.collectAsState()
-    val waypointCanUndo by waypointStore.canUndo.collectAsState()
-    val waypointCanRedo by waypointStore.canRedo.collectAsState()
+    val canUndo by undoHistory.canUndo.collectAsState()
+    val canRedo by undoHistory.canRedo.collectAsState()
     val waypointDataLocked by waypointStore.locked.collectAsState()
     val drawingDataLocked by drawingStore.locked.collectAsState()
     val waypointStoreMessage by waypointStore.loadError.collectAsState()
     val waypointStoreError = waypointStoreMessage?.text
     val drawingStoreMessage by drawingStore.loadError.collectAsState()
     val drawingStoreError = drawingStoreMessage?.text
-    val canUndo = drawingCanUndo || waypointCanUndo
-    val canRedo = drawingCanRedo || waypointCanRedo
     val lastLocation by vm.locationService.lastLocation.collectAsState()
     val distanceFromUserToCrosshair = lastLocation?.let { location ->
         crosshairDistanceMetres(
@@ -406,6 +411,10 @@ internal fun MapScreen(
     var activeDrawingName by remember { mutableStateOf("") }
     var activeStrokeColor by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_COLOR) }
     var activeStrokeStyle by remember { mutableStateOf(DrawingStrokeStyle.SOLID) }
+    // Area fill is chosen independently of the stroke and kept between
+    // drawings, like the iOS drawing session.
+    var activeFillColor by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_COLOR) }
+    var activeFillAlpha by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_FILL_ALPHA) }
     var pendingDrawingMutation by remember { mutableStateOf<PendingDrawingMutation?>(null) }
 
     fun checkedDrawingMutation(
@@ -758,11 +767,18 @@ internal fun MapScreen(
             points = draftPoints,
             layerId = safeActiveLayerId,
             strokeColor = activeStrokeColor,
-            fillColor = activeStrokeColor.withAlpha(0x33),
+            fillColor = activeFillColor.withAlpha(activeFillAlpha),
             strokeStyle = activeStrokeStyle,
             density = rendererDensity,
         )
         else -> null
+    }
+
+    /** New drawings inherit the active layer's colour (e.g. Hostile starts
+     *  red), as on iOS; the draft bar can still change it. */
+    fun useActiveLayerStrokeColor() {
+        (drawingDocument.layers.firstOrNull { it.id == activeDrawingLayerId } ?: drawingDocument.layers.firstOrNull())
+            ?.let { activeStrokeColor = it.color or 0xFF000000.toInt() }
     }
 
     fun stopDrawing() {
@@ -783,7 +799,7 @@ internal fun MapScreen(
                     points = points,
                     layerId = safeActiveLayerId,
                     strokeColor = activeStrokeColor,
-                    fillColor = activeStrokeColor.withAlpha(0x33),
+                    fillColor = activeFillColor.withAlpha(activeFillAlpha),
                     strokeStyle = activeStrokeStyle,
                     density = rendererDensity,
                 )
@@ -1378,17 +1394,23 @@ internal fun MapScreen(
                     canUndo = canUndo,
                     canRedo = canRedo,
                     onUndo = {
-                        if (drawingCanUndo) {
-                            if (drawingStore.undo()) ringFollower.realign(waypointStore.committedWaypoints.value)
-                        } else {
-                            waypointStore.undo()
+                        undoHistory.undo { target ->
+                            when (target) {
+                                UndoTarget.DRAWINGS -> drawingStore.undo().also { undone ->
+                                    if (undone) ringFollower.realign(waypointStore.committedWaypoints.value)
+                                }
+                                UndoTarget.SYMBOLS -> waypointStore.undo()
+                            }
                         }
                     },
                     onRedo = {
-                        if (drawingCanRedo) {
-                            if (drawingStore.redo()) ringFollower.realign(waypointStore.committedWaypoints.value)
-                        } else {
-                            waypointStore.redo()
+                        undoHistory.redo { target ->
+                            when (target) {
+                                UndoTarget.DRAWINGS -> drawingStore.redo().also { redone ->
+                                    if (redone) ringFollower.realign(waypointStore.committedWaypoints.value)
+                                }
+                                UndoTarget.SYMBOLS -> waypointStore.redo()
+                            }
                         }
                     }
                 )
@@ -1435,9 +1457,14 @@ internal fun MapScreen(
                 ),
                 strokeColor = activeStrokeColor,
                 strokeStyle = activeStrokeStyle,
+                fillColor = activeFillColor,
+                fillAlpha = activeFillAlpha,
                 onDrawingNameChange = { activeDrawingName = it },
                 onStrokeColorChange = { activeStrokeColor = it },
                 onStrokeStyleChange = { activeStrokeStyle = it },
+                onFillColorChange = { activeFillColor = it },
+                onFillAlphaChange = { activeFillAlpha = it },
+                onUndoPoint = { draftPoints = draftPoints.dropLast(1) },
                 onFinish = {
                     when (activeDrawTool) {
                         DrawingGeometry.POINT -> stopDrawing()
@@ -1671,6 +1698,7 @@ internal fun MapScreen(
             onPlacePoint = {
                 vm.selectWaypoint(null)
                 selectedDrawingId = null
+                useActiveLayerStrokeColor()
                 activeDrawTool = DrawingGeometry.POINT
                 activeDrawingName = defaultDrawingName(DrawingGeometry.POINT, drawingDocument.features)
                 draftGeometry = null
@@ -1680,6 +1708,7 @@ internal fun MapScreen(
             onStartDraft = { geometry ->
                 vm.selectWaypoint(null)
                 selectedDrawingId = null
+                useActiveLayerStrokeColor()
                 activeDrawTool = geometry
                 isFreeDrawMode = false
                 activeDrawingName = defaultDrawingName(geometry, drawingDocument.features)
@@ -1690,6 +1719,7 @@ internal fun MapScreen(
             onStartFreeDraw = {
                 vm.selectWaypoint(null)
                 selectedDrawingId = null
+                useActiveLayerStrokeColor()
                 activeDrawTool = DrawingGeometry.LINE
                 isFreeDrawMode = true
                 activeDrawingName = defaultDrawingName(DrawingGeometry.LINE, drawingDocument.features)
@@ -1721,7 +1751,13 @@ internal fun MapScreen(
                 checkedDrawingMutation(DrawingMutationIntent.DELETE) {
                     drawingStore.removeFeature(id)
                 }
-            }
+            },
+            onRenameFeature = { id, name ->
+                checkedDrawingMutation(DrawingMutationIntent.EDIT) {
+                    val feature = drawingStore.document.value.features.firstOrNull { it.id == id }
+                    feature != null && drawingStore.updateFeature(feature.copy(name = name))
+                }
+            },
         )
     }
 

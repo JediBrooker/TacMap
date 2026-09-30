@@ -49,6 +49,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import android.os.Handler
 import android.os.Looper
+import kotlin.math.roundToInt
 
 // Non-composable helpers extracted from MapScreen.kt: angle normalisation,
 // drawing defaults/naming, PDF import + georeferencing, GeoJSON sharing.
@@ -83,9 +84,30 @@ internal object DrawingDefaults {
     val DEFAULT_COLOR: Int = 0xFFFFA000.toInt()
     /** Portable width shared with iOS and interchange formats. */
     const val STROKE_WIDTH_DP: Float = 3f
+    /** Stroke width slider range and step in portable points, as on iOS. */
+    const val MIN_STROKE_WIDTH_DP: Float = 0.5f
+    const val MAX_STROKE_WIDTH_DP: Float = 16f
+    const val STROKE_WIDTH_STEP_DP: Float = 0.5f
+    /** Polygon fill opacity for new drawings and the reset button (20%). */
+    const val DEFAULT_FILL_ALPHA: Int = 0x33
+    /** Fill opacity presets in percent, matching the iOS fill menus. */
+    val FILL_OPACITY_PRESETS: List<Int> = listOf(0, 10, 20, 40, 60, 80, 100)
 
     fun rendererStrokeWidth(density: Float): Float =
         STROKE_WIDTH_DP * density.coerceAtLeast(0f)
+
+    /** Android stores renderer pixels; the slider and iOS use portable points
+     *  (`testdata/drawing_style.json`). */
+    fun portableStrokeWidth(storedPixels: Float, density: Float): Float =
+        if (density > 0f) storedPixels / density else storedPixels
+
+    fun storedStrokeWidth(portableWidth: Float, density: Float): Float =
+        portableWidth.coerceIn(MIN_STROKE_WIDTH_DP, MAX_STROKE_WIDTH_DP) * density.coerceAtLeast(0f)
+
+    fun fillAlpha(percent: Int): Int = (percent.coerceIn(0, 100) * 255f / 100f).roundToInt()
+
+    fun fillPercent(alpha: Int): Int = (alpha.coerceIn(0, 255) * 100f / 255f).roundToInt()
+
     val COLORS = listOf(
         DEFAULT_COLOR,
         0xFFE53935.toInt(),

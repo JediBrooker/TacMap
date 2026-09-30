@@ -14401,6 +14401,140 @@
       }
     ]
   },
+  "drawings_delete_title": {
+    "en": "Delete drawing?",
+    "de": "Zeichnung löschen?",
+    "platforms": [
+      "android"
+    ],
+    "context": "Title of the confirmation shown before a drawing is deleted, from its controls card on the map or from the Drawings list.",
+    "legacy": false,
+    "accessor": "drawingsDeleteTitle",
+    "parameters": []
+  },
+  "drawings_delete_body": {
+    "en": "This will permanently remove “{1}” — {2}.",
+    "de": "„{1}“ wird dauerhaft entfernt – {2}.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Message of the confirmation before deleting a drawing from the Drawings list. {1} is the drawing name entered by the user; {2} is its vertex count, already formatted, such as “4 points”.",
+    "legacy": false,
+    "accessor": "drawingsDeleteBody",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "string"
+      }
+    ]
+  },
+  "drawings_discard_title": {
+    "en": "Discard drawing?",
+    "de": "Zeichnung verwerfen?",
+    "platforms": [
+      "android"
+    ],
+    "context": "Title of the confirmation shown when the user cancels a line or area they are still drawing and has already placed points.",
+    "legacy": false,
+    "accessor": "drawingsDiscardTitle",
+    "parameters": []
+  },
+  "drawings_discard_body": {
+    "en": "This will discard the {1} point(s) you've placed.",
+    "de": "Die gesetzten Punkte ({1}) werden verworfen.",
+    "platforms": [
+      "android"
+    ],
+    "context": "Message of the confirmation before discarding a drawing in progress. {1} is the number of points placed so far.",
+    "legacy": false,
+    "accessor": "drawingsDiscardBody",
+    "parameters": [
+      {
+        "name": "count",
+        "type": "string"
+      }
+    ]
+  },
+  "drawings_keep_drawing": {
+    "en": "Keep drawing",
+    "de": "Weiterzeichnen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Button in the discard confirmation that closes it and continues the drawing in progress.",
+    "legacy": false,
+    "accessor": "drawingsKeepDrawing",
+    "parameters": []
+  },
+  "drawings_rename_title": {
+    "en": "Rename drawing",
+    "de": "Zeichnung umbenennen",
+    "platforms": [
+      "android"
+    ],
+    "context": "Title of the dialog that renames a drawing from the Drawings list.",
+    "legacy": false,
+    "accessor": "drawingsRenameTitle",
+    "parameters": []
+  },
+  "drawings_rename_named": {
+    "en": "Rename {1}",
+    "de": "{1} umbenennen",
+    "platforms": [
+      "android"
+    ],
+    "context": "TalkBack label of the pencil button on a row of the Drawings list. {1} is the drawing name entered by the user.",
+    "legacy": false,
+    "accessor": "drawingsRenameNamed",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "drawings_stroke_width": {
+    "en": "Stroke width",
+    "de": "Linienbreite",
+    "platforms": [
+      "android"
+    ],
+    "context": "Label of the slider that sets how thick a drawing's line or outline is.",
+    "legacy": false,
+    "accessor": "drawingsStrokeWidth",
+    "parameters": []
+  },
+  "drawings_stroke_width_value": {
+    "en": "{1} pt",
+    "de": "{1} pt",
+    "platforms": [
+      "android"
+    ],
+    "context": "Current stroke width next to its slider, in screen points (pt); {1} is a formatted number such as 3.0.",
+    "legacy": false,
+    "accessor": "drawingsStrokeWidthValue",
+    "parameters": [
+      {
+        "name": "width",
+        "type": "string"
+      }
+    ]
+  },
+  "drawings_fill_style": {
+    "en": "Fill style",
+    "de": "Füllstil",
+    "platforms": [
+      "android"
+    ],
+    "context": "TalkBack label of the button on the drawing toolbar that opens the fill colour and fill opacity choices for a new area.",
+    "legacy": false,
+    "accessor": "drawingsFillStyle",
+    "parameters": []
+  },
   "online_basemaps_disabled": {
     "en": "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.",
     "de": "Online-Grundkarten sind deaktiviert. Importiere ein Offline-Kartenpaket oder aktiviere Online-Kartenkacheln unter „Einstellungen, Datenschutz und OPSEC“.",
