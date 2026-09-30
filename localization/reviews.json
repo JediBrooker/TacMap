@@ -13159,6 +13159,27 @@
         "translation": "4d3edd94a5f6213c18706dc3695e22b34c7656fe423b885488949c6f6015fdd4",
         "status": "reviewed"
       }
+    },
+    "calibration_collinear": {
+      "de": {
+        "source": "ddb5db7b6fc949417538701fb2593614fdaa44471981b284a1c28156e2e5a167",
+        "translation": "9d94d79e4a17be57f1c430a7da32a2010f9fc99e583f6217798500ef008e8059",
+        "status": "reviewed"
+      }
+    },
+    "calibration_failed": {
+      "de": {
+        "source": "da8fc93d3cd391497029441f93e5e989afef1de6d7c03495d95294e9ae7e9596",
+        "translation": "9ec0c16068b2043565e89612ab2416a24043112575cedeb37fb88e98c140c2d8",
+        "status": "reviewed"
+      }
+    },
+    "calibration_done": {
+      "de": {
+        "source": "8bc25c0a739608d0922e715145625e91a5727f5e7a2092b8f81abd2085215484",
+        "translation": "35f41f31f4691e03118f65daa710919e57d6da42e2a7468df575243d71e029ab",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

@@ -17087,5 +17087,43 @@
     "legacy": false,
     "accessor": "appLockUseBiometric",
     "parameters": []
+  },
+  "calibration_collinear": {
+    "en": "Calibration needs 3 points that aren't in a straight line.",
+    "de": "Die Kalibrierung benötigt 3 Punkte, die nicht auf einer Linie liegen.",
+    "platforms": [
+      "ios"
+    ],
+    "context": "Short notice when the user taps Finish but the calibration points on the PDF lie in a line.",
+    "legacy": false,
+    "accessor": "calibrationCollinear",
+    "parameters": []
+  },
+  "calibration_failed": {
+    "en": "Calibration failed. Check the grid references and try again.",
+    "de": "Kalibrierung fehlgeschlagen. Prüfe die Gitterangaben und versuche es erneut.",
+    "platforms": [
+      "ios"
+    ],
+    "context": "Short notice when the calibration points cannot be fitted for another reason.",
+    "legacy": false,
+    "accessor": "calibrationFailed",
+    "parameters": []
+  },
+  "calibration_done": {
+    "en": "Map calibrated · RMS error {1}",
+    "de": "Karte kalibriert · RMS-Fehler {1}",
+    "platforms": [
+      "ios"
+    ],
+    "context": "Short notice after a PDF map is calibrated. {1} is the fit's root-mean-square error with its unit, e.g. '12 m'.",
+    "legacy": false,
+    "accessor": "calibrationDone",
+    "parameters": [
+      {
+        "name": "error",
+        "type": "string"
+      }
+    ]
   }
 }
