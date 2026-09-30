@@ -1032,7 +1032,6 @@ struct ContentView: View {
         }
         .nightSheet(item: $profileRequest) { request in
             ElevationProfileSheet(request: request)
-                .presentationDetents([.medium, .large])
                 .nightDragIndicator()
         }
         .nightSheet(isPresented: $showOpsecSheet, onDismiss: presentTipsIfNeeded) {

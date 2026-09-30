@@ -35,6 +35,9 @@ struct ElevationProfileSheet: View {
     @State private var observerHeight = 2.0
     @State private var targetHeight = 2.0
     @State private var selected: Int?
+    // Full height, so the chart, the verdict and the steppers show together;
+    // drag down to half height to see the line on the map.
+    @State private var detent: PresentationDetent = .large
 
     /// Eye and target heights the steppers walk through, metres.
     static let heightSteps: [Double] = [0, 1, 2, 3, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200, 300, 500]
@@ -56,6 +59,7 @@ struct ElevationProfileSheet: View {
             }
         }
         .task(id: attempt) { await load() }
+        .presentationDetents([.medium, .large], selection: $detent)
     }
 
     @ViewBuilder
@@ -83,7 +87,7 @@ struct ElevationProfileSheet: View {
 
     @ViewBuilder
     private func loaded(samples: [ElevationProfile.Sample], elevations: [Double]) -> some View {
-        let distances = samples.map(\.distance)
+        let distances = Self.ellipsoidalDistances(path: request.path, samples: samples)
         let sight = request.path.count == 2
             ? ElevationProfile.lineOfSight(distances: distances, elevations: elevations,
                                            observerHeight: observerHeight, targetHeight: targetHeight)
@@ -183,6 +187,22 @@ struct ElevationProfileSheet: View {
             .foregroundStyle(sight.blocked ? Color.red : Color.green)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier(sight.blocked ? "profile.blocked" : "profile.clear")
+    }
+
+    /// Sample distances stretched to the path's WGS84 length, which is what
+    /// the Measure bar shows; the sampling itself uses a sphere, about 0.5 %
+    /// shorter or longer depending on latitude.
+    static func ellipsoidalDistances(path: [ElevationProfile.Coordinate],
+                                     samples: [ElevationProfile.Sample]) -> [Double] {
+        let spherical = samples.last?.distance ?? 0
+        guard spherical > 0 else { return samples.map(\.distance) }
+        var length = 0.0
+        for (a, b) in zip(path, path.dropFirst()) {
+            length += CLLocation(latitude: a.latitude, longitude: a.longitude)
+                .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
+        }
+        let factor = length / spherical
+        return samples.map { $0.distance * factor }
     }
 
     private func load() async {

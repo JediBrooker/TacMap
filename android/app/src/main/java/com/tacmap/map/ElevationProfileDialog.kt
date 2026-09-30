@@ -1,5 +1,6 @@
 package com.tacmap.map
 
+import android.location.Location
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -93,6 +94,7 @@ internal fun ElevationProfileDialog(
     service: ElevationProfileService = remember { ElevationProfileService() },
 ) {
     val samples = remember(path) { ElevationProfile.samples(path) }
+    val distances = remember(samples) { ellipsoidalDistances(path, samples) }
     var attempt by remember { mutableIntStateOf(0) }
     var result by remember(path) { mutableStateOf<ElevationProfileService.Result?>(null) }
     var observerHeight by rememberSaveable { mutableDoubleStateOf(2.0) }
@@ -138,7 +140,7 @@ internal fun ElevationProfileDialog(
                     }
                     current is ElevationProfileService.Result.Heights -> ProfileContent(
                         straightLine = path.size == 2,
-                        distances = samples.map { it.distance },
+                        distances = distances,
                         elevations = current.metres,
                         observerHeight = observerHeight,
                         targetHeight = targetHeight,
@@ -265,6 +267,26 @@ private fun LineOfSightVerdict(sight: ElevationProfile.SightLine, distances: Lis
         )
         Text(text, color = colour, fontWeight = FontWeight.SemiBold)
     }
+}
+
+/**
+ * Sample distances stretched to the path's WGS84 length, which is what the
+ * Measure bar shows; the sampling itself uses a sphere, about 0.5 % shorter
+ * or longer depending on latitude.
+ */
+private fun ellipsoidalDistances(
+    path: List<ElevationProfile.Coordinate>,
+    samples: List<ElevationProfile.Sample>,
+): List<Double> {
+    val spherical = samples.lastOrNull()?.distance ?: 0.0
+    if (spherical <= 0.0) return samples.map { it.distance }
+    val result = FloatArray(1)
+    val length = path.zipWithNext().sumOf { (a, b) ->
+        Location.distanceBetween(a.latitude, a.longitude, b.latitude, b.longitude, result)
+        result[0].toDouble()
+    }
+    val factor = length / spherical
+    return samples.map { it.distance * factor }
 }
 
 /** Plot area inside the chart, shared by drawing and touch handling. */

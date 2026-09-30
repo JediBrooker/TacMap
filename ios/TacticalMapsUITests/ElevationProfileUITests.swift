@@ -18,8 +18,6 @@ final class ElevationProfileUITests: XCTestCase {
         XCTAssertTrue(chart.waitForExistence(timeout: 10), "No profile chart")
         let verdict = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Blocked' OR label BEGINSWITH 'Clear'")).firstMatch
         XCTAssertTrue(verdict.waitForExistence(timeout: 5), "No line of sight verdict")
-        // Full height, so the chart and the verdict are on screen together.
-        app.navigationBars.firstMatch.swipeUp()
         sleep(1)
         attachScreenshot("profile-2m-observer")
 
