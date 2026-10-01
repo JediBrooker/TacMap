@@ -47,7 +47,13 @@ import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.Wgs84Bounds
 import com.tacmap.calibration.Wgs84Coordinate
 import com.tacmap.calibration.PdfPageRenderer
+import com.tacmap.mgrs.GridScreenFrame
+import com.tacmap.mgrs.MgrsGridBuildSpec
+import com.tacmap.mgrs.MgrsGridLabels
 import com.tacmap.mgrs.MgrsGridRenderer
+import mil.nga.mgrs.grid.GridType
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.ensureActive
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -248,107 +254,124 @@ private fun arrowHead(pts: List<Offset>, size: Float): Path? {
 }
 
 /**
- * MGRS grid (lines + labels) on the SDK-free renderer, drawn from
- * MgrsGridRenderer projected through MapCamera. Replaces the TileOverlay grid,
- * so the lines stay correct at every zoom (the tile-provider grid went awry
- * zoomed out). Labels are deduped to one per line, same as the shared fix.
+ * MGRS grid (lines + labels) on the SDK-free renderer. Geometry comes from a
+ * cached MgrsGridBuildSpec built on Dispatchers.Default, so pans / pinches /
+ * compass spins just reproject the cached lines. It only rebuilds when the camera
+ * leaves the spec's envelope, and the old lines stay up while the new ones build.
+ * Labels get laid out per frame against the visible viewport (MgrsGridLabels).
  */
 @Composable
 fun MgrsGridCanvas(camera: MapCamera, density: Float, modifier: Modifier = Modifier) {
     if (camera.viewportWidth <= 0.0 || camera.viewportHeight <= 0.0) return
-    val proj = remember(camera, density) { MapProjection(camera, density) }
+    val pxPerDp = density.toDouble()
+    val lod = MgrsGridRenderer.lod(camera.zoom, camera.centerLat)
 
-    // Geometry covers the square around the viewport's half-diagonal, so it is
-    // valid at every heading. Live compass samples only reproject these cached
-    // lines; they do not synchronously rebuild the MGRS tessellation.
-    val gridBounds = remember(
-        camera.centerLat,
-        camera.centerLon,
-        camera.zoom,
-        camera.viewportWidth,
-        camera.viewportHeight,
-    ) { orientationInvariantGridBounds(camera) }
-    val coverageWidthPx = (
-        hypot(camera.viewportWidth, camera.viewportHeight) * density
-    ).roundToInt().coerceAtLeast(1)
-    val built = remember(gridBounds, coverageWidthPx) {
-        MgrsGridRenderer.build(
-            minLat = gridBounds.southwest.latitude,
-            minLng = gridBounds.southwest.longitude,
-            maxLat = gridBounds.northeast.latitude,
-            maxLng = gridBounds.northeast.longitude,
-            mapWidthPx = coverageWidthPx,
-        )
+    // holder not state: swapping the spec shouldn't itself trigger a recompose,
+    // the new key on produceState below does the work
+    val specHolder = remember { arrayOfNulls<MgrsGridBuildSpec>(1) }
+    val spec = specHolder[0]?.takeUnless { it.isStaleFor(camera, pxPerDp, lod) }
+        ?: MgrsGridBuildSpec.forCamera(camera, pxPerDp, lod).also { specHolder[0] = it }
+    val geometry by produceState<MgrsGridRenderer.GridGeometry?>(initialValue = null, spec) {
+        val built = try {
+            withContext(Dispatchers.Default) { spec.build(checkCancelled = { ensureActive() }) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: RuntimeException) {
+            // keep whatever grid we had rather than take the map down with it
+            android.util.Log.w("MgrsGridCanvas", "grid build failed", e)
+            null
+        }
+        if (built != null) value = built
     }
+    val paints = remember { MgrsLabelPaints() }
 
     Canvas(modifier.fillMaxSize()) {
-        val (segments, labels) = built
+        val g = geometry ?: return@Canvas
+        val frame = GridScreenFrame(camera)
         val ink = Color(MgrsGridRenderer.INK_COLOR)
-        segments.forEach { seg ->
-            val a = proj.toScreen(seg.start.latitude, seg.start.longitude)
-            val b = proj.toScreen(seg.end.latitude, seg.end.longitude)
-            drawLine(ink, a, b, strokeWidth = MgrsGridRenderer.lineWidthPx(seg.type, density),
-                cap = StrokeCap.Round)
-        }
-
-        // Declutter to one label per grid line (bucket by perpendicular screen
-        // axis, keep nearest the top/left margin) - matches the MgrsGridLabelsOverlay fix.
-        val bucketPx = 55f
-        val kept = HashMap<String, Pair<MgrsGridRenderer.LabelMark, Offset>>()
-        labels.forEach { mark ->
-            val p = proj.toScreen(mark.lat, mark.lng)
-            val b = Math.round((if (mark.isVertical) p.x else p.y) / bucketPx)
-            val key = "${if (mark.isVertical) "v" else "h"}|$b|${mark.text}"
-            val ex = kept[key]
-            val margin = if (mark.isVertical) p.y else p.x
-            if (ex == null || margin < (if (mark.isVertical) ex.second.y else ex.second.x)) {
-                kept[key] = mark to p
+        // one path per level so the 85% ink doesn't double up at joins
+        for (level in lod.drawn) {
+            val path = Path()
+            var any = false
+            for (piece in g.pieces) {
+                if (piece.level != level ||
+                    !frame.mayBeVisible(piece.minX, piece.minY, piece.maxX, piece.maxY)
+                ) continue
+                val mx = piece.mercX
+                val my = piece.mercY
+                path.moveTo((frame.sx(mx[0], my[0]) * density).toFloat(), (frame.sy(mx[0], my[0]) * density).toFloat())
+                for (i in 1 until mx.size) {
+                    path.lineTo((frame.sx(mx[i], my[i]) * density).toFloat(), (frame.sy(mx[i], my[i]) * density).toFloat())
+                }
+                any = true
+            }
+            if (any) {
+                drawPath(
+                    path, ink,
+                    style = Stroke(
+                        width = MgrsGridRenderer.lineWidthPx(level, density),
+                        cap = StrokeCap.Round, join = StrokeJoin.Round,
+                    ),
+                )
             }
         }
-        val main = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textAlign = android.graphics.Paint.Align.CENTER
-            color = MgrsGridRenderer.LABEL_TEXT_COLOR
-        }
-        val halo = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textAlign = android.graphics.Paint.Align.CENTER
-            color = 0xE6FFFFFF.toInt()
+
+        val labels = MgrsGridLabels.place(g, camera, lod.drawn, lod.labelled) { text, level ->
+            paints.measureDp(text, level, density)
         }
         val nc = drawContext.canvas.nativeCanvas
-        kept.values.forEach { (mark, p) ->
-            val ts = MgrsGridRenderer.labelTextSp(mark.type) * density
+        labels.forEach { label ->
+            val ts = MgrsGridRenderer.labelTextSp(label.level) * density
+            val main = paints.main
+            val halo = paints.halo
             main.textSize = ts; halo.textSize = ts
             val fm = main.fontMetrics
-            val textY = p.y - (fm.ascent + fm.descent) / 2f
+            val px = (label.x * density).toFloat()
+            val py = (label.y * density).toFloat()
+            val textY = py - (fm.ascent + fm.descent) / 2f
             val off = ts * 0.07f
-            if (mark.isVertical) { nc.save(); nc.rotate(-90f, p.x, p.y) }
-            nc.drawText(mark.text, p.x - off, textY - off, halo)
-            nc.drawText(mark.text, p.x + off, textY + off, halo)
-            nc.drawText(mark.text, p.x, textY, main)
-            if (mark.isVertical) nc.restore()
+            if (label.rotated) { nc.save(); nc.rotate(-90f, px, py) }
+            nc.drawText(label.text, px - off, textY - off, halo)
+            nc.drawText(label.text, px + off, textY + off, halo)
+            nc.drawText(label.text, px, textY, main)
+            if (label.rotated) nc.restore()
         }
     }
 }
 
-/** Heading-independent MGRS geometry coverage for the current viewport. */
+/** Label paints, same bold dark text + white halo as before. */
+private class MgrsLabelPaints {
+    val main = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        textAlign = android.graphics.Paint.Align.CENTER
+        color = MgrsGridRenderer.LABEL_TEXT_COLOR
+    }
+    val halo = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        textAlign = android.graphics.Paint.Align.CENTER
+        color = 0xE6FFFFFF.toInt()
+    }
+
+    /** unrotated text box in dp, halo offset included */
+    fun measureDp(text: String, level: GridType, density: Float): DoubleArray {
+        val ts = MgrsGridRenderer.labelTextSp(level) * density
+        main.textSize = ts
+        val fm = main.fontMetrics
+        val pad = ts * 0.14f
+        return doubleArrayOf(
+            ((main.measureText(text) + pad) / density).toDouble(),
+            ((fm.descent - fm.ascent + pad) / density).toDouble(),
+        )
+    }
+}
+
+/** Heading-independent MGRS geometry coverage for the current viewport (the build spec's square). */
 internal fun orientationInvariantGridBounds(camera: MapCamera): Wgs84Bounds {
-    val radius = hypot(camera.viewportWidth, camera.viewportHeight) / 2.0
-    val centreX = camera.viewportWidth / 2.0
-    val centreY = camera.viewportHeight / 2.0
-    val northUp = camera.copy(headingDegrees = 0.0)
-    val coordinates = listOf(
-        northUp.coordinate(centreX - radius, centreY - radius),
-        northUp.coordinate(centreX + radius, centreY - radius),
-        northUp.coordinate(centreX + radius, centreY + radius),
-        northUp.coordinate(centreX - radius, centreY + radius),
+    val b = MgrsGridBuildSpec.coverageBounds(
+        camera.centerLat, camera.centerLon, camera.zoom,
+        MgrsGridBuildSpec.coverageHalfSideDp(camera.viewportWidth, camera.viewportHeight),
     )
-    val latitudes = coordinates.map { it.first }
-    val longitudes = coordinates.map { it.second }
-    return Wgs84Bounds(
-        Wgs84Coordinate(latitudes.min(), longitudes.min()),
-        Wgs84Coordinate(latitudes.max(), longitudes.max()),
-    )
+    return Wgs84Bounds(Wgs84Coordinate(b[0], b[1]), Wgs84Coordinate(b[2], b[3]))
 }
 
 /**
