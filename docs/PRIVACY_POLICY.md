@@ -117,7 +117,27 @@ The relay and its hosting/network providers can still observe or process:
 - encrypted mission objects and tombstones held for synchronisation.
 
 Encrypted mission objects and actor records can remain at the relay until the
-room has been idle for seven days. Live location presence is forwarded to
+room has been idle for seven days. Encrypted deletion records (tombstones) are
+kept after that. In current rooms a tombstone is removed once it is 30 days old
+and the device that made it is not connected and has not started a session in
+the last 30 days; if the room was idle
+for seven days in the meantime, the relay no longer knows each device's last
+connection and counts instead from the last connection of any device before that
+idle period, which can be later. In legacy rooms (join codes starting `2:`) a
+tombstone is removed once it is 30 days old and nobody has used the room for 30
+days. After a room goes idle the relay also keeps the token hash and a few
+counters and timestamps (room sequence and version high-water, record totals,
+last-activity time, time of the last idle clean-up, the latest device
+connection hour before the idle period, the hour each kept deletion record
+was made, and for rooms created before this retention scheme the hour the
+relay started tracking their deletion records) with no mission content, so
+returning devices resume cleanly. Once a room has been idle for 90 days in a
+row the relay deletes everything it holds for it, including these values and
+any deletion records still kept; any use of the room before then restarts that
+period. A room in which nothing was ever stored is deleted entirely after
+seven idle days. A device that comes back to a room after it was deleted finds
+it empty and shows a rollback warning; start a new room with a new join code
+instead. Live location presence is forwarded to
 connected peers and held only as current in-memory session state. TacMap Chat
 key adverts and ciphertext are forwarded only to currently connected,
 Chat-capable sessions and are not written to the relay's room storage. There is

@@ -353,6 +353,13 @@ Object storage and never includes chat frames in durable snapshot pages. It may
 carry the current signed `chat-key` alongside current hello/presence frames for
 a live peer after `snapshot-end`.
 
+Chat traffic also causes no storage write of any kind: it does not refresh the
+room's activity marker (an open socket keeps the room alive through the
+maintenance alarm, ADR-001 §16). Chat frames count toward the per-socket rate
+window and the room backlog in ADR-001 §15 like any other frame; when the room
+backlog is full, the socket with the largest backlog is closed, not the sender
+of the next chat frame.
+
 The relay can see:
 
 - the room, sender actor/session/key ID, and direct recipient actor/session/key

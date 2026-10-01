@@ -11,7 +11,7 @@ diverge:
 | `geojson_geometry.json` | GeoJSON geometry shape (`[lon, lat]`, ring closure) |
 | `android_waypoint_production.geojson` | byte-for-byte Android production marker export consumed by iOS importer/hash tests |
 | `ios_waypoint_production.geojson` | byte-for-byte iOS production waypoint export consumed by Android importer tests |
-| `sync_protocol_v3.json` | v3 key/identity derivation, signed preimages, monotonic signed hello epochs, ordering, replay rules, and relay/client ceilings |
+| `sync_protocol_v3.json` | v3 key/identity derivation, signed preimages, monotonic signed hello epochs, ordering, replay rules, relay/client ceilings, and (`relayLimits`) every relay limit, rate-window rule, close code, nack code and retention rule clients must pace and react to |
 | `tacmap_chat_v1.json` | chat session-key IDs and signatures, room/direct headers and AAD, X25519/HKDF keys, deterministic seals, and outer Ed25519 signatures |
 | `presence_accuracy_v3.json` | optional signed accuracy bytes, location-quality thresholds, implausible-jump rejection, and cross-platform recovery behaviour |
 | `local_store_name_v1.json` | DEK-bound opaque per-room chat/replay filenames shared by iOS and Android |
@@ -31,8 +31,15 @@ Both test suites load these same files and assert against them:
 - iOS - [`ios/TacticalMapsTests/SharedVectorsTests.swift`](../ios/TacticalMapsTests/SharedVectorsTests.swift) (walks up from `#filePath`)
 - Android - [`android/app/src/test/java/com/tacmap/SharedVectorsTest.kt`](../android/app/src/test/java/com/tacmap/SharedVectorsTest.kt) (walks up from `user.dir`)
 - Relay - [`sync/test/relay.test.ts`](../sync/test/relay.test.ts) imports the v3
-  fixture directly and validates the chat wire contract; copied relay-only
-  constants are not authoritative.
+  fixture directly and validates the chat wire contract.
+  [`sync/test/contract.test.ts`](../sync/test/contract.test.ts) fails if
+  `relayLimits.values` and the relay's `sync/src/limits.ts` differ, or if the
+  relay can send a close code the fixture doesn't document.
+
+`sync_protocol_v3.json` vectors are regenerated from their inputs by
+[`sync/scripts/gen_v3_fixtures.mjs`](../sync/scripts/gen_v3_fixtures.mjs)
+(`npm run fixtures:check` in `sync/`), a third, node-only implementation that
+must reproduce every derivable value byte for byte.
 
 If you change an algorithm on one platform and a shared test fails, the two
 platforms have drifted - fix the implementation, don't just edit the vector.
@@ -66,3 +73,4 @@ Both implementations must:
 
 `caseKey` and `batchKey` are fixture/batch metadata only. They must not be copied
 into TacMap object IDs, layer IDs, or synced object payloads.
+

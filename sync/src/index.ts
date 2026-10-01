@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
+import { RELAY_LIMITS } from "./limits"
 import { RELAY_RELEASE_ID } from "./release"
 
 // TacMap sync relay. The relay is E2E-blind: it validates routing metadata,
@@ -15,25 +16,26 @@ const ROOM_V2_RE = /^\/room\/([A-Za-z0-9_-]{32,128})$/
 const ROOM_V3_RE = /^\/v3\/room\/([A-Za-z0-9_-]{43})$/
 const ALLOWED_ORIGINS = new Set<string>([])
 
-const MAX_CONNECTIONS = 64
-const MAX_RECORDS = 10_000 // objects + retained tombstones + actor pins
-const MAX_STORED_BYTES = 50_000_000
-const MAX_V = 1e12
-const CT_MAX = 700_000
-const PRESENCE_CT_MAX = 8_192
-const CHAT_CT_MAX = 16_384
-const MAX_FRAME_BYTES = 1_048_576
-const SNAPSHOT_FRAME_BYTES = 900_000
-const RATE_WINDOW_MS = 10_000
-const RATE_MAX_MSGS = 200
-const RATE_MAX_BYTES = 4 * 1_048_576
-const ROOM_PENDING_MAX_MSGS = 512
-const ROOM_PENDING_MAX_BYTES = 8 * 1_048_576
-const STORAGE_PAGE_SIZE = 100
-const IDLE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const {
+  MAX_CONNECTIONS, MAX_ACCEPTED_SOCKETS, HELLO_DEADLINE_MS, HELLO_DEADLINE_BYTES_PER_SEC,
+  MAX_RECORDS, MAX_STORED_BYTES, MAX_V, CT_MAX, PRESENCE_CT_MAX, CHAT_CT_MAX, MAX_FRAME_BYTES,
+  SNAPSHOT_FRAME_BYTES, STORAGE_PAGE_SIZE, STORAGE_FIRST_PAGE_SIZE, STORAGE_READ_BUDGET_BYTES,
+  RATE_WINDOW_MS, RATE_MAX_MSGS, RATE_MAX_BYTES, ROOM_PENDING_MAX_MSGS, ROOM_PENDING_MAX_BYTES,
+  IDLE_TTL_MS, TOMBSTONE_TTL_MS, ROOM_PURGE_TTL_MS, ACTIVITY_PERSIST_MS, MAINTENANCE_INTERVAL_MS,
+  MAINTENANCE_RETRY_MS,
+} = RELAY_LIMITS
 const MAX_COUNTER = 0x7fffffffffffffffn
 const MAX_U64 = 0xffffffffffffffffn
-const ADVANCE_WINDOW = 10_000n
+const ADVANCE_WINDOW = BigInt(RELAY_LIMITS.ADVANCE_WINDOW)
+// WebSocket.READY_STATE_OPEN, spelled out so it doesn't depend on typings
+const WS_OPEN = 1
+const HOUR_MS = 60 * 60 * 1000
+// a relay close and the client's echo both land on the last-socket path,
+// one activity write covers both
+const LAST_CLOSE_DEDUPE_MS = 60_000
+// relay-only row per tombstone: tomb:<id> -> hour the delete landed. never
+// part of the record, so snapshots keep the exact shape clients verify
+const TOMB_PREFIX = "tomb:"
 const ZERO_COUNTER = "0000000000000000"
 const B64URL_32_RE = /^[A-Za-z0-9_-]{43}$/
 const B64URL_64_RE = /^[A-Za-z0-9_-]{86}$/
@@ -64,6 +66,9 @@ interface SyncRecordV3 {
 interface ActorRecord {
   pubkey: string
   firstSeen: number
+  // hour of the latest accepted hello. only used to tell whether an author
+  // could still come back and resend its own tombstones
+  lastSeen?: number
   helloEpoch?: string
   hello?: HelloFrame
 }
@@ -143,6 +148,10 @@ interface SocketState {
   bytes: number
   protocol: 2 | 3
   roomId: string
+  /** When the upgrade was accepted. Pre-hello sockets past the deadline can be evicted. */
+  acceptedAt?: number
+  /** UTF-8 bytes queued on this socket before the 101, stretches its hello deadline. */
+  snapshotBytes?: number
   hello?: HelloFrame
   chatKey?: ChatKeyFrame
   chatCounter?: string
@@ -155,11 +164,14 @@ interface SocketState {
 }
 
 interface SocketMessageQueue {
+  ws: WebSocket
   tail: Promise<void>
   pendingMessages: number
   pendingBytes: number
   accepting: boolean
   abortPending: boolean
+  /** False once aborted: its frames are dropped and no longer count toward the room backlog. */
+  counted: boolean
 }
 
 interface SnapshotState {
@@ -248,8 +260,37 @@ function isValidCiphertext(s: unknown, maxChars: number): s is string {
   return (s.length / 4) * 3 - padding >= 28
 }
 
+// same answer as TextEncoder().encode(s).length (lone surrogates become
+// U+FFFD, 3 bytes) without allocating, since snapshots call it per record
 function utf8Length(s: string): number {
-  return new TextEncoder().encode(s).length
+  let bytes = s.length
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c < 0x80) continue
+    if (c < 0x800) {
+      bytes += 1
+    } else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xfc00) === 0xdc00) {
+      bytes += 2
+      i++
+    } else {
+      bytes += 2
+    }
+  }
+  return bytes
+}
+
+function coarseHour(ms: number): number {
+  return ms - (ms % HOUR_MS)
+}
+
+// rough in-memory size of a listed value, only used to size the next read
+function recordReadSize(value: unknown): number {
+  const ct = (value as { ct?: unknown } | null)?.ct
+  return (typeof ct === "string" ? ct.length : 0) + 512
+}
+
+function recordBytes(protocol: 2 | 3, record: SyncRecord | SyncRecordV3): number {
+  return protocol === 3 ? recordBytesV3(record as SyncRecordV3) : recordBytesV2(record as SyncRecord)
 }
 
 function storageBytes(key: string, value: unknown): number {
@@ -614,8 +655,19 @@ export class SyncRoom {
   // or storage. Keep each socket's accepted frames in wire order while still
   // allowing different peers to make progress concurrently.
   private readonly socketMessageQueues = new WeakMap<WebSocket, SocketMessageQueue>()
+  // queues that currently count toward the room backlog, so the heaviest can be shed
+  private readonly pendingQueues = new Set<SocketMessageQueue>()
   private roomPendingMessages = 0
   private roomPendingBytes = 0
+  // activity bookkeeping lives in memory and only hits storage hourly, on the
+  // last close and from the alarm. both reset on a hibernation wake, which is
+  // fine: persisted time is re-read lazily and the alarm is re-checked once
+  private activityAt = 0
+  private activityPersistedAt: number | undefined
+  // when the alarm we last armed fires, null for none, undefined after a wake
+  // (unknown, read it once). lets a join pull a far idle/purge alarm back to
+  // the daily cadence without a storage read per accepted frame
+  private alarmAt: number | null | undefined
 
   constructor(private state: DurableObjectState, private env: Env) {}
 
@@ -662,37 +714,108 @@ export class SyncRoom {
           if (existingProtocol !== undefined && existingProtocol !== protocol) throw new Error("protocol race")
           await txn.put("meta:auth", tokenHash)
           await txn.put("meta:protocol", protocol)
+          // a brand new room has no tombstones to backfill into tomb: rows.
+          // 0 and not the current hour, so the relay doesn't keep a creation
+          // time around. only legacy rooms get a real index hour (alarm())
+          if (existingProtocol === undefined) await txn.put("meta:tombIndexAt", 0)
         })
       } catch {
         return new Response("Room initialization failed", { status: 503 })
       }
+      // if this first join dies further down nothing else arms an alarm, and
+      // the pin would sit there with nobody ever cleaning it up
+      await this.ensureAlarm(Date.now() + MAINTENANCE_INTERVAL_MS)
     }
 
-    if (protocol === 3) {
+    // A throw inside blockConcurrencyWhile resets the whole object and drops
+    // every member, so both callbacks catch and report instead.
+    // The auth check above ran outside any bCW, so an alarm can wipe the room
+    // (drive-by expiry or the idle purge) before we get here. Look again under
+    // the same bCW as the accounting, otherwise the socket lands in a room
+    // with no pin at all.
+    const accounted = await this.state.blockConcurrencyWhile(async (): Promise<"ok" | "reset" | "failed"> => {
       try {
-        await this.state.blockConcurrencyWhile(async () => this.ensureV3Accounting())
+        const meta = await this.state.storage.get(["meta:auth", "meta:protocol"])
+        const auth = meta.get("meta:auth")
+        if (typeof auth !== "string" || !constantTimeEqual(auth, tokenHash) || meta.get("meta:protocol") !== protocol) {
+          return "reset"
+        }
+        await this.ensureAccounting(protocol)
+        return "ok"
       } catch {
-        metric("storage_error", { operation: "accounting_migration" })
-        return new Response("Room accounting unavailable", { status: 503 })
+        return "failed"
       }
+    })
+    if (accounted === "reset") {
+      // transient for clients, the reconnect goes through the normal pin path
+      metric("join_rejected", { reason: "room_reset" })
+      return new Response("Room reset during join", { status: 503 })
+    }
+    if (accounted === "failed") {
+      metric("storage_error", { operation: "accounting_migration" })
+      return new Response("Room accounting unavailable", { status: 503 })
     }
 
-    if (this.state.getWebSockets().length >= MAX_CONNECTIONS) return new Response("Room full", { status: 503 })
+    const acceptedAt = Date.now()
+    if (!this.admitConnection(acceptedAt)) return new Response("Room full", { status: 503 })
     const pair = new WebSocketPair()
     const client = pair[0]
     const server = pair[1]
     this.state.acceptWebSocket(server)
-    server.serializeAttachment({ windowStart: 0, msgs: 0, bytes: 0, protocol, roomId } satisfies SocketState)
-    try {
-      // No mutation event can interleave with this fence/pages/end sequence.
-      await this.state.blockConcurrencyWhile(async () => this.sendSnapshot(server, protocol))
-      await this.touchActivity()
-    } catch {
+    server.serializeAttachment({ windowStart: 0, msgs: 0, bytes: 0, protocol, roomId, acceptedAt } satisfies SocketState)
+    // No mutation event can interleave with this fence/pages/end sequence.
+    const sentBytes = await this.state.blockConcurrencyWhile(async () => {
+      try {
+        return await this.sendSnapshot(server, protocol)
+      } catch {
+        return null
+      }
+    })
+    if (sentBytes === null) {
       metric("storage_error", { operation: "snapshot" })
       this.closeSocket(server, 1011, "snapshot unavailable")
       return new Response("Snapshot unavailable", { status: 503 })
     }
+    // the client can't send anything before the 101, so nothing races this write
+    const attachment = server.deserializeAttachment() as SocketState
+    attachment.snapshotBytes = sentBytes
+    server.serializeAttachment(attachment)
+    await this.noteActivity()
     return new Response(null, { status: 101, webSocket: client })
+  }
+
+  private openSockets(): WebSocket[] {
+    return this.state.getWebSockets().filter(ws => ws.readyState === WS_OPEN)
+  }
+
+  // Server-closed sockets whose client never echoed sit in CLOSING and must not
+  // hold slots, but they still cost memory and fan-out until the transport
+  // dies, so all accepted sockets get a separate hard cap. A full room also
+  // reclaims v3 sockets that never proved an actor by their hello deadline,
+  // most overdue first. Nothing else gets evicted.
+  private admitConnection(now: number): boolean {
+    if (this.state.getWebSockets().length >= MAX_ACCEPTED_SOCKETS) {
+      metric("room_full", { reason: "accepted_sockets" })
+      return false
+    }
+    const open = this.openSockets()
+    let excess = open.length - MAX_CONNECTIONS + 1
+    if (excess <= 0) return true
+    // shipped clients only say hello after snapshot-end, so a socket that was
+    // sent a big snapshot on a slow link gets that much longer
+    const deadline = (socket: SocketState): number => (socket.acceptedAt ?? 0) + HELLO_DEADLINE_MS +
+      Math.ceil((socket.snapshotBytes ?? 0) * 1000 / HELLO_DEADLINE_BYTES_PER_SEC)
+    const stale = open
+      .map(ws => ({ ws, socket: ws.deserializeAttachment() as SocketState | null }))
+      .filter(({ socket }) => socket?.protocol === 3 && !socket.hello && now >= deadline(socket))
+      .sort((a, b) => deadline(a.socket!) - deadline(b.socket!))
+    for (const { ws } of stale) {
+      if (excess <= 0) break
+      metric("socket_evicted", { reason: "hello_deadline" })
+      this.closeSocket(ws, 1013, "hello deadline")
+      excess -= 1
+    }
+    return excess <= 0
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -731,21 +854,15 @@ export class SyncRoom {
     const receivedAt = Date.now()
     let queue = this.socketMessageQueues.get(ws)
     if (!queue) {
-      queue = {
-        tail: Promise.resolve(), pendingMessages: 0, pendingBytes: 0,
-        accepting: true, abortPending: false,
-      }
+      queue = this.newMessageQueue(ws)
       this.socketMessageQueues.set(ws, queue)
     }
     if (!queue.accepting) return
-    // Admission is independent of the rolling rate limiter because an async
-    // crypto/storage operation must not let an attacker retain an unbounded
-    // number of otherwise-valid frames in this isolate.
+    // Admission is independent of the fixed-window rate limiter because an
+    // async crypto/storage operation must not let an attacker retain an
+    // unbounded number of otherwise-valid frames in this isolate.
     if (queue.pendingMessages >= RATE_MAX_MSGS || queue.pendingBytes + frameBytes > RATE_MAX_BYTES ||
-        this.roomPendingMessages >= ROOM_PENDING_MAX_MSGS ||
-        this.roomPendingBytes + frameBytes > ROOM_PENDING_MAX_BYTES) {
-      queue.accepting = false
-      queue.abortPending = true
+        !this.makeRoomBacklogSpace(queue, frameBytes)) {
       this.closeSocket(ws, 4008, "rate limit")
       return
     }
@@ -753,6 +870,7 @@ export class SyncRoom {
     queue.pendingBytes += frameBytes
     this.roomPendingMessages += 1
     this.roomPendingBytes += frameBytes
+    this.pendingQueues.add(queue)
 
     const previous = queue.tail
     const current = previous.catch(() => undefined).then(async () => {
@@ -771,12 +889,50 @@ export class SyncRoom {
     } finally {
       queue.pendingMessages -= 1
       queue.pendingBytes -= frameBytes
-      this.roomPendingMessages -= 1
-      this.roomPendingBytes -= frameBytes
-      if (queue.tail === current && queue.pendingMessages === 0) {
+      if (queue.counted) {
+        this.roomPendingMessages -= 1
+        this.roomPendingBytes -= frameBytes
+        if (queue.pendingMessages === 0) this.pendingQueues.delete(queue)
+      }
+      // an aborted queue stays mapped so a straggler frame on the dead socket
+      // can't open a fresh accepting queue. the WeakMap drops it with the socket
+      if (queue.accepting && queue.tail === current && queue.pendingMessages === 0) {
         this.socketMessageQueues.delete(ws)
       }
     }
+  }
+
+  private newMessageQueue(ws: WebSocket): SocketMessageQueue {
+    return {
+      ws, tail: Promise.resolve(), pendingMessages: 0, pendingBytes: 0,
+      accepting: true, abortPending: false, counted: true,
+    }
+  }
+
+  // The room backlog cap used to close whichever socket's frame arrived next,
+  // so one bursting peer could get an idle presence sender kicked. Now the
+  // socket holding the largest backlog goes, counting the arriving frame on
+  // its own sender. Returns false when that is the arriving socket itself.
+  private makeRoomBacklogSpace(incoming: SocketMessageQueue, frameBytes: number): boolean {
+    const load = (messages: number, bytes: number): number =>
+      Math.max(messages / ROOM_PENDING_MAX_MSGS, bytes / ROOM_PENDING_MAX_BYTES)
+    while (this.roomPendingMessages + 1 > ROOM_PENDING_MAX_MSGS ||
+        this.roomPendingBytes + frameBytes > ROOM_PENDING_MAX_BYTES) {
+      let heaviest = incoming
+      let heaviestLoad = load(incoming.pendingMessages + 1, incoming.pendingBytes + frameBytes)
+      for (const queue of this.pendingQueues) {
+        if (queue === incoming) continue
+        const candidate = load(queue.pendingMessages, queue.pendingBytes)
+        if (candidate > heaviestLoad) {
+          heaviest = queue
+          heaviestLoad = candidate
+        }
+      }
+      if (heaviest === incoming) return false
+      metric("room_backlog_shed", { messages: heaviest.pendingMessages, bytes: heaviest.pendingBytes })
+      this.closeSocket(heaviest.ws, 4008, "rate limit")
+    }
+    return true
   }
 
   private async processWebSocketMessage(ws: WebSocket, text: string): Promise<void> {
@@ -789,24 +945,25 @@ export class SyncRoom {
     const type = (msg as { t?: unknown }).t
     const socket = ws.deserializeAttachment() as SocketState | null
     const protocol = socket?.protocol ?? 2
+    // only durably accepted work counts as room activity. presence, chat and
+    // rejected frames never touch storage, the open socket already keeps the
+    // room alive via the alarm
+    let accepted = false
     try {
-      if (type === "put") await (protocol === 3 ? this.applyChangeV3(ws, msg, false) : this.applyChange(ws, msg, false))
-      else if (type === "del") await (protocol === 3 ? this.applyChangeV3(ws, msg, true) : this.applyChange(ws, msg, true))
+      if (type === "put") accepted = await (protocol === 3 ? this.applyChangeV3(ws, msg, false) : this.applyChange(ws, msg, false))
+      else if (type === "del") accepted = await (protocol === 3 ? this.applyChangeV3(ws, msg, true) : this.applyChange(ws, msg, true))
       else if (type === "loc") await (protocol === 3 ? this.handlePresenceV3(ws, msg) : this.handlePresence(ws, msg))
-      else if (type === "hello" && protocol === 3) await this.handleHello(ws, msg)
+      else if (type === "hello" && protocol === 3) accepted = await this.handleHello(ws, msg)
       else if (type === "leave" && protocol === 3) await this.handleExplicitLeave(ws, msg)
       else if (type === "chat-key" && protocol === 3) await this.handleChatKey(ws, msg)
       else if (type === "chat" && protocol === 3) await this.handleChat(ws, msg)
-      else if (type === "ping" && Object.keys(msg).length === 1) {
-        ws.send(JSON.stringify({ t: "pong" }))
-        return
-      }
-      else return
-      await this.touchActivity()
+      else if (type === "ping" && Object.keys(msg).length === 1) ws.send(JSON.stringify({ t: "pong" }))
     } catch {
       metric("storage_error", { operation: "message" })
       this.closeSocket(ws, 1011, "storage unavailable")
+      return
     }
+    if (accepted) await this.noteActivity()
   }
 
   async webSocketClose(ws: WebSocket, code: number): Promise<void> {
@@ -819,44 +976,481 @@ export class SyncRoom {
       if (this.socketMessageQueues.get(ws) === queue) this.socketMessageQueues.delete(ws)
     }
     const s = ws.deserializeAttachment() as SocketState | null
-    if (s?.presenceV2) this.broadcast({ t: "leave", clientId: s.presenceV2.clientId }, ws)
-    if (s?.hello) this.announceV3Departure(ws, s, "transient")
+    if (s) this.announceDeparture(ws, s)
     try { ws.close(code, "closing") } catch { /* closed */ }
-    if (this.state.getWebSockets().length <= 1) {
-      try { await this.touchActivity() } catch { metric("storage_error", { operation: "close" }) }
-    }
+    await this.noteSocketGone(ws)
   }
 
   async webSocketError(ws: WebSocket, _err: unknown): Promise<void> {
     this.abortSocketQueue(ws)
+    // a close callback may never follow an error, so peers hear about it here.
+    // anything already running finishes first, same ordering as a close
+    try { await this.socketMessageQueues.get(ws)?.tail } catch { /* already handled */ }
+    const s = ws.deserializeAttachment() as SocketState | null
+    if (s) this.announceDeparture(ws, s)
+    await this.noteSocketGone(ws)
   }
 
+  // the idle clock starts when the last open socket goes, whichever path
+  // notices it first (relay close, client close, transport error)
+  private async noteSocketGone(ws: WebSocket): Promise<void> {
+    if (this.openSockets().some(other => other !== ws)) return
+    const now = Date.now()
+    // skip only when the stored value is already this fresh and nothing newer is pending
+    if (this.activityPersistedAt !== undefined && this.activityAt <= this.activityPersistedAt &&
+        now - this.activityPersistedAt < LAST_CLOSE_DEDUPE_MS) return
+    await this.persistActivity(now)
+  }
+
+  // Maintenance. Runs at least daily while sockets are open and otherwise only
+  // when idle expiry, the idle purge or a tombstone compaction is due. Every
+  // room that still holds anything leaves with one of those armed, so nothing
+  // outlives the purge. Every step is best effort and a step that fails asks
+  // for a retry, so one bad pass can't strand the room without an alarm.
   async alarm(): Promise<void> {
     const now = Date.now()
-    if (this.state.getWebSockets().length > 0) {
-      await this.state.storage.setAlarm(now + IDLE_TTL_MS)
+    // the alarm that's firing is used up. anything a join arms meanwhile is
+    // folded in at the end
+    this.alarmAt = null
+    const open = this.openSockets().length > 0
+    if (!open && await this.roomIsWiped()) {
+      // leftover alarm on a purged room (the compat date predates deleteAll
+      // taking the alarm with it). touch nothing, or it stops being empty
       return
     }
-    const last = (await this.state.storage.get<number>("meta:lastActivity")) ?? 0
-    if (now - last >= IDLE_TTL_MS) {
-      metric("room_expired")
-      await this.state.storage.deleteAll()
+    if (open) {
+      await this.persistActivity(now)
+    } else if (this.activityPersistedAt !== undefined && this.activityAt > this.activityPersistedAt) {
+      // throttled activity whose last socket left without a close callback
+      await this.persistActivity(this.activityAt)
+    }
+    let next: number | null = open ? now + MAINTENANCE_INTERVAL_MS : null
+    // never spin: anything due but blocked waits at least a minute
+    const later = (at: number): void => {
+      const when = Math.max(at, now + 60_000)
+      next = next === null ? when : Math.min(next, when)
+    }
+    const retry = (): void => later(now + MAINTENANCE_RETRY_MS)
+    if (!await this.ensureTombstoneIndex(now)) retry()
+    if (!open) {
+      try {
+        const { idleUntil, purgeAt } = await this.idleDeadlines()
+        if (purgeAt !== null && purgeAt <= now) {
+          // drive-by or idle purge: nothing left to look after, not even an alarm
+          if (await this.purgeIdleRoom(now) === "purged") return
+        } else if (idleUntil !== null && idleUntil <= now) {
+          if (await this.expireIdleRoom(now) === "purged") return
+        }
+      } catch {
+        metric("storage_error", { operation: "expiry_check" })
+        retry()
+      }
+    }
+    const compactAt = await this.compactTombstones(now)
+    if (compactAt !== null) later(compactAt)
+    if (this.openSockets().length > 0) {
+      // a join can land while this pass awaits storage; it still needs a
+      // daily pass, not an idle deadline worked out before it showed up
+      later(now + MAINTENANCE_INTERVAL_MS)
     } else {
-      await this.state.storage.setAlarm(now + IDLE_TTL_MS - (now - last))
+      // an idle room always leaves with its next idle deadline armed, read
+      // fresh since the steps above (or a join and leave meanwhile) move it.
+      // one that's still past due means its step failed or got skipped, so
+      // that's a retry, not a spin
+      try {
+        const { idleUntil, purgeAt } = await this.idleDeadlines()
+        for (const due of [idleUntil, purgeAt]) {
+          if (due === null) continue
+          if (due > now) later(due)
+          else retry()
+        }
+      } catch {
+        retry()
+      }
+    }
+    // a join during this pass may have armed its own daily alarm
+    if (typeof this.alarmAt === "number") later(this.alarmAt)
+    if (next === null) return
+    await this.state.storage.setAlarm(next)
+    this.alarmAt = next
+  }
+
+  // true only when there's provably nothing stored. a failed read says no,
+  // the normal pass has its own error handling
+  private async roomIsWiped(): Promise<boolean> {
+    try {
+      return (await this.state.storage.list({ limit: 1 })).size === 0
+    } catch {
+      return false
     }
   }
 
   private abortSocketQueue(ws: WebSocket): void {
-    const queue = this.socketMessageQueues.get(ws)
-    if (queue) {
-      queue.accepting = false
-      queue.abortPending = true
+    let queue = this.socketMessageQueues.get(ws)
+    if (!queue) {
+      // remember the close even with nothing queued, otherwise the next frame
+      // on this dead socket would open a fresh queue and get processed
+      queue = this.newMessageQueue(ws)
+      this.socketMessageQueues.set(ws, queue)
+    }
+    queue.accepting = false
+    queue.abortPending = true
+    if (queue.counted) {
+      queue.counted = false
+      this.roomPendingMessages -= queue.pendingMessages
+      this.roomPendingBytes -= queue.pendingBytes
+      this.pendingQueues.delete(queue)
     }
   }
 
   private closeSocket(ws: WebSocket, code: number, reason: string): void {
     this.abortSocketQueue(ws)
+    // Hibernating close callbacks aren't guaranteed after a server-initiated
+    // close (the client may never echo it), so announce while the binding is
+    // still known. A fenced socket is left to the replacement path.
+    const s = ws.deserializeAttachment() as SocketState | null
+    if (s && !s.replacementFences?.length) this.announceDeparture(ws, s)
     try { ws.close(code, reason) } catch { /* closed */ }
+    // no close callback is promised after this either. the put is issued
+    // before the first await, and persistActivity swallows its own errors
+    void this.noteSocketGone(ws)
+  }
+
+  private announceDeparture(ws: WebSocket, socket: SocketState): void {
+    if (socket.presenceV2) {
+      const clientId = socket.presenceV2.clientId
+      socket.presenceV2 = undefined
+      ws.serializeAttachment(socket)
+      this.broadcast({ t: "leave", clientId }, ws)
+    }
+    if (socket.hello) this.announceV3Departure(ws, socket, "transient")
+  }
+
+  private async noteActivity(): Promise<void> {
+    const now = Date.now()
+    this.activityAt = Math.max(this.activityAt, now)
+    try {
+      if (this.activityPersistedAt === undefined) {
+        // first accepted frame after a wake: one read instead of a write
+        this.activityPersistedAt = (await this.state.storage.get<number>("meta:lastActivity")) ?? 0
+      }
+      if (now - this.activityPersistedAt >= ACTIVITY_PERSIST_MS) {
+        await this.state.storage.put("meta:lastActivity", now)
+        this.activityPersistedAt = now
+      }
+    } catch {
+      // bookkeeping only. never close a socket or fail a join over it
+      metric("storage_error", { operation: "activity" })
+    }
+    await this.ensureAlarm(now + MAINTENANCE_INTERVAL_MS)
+  }
+
+  // makes sure some alarm fires no later than at. one read after a wake, a
+  // write only when the armed one is missing or further out (an idle room's
+  // expiry or purge alarm when someone joins)
+  private async ensureAlarm(at: number): Promise<void> {
+    if (typeof this.alarmAt === "number" && this.alarmAt <= at) return
+    try {
+      if (this.alarmAt === undefined) this.alarmAt = await this.state.storage.getAlarm()
+      if (this.alarmAt === null || this.alarmAt > at) {
+        await this.state.storage.setAlarm(at)
+        this.alarmAt = at
+      }
+    } catch {
+      metric("storage_error", { operation: "alarm" })
+    }
+  }
+
+  private async persistActivity(at: number): Promise<void> {
+    this.activityAt = Math.max(this.activityAt, at)
+    try {
+      await this.state.storage.put("meta:lastActivity", at)
+      this.activityPersistedAt = at
+    } catch {
+      metric("storage_error", { operation: "activity" })
+    }
+  }
+
+  /**
+   * idleUntil: when idle expiry is due, or null when the room already expired
+   * since its last activity. purgeAt: when the whole room goes, counted from
+   * the last activity (from the last expiry if no activity was ever recorded),
+   * or null when neither is known. Throws on storage errors so callers retry.
+   */
+  private async idleDeadlines(): Promise<{ idleUntil: number | null; purgeAt: number | null }> {
+    const meta = await this.state.storage.get<number>(["meta:lastActivity", "meta:expiredAt"])
+    const last = meta.get("meta:lastActivity")
+    const expiredAt = meta.get("meta:expiredAt")
+    const idleUntil = expiredAt !== undefined && expiredAt >= (last ?? 0) ? null : (last ?? 0) + IDLE_TTL_MS
+    const since = last ?? expiredAt
+    return { idleUntil, purgeAt: since === undefined ? null : since + ROOM_PURGE_TTL_MS }
+  }
+
+  // Wipes a room that has been idle ROOM_PURGE_TTL_MS: meta rows, tombstones,
+  // bookkeeping, the lot, same as a drive-by room at expiry. A device that
+  // comes back after this gets a fresh room at seq 0 (a rollback diagnostic on
+  // shipped clients) and needs a new join code. Crash safety comes from
+  // deleteAll being atomic on the sqlite backend this relay is configured
+  // for: a pass that dies leaves the room exactly as it was, the deadline is
+  // recomputed from durable state next time, and the retry alarm (or the
+  // runtime's own alarm retry) just does it again. Under bCW so a join either
+  // lands before (and resets the clock) or after (and finds no pin).
+  private async purgeIdleRoom(now: number): Promise<"purged" | "skipped" | "failed"> {
+    return this.state.blockConcurrencyWhile(async () => {
+      try {
+        if (this.openSockets().length > 0) return "skipped"
+        const { purgeAt } = await this.idleDeadlines()
+        if (purgeAt === null || purgeAt > now) return "skipped"
+        await this.wipeRoom()
+        metric("room_purged", { reason: "idle" })
+        return "purged"
+      } catch {
+        metric("storage_error", { operation: "purge" })
+        return "failed"
+      }
+    })
+  }
+
+  private async wipeRoom(): Promise<void> {
+    await this.state.storage.deleteAll()
+    this.activityAt = 0
+    this.activityPersistedAt = undefined
+    // our compat date predates deleteAll dropping the alarm too. if this
+    // fails the leftover alarm finds an empty room and does nothing
+    try {
+      await this.state.storage.deleteAlarm()
+      this.alarmAt = null
+    } catch {
+      this.alarmAt = undefined
+    }
+  }
+
+  // Idle expiry drops what an idle room doesn't need: live object ciphertext
+  // and actor pins. It keeps auth, protocol, seq, highWater, accounting and
+  // every tombstone so a returning client neither rolls back, nor trips the
+  // counter window, nor sees a delete come back, until the idle purge takes
+  // the rest (purgeIdleRoom). A room that never accepted a write has none of
+  // that to protect and is wiped outright, like before SP1.
+  // Runs under bCW so no join or write lands between the scan and the rewrite.
+  //
+  // Crash safety: seq, horizonSeq and the meta:expiring marker are written
+  // before anything is deleted, so a pass that dies half way has already moved
+  // seq past what it removed. "failed" makes alarm() retry soon, and a join in
+  // the meantime recounts the counters because of the marker (ensureAccounting).
+  private async expireIdleRoom(now: number): Promise<"expired" | "skipped" | "purged" | "failed"> {
+    return this.state.blockConcurrencyWhile(async () => {
+      try {
+        if (this.openSockets().length > 0) return "skipped"
+        const { idleUntil } = await this.idleDeadlines()
+        if (idleUntil === null || idleUntil > now) return "skipped"
+        const protocol = ((await this.state.storage.get<number>("meta:protocol")) ?? 2) as 2 | 3
+        const indexedAt = (await this.state.storage.get<number>("meta:tombIndexAt")) ?? now
+        const doomed: string[] = []
+        // newest hello among the pins about to go. compaction uses it as the
+        // last-seen bound for authors that no longer have a pin
+        let droppedSeen: number | undefined
+        for await (const [key, pin] of this.scanRecords<ActorRecord>("actor:", () => 1024)) {
+          doomed.push(key)
+          const seen = pin.lastSeen ?? Math.max(pin.firstSeen ?? 0, indexedAt)
+          droppedSeen = droppedSeen === undefined ? seen : Math.max(droppedSeen, seen)
+        }
+        let keptRecords = 0
+        let keptBytes = 0
+        for await (const [key, record] of this.scanRecords<SyncRecord | SyncRecordV3>("obj:", recordReadSize)) {
+          if (record.deleted === true) {
+            keptRecords += 1
+            keptBytes += recordBytes(protocol, record)
+          } else {
+            doomed.push(key)
+          }
+        }
+        const seq = (await this.state.storage.get<number>("meta:seq")) ?? 0
+        const highWater = (await this.state.storage.get<string>("meta:highWater")) ?? ZERO_COUNTER
+        if (seq === 0 && keptRecords === 0 && highWater === ZERO_COUNTER) {
+          // no seq, counter or delete a returning device could be rolled back
+          // on. v3 room ids are bound to the token so this can't be squatted
+          await this.wipeRoom()
+          metric("room_expired", { removed: doomed.length, kept: 0, purged: 1 })
+          return "purged"
+        }
+        if (doomed.length > 0) {
+          await this.state.storage.transaction(async txn => {
+            const nextSeq = ((await txn.get<number>("meta:seq")) ?? 0) + 1
+            const previousSeen = await txn.get<number>("meta:droppedPinsSeen")
+            const seen = droppedSeen === undefined ? previousSeen
+              : previousSeen === undefined ? droppedSeen : Math.max(previousSeen, droppedSeen)
+            await txn.put({
+              "meta:seq": nextSeq,
+              "meta:horizonSeq": nextSeq,
+              "meta:expiring": now,
+              ...(seen !== undefined ? { "meta:droppedPinsSeen": seen } : {}),
+            })
+          })
+          for (let index = 0; index < doomed.length; index += 128) {
+            await this.state.storage.delete(doomed.slice(index, index + 128))
+          }
+        }
+        await this.state.storage.transaction(async txn => {
+          await txn.put({ "meta:totalRecords": keptRecords, "meta:bytes": keptBytes, "meta:expiredAt": now })
+          await txn.delete("meta:expiring")
+        })
+        metric("room_expired", { removed: doomed.length, kept: keptRecords })
+        return "expired"
+      } catch {
+        metric("storage_error", { operation: "expiry" })
+        return "failed"
+      }
+    })
+  }
+
+  // One-time pass for rooms written before tomb: rows existed. Legacy v3
+  // tombstones have no delete time, so they count from now (conservative).
+  // False when it failed and needs another go.
+  private async ensureTombstoneIndex(now: number): Promise<boolean> {
+    try {
+      if (await this.state.storage.get("meta:tombIndexAt") !== undefined) return true
+      let pending: Array<{ key: string; at: number }> = []
+      const flush = async (): Promise<void> => {
+        if (pending.length === 0) return
+        const rows = pending
+        pending = []
+        await this.state.storage.transaction(async txn => {
+          for (const { key, at } of rows) {
+            const id = key.slice(4)
+            if (await txn.get(TOMB_PREFIX + id) !== undefined) continue
+            const current = await txn.get<SyncRecord | SyncRecordV3>(key)
+            if (current?.deleted === true) await txn.put(TOMB_PREFIX + id, at)
+          }
+        })
+      }
+      for await (const [key, record] of this.scanRecords<SyncRecord | SyncRecordV3>("obj:", recordReadSize)) {
+        if (record.deleted !== true) continue
+        const deletedAt = (record as SyncRecord).deletedAt
+        pending.push({ key, at: coarseHour(typeof deletedAt === "number" ? deletedAt : now) })
+        if (pending.length === 64) await flush()
+      }
+      await flush()
+      await this.state.storage.put("meta:tombIndexAt", coarseHour(now))
+      return true
+    } catch {
+      metric("storage_error", { operation: "tomb_index" })
+      return false
+    }
+  }
+
+  // Compacts tombstones older than TOMBSTONE_TTL_MS whose author has not said
+  // hello for TOMBSTONE_TTL_MS either. The author check matters: shipped
+  // clients resend every own tombstone a snapshot doesn't confirm, so dropping
+  // a live author's tombstone would just come straight back (and burst the
+  // rate limit on each reconnect). Returns when the next tombstone could
+  // become compactable, or null if none remain.
+  //
+  // Authors without a pin. v2 has no pins at all, so its authors count as
+  // seen at the room's last activity. A v3 pin only goes at idle expiry and
+  // any hello since would have made a new one, so an unpinned v3 author was
+  // last seen no later than the newest hello among the dropped pins, even if
+  // other devices keep the room busy afterwards. Not meta:expiredAt: a pass
+  // that dropped pins and then failed never wrote it, droppedPinsSeen goes
+  // in before the first delete.
+  private async compactTombstones(now: number): Promise<number | null> {
+    try {
+      const cutoff = now - TOMBSTONE_TTL_MS
+      const protocol = ((await this.state.storage.get<number>("meta:protocol")) ?? 2) as 2 | 3
+      // indexedAt is 0 in rooms this relay created and the first index hour in
+      // legacy ones, whose pins and activity predate any of this tracking
+      const indexedAt = (await this.state.storage.get<number>("meta:tombIndexAt")) ?? now
+      // no recorded activity at all: treat everyone as just seen, never as gone
+      const roomSeen = Math.max((await this.state.storage.get<number>("meta:lastActivity")) ?? now, indexedAt)
+      let unpinnedSeen = roomSeen
+      if (protocol === 3) {
+        const droppedSeen = await this.state.storage.get<number>("meta:droppedPinsSeen")
+        if (typeof droppedSeen === "number") unpinnedSeen = Math.min(unpinnedSeen, droppedSeen)
+      }
+      let nextDue: number | null = null
+      const later = (at: number): void => { nextDue = nextDue === null ? at : Math.min(nextDue, at) }
+      const due: string[] = []
+      for await (const [key, at] of this.scanRecords<number>(TOMB_PREFIX, () => 64)) {
+        const deletedAt = typeof at === "number" && Number.isFinite(at) ? at : now
+        if (deletedAt > cutoff) later(deletedAt + TOMBSTONE_TTL_MS)
+        else due.push(key.slice(TOMB_PREFIX.length))
+      }
+      // lastSeen only moves on a hello, so an author sitting on one socket for
+      // the whole TTL would look gone. anyone bound right now is seen now
+      const authorSeen = new Map<string, number>()
+      for (const ws of this.openSockets()) {
+        const by = (ws.deserializeAttachment() as SocketState | null)?.hello?.by
+        if (by) authorSeen.set(by, now)
+      }
+      for (let index = 0; index < due.length; index += 64) {
+        const ids = due.slice(index, index + 64)
+        await this.state.storage.transaction(async txn => {
+          const doomed: string[] = []
+          let removed = 0
+          let removedBytes = 0
+          for (const id of ids) {
+            const at = await txn.get<number>(TOMB_PREFIX + id)
+            if (at === undefined) continue
+            const record = await txn.get<SyncRecord | SyncRecordV3>("obj:" + id)
+            if (record?.deleted !== true) {
+              // recreated since, the row is stale
+              doomed.push(TOMB_PREFIX + id)
+              continue
+            }
+            if (at > cutoff) continue
+            let seen = authorSeen.get(record.by)
+            if (seen === undefined) {
+              const pin = protocol === 3 ? await txn.get<ActorRecord>("actor:" + record.by) : undefined
+              seen = pin ? (pin.lastSeen ?? Math.max(pin.firstSeen, indexedAt)) : unpinnedSeen
+              authorSeen.set(record.by, seen)
+            }
+            if (seen > cutoff) {
+              later(seen + TOMBSTONE_TTL_MS)
+              continue
+            }
+            doomed.push("obj:" + id, TOMB_PREFIX + id)
+            removed += 1
+            removedBytes += recordBytes(protocol, record)
+          }
+          if (doomed.length > 0) await txn.delete(doomed)
+          if (removed === 0) return
+          const total = (await txn.get<number>("meta:totalRecords")) ?? removed
+          const bytes = (await txn.get<number>("meta:bytes")) ?? removedBytes
+          const seq = ((await txn.get<number>("meta:seq")) ?? 0) + 1
+          await txn.put({
+            "meta:totalRecords": Math.max(0, total - removed),
+            "meta:bytes": Math.max(0, bytes - removedBytes),
+            "meta:seq": seq,
+            "meta:horizonSeq": seq,
+          })
+        })
+      }
+      if (due.length > 0) metric("tombstones_compacted", { examined: due.length })
+      return nextDue
+    } catch {
+      metric("storage_error", { operation: "compaction" })
+      return now + MAINTENANCE_RETRY_MS
+    }
+  }
+
+  // Lists a prefix in pages sized to STORAGE_READ_BUDGET_BYTES of values, so a
+  // room of 700 KB drawings no longer pulls 100 of them (70 MB) into one read.
+  private async *scanRecords<T>(prefix: string, sizeOf: (value: T) => number): AsyncGenerator<[string, T]> {
+    let cursor: string | undefined
+    let limit: number = STORAGE_FIRST_PAGE_SIZE
+    while (true) {
+      const options: DurableObjectListOptions = { prefix, limit }
+      if (cursor !== undefined) options.startAfter = cursor
+      const page = await this.state.storage.list<T>(options)
+      let bytes = 0
+      for (const [key, value] of page) {
+        bytes += sizeOf(value)
+        cursor = key
+        yield [key, value]
+      }
+      if (page.size < limit) return
+      const average = Math.max(1, bytes / page.size)
+      limit = Math.max(1, Math.min(STORAGE_PAGE_SIZE, Math.floor(STORAGE_READ_BUDGET_BYTES / average)))
+    }
   }
 
   private allow(ws: WebSocket, frameBytes: number, receivedAt: number): boolean {
@@ -887,22 +1481,22 @@ export class SyncRoom {
     this.broadcast({ t: "loc", ...s.presenceV2 }, sender)
   }
 
-  private async applyChange(sender: WebSocket, input: unknown, deleted: boolean): Promise<void> {
+  private async applyChange(sender: WebSocket, input: unknown, deleted: boolean): Promise<boolean> {
     const msg = input as Record<string, unknown>
     const rid = requestId(input)
     const reject = (code: string, retry: boolean): void => {
       if (rid) this.sendV2Nack(sender, rid, msg.by, code, retry)
     }
-    if (typeof msg.id !== "string" || msg.id.length === 0 || msg.id.length > 256) { reject("invalid", false); return }
-    if (typeof msg.v !== "number" || !Number.isSafeInteger(msg.v) || msg.v < 0 || msg.v > MAX_V) { reject("invalid", false); return }
-    if (typeof msg.by !== "string" || msg.by.length === 0 || msg.by.length > 128) { reject("invalid", false); return }
+    if (typeof msg.id !== "string" || msg.id.length === 0 || msg.id.length > 256) { reject("invalid", false); return false }
+    if (typeof msg.v !== "number" || !Number.isSafeInteger(msg.v) || msg.v < 0 || msg.v > MAX_V) { reject("invalid", false); return false }
+    if (typeof msg.by !== "string" || msg.by.length === 0 || msg.by.length > 128) { reject("invalid", false); return false }
     // Hardened Android/iOS v2 clients seal and sign deletes but historically
     // omitted the redundant outer `kind`. Normalize only that exact shape;
     // plaintext legacy deletes still fail the ciphertext check below.
     const kind = deleted && msg.kind === undefined ? "del" : msg.kind
-    if (typeof kind !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(kind)) { reject("invalid", false); return }
-    if ((deleted && kind !== "del") || (!deleted && kind === "del")) { reject("invalid", false); return }
-    if (!isValidCiphertext(msg.ct, CT_MAX)) { reject("invalid", false); return }
+    if (typeof kind !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(kind)) { reject("invalid", false); return false }
+    if ((deleted && kind !== "del") || (!deleted && kind === "del")) { reject("invalid", false); return false }
+    if (!isValidCiphertext(msg.ct, CT_MAX)) { reject("invalid", false); return false }
     const record: SyncRecord = { id: msg.id, v: msg.v, by: msg.by, kind, ct: msg.ct, deleted, ...(deleted ? { deletedAt: Date.now() } : {}) }
     const key = "obj:" + record.id
     let seq: number | undefined
@@ -934,12 +1528,14 @@ export class SyncRoom {
         await txn.put("meta:totalRecords", nextTotal)
         await txn.put("meta:bytes", nextBytes)
         await txn.put("meta:seq", seq)
+        if (deleted) await txn.put(TOMB_PREFIX + record.id, coarseHour(record.deletedAt!))
+        else if (existing?.deleted) await txn.delete(TOMB_PREFIX + record.id)
         result.outcome = "stored"
       })
     } catch {
       metric("storage_error", { operation: "v2_mutation" })
       reject("storage", true)
-      return
+      return false
     }
     if (result.outcome === "stored") this.broadcast({ t: deleted ? "del" : "put", ...record, seq }, sender)
     if (result.outcome === "stored" || result.outcome === "duplicate") {
@@ -947,19 +1543,20 @@ export class SyncRoom {
         t: "op-ack", av: DELIVERY_ACK_VERSION, rid, by: record.by,
         id: record.id, v: record.v, kind: record.kind, cth: await ciphertextHash(record.ct),
       }))
-    } else {
-      reject(result.outcome, false)
+      return true
     }
+    reject(result.outcome, false)
+    return false
   }
 
-  private async handleHello(ws: WebSocket, input: unknown): Promise<void> {
+  private async handleHello(ws: WebSocket, input: unknown): Promise<boolean> {
     const frame = parseHello(input)
     const socket = ws.deserializeAttachment() as SocketState
-    if (socket.protocol !== 3) return
+    if (socket.protocol !== 3) return false
     if (!frame) {
       metric("actor_rejected", { reason: "malformed_hello" })
       this.closeSocket(ws, 4011, "invalid actor proof")
-      return
+      return false
     }
     if (socket.hello) {
       if (JSON.stringify(socket.hello) === JSON.stringify(frame) && !socket.replacementFences?.length) {
@@ -969,7 +1566,7 @@ export class SyncRoom {
       } else if (JSON.stringify(socket.hello) !== JSON.stringify(frame)) {
         this.closeSocket(ws, 4012, "actor already announced")
       }
-      return
+      return false
     }
 
     // Never let unauthenticated actor text affect another live socket. Actor
@@ -978,8 +1575,11 @@ export class SyncRoom {
     if (!computed || !constantTimeEqual(computed, frame.by) || !await verifyHello(socket.roomId, frame)) {
       metric("actor_rejected", { reason: "invalid_proof" })
       this.closeSocket(ws, 4011, "invalid actor proof")
-      return
+      return false
     }
+    // the relay may have closed this socket (eviction, backlog shed) while the
+    // proof was being checked. a dead socket must never fence or retire anyone
+    if (!this.socketStillLive(ws)) return false
     const acceptedEpoch = parseHelloEpoch(frame.vs, frame.by)!.value
     const fenceToken = `${frame.by}:${frame.vs}:${frame.sd}:${++this.replacementFenceCounter}`
     const fenced = this.fenceOlderActorSockets(ws, frame.by, acceptedEpoch, fenceToken)
@@ -1001,8 +1601,12 @@ export class SyncRoom {
         const code = result === "mismatch" ? 4010 : result === "replay" ? 4014 : 4013
         const reason = result === "mismatch" ? "actor key mismatch" : result === "replay" ? "stale hello epoch" : "room quota"
         this.closeSocket(ws, code, reason)
-        return
+        return false
       }
+      // same check again after the durable pin. the pin stays (its epoch is
+      // spent, the client reconnects with a newer one) but nothing gets bound,
+      // and the finally below hands the older session back its fence
+      if (!this.socketStillLive(ws)) return false
       accepted = true
 
       // The old session was fenced only after proof. Retire it after the
@@ -1025,6 +1629,7 @@ export class SyncRoom {
       // Sender gating ends only after both the durable pin and socket binding.
       ws.send(JSON.stringify({ t: "hello-ack", by: frame.by, sd: frame.sd, vs: frame.vs }))
       this.broadcast(frame, ws)
+      return true
     } finally {
       if (!accepted) this.restoreActorFences(fenced, fenceToken, ws)
     }
@@ -1072,6 +1677,10 @@ export class SyncRoom {
     this.closeSocket(ws, 1000, "explicit leave")
   }
 
+  private socketStillLive(ws: WebSocket): boolean {
+    return ws.readyState === WS_OPEN && this.socketMessageQueues.get(ws)?.abortPending !== true
+  }
+
   private fenceOlderActorSockets(
     replacement: WebSocket,
     actorId: string,
@@ -1106,6 +1715,13 @@ export class SyncRoom {
       if (restored) current.replacementFences = undefined
       ws.serializeAttachment(current)
       if (!restored) continue
+      if (ws.readyState !== WS_OPEN) {
+        // the relay closed it while fenced and closeSocket left the leave to
+        // the replacement path. that path failed, so say it here instead of
+        // bringing back a session nobody can reach
+        this.announceV3Departure(ws, current, "transient", failedReplacement)
+        continue
+      }
       // A socket that joined while proof was pending intentionally received no
       // fenced live metadata. Re-announce the restored old session so it does
       // not remain invisible after the replacement fails. Duplicate frames are
@@ -1130,6 +1746,7 @@ export class SyncRoom {
       const actor: ActorRecord = {
         pubkey: frame.pub,
         firstSeen: existing?.firstSeen ?? Date.now(),
+        lastSeen: coarseHour(Date.now()),
         helloEpoch: incomingEpoch.hex,
         hello: frame,
       }
@@ -1145,24 +1762,24 @@ export class SyncRoom {
     return result
   }
 
-  private async applyChangeV3(sender: WebSocket, input: unknown, deleted: boolean): Promise<void> {
+  private async applyChangeV3(sender: WebSocket, input: unknown, deleted: boolean): Promise<boolean> {
     const msg = input as Record<string, unknown>
     let socket = sender.deserializeAttachment() as SocketState
     const rid = requestId(input)
     const reject = (code: string, retry: boolean): void => {
       if (rid) this.sendV3Nack(sender, socket, rid, code, retry)
     }
-    if (socket.replacementFences?.length) { reject("session-replaced", false); return }
+    if (socket.replacementFences?.length) { reject("session-replaced", false); return false }
     const hello = socket.hello
-    if (!hello) { reject("hello-required", true); return }
-    if (typeof msg.id !== "string" || !B64URL_32_RE.test(msg.id)) { reject("invalid", false); return }
-    if (typeof msg.vs !== "string") { reject("invalid", false); return }
+    if (!hello) { reject("hello-required", true); return false }
+    if (typeof msg.id !== "string" || !B64URL_32_RE.test(msg.id)) { reject("invalid", false); return false }
+    if (typeof msg.vs !== "string") { reject("invalid", false); return false }
     const stamp = parseStamp(msg.vs)
-    if (!stamp || stamp.counter > MAX_COUNTER || stamp.actorId !== hello.by) { reject("invalid", false); return }
-    if (msg.by !== hello.by || msg.pub !== hello.pub || msg.sd !== hello.sd) { reject("session-mismatch", false); return }
-    if (typeof msg.kind !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(msg.kind)) { reject("invalid", false); return }
-    if (deleted ? msg.kind !== "del" : msg.kind === "del") { reject("invalid", false); return }
-    if (!isValidCiphertext(msg.ct, CT_MAX)) { reject("invalid", false); return }
+    if (!stamp || stamp.counter > MAX_COUNTER || stamp.actorId !== hello.by) { reject("invalid", false); return false }
+    if (msg.by !== hello.by || msg.pub !== hello.pub || msg.sd !== hello.sd) { reject("session-mismatch", false); return false }
+    if (typeof msg.kind !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(msg.kind)) { reject("invalid", false); return false }
+    if (deleted ? msg.kind !== "del" : msg.kind === "del") { reject("invalid", false); return false }
+    if (!isValidCiphertext(msg.ct, CT_MAX)) { reject("invalid", false); return false }
     const record: SyncRecordV3 = { id: msg.id, vs: msg.vs, by: hello.by, kind: msg.kind, ct: msg.ct, deleted, pub: hello.pub, sd: hello.sd }
     const expectedRoomId = socket.roomId
     const expectedHello = hello
@@ -1175,7 +1792,7 @@ export class SyncRoom {
         currentHello.by !== expectedHello.by || currentHello.sd !== expectedHello.sd ||
         currentHello.pub !== expectedHello.pub || currentHello.vs !== expectedHello.vs) {
       reject("session-replaced", false)
-      return
+      return false
     }
     const key = "obj:" + record.id
     let seq: number | undefined
@@ -1208,12 +1825,14 @@ export class SyncRoom {
         await txn.put("meta:bytes", nextBytes)
         await txn.put("meta:seq", seq)
         if (stamp.counter > highCounter) await txn.put("meta:highWater", stamp.counter.toString(16).padStart(16, "0"))
+        if (deleted) await txn.put(TOMB_PREFIX + record.id, coarseHour(Date.now()))
+        else if (existing?.deleted) await txn.delete(TOMB_PREFIX + record.id)
         result.outcome = "stored"
       })
     } catch {
       metric("storage_error", { operation: "v3_mutation" })
       reject("storage", true)
-      return
+      return false
     }
     if (result.outcome === "stored") this.broadcast({ t: deleted ? "del" : "put", ...record, seq }, sender)
     if (result.outcome === "stored" || result.outcome === "duplicate") {
@@ -1222,9 +1841,10 @@ export class SyncRoom {
         by: hello.by, sd: hello.sd, id: record.id, vs: record.vs,
         kind: record.kind, cth,
       }))
-    } else {
-      reject(result.outcome, false)
+      return true
     }
+    reject(result.outcome, false)
+    return false
   }
 
   private sameV2Record(a: SyncRecord, b: SyncRecord): boolean {
@@ -1315,7 +1935,7 @@ export class SyncRoom {
     if (frame.scope === "room") {
       const data = JSON.stringify(frame)
       for (const peer of this.state.getWebSockets()) {
-        if (peer === sender) continue
+        if (peer === sender || peer.readyState !== WS_OPEN) continue
         const state = peer.deserializeAttachment() as SocketState | null
         if (state?.protocol !== 3 || !state.hello || !state.chatKey || state.replacementFences?.length) continue
         try { peer.send(data) } catch { /* dead socket */ }
@@ -1323,7 +1943,7 @@ export class SyncRoom {
       return true
     }
     const recipient = this.state.getWebSockets().find(peer => {
-      if (peer === sender) return false
+      if (peer === sender || peer.readyState !== WS_OPEN) return false
       const state = peer.deserializeAttachment() as SocketState | null
       return state?.protocol === 3 && !!state.chatKey && !state.replacementFences?.length &&
         state.hello?.by === frame.to && state.hello?.sd === frame.toSd &&
@@ -1431,7 +2051,7 @@ export class SyncRoom {
 
   private collectV2Members(except: WebSocket): PresenceV2[] {
     return this.state.getWebSockets().flatMap(ws => {
-      if (ws === except) return []
+      if (ws === except || ws.readyState !== WS_OPEN) return []
       const s = ws.deserializeAttachment() as SocketState | null
       return s?.presenceV2 ? [s.presenceV2] : []
     })
@@ -1440,7 +2060,9 @@ export class SyncRoom {
   private collectV3Live(except: WebSocket): Array<HelloFrame | ChatKeyFrame | PresenceV3> {
     const frames: Array<HelloFrame | ChatKeyFrame | PresenceV3> = []
     for (const ws of this.state.getWebSockets()) {
-      if (ws === except) continue
+      // a socket the relay already closed is not a live member, even if its
+      // client never echoed the close
+      if (ws === except || ws.readyState !== WS_OPEN) continue
       const s = ws.deserializeAttachment() as SocketState | null
       // A newer signed session has already fenced this socket. Do not leak its
       // superseded hello/location into a concurrent newcomer's live snapshot.
@@ -1454,78 +2076,87 @@ export class SyncRoom {
     return frames
   }
 
-  private async ensureV3Accounting(): Promise<void> {
-    if (await this.state.storage.get<number>("meta:accountingSchema") === 2) return
+  // Recounts meta:totalRecords / meta:bytes from what is actually stored. v3
+  // rooms from before exact accounting get it once (accountingSchema 2), and
+  // any room whose idle expiry died half way gets it on the next join, since
+  // that pass never rewrote its counters. Runs under bCW from fetch.
+  private async ensureAccounting(protocol: 2 | 3): Promise<void> {
+    const meta = await this.state.storage.get(["meta:accountingSchema", "meta:expiring"])
+    const migrated = protocol === 2 || meta.get("meta:accountingSchema") === 2
+    if (migrated && !meta.has("meta:expiring")) return
     let total = 0
     let bytes = 0
-    for (const prefix of ["actor:", "obj:"]) {
-      let cursor: string | undefined
-      while (true) {
-        const options: DurableObjectListOptions = { prefix, limit: STORAGE_PAGE_SIZE }
-        if (cursor) options.startAfter = cursor
-        const page = await this.state.storage.list<ActorRecord | SyncRecordV3>(options)
-        if (page.size === 0) break
-        for (const [key, value] of page) {
-          total += 1
-          bytes += prefix === "actor:"
-            ? storageBytes(key, value)
-            : recordBytesV3(value as SyncRecordV3)
-        }
-        const keys = [...page.keys()]
-        cursor = keys[keys.length - 1]
-        if (page.size < STORAGE_PAGE_SIZE) break
+    if (protocol === 3) {
+      for await (const [key, value] of this.scanRecords<ActorRecord>("actor:", () => 1024)) {
+        total += 1
+        bytes += storageBytes(key, value)
       }
+    }
+    for await (const [, value] of this.scanRecords<SyncRecord | SyncRecordV3>("obj:", recordReadSize)) {
+      total += 1
+      bytes += recordBytes(protocol, value)
     }
     await this.state.storage.transaction(async txn => {
       await txn.put("meta:totalRecords", total)
       await txn.put("meta:bytes", bytes)
-      await txn.put("meta:accountingSchema", 2)
+      if (protocol === 3) await txn.put("meta:accountingSchema", 2)
+      await txn.delete("meta:expiring")
     })
   }
 
-  private async sendSnapshot(ws: WebSocket, protocol: 2 | 3): Promise<void> {
+  // returns the UTF-8 bytes queued on the socket
+  private async sendSnapshot(ws: WebSocket, protocol: 2 | 3): Promise<number> {
     const snapshot: SnapshotState = {
       seq: (await this.state.storage.get<number>("meta:seq")) ?? 0,
       highWater: (await this.state.storage.get<string>("meta:highWater")) ?? ZERO_COUNTER,
     }
-    const members = protocol === 2 ? this.collectV2Members(ws) : []
     const liveFrames = protocol === 3 ? this.collectV3Live(ws) : []
-    ws.send(JSON.stringify({ t: "snapshot-begin", seq: snapshot.seq, ...(protocol === 3 ? { highWater: snapshot.highWater } : {}) }))
-
-    let cursor: string | undefined
-    let chunk: unknown[] = []
-    let first = true
-    const payload = (items: unknown[], more: boolean) => ({ t: "snapshot", items, more, ...(first && protocol === 2 ? { members } : {}) })
-    const flush = (more: boolean) => {
-      const text = JSON.stringify(payload(chunk, more))
-      if (utf8Length(text) > SNAPSHOT_FRAME_BYTES) throw new Error("snapshot frame ceiling")
+    let sentBytes = 0
+    const send = (text: string, bytes = utf8Length(text)): void => {
       ws.send(text)
-      chunk = []
+      sentBytes += bytes
+    }
+    send(JSON.stringify({ t: "snapshot-begin", seq: snapshot.seq, ...(protocol === 3 ? { highWater: snapshot.highWater } : {}) }))
+
+    // Pages are byte-for-byte JSON.stringify({ t, items, more, members? }), just
+    // assembled by hand so each record is stringified and measured once. The
+    // old loop re-stringified the whole pending page per record (O(n x page)).
+    const head = '{"t":"snapshot","items":['
+    const membersTail = protocol === 2 ? ',"members":' + JSON.stringify(this.collectV2Members(ws)) : ""
+    const membersTailBytes = utf8Length(membersTail)
+    // sized for the longer "false" flag so the last page can't overshoot
+    const tailBytes = '],"more":false}'.length
+    let parts: string[] = []
+    let partsBytes = 0
+    let first = true
+    const pageBytes = (next: number): number => head.length + partsBytes + (parts.length > 0 ? 1 : 0) + next +
+      tailBytes + (first ? membersTailBytes : 0)
+    const flush = (more: boolean): void => {
+      const tail = '],"more":' + more + (first ? membersTail : "") + "}"
+      send(head + parts.join(",") + tail, head.length + partsBytes + utf8Length(tail))
+      parts = []
+      partsBytes = 0
       first = false
     }
 
-    while (true) {
-      const options: DurableObjectListOptions = { prefix: "obj:", limit: STORAGE_PAGE_SIZE }
-      if (cursor) options.startAfter = cursor
-      const page = await this.state.storage.list<SyncRecord | SyncRecordV3>(options)
-      if (page.size === 0) break
-      for (const record of page.values()) {
-        const candidate = [...chunk, record]
-        if (utf8Length(JSON.stringify(payload(candidate, true))) > SNAPSHOT_FRAME_BYTES) {
-          if (chunk.length === 0) throw new Error("record exceeds snapshot ceiling")
-          flush(true)
-        }
-        chunk.push(record)
+    for await (const [, record] of this.scanRecords<SyncRecord | SyncRecordV3>("obj:", recordReadSize)) {
+      const text = JSON.stringify(record)
+      const bytes = utf8Length(text)
+      if (pageBytes(bytes) > SNAPSHOT_FRAME_BYTES) {
+        // v2 puts the member list on the first page. If that plus the first
+        // record won't fit, the members go out alone rather than throwing
+        if (parts.length > 0 || (first && membersTail !== "")) flush(true)
+        if (pageBytes(bytes) > SNAPSHOT_FRAME_BYTES) throw new Error("record exceeds snapshot ceiling")
       }
-      const keys = [...page.keys()]
-      cursor = keys[keys.length - 1]
-      if (page.size < STORAGE_PAGE_SIZE) break
+      partsBytes += bytes + (parts.length > 0 ? 1 : 0)
+      parts.push(text)
     }
     flush(false)
-    ws.send(JSON.stringify({ t: "snapshot-end", seq: snapshot.seq }))
+    send(JSON.stringify({ t: "snapshot-end", seq: snapshot.seq }))
     // Active-session metadata is ephemeral and follows the durable fence. Each
     // frame is independently bounded by the normal incoming client ceiling.
-    for (const frame of liveFrames) ws.send(JSON.stringify(frame))
+    for (const frame of liveFrames) send(JSON.stringify(frame))
+    return sentBytes
   }
 
   private announceV3Departure(
@@ -1556,14 +2187,9 @@ export class SyncRoom {
   private broadcast(payload: unknown, except: WebSocket, alsoExcept?: WebSocket): void {
     const data = JSON.stringify(payload)
     for (const ws of this.state.getWebSockets()) {
-      if (ws === except || ws === alsoExcept) continue
+      // closed-but-not-echoed sockets can't take anything, skip the work
+      if (ws === except || ws === alsoExcept || ws.readyState !== WS_OPEN) continue
       try { ws.send(data) } catch { /* dead socket */ }
     }
-  }
-
-  private async touchActivity(): Promise<void> {
-    const now = Date.now()
-    await this.state.storage.put("meta:lastActivity", now)
-    if (await this.state.storage.getAlarm() === null) await this.state.storage.setAlarm(now + IDLE_TTL_MS)
   }
 }

@@ -237,5 +237,107 @@
     "SNAPSHOT_DUPLICATE_ID_POLICY": "reject-entire-snapshot",
     "PRESENCE_COUNTER_SCOPE": "websocket-session",
     "DURABLE_RECORD_VERIFICATION_FIELDS": ["by", "pub", "sd", "vs", "id", "kind", "ct"]
+  },
+  "relayLimits": {
+    "_comment": "Relay limits and delivery rules clients must stay under. values mirrors sync/src/limits.ts RELAY_LIMITS exactly (sync/test/contract.test.ts fails on drift). Character limits (CT_MAX, PRESENCE_CT_MAX, CHAT_CT_MAX) count characters of the padded standard-base64 ct string; *_BYTES limits count UTF-8 wire bytes.",
+    "values": {
+      "MAX_CONNECTIONS": 64,
+      "MAX_ACCEPTED_SOCKETS": 128,
+      "HELLO_DEADLINE_MS": 60000,
+      "HELLO_DEADLINE_BYTES_PER_SEC": 100000,
+      "MAX_RECORDS": 10000,
+      "MAX_STORED_BYTES": 50000000,
+      "MAX_V": 1000000000000,
+      "CT_MAX": 700000,
+      "PRESENCE_CT_MAX": 8192,
+      "CHAT_CT_MAX": 16384,
+      "MAX_FRAME_BYTES": 1048576,
+      "SNAPSHOT_FRAME_BYTES": 900000,
+      "STORAGE_PAGE_SIZE": 100,
+      "STORAGE_FIRST_PAGE_SIZE": 4,
+      "STORAGE_READ_BUDGET_BYTES": 4194304,
+      "RATE_WINDOW_MS": 10000,
+      "RATE_MAX_MSGS": 200,
+      "RATE_MAX_BYTES": 4194304,
+      "ROOM_PENDING_MAX_MSGS": 512,
+      "ROOM_PENDING_MAX_BYTES": 8388608,
+      "ADVANCE_WINDOW": 10000,
+      "IDLE_TTL_MS": 604800000,
+      "TOMBSTONE_TTL_MS": 2592000000,
+      "ROOM_PURGE_TTL_MS": 7776000000,
+      "ACTIVITY_PERSIST_MS": 3600000,
+      "MAINTENANCE_INTERVAL_MS": 86400000,
+      "MAINTENANCE_RETRY_MS": 3600000
+    },
+    "rateWindow": {
+      "kind": "fixed",
+      "rule": "Per socket. The window opens at the first frame and resets on the first frame that arrives more than RATE_WINDOW_MS after it opened, so up to 2 x RATE_MAX_MSGS frames can pass across one boundary. Every frame counts: malformed, unknown, ping, hello, loc, chat and retries.",
+      "onExceed": "close 4008; frames already queued on that socket are dropped with no op-ack or op-nack",
+      "perSocketBacklog": "At most RATE_MAX_MSGS frames / RATE_MAX_BYTES bytes may be waiting for processing on one socket; the next frame closes it 4008."
+    },
+    "roomBacklog": {
+      "rule": "At most ROOM_PENDING_MAX_MSGS frames / ROOM_PENDING_MAX_BYTES bytes may be waiting for processing across the whole room.",
+      "onExceed": "The socket with the largest pending backlog, counting the arriving frame on its sender, is closed 4008 and its queued frames are dropped. The arriving frame is admitted unless its own socket was the largest.",
+      "residualRisk": "Largest-backlog is a heuristic: a member with several bound actor identities can make an honest peer's burst (e.g. the post-hello-ack resend) the largest. Pace under clientPacing, including that resend."
+    },
+    "admission": {
+      "openSockets": "At most MAX_CONNECTIONS OPEN sockets; sockets the relay already closed do not count.",
+      "acceptedSockets": "At most MAX_ACCEPTED_SOCKETS accepted sockets in total, including relay-closed ones the client never echoed; beyond that every upgrade gets 503 Room full.",
+      "helloDeadline": "When the room is full, a v3 socket with no accepted hello by acceptedAt + HELLO_DEADLINE_MS + snapshotBytes * 1000 / HELLO_DEADLINE_BYTES_PER_SEC is closed 1013, most overdue first. snapshotBytes is every UTF-8 byte the relay queued on that socket before the 101."
+    },
+    "clientPacing": {
+      "_comment": "Recommended outbound budget for clients (SP2), comfortably under the relay window including retries.",
+      "maxFramesPerWindow": 150,
+      "maxBytesPerWindow": 3145728,
+      "windowMs": 10000
+    },
+    "deployment": {
+      "_comment": "Default per-IP Cloudflare rate limiters in sync/wrangler.jsonc. Self-hosters may change them.",
+      "CONN_LIMITER": { "period": 60, "limit": 60 },
+      "ROOM_LIMITER": { "period": 60, "limit": 10 }
+    },
+    "closeCodes": {
+      "1000": "explicit leave accepted",
+      "1007": "invalid UTF-8 in a binary frame",
+      "1011": "relay storage failed while handling this socket's frame or join",
+      "1013": "v3 socket with no accepted hello (one still being verified or pinned counts as none) past its hello deadline (HELLO_DEADLINE_MS plus snapshot drain time at HELLO_DEADLINE_BYTES_PER_SEC) evicted to free a slot for a new join; transient, reconnect",
+      "4008": "rate limit, per-socket backlog, or largest backlog when the room backlog cap was hit",
+      "4009": "frame larger than MAX_FRAME_BYTES",
+      "4010": "actor key mismatch",
+      "4011": "invalid actor or leave proof",
+      "4012": "a different hello on an already announced socket",
+      "4013": "room quota reached while pinning a new actor",
+      "4014": "stale hello epoch",
+      "4015": "actor session superseded by a newer hello"
+    },
+    "upgradeStatus": {
+      "401": "missing or malformed bearer token",
+      "403": "token does not match the room (v3 binding or pinned hash) or an Origin header was sent",
+      "404": "unknown route",
+      "426": "not a WebSocket upgrade, or protocol mismatch with the room",
+      "429": "per-IP CONN_LIMITER or ROOM_LIMITER",
+      "503": "Room full (MAX_CONNECTIONS open or MAX_ACCEPTED_SOCKETS accepted), Room metadata incomplete, Room initialization failed, Room reset during join (an idle wipe landed between the auth check and admission; the reconnect pins a fresh room), Room accounting unavailable, or Snapshot unavailable; transient"
+    },
+    "opNackCodes": {
+      "invalid": { "retry": false },
+      "hello-required": { "retry": true },
+      "session-mismatch": { "retry": false },
+      "session-replaced": { "retry": false },
+      "stale": { "retry": false },
+      "counter-window": { "retry": false },
+      "quota": { "retry": false },
+      "storage": { "retry": true },
+      "not-found": { "retry": false, "reserved": "only produced for deletes without rid, which never receive a nack" }
+    },
+    "leaveVariants": ["transient", "explicit", "replaced"],
+    "retention": {
+      "activity": "meta:lastActivity is written at most once per ACTIVITY_PERSIST_MS for joins, accepted writes and hellos, whenever the relay sees the last OPEN socket go (relay close, client close or transport error), and by the maintenance alarm (at least every MAINTENANCE_INTERVAL_MS while a socket is open). Never per presence, chat or rejected frame.",
+      "idleExpiry": "About IDLE_TTL_MS after the last persisted activity, with no OPEN socket, the relay deletes live object ciphertext and actor pins. It keeps meta:auth (token hash), meta:protocol, meta:seq, meta:highWater, record/byte accounting, meta:lastActivity, relay-only bookkeeping and tombstones, so seq and highWater do not roll back and deletes cannot resurrect until the idle purge. A room with seq 0, no tombstone and zero highWater is deleted entirely instead.",
+      "idlePurge": "About ROOM_PURGE_TTL_MS after the last persisted activity (after the last expiry if no activity was ever recorded), with no OPEN socket, the relay deletes everything it holds for the room (meta rows, bookkeeping, every tombstone) in one atomic deleteAll, then its alarm. Any activity restarts the clock; a failed purge leaves the room whole and is retried after MAINTENANCE_RETRY_MS. A device returning afterwards finds a fresh room: snapshot-begin seq 0 (below its lastSnapshotSeq, so shipped clients raise the rollback diagnostic), zero highWater (counters above ADVANCE_WINDOW are nacked counter-window) and no tombstones. It has to move to a new join code; clients should surface this as its own state (SP2).",
+      "seqHorizon": "seq advances before any expiry or compaction removal (in the same transaction for compaction, in a transaction ahead of the deletes for expiry); meta:horizonSeq records the seq of the last such pass. A failed expiry pass is retried after MAINTENANCE_RETRY_MS and a join in between recounts accounting.",
+      "tombstones": "A tombstone is compacted once it is older than TOMBSTONE_TTL_MS and its author has not sent a hello for TOMBSTONE_TTL_MS and has no open session. v3 author with a pin: pin lastSeen. v3 author without a pin (dropped at expiry): min(room last activity, newest lastSeen among all pins any expiry dropped). v2 (no pins): room last activity, so v2 tombstones only go after the whole room is unused for TOMBSTONE_TTL_MS. A device offline longer than TOMBSTONE_TTL_MS can resurrect an object whose tombstone was compacted. A departed author that returns after compaction and resends every unconfirmed own tombstone right after hello-ack, unpaced, trips the rate window (4008) about once per RATE_MAX_MSGS and makes the relay store them again: pace that resend under clientPacing.",
+      "snapshotRecordShape": "Unchanged. Compaction bookkeeping lives in separate relay-only rows and is never sent to clients.",
+      "clientGating": "No in-band capability advertises these rules and pre-SP1 relays wipe the whole room at idle expiry. Client behaviour that depends on them (including reading a fresh room under an old join code as an idle purge rather than a rollback) must be gated on a negotiated capability (SP2/SP4)."
+    }
   }
 }

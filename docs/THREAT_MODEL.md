@@ -123,6 +123,57 @@ ciphertext.
   guesses and a relay also receives the separately derived authorization token.
 - The contents of any synced object. All of it is AES-256-GCM ciphertext.
 
+**What the relay stores, and for how long.** Per room the relay stores a hash of
+the admission token, the protocol version, the room's sequence and counter
+high-water values, record/byte counters, the time of last activity (written at
+most hourly, when the last connection goes, and daily while anyone is
+connected; never per presence or chat frame), the latest sealed record of each
+synced object, tombstones (the sealed, signed delete proof with its signer's
+public key and session ID), and one pin per device actor (public key, first-seen
+time, the hour of its latest session announcement, and that signed
+announcement). It also keeps relay-only bookkeeping rows: the hour each delete
+landed, the time of the last idle expiry, the sequence number of the last
+expiry or compaction, the newest session-announcement hour among the device
+pins dropped at expiry (one value, no device identity), an index marker (0 in
+rooms created since SP1; in older rooms the hour the relay first indexed their
+deletes, which is about the SP1 deploy time, not the room's creation), and a
+marker while an expiry pass is unfinished. Nothing that outlives idle expiry
+records when the room was created (device pins, with their first-seen times,
+go at expiry). Presence, chat, and chat keys are never written to storage.
+
+- About 7 days after the last recorded activity, with no connection open, the
+  relay deletes every live object and every actor pin. A room that never
+  stored anything is deleted entirely. Otherwise the relay keeps the token
+  hash, protocol, sequence and high-water values, counters, last-activity time,
+  the bookkeeping above and tombstones, so a device that returns later is not
+  rolled back, is not locked out by the counter window, and cannot bring back
+  an object someone deleted. Those few values hold no mission content.
+- About 90 days after the last recorded activity (or after the last idle
+  expiry, if no activity was ever recorded), with no connection open, the
+  relay deletes everything it still holds for the room: token hash, counters,
+  timestamps, bookkeeping and every remaining tombstone. Nothing is left. Any
+  recorded activity in between restarts both clocks. A device that comes back after that finds a fresh, empty room: its
+  sequence fence is lower than the one it saw before, so the app shows the
+  rollback warning, and a device whose version counters had run more than
+  10,000 ahead gets counter-window rejections. Treat it as a new room and move
+  to a new join code. In legacy v2 rooms whoever connects first afterwards pins
+  the fresh room, as at idle expiry before SP1; v3 room IDs are bound to the
+  join code. See §7,
+  *Expired rooms are remembered for up to 90 days*.
+- In v3 rooms a tombstone is deleted once it is 30 days old **and** its author
+  device is not connected now and has not started a session (signed hello)
+  in the last 30 days. Once idle expiry has dropped the device
+  pins, the relay no longer knows each device's last connection and counts
+  from the latest connection of any device whose pin was dropped, so a
+  tombstone can outlast its own author's absence by up to the gap between that
+  author's last connection and the last device's, even while other devices
+  keep using the room. In legacy v2 rooms (no device pins) a tombstone is
+  deleted once it is 30 days old and the whole room has been unused for 30
+  days; a v2 room in steady use keeps them. Until then deletes survive idle
+  expiry. Legacy v2 tombstones are stored as the v2 record itself, so they
+  keep its relay-set deletion time (millisecond precision) and the deleting
+  client's id until they are compacted or the room is purged.
+
 **What payload authentication prevents.** Each sealed object binds its own
 routing metadata (object ID, version, kind) into the encryption as associated
 data. A relay that relabels an object under a different ID or moves it between
@@ -348,6 +399,23 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   and confirm critical changes out-of-band. Detecting these cases requires an
   external transparency log or out-of-band trust anchor; a relay-controlled
   monotonic sequence alone is not sufficient.
+- **Deletes are not remembered forever.** To reclaim space from departed
+  devices, the relay drops a tombstone once it is 30 days old and its author
+  has been away for 30 days (§4 has the exact rule, including legacy v2
+  rooms), and after 90 idle days it drops the whole room. A device that was
+  offline longer than that, still holding the deleted object, can publish it
+  again and the relay accepts it. Peers that kept the delete in their own
+  replay state keep rejecting it, so those peers and new joiners can disagree
+  about that object until someone edits or deletes it again. For operations
+  where devices sit unused for more than a month, rotate to a fresh join code
+  instead of reusing the room.
+- **A room insider can still fill the room.** Record and byte quotas are
+  room-wide. Anyone holding the join code can pin many throwaway device
+  identities or keep a large set of tombstones alive by checking in more often
+  than every 30 days, until honest writes are refused as over quota and new
+  devices cannot join. The relay cannot tell an insider from a teammate. The
+  remedy is the same as for any compromised code: move the unit to a new join
+  code.
 - **Area-of-interest leakage via online basemaps/lookups.** See §6. While the
   online-basemaps or online-lookups gate is on, the tile/query coordinates go to
   the provider (Esri/OpenTopoMap/Open-Meteo, Apple place search, or the Android
@@ -444,6 +512,28 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   to be async-signal-safe (no allocation or crypto), and doing keystore crypto
   inside a crash handler is fragile. Stack traces rarely contain coordinates but
   can carry an imported map's file name; clear it if that matters.
+- **Expired rooms are remembered for up to 90 days.** A room that ever stored
+  anything keeps about a dozen small relay rows (token hash, sequence and
+  high-water values, counters, timestamps) plus its remaining tombstones after
+  idle expiry, so devices returning within that time resume cleanly (§4).
+  They hold no mission content, but until they go they show that the room
+  existed and roughly when it was last used, and the token hash lets whoever
+  holds relay storage confirm a join-code guess just as the routing ID does
+  (see *A weak join code*). After 90 days with no activity the relay deletes
+  all of it; rooms that never stored anything go at 7 days. Room creation is
+  only rate limited per IP address, so relay storage holds rows for every room
+  used in the last 90 days. A device returning after the purge gets the
+  rollback warning and must move to a new join code (§4). If even 90 days is
+  too long for an operation, self-host and wipe the relay's storage when the
+  operation ends.
+- **A room member can get another member's connection dropped.** When the
+  relay's room-wide processing backlog is full it closes the connection with
+  the largest backlog. A member who runs several device identities can keep
+  each of their own backlogs just under an honest device's normal burst (for
+  example its resend right after reconnecting), so the honest device is the one
+  closed, again on every reconnect. Each identity shows up as a room member and
+  counts toward the room quota, and the closed device reconnects on its own;
+  treat it like any other misbehaving member who holds the join code.
 - **Your own room members and chat recipients.** Everyone with the join code can
   decrypt map objects, presence, and **Entire room** chat. A **Selected unit**
   message instead uses an ephemeral X25519 session secret and is not decryptable
