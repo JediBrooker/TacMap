@@ -48,21 +48,21 @@ import java.io.File
 import java.util.UUID
 
 /**
- * OD3-R3-1, the Android side: Layers > Delete PDF Map > Delete Map is MapViewModel.unloadPdfMap
- * (MapScreen's confirm calls exactly that). With or without a bake running it has to leave
- * nothing for that map in pdf_maps, offline_tiles or pdf_bake_work and no session record. Also
- * R3-4: Remove Offline Tiles hands back on main straight away and the source loses its bake
- * once the IO half is done. Real view model on the app's own files dir, so everything it could
- * touch is copied aside first and put back after (the emulator has real imports on it)
+ * OD3-R3-1, the Android side, on the WP4 library since the merge: Layers > Imported maps >
+ * Delete is MapViewModel.deleteImportedMap (the row's confirm calls exactly that). With or
+ * without a bake running it has to leave nothing for that map in pdf_maps, offline_tiles or
+ * pdf_bake_work and no library entry. Also R3-4: Remove Offline Tiles hands back on main
+ * straight away and the source loses its bake once the IO half is done. Real view model on
+ * the app's own files dir, so everything it could touch is copied aside first and put back
+ * after (the emulator has real imports on it)
  */
 @RunWith(AndroidJUnit4::class)
 class PdfDeleteMapInstrumentedTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val app = context.applicationContext as Application
     private val files = context.filesDir
-    private val sessions = PdfSessionStore(context)
+    private val library = com.tacmap.calibration.ImportedMapLibraryStore(files)
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private lateinit var snapshot: PdfSessionSnapshot
     private val backup = File(context.cacheDir, "deletemap-backup-${System.nanoTime()}")
     private val roots = listOf("pdf_maps", "mbtiles", "offline_tiles", PdfBaker.WORK_DIR)
     private val vmStore = ViewModelStore()
@@ -72,7 +72,6 @@ class PdfDeleteMapInstrumentedTest {
         PDFBoxResourceLoader.init(context)
         PdfRenderSessions.init(context)
         PdfRenderExecutor.foreground = true
-        snapshot = sessions.snapshotActiveSession()
         backup.mkdirs()
         files.listFiles().orEmpty().filter { it.isFile }.forEach { it.copyTo(File(backup, it.name), overwrite = true) }
         for (r in roots) File(files, r).listFiles().orEmpty().filter { it.isFile }.forEach {
@@ -84,7 +83,13 @@ class PdfDeleteMapInstrumentedTest {
     fun tearDown() {
         (app as com.tacmap.app.TacticalApp).pdfBakeManager.cancel()
         instrumentation.runOnMainSync { vmStore.clear() }
-        sessions.restoreActiveSession(snapshot)
+        // the library file is top level, the copy below puts the user's one back. its sealed-only
+        // marker (and any quarantine) go too, or a library that wasn't there before the test
+        // reads as vanished-after-written = corrupt from now on (WP4 r1 S1)
+        val lib = com.tacmap.calibration.ImportedMapLibraryStore.FILE_NAME
+        File(files, lib).delete()
+        File(files, ".$lib.sealed-only-v1").delete()
+        files.listFiles().orEmpty().filter { it.name.startsWith("$lib.corrupt-") && !File(backup, it.name).exists() }.forEach { it.delete() }
         for (r in roots) {
             File(files, r).listFiles().orEmpty().filter { it.isFile }.forEach { it.delete() }
             File(backup, r).listFiles().orEmpty().forEach { it.copyTo(File(files, "$r/${it.name}"), overwrite = true) }
@@ -112,44 +117,53 @@ class PdfDeleteMapInstrumentedTest {
         return file
     }
 
-    private fun source(file: File): PdfMapSource {
-        val src = PdfMapSource(
-            uri = Uri.fromFile(file),
-            displayName = file.nameWithoutExtension,
-            kind = MapSourceKind.CALIBRATED_PDF,
-            calibration = Calibration.Parsed(
-                PdfGeoreference(
-                    page = 0,
-                    crs = GeoCrs.Geographic,
-                    datum = GeoDatums.WGS84,
-                    affine = PlaneAffine(0.5 / 600.0, 0.0, 150.0, 0.0, 0.5 / 400.0, -34.0),
-                    crop = listOf(PagePoint(0.0, 0.0), PagePoint(600.0, 0.0), PagePoint(600.0, 400.0), PagePoint(0.0, 400.0)),
-                    origin = GeorefOrigin.FIDUCIARIES,
-                ),
-            ),
-            geometry = PdfPageGeometry(PdfBox(0.0, 0.0, 600.0, 400.0), null, 0, 600, 400),
-        )
-        // content bound like a real import
-        return src.withRender(src.render.copy(contentKey = PdfStoredFile.contentKey(file)))
-    }
+    private val georef = PdfGeoreference(
+        page = 0,
+        crs = GeoCrs.Geographic,
+        datum = GeoDatums.WGS84,
+        affine = PlaneAffine(0.5 / 600.0, 0.0, 150.0, 0.0, 0.5 / 400.0, -34.0),
+        crop = listOf(PagePoint(0.0, 0.0), PagePoint(600.0, 0.0), PagePoint(600.0, 400.0), PagePoint(0.0, 400.0)),
+        origin = GeorefOrigin.ADOBE_VP,
+    )
 
     private fun bakeFiles() = File(files, "offline_tiles").listFiles().orEmpty().filter { it.name.startsWith("tacmap-bake-") }
     private fun workFiles() = PdfBaker.workDir(context).listFiles().orEmpty().toList()
 
-    /** the PDF active + retained with a published bake attached, the state a real import + bake leaves */
-    private fun storedPdfWithBake(): Pair<File, PdfMapSource> {
+    /** the PDF as the active library entry with a published bake on it, what a real import + bake leaves */
+    private fun storedPdfWithBake(): Pair<File, com.tacmap.calibration.ImportedMapEntry> {
         val pdf = inkedPdf()
-        val src = source(pdf)
-        assertTrue(sessions.save(src))
         val bakeFile = File(files, "offline_tiles/tacmap-bake-${UUID.randomUUID()}.mbtiles").apply { parentFile!!.mkdirs(); writeText("tiles") }
         val bake = PersistedPdfBake(bakeFile.name, "a".repeat(64), 0, 12, 256, bakeFile.length())
-        assertEquals(
-            PdfSessionStore.AttachResult.Attached,
-            sessions.attachBake(pdf.name, src.render.renderGuardToken, src.placement!!.canonicalJson(), bake),
+        val box = listOf(listOf(0.0, 0.0), listOf(600.0, 0.0), listOf(600.0, 400.0), listOf(0.0, 400.0))
+        val entry = com.tacmap.calibration.ImportedMapEntry(
+            id = UUID.randomUUID().toString(),
+            kind = "pdf",
+            fileName = "pdf_maps/${pdf.name}",
+            displayName = pdf.nameWithoutExtension,
+            // content bound like a real import
+            contentKey = PdfStoredFile.contentKey(pdf),
+            byteCount = pdf.length(),
+            fileModifiedAtMs = pdf.lastModified(),
+            importedAtMs = System.currentTimeMillis(),
+            pdf = com.tacmap.calibration.PdfEntryInfo(
+                pageCount = 1, pageIndex = 0, rotate = 0, pageBox = box,
+                embedded = com.tacmap.calibration.PdfGeoreferenceCodec.encode(georef),
+                geometry = PdfPageGeometry(PdfBox(0.0, 0.0, 600.0, 400.0), null, 0, 600, 400),
+                bake = bake,
+                renderGuardToken = UUID.randomUUID().toString(),
+            ),
         )
-        assertTrue(ActiveMapSelectionStore(context).saveActiveAndRetainedPdf(BasemapStyle.OSM_TOPO))
-        return pdf to src
+        val state = com.tacmap.calibration.LibraryState(
+            active = com.tacmap.calibration.ActiveRef.entry(entry.id),
+            preferredOnlineStyle = BasemapStyle.OSM_TOPO.name,
+            entries = listOf(entry),
+        )
+        assertTrue(library.write(state))
+        return pdf to entry
     }
+
+    private fun storedEntry(id: String): com.tacmap.calibration.ImportedMapEntry? =
+        (library.load() as? com.tacmap.calibration.LibraryLoad.Loaded)?.state?.entry(id)
 
     private fun viewModel(): MapViewModel {
         var vm: MapViewModel? = null
@@ -172,25 +186,26 @@ class PdfDeleteMapInstrumentedTest {
         assertTrue("pdf_maps: ${File(files, "pdf_maps").list()?.toList()}", File(files, "pdf_maps").listFiles().orEmpty().none { it.name == pdf.name })
         assertEquals("offline_tiles bakes", emptyList<String>(), bakeFiles().map { it.name })
         assertEquals("pdf_bake_work", emptyList<String>(), workFiles().map { it.name })
-        assertEquals("no session record", PdfBakeRecordRead.Read(null), sessions.readBakeRecord { false })
-        assertNull(sessions.snapshotActiveSession().encodedSession)
+        val left = (library.load() as? com.tacmap.calibration.LibraryLoad.Loaded)?.state
+        assertTrue("the library still loads", left != null)
+        assertTrue("no library entry: ${left!!.entries}", left.entries.none { it.fileName == "pdf_maps/${pdf.name}" })
     }
 
     @Test
     fun deleteMapLeavesNothingBehindWithNoBakeRunning() {
-        val (pdf, _) = storedPdfWithBake()
+        val (pdf, entry) = storedPdfWithBake()
         val vm = viewModel()
         assertEquals(pdf.name, (vm.mapSource.value as? PdfMapSource)?.uri?.path?.let(::File)?.name)
         var ok = false
-        instrumentation.runOnMainSync { ok = vm.unloadPdfMap() }
+        instrumentation.runOnMainSync { ok = vm.deleteImportedMap(entry.id) }
         assertTrue(ok)
         assertNothingLeftFor(pdf)
-        assertNull(vm.retainedImportedMapSource.value)
+        assertTrue("back on the online map", vm.mapSource.value is com.tacmap.calibration.OnlineRasterMapSourceAndroid)
     }
 
     @Test
     fun deleteMapDuringARunningBakeLeavesNothingBehind() {
-        val (pdf, src) = storedPdfWithBake()
+        val (pdf, entry) = storedPdfWithBake()
         val vm = viewModel()
         val manager = vm.bakeManager
         instrumentation.runOnMainSync { manager.prepare(vm.mapSource.value as PdfMapSource, 1f) }
@@ -200,10 +215,10 @@ class PdfDeleteMapInstrumentedTest {
         instrumentation.runOnMainSync { manager.start(choice) }
         // really running: the .partial is there and it's on the PDF's token
         waitUntil(what = "bake partial") { workFiles().any { it.name.endsWith(".partial") } }
-        assertEquals(src.render.renderGuardToken, (manager.state.value as? PdfBakeManager.State.Running)?.token)
+        assertEquals(entry.renderGuardToken, (manager.state.value as? PdfBakeManager.State.Running)?.token)
 
         var ok = false
-        instrumentation.runOnMainSync { ok = vm.unloadPdfMap() }
+        instrumentation.runOnMainSync { ok = vm.deleteImportedMap(entry.id) }
         assertTrue(ok)
         assertEquals(PdfBakeManager.State.Idle, manager.state.value)
         // the cancelled run unwinds on its own, its partial goes on the way out
@@ -211,17 +226,16 @@ class PdfDeleteMapInstrumentedTest {
         // and a publish that was already under way can't land a file for a map that's gone
         Thread.sleep(1_500)
         assertNothingLeftFor(pdf)
-        assertNull(vm.retainedImportedMapSource.value)
     }
 
     @Test
     fun removeOfflineTilesReturnsAtOnceAndDropsTheBakeOffMain() {
-        val (pdf, _) = storedPdfWithBake()
+        val (pdf, entry) = storedPdfWithBake()
         val vm = viewModel()
         val named = bakeFiles().single()
         assertTrue((vm.mapSource.value as PdfMapSource).render.bake != null)
         val orphan = File(files, "offline_tiles/tacmap-bake-${UUID.randomUUID()}.mbtiles").apply { writeText("left by a failed Remove") }
-        // F2: the takeBake / delete / sweep half is on IO, the reconcile after it comes back to main
+        // F2: the delete / sweep half is on IO, the reconcile after it comes back to main
         val reconcileOnMain = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
         vm.onReconcileForTests = { reconcileOnMain += android.os.Looper.myLooper() == android.os.Looper.getMainLooper() }
         var started = false
@@ -229,7 +243,7 @@ class PdfDeleteMapInstrumentedTest {
         assertTrue(started)
         waitUntil(what = "source lost its bake") { (vm.mapSource.value as? PdfMapSource)?.render?.bake == null }
         waitUntil(what = "bake files gone") { !named.exists() && !orphan.exists() }
-        assertEquals(PdfBakeRecordRead.Read(null), sessions.readBakeRecord { false })
+        assertNull("the entry's record is gone", storedEntry(entry.id)?.pdf?.bake)
         waitUntil(what = "reconcile after Remove") { reconcileOnMain.isNotEmpty() }
         assertEquals("every reconcile on main", listOf(true), reconcileOnMain.distinct())
         assertTrue("the PDF stays", pdf.isFile)

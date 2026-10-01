@@ -445,10 +445,17 @@ final class PdfSessionMigrationTests: XCTestCase {
         XCTAssertEqual((json["pendingFiduciaries"] as? [Any])?.count, 4)
         let again = try XCTUnwrap(PDFSessionStore.load())
         assertPending(again, "reloaded")
-        // and calibration opens with them placed (Android seeds the same way)
-        let session = CalibrationSession()
-        session.start(for: again)
-        XCTAssertEqual(session.fiduciaries.map(\.pdfPoint), raw)
+        // and calibration opens with them placed: the WP5 library migration parks
+        // them in a draft for that file (Android seeds the same way)
+        let original = ImportedMapStorage.applicationSupportProvider
+        let support = root.appendingPathComponent("support", isDirectory: true)
+        ImportedMapStorage.applicationSupportProvider = { support }
+        defer { ImportedMapStorage.applicationSupportProvider = original }
+        let made = try XCTUnwrap(ImportedMapLibraryMigration.pdfEntry(from: again, nowMs: 0))
+        XCTAssertNil(made.entry.pdf?.manual)
+        XCTAssertEqual(made.draft?.points.map { CGPoint(x: $0.page.x, y: $0.page.y) }, raw)
+        XCTAssertEqual(made.draft?.points.map(\.input), ["f0", "f1", "f2", "f3"])
+        XCTAssertEqual(made.draft?.active, false, "offered on the next calibration, not auto-resumed")
         // a real calibration replaces them
         let good = [CGPoint(x: 185, y: 185), CGPoint(x: 639, y: 185), CGPoint(x: 639, y: 866), CGPoint(x: 185, y: 866)]
         let fids = try good.map { p -> Fiduciary in
@@ -481,6 +488,62 @@ final class PdfSessionMigrationTests: XCTestCase {
         // nothing saved, nothing to migrate
         PDFSessionStore.clear()
         XCTAssertFalse(PDFSessionStore.needsMigration)
+    }
+
+    /// WP1 review leftover: the v1 re-parse used to run inside the store lock,
+    /// so a main thread clear()/save() sat behind a multi second migration. Now
+    /// the lock is free during the parse and the late migration result is
+    /// thrown away when the bytes it started from are gone.
+    func testV1MigrationDoesNotHoldTheLockAndLosesToAConcurrentClear() throws {
+        let file = try importFixture("tacmap_grid_sf_iso.pdf")
+        try storeV1(file: file, kind: .geoPDF, sw: (37.7298, -122.478), ne: (37.8022, -122.4093),
+                    crop: CGRect(x: 72, y: 72, width: 680.314961, height: 907.086614))
+        let inParse = DispatchSemaphore(value: 0)
+        let cleared = DispatchSemaphore(value: 0)
+        var hookRuns = 0
+        PDFSessionStore.unlockedPhaseHook = {
+            hookRuns += 1
+            guard hookRuns == 1 else { return }
+            inParse.signal()
+            _ = cleared.wait(timeout: .now() + 10)
+        }
+        defer { PDFSessionStore.unlockedPhaseHook = nil }
+        var migrated: PDFMapSource?
+        let done = expectation(description: "load returned")
+        DispatchQueue.global(qos: .userInitiated).async {
+            migrated = PDFSessionStore.load()
+            done.fulfill()
+        }
+        XCTAssertEqual(inParse.wait(timeout: .now() + 20), .success)
+        // the background load is parked mid migration; this must not block on its lock
+        let started = Date()
+        XCTAssertTrue(PDFSessionStore.clear())
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "clear waited on the migration")
+        cleared.signal()
+        wait(for: [done], timeout: 30)
+        XCTAssertNil(migrated, "the stale migration must not publish a cleared session")
+        XCTAssertNil(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), "or bring it back")
+    }
+
+    /// Same race the other way round: a newer save during the parse wins and
+    /// the migration's v2 rewrite of the old bytes is dropped.
+    func testV1MigrationDropsItsResultWhenANewerSessionWasSaved() throws {
+        let old = try importFixture("tacmap_grid_sf_iso.pdf")
+        try storeV1(file: old, kind: .geoPDF, sw: (37.7298, -122.478), ne: (37.8022, -122.4093),
+                    crop: CGRect(x: 72, y: 72, width: 680.314961, height: 907.086614))
+        let newer = try importFixture("tacmap_grid_rot5_iso.pdf")
+        let newerSource = PDFMapSource(url: newer, georef: try XCTUnwrap(GeoPDFReader.read(url: newer)?.georef),
+                                       contentKey: PDFSessionStore.contentKey(for: newer))
+        var hookRuns = 0
+        PDFSessionStore.unlockedPhaseHook = {
+            hookRuns += 1
+            if hookRuns == 1 { XCTAssertTrue(PDFSessionStore.save(newerSource)) }
+        }
+        defer { PDFSessionStore.unlockedPhaseHook = nil }
+        let loaded = try XCTUnwrap(PDFSessionStore.load())
+        XCTAssertEqual(loaded.url.lastPathComponent, newer.lastPathComponent)
+        XCTAssertEqual(loaded.georef, newerSource.georef)
+        XCTAssertEqual(hookRuns, 2, "went round again on the newer bytes")
     }
 
     private func storeLibrary(_ library: [String: Any]) throws {

@@ -13,6 +13,7 @@ nothing there. They're listed in `docs/THREAT_MODEL.md` §9 for auditors.
 |---|---|---|
 | `TACMAP_DEBUG_IMPORT_PDF` | absolute path readable by the app | Imports that file through the normal import pipeline, exactly as if it had been picked (copy, parse, crash-guard probe, persist, select). No picker. |
 | `TACMAP_DEBUG_CAMERA` | `lat,lon,zoom[,heading]` | Sets the camera once the app is up (after the import above has framed its sheet). Zoom is still clamped to 2...22. Malformed values are ignored. |
+| `TACMAP_DEBUG_CALIBRATION_POINT` | `rawPageX,rawPageY` | iOS only: centres the normal camera on this point of the current calibration display at z18 (or DEBUG_CAMERA zoom). It changes no points or calibration state; Add point still uses the real crosshair capture and entry UI. |
 | `TACMAP_DEBUG_GRID` | `1` | Turns the MGRS grid overlay on. |
 | `TACMAP_DEBUG_OPSEC_ALLOW_SCREENSHOTS` | `1` | Android only: lifts `FLAG_SECURE` for this session so `screencap` works. The persisted OPSEC setting is untouched. |
 

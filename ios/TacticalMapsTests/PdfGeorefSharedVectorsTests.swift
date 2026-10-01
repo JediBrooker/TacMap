@@ -459,8 +459,23 @@ final class PdfGeorefSharedVectorsTests: XCTestCase {
 
     // MARK: - rejections
 
+    /// cases + the round 4 valueTypeCases, same shape. Count guarded so a
+    /// renamed or emptied section can't turn this into a silent no-op
+    private func rejectionCases() -> [[String: Any]] {
+        let r = section("rejections")
+        let cases = r["cases"] as? [[String: Any]] ?? []
+        let valueTypes = r["valueTypeCases"] as? [[String: Any]] ?? []
+        XCTAssertGreaterThanOrEqual(cases.count, 54, "rejections.cases went missing")
+        XCTAssertGreaterThanOrEqual(valueTypes.count, 34, "rejections.valueTypeCases went missing")
+        return cases + valueTypes
+    }
+
     func testRejectionsFromParsedInputs() throws {
-        for c in section("rejections")["cases"] as? [[String: Any]] ?? [] {
+        let all = rejectionCases()
+        var ran = 0
+        defer { XCTAssertEqual(ran, all.count, "every rejection case has to run") }
+        for c in all {
+            ran += 1
             let id = c["id"] as? String ?? "?"
             let input = try XCTUnwrap(c["input"] as? [String: Any], id)
             let mb = dbls(c["mediaBox"])
@@ -482,7 +497,11 @@ final class PdfGeorefSharedVectorsTests: XCTestCase {
     }
 
     func testRejectionsThroughThePDFParser() throws {
-        for c in section("rejections")["cases"] as? [[String: Any]] ?? [] {
+        let all = rejectionCases()
+        var ran = 0
+        defer { XCTAssertEqual(ran, all.count, "every rejection case has to run") }
+        for c in all {
+            ran += 1
             let id = c["id"] as? String ?? "?"
             let extras = try XCTUnwrap(c["pdfPageExtras"] as? String, id)
             let readout = try XCTUnwrap(readPDF(pageExtras: extras, mediaBox: dbls(c["mediaBox"])), id)
@@ -525,8 +544,10 @@ final class PdfGeorefSharedVectorsTests: XCTestCase {
         var out: [Double] = []
         for v in arr {
             if let n = v as? NSNumber { out.append(n.doubleValue); continue }
-            // json can't hold inf, the fixture writes "Infinity"
-            if let s = v as? String, let d = Double(s) {
+            // json can't hold inf, the older cases write "Infinity" for an overflowing real
+            if let s = v as? String, s == "Infinity" || s == "-Infinity" { return .nonFinite }
+            // any other json string is a pdf string: lgiRules.numericStrings or it's the wrong type
+            if let s = v as? String, let d = PdfNumericString.parse(s) {
                 if !d.isFinite { return .nonFinite }
                 out.append(d); continue
             }
@@ -553,20 +574,76 @@ final class PdfGeorefSharedVectorsTests: XCTestCase {
                                   gpts: numbers(v["gpts"]), bounds: numbers(v["bounds"]), gcs: gcs)
     }
 
+    /// valueTypeCases stand-ins: {"pdfNull": true} is the pdf null object,
+    /// {"pdfReal": x} a real, a json integer a pdf integer
     private func lgiValue(_ v: Any) -> LgiValue {
         if let s = v as? String { return .text(s) }
-        if let n = v as? NSNumber { return .number(n.doubleValue) }
-        if let d = v as? [String: Any] { return .dictionary(d.mapValues(lgiValue)) }
+        if let n = v as? NSNumber {
+            let d = n.doubleValue
+            // json ints come through as integral NSNumbers with no fraction in the text
+            if CFNumberIsFloatType(n) == false { return .integer(n.int64Value) }
+            return .number(d)
+        }
+        if let d = v as? [String: Any] {
+            if d["pdfNull"] as? Bool == true { return .null }
+            if let r = d["pdfReal"] as? NSNumber { return .number(r.doubleValue) }
+            return .dictionary(d.mapValues(lgiValue))
+        }
         return .other
     }
 
+    private func isPdfNull(_ v: Any?) -> Bool { (v as? [String: Any])?["pdfNull"] as? Bool == true }
+
     private func lgiInput(_ e: [String: Any]) -> LgiEntryInput {
         var reg = PdfRegistration.missing
-        if let rows = e["registration"] as? [[Any]] { reg = .rows(rows.map { $0.map(dbl) }) }
+        if let rows = e["registration"] as? [[Any]] {
+            var parsed: [[Double]] = []
+            reg = .malformed
+            rowLoop: do {
+                for row in rows {
+                    switch numbers(row) {
+                    case .values(let v): parsed.append(v)
+                    case .nonFinite: reg = .nonFinite; break rowLoop
+                    default: break rowLoop
+                    }
+                }
+                reg = .rows(parsed)
+            }
+        } else if e["registration"] != nil, !(e["registration"] is NSNull) {
+            reg = .malformed
+        }
+        // a /Projection or /Display that's null (or not a dict) reads as absent, the
+        // builder then decides: no /Projection is malformed, /Display only matters when needed
         return LgiEntryInput(description: e["description"] as? String, ctm: numbers(e["ctm"]), registration: reg,
                              neatline: numbers(e["neatline"]),
-                             projection: (e["projection"] as? [String: Any])?.mapValues(lgiValue),
-                             display: (e["display"] as? [String: Any])?.mapValues(lgiValue))
+                             projection: isPdfNull(e["projection"]) ? nil : (e["projection"] as? [String: Any])?.mapValues(lgiValue),
+                             display: isPdfNull(e["display"]) ? nil : (e["display"] as? [String: Any])?.mapValues(lgiValue))
+    }
+
+    // MARK: - page budget (whole PDFs, shared indirect arrays)
+
+    func testPageBudgetCasesThroughThePDFParser() throws {
+        let cases = section("rejections")["pageBudgetCases"] as? [[String: Any]] ?? []
+        XCTAssertGreaterThanOrEqual(cases.count, 10, "rejections.pageBudgetCases went missing")
+        var ran = 0
+        for c in cases {
+            let id = c["id"] as? String ?? "?"
+            let url = try XCTUnwrap(Self.testdataURL(c["file"] as? String ?? ""), "\(id): missing \(c["file"] ?? "")")
+            let data = try Data(contentsOf: url)
+            let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            XCTAssertEqual(sha, c["sha256"] as? String, "\(id): fixture PDF changed")
+            let readout = try XCTUnwrap(GeoPDFReader.read(url: url), id)
+            let expected = try XCTUnwrap(c["expected"] as? [String: Any], id)
+            ran += 1
+            if (expected["outcome"] as? String) == "reject" {
+                XCTAssertEqual(readout.outcome, .rejected(try XCTUnwrap(PdfGeorefRejectReason(rawValue: expected["reason"] as? String ?? ""))),
+                               "\(id): \(c["charged"] ?? "")")
+            } else {
+                let g = try XCTUnwrap(readout.georef, "\(id): \(readout.outcome) (\(c["charged"] ?? ""))")
+                if let origin = expected["origin"] as? String { XCTAssertEqual(g.origin.rawValue, origin, id) }
+            }
+        }
+        XCTAssertEqual(ran, cases.count)
     }
 
     // MARK: - fiduciary fits

@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 /// A finished bake attached to its PDF. Lives in the sealed session.
-struct PDFBakeRecord: Codable, Equatable {
+struct PDFBakeRecord: Codable, Hashable, Sendable {
     var fileName: String
     var bakeKey: String
     var minZoom: Int
@@ -40,10 +40,8 @@ final class PDFBakeReader {
 
     func close() { store.closeForDeletion() }
 
-    static func directoryURL() -> URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("offline_tiles", isDirectory: true)
-    }
+    /// the same offline_tiles the library reconciles and sweeps
+    static func directoryURL() -> URL { ImportedMapLibrary.offlineTilesDirectory }
 }
 
 /// Live failure accounting, contract G2, pinned by fixture failureAccounting.

@@ -7,9 +7,11 @@ struct LayersSheet: View {
     @ObservedObject var mapVM: MapViewModel
     @ObservedObject var drawingStore: DrawingStore
     @ObservedObject var waypointStore: WaypointStore
-    /// Called when user wants to calibrate the current PDF. ContentView
-    /// dismisses this sheet and kicks off CalibrationSession.
-    var onCalibrate: () -> Void = {}
+    /// Calibrate / refine an imported PDF. ContentView dismisses this sheet
+    /// and runs the calibration start sequence.
+    var onCalibrate: (UUID) -> Void = { _ in }
+    /// Choose page... on a multi-page PDF entry
+    var onChoosePage: (ImportedMapEntry) -> Void = { _ in }
     /// J1: while calibrating the imported map is forced on, the toggle shows
     /// that and cant be changed. its stored value comes back afterwards
     var isCalibrating: Bool = false
@@ -22,11 +24,6 @@ struct LayersSheet: View {
     @ObservedObject private var bake = PDFBakeController.shared
     @State private var layerDeleteError: LocalizedMessage? = nil
     @State private var layerMutationError: LocalizedMessage? = nil
-    /// Persisted imported map that's not currently active, so user can
-    /// switch back after picking an online basemap.
-    @State private var restorableImportedMap: MapSource? = nil
-    @State private var retainedMapError: LocalizedMessage? = nil
-    @State private var confirmingImportedMapDeletion = false
 
     var body: some View {
         NavigationStack {
@@ -48,14 +45,24 @@ struct LayersSheet: View {
 
                 drawingLayersSection
 
+                // the map on screen: Show Imported Map, render failure, its bake (WP2)
                 importedMapSection
 
+                ImportedMapsSection(
+                    mapVM: mapVM,
+                    bake: bake,
+                    onCalibrate: { id in
+                        dismiss()
+                        onCalibrate(id)
+                    },
+                    onChoosePage: { entry in
+                        dismiss()
+                        onChoosePage(entry)
+                    },
+                    onGenerateTiles: generateTiles
+                )
+
                 basemapSection
-            }
-            .onAppear {
-                // Offer a "switch back" to a persisted imported map that isn't
-                // the current source.
-                refreshRetainedMap()
             }
             .onDisappear {
                 // an estimate / confirm belongs to this sheet, a running bake doesnt
@@ -114,7 +121,7 @@ struct LayersSheet: View {
             // Cancel, one modal that morphs so the two never fight over presenting
             .nightSheet(isPresented: Binding(get: { bakeSheetShowing },
                                              set: { if !$0, bakeSheetShowing { bake.cancel() } })) {
-                PDFBakeConfirmSheet(bake: bake)
+                PDFBakeConfirmSheet(bake: bake, onScreenToken: (mapVM.mapSource as? PDFMapSource)?.renderGuardToken)
             }
             .alert(L10n.text("Layer change not saved"),
                    isPresented: Binding(get: { layerMutationError != nil },
@@ -122,17 +129,8 @@ struct LayersSheet: View {
                    presenting: layerMutationError) { _ in
                 Button(Messages.acknowledge(), role: .cancel) { layerMutationError = nil }
             } message: { msg in Text(msg.text) }
-            .alert(L10n.text("Delete imported map from this device?"),
-                   isPresented: $confirmingImportedMapDeletion) {
-                Button(L10n.text("Delete Map"), role: .destructive) { deleteRetainedImportedMap() }
-                Button(L10n.text("Cancel"), role: .cancel) {}
-            } message: {
-                Text(L10n.text("This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone."))
-            }
             // the sheet hosts it while its up, ContentView stands down (OD3-R3-1)
-            .mapSelectionIssueAlert(mapVM: mapVM, isActive: true) { retried in
-                if retried { refreshRetainedMap() }
-            }
+            .mapSelectionIssueAlert(mapVM: mapVM, isActive: true) { _ in }
         }
     }
 
@@ -141,13 +139,22 @@ struct LayersSheet: View {
         return nil
     }
 
-    /// estimating or confirming, for the map on screen
+    /// estimating or confirming, for whichever entry the row menu picked. The
+    /// bake never changes the active map (J), so it isnt only the one on screen
     private var bakeSheetShowing: Bool {
-        guard let pdf = mapVM.mapSource as? PDFMapSource, bake.isFor(pdf) else { return false }
+        guard bake.subjectToken != nil || bake.subjectURL != nil else { return false }
         switch bake.state {
         case .estimating, .confirming: return true
         default: return false
         }
+    }
+
+    /// row menu "Generate Offline Tiles…" (WP2 J1 flow) for that entry, live
+    /// runtime only when its the map on screen
+    private func generateTiles(_ entry: ImportedMapEntry) {
+        guard let pdf = mapVM.source(for: entry) as? PDFMapSource else { return }
+        let shown = mapVM.activeEntryID == entry.id ? mapVM.mapSource as? PDFMapSource : nil
+        bake.prepare(pdf: shown ?? pdf, runtime: shown != nil ? mapVM.pdfRuntime : nil)
     }
 
     private func georefLabel(_ pdf: PDFMapSource) -> String {
@@ -155,17 +162,24 @@ struct LayersSheet: View {
         case .provisional: return L10n.text("No georeferencing — using map-centre fallback")
         case .adobeVP: return Messages.pdfGeorefAdobeLabel()
         case .lgiDict: return L10n.text("Georeferenced (GeoPDF LGIDict)")
-        case .fiduciaries: return L10n.text("Manually placed bounds")
+        case .fiduciaries:
+            // OD-F10: a calibrated library map says so the way its Layers row
+            // does, "Manually placed bounds" is only the legacy bounds origin
+            if let id = pdf.entryID, let e = mapVM.entry(id), e.pdf?.manual != nil {
+                return ImportedMapStates.present(e, file: .ok, draftPoints: nil, parentName: nil).subtitle.text
+            }
+            return L10n.text("Manually placed bounds")
         }
     }
 
-
-    /// Pulled out b/c the outer body was hitting SwiftUI's type-checker
-    /// complexity limit.
+    /// The PDF on screen (WP2): Show Imported Map, the G1 failed row with Try
+    /// Again, its offline tiles. Picking, calibrating and deleting maps is the
+    /// Imported maps section below (WP4). Pulled out b/c the outer body was
+    /// hitting SwiftUI's type-checker complexity limit.
     @ViewBuilder
     private var importedMapSection: some View {
-        Section(L10n.text("Imported Map")) {
-            if let pdfSource = mapVM.mapSource as? PDFMapSource {
+        if let pdfSource = mapVM.mapSource as? PDFMapSource {
+            Section(L10n.text("Imported Map")) {
                 Toggle(isOn: isCalibrating ? .constant(true) : $visibility.importedMapVisible) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(Messages.importedMapShowToggle()).font(.callout)
@@ -177,67 +191,10 @@ struct LayersSheet: View {
                 }
                 .disabled(isCalibrating)
                 PDFRenderFailureRow(runtime: mapVM.pdfRuntime)
-                Button {
-                    dismiss()
-                    onCalibrate()
-                } label: {
-                    Label(L10n.text("Calibrate with fiduciaries…"), systemImage: "scope")
+                // a calibration preview isnt a map you can bake
+                if !isCalibrating {
+                    PDFBakeRows(pdf: pdfSource, bake: bake, runtime: mapVM.pdfRuntime)
                 }
-                if let fids = pdfSource.fiduciaries, !fids.isEmpty {
-                    Text(L10n.text("Currently calibrated with %1$@ fiduciaries", fids.count))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                PDFBakeRows(pdf: pdfSource, bake: bake, runtime: mapVM.pdfRuntime)
-                Button {
-                    if mapVM.selectMapSource(OnlineRasterBasemapSource.makeDefault()) {
-                        refreshRetainedMap()
-                    }
-                } label: {
-                    Label(L10n.text("Switch to Online Basemap"), systemImage: "globe")
-                }
-                Button(role: .destructive) {
-                    confirmingImportedMapDeletion = true
-                } label: {
-                    Label(L10n.text("Delete PDF Map…"), systemImage: "trash")
-                }
-            } else if let tileSource = mapVM.mapSource as? OfflineTileMapSource {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tileSource.displayName).font(.callout)
-                    Text(L10n.text("Offline MBTiles raster — no network needed"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Button {
-                    if mapVM.selectMapSource(OnlineRasterBasemapSource.makeDefault()) {
-                        refreshRetainedMap()
-                    }
-                } label: {
-                    Label(L10n.text("Switch to Online Basemap"), systemImage: "globe")
-                }
-                Button(role: .destructive) {
-                    confirmingImportedMapDeletion = true
-                } label: {
-                    Label(L10n.text("Delete Offline Map…"), systemImage: "trash")
-                }
-            } else if let stored = restorableImportedMap {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(stored.displayName).font(.callout)
-                    Text(L10n.text("Saved locally and available from the Basemap section below"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Button(role: .destructive) {
-                    confirmingImportedMapDeletion = true
-                } label: {
-                    Label(L10n.text("Delete Saved Imported Map…"), systemImage: "trash")
-                }
-            } else {
-                Label(L10n.text("None loaded"), systemImage: "doc")
-                    .foregroundStyle(.secondary)
-                Text(L10n.text("Import a PDF/GeoPDF via ☰ → Import PDF Map, or an MBTiles raster via ☰ → Import Offline Tiles."))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -247,39 +204,17 @@ struct LayersSheet: View {
         Section(L10n.text("Basemap")) {
             let importedActive = mapVM.mapSource is PDFMapSource
                 || mapVM.mapSource is OfflineTileMapSource
-            // Switching basemap just changes the shown layer, doesn't
-            // clobber the imported map's session anymore. Imported map
-            // stays re-loadable and restores on next launch. Use
-            // The explicit delete action above removes the retained file.
             // Four online basemaps. Keyed styles (all but OSM Topo) need the
             // ArcGIS key baked in at build time; no key -> hide them rather than
-            // offer a basemap that would render blank.
+            // offer a basemap that would render blank. Imported maps are picked
+            // in the section above and stay in the library either way.
             ForEach(BasemapStyle.allCases.filter {
                 !$0.requiresEsriKey || EsriKey.isAvailable
             }, id: \.self) { style in
                 basemapRow(title: style.displayName,
                            systemImage: basemapIcon(style),
                            isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == style) {
-                    if mapVM.selectOnlineBasemap(style) { refreshRetainedMap() }
-                }
-            }
-            if !importedActive, let stored = restorableImportedMap {
-                let title = L10n.text("Imported map (") + stored.displayName + ")"
-                let icon = stored is OfflineTileMapSource ? "square.stack.3d.up" : "doc.viewfinder"
-                basemapRow(title: title, systemImage: icon, isActive: false) {
-                    if mapVM.restoreRetainedMap(stored) { refreshRetainedMap() }
-                }
-            }
-            if !importedActive, let retainedMapError {
-                Label(L10n.text("Saved imported map unavailable"), systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                Text(retainedMapError.text)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Button(L10n.text("Remove Saved Map Entry")) {
-                    if mapVM.removeUnavailableRetainedMapEntry() {
-                        refreshRetainedMap()
-                    }
+                    _ = mapVM.selectOnlineBasemap(style)
                 }
             }
             if importedActive {
@@ -288,39 +223,6 @@ struct LayersSheet: View {
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private func refreshRetainedMap() {
-        // The current source already represents the retained imported map. Do
-        // not open a second SQLite connection merely to build a hidden return
-        // row while MBTiles is active.
-        if mapVM.mapSource is PDFMapSource || mapVM.mapSource is OfflineTileMapSource {
-            restorableImportedMap = nil
-            retainedMapError = nil
-            return
-        }
-        switch mapVM.restoreRetainedMapSelection() {
-        case .noRetainedMap:
-            restorableImportedMap = nil
-            retainedMapError = nil
-        case .restored(let source):
-            restorableImportedMap = source
-            retainedMapError = nil
-        case .unavailable(let message):
-            restorableImportedMap = nil
-            retainedMapError = message
-        }
-    }
-
-    private func deleteRetainedImportedMap() {
-        let source = (mapVM.mapSource is PDFMapSource || mapVM.mapSource is OfflineTileMapSource)
-            ? mapVM.mapSource
-            : restorableImportedMap
-        guard let source else { return }
-        if mapVM.deleteRetainedImportedMap(source) { restorableImportedMap = nil }
-        // failed or not the map is no longer on screen, so show what the library
-        // really holds now (a kept entry stays deletable from here, OD3-R3-1)
-        refreshRetainedMap()
     }
 
     private func basemapIcon(_ style: BasemapStyle) -> String {
@@ -523,8 +425,8 @@ private struct PDFBakeRows: View {
                 Text(PDFBakeFormat.info(record))
                     .font(.caption2).foregroundStyle(.secondary)
                 Button(role: .destructive) {
-                    // R2-S2: removeBake deletes the file itself, the reconcile is just housekeeping
-                    if bake.removeBake(from: pdf, runtime: runtime) { _ = ActiveMapSelectionStore.reconcileManagedImportedMapFiles() }
+                    // R2-S2: removeBake clears the library record, then deletes the file itself
+                    bake.removeBake(from: pdf, runtime: runtime)
                 } label: {
                     Label(Messages.pdfBakeRemove(), systemImage: "square.stack.3d.down.right.fill")
                 }
@@ -552,6 +454,8 @@ private struct PDFBakeRows: View {
 /// minutes follow the selected row. While estimating its a spinner + Cancel
 private struct PDFBakeConfirmSheet: View {
     @ObservedObject var bake: PDFBakeController
+    /// the map on screen, OD-F9 words it differently for any other entry
+    var onScreenToken: String?
 
     private var proposal: PDFBakeProposal? {
         if case .confirming(let p) = bake.state { return p }
@@ -584,7 +488,11 @@ private struct PDFBakeConfirmSheet: View {
         return Form {
             // OD-F7: the message sits above the rows on both platforms
             Section {
-                Text(Messages.pdfBakeConfirmMessage(p.pdfName, PDFBakeFormat.minutes(selected?.minutes ?? 1)))
+                // OD-F9: a row menu bake of a map that isnt on screen doesnt promise
+                // it "remains the active map"
+                Text(bake.subjectToken == nil || bake.subjectToken == onScreenToken
+                     ? Messages.pdfBakeConfirmMessage(p.pdfName, PDFBakeFormat.minutes(selected?.minutes ?? 1))
+                     : Messages.pdfBakeConfirmMessageInactive(p.pdfName, PDFBakeFormat.minutes(selected?.minutes ?? 1)))
                     .font(.callout)
             }
             Section {

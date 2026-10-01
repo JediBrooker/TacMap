@@ -112,6 +112,44 @@ class GeoPdfFixtureInstrumentedTest {
     @Test
     fun rejectionCasesBuiltIntoRealPdfsFailTheSameWay() {
         val cases = PdfGeorefFixture.root.obj("rejections").arr("cases").map { it.jsonObject }
+        val checked = assertPdfRejectionCases(cases)
+        assertTrue("only $checked cases", checked >= 54)
+    }
+
+    @Test
+    fun valueTypeCasesThroughPdfBoxNullsNumberStringsAndText() {
+        // parity round 4: PDFBox's getDictionaryObject hides a pdf null, the reader has to
+        // see it (lgiRules.nullValues), and number strings go through the shared grammar
+        val cases = PdfGeorefFixture.root.obj("rejections").arr("valueTypeCases").map { it.jsonObject }
+        val checked = assertPdfRejectionCases(cases)
+        assertTrue("only $checked valueTypeCases", checked >= 34)
+    }
+
+    @Test
+    fun pageBudgetCasesAreChargedLikeTheContractSays() {
+        // whole PDFs (shared indirect arrays), lgiRules.pageBudget
+        val cases = PdfGeorefFixture.root.obj("rejections").arr("pageBudgetCases").map { it.jsonObject }
+        assertTrue("only ${cases.size} pageBudgetCases", cases.size >= 10)
+        for (c in cases) {
+            val id = c.str("id")
+            val bytes = PdfGeorefFixture.readBytes(c.str("file"))
+            val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            assertEquals("$id fixture PDF changed", c.str("sha256"), sha)
+            val result = PdfDocumentInspector.inspect(context, copy(c.str("file"))).georeference()
+            val expected = c.obj("expected")
+            if (expected.strOrNull("outcome") == "reject") {
+                assertTrue("$id should reject (${c.str("charged")}), got $result", result is GeoPdfGeorefResult.Rejected)
+                val rejected = result as GeoPdfGeorefResult.Rejected
+                assertEquals(id, expected.str("reason"), rejected.reason.code)
+                expected["fit"]?.takeIf { it !is JsonNull }?.let { PdfGeorefFixture.assertFitStats(id, it.jsonObject, rejected.fitStats) }
+            } else {
+                PdfGeorefFixture.assertGeoref(id, expected, result)
+            }
+        }
+    }
+
+    /** every case through a one page PDF built from its pdfPageExtras, returns how many ran */
+    private fun assertPdfRejectionCases(cases: List<JsonObject>): Int {
         var checked = 0
         for (c in cases) {
             val id = c.str("id")
@@ -132,7 +170,7 @@ class GeoPdfFixtureInstrumentedTest {
         }
         // every case carries its pdf form
         assertEquals(cases.size, checked)
-        assertTrue("only $checked cases", checked >= 54)
+        return checked
     }
 
     private fun sfLayersProjection() =

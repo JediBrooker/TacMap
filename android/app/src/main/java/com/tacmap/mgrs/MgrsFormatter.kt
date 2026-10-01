@@ -64,9 +64,15 @@ object MgrsFormatter {
      *  Rejects partial/invalid input that NGA would resolve to a far corner. */
     fun looksLikeMgrs(s: String): Boolean {
         if (s.isEmpty()) return false
-        val utm = Regex("^(0?[1-9]|[1-5]\\d|60)[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-Z](\\d{2}|\\d{4}|\\d{6}|\\d{8}|\\d{10})?$")
+        val utm = Regex("^(0?[1-9]|[1-5]\\d|60)[C-HJ-NP-X]([A-HJ-NP-Z])([A-HJ-NP-V])(\\d{2}|\\d{4}|\\d{6}|\\d{8}|\\d{10})?$")
         val ups = Regex("^[ABYZ][A-HJ-NP-Z][A-HJ-NP-Z](\\d{2}|\\d{4}|\\d{6}|\\d{8}|\\d{10})?$")
-        return utm.matches(s) || ups.matches(s)
+        utm.matchEntire(s)?.let { m ->
+            // iOS isSafeUTMMGRS: the 100 km column has to be one this zone actually uses
+            // (56HAH... isn't a square, NGA would happily put it somewhere though)
+            val zone = m.groupValues[1].toInt()
+            return m.groupValues[2][0] in CoordinateInputParser.columnLetters(zone)
+        }
+        return ups.matches(s)
     }
 
     private fun String.withDisplaySpacing(): String {

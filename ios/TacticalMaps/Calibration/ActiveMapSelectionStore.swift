@@ -111,6 +111,67 @@ enum ActiveMapSelectionStore {
         try ImportedMapFileCopier.importedMapsDirectory()
     }
 
+    // MARK: - legacy reader (WP5): the imported-map library replaced this store,
+    // it's only read once by ImportedMapLibraryMigration and then removed
+
+    enum LegacySelection: Equatable {
+        case online(BasemapStyle)
+        case pdf
+        /// the resolved, validated MBTiles file (nil when it's gone)
+        case offlineTiles(URL?)
+    }
+
+    enum LegacySnapshot: Equatable {
+        case none
+        case unreadable
+        case loaded(active: LegacySelection?, retained: LegacySelection?)
+    }
+
+    /// No writes, no publication: just what the old store says.
+    static func legacySnapshot() -> LegacySnapshot {
+        switch loadState() {
+        case .empty: return legacyStoreQuarantined ? .unreadable : .none
+        case .locked, .corrupt: return .unreadable
+        case .loaded(let decoded):
+            func map(_ s: PersistedSelection?) -> LegacySelection? {
+                guard let s else { return nil }
+                switch s.kind {
+                case .online:
+                    let style = s.value.flatMap(BasemapStyle.init(rawValue:)) ?? OnlineRasterBasemapSource.defaultStyle
+                    return .online(style)
+                case .pdf: return .pdf
+                case .offlineTiles: return .offlineTiles(s.value.flatMap(restoredOfflineFile(for:)))
+                }
+            }
+            return .loaded(active: map(decoded.state.active), retained: map(decoded.state.retained))
+        }
+    }
+
+    /// drop the old descriptor once the library holds everything it said
+    static func removeLegacyStore() {
+        try? FileManager.default.removeItem(at: storageURLProvider())
+    }
+
+    static var legacyStoreExists: Bool {
+        FileManager.default.fileExists(atPath: storageURLProvider().path)
+    }
+
+    /// S1: the old selector is gone but not because the library took over: read()
+    /// quarantined it (.corrupt-* sibling), or it was sealed here before and no
+    /// library was ever written (clearLegacy only runs after that write). Blocks
+    /// the migration, never reads as "no legacy left". No key = can't tell = true
+    static var legacyStoreQuarantined: Bool {
+        let url = storageURLProvider()
+        guard !FileManager.default.fileExists(atPath: url.path) else { return false }
+        if SafeStore.quarantineSiblingExists(url) { return true }
+        guard let sealedBefore = try? SafeStore.wasSealedBefore(url, label: label) else { return true }
+        guard sealedBefore else { return false }
+        let library = ImportedMapLibrary.storageURLProvider()
+        return (try? SafeStore.wasSealedBefore(library, label: ImportedMapLibrary.label)) != true
+    }
+
+    /// Legacy writer, kept so tests can build frozen pre-library fixtures for
+    /// the migration. The app writes ImportedMapLibrary now.
     @discardableResult
     static func save(_ source: MapSource, clearRetained: Bool = false) -> Bool {
         guard let selection = selection(for: source) else { return false }
@@ -243,72 +304,9 @@ enum ActiveMapSelectionStore {
         }
     }
 
-    /// F6: could the selector be pointing at a PDF, active or retained. nil =
-    /// it cant be read (locked or corrupt), so it might be. matches Android
-    static func mayHavePDF() -> Bool? {
-        switch loadState() {
-        case .empty:
-            // a corrupt selector was quarantined this launch: still unknown, not empty
-            if pendingUnavailableIssue?.path == storageURLProvider().standardizedFileURL.path { return nil }
-            return false
-        case .locked, .corrupt: return nil
-        case .loaded(let decoded):
-            return decoded.state.active?.kind == .pdf || decoded.state.retained?.kind == .pdf
-        }
-    }
-
-    /// Remove plaintext PDF/GeoPDF/MBTiles copies that are no longer reachable
-    /// from the authenticated v2 map-library snapshot. Missing, legacy, locked,
-    /// corrupt, or internally inconsistent state performs no deletion: without
-    /// durable authority we cannot know which operational map is recoverable.
-    @discardableResult
-    static func reconcileManagedImportedMapFiles() -> Bool {
-        // R2-S2: the keep set and the deletes happen under the same lock the bake
-        // publish and Remove take, so nobody lists offline_tiles in between
-        ManagedImportedMapFileLifecycle.withManagedFilesLock { reconcileManagedImportedMapFilesLocked() }
-    }
-
-    private static func reconcileManagedImportedMapFilesLocked() -> Bool {
-        guard case .loaded(let decoded) = loadState(), !decoded.migrated else {
-            return false
-        }
-        let active = decoded.state.active
-        let retained = decoded.state.retained
-        let generated = applicationSupportDirectoryProvider()
-            .appendingPathComponent("offline_tiles", isDirectory: true)
-        var keep = Set<URL>()
-        if retained?.kind == .pdf {
-            guard active?.kind != .offlineTiles else { return false }
-            guard let source = source(for: retained!) as? PDFMapSource else {
-                return false
-            }
-            keep.insert(source.url)
-            // the PDF's baked tiles ride along with it. no record = reaped
-            if let bake = source.bake, PDFSessionStore.validBake(bake) {
-                let file = generated.appendingPathComponent(bake.fileName)
-                if FileManager.default.fileExists(atPath: file.path) { keep.insert(file) }
-            }
-        } else if retained?.kind == .offlineTiles {
-            guard active?.kind != .pdf,
-                  active?.kind != .offlineTiles || active == retained else { return false }
-            guard let path = retained?.value,
-                  let file = restoredOfflineFile(for: path) else { return false }
-            guard PDFSessionStore.clear() else { return false }
-            keep.insert(file)
-        } else {
-            // A current snapshot can only activate an imported map while
-            // retaining that same map. Refuse cleanup rather than guessing
-            // through a semantically inconsistent or future snapshot.
-            guard active?.kind != .pdf, active?.kind != .offlineTiles else { return false }
-            guard PDFSessionStore.clear() else { return false }
-        }
-
-        guard let imported = try? importedMapsDirectoryProvider() else { return false }
-        return ManagedImportedMapFileLifecycle.reconcile(
-            directories: [imported, generated],
-            keeping: keep
-        )
-    }
+    // reconcileManagedImportedMapFiles is gone: it deleted every imported file
+    // the one retained entry didn't name, which after the library migration
+    // would wipe the user's other maps. ImportedMapLibrary.reconcile owns cleanup.
 
     /// Removes the retained library entry. The candidate descriptor is written
     /// first while the managed backing file is still recoverable. If deletion

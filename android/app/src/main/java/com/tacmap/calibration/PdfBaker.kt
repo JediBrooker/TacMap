@@ -38,6 +38,26 @@ enum class PdfBakeError { NOT_CALIBRATED, TOO_LARGE, NO_SPACE, WRITE_FAILED, REN
 
 class PdfBakeException(val error: PdfBakeError, cause: Throwable? = null) : Exception(error.name, cause)
 
+/** what recording a finished bake in the library got (R6 shapes) */
+sealed class PdfBakeAttach {
+    data object Attached : PdfBakeAttach()
+    /** the entry moved on: recalibrated, reimported, deleted */
+    data object SourceChanged : PdfBakeAttach()
+    data class WriteFailed(val cause: Throwable?) : PdfBakeAttach()
+}
+
+/**
+ * Where a published bake gets recorded: the PDF's library entry, one sealed write on the
+ * main thread (M3). MapViewModel plugs itself in; with nothing plugged in a bake fails
+ * closed as writeFailed and its file goes again.
+ */
+interface PdfBakeRecorder {
+    fun attach(entryId: String?, contentKey: String?, renderGuardToken: String, bake: PersistedPdfBake): PdfBakeAttach
+
+    /** a cancel landed while we attached: take it back off. true = it's off */
+    fun detach(entryId: String?, bake: PersistedPdfBake): Boolean
+}
+
 /** J2 error mapping for the write side, pure so the JVM tests can pin it */
 internal object PdfBakeErrors {
     /**
@@ -65,8 +85,8 @@ internal object PdfBakeErrors {
  * Generate Offline Tiles, the same tile renderer as the live map at the lowest
  * band (replaces PdfTiler). Writes a .partial in pdf_bake_work (outside the reconcile
  * roots, reconcile deletes any .partial it sees in offline_tiles), commits every 64
- * tiles, then publishes into offline_tiles and attaches it to the PDF's session. The
- * PDF stays, the active map never changes (D5-05, D5-06).
+ * tiles, then publishes into offline_tiles and attaches it to the PDF's library entry.
+ * The PDF stays, the active map never changes (D5-05, D5-06).
  */
 internal object PdfBaker {
     private const val TAG = "PdfBaker"
@@ -157,8 +177,9 @@ internal object PdfBaker {
         pdf: PdfMapSource,
         maxZoom: Int,
         bakeKey: String,
-        georefJson: String,
-        /** called once the bake is attached to the session for good, even if a cancel lands right after (F1) */
+        /** the library side of the publish, null = nobody to record it, fails closed */
+        recorder: PdfBakeRecorder?,
+        /** called once the bake is attached to its entry for good, even if a cancel lands right after (F1) */
         onPublished: (PersistedPdfBake) -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit,
     ): PersistedPdfBake {
@@ -304,7 +325,7 @@ internal object PdfBaker {
             // the publish runs to its end whatever happens (C4, F1): a cancel can only win before
             // the session is touched, after that it gets undone or it stands
             val bake = withContext(NonCancellable + Dispatchers.IO) {
-                publish(context, partial, uuid, pdf, bakeKey, georefJson, maxZoom, source.tilePx, outer) {
+                publish(context, partial, uuid, pdf, bakeKey, maxZoom, source.tilePx, outer, recorder) {
                     published = true
                     onPublished(it)
                 }
@@ -328,84 +349,96 @@ internal object PdfBaker {
     }
 
     /**
-     * Under the managed files lock so a reconcile can't list offline_tiles in between:
-     * move it in, fsync the dir so the rename sticks, then attach it to the session. If
-     * the session moved on (another PDF, a new georef) the file goes again and the bake
-     * reports sourceChanged.
+     * Move it in under the managed files lock and fsync the dir so the rename sticks. From
+     * the moment it's in offline_tiles until its record is written it's in flight, so neither
+     * the reconcile nor the bake sweep (both under that lock, both skip in flight files) can
+     * reap a file nothing points at yet. Then record it on the PDF's library entry, on main
+     * like every other library write. If the entry moved on (another file, a new georef) the
+     * file goes again and the bake reports sourceChanged.
      */
-    private fun publish(
+    private suspend fun publish(
         context: Context,
         partial: File,
         uuid: String,
         pdf: PdfMapSource,
         bakeKey: String,
-        georefJson: String,
         maxZoom: Int,
         tilePx: Int,
         /** the bake's own job, we're inside NonCancellable so ask it directly */
         outer: kotlinx.coroutines.Job,
+        recorder: PdfBakeRecorder?,
         onAttached: (PersistedPdfBake) -> Unit,
-    ): PersistedPdfBake = ActiveMapSelectionStore.withManagedFilesLock {
-        deleteMBTilesSidecars(partial)
-        val dir = File(context.filesDir, PUBLISH_DIR).apply { mkdirs() }
+    ): PersistedPdfBake {
+        val dir = File(context.filesDir, PUBLISH_DIR)
         val out = File(dir, "tacmap-bake-$uuid.mbtiles")
+        val busy = listOf(out) + ImportedMapLibraryStore.SQLITE_SIDECARS.map { File(dir, out.name + it) }
+        busy.forEach(InFlightImportFiles::register)
         try {
-            Files.move(partial.toPath(), out.toPath(), StandardCopyOption.ATOMIC_MOVE)
-        } catch (_: AtomicMoveNotSupportedException) {
-            try {
-                Files.move(partial.toPath(), out.toPath())
-            } catch (e: Exception) {
-                throw PdfBakeException(PdfBakeErrors.classifyWrite(e), e)
+            ActiveMapSelectionStore.withManagedFilesLock {
+                deleteMBTilesSidecars(partial)
+                dir.mkdirs()
+                try {
+                    Files.move(partial.toPath(), out.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                } catch (_: AtomicMoveNotSupportedException) {
+                    try {
+                        Files.move(partial.toPath(), out.toPath())
+                    } catch (e: Exception) {
+                        throw PdfBakeException(PdfBakeErrors.classifyWrite(e), e)
+                    }
+                } catch (e: Exception) {
+                    throw PdfBakeException(PdfBakeErrors.classifyWrite(e), e)
+                }
+                try {
+                    fsyncDirectory(dir)
+                } catch (e: Exception) {
+                    deleteMBTilesArtifacts(out)
+                    throw PdfBakeException(PdfBakeErrors.classifyWrite(e), e)
+                }
             }
-        } catch (e: Exception) {
-            throw PdfBakeException(PdfBakeErrors.classifyWrite(e), e)
-        }
-        try {
-            fsyncDirectory(dir)
-        } catch (e: Exception) {
-            deleteMBTilesArtifacts(out)
-            throw PdfBakeException(PdfBakeErrors.classifyWrite(e), e)
-        }
-        val bake = PersistedPdfBake(out.name, bakeKey, PdfBakePlan.MIN_ZOOM, maxZoom, tilePx, out.length())
-        val pdfName = pdf.uri.path?.let { File(it).name }
-        val token = pdf.render.renderGuardToken
-        // last call for a cancel, the session isn't touched yet
-        if (!outer.isActive) {
-            deleteMBTilesArtifacts(out)
-            throw CancellationException("bake cancelled before publish")
-        }
-        val sessions = PdfSessionStore(context)
-        val attached = if (pdfName == null) PdfSessionStore.AttachResult.SourceChanged
-        else sessions.attachBake(pdfName, token, georefJson, bake)
-        when (attached) {
-            PdfSessionStore.AttachResult.Attached -> Unit
-            PdfSessionStore.AttachResult.SourceChanged -> {
-                deleteMBTilesArtifacts(out)
-                throw PdfBakeException(PdfBakeError.SOURCE_CHANGED)
+            val bake = PersistedPdfBake(out.name, bakeKey, PdfBakePlan.MIN_ZOOM, maxZoom, tilePx, out.length())
+            val token = pdf.render.renderGuardToken
+            val contentKey = pdf.contentKey ?: pdf.render.contentKey
+            // last call for a cancel, nothing's recorded yet
+            if (!outer.isActive) {
+                ActiveMapSelectionStore.withManagedFilesLock { deleteMBTilesArtifacts(out) }
+                throw CancellationException("bake cancelled before publish")
             }
-            is PdfSessionStore.AttachResult.WriteFailed -> {
-                deleteMBTilesArtifacts(out)
-                val error = if (PdfBakeErrors.isNoSpace(attached.cause) || diskNearlyFull(context)) PdfBakeError.NO_SPACE
-                else PdfBakeError.WRITE_FAILED
-                throw PdfBakeException(error, attached.cause)
+            val attached = withContext(Dispatchers.Main) {
+                recorder?.attach(pdf.entryId, contentKey, token, bake) ?: PdfBakeAttach.WriteFailed(null)
             }
-        }
-        // cancelled while we attached: take it back off so nothing says it's there (F1)
-        if (!outer.isActive) {
-            if (sessions.clearBake(pdfName!!, token)) {
-                deleteMBTilesArtifacts(out)
-                throw CancellationException("bake cancelled during publish")
+            when (attached) {
+                PdfBakeAttach.Attached -> Unit
+                PdfBakeAttach.SourceChanged -> {
+                    ActiveMapSelectionStore.withManagedFilesLock { deleteMBTilesArtifacts(out) }
+                    throw PdfBakeException(PdfBakeError.SOURCE_CHANGED)
+                }
+                is PdfBakeAttach.WriteFailed -> {
+                    ActiveMapSelectionStore.withManagedFilesLock { deleteMBTilesArtifacts(out) }
+                    val error = if (PdfBakeErrors.isNoSpace(attached.cause) || diskNearlyFull(context)) PdfBakeError.NO_SPACE
+                    else PdfBakeError.WRITE_FAILED
+                    throw PdfBakeException(error, attached.cause)
+                }
             }
-            // couldn't undo it, so it stands and gets reported like any finished bake
+            // cancelled while we attached: take it back off so nothing says it's there (F1)
+            if (!outer.isActive) {
+                val detached = withContext(Dispatchers.Main) { recorder?.detach(pdf.entryId, bake) == true }
+                if (detached) {
+                    ActiveMapSelectionStore.withManagedFilesLock { deleteMBTilesArtifacts(out) }
+                    throw CancellationException("bake cancelled during publish")
+                }
+                // couldn't undo it, so it stands and gets reported like any finished bake
+            }
+            onAttached(bake)
+            return bake
+        } finally {
+            busy.forEach(InFlightImportFiles::release)
         }
-        onAttached(bake)
-        bake
     }
 
     /**
-     * SharedPreferences only says commit() false, never why. When the session write fails
-     * with the volume this close to full, call it noSpace (R6), the prefs file is tiny so
-     * anything else really is a write problem
+     * The library write only says false, never why. When it fails with the volume this
+     * close to full, call it noSpace (R6), the library file is tiny so anything else really
+     * is a write problem
      */
     private fun diskNearlyFull(context: Context): Boolean =
         runCatching { android.os.StatFs(context.filesDir.path).availableBytes < NEARLY_FULL_BYTES }.getOrDefault(false)

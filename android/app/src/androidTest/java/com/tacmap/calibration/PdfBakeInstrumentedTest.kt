@@ -51,8 +51,8 @@ import kotlin.math.log10
 class PdfBakeInstrumentedTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val app = context.applicationContext as Application
-    private val store = PdfSessionStore(context)
-    private lateinit var snapshot: PdfSessionSnapshot
+    // the library side of the publish, the app's is MapViewModel
+    private val recorder = RecordingBakeRecorder()
     private lateinit var pdf: File
 
     @Before
@@ -62,13 +62,11 @@ class PdfBakeInstrumentedTest {
         PDFBoxResourceLoader.init(context)
         PdfRenderSessions.init(context)
         PdfRenderExecutor.foreground = true
-        snapshot = store.snapshotActiveSession()
         pdf = inkedPdf()
     }
 
     @After
     fun tearDown() {
-        store.restoreActiveSession(snapshot)
         pdf.delete()
     }
 
@@ -121,7 +119,6 @@ class PdfBakeInstrumentedTest {
     @Test
     fun cancelMidBakeLeavesNoPartialAndPublishesNothing() = runBlocking<Unit> {
         val src = source(pdf)
-        assertTrue(store.save(src))
         val publish = File(context.filesDir, PdfBaker.PUBLISH_DIR).apply { mkdirs() }
         val before = publish.list()?.toSet().orEmpty()
         val tiles = createPdfTileSource(app, src, 256, "bake-cancel", null, { true }, forBake = true)
@@ -133,7 +130,7 @@ class PdfBakeInstrumentedTest {
             var progressed = 0
             val job = CoroutineScope(Dispatchers.Default).launch {
                 val self = this
-                PdfBaker.bake(context, tiles, src, 13, key, json, onProgress = { done, _ ->
+                PdfBaker.bake(context, tiles, src, 13, key, recorder, onProgress = { done, _ ->
                     if (done > 0 && progressed == 0) {
                         progressed = done
                         val work = PdfBaker.workDir(context).list().orEmpty().toList()
@@ -152,7 +149,7 @@ class PdfBakeInstrumentedTest {
             assertEquals("no *.partial-journal mid bake", emptyList<String>(), sawJournal)
             assertTrue("work dir: ${PdfBaker.workDir(context).list()?.toList()}", PdfBaker.workDir(context).list().isNullOrEmpty())
             assertEquals(before, publish.list()?.toSet().orEmpty())
-            assertNull(store.activeBakeFile())
+            assertNull(recorder.attached)
             assertTrue("the PDF itself stays", pdf.isFile)
         } finally {
             disposePdfTileSource(tiles)
@@ -167,7 +164,6 @@ class PdfBakeInstrumentedTest {
     @Test
     fun cancelWhileTheWriterIsBeingMadeLeavesNoPartial() = runBlocking<Unit> {
         val src = source(pdf)
-        assertTrue(store.save(src))
         val tiles = createPdfTileSource(app, src, 256, "bake-early-cancel", null, { true }, forBake = true)
         try {
             val json = src.placement!!.canonicalJson()
@@ -175,7 +171,7 @@ class PdfBakeInstrumentedTest {
             val work = PdfBaker.workDir(context)
             repeat(10) { round ->
                 val job = CoroutineScope(Dispatchers.Default).launch {
-                    PdfBaker.bake(context, tiles, src, 13, key, json, onProgress = { _, _ -> })
+                    PdfBaker.bake(context, tiles, src, 13, key, recorder, onProgress = { _, _ -> })
                 }
                 // the moment the file shows up, ie mid create more often than not
                 val end = System.nanoTime() + 5_000_000_000L
@@ -184,7 +180,7 @@ class PdfBakeInstrumentedTest {
                 job.join()
                 assertTrue("round $round, work dir: ${work.list()?.toList()}", work.list().isNullOrEmpty())
             }
-            assertNull(store.activeBakeFile())
+            assertNull(recorder.attached)
         } finally {
             disposePdfTileSource(tiles)
         }
@@ -307,7 +303,6 @@ class PdfBakeInstrumentedTest {
             val page = PdfDocumentInspector.inspect(context, file)
             val georef = (page.georeference() as GeoPdfGeorefResult.Georeferenced).georef
             val src = PdfMapSource.geoPdf(Uri.fromFile(file), "usgs", georef, page.geometry)
-            assertTrue(store.save(src))
             val tilePx = com.tacmap.map.render.pdf.PdfZoomPolicy.tilePx(context.resources.displayMetrics.density.toDouble())
             val tiles = createPdfTileSource(app, src, tilePx, "bake-usgs-full-${System.nanoTime()}", null, { true }, forBake = true)
             try {
@@ -317,7 +312,7 @@ class PdfBakeInstrumentedTest {
                 val t0 = android.os.SystemClock.elapsedRealtime()
                 var published: PersistedPdfBake? = null
                 val bake = PdfBaker.bake(
-                    context, tiles, src, default.maxZoom, PdfBakePlan.bakeKey(json, tilePx), json,
+                    context, tiles, src, default.maxZoom, PdfBakePlan.bakeKey(json, tilePx), recorder,
                     onPublished = { published = it },
                     onProgress = { _, _ -> },
                 )
@@ -432,7 +427,6 @@ class PdfBakeInstrumentedTest {
         zooms: List<kotlinx.serialization.json.JsonObject>,
         report: MutableList<String>,
     ): Double {
-        assertTrue(store.save(src))
         val georef = src.placement!!
         val footprint = com.tacmap.map.render.pdf.PdfFootprint.build(georef, src.geometry.visibleBox)
         val policy = com.tacmap.map.render.pdf.PdfZoomPolicy.of(georef, footprint)
@@ -453,9 +447,9 @@ class PdfBakeInstrumentedTest {
             assertEquals("${src.displayName}@$tilePx baseMaxZoom", fixtureBaseMaxZoom, tiles.baseMaxZoom)
             val json = georef.canonicalJson()
             val key = PdfBakePlan.bakeKey(json, tilePx)
-            val bake = PdfBaker.bake(context, tiles, src, maxZoom, key, json, onProgress = { _, _ -> })
+            val bake = PdfBaker.bake(context, tiles, src, maxZoom, key, recorder, onProgress = { _, _ -> })
             out = File(File(context.filesDir, PdfBaker.PUBLISH_DIR), bake.fileName)
-            assertEquals(out.canonicalPath, store.activeBakeFile()?.canonicalPath)
+            assertEquals(bake, recorder.attached)
             assertEquals(PdfBakePlan.MBTILES_NAME, metadata(out, "name"))
             var worst = Double.POSITIVE_INFINITY
             for (e in zooms) {

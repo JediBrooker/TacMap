@@ -201,21 +201,19 @@ final class PDFBakeController: ObservableObject {
     var guardStore: PDFRenderGuard = .shared
     /// tests point this somewhere private
     var finalDirectory: URL = PDFBakeReader.directoryURL()
-    /// persists a removal into the sealed session. Tests stub it.
-    var persist: (PDFMapSource) -> Bool = { PDFSessionStore.save($0) }
-    /// what the sealed session names as its bake, for the sweep after Remove. Tests stub it
-    var storedBake: () -> PDFSessionStore.StoredBake = { PDFSessionStore.storedBakeForSweep() }
-    /// S1: writes only the bake field into the stored session, and only when
-    /// that session is still the file + token + georef the bake was made from
-    var attachRecord: (PDFBakeRecord, PDFMapSource, PDFRenderContext) -> AttachOutcome = { record, pdf, ctx in
-        switch PDFSessionStore.attachBake(record, fileName: pdf.url.lastPathComponent,
-                                          renderGuardToken: pdf.renderGuardToken,
-                                          bakeKey: ctx.bakeKey, tilePx: ctx.tilePx) {
-        case .attached: return .attached
-        case .sourceChanged: return .sourceChanged
-        case .writeFailed: return .writeFailed
-        }
-    }
+    // The three below go through the sealed imported-map library (the one
+    // authority since the WP4 merge). MapViewModel.bindBakeController wires
+    // them, until then they fail closed. Tests stub them.
+
+    /// Remove step 1: clears the record on the library entry. false = not
+    /// persisted, nothing gets deleted
+    var detachRecord: (PDFBakeRecord, PDFMapSource) -> Bool = { _, _ in false }
+    /// every bake name the library vouches for, for the sweep after Remove.
+    /// nil = the library cant be trusted right now (locked etc), skip
+    var storedBake: () -> Set<String>? = { nil }
+    /// S1: puts only the bake record on the entry, and only while that entry is
+    /// still the bytes + token + georef the bake was made from
+    var attachRecord: (PDFBakeRecord, PDFMapSource, PDFRenderContext) -> AttachOutcome = { _, _, _ in .writeFailed }
     /// free bytes, nil = unknown. tests stub it
     var freeSpace: () -> Int64? = { PDFBakeController.freeSpaceBytes() }
     var onPublished: ((PDFMapSource) -> Void)?
@@ -315,7 +313,7 @@ final class PDFBakeController: ObservableObject {
                 // R2-S4: a restored source flagged missing / changed only bakes once
                 // the file is back with the exact stored bytes. the UI gate alone
                 // isnt enough, a bake off swapped bytes would draw over the right ones
-                if needsFileCheck, !PDFSessionStore.storedFileMatches(pdf) { throw PDFBakeError.renderFailed }
+                if needsFileCheck, !ImportedMapLibrary.storedFileMatches(pdf) { throw PDFBakeError.renderFailed }
                 let (_, page) = try PDFTileRenderer.openPage(url: url, pageIndex: georef.page)
                 let ctx = try PDFRenderContext(url: url, identity: identity, georef: georef,
                                                pageBox: PDFTileRenderer.pageBox(page), tilePx: tilePx,
@@ -591,7 +589,7 @@ final class PDFBakeController: ObservableObject {
             state = .failed(.writeFailed)
             return
         }
-        // the stored session has it now, bring the object in memory along.
+        // the library entry has it now, bring the object in memory along.
         // the previous bake (if any) is unreferenced, reconcile reaps it
         pdf.bake = record
         recordRevision &+= 1
@@ -653,8 +651,8 @@ final class PDFBakeController: ObservableObject {
     @discardableResult
     func removeBake(from pdf: PDFMapSource, runtime live: PDFMapRuntime? = nil) -> Bool {
         guard let old = pdf.bake else { return true }
+        guard detachRecord(old, pdf) else { return false }
         pdf.bake = nil
-        guard persist(pdf) else { pdf.bake = old; return false }
         recordRevision &+= 1
         // the sheet hands in the live runtime, ours is only set by an estimate
         (live ?? runtime)?.detachBake()
@@ -664,18 +662,16 @@ final class PDFBakeController: ObservableObject {
         return true
     }
 
-    /// R3-2: delete tacmap-bake-* files in offline_tiles the sealed session
-    /// doesnt name. The session is read under the managed files lock, same as
-    /// publish (move + record), so a bake landing right now is never seen half
-    /// done. Locked / unreadable session = skip, never delete on a guess
+    /// R3-2: delete tacmap-bake-* files in offline_tiles the library doesnt
+    /// name. The names are read under the managed files lock, same as publish
+    /// (move + record), so a bake landing right now is never seen half done.
+    /// Locked / unreadable library = skip, never delete on a guess
     @discardableResult
     static func sweepUnreferencedBakes(in directory: URL = PDFBakeReader.directoryURL(),
-                                       storedBake: () -> PDFSessionStore.StoredBake = {
-                                           PDFSessionStore.storedBakeForSweep()
-                                       }) -> Bool {
+                                       storedBake: () -> Set<String>?) -> Bool {
         ManagedImportedMapFileLifecycle.withManagedFilesLock {
-            guard case .read(let keep) = storedBake() else { return false }
-            return ManagedImportedMapFileLifecycle.sweepUnreferencedBakes(in: directory, keeping: keep)
+            guard let keep = storedBake() else { return false }
+            return ManagedImportedMapFileLifecycle.sweepUnreferencedBakes(in: directory, keepingNames: keep)
         }
     }
 

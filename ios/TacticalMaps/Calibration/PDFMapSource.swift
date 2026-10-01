@@ -23,6 +23,8 @@ final class PDFMapSource: MapSource {
     /// SHA-256 identity of the imported bytes. Import workers provide this
     /// off-main; restored legacy sessions may fill it while validating disk.
     let contentKey: String?
+    /// the ImportedMapLibrary entry this source shows, nil for legacy/test sources
+    let entryID: UUID?
 
     /// The real placement. Everything below is derived from it.
     private(set) var georef: PdfGeoreference
@@ -34,8 +36,8 @@ final class PDFMapSource: MapSource {
     /// included, /Rotate ignored). Calibration fits over it.
     private(set) var pdfRenderRect: CGRect = .zero
 
-    /// Random UUID the crash guard knows this map by. Lives in the sealed
-    /// session, never derived from the file or its name.
+    /// Random UUID the crash guard knows this map by. Lives sealed on the
+    /// library entry, never derived from the file or its name.
     let renderGuardToken: String
 
     /// Pre-rendered tiles for exactly this georef. A georef change drops it
@@ -62,10 +64,13 @@ final class PDFMapSource: MapSource {
     var placementTransform: AffineTransform2D? { bounds?.placementAffine }
 
     init(url: URL, georef: PdfGeoreference, contentKey: String? = nil,
+         entryID: UUID? = nil, displayName: String? = nil,
          renderGuardToken: String? = nil, bake: PDFBakeRecord? = nil) {
         self.url = url
         self.contentKey = contentKey
-        self.displayName = url.deletingPathExtension().lastPathComponent
+        self.entryID = entryID
+        // library files have opaque names, the real name only lives sealed in the entry
+        self.displayName = displayName ?? url.deletingPathExtension().lastPathComponent
         self.georef = georef
         self.kind = Self.kind(for: georef.origin)
         self.renderGuardToken = renderGuardToken.flatMap { UUID(uuidString: $0)?.uuidString } ?? UUID().uuidString

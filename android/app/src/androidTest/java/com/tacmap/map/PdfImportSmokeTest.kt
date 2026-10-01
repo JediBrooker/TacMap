@@ -18,13 +18,14 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import com.tacmap.app.MainActivity
-import com.tacmap.calibration.GeorefOrigin
 import com.tacmap.calibration.GeorefRejectReason
+import com.tacmap.calibration.ImportOutcome
+import com.tacmap.calibration.InFlightImportFiles
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import com.tacmap.calibration.PdfGeorefIssue
 import com.tacmap.calibration.PdfPageRenderer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -42,34 +43,40 @@ class PdfImportSmokeTest {
         val selectedPdf = File(context.cacheDir, "pdf-import-smoke.pdf")
         createPdf(selectedPdf)
 
-        val latitude = -35.2809
-        val longitude = 149.1300
-        val copyJournalDir = File(context.cacheDir, "pdf-import-smoke-journal").apply { mkdirs() }
-        val result = importPdfMapSource(
-            context = context,
-            sourceUri = Uri.fromFile(selectedPdf),
-            cameraLat = latitude,
-            cameraLng = longitude,
-            operationKey = "pdf-import-smoke",
-            copyJournal = DocumentImportCopyJournal.forTests(copyJournalDir),
-        )
-        val source = result.source
+        val prepared = runImport(context, selectedPdf, "pdf-import-smoke-${System.nanoTime()}")
+        try {
+            assertTrue(prepared.file.isFile)
+            val page = requireNotNull(prepared.inspection.page(0))
+            val geometry = requireNotNull(page.geometry)
+            assertEquals(200, geometry.rendererWidth)
+            assertEquals(300, geometry.rendererHeight)
+            assertTrue(prepared.contentKey.startsWith("sha256:"))
+            // a plain single page PDF is never passed off as georeferenced: it's added
+            // as needsCalibration and goes straight into calibration (E1)
+            assertEquals(ImportOutcome.AddAndCalibrate(0), prepared.outcome)
+            assertEquals(null, page.georef?.takeIf { it !is com.tacmap.calibration.GeoPdfGeorefResult.NoGeoreference })
+            renderBlack(context, prepared.file, geometry)
+        } finally {
+            InFlightImportFiles.release(prepared.file)
+            prepared.file.delete()
+        }
+    }
 
-        assertTrue(File(requireNotNull(source.uri.path)).isFile)
-        assertEquals(200, source.geometry.rendererWidth)
-        assertEquals(300, source.geometry.rendererHeight)
-        // a plain PDF is never passed off as georeferenced: its own outcome, a
-        // provisional placement around the camera, and a reason the UI can show
-        assertEquals(PdfImportOutcome.NoGeoreference, result.outcome)
-        assertFalse(source.isGeoreferenced)
-        assertEquals(PdfGeorefIssue.NoMetadata, source.georefIssue)
-        assertEquals(GeorefOrigin.PROVISIONAL, source.placement?.origin)
-        assertTrue(requireNotNull(source.coverage).contains(latitude, longitude))
+    /** the whole s9 pipeline minus the library commit, off a file:// source */
+    private fun runImport(context: Context, pdf: File, key: String): PreparedPdfImport {
+        val journalDir = File(context.cacheDir, "pdf-import-journal-${System.nanoTime()}").apply { mkdirs() }
+        val pipeline = MapImportPipeline(context, DocumentImportCopyJournal.forTests(journalDir))
+        val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
+        val outcome = runBlocking { pipeline.runPdf(Uri.fromFile(pdf), key, snapshot) { } }
+        assertTrue("import failed: $outcome", outcome is PreparedOutcome.Pdf)
+        return (outcome as PreparedOutcome.Pdf).prepared
+    }
 
+    private fun renderBlack(context: Context, file: File, geometry: com.tacmap.calibration.PdfPageGeometry) {
         val rendered = PdfPageRenderer.renderRawRegion(
             context = context,
-            uri = source.uri,
-            geometry = source.geometry,
+            uri = Uri.fromFile(file),
+            geometry = geometry,
             x0 = 0.0,
             y0 = 0.0,
             x1 = 200.0,
@@ -85,9 +92,9 @@ class PdfImportSmokeTest {
     }
 
     @Test
-    fun refusedGeoPdfIsParkedOffTheMapAndCancelDropsTheCopy() {
-        // same flow as iOS: a declared-but-unusable georef comes back as its own outcome
-        // with the reason, the UI parks it behind the alert, Cancel deletes the private copy
+    fun refusedGeoPdfIsAddedAsRejectedWithItsReason() {
+        // s9.6 (same table as iOS): a single page whose declared georef can't be used is
+        // added as rejected, never active, and the alert offers Calibrate now / Later
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = ApplicationProvider.getApplicationContext<Context>()
         com.tacmap.calibration.PdfGeorefFixture.readBytes = { name ->
@@ -101,26 +108,18 @@ class PdfImportSmokeTest {
             case["mediaBox"]!!.jsonArray.map { it.jsonPrimitive.double },
             case["pdfPageExtras"]!!.jsonPrimitive.content,
         )
-        val copyJournalDir = File(context.cacheDir, "pdf-import-refused-journal").apply { mkdirs() }
-        val result = importPdfMapSource(
-            context = context,
-            sourceUri = Uri.fromFile(selectedPdf),
-            cameraLat = -35.28,
-            cameraLng = 149.13,
-            operationKey = "pdf-import-refused-${System.nanoTime()}",
-            copyJournal = DocumentImportCopyJournal.forTests(copyJournalDir),
-        )
-        assertEquals(PdfImportOutcome.Rejected(GeorefRejectReason.LPTS_OUT_OF_RANGE), result.outcome)
-        assertFalse(result.source.isGeoreferenced)
-        assertEquals(GeorefOrigin.PROVISIONAL, result.source.placement?.origin)
-        val copy = File(requireNotNull(result.source.uri.path))
-        assertTrue(copy.isFile)
-        assertTrue(
-            com.tacmap.localization.Messages.pdfGeorefRejectedMessage(pdfGeorefRejectionReason(GeorefRejectReason.LPTS_OUT_OF_RANGE))
-                .isNotBlank()
-        )
-        discardRejectedPdfImport(result.source)
-        assertFalse("Cancel should drop the refused copy", copy.exists())
+        val prepared = runImport(context, selectedPdf, "pdf-import-refused-${System.nanoTime()}")
+        try {
+            assertEquals(ImportOutcome.AddRejected(0, GeorefRejectReason.LPTS_OUT_OF_RANGE), prepared.outcome)
+            assertTrue(prepared.file.isFile)
+            assertTrue(
+                com.tacmap.localization.Messages.mapImportGeorefRejected(pdfGeorefRejectionReason(GeorefRejectReason.LPTS_OUT_OF_RANGE))
+                    .isNotBlank()
+            )
+        } finally {
+            InFlightImportFiles.release(prepared.file)
+            prepared.file.delete()
+        }
     }
 
     // This picker fixture uses the scoped MediaStore Downloads API (Android 10+).
@@ -158,13 +157,13 @@ class PdfImportSmokeTest {
             )
             waitFor(device, By.text(fileName), PICKER_TIMEOUT_MS).click()
 
-            // no georef in this PDF (plan 02 s1): same flow as iOS, it goes straight into
-            // calibration on a provisional placement that's labelled uncalibrated, never a
-            // quiet camera box passed off as a basemap
+            // no georef in this PDF: same flow as iOS (WP4 E1), straight into calibration on
+            // a provisional placement. A plain PDF has no datum yet, so the datum sheet's first
             assertTrue(
                 "A plain PDF import didn't drop into calibration",
-                device.wait(Until.hasObject(By.text("Calibrating PDF")), IMPORT_TIMEOUT_MS),
+                device.wait(Until.hasObject(By.text("Datum printed on the map")), IMPORT_TIMEOUT_MS),
             )
+            waitFor(device, By.text("WGS84")).click()
             assertTrue(
                 "The selected PDF never became the rendered map",
                 device.wait(
@@ -172,18 +171,17 @@ class PdfImportSmokeTest {
                     IMPORT_TIMEOUT_MS,
                 ),
             )
-            assertTrue(
-                "The imported PDF wasn't labelled uncalibrated",
-                device.hasObject(By.text("Uncalibrated map")),
-            )
+            // the header says it isn't georeferenced, never a quiet camera box passed off as a map
+            assertTrue(device.hasObject(By.text("NOT GEOREFERENCED")))
             assertFalse(
                 "A plain PDF isn't a refused GeoPDF",
                 device.hasObject(By.text("Georeference not usable")),
             )
-            waitFor(device, By.text("Cancel")).click()
+            // nothing placed, so the X just leaves (no keep/discard dialog)
+            waitFor(device, By.desc("Leave calibration")).click()
             assertTrue(
-                "Backing out of calibration should keep it labelled uncalibrated",
-                device.wait(Until.hasObject(By.text("Uncalibrated map")), UI_TIMEOUT_MS),
+                "Leaving calibration should hand the map back",
+                device.wait(Until.gone(By.text("NOT GEOREFERENCED")), UI_TIMEOUT_MS),
             )
         } finally {
             scenario.close()

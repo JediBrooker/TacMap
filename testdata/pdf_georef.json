@@ -3478,16 +3478,22 @@
     },
     "lgiRules": {
       "projectionTypes": "UT/UTM (Zone + Hemisphere, also read from /Display), TC, LE/LC (StandardParallelTwo defaults to One), geographic = GEOGRAPHIC/GEO/LL/LONGLAT. Anything else unsupportedProjection",
-      "valueTypes": "ProjectionType, Hemisphere, Units and a Datum code are a name or a string (a bare integer Datum reads as its digits); a ProjectionType of any other type is malformed. Numeric parameters are a pdf number or a numeric string, never a name. Zone/Hemisphere come from /Projection when the key is there and from /Display only when it's missing: a present /Zone that isn't a whole number in 1..60 (name, junk string, inf, 1e30, 10.5) or a present /Hemisphere that isn't N/S/NORTH/SOUTH text is malformed. Range-check the double before converting it to an int",
+      "valueTypes": "ProjectionType, Hemisphere, Units and a Datum code are a name or a string (a bare integer Datum reads as its decimal digits, any size; a real Datum is malformed); a ProjectionType of any other type is malformed. Numeric parameters are a pdf number or a numeric string, never a name. Zone/Hemisphere come from /Projection when the key is there and from /Display only when it's missing: a present /Zone that isn't a whole number in 1..60 (name, junk string, inf, 1e30, 10.5) or a present /Hemisphere that isn't N/S/NORTH/SOUTH text is malformed. Range-check the double before converting it to an int. Same for every optional key: present but unusable is malformed, never swapped for a default (a junk or null StandardParallelTwo doesn't fall back to One). Text values (types, codes, hemisphere) are trimmed of numericStrings.trim and compared case-insensitively",
+      "numericStrings": {
+        "grammar": "^[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?$ (ascii only) after trimming",
+        "trim": "fiduciaryFits.whiteSpaceCodePoints, both ends only",
+        "rule": "anywhere a pdf number may come as a string (LGIDict /Zone and the TC/LE parameters, inline datum numbers, every element of /CTM /Registration /Neatline and the /VP arrays) the string has to match the grammar, else it's a wrong type: malformed. A match that overflows a double is non-finite like an overflowing pdf real. Platform number parsers take more than this (Java/Kotlin: 10d, 10f, hex floats, Infinity; Swift: hex floats, inf, nan), so gate on the grammar before converting"
+      },
+      "nullValues": "a key whose value is the pdf null object is PRESENT with the wrong type, on every /VP, /Measure, /GCS, /LGIDict, /Projection, /Display and inline /Datum key: malformed (Units: unsupportedProjection), never treated as missing and never a /Display or default fallback. ISO 32000 7.3.7 says null == absent; we don't follow it because every absent-key branch here is a fallback (local TM, page-box crop, /Display zone, plain PDF) and a null where a georef value belongs is a broken producer. PDFBox getDictionaryObject() hides null (returns null), so read the raw item. /Display itself is only looked at when /Projection lacks Zone or Hemisphere",
       "order": "entry structure (CTM, Neatline, Registration shape then finiteness) -> /Projection present -> ProjectionType (missing malformed, unknown unsupportedProjection) -> Datum -> Units -> parameters -> Registration fit / CTM precedence -> crop -> crop on the earth (gptsOffEarth)",
       "shortRegistration": "a Registration with < 3 rows or collinear page points is ignored next to a CTM (CTM alone, source ctm) and is degenerateViewport without one. As the crop (no Neatline) it needs >= 3 rows, else malformed",
       "units": "GDAL ParseProjDict: Units M (also METER/METERS/METRE/METRES) = 1, FT = 0.3048, USSF = 1200/3937, case-insensitive, name or string. It converts FalseEasting/FalseNorthing ONLY: CTM and Registration are always metres ('the false easting/northing of the SRS are expressed in the unit, but the geotransform is expressed in meters'). Ignored for geographic. Any other Units, or a non-metre Units on UT (zone false origin is fixed metres), is unsupportedProjection",
       "inlineDatum": "/Datum << /Ellipsoid << /SemiMajorAxis /InvFlattening >> /ToWGS84 << /dx /dy /dz >> >>: Ellipsoid missing or not a plausible earth, or ToWGS84 present but not 3 numbers -> malformed. No ToWGS84: WGS84/GRS80-sized (1 m / 1e-6 invF) -> zero shift, datumAssumed; else unknownDatum",
       "entries": "/LGIDict is a dictionary or an array; non-dictionary array members are skipped and the selected index counts dictionaries only. Neither type, or no dictionary at all, is malformed",
       "registrationRows": "each row must be an array of exactly 4 numbers, at most 4096 rows; the row length is checked before any value is read (hostile files point every row at one huge shared array). Readers also cap the numbers read per page across all /VP and LGIDict arrays",
-      "pageBudget": "65536 numbers per page across every /VP and LGIDict array (row lengths are checked first). Running out while reading the /VP makes the whole /VP malformed (no viewport of it is tried) and the LGIDict too; running out while reading the LGIDict makes the LGIDict malformed. A /VP read in full before that still stands. Platform tests pin this with shared-array PDFs, the structured form can't express it"
+      "pageBudget": "65536 numbers per page across every /VP and LGIDict array (row lengths are checked first). Running out while reading the /VP makes the whole /VP malformed (no viewport of it is tried) and the LGIDict too; running out while reading the LGIDict makes the LGIDict malformed. A /VP read in full before that still stands, and so does its rejection (the first rejection is the one reported). Read order: page /VP (GEO viewports only, BBox LPTS GPTS Bounds), else the catalog /VP on the same budget, then LGIDict entries in order (CTM, Registration row by row, Neatline). An array is charged its full length before any value is read; one over the 8192 cap is malformed and charges nothing; non-GEO viewports, page boxes and /Projection values are never charged. Exactly 65536 is fine, 65537 runs out. pageBudgetCases pin this with shared-array PDFs (the structured form can't express it)"
     },
-    "note": "input.viewports / input.entries hold the parsed numbers (for core tests), pdfPageExtras the same thing as page-dictionary text (for parser tests: drop it into a one page PDF with the given MediaBox). pdfPageExtras strings are latin-1, one char per byte, same for sheets[].pdfPageExtras. Structured stand-ins for wrong PDF types: a viewport gcs that isn't an object = /GCS not a dictionary; gcs.wkt that isn't a string = /WKT not a string; gcs.epsg that isn't an integer = /EPSG not a PDF integer; input.entries that isn't an array = /LGIDict of the wrong type. Viewport/entry indexes count GEO viewports / LGIDict dictionaries only, so structured inputs leave the non-GEO and non-dictionary members out",
+    "note": "input.viewports / input.entries hold the parsed numbers (for core tests), pdfPageExtras the same thing as page-dictionary text (for parser tests: drop it into a one page PDF with the given MediaBox). pdfPageExtras strings are latin-1, one char per byte, same for sheets[].pdfPageExtras. Structured stand-ins for wrong PDF types: a viewport gcs that isn't an object = /GCS not a dictionary; gcs.wkt that isn't a string = /WKT not a string; gcs.epsg that isn't an integer = /EPSG not a PDF integer; input.entries that isn't an array = /LGIDict of the wrong type. Viewport/entry indexes count GEO viewports / LGIDict dictionaries only, so structured inputs leave the non-GEO and non-dictionary members out. valueTypeCases (parity round 4: null, number vs string, numeric string grammar) have the same shape and add stand-ins: {\"pdfNull\": true} is the pdf null object wherever a value can go (a gcs of the string \"malformed\" still stands for /GCS null), {\"pdfReal\": x} is a pdf real where a Datum code goes, a json string in a numeric slot is a pdf string that has to pass lgiRules.numericStrings, a json integer Datum is a pdf integer. pageBudgetCases are whole PDFs (file, opened at page 0) because the budget needs shared indirect arrays; objects 1-4 are catalog/pages/page/content and pdfObjects are 5, 6, ... like the platform test writers. Both extra arrays are part of the contract next to cases",
     "cases": [
       {
         "id": "lpts_outside_range",
@@ -4793,6 +4799,1065 @@
         "expected": {"outcome": "reject", "reason": "malformed"},
         "note": "a ProjectionType that isn't a name or string is a wrong type (malformed), not an unknown projection. structured: an object stands in for the pdf integer"
       }
+    ],
+    "valueTypeCases": [
+      {
+        "id": "lgi_zone_null_no_display_fallback",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {
+                "ProjectionType": "UT",
+                "Zone": {"pdfNull": true},
+                "Hemisphere": "N",
+                "Datum": "WE"
+              },
+              "display": {"Zone": 10.0, "Hemisphere": "N"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone null /Hemisphere (N) /Datum (WE) >> /Display << /Zone 10 /Hemisphere (N) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Zone null next to /Display /Zone 10. iOS read it as present junk, Android (PDFBox hides null) fell back to /Display. Fail closed: lgiRules.nullValues"
+      },
+      {
+        "id": "lgi_hemisphere_null_no_display_fallback",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {
+                "ProjectionType": "UT",
+                "Zone": 10,
+                "Hemisphere": {"pdfNull": true},
+                "Datum": "WE"
+              },
+              "display": {"Zone": 10.0, "Hemisphere": "N"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere null /Datum (WE) >> /Display << /Zone 10 /Hemisphere (N) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Hemisphere null next to /Display /Hemisphere (N), same rule"
+      },
+      {
+        "id": "lgi_datum_null",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {
+                "ProjectionType": "UT",
+                "Zone": 10,
+                "Hemisphere": "N",
+                "Datum": {"pdfNull": true}
+              }
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum null >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Datum null is a datum of the wrong type (malformed), not a missing datum (unknownDatum)"
+      },
+      {
+        "id": "lgi_units_null",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {
+                "ProjectionType": "TC",
+                "OriginLatitude": 0.0,
+                "CentralMeridian": -123.0,
+                "ScaleFactor": 0.9996,
+                "FalseEasting": 500000.0,
+                "FalseNorthing": 0.0,
+                "Datum": "WE",
+                "Units": {"pdfNull": true}
+              }
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (TC) /OriginLatitude 0 /CentralMeridian -123 /ScaleFactor 0.9996 /FalseEasting 500000 /FalseNorthing 0 /Datum (WE) /Units null >> >>]",
+        "expected": {"outcome": "reject", "reason": "unsupportedProjection"},
+        "note": "/Units null is a Units we can't use (unsupportedProjection), not metres by default"
+      },
+      {
+        "id": "lgi_sp2_null_no_default",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {
+                "ProjectionType": "LE",
+                "StandardParallelOne": 33.0,
+                "OriginLatitude": 37.5,
+                "CentralMeridian": -122.6,
+                "FalseEasting": 0.0,
+                "FalseNorthing": 0.0,
+                "Datum": "WE",
+                "StandardParallelTwo": {"pdfNull": true}
+              }
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (LE) /StandardParallelOne 33 /OriginLatitude 37.5 /CentralMeridian -122.6 /FalseEasting 0 /FalseNorthing 0 /Datum (WE) /StandardParallelTwo null >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "a null StandardParallelTwo is present junk, it doesn't default to StandardParallelOne. Both readers used to default it"
+      },
+      {
+        "id": "lgi_sp2_junk_no_default",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "LE", "StandardParallelOne": 33.0, "OriginLatitude": 37.5, "CentralMeridian": -122.6, "FalseEasting": 0.0, "FalseNorthing": 0.0, "Datum": "WE", "StandardParallelTwo": "abc"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (LE) /StandardParallelOne 33 /OriginLatitude 37.5 /CentralMeridian -122.6 /FalseEasting 0 /FalseNorthing 0 /Datum (WE) /StandardParallelTwo (abc) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "(abc) isn't a number string, same as a junk /Zone: malformed, no default. Both readers used to default it"
+      },
+      {
+        "id": "lgi_neatline_null",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": {"pdfNull": true},
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline null /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Neatline null is malformed, not a page-box crop"
+      },
+      {
+        "id": "lgi_ctm_null_beside_registration",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": {"pdfNull": true},
+              "registration": [[72.0, 72.0, 546000.0, 4176000.0], [752.314961, 72.0, 552000.0, 4176000.0], [752.314961, 979.086614, 552000.0, 4184000.0], [72.0, 979.086614, 546000.0, 4184000.0]],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM null /Registration [[72 72 546000 4176000] [752.314961 72 552000 4176000] [752.314961 979.086614 552000 4184000] [72 979.086614 546000 4184000]] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/CTM null is malformed even though the Registration alone would fit"
+      },
+      {
+        "id": "lgi_registration_null_beside_ctm",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": "WE"},
+              "registration": {"pdfNull": true}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Registration null /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Registration null is malformed, the CTM isn't used on its own. structured: an object where the rows go"
+      },
+      {
+        "id": "lgi_projection_null",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"pdfNull": true}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection null >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Projection null is the same as no usable /Projection"
+      },
+      {
+        "id": "lgi_display_null_not_needed",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": "WE"},
+              "display": {"pdfNull": true}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >> /Display null >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "/Projection has Zone and Hemisphere so /Display (null here) is never looked at"
+      },
+      {
+        "id": "lgi_display_null_needed",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Hemisphere": "N", "Datum": "WE"},
+              "display": {"pdfNull": true}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Hemisphere (N) /Datum (WE) >> /Display null >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Projection has no Zone and /Display is null, nowhere to read a zone from"
+      },
+      {
+        "id": "lgidict_null",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": {"pdfNull": true}
+        },
+        "pdfPageExtras": "/LGIDict null",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/LGIDict null is declared-but-junk (malformed), not a plain PDF. structured: entries that isn't an array, as for lgi_wrong_type"
+      },
+      {
+        "id": "vp_gcs_null",
+        "kind": "adobeVP",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "viewports": [
+            {
+              "name": "Map Layers",
+              "bbox": [72.0, 72.0, 752.314961, 979.086614],
+              "lpts": [0.0, 0.0, 0.999999999456, 0.0, 0.999999999456, 1.000000000191, 0.0, 1.000000000191],
+              "gpts": [37.730118209661, -122.47797518349, 37.729797033048, -122.409888114302, 37.801899271359, -122.409314910114, 37.802221278622, -122.477468107753],
+              "bounds": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+              "gcs": "malformed"
+            }
+          ]
+        },
+        "pdfPageExtras": "/VP [<< /Type /Viewport /Name (Map Layers) /BBox [72 72 752.314961 979.086614] /Measure << /Type /Measure /Subtype /GEO /Bounds [0 0 0 1 1 1 1 0] /GPTS [37.730118209661 -122.47797518349 37.729797033048 -122.409888114302 37.801899271359 -122.409314910114 37.802221278622 -122.477468107753] /LPTS [0 0 0.999999999456 0 0.999999999456 1.000000000191 0 1.000000000191] /GCS null >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/GCS null is a /GCS that isn't a dictionary (malformed), never the local TM fallback a missing /GCS gets. structured: the gcs_not_a_dictionary stand-in"
+      },
+      {
+        "id": "vp_bounds_null",
+        "kind": "adobeVP",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "viewports": [
+            {
+              "name": "Map Layers",
+              "bbox": [72.0, 72.0, 752.314961, 979.086614],
+              "lpts": [0.0, 0.0, 0.999999999456, 0.0, 0.999999999456, 1.000000000191, 0.0, 1.000000000191],
+              "gpts": [37.730118209661, -122.47797518349, 37.729797033048, -122.409888114302, 37.801899271359, -122.409314910114, 37.802221278622, -122.477468107753],
+              "bounds": {"pdfNull": true},
+              "gcs": {
+                "type": "PROJCS",
+                "wkt": "PROJCS[\"WGS 84 / UTM zone 10N\",GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-123],PARAMETER[\"scale_factor\",0.9996],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1]]"
+              }
+            }
+          ]
+        },
+        "pdfPageExtras": "/VP [<< /Type /Viewport /Name (Map Layers) /BBox [72 72 752.314961 979.086614] /Measure << /Type /Measure /Subtype /GEO /Bounds null /GPTS [37.730118209661 -122.47797518349 37.729797033048 -122.409888114302 37.801899271359 -122.409314910114 37.802221278622 -122.477468107753] /LPTS [0 0 0.999999999456 0 0.999999999456 1.000000000191 0 1.000000000191] /GCS << /Type /PROJCS /WKT (PROJCS[\"WGS 84 / UTM zone 10N\",GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-123],PARAMETER[\"scale_factor\",0.9996],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1]]) >> >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Bounds null is malformed, the BBox isn't used instead"
+      },
+      {
+        "id": "lgi_zone_string_type_suffix_d",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": "10d", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone (10d) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "(10d): Kotlin toDouble reads a Java type suffix"
+      },
+      {
+        "id": "lgi_zone_string_float_suffix_f",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": "10f", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone (10f) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "(10f): same, f suffix"
+      },
+      {
+        "id": "lgi_zone_string_hex",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": "0x1.4p3", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone (0x1.4p3) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "(0x1.4p3) is 10 as a hex float on both readers, not a number string here"
+      },
+      {
+        "id": "lgi_zone_string_nan",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": "NaN", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone (NaN) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "(NaN) isn't in the grammar"
+      },
+      {
+        "id": "lgi_zone_string_comma_decimal",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": "10,0", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone (10,0) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "(10,0): no decimal comma in pdf number strings"
+      },
+      {
+        "id": "lgi_zone_string_padded",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": " 10 ", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone ( 10 ) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "( 10 ): trimmed, then 10"
+      },
+      {
+        "id": "lgi_zone_string_plus",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": "+10", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone (+10) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "(+10): a leading + is fine, pdf numbers allow it too"
+      },
+      {
+        "id": "lgi_zone_string_whole_real",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": "10.0", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone (10.0) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "(10.0) is a whole number"
+      },
+      {
+        "id": "lgi_zone_string_exponent",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": "1e1", "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone (1e1) /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "(1e1): exponents are in the string grammar (pdf numbers don't have them, Java/C producers write them)"
+      },
+      {
+        "id": "lgi_hemisphere_lowercase_padded",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": " n ", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere ( n ) /Datum (WE) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "( n ): text values are trimmed and case-insensitive"
+      },
+      {
+        "id": "lgi_projection_type_lowercase_padded",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": " ut ", "Zone": 10, "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType ( ut ) /Zone 10 /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "( ut ) is UT"
+      },
+      {
+        "id": "lgi_datum_code_padded",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": " WE "}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum ( WE ) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "( WE ) is WE"
+      },
+      {
+        "id": "lgi_datum_real",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {
+                "ProjectionType": "UT",
+                "Zone": 10,
+                "Hemisphere": "N",
+                "Datum": {"pdfReal": 5.0}
+              }
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum 5.0 >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "/Datum 5.0: a real isn't a datum code (only a pdf integer reads as its digits). iOS used to read it as code 5 (unknownDatum)"
+      },
+      {
+        "id": "lgi_datum_integer_large",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": 99999999999}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum 99999999999 >> >>]",
+        "expected": {"outcome": "reject", "reason": "unknownDatum"},
+        "note": "/Datum 99999999999: an integer reads as its digits whatever its size, no such code. iOS used to cap it at 1e9 and call it malformed"
+      },
+      {
+        "id": "lgi_tc_parameter_string_suffix",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": [8.819444444496, 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "TC", "OriginLatitude": 0.0, "CentralMeridian": "-123d", "ScaleFactor": 0.9996, "FalseEasting": 500000.0, "FalseNorthing": 0.0, "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [8.819444444496 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (TC) /OriginLatitude 0 /CentralMeridian (-123d) /ScaleFactor 0.9996 /FalseEasting 500000 /FalseNorthing 0 /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "TC /CentralMeridian (-123d) isn't a number string"
+      },
+      {
+        "id": "lgi_registration_number_strings",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "registration": [["72", "72", "546000", "4176000"], ["752.314961", "72", "552000", "4176000"], ["752.314961", "979.086614", "552000", "4184000"], ["72", "979.086614", "546000", "4184000"]],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /Registration [[(72) (72) (546000) (4176000)] [(752.314961) (72) (552000) (4176000)] [(752.314961) (979.086614) (552000) (4184000)] [(72) (979.086614) (546000) (4184000)]] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "registration"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.81944443964683, 0.0, 545365.000000345, 6.68436499203292e-16, 8.81944444612872, 4175364.99999988],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "fit": {"rmsMetres": 0.0, "maxResidualMetres": 0.0, "residualsMetres": [0.0, 0.0, 0.0, 0.0], "sheetDiagonalMetres": 10000.0, "gateLimitMetres": 20.0, "passesGate": true},
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.0, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.0, 4176000.0], "wgs84": [37.72979703305, -122.4098881143], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.0, 4184000.0], "wgs84": [37.80189927136, -122.40931491011], "toPage": [752.314961, 979.086614]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.0, 4184000.0], "wgs84": [37.80222127862, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "every Registration value is a number string like (546000): read as the numbers"
+      },
+      {
+        "id": "lgi_registration_string_type_suffix",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "registration": [["72d", "72d", "546000d", "4176000d"], ["752.314961d", "72d", "552000d", "4176000d"], ["752.314961d", "979.086614d", "552000d", "4184000d"], ["72d", "979.086614d", "546000d", "4184000d"]],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /Registration [[(72d) (72d) (546000d) (4176000d)] [(752.314961d) (72d) (552000d) (4176000d)] [(752.314961d) (979.086614d) (552000d) (4184000d)] [(72d) (979.086614d) (546000d) (4184000d)]] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "Registration values (546000d): Kotlin read them as numbers, Swift didn't. Not number strings: malformed"
+      },
+      {
+        "id": "lgi_ctm_string_hex",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": ["0x1.1a38e38e3ff98p+3", 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [(0x1.1a38e38e3ff98p+3) 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "a /CTM element written as the exact hex float of the right value: both readers took it, the grammar doesn't"
+      },
+      {
+        "id": "lgi_ctm_string_exponent",
+        "kind": "lgiDict",
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "input": {
+          "entries": [
+            {
+              "description": "Layers",
+              "ctm": ["8.819444444496e+00", 0.0, 0.0, 8.819444444496, 545365.0, 4175365.0],
+              "neatline": [72.0, 72.0, 752.314961, 72.0, 752.314961, 979.086614, 72.0, 979.086614],
+              "projection": {"ProjectionType": "UT", "Zone": 10, "Hemisphere": "N", "Datum": "WE"}
+            }
+          ]
+        },
+        "pdfPageExtras": "/LGIDict [<< /Type /LGIDict /Version (2.1) /Description (Layers) /CTM [(8.819444444496e+00) 0 0 8.819444444496 545365 4175365] /Neatline [72 72 752.314961 72 752.314961 979.086614 72 979.086614] /Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >> >>]",
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "a /CTM element as (8.819444444496e+00): in the grammar, same number"
+      }
+    ],
+    "pageBudgetCases": [
+      {
+        "id": "vp_runs_out_lgidict_too",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_vp_runs_out_lgidict_too.pdf",
+        "sha256": "570066dcac0975118cf97396cf2b7a79991099bc54bd2e24351122c24abe5c79",
+        "bytes": 19128,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "good viewport 28, then 4 + 2 x 8192 per junk viewport: runs out on the 4th",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          }
+        ],
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "out of budget inside the /VP: the whole /VP is malformed (the good first viewport included) and the perfectly good LGIDict after it isn't read"
+      },
+      {
+        "id": "lgidict_runs_out_after_layers",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_lgidict_runs_out_after_layers.pdf",
+        "sha256": "fda7b860a0a797f3f6f36cc03274bdb36c01849e59f8cf72c99769aa7ec8df97",
+        "bytes": 18687,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "Layers 14, then 8192 per inset: runs out on the 8th",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          }
+        ],
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "the Layers entry was read fine and would be picked, but the LGIDict ran out: malformed"
+      },
+      {
+        "id": "vp_read_in_full_then_lgidict_runs_out",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_vp_read_in_full_then_lgidict_runs_out.pdf",
+        "sha256": "b1c2423298570f3d56b6fabe43e64ee2879a5f428ec4806d1ca317bdc00097cc",
+        "bytes": 19195,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "viewport 28, then 8192 per inset: runs out on the 8th",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          }
+        ],
+        "expected": {
+          "origin": "adobeVP",
+          "selected": {"kind": "viewport", "index": 0, "name": "Map Layers"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [72.0, 979.086614], [752.314961, 979.086614], [752.314961, 72.0]],
+          "affine": [8.81944444443947, 4.17106046820989e-11, 545364.999999964, -4.85980072645135e-11, 8.81944444443702, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "fit": {"rmsMetres": 0.0, "maxResidualMetres": 0.0, "residualsMetres": [0.0, 0.0, 0.0, 0.0], "sheetDiagonalMetres": 10000.0, "gateLimitMetres": 20.0, "passesGate": true},
+          "outcome": "accept",
+          "checks": [
+            {"label": "control 1", "kind": "control", "page": [72.0, 72.0], "plane": [545999.999999966, 4175999.99999999], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "control 2", "kind": "control", "page": [752.3149606, 72.0], "plane": [551999.999999699, 4175999.99999996], "wgs84": [37.72979703305, -122.40988811431], "toPage": [752.3149606, 72.0]},
+            {"label": "control 3", "kind": "control", "page": [752.3149606, 979.0866142], "plane": [551999.999999737, 4184000.00000019], "wgs84": [37.80189927136, -122.40931491012], "toPage": [752.3149606, 979.0866142]},
+            {"label": "control 4", "kind": "control", "page": [72.0, 979.0866142], "plane": [546000.000000004, 4184000.00000022], "wgs84": [37.80222127862, -122.47746810775], "toPage": [72.0, 979.0866141]}
+          ]
+        },
+        "note": "the /VP was read in full before the budget ran out, it still stands"
+      },
+      {
+        "id": "vp_rejected_then_lgidict_runs_out",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_vp_rejected_then_lgidict_runs_out.pdf",
+        "sha256": "c6642f2469aaa386f4a58b46753bf6f71dde0f34ff0b13b643d85bcfe076c1b6",
+        "bytes": 19195,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "viewport 28, then 8192 per inset: runs out on the 8th",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          }
+        ],
+        "expected": {
+          "outcome": "reject",
+          "reason": "rmsGate",
+          "fit": {"rmsMetres": 110.952068, "maxResidualMetres": 110.952068, "residualsMetres": [110.952068, 110.952068, 110.952068, 110.952068], "sheetDiagonalMetres": 10358.462651, "gateLimitMetres": 20.716925, "passesGate": false}
+        },
+        "note": "the /VP (rejections.cases rms_gate) was read in full and rejected; the LGIDict then runs out. The first rejection is the one reported: rmsGate, not malformed"
+      },
+      {
+        "id": "exactly_at_limit",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_exactly_at_limit.pdf",
+        "sha256": "b0d626d7e376de9e898fea4466ba96966efa10c81d83a50b6dfa5320899226d8",
+        "bytes": 34913,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "14 + 7 x 8192 + 8178 = 65536",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          },
+          {
+            "numberArray": {"count": 8178, "value": "0"},
+            "object": 6
+          }
+        ],
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "Layers + 7 x 8192 + 8178 = 65536 exactly: nothing ran out"
+      },
+      {
+        "id": "one_over_limit",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_one_over_limit.pdf",
+        "sha256": "379b9a0f568fe153eb35ac9999cf9a08aedbd3b4cd7246d984deb9d796387bb4",
+        "bytes": 34915,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "14 + 7 x 8192 + 8179 = 65537",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          },
+          {
+            "numberArray": {"count": 8179, "value": "0"},
+            "object": 6
+          }
+        ],
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "Layers + 7 x 8192 + 8179 = 65537: runs out on the last inset"
+      },
+      {
+        "id": "oversized_array_not_charged",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_oversized_array_not_charged.pdf",
+        "sha256": "620a81c269211d7d3908b7b1924bd06cc10478a78bfd327545e85d40dacf6047",
+        "bytes": 34958,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "viewport 4 + 8 (its 8193 GPTS is over the cap: malformed, not charged), Layers 14, 7 x 8192 = 57370. Charging the 8193 would make it 65563 and run out",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8193, "value": "0"},
+            "object": 5
+          },
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 6
+          }
+        ],
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "the viewport is malformed (GPTS over the 8192 cap) without touching the budget, so the LGIDict reads fine and lands the sheet"
+      },
+      {
+        "id": "non_geo_viewports_not_charged",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_non_geo_viewports_not_charged.pdf",
+        "sha256": "a7fa0ba8653c49116eefaf7c85a6b003449e9b0a11e822a137db3b1b67124959",
+        "bytes": 18225,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "9 non-GEO viewports with 8192-number BBoxes aren't read; Layers 14",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          }
+        ],
+        "expected": {
+          "origin": "lgiDict",
+          "selected": {"kind": "lgiEntry", "index": 0, "description": "Layers", "source": "ctm"},
+          "crs": {"kind": "transverseMercator", "lat0": 0.0, "lon0": -123.0, "k0": 0.9996, "fe": 500000.0, "fn": 0.0, "utmZone": 10, "hemisphere": "N"},
+          "datum": {"id": "WGS84"},
+          "crop": [[72.0, 72.0], [752.314961, 72.0], [752.314961, 979.086614], [72.0, 979.086614]],
+          "affine": [8.819444444496, 0.0, 545365.0, 0.0, 8.819444444496, 4175365.0],
+          "affineTol": [1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592, 1.10243055576609e-06, 1.10243055576609e-06, 0.00203375000030592],
+          "outcome": "accept",
+          "checks": [
+            {"label": "neatline 1", "kind": "neatline", "page": [72.0, 72.0], "plane": [546000.000000004, 4176000.0], "wgs84": [37.73011820966, -122.47797518349], "toPage": [72.0, 72.0]},
+            {"label": "neatline 2", "kind": "neatline", "page": [752.314961, 72.0], "plane": [552000.000003303, 4176000.0], "wgs84": [37.72979703305, -122.40988811426], "toPage": [752.314961, 72.0]},
+            {"label": "neatline 3", "kind": "neatline", "page": [752.314961, 979.086614], "plane": [552000.000003303, 4183999.99999852], "wgs84": [37.80189927135, -122.40931491008], "toPage": [752.314961, 979.0866141]},
+            {"label": "neatline 4", "kind": "neatline", "page": [72.0, 979.086614], "plane": [546000.000000004, 4183999.99999852], "wgs84": [37.80222127861, -122.47746810775], "toPage": [72.0, 979.086614]}
+          ]
+        },
+        "note": "only GEO viewports are read (and charged)"
+      },
+      {
+        "id": "catalog_vp_runs_out",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_catalog_vp_runs_out.pdf",
+        "sha256": "be15f34f70d8dbf7168d7810decc6bbd9879b00ba1b23969a9429db2877cbdf1",
+        "bytes": 18623,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "page /VP has no GEO viewport; catalog /VP: 4 + 2 x 8192 per junk viewport, runs out on the 4th",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          }
+        ],
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "the catalog /VP is read on the same page budget; running out there takes the page LGIDict down too"
+      },
+      {
+        "id": "registration_rows_charged",
+        "kind": "pageBudget",
+        "file": "geopdf/tacmap_budget_registration_rows_charged.pdf",
+        "sha256": "1e4182bf34a645c7a854f284a4b68474feea5a98d28f7dda6a52a593c0fd330f",
+        "bytes": 30866,
+        "mediaBox": [0.0, 0.0, 824.3149606, 1051.0866142],
+        "charged": "Layers 14 + 7 x 8192 + 2048 rows x 4 = 65550: runs out inside the Registration",
+        "pdfObjects": [
+          {
+            "numberArray": {"count": 8192, "value": "0"},
+            "object": 5
+          },
+          {"text": "[72 72 546000 4176000]", "object": 6}
+        ],
+        "expected": {"outcome": "reject", "reason": "malformed"},
+        "note": "Registration rows are charged 4 each as they're read, after the row length check"
+      }
     ]
   },
   "fiduciaryFits": {
@@ -4804,7 +5869,7 @@
       "spanWarning": "page points span < 25% of the crop bbox width or height -> warn (still fit)",
       "crossValidated": "n >= 4",
       "leaveOneOut": "leaveOneOut[i] = distance from point i's plane coords to the fit of the other n-1 points (null when those are degenerate); leaveOneOutRms[i] = RMS of that n-1 fit on its own points",
-      "outliers": "n >= 5 only: k = argmin leaveOneOutRms (ties -> lowest index, nulls skipped); flag k alone when leaveOneOut[k] > max(5 m, 5 * leaveOneOutRms[k]). One at a time, the user fixes it and we re-run. Proposed rule, plan only says 'outliers flagged'"
+      "outliers": "WP4 contract rule 6.4 (replaces the WP1 proposal, which false-flagged 45-83% of clean 5-6 point fits): only when n >= 5 and RMS > tau, where tau = max(10 m, 0.0005 * D) and D is the longer of the two cropBBox diagonals mapped through the fit (plane metres, diagonalMetres / toleranceMetres). S = points whose leaveOneOutRms <= tau (nulls never count). flaggedOutliers = [i] when S = {i}, else []. |S| >= 2 (ambiguous) and |S| = 0 (disagree) flag nothing here, testdata/calibration_fit_report.json pins those"
     },
     "tolerance": {"planeMetres": 0.001, "residualMetres": 0.001, "eigenRatioRelative": 1e-06, "wgs84Metres": 0.01, "pagePoints": 0.001},
     "sets": [
@@ -4851,6 +5916,8 @@
           "maxResidualMetres": 0.0,
           "leaveOneOutMetres": [0.0, 0.0, 0.0, 0.0],
           "leaveOneOutRmsMetres": [0.0, 0.0, 0.0, 0.0],
+          "diagonalMetres": 12586.499384,
+          "toleranceMetres": 10.0,
           "flaggedOutliers": [],
           "checks": [
             {"label": "points centroid", "kind": "centroid", "page": [450.3919822, 553.4641157], "plane": [548999.999999953, 4179999.9999998], "wgs84": [37.76601398122, -122.44366168425], "toPage": [450.3919822, 553.4641157]},
@@ -4951,12 +6018,14 @@
           "maxResidualMetres": 79.274611,
           "leaveOneOutMetres": [194.904459, 258.715596, 300.0, 230.578512, 12.5],
           "leaveOneOutRmsMetres": [42.324949, 30.477846, 0.0, 38.569461, 75.0],
+          "diagonalMetres": 12102.771697,
+          "toleranceMetres": 10.0,
           "flaggedOutliers": [2],
           "checks": [
             {"label": "points centroid", "kind": "centroid", "page": [389.480315, 502.8661417], "plane": [548860.000000353, 4179799.99999972], "wgs84": [37.76421890689, -122.44526461809], "toPage": [389.480315, 502.8661417]}
           ]
         },
-        "note": "5 points on tacmap_grid_sf_plain.pdf, point index 2 has a typo (51000 -> 51300, 300 m). flag rule: n >= 5 and leaveOneOut > max(5 m, 5 * leaveOneOutRms)"
+        "note": "5 points on tacmap_grid_sf_plain.pdf, point index 2 has a typo (51000 -> 51300, 300 m). flag rule (rules.outliers): RMS > tau and only dropping index 2 makes the rest Good"
       },
       {
         "name": "zone_crossing_55_56_gda94",
@@ -5001,6 +6070,8 @@
           "maxResidualMetres": 0.056897,
           "leaveOneOutMetres": [0.229619, 0.229619, 0.200917, 0.200917],
           "leaveOneOutRmsMetres": [0.0, 0.0, 0.0, 0.0],
+          "diagonalMetres": 31876.373677,
+          "toleranceMetres": 15.938187,
           "flaggedOutliers": [],
           "checks": [
             {"label": "points centroid", "kind": "centroid", "page": [667.2755906, 638.9291339], "plane": [776500.017338595, 6260000.05128886], "wgs84": [-33.76403245881, 149.9853696485], "toPage": [667.2755906, 638.9291339]}
@@ -5130,6 +6201,8 @@
           "maxResidualMetres": 0.0,
           "leaveOneOutMetres": [0.0, 0.0, 0.0, 0.0],
           "leaveOneOutRmsMetres": [0.0, 0.0, 0.0, 0.0],
+          "diagonalMetres": 12487.080643,
+          "toleranceMetres": 10.0,
           "flaggedOutliers": [],
           "checks": [
             {"label": "points centroid", "kind": "centroid", "page": [500.0, 469.5], "plane": [550541.0, 4180006.5], "wgs84": [37.76598867037, -122.42616575292], "toPage": [500.0, 469.5]}
@@ -5180,6 +6253,8 @@
           "maxResidualMetres": 0.185701,
           "leaveOneOutMetres": [0.72053, 0.745601, 0.697712, 0.675711],
           "leaveOneOutRmsMetres": [0.0, 0.0, 0.0, 0.0],
+          "diagonalMetres": 12481.58074,
+          "toleranceMetres": 10.0,
           "flaggedOutliers": [],
           "checks": [
             {"label": "points centroid", "kind": "centroid", "page": [504.25, 504.25], "plane": [550588.5, 4180311.5], "wgs84": [37.7687349481, -122.42560520874], "toPage": [504.25, 504.25]}
@@ -5230,6 +6305,8 @@
           "maxResidualMetres": 0.001698,
           "leaveOneOutMetres": [0.006003, 0.007003, 0.006003, 0.005252],
           "leaveOneOutRmsMetres": [0.0, 0.0, 0.0, 0.0],
+          "diagonalMetres": 17734.243618,
+          "toleranceMetres": 10.0,
           "flaggedOutliers": [],
           "checks": [
             {"label": "points centroid", "kind": "centroid", "page": [369.6377953, 341.2913386], "plane": [500250.000117625, 5539750.00130814], "wgs84": [50.00825167146, 9.00232850664], "toPage": [369.6378245, 341.2913704]},
@@ -5281,6 +6358,8 @@
           "maxResidualMetres": 0.001097,
           "leaveOneOutMetres": [0.00439, 0.00439, 0.00439, 0.00439],
           "leaveOneOutRmsMetres": [0.0, 0.0, 0.0, 0.0],
+          "diagonalMetres": 31876.373696,
+          "toleranceMetres": 15.938187,
           "flaggedOutliers": [],
           "checks": [
             {"label": "points centroid", "kind": "centroid", "page": [638.9291339, 638.9291339], "plane": [689999.99934584, 6090000.00088132], "wgs84": [-35.31517968757, 149.090045375], "toPage": [638.9291339, 638.9291339]}
@@ -5331,6 +6410,8 @@
           "maxResidualMetres": 0.001069,
           "leaveOneOutMetres": [0.004276, 0.004276, 0.004276, 0.004276],
           "leaveOneOutRmsMetres": [0.0, 0.0, 0.0, 0.0],
+          "diagonalMetres": 12586.499557,
+          "toleranceMetres": 10.0,
           "flaggedOutliers": [],
           "checks": [
             {"label": "points centroid", "kind": "centroid", "page": [450.3919822, 553.4641157], "plane": [549000.000673558, 4179999.99916987], "wgs84": [37.76601397371, -122.44366167666], "toPage": [450.3919822, 553.4641158]}

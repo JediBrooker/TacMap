@@ -785,19 +785,24 @@ final class PDFTileRenderFixtureTests: XCTestCase {
         try FileManager.default.copyItem(at: url, to: dest)
         defer { try? FileManager.default.removeItem(at: dest) }
         let readout = try XCTUnwrap(GeoPDFReader.read(url: dest))
-        let payload = ImportedMapWorker.PDFPayload(destination: dest, outcome: readout.outcome, page: readout.page,
-                                                   contentKey: try XCTUnwrap(PDFSessionStore.contentKey(for: dest)),
-                                                   performedWorkOffMainThread: false)
         let expected = (c["expected"] as? [String: Any])?["importFailure"] as? String
         XCTAssertEqual(expected, PDFRenderFailure.blank.rawValue)
         PDFTileRenderer.assertsOffMainThread = false
         defer { PDFTileRenderer.assertsOffMainThread = true }
-        XCTAssertThrowsError(try ImportedMapWorker.probePDF(payload)) { e in
-            guard case PDFMapImportError.cannotDraw(let f)? = e as? PDFMapImportError else {
+        let guardFile = FileManager.default.temporaryDirectory.appendingPathComponent("probe-guard-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: guardFile) }
+        let probeGuard = PDFRenderGuard(url: guardFile)
+        let token = UUID().uuidString
+        XCTAssertThrowsError(try MapImportPipeline.probe(url: dest, contentKey: try XCTUnwrap(PDFSessionStore.contentKey(for: dest)),
+                                                         pageIndex: 0, page: readout.page, georef: readout.georef,
+                                                         token: token, guardStore: probeGuard)) { e in
+            guard case MapImportError.cannotDraw(let f)? = e as? MapImportError else {
                 return XCTFail("wrong error \(e)")
             }
             XCTAssertEqual(f.rawValue, expected)
         }
+        // a clean failure isnt a crash: the import marker came off again
+        XCTAssertNil(probeGuard.snapshot.inProgress)
     }
 
     // MARK: - bake format (OD-F7)

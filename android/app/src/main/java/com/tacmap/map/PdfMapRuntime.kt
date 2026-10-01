@@ -43,7 +43,11 @@ class PdfMapRuntime internal constructor(
     /** makes a freshly minted guard token durable before anything arms on it (worker thread) */
     private val persistRenderMeta: (PdfMapSource) -> Boolean,
 ) {
-    private class Entry(val key: String, val source: PdfTileSource?, val failure: PdfRenderFailure?)
+    /** [canonical] = the georef the source was built from, a bake only rides on that exact one (F1) */
+    private class Entry(val key: String, val source: PdfTileSource?, val failure: PdfRenderFailure?, val canonical: String)
+
+    /** a calibration display is up: it never gets a bake, whatever georef it's on (M13, F1) */
+    @Volatile internal var calibrating: () -> Boolean = { false }
 
     // volatile: Remove's detachBake reads it off main now (R3-4)
     @Volatile private var current: Entry? = null
@@ -67,17 +71,20 @@ class PdfMapRuntime internal constructor(
         val file = pdf.uri.path?.let(::File) ?: return release().let { null }
         val tilePx = PdfZoomPolicy.tilePx(density.toDouble())
         val canonical = georef.canonicalJson()
-        val key = "pdf:${file.path}:${sha256(canonical).take(16)}:$tilePx:g$generation"
+        val cal = calibrating()
+        // its own key while calibrating, so a GeoPDF refine on the very same georef still gets a
+        // fresh source with no bake on it instead of the baked one that's up
+        val key = "pdf:${file.path}:${sha256(canonical).take(16)}:$tilePx:g$generation" + if (cal) ":cal" else ""
         current?.let { if (it.key == key) return it.source }
 
         val previous = current
         val entry = try {
             val source = createPdfTileSource(app, pdf, tilePx, key, guard, persistRenderMeta)
-            attachBake(source, pdf, canonical)
-            Entry(key, source, null)
+            if (!cal) attachBake(source, pdf, canonical)
+            Entry(key, source, null, canonical)
         } catch (e: PdfRenderException) {
             Log.w(TAG, "pdf can't be drawn: ${e.failure.code}")
-            Entry(key, null, e.failure)
+            Entry(key, null, e.failure, canonical)
         }
         current = entry
         previous?.source?.let(::disposeSource)
@@ -133,9 +140,11 @@ class PdfMapRuntime internal constructor(
 
     /** a baked tile set landed for the active PDF, start reading it */
     internal fun onBakePublished(pdf: PdfMapSource) {
-        val source = current?.source ?: return
-        val georef = pdf.placement ?: return
-        attachBake(source, pdf, georef.canonicalJson())
+        val entry = current ?: return
+        val source = entry.source ?: return
+        val canonical = pdf.placement?.canonicalJson() ?: return
+        if (!PdfBakeAttachRules.mayAttach(calibrating(), entry.canonical, canonical)) return
+        attachBake(source, pdf, canonical)
     }
 
     /** the bake was removed, stop reading it before the file goes */
@@ -162,6 +171,16 @@ class PdfMapRuntime internal constructor(
     private companion object {
         const val TAG = "PdfMapRuntime"
     }
+}
+
+/** F1 / M13, pure: when a published bake may go onto the live tile source */
+internal object PdfBakeAttachRules {
+    /**
+     * only onto a source drawn on the entry's own (effective) georef, and never while a
+     * calibration display is up, whatever georef that one's on
+     */
+    fun mayAttach(calibrating: Boolean, sourceGeorefCanonical: String, entryGeorefCanonical: String): Boolean =
+        !calibrating && sourceGeorefCanonical == entryGeorefCanonical
 }
 
 /**

@@ -2,7 +2,8 @@
 """Shared GeoPDF georeference fixtures for the iOS + Android PDF import.
 
 Writes (default: the repo's testdata/):
-  geopdf/*.pdf       tiny vector-only synthetic map sheets
+  geopdf/*.pdf       tiny vector-only synthetic map sheets, plus the tacmap_budget_*.pdf
+                     page-budget cases (shared indirect arrays, no ink)
   pdf_georef.json    expected georeference numbers both unit-test suites load
 
 This is the "independent third implementation" from plans/02-pdf-import-revision.md.
@@ -2028,7 +2029,7 @@ def lgi_pdf_extras(entries):
     return "/LGIDict [%s]" % " ".join(parts)
 
 
-def rejections_section(ref, sheets):
+def rejections_section(ref, sheets, pdfdir=None):
     sf = sheets["sf"]
     wkt10 = wkt_utm_simple(10, False)
     _, base = iso_vp(sf, ("PROJCS", "wkt", wkt10))
@@ -2202,8 +2203,10 @@ def rejections_section(ref, sheets):
               {"description": "Layers", "ctm": ctm, "neatline": nl, "projection": proj}],
              lgi_expect(A_ctm, crop, "ctm", 1, "Layers"),
              note="entry named Layers is taken first, only without one does the largest neatline win")
-    rejection_parity_cases(ref, sf, base, wkt10, crs10, out, lgi_case, lgi_expect,
-                           dict(ctm=ctm, nl=nl, regs=regs, proj=proj, crop=crop, A_ctm=A_ctm))
+    lgi = dict(ctm=ctm, nl=nl, regs=regs, proj=proj, crop=crop, A_ctm=A_ctm)
+    rejection_parity_cases(ref, sf, base, wkt10, crs10, out, lgi_case, lgi_expect, lgi)
+    value_cases = lgi_value_cases(ref, sf, base, wkt10, crs10, lgi_expect, lgi)
+    budget_cases = page_budget_cases(ref, pdfdir, sf, base, wkt10, crs10, lgi_expect, lgi) if pdfdir else []
     return {"reasons": {
         "lptsOutOfRange": "an LPTS coordinate outside [-0.5, 1.5]",
         "nonFinite": "any number that doesn't parse to a finite double",
@@ -2220,12 +2223,33 @@ def rejections_section(ref, sheets):
             "projectionTypes": "UT/UTM (Zone + Hemisphere, also read from /Display), TC, LE/LC (StandardParallelTwo "
                                "defaults to One), geographic = GEOGRAPHIC/GEO/LL/LONGLAT. Anything else unsupportedProjection",
             "valueTypes": "ProjectionType, Hemisphere, Units and a Datum code are a name or a string (a bare integer "
-                          "Datum reads as its digits); a ProjectionType of any other type is malformed. Numeric "
+                          "Datum reads as its decimal digits, any size; a real Datum is malformed); a ProjectionType "
+                          "of any other type is malformed. Numeric "
                           "parameters are a pdf number or a numeric string, never a name. Zone/Hemisphere come from "
                           "/Projection when the key is there and from /Display only when it's missing: a present "
                           "/Zone that isn't a whole number in 1..60 (name, junk string, inf, 1e30, 10.5) or a present "
                           "/Hemisphere that isn't N/S/NORTH/SOUTH text is malformed. Range-check the double before "
-                          "converting it to an int",
+                          "converting it to an int. Same for every optional key: present but unusable is malformed, "
+                          "never swapped for a default (a junk or null StandardParallelTwo doesn't fall back to One). "
+                          "Text values (types, codes, hemisphere) are trimmed of numericStrings.trim and compared "
+                          "case-insensitively",
+            "numericStrings": {
+                "grammar": "^[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?$ (ascii only) after trimming",
+                "trim": "fiduciaryFits.whiteSpaceCodePoints, both ends only",
+                "rule": "anywhere a pdf number may come as a string (LGIDict /Zone and the TC/LE parameters, inline "
+                        "datum numbers, every element of /CTM /Registration /Neatline and the /VP arrays) the string "
+                        "has to match the grammar, else it's a wrong type: malformed. A match that overflows a double "
+                        "is non-finite like an overflowing pdf real. Platform number parsers take more than this "
+                        "(Java/Kotlin: 10d, 10f, hex floats, Infinity; Swift: hex floats, inf, nan), so gate on the "
+                        "grammar before converting"},
+            "nullValues": "a key whose value is the pdf null object is PRESENT with the wrong type, on every /VP, "
+                          "/Measure, /GCS, /LGIDict, /Projection, /Display and inline /Datum key: malformed (Units: "
+                          "unsupportedProjection), never treated as missing and never a /Display or default fallback. "
+                          "ISO 32000 7.3.7 says null == absent; we don't follow it because every absent-key branch "
+                          "here is a fallback (local TM, page-box crop, /Display zone, plain PDF) and a null where a "
+                          "georef value belongs is a broken producer. PDFBox getDictionaryObject() hides null "
+                          "(returns null), so read the raw item. /Display itself is only looked at when /Projection "
+                          "lacks Zone or Hemisphere",
             "order": "entry structure (CTM, Neatline, Registration shape then finiteness) -> /Projection present -> "
                      "ProjectionType (missing malformed, unknown unsupportedProjection) -> Datum -> Units -> parameters "
                      "-> Registration fit / CTM precedence -> crop -> crop on the earth (gptsOffEarth)",
@@ -2248,8 +2272,13 @@ def rejections_section(ref, sheets):
             "pageBudget": "65536 numbers per page across every /VP and LGIDict array (row lengths are checked first). "
                           "Running out while reading the /VP makes the whole /VP malformed (no viewport of it is "
                           "tried) and the LGIDict too; running out while reading the LGIDict makes the LGIDict "
-                          "malformed. A /VP read in full before that still stands. Platform tests pin this with "
-                          "shared-array PDFs, the structured form can't express it"},
+                          "malformed. A /VP read in full before that still stands, and so does its rejection (the "
+                          "first rejection is the one reported). Read order: page /VP (GEO viewports only, BBox LPTS "
+                          "GPTS Bounds), else the catalog /VP on the same budget, then LGIDict entries in order (CTM, "
+                          "Registration row by row, Neatline). An array is charged its full length before any value "
+                          "is read; one over the 8192 cap is malformed and charges nothing; non-GEO viewports, page "
+                          "boxes and /Projection values are never charged. Exactly 65536 is fine, 65537 runs out. "
+                          "pageBudgetCases pin this with shared-array PDFs (the structured form can't express it)"},
         "note": "input.viewports / input.entries hold the parsed numbers (for core tests), pdfPageExtras the same thing as "
                 "page-dictionary text (for parser tests: drop it into a one page PDF with the given MediaBox). "
                 "pdfPageExtras strings are latin-1, one char per byte, same for sheets[].pdfPageExtras. "
@@ -2257,8 +2286,17 @@ def rejections_section(ref, sheets):
                 "gcs.wkt that isn't a string = /WKT not a string; gcs.epsg that isn't an integer = /EPSG not a PDF "
                 "integer; input.entries that isn't an array = /LGIDict of the wrong type. Viewport/entry indexes count "
                 "GEO viewports / LGIDict dictionaries only, so structured inputs leave the non-GEO and non-dictionary "
-                "members out",
-        "cases": out}
+                "members out. valueTypeCases (parity round 4: null, number vs string, numeric string grammar) have "
+                "the same shape and add stand-ins: {\"pdfNull\": true} is the pdf null object wherever a value can "
+                "go (a gcs of the string \"malformed\" still stands for /GCS null), {\"pdfReal\": x} is a pdf real "
+                "where a Datum code goes, a json string in a numeric slot is a pdf string that has to pass "
+                "lgiRules.numericStrings, a json integer Datum is a pdf integer. pageBudgetCases are whole PDFs "
+                "(file, opened at page 0) because the budget needs shared indirect arrays; objects 1-4 are "
+                "catalog/pages/page/content and pdfObjects are 5, 6, ... like the platform test writers. Both "
+                "extra arrays are part of the contract next to cases",
+        "cases": out,
+        "valueTypeCases": value_cases,
+        "pageBudgetCases": budget_cases}
 
 
 def vp_extras_custom(vp, gcs_pdf, name="Map Layers"):
@@ -2513,6 +2551,351 @@ def rejection_parity_cases(ref, sf, base, wkt10, crs10, out, lgi_case, lgi_expec
 
 
 # ----------------------------------------------------------------------------
+# parity round 4 (WP1 final review): null values, number vs string, page budget
+# ----------------------------------------------------------------------------
+
+class PdfRaw(str):
+    """a pdf token written as is (null, a name, a real), only the round 4 cases use it"""
+
+
+PDF_NULL = PdfRaw("null")
+NULL_STANDIN = {"pdfNull": True}
+NUMERIC_STRING = re.compile(r"[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?")
+
+
+def numeric_string_value(s):
+    """lgiRules.numericStrings: None when it's not a number string at all (malformed)"""
+    t = "".join(" " if ord(c) in WHITE_SPACE else c for c in s).strip(" ")
+    if not NUMERIC_STRING.fullmatch(t):
+        return None
+    return float(t)
+
+
+def _raw_item(v, nd):
+    if isinstance(v, PdfRaw):
+        return str(v)
+    if isinstance(v, str):
+        return "(%s)" % v
+    return dec(v, nd)
+
+
+def _raw_value(v):
+    if isinstance(v, PdfRaw):
+        return str(v)
+    if isinstance(v, str):
+        return "(%s)" % v
+    if isinstance(v, dict):
+        return "<< %s >>" % " ".join("/%s %s" % (k, _raw_value(x)) for k, x in v.items())
+    return dec(v, DEG_DP)
+
+
+def lgi_pdf_extras_raw(entries):
+    """lgi_pdf_extras plus raw tokens and string array items, same layout otherwise"""
+    parts = []
+    for e in entries:
+        s = "<< /Type /LGIDict /Version (2.1) /Description (%s)" % e["description"]
+        for key, pkey, nd in (("ctm", "CTM", DEG_DP), ("registration", "Registration", M_DP),
+                              ("neatline", "Neatline", PT_DP)):
+            if key not in e:
+                continue
+            v = e[key]
+            if isinstance(v, PdfRaw):
+                s += " /%s %s" % (pkey, v)
+            elif key == "registration":
+                s += " /Registration [%s]" % " ".join("[%s]" % " ".join(_raw_item(x, nd) for x in r) for r in v)
+            else:
+                s += " /%s [%s]" % (pkey, " ".join(_raw_item(x, nd) for x in v))
+        for key, pkey in (("projection", "Projection"), ("display", "Display")):
+            if key not in e:
+                continue
+            v = e[key]
+            if isinstance(v, PdfRaw):
+                s += " /%s %s" % (pkey, v)
+                continue
+            body = " ".join("/%s %s" % (k, _raw_value(x)) for k, x in v.items())
+            s += (" /Projection << /Type /Projection %s >>" % body) if key == "projection" else (" /Display << %s >>" % body)
+        parts.append(s + " >>")
+    return "/LGIDict [%s]" % " ".join(parts)
+
+
+def lgi_value_cases(ref, sf, base, wkt10, crs10, lgi_expect, lgi):
+    """
+    The LGIDict/VP value types the WP1 final review saw the two readers disagree on, one outcome each,
+    fail closed when it could go either way. pdf = what goes in the page, structured = the parsed stand-in
+    """
+    media = [rpt(v) for v in sf.media]
+    ctm, nl, regs, proj, crop, A_ctm = (lgi[k] for k in ("ctm", "nl", "regs", "proj", "crop", "A_ctm"))
+    rej = lambda reason: {"outcome": "reject", "reason": reason}
+    ok_ctm = lambda: lgi_expect(A_ctm, crop, "ctm", 0, "Layers")
+    layers = {"description": "Layers", "ctm": ctm, "neatline": nl, "projection": proj}
+    disp = {"Zone": 10.0, "Hemisphere": "N"}
+    out = []
+
+    def case(cid, structured, pdf, expected, note):
+        out.append({"id": cid, "kind": "lgiDict", "mediaBox": media, "input": {"entries": structured},
+                    "pdfPageExtras": pdf if isinstance(pdf, str) else lgi_pdf_extras_raw(pdf),
+                    "expected": expected, "note": note})
+
+    def proj_case(cid, key, structured_value, pdf_value, expected, note, display=None, base_proj=None):
+        bp = dict(base_proj or proj)
+        s_entry = dict(layers, projection=dict(bp, **{key: structured_value}))
+        p_entry = dict(layers, projection=dict(bp, **{key: pdf_value}))
+        if display is not None:
+            s_entry["display"] = display
+            p_entry["display"] = display
+        case(cid, [s_entry], [p_entry], expected, note)
+
+    # ---- the pdf null object: present, wrong type, never "missing"
+    proj_case("lgi_zone_null_no_display_fallback", "Zone", NULL_STANDIN, PDF_NULL, rej("malformed"),
+              "/Zone null next to /Display /Zone 10. iOS read it as present junk, Android (PDFBox hides null) "
+              "fell back to /Display. Fail closed: lgiRules.nullValues", display=disp)
+    proj_case("lgi_hemisphere_null_no_display_fallback", "Hemisphere", NULL_STANDIN, PDF_NULL, rej("malformed"),
+              "/Hemisphere null next to /Display /Hemisphere (N), same rule", display=disp)
+    proj_case("lgi_datum_null", "Datum", NULL_STANDIN, PDF_NULL, rej("malformed"),
+              "/Datum null is a datum of the wrong type (malformed), not a missing datum (unknownDatum)")
+    tc = {"ProjectionType": "TC", "OriginLatitude": 0.0, "CentralMeridian": -123.0, "ScaleFactor": 0.9996,
+          "FalseEasting": 500000.0, "FalseNorthing": 0.0, "Datum": "WE"}
+    proj_case("lgi_units_null", "Units", NULL_STANDIN, PDF_NULL, rej("unsupportedProjection"),
+              "/Units null is a Units we can't use (unsupportedProjection), not metres by default", base_proj=tc)
+    le = {"ProjectionType": "LE", "StandardParallelOne": 33.0, "OriginLatitude": 37.5, "CentralMeridian": -122.6,
+          "FalseEasting": 0.0, "FalseNorthing": 0.0, "Datum": "WE"}
+    proj_case("lgi_sp2_null_no_default", "StandardParallelTwo", NULL_STANDIN, PDF_NULL, rej("malformed"),
+              "a null StandardParallelTwo is present junk, it doesn't default to StandardParallelOne. Both readers "
+              "used to default it", base_proj=le)
+    proj_case("lgi_sp2_junk_no_default", "StandardParallelTwo", "abc", "abc", rej("malformed"),
+              "(abc) isn't a number string, same as a junk /Zone: malformed, no default. Both readers used to "
+              "default it", base_proj=le)
+    case("lgi_neatline_null", [dict(layers, neatline=NULL_STANDIN)], [dict(layers, neatline=PDF_NULL)],
+         rej("malformed"), "/Neatline null is malformed, not a page-box crop")
+    case("lgi_ctm_null_beside_registration",
+         [{"description": "Layers", "ctm": NULL_STANDIN, "registration": regs, "neatline": nl, "projection": proj}],
+         [{"description": "Layers", "ctm": PDF_NULL, "registration": regs, "neatline": nl, "projection": proj}],
+         rej("malformed"), "/CTM null is malformed even though the Registration alone would fit")
+    case("lgi_registration_null_beside_ctm", [dict(layers, registration=NULL_STANDIN)],
+         [dict(layers, registration=PDF_NULL)], rej("malformed"),
+         "/Registration null is malformed, the CTM isn't used on its own. structured: an object where the rows go")
+    case("lgi_projection_null", [dict(layers, projection=NULL_STANDIN)], [dict(layers, projection=PDF_NULL)],
+         rej("malformed"), "/Projection null is the same as no usable /Projection")
+    case("lgi_display_null_not_needed", [dict(layers, display=NULL_STANDIN)], [dict(layers, display=PDF_NULL)],
+         ok_ctm(), "/Projection has Zone and Hemisphere so /Display (null here) is never looked at")
+    nozone = {k: v for k, v in proj.items() if k != "Zone"}
+    case("lgi_display_null_needed", [dict(layers, projection=nozone, display=NULL_STANDIN)],
+         [dict(layers, projection=nozone, display=PDF_NULL)], rej("malformed"),
+         "/Projection has no Zone and /Display is null, nowhere to read a zone from")
+    out.append({"id": "lgidict_null", "kind": "lgiDict", "mediaBox": media, "input": {"entries": NULL_STANDIN},
+                "pdfPageExtras": "/LGIDict null", "expected": rej("malformed"),
+                "note": "/LGIDict null is declared-but-junk (malformed), not a plain PDF. structured: entries that "
+                        "isn't an array, as for lgi_wrong_type"})
+    vp0 = {k: v for k, v in base.items() if k != "gcs"}
+    out.append({"id": "vp_gcs_null", "kind": "adobeVP", "mediaBox": media,
+                "input": {"viewports": [dict(vp0, gcs="malformed")]},
+                "pdfPageExtras": vp_extras_custom(vp0, "null"), "expected": rej("malformed"),
+                "note": "/GCS null is a /GCS that isn't a dictionary (malformed), never the local TM fallback a "
+                        "missing /GCS gets. structured: the gcs_not_a_dictionary stand-in"})
+    vb = dict(vp0, bounds=["B"])
+    out.append({"id": "vp_bounds_null", "kind": "adobeVP", "mediaBox": media,
+                "input": {"viewports": [dict(vp0, bounds=NULL_STANDIN, gcs={"type": "PROJCS", "wkt": wkt10})]},
+                "pdfPageExtras": vp_pdf_extras(vb, wkt10).replace("/Bounds [B]", "/Bounds null", 1),
+                "expected": rej("malformed"), "note": "/Bounds null is malformed, the BBox isn't used instead"})
+
+    # ---- number vs string: the numeric string grammar (lgiRules.numericStrings)
+    for cid, text, outcome, note in (
+            ("lgi_zone_string_type_suffix_d", "10d", "malformed", "(10d): Kotlin toDouble reads a Java type suffix"),
+            ("lgi_zone_string_float_suffix_f", "10f", "malformed", "(10f): same, f suffix"),
+            ("lgi_zone_string_hex", "0x1.4p3", "malformed", "(0x1.4p3) is 10 as a hex float on both readers, "
+                                                            "not a number string here"),
+            ("lgi_zone_string_nan", "NaN", "malformed", "(NaN) isn't in the grammar"),
+            ("lgi_zone_string_comma_decimal", "10,0", "malformed", "(10,0): no decimal comma in pdf number strings"),
+            ("lgi_zone_string_padded", " 10 ", "accept", "( 10 ): trimmed, then 10"),
+            ("lgi_zone_string_plus", "+10", "accept", "(+10): a leading + is fine, pdf numbers allow it too"),
+            ("lgi_zone_string_whole_real", "10.0", "accept", "(10.0) is a whole number"),
+            ("lgi_zone_string_exponent", "1e1", "accept", "(1e1): exponents are in the string grammar (pdf "
+                                                         "numbers don't have them, Java/C producers write them)")):
+        assert (numeric_string_value(text) is not None) == (outcome == "accept"), cid
+        proj_case(cid, "Zone", text, text, ok_ctm() if outcome == "accept" else rej(outcome), note)
+    proj_case("lgi_hemisphere_lowercase_padded", "Hemisphere", " n ", " n ", ok_ctm(),
+              "( n ): text values are trimmed and case-insensitive")
+    proj_case("lgi_projection_type_lowercase_padded", "ProjectionType", " ut ", " ut ", ok_ctm(), "( ut ) is UT")
+    proj_case("lgi_datum_code_padded", "Datum", " WE ", " WE ", ok_ctm(), "( WE ) is WE")
+    proj_case("lgi_datum_real", "Datum", {"pdfReal": 5.0}, PdfRaw("5.0"), rej("malformed"),
+              "/Datum 5.0: a real isn't a datum code (only a pdf integer reads as its digits). iOS used to read it "
+              "as code 5 (unknownDatum)")
+    proj_case("lgi_datum_integer_large", "Datum", 99999999999, PdfRaw("99999999999"), rej("unknownDatum"),
+              "/Datum 99999999999: an integer reads as its digits whatever its size, no such code. iOS used to cap "
+              "it at 1e9 and call it malformed")
+    tc_cm = dict(tc, CentralMeridian="-123d")
+    case("lgi_tc_parameter_string_suffix", [dict(layers, projection=tc_cm)], [dict(layers, projection=tc_cm)],
+         rej("malformed"), "TC /CentralMeridian (-123d) isn't a number string")
+
+    # array elements as strings: plain number strings are fine (ADF/AUSLIG write them), the rest is junk
+    reg_s = [[dec(v, PT_DP if i < 2 else M_DP) for i, v in enumerate(r)] for r in regs]
+    pairs = [tuple(r) for r in regs]
+    A_reg = ref.fit(pairs)
+    reg_entry = {"description": "Layers", "registration": reg_s, "neatline": nl, "projection": proj}
+    assert all(numeric_string_value(x) == v for r, rs in zip(regs, reg_s) for x, v in zip(rs, r))
+    case("lgi_registration_number_strings", [reg_entry], [reg_entry],
+         lgi_expect(A_reg, crop, "registration", 0, "Layers", fit_stats(ref, A_reg, pairs, crs10, "WGS84")),
+         "every Registration value is a number string like (546000): read as the numbers")
+    reg_d = [[x + "d" for x in r] for r in reg_s]
+    bad_reg = dict(reg_entry, registration=reg_d)
+    case("lgi_registration_string_type_suffix", [bad_reg], [bad_reg], rej("malformed"),
+         "Registration values (546000d): Kotlin read them as numbers, Swift didn't. Not number strings: malformed")
+    hexed = [float(ctm[0]).hex()] + ctm[1:]
+    assert float.fromhex(hexed[0]) == ctm[0]
+    case("lgi_ctm_string_hex", [dict(layers, ctm=hexed)], [dict(layers, ctm=hexed)], rej("malformed"),
+         "a /CTM element written as the exact hex float of the right value: both readers took it, the grammar "
+         "doesn't")
+    expo = ["%.12e" % ctm[0]] + ctm[1:]
+    assert numeric_string_value(expo[0]) == ctm[0]
+    case("lgi_ctm_string_exponent", [dict(layers, ctm=expo)], [dict(layers, ctm=expo)], ok_ctm(),
+         "a /CTM element as (8.819444444496e+00): in the grammar, same number")
+    return out
+
+
+def write_pdf_objects(path, media, page_extras, catalog_extras="", objects=()):
+    """one page, objects 1-4 catalog/pages/page/content then the extra objects as 5, 6, ... (same layout as the
+    platform hostile-pdf writers)"""
+    content = b"q 1 1 1 rg 0 0 10 10 re f Q"
+    cat = "<< /Type /Catalog /Pages 2 0 R%s >>" % ((" " + catalog_extras) if catalog_extras else "")
+    page = ("<< /Type /Page /Parent 2 0 R /MediaBox [%s] /Resources << >> /Contents 4 0 R %s >>"
+            % (nums(media, 3), page_extras))
+    objs = [cat.encode("latin-1"), b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>", page.encode("latin-1"),
+            b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream"]
+    objs += [o.encode("latin-1") for o in objects]
+    buf = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+    offs = []
+    for i, o in enumerate(objs):
+        offs.append(len(buf))
+        buf += b"%d 0 obj\n" % (i + 1) + o + b"\nendobj\n"
+    x = len(buf)
+    buf += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    for o in offs:
+        buf += b"%010d 00000 n \n" % o
+    buf += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, x)
+    with open(path, "wb") as fh:
+        fh.write(bytes(buf))
+    return hashlib.sha256(bytes(buf)).hexdigest(), len(buf)
+
+
+PAGE_BUDGET = 65536
+CONTROL_CAP = 8192
+
+
+def page_budget_cases(ref, pdfdir, sf, base, wkt10, crs10, lgi_expect, lgi):
+    """lgiRules.pageBudget as whole PDFs. Every case says how many numbers it charges"""
+    media = [rpt(v) for v in sf.media]
+    ctm, nl, proj, crop, A_ctm = (lgi[k] for k in ("ctm", "nl", "proj", "crop", "A_ctm"))
+    layers = {"description": "Layers", "ctm": ctm, "neatline": nl, "projection": proj}
+    layers_pdf = lgi_pdf_extras([layers])[len("/LGIDict ["):-1]
+    proj_pdf = "/Projection << /Type /Projection /ProjectionType (UT) /Zone 10 /Hemisphere (N) /Datum (WE) >>"
+    inset = lambda ref_: "<< /Type /LGIDict /Version (2.1) /Description (Inset) /Neatline %s %s >>" % (ref_, proj_pdf)
+    zeros = lambda n: "[%s]" % " ".join(["0"] * n)
+    vp0 = {k: v for k, v in base.items() if k != "gcs"}
+    good_vp = vp_pdf_extras(vp0, wkt10)[len("/VP ["):-1]
+    junk_vp = ("<< /Type /Viewport /BBox [0 0 10 10] /Measure << /Type /Measure /Subtype /GEO /LPTS 5 0 R "
+               "/GPTS 5 0 R /GCS << /Type /PROJCS /EPSG 32610 >> >> >>")
+    rej = lambda reason: {"outcome": "reject", "reason": reason}
+    out = []
+
+    def vp_georef(vp):
+        A, pairs = fit_vp(ref, vp, crs10, "WGS84")
+        g = {"crs": crs10, "datum": "WGS84", "affine": A}
+        ex = georef_json(ref, g, "adobeVP", {"kind": "viewport", "index": 0, "name": "Map Layers"}, vp_crop(vp),
+                         {"fit": fit_stats(ref, A, pairs, crs10, "WGS84")})
+        ex["outcome"] = "accept"
+        ex["checks"] = [check_point(ref, g, "control %d" % (i + 1), x, y, "control")
+                        for i, (x, y, _, _) in enumerate(pairs)]
+        return ex
+
+    def add(cid, page_extras, objects, charged, expected, note, catalog_extras="", spec=None):
+        fname = "tacmap_budget_%s.pdf" % cid
+        sha, size = write_pdf_objects(os.path.join(pdfdir, fname), sf.media, page_extras, catalog_extras,
+                                      [o for o, _ in objects])
+        c = {"id": cid, "kind": "pageBudget", "file": "geopdf/" + fname, "sha256": sha, "bytes": size,
+             "mediaBox": media, "charged": charged, "pdfObjects": [dict(s, object=5 + i) for i, (_, s) in
+                                                                    enumerate(objects)],
+             "expected": expected, "note": note}
+        print("wrote %-34s %6d bytes" % (fname, size))
+        out.append(c)
+
+    shared = lambda n: (zeros(n), {"numberArray": {"count": n, "value": "0"}})
+    # numbers the good pieces cost
+    vp_cost = 4 + len(vp0["lpts"]) + len(vp0["gpts"]) + (len(vp0["bounds"]) if vp0.get("bounds") else 0)
+    layers_cost = 6 + 8
+
+    add("vp_runs_out_lgidict_too",
+        "/VP [%s %s] /LGIDict [%s]" % (good_vp, " ".join([junk_vp] * 8), layers_pdf),
+        [shared(CONTROL_CAP)], "good viewport %d, then 4 + 2 x 8192 per junk viewport: runs out on the 4th" % vp_cost,
+        rej("malformed"),
+        "out of budget inside the /VP: the whole /VP is malformed (the good first viewport included) and the "
+        "perfectly good LGIDict after it isn't read")
+    add("lgidict_runs_out_after_layers",
+        "/LGIDict [%s %s]" % (layers_pdf, " ".join([inset("5 0 R")] * 9)),
+        [shared(CONTROL_CAP)], "Layers %d, then 8192 per inset: runs out on the 8th" % layers_cost, rej("malformed"),
+        "the Layers entry was read fine and would be picked, but the LGIDict ran out: malformed")
+    add("vp_read_in_full_then_lgidict_runs_out",
+        "/VP [%s] /LGIDict [%s]" % (good_vp, " ".join([inset("5 0 R")] * 9)),
+        [shared(CONTROL_CAP)], "viewport %d, then 8192 per inset: runs out on the 8th" % vp_cost, vp_georef(vp0),
+        "the /VP was read in full before the budget ran out, it still stands")
+    gr = list(base["gpts"])
+    gr[4] = num(gr[4] + 0.004, DEG_DP)
+    rvp = dict(vp0, gpts=gr)
+    A, pairs = fit_vp(ref, rvp, crs10, "WGS84")
+    st = fit_stats(ref, A, pairs, crs10, "WGS84")
+    assert not st["passesGate"]
+    add("vp_rejected_then_lgidict_runs_out",
+        "%s /LGIDict [%s]" % (vp_pdf_extras(rvp, wkt10), " ".join([inset("5 0 R")] * 9)),
+        [shared(CONTROL_CAP)], "viewport %d, then 8192 per inset: runs out on the 8th" % vp_cost,
+        {"outcome": "reject", "reason": "rmsGate", "fit": st},
+        "the /VP (rejections.cases rms_gate) was read in full and rejected; the LGIDict then runs out. The first "
+        "rejection is the one reported: rmsGate, not malformed")
+    last = PAGE_BUDGET - layers_cost - 7 * CONTROL_CAP
+    for cid, n, expected, note in (
+            ("exactly_at_limit", last, None, "Layers + 7 x 8192 + %d = 65536 exactly: nothing ran out" % last),
+            ("one_over_limit", last + 1, rej("malformed"), "Layers + 7 x 8192 + %d = 65537: runs out on the last "
+                                                           "inset" % (last + 1))):
+        add(cid, "/LGIDict [%s %s %s]" % (layers_pdf, " ".join([inset("5 0 R")] * 7), inset("6 0 R")),
+            [shared(CONTROL_CAP), shared(n)], "%d + 7 x 8192 + %d = %d" % (layers_cost, n,
+                                                                         layers_cost + 7 * CONTROL_CAP + n),
+            expected or lgi_expect(A_ctm, crop, "ctm", 0, "Layers"), note)
+    big = ("<< /Type /Viewport /Name (Map Layers) /BBox [0 0 10 10] /Measure << /Type /Measure /Subtype /GEO "
+           "/LPTS [0 0 1 0 1 1 0 1] /GPTS 5 0 R /GCS << /Type /PROJCS /EPSG 32610 >> >> >>")
+    add("oversized_array_not_charged",
+        "/VP [%s] /LGIDict [%s %s]" % (big, layers_pdf, " ".join([inset("6 0 R")] * 7)),
+        [shared(CONTROL_CAP + 1), shared(CONTROL_CAP)],
+        "viewport 4 + 8 (its 8193 GPTS is over the cap: malformed, not charged), Layers %d, 7 x 8192 = %d. "
+        "Charging the 8193 would make it %d and run out" % (layers_cost, 12 + layers_cost + 7 * CONTROL_CAP,
+                                                           12 + layers_cost + 7 * CONTROL_CAP + CONTROL_CAP + 1),
+        lgi_expect(A_ctm, crop, "ctm", 0, "Layers"),
+        "the viewport is malformed (GPTS over the 8192 cap) without touching the budget, so the LGIDict reads "
+        "fine and lands the sheet")
+    rl = ("<< /Type /Viewport /Name (Scale bar) /BBox 5 0 R /Measure << /Type /Measure /Subtype /RL "
+          "/R (1 in = 2000 ft) >> >>")
+    add("non_geo_viewports_not_charged",
+        "/VP [%s] /LGIDict [%s]" % (" ".join([rl] * 9), layers_pdf), [shared(CONTROL_CAP)],
+        "9 non-GEO viewports with 8192-number BBoxes aren't read; Layers %d" % layers_cost,
+        lgi_expect(A_ctm, crop, "ctm", 0, "Layers"), "only GEO viewports are read (and charged)")
+    scale_bar = ("<< /Type /Viewport /Name (Scale bar) /BBox [0 0 100 20] /Measure << /Type /Measure /Subtype /RL "
+                 "/R (1 in = 2000 ft) >> >>")
+    add("catalog_vp_runs_out",
+        "/VP [%s] /LGIDict [%s]" % (scale_bar, layers_pdf), [shared(CONTROL_CAP)],
+        "page /VP has no GEO viewport; catalog /VP: 4 + 2 x 8192 per junk viewport, runs out on the 4th",
+        rej("malformed"),
+        "the catalog /VP is read on the same page budget; running out there takes the page LGIDict down too",
+        catalog_extras="/VP [%s]" % " ".join([junk_vp] * 9))
+    row = "[%s]" % " ".join(dec(v, M_DP) for v in lgi["regs"][0])
+    reg_entry = ("<< /Type /LGIDict /Version (2.1) /Description (Inset) /Registration [%s] %s >>"
+                 % (" ".join(["6 0 R"] * 2048), proj_pdf))
+    add("registration_rows_charged",
+        "/LGIDict [%s %s %s]" % (layers_pdf, " ".join([inset("5 0 R")] * 7), reg_entry),
+        [shared(CONTROL_CAP), (row, {"text": row})],
+        "Layers %d + 7 x 8192 + 2048 rows x 4 = %d: runs out inside the Registration"
+        % (layers_cost, layers_cost + 7 * CONTROL_CAP + 2048 * 4), rej("malformed"),
+        "Registration rows are charged 4 each as they're read, after the row length check")
+    return out
+
+
+# ----------------------------------------------------------------------------
 # fiduciary fits
 # ----------------------------------------------------------------------------
 
@@ -2621,12 +3004,21 @@ def fid_fit(ref, name, points, datum, crop_bbox, note=None, extra_check=None):
                 loo_rms.append(math.sqrt(sum(r * r for r in rr) / len(rr)))
             exp["leaveOneOutMetres"] = [None if v is None else rm(v) for v in loo]
             exp["leaveOneOutRmsMetres"] = [None if v is None else rm(v) for v in loo_rms]
+            # WP4 contract rule 6.4: only when the whole fit is worse than tau, and only name a point when
+            # dropping exactly that one makes the rest Good. tau off the crop box diagonals through the fit
+            cb = crop_bbox
+            ends = [Ref.apply(A, x, y) for x, y in ((cb[0], cb[1]), (cb[2], cb[3]), (cb[2], cb[1]), (cb[0], cb[3]))]
+            diag = max(math.hypot(ends[0][0] - ends[1][0], ends[0][1] - ends[1][1]),
+                       math.hypot(ends[2][0] - ends[3][0], ends[2][1] - ends[3][1]))
+            tau = max(10.0, 0.0005 * diag)
+            rms = math.sqrt(sum(r * r for r in res) / len(res))
             flagged = []
-            usable = [i for i in range(len(pairs)) if loo_rms[i] is not None]
-            if len(pairs) >= 5 and usable:
-                k = min(usable, key=lambda i: (loo_rms[i], i))
-                if loo[k] > max(5.0, 5.0 * loo_rms[k]):
-                    flagged = [k]
+            if len(pairs) >= 5 and rms > tau:
+                good = [i for i in range(len(pairs)) if loo_rms[i] is not None and loo_rms[i] <= tau]
+                if len(good) == 1:
+                    flagged = good
+            exp["diagonalMetres"] = rm(diag)
+            exp["toleranceMetres"] = rm(tau)
             exp["flaggedOutliers"] = flagged
         else:
             exp["exactFit"] = True
@@ -2672,7 +3064,7 @@ def fiducial_section(ref, sheets):
     typo_pts[2] = (typo_pts[2][0], typo_pts[2][1], good.replace(" 51000 ", " 51300 "))
     out.append(fid_fit(ref, "sf_plain_typo_outlier", typo_pts, "WGS84", sf.media,
                        note="5 points on tacmap_grid_sf_plain.pdf, point index 2 has a typo (51000 -> 51300, 300 m). "
-                            "flag rule: n >= 5 and leaveOneOut > max(5 m, 5 * leaveOneOutRms)"))
+                            "flag rule (rules.outliers): RMS > tau and only dropping index 2 makes the rest Good"))
 
     # zone 55/56 boundary at 150E, sheet is a linear image of zone 55 (GDA94 MGA55 style)
     zc = Sheet("zc", Plane.utm(55, True, "GDA94"), 766000, 6250000, 20000, 20000, S50K)
@@ -2762,9 +3154,12 @@ def fiducial_section(ref, sheets):
         "crossValidated": "n >= 4",
         "leaveOneOut": "leaveOneOut[i] = distance from point i's plane coords to the fit of the other n-1 points "
                        "(null when those are degenerate); leaveOneOutRms[i] = RMS of that n-1 fit on its own points",
-        "outliers": "n >= 5 only: k = argmin leaveOneOutRms (ties -> lowest index, nulls skipped); flag k alone when "
-                    "leaveOneOut[k] > max(5 m, 5 * leaveOneOutRms[k]). One at a time, the user fixes it and we "
-                    "re-run. Proposed rule, plan only says 'outliers flagged'"},
+        "outliers": "WP4 contract rule 6.4 (replaces the WP1 proposal, which false-flagged 45-83% of clean 5-6 "
+                    "point fits): only when n >= 5 and RMS > tau, where tau = max(10 m, 0.0005 * D) and D is the "
+                    "longer of the two cropBBox diagonals mapped through the fit (plane metres, diagonalMetres / "
+                    "toleranceMetres). S = points whose leaveOneOutRms <= tau (nulls never count). flaggedOutliers "
+                    "= [i] when S = {i}, else []. |S| >= 2 (ambiguous) and |S| = 0 (disagree) flag nothing here, "
+                    "testdata/calibration_fit_report.json pins those"},
         "tolerance": {"planeMetres": 1e-3, "residualMetres": 1e-3, "eigenRatioRelative": 1e-6,
                       "wgs84Metres": 0.01, "pagePoints": 0.001},
         "sets": out,
@@ -3115,7 +3510,7 @@ def main():
         "projections": projections_section(ref),
         "gcs": gcs_section(ref),
         "sheets": sheet_entries,
-        "rejections": rejections_section(ref, sheets),
+        "rejections": rejections_section(ref, sheets, pdfdir),
         "fiduciaryFits": fiducial_section(ref, sheets),
         "tileWarp": tilewarp_section(ref, [(k,) + georefs[k] for k in ("sf_iso", "rot5_iso", "usgs_sf_north")]),
     }

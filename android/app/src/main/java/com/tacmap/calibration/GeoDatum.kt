@@ -300,7 +300,7 @@ object GeoDatums {
 
     /** exact code first, then the prefixes, NAS-X without its own row lands on the CONUS mean */
     fun forLgiCode(code: String): GeoDatum? {
-        val key = code.trim().uppercase(Locale.US)
+        val key = PdfValueRules.trim(code).uppercase(Locale.US)
         if (key.isEmpty()) return null
         rows.firstOrNull { (_, alias) -> key in alias.lgiCodes }?.let { return it.first }
         return rows.firstOrNull { (_, alias) -> alias.lgiCodePrefixes.any { key.startsWith(it) } }?.first

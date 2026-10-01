@@ -3,6 +3,7 @@ package com.tacmap.map
 import com.tacmap.localization.DisplayFormat
 
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -71,8 +72,12 @@ fun MgrsHeader(
     distanceFromUserMetres: Double? = null,
     /** Applied to the card itself, inside its side margins. */
     highlightModifier: Modifier = Modifier,
+    /** while calibrating (contract s7.8): provisional hides the coordinate, otherwise maybe a PREVIEW tag */
+    calibrationReadout: CalibrationReadout? = null,
     onDropPin: (() -> Unit)? = null
 ) {
+    val notGeoreferenced = calibrationReadout == CalibrationReadout.NotGeoreferenced
+    val shownCoordinate = if (notGeoreferenced) Messages.calibrationNotGeoreferenced() else primaryCoordinate
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val gmMils = rememberPersistedBoolean("gridMagneticMils", true)
@@ -83,9 +88,12 @@ fun MgrsHeader(
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xCC000000))
             .combinedClickable(
-                onClickLabel = L10n.text("Copy %1\$s coordinate", coordinateType.displayName),
+                // provisional: no copy action to announce either (OD-F15)
+                onClickLabel = if (notGeoreferenced) null else L10n.text("Copy %1\$s coordinate", coordinateType.displayName),
                 role = Role.Button,
                 onClick = {
+                    // nothing real to copy off a provisional placement
+                    if (notGeoreferenced) return@combinedClickable
                     val copied = copySensitivePlainText(
                         context,
                         L10n.text("%1\$s coordinate", coordinateType.displayName),
@@ -102,8 +110,8 @@ fun MgrsHeader(
                     ).show()
                     if (copied) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 },
-                onLongClickLabel = L10n.text("Drop pin at displayed coordinate"),
-                onLongClick = onDropPin?.let { drop ->
+                onLongClickLabel = if (notGeoreferenced) null else L10n.text("Drop pin at displayed coordinate"),
+                onLongClick = onDropPin?.takeUnless { notGeoreferenced }?.let { drop ->
                     {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         drop()
@@ -119,8 +127,8 @@ fun MgrsHeader(
         // The old source title was redundant; the selected primary coordinate
         // now leads the card directly.
         FittedHudText(
-            text = primaryCoordinate,
-            color = Color(0xFF8CF28C),
+            text = shownCoordinate,
+            color = if (notGeoreferenced) CalibrationHeaderColor else Color(0xFF8CF28C),
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = when (coordinateType) {
@@ -136,12 +144,18 @@ fun MgrsHeader(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics {
-                    contentDescription =
+                    // OD-F15: a provisional placement's coordinate is made up, TalkBack only
+                    // hears NOT GEOREFERENCED, same as what's on screen
+                    contentDescription = if (notGeoreferenced) {
+                        Messages.calibrationNotGeoreferenced()
+                    } else {
                         L10n.text("%1\$s coordinate %2\$s", coordinateType.displayName, primaryCoordinate)
+                    }
                 }
         )
-        // Immediate operational row: range left, elevation right.
-        Row(
+        // Immediate operational row: range left, elevation right. Off a provisional
+        // placement there's no real ground under the crosshair to measure to
+        if (!notGeoreferenced) Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -183,7 +197,11 @@ fun MgrsHeader(
                 ) {
                     if (basemapLabel != null) {
                         FittedHudText(
-                            basemapLabel,
+                            if ((calibrationReadout as? CalibrationReadout.Preview)?.showTag == true) {
+                                basemapLabel + " · " + Messages.calibrationPreviewTag()
+                            } else {
+                                basemapLabel
+                            },
                             color = basemapColor,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -222,7 +240,7 @@ fun MgrsHeader(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.CenterEnd
                 ) {
-                    if (gridMagneticDegrees != null) {
+                    if (gridMagneticDegrees != null && !notGeoreferenced) {
                         FittedHudText(
                             formatGridMagnetic(gridMagneticDegrees, gmMils.value),
                             color = Color.White.copy(alpha = 0.75f),
@@ -320,4 +338,10 @@ internal fun FittedHudText(
             maxLines = 1,
         )
     }
+}
+
+/** what the header reads while calibrating */
+sealed class CalibrationReadout {
+    data object NotGeoreferenced : CalibrationReadout()
+    data class Preview(val showTag: Boolean) : CalibrationReadout()
 }

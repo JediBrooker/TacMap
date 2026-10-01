@@ -139,11 +139,11 @@ internal fun PdfRenderDialogs(
         )
     }
     if (pdfRecovery != null && confirmDeleteSuspect) {
-        // same confirm as Layers > Delete
+        // same confirm as Layers > Imported maps > Delete (M10)
         AlertDialog(
             onDismissRequest = { onConfirmDeleteSuspect(false) },
-            title = { Text(Messages.layersDeleteImportedTitle()) },
-            text = { Text(Messages.layersDeleteImportedMessage()) },
+            title = { Text(Messages.mapDeleteTitle(pdfRecovery.displayName)) },
+            text = { Text(Messages.mapDeleteMessage()) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -151,7 +151,7 @@ internal fun PdfRenderDialogs(
                         vm.deleteSuspectPdf()
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF5A5A)),
-                ) { Text(Messages.layersDeleteImportedConfirm()) }
+                ) { Text(L10n.text("Delete")) }
             },
             dismissButton = { TextButton(onClick = { onConfirmDeleteSuspect(false) }) { Text(L10n.text("Cancel")) } },
         )
@@ -187,7 +187,12 @@ internal fun PdfRenderDialogs(
             confirmButton = {},
             dismissButton = { TextButton(onClick = { vm.bakeManager.dismiss() }) { Text(L10n.text("Cancel")) } },
         )
-        is PdfBakeManager.State.Confirming -> BakeConfirmDialog(bakeState.proposal, vm.bakeManager)
+        is PdfBakeManager.State.Confirming -> BakeConfirmDialog(
+            bakeState.proposal,
+            vm.bakeManager,
+            // OD-F9: a row-menu bake of another map says the screen won't change
+            onScreen = pdf != null && pdf.render.renderGuardToken == bakeState.proposal.renderGuardToken,
+        )
         is PdfBakeManager.State.Failed -> AlertDialog(
             onDismissRequest = { vm.bakeManager.dismiss() },
             title = { Text(Messages.pdfBakeErrorTitle()) },
@@ -199,7 +204,7 @@ internal fun PdfRenderDialogs(
 }
 
 @Composable
-private fun BakeConfirmDialog(proposal: PdfBakeManager.Proposal, manager: PdfBakeManager) {
+private fun BakeConfirmDialog(proposal: PdfBakeManager.Proposal, manager: PdfBakeManager, onScreen: Boolean) {
     val context = LocalContext.current
     var chosen by remember(proposal) { mutableStateOf(proposal.initial) }
     AlertDialog(
@@ -207,11 +212,12 @@ private fun BakeConfirmDialog(proposal: PdfBakeManager.Proposal, manager: PdfBak
         title = { Text(Messages.pdfBakeConfirmTitle()) },
         text = {
             Column {
+                val minutes = Messages.pdfBakeMinutes(DisplayFormat.number(chosen.minutes.toDouble(), 0))
                 Text(
-                    Messages.pdfBakeConfirmMessage(
-                        proposal.pdfName,
-                        Messages.pdfBakeMinutes(DisplayFormat.number(chosen.minutes.toDouble(), 0)),
-                    ),
+                    when (ImportUiRules.bakeConfirmKey(onScreen)) {
+                        "pdf_bake_confirm_message" -> Messages.pdfBakeConfirmMessage(proposal.pdfName, minutes)
+                        else -> Messages.pdfBakeConfirmMessageInactive(proposal.pdfName, minutes)
+                    },
                     fontSize = 14.sp,
                 )
                 proposal.options.forEach { o ->

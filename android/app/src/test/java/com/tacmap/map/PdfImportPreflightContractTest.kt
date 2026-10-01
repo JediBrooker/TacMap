@@ -1,6 +1,11 @@
 package com.tacmap.map
 
 import com.tacmap.calibration.GeorefRejectReason
+import com.tacmap.calibration.ImportError
+import com.tacmap.calibration.ImportFailure
+import com.tacmap.calibration.ImportLimits
+import com.tacmap.calibration.ImportPrecheck
+import com.tacmap.calibration.ImportedMapKind
 import com.tacmap.localization.Messages
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -62,15 +67,22 @@ class PdfImportPreflightContractTest {
     }
 
     @Test
-    fun invalidAndProtectedInputsGetAStableNonTechnicalMessage() {
-        val message = pdfImportUserMessage(IllegalStateException("private/path/document.pdf"))
-        assertTrue(message.contains("invalid or password-protected"))
-        assertTrue(!message.contains("private/path"))
+    fun invalidAndProtectedInputsGetTheSharedImportMessages() {
+        // WP5 (D5-20): typed import errors, the same keys and words as iOS, never the
+        // exception text (which can carry the picked file's path)
+        val invalid = CalibrationText.importFailure(ImportFailure(ImportError.INVALID_PDF)) { it.toString() }
+        assertEquals(shared("map_import_invalid_pdf"), invalid)
+        val locked = CalibrationText.importFailure(ImportFailure(ImportError.PASSWORD)) { it.toString() }
+        assertEquals(shared("map_import_password"), locked)
+        assertTrue(!invalid.contains("/"))
     }
 
     @Test
-    fun hugeInputGetsTheDocumentedLimit() {
-        val failure = IllegalArgumentException("Import exceeds the supported size limit")
-        assertTrue(pdfImportUserMessage(failure).contains("256 MB"))
+    fun hugeInputGetsTheSharedLimit() {
+        // 512 MiB on both apps now (Android was 256 MB): the limit arg is the byte count
+        val failure = ImportPrecheck.check(true, 0, ImportedMapKind.PDF, ImportLimits.PDF_MAX_BYTES + 1, Long.MAX_VALUE)!!
+        assertEquals(ImportError.TOO_LARGE, failure.error)
+        val text = CalibrationText.importFailure(failure) { "${it / (1024 * 1024)} MiB" }
+        assertEquals(shared("map_import_too_large").replace("{1}", "512 MiB"), text)
     }
 }

@@ -58,7 +58,14 @@ class PdfMapSource(
     val georefIssue: PdfGeorefIssue? = null,
     /** fiduciaries left over from a calibration that couldn't be rebuilt, seeds the next attempt */
     val pendingFiduciaries: List<Fiduciary> = emptyList(),
-    val render: PdfRenderMeta = PdfRenderMeta(),
+    /** library entry this came from, null for the legacy session readers */
+    val entryId: String? = null,
+    /** 0-based page shown */
+    val pageIndex: Int = 0,
+    val contentKey: String? = null,
+    /** a calibration preview of a sheet with no georef yet, never durable (D2-06, D5-02) */
+    val isPreview: Boolean = false,
+    val render: PdfRenderMeta = PdfRenderMeta(contentKey = contentKey),
     override val id: String = UUID.randomUUID().toString(),
 ) : MapSource {
 
@@ -80,6 +87,9 @@ class PdfMapSource(
             kind = MapSourceKind.CALIBRATED_PDF,
             calibration = Calibration.Fiduciaries(fiduciaries, georef),
             geometry = geometry,
+            entryId = entryId,
+            pageIndex = pageIndex,
+            contentKey = contentKey,
             // a new georef makes any baked tiles wrong, reconcile reaps the file
             render = render.copy(bake = null),
         )
@@ -87,7 +97,28 @@ class PdfMapSource(
 
     /** same map as far as the UI is concerned (same id), just new render bits (a bake landed, say) */
     fun withRender(meta: PdfRenderMeta): PdfMapSource = PdfMapSource(
-        uri, displayName, kind, calibration, geometry, provisional, georefIssue, pendingFiduciaries, meta, id,
+        uri, displayName, kind, calibration, geometry, provisional, georefIssue, pendingFiduciaries,
+        entryId, pageIndex, contentKey, isPreview, meta, id,
+    )
+
+    /**
+     * the same sheet drawn on [georef] instead (calibration's displayed georef), no bake.
+     * the tile runtime keys on the placement so this gets its own tile source
+     */
+    fun drawnOn(georef: PdfGeoreference): PdfMapSource = PdfMapSource(
+        uri = uri,
+        displayName = displayName,
+        kind = kind,
+        calibration = null,
+        geometry = geometry,
+        provisional = georef,
+        georefIssue = georefIssue,
+        entryId = entryId,
+        pageIndex = pageIndex,
+        contentKey = contentKey,
+        isPreview = isPreview,
+        render = render.copy(bake = null),
+        id = id,
     )
 
     companion object {

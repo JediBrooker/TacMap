@@ -537,7 +537,8 @@ object GeoPdfGeoreferencer {
         display: GeoPdfLgiProjectionData?,
     ): LgiDecode {
         fun fail(reason: GeorefRejectReason) = LgiDecode.Fail(reason)
-        val type = projection.projectionType?.trim()?.uppercase(Locale.US)?.takeIf { it.isNotEmpty() }
+        // text values: trimmed (fiduciaryFits.whiteSpaceCodePoints) and case-insensitive
+        val type = projection.projectionType?.let(PdfValueRules::trim)?.uppercase(Locale.US)?.takeIf { it.isNotEmpty() }
             ?: return fail(GeorefRejectReason.MALFORMED)
         val geographic = type in GEOGRAPHIC_TYPES
         if (!geographic && type !in PROJECTED_TYPES) return fail(GeorefRejectReason.UNSUPPORTED_PROJECTION)
@@ -573,7 +574,7 @@ object GeoPdfGeoreferencer {
         // CTM and Registration are metres. Lat/lon ignores it, a foot UTM can't mean anything sane
         var unit = 1.0
         if (!geographic && projection.units != null) {
-            unit = when (projection.units.trim().uppercase(Locale.US)) {
+            unit = when (PdfValueRules.trim(projection.units).uppercase(Locale.US)) {
                 in METRE_UNITS -> 1.0
                 "FT" -> FOOT
                 "USSF" -> US_SURVEY_FOOT
@@ -588,7 +589,7 @@ object GeoPdfGeoreferencer {
             type == "UT" || type == "UTM" -> {
                 val zone = (projection.zone ?: display?.zone)?.takeIf { it.isFinite() && it == Math.rint(it) && it in 1.0..60.0 }
                     ?: return fail(GeorefRejectReason.MALFORMED)
-                val south = when ((projection.hemisphere ?: display?.hemisphere)?.trim()?.uppercase(Locale.US)) {
+                val south = when ((projection.hemisphere ?: display?.hemisphere)?.let(PdfValueRules::trim)?.uppercase(Locale.US)) {
                     "N", "NORTH" -> false
                     "S", "SOUTH" -> true
                     else -> return fail(GeorefRejectReason.MALFORMED)
@@ -612,7 +613,12 @@ object GeoPdfGeoreferencer {
                 val fe = num("FalseEasting")
                 val fn = num("FalseNorthing")
                 if (p1 == null || lat0 == null || cm == null || fe == null || fn == null) return fail(GeorefRejectReason.MALFORMED)
-                val p2 = num("StandardParallelTwo") ?: p1
+                // present but unusable is malformed, it never quietly turns into SP1 (lgiRules.valueTypes)
+                val p2 = if (projection.parameters.containsKey("StandardParallelTwo")) {
+                    num("StandardParallelTwo") ?: return fail(GeorefRejectReason.MALFORMED)
+                } else {
+                    p1
+                }
                 if (!(abs(p2) < 89.999)) return fail(GeorefRejectReason.MALFORMED)
                 GeoCrs.LambertConformalConic2SP(p1, p2, lat0, cm, fe * unit, fn * unit)
             }

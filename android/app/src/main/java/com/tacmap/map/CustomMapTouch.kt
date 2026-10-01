@@ -111,7 +111,6 @@ internal fun MapItemTouchOverlayCustom(
     camera: MapCamera,
     density: Float,
     drawingInputEnabled: Boolean,
-    calibrationInputEnabled: Boolean,
     locked: Boolean,
     onDragStateChange: (MapItemDrag?) -> Unit,
     onWaypointTap: (Waypoint) -> Unit,
@@ -124,12 +123,13 @@ internal fun MapItemTouchOverlayCustom(
     rotationEnabled: Boolean,
     onCameraChange: (MapCamera) -> Unit,
     onMapGestureStart: () -> Unit,
-    onEmptyTap: () -> Unit,
+    /** a tap that hit nothing, with where it landed (calibration hit-tests its markers off this) */
+    onEmptyTap: (Offset) -> Unit,
     /** Held still on empty map (no symbol, drawing or unit marker): the point
      * and its screen position. Null disables the long-press menu. */
     onEmptyLongPress: ((lat: Double, lng: Double, screen: Offset) -> Unit)? = null,
 ) {
-    if (drawingInputEnabled || calibrationInputEnabled) return
+    if (drawingInputEnabled) return
     val proj = remember(camera, density) { MapProjection(camera, density) }
     val context = LocalContext.current
     val drawingTolerancePx = with(LocalDensity.current) { 22.dp.toPx() }
@@ -385,7 +385,7 @@ internal fun MapItemTouchOverlayCustom(
                             }
 
                             CustomMapGestureMode.MAP_PENDING -> {
-                                if (peerHit != null) cOnPeerTap.value(peerHit) else cOnEmpty.value()
+                                if (peerHit != null) cOnPeerTap.value(peerHit) else cOnEmpty.value(start)
                             }
                             CustomMapGestureMode.MAP_TRANSFORM -> Unit
                         }
@@ -579,33 +579,34 @@ private fun CustomVertexHandleBox(
     }
 }
 
-/// Tap + free-draw capture for drawing / calibration input on the SDK-free
+/// Tap + free-draw capture for drawing / measure input on the SDK-free
 /// renderer. Replaces the SDK's onMapClick + the free-draw pointerInput.
+/// Calibration doesn't come through here any more: it keeps the full pan/zoom/
+/// rotate overlay and places points with the crosshair (D2-01).
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 internal fun MapInputOverlay(
     camera: MapCamera,
     density: Float,
     drawingInputEnabled: Boolean,
-    calibrationInputEnabled: Boolean,
     freeDrawActive: Boolean,
     onDrawingTap: (lat: Double, lng: Double) -> Unit,
-    onCalibrationTap: (lat: Double, lng: Double) -> Unit,
     onFreeDrawPoint: (lat: Double, lng: Double) -> Unit,
     onFreeDrawEnd: () -> Unit
 ) {
-    if (!drawingInputEnabled && !calibrationInputEnabled && !freeDrawActive) return
+    if (!drawingInputEnabled && !freeDrawActive) return
     val proj = remember(camera, density) { MapProjection(camera, density) }
     val cProj = rememberUpdatedState(proj)
     val cOnDraw = rememberUpdatedState(onDrawingTap)
-    val cOnCal = rememberUpdatedState(onCalibrationTap)
+    val cDrawing = rememberUpdatedState(drawingInputEnabled)
     val cOnFree = rememberUpdatedState(onFreeDrawPoint)
     val cOnFreeEnd = rememberUpdatedState(onFreeDrawEnd)
 
     if (freeDrawActive) {
         var lastLat = remember { doubleArrayOf(Double.NaN) }
         var lastLng = remember { doubleArrayOf(Double.NaN) }
-        Box(Modifier.fillMaxSize().pointerInput(Unit) {
+        // keyed on the modes so a gesture handler never runs with a stale capture of them
+        Box(Modifier.fillMaxSize().pointerInput(drawingInputEnabled, freeDrawActive) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 down.consume()
@@ -628,11 +629,10 @@ internal fun MapInputOverlay(
             }
         })
     } else {
-        Box(Modifier.fillMaxSize().pointerInput(Unit) {
+        Box(Modifier.fillMaxSize().pointerInput(drawingInputEnabled, freeDrawActive) {
             detectTapGestures { pos ->
                 val (lat, lng) = cProj.value.fromScreen(pos.x, pos.y)
-                if (drawingInputEnabled) cOnDraw.value(lat, lng)
-                else if (calibrationInputEnabled) cOnCal.value(lat, lng)
+                if (cDrawing.value) cOnDraw.value(lat, lng)
             }
         })
     }

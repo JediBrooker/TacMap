@@ -24,7 +24,8 @@ enum PDFSessionStore {
     /// The v1 migration runs off main (migrateStoredSession) while the UI can
     /// still save/clear/restore on main. One lock round every entry point that
     /// reads-then-writes, so a late migration save can't clobber a newer
-    /// session or bring back a cleared one. Recursive, load() calls save().
+    /// session or bring back a cleared one. load() only holds it to snapshot and
+    /// to commit, never across the parse. Recursive, load() calls save().
     private static let lock = NSRecursiveLock()
 
     /// Exact encrypted preference bytes captured before a cross-store map
@@ -166,45 +167,9 @@ enum PDFSessionStore {
         }
     }
 
-    enum BakeAttach: Equatable { case attached, sourceChanged, writeFailed }
-
-    /// S1: put a finished bake into the stored session, and only that field.
-    /// The stored session has to still be the sheet the bake was made from:
-    /// same file, same guard token, and its own georef has to give the same
-    /// bake key. Anything else (recalibrated, reimported, another map) is
-    /// sourceChanged. Never re-saves the object the bake started with, that
-    /// one can be stale
-    static func attachBake(_ record: PDFBakeRecord, fileName: String, renderGuardToken: String,
-                           bakeKey: String, tilePx: Int) -> BakeAttach {
-        lock.lock()
-        defer { lock.unlock() }
-        let defaults = defaultsProvider()
-        // R6: no session at all = it no longer matches the bake. one we cant
-        // unseal (locked) or decode is a write problem, not a different map
-        guard let stored = defaults.data(forKey: key) else { return .sourceChanged }
-        guard let data = unseal(stored, Self.labelActive),
-              var dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else { return .writeFailed }
-        guard dto.fileName == fileName, dto.renderGuardToken == renderGuardToken,
-              let georef = dto.georef,
-              PDFRenderContext.bakeKey(georef: georef, tilePx: tilePx) == bakeKey else { return .sourceChanged }
-        guard validBake(record) else { return .writeFailed }
-        dto.bake = record
-        guard valid(dto), let out = try? JSONEncoder().encode(dto), let sealed = seal(out, Self.labelActive),
-              commitSealedDefaults(sealed, key: key, defaults: defaults) else { return .writeFailed }
-        return .attached
-    }
-
-    /// content key of the saved active PDF, without resolving or hashing the
-    /// file. The bake uses it to make sure it isnt about to write its record
-    /// over a different map's session.
-    static func activeContentKey() -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let stored = defaultsProvider().data(forKey: key),
-              let data = unseal(stored, Self.labelActive),
-              let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else { return nil }
-        return dto.contentKey
-    }
+    // the bake record + crash guard token moved onto the library entry with the
+    // WP4 merge (attachBake, the sweep's record read). This store only gets
+    // read once more, by ImportedMapLibraryMigration, which keeps the token
 
     /// True when the saved session is a v1 (or filename-only) record, so the
     /// next load() re-parses the PDF. Cheap, it only opens the small sealed JSON.
@@ -223,71 +188,137 @@ enum PDFSessionStore {
         _ = load()
     }
 
-    static func load() -> PDFMapSource? {
-        lock.lock()
-        defer { lock.unlock() }
+    /// Test seam: runs in the unlocked middle of load(), after the snapshot and
+    /// before the re-validate + commit. Production leaves it nil.
+    static var unlockedPhaseHook: (() -> Void)?
+
+    /// What the unlocked part of load() decided, committed under the lock only
+    /// if the stored bytes are still the ones it started from.
+    private enum LoadStep {
+        /// locked key or a reseal we can't do yet: return nil, touch nothing
+        case leave
+        /// unreadable / stale / gone: drop the entry
+        case clear(ClearReason)
+        /// publish source. resealed = plaintext legacy bytes sealed in place first,
+        /// save = rewrite as content-bound v2, clearIfSaveFails for the rebuilt
+        /// legacy identity that must not survive half done
+        case publish(PDFMapSource, resealed: Data?, save: Bool, clearIfSaveFails: Bool)
+    }
+
+    /// why load() would drop the record. the migration only lets gone through
+    private enum ClearReason { case invalidRecord, fileGone, fileUnreadable }
+
+    /// S3: what the library migration may do with the session. load() clears a
+    /// record whose file it can't hash or whose bytes changed, which is fine for
+    /// the old live reader but would let the migration drop a map that's still
+    /// on disk. This reads without touching anything
+    enum MigrationRead {
+        case none
+        /// there but it won't open, convert or hash: fail closed
+        case blocked
+        /// its file is gone (D5-19), nothing to keep
+        case gone
+        case source(PDFMapSource)
+    }
+
+    static func migrationRead() -> MigrationRead {
         let defaults = defaultsProvider()
-        guard let stored = defaults.data(forKey: key) else { return nil }
-        // Locked key returns nil. Do NOT clear the entry: the user would lose
-        // their calibrated sheet just for opening the app before authenticating.
-        guard let data = unseal(stored, Self.labelActive) else { return nil }
-        guard let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else {
-            defaults.removeObject(forKey: key)
-            return nil
+        lock.lock()
+        let snapshot = defaults.data(forKey: key)
+        lock.unlock()
+        guard let stored = snapshot else { return .none }
+        switch loadStep(stored, defaults: defaults) {
+        case .leave: return .blocked
+        case .clear(.fileGone): return .gone
+        case .clear: return .blocked
+        case .publish(let source, _, _, _): return .source(source)
         }
-        guard valid(dto) else {
-            defaults.removeObject(forKey: key)
-            return nil
-        }
-        // Written by a pre-encryption build, seal it in place.
-        if !SealedEnvelope.isSealedFile(stored) {
-            guard let sealed = seal(data, Self.labelActive),
-                  commitSealedDefaults(sealed, key: key, defaults: defaults) else {
-                // The legacy descriptor remains byte-for-byte intact, but the
-                // marker-first attempt fences it from a future plaintext
-                // downgrade. Do not publish area-of-interest metadata until
-                // its authenticated migration is durable.
+    }
+
+    /// a file by that name is still in ImportedMaps or the old Documents spot
+    private static func anyCandidateExists(named fileName: String) -> Bool {
+        guard !fileName.isEmpty, fileName == URL(fileURLWithPath: fileName).lastPathComponent else { return false }
+        let fm = FileManager.default
+        if let dir = try? importedMapsDirectoryProvider(),
+           fm.fileExists(atPath: dir.appendingPathComponent(fileName).path) { return true }
+        if let docs = legacyDocumentsDirectoryProvider(),
+           fm.fileExists(atPath: docs.appendingPathComponent(fileName).path) { return true }
+        return false
+    }
+
+    /// Snapshot under the lock, do the slow part (hashing, the v1 re-parse that
+    /// takes seconds on a big USGS sheet) WITHOUT it, then re-take the lock and
+    /// only commit if nobody saved/cleared meanwhile, else start over from the
+    /// newer bytes. Holding the lock through the parse used to freeze every main
+    /// thread save/clear/restore behind a background migration.
+    static func load() -> PDFMapSource? {
+        let defaults = defaultsProvider()
+        for _ in 0..<4 {
+            lock.lock()
+            let snapshot = defaults.data(forKey: key)
+            lock.unlock()
+            guard let stored = snapshot else { return nil }
+            let step = loadStep(stored, defaults: defaults)
+            unlockedPhaseHook?()
+            lock.lock()
+            defer { lock.unlock() }
+            // a save/clear landed while we were parsing: their bytes win, go again
+            guard defaults.data(forKey: key) == stored else { continue }
+            switch step {
+            case .leave:
                 return nil
+            case .clear:
+                defaults.removeObject(forKey: key)
+                return nil
+            case let .publish(source, resealed, save, clearIfSaveFails):
+                if let resealed {
+                    // The legacy descriptor remains byte-for-byte intact if this
+                    // fails, but the marker-first attempt fences it from a future
+                    // plaintext downgrade. Don't publish area-of-interest metadata
+                    // until its authenticated migration is durable.
+                    guard commitSealedDefaults(resealed, key: key, defaults: defaults) else { return nil }
+                }
+                if save, !Self.save(source), clearIfSaveFails {
+                    defaults.removeObject(forKey: key)
+                    return nil
+                }
+                return source
             }
         }
-        // OD-F4: a content bound v2 session whose file is missing, truncated or
-        // swapped keeps the selection. The source comes back flagged, the
-        // renderer fails it as cannotOpen (G1, Try Again), and once the right
-        // bytes are back Try Again or the next launch just works. Nothing here
-        // ever draws bytes that dont match the stored key
-        let contentBound = dto.contentKey != nil && dto.georef != nil
+        // kept losing the race, the next launch gets another go
+        return nil
+    }
+
+    /// The slow, lock free half of load(): decode, find + hash the file, rebuild.
+    private static func loadStep(_ stored: Data, defaults: UserDefaults) -> LoadStep {
+        // Locked key returns nil. Do NOT clear the entry: the user would lose
+        // their calibrated sheet just for opening the app before authenticating.
+        guard let data = unseal(stored, Self.labelActive) else { return .leave }
+        guard let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data), valid(dto) else { return .clear(.invalidRecord) }
+        // Written by a pre-encryption build, seal it in place (committed with the rest)
+        var resealed: Data?
+        if !SealedEnvelope.isSealedFile(stored) {
+            guard let sealed = seal(data, Self.labelActive) else { return .leave }
+            resealed = sealed
+        }
+        // legacy reader only now (the library migration): OD-F4 lives on the
+        // library entry, a session whose file is gone just isn't migrated
         guard let resolved = resolveImportedMap(
             named: dto.fileName,
             expectedContentKey: dto.contentKey
         ) else {
-            if contentBound, let kept = unavailableSource(dto) {
-                NSLog("[PDFSessionStore] active PDF file missing or changed; keeping the session")
-                return kept
-            }
             NSLog("[PDFSessionStore] active PDF file vanished; clearing session")
-            defaults.removeObject(forKey: key)
-            return nil
+            // a same name file that doesnt hash to the record isnt gone, it's unreadable
+            return .clear(anyCandidateExists(named: dto.fileName) ? .fileUnreadable : .fileGone)
         }
         let url = resolved.url
         guard let actualContentKey = Self.contentKey(for: url) else {
-            if contentBound, let kept = unavailableSource(dto) {
-                NSLog("[PDFSessionStore] active PDF could not be fingerprinted; keeping the session")
-                return kept
-            }
             NSLog("[PDFSessionStore] active PDF could not be fingerprinted; clearing stale session")
-            defaults.removeObject(forKey: key)
-            return nil
+            return .clear(.fileUnreadable)
         }
-        if let expectedContentKey = dto.contentKey {
-            guard actualContentKey == expectedContentKey else {
-                if contentBound, let kept = unavailableSource(dto) {
-                    NSLog("[PDFSessionStore] active PDF content changed; keeping the session")
-                    return kept
-                }
-                NSLog("[PDFSessionStore] active PDF content changed; clearing stale session")
-                defaults.removeObject(forKey: key)
-                return nil
-            }
+        if let expectedContentKey = dto.contentKey, actualContentKey != expectedContentKey {
+            NSLog("[PDFSessionStore] active PDF content changed; clearing stale session")
+            return .clear(.fileUnreadable)
         }
 
         // Filename-only descriptors cannot authenticate which bytes their
@@ -298,12 +329,8 @@ enum PDFSessionStore {
         // historical sheet's affine during an upgrade.
         if dto.contentKey == nil && resolved.legacyCorroboratedContentKey != actualContentKey {
             let rebuilt = rebuildFromBytes(url: url, contentKey: actualContentKey, legacy: dto)
-            guard save(rebuilt) else {
-                defaults.removeObject(forKey: key)
-                return nil
-            }
             NSLog("[PDFSessionStore] legacy PDF identity was unverified; calibration must be repeated")
-            return rebuilt
+            return .publish(rebuilt, resealed: resealed, save: true, clearIfSaveFails: true)
         }
 
         let source: PDFMapSource
@@ -317,13 +344,9 @@ enum PDFSessionStore {
                                pointsAreRaw: (dto.version ?? 1) >= 2 || dto.calibration?.pointsAreRaw == true)
         }
         // v1 and corroborated legacy copies get rewritten as content-bound v2
-        // so the next launch doesn't redo the migration (or trust a filename).
-        // Same for a session from before the crash guard: the token has to
-        // be stable across launches or the guard can never match it
-        if dto.contentKey == nil || dto.georef == nil || token == nil {
-            _ = save(source)
-        }
-        return source
+        // so the next launch doesn't redo the migration (or trust a filename)
+        return .publish(source, resealed: resealed, save: dto.contentKey == nil || dto.georef == nil,
+                        clearIfSaveFails: false)
     }
 
     private static func v2Source(_ dto: PersistedPDF, georef: PdfGeoreference, url: URL, contentKey: String,
@@ -340,19 +363,6 @@ enum PDFSessionStore {
         if source.calibration == nil, let pending = dto.pendingFiduciaries {
             source.keepPendingFiduciaries(pending)
         }
-        return source
-    }
-
-    /// OD-F4: the session as stored, pointing at where its file should be,
-    /// flagged so the renderer re-checks the bytes before drawing anything.
-    /// Not saved, the stored record is left exactly as it was
-    private static func unavailableSource(_ dto: PersistedPDF) -> PDFMapSource? {
-        guard let georef = dto.georef, let key = dto.contentKey,
-              let directory = try? importedMapsDirectoryProvider() else { return nil }
-        let url = directory.appendingPathComponent(dto.fileName)
-        let token = dto.renderGuardToken.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
-        let source = v2Source(dto, georef: georef, url: url, contentKey: key, token: token)
-        source.storedFileUnavailable = true
         return source
     }
 
@@ -491,33 +501,21 @@ enum PDFSessionStore {
         return defaults.data(forKey: key) == snapshot.stored
     }
 
-    /// R3-2: what the sealed session says about its bake, for the bake only
-    /// sweep. unreadable = locked, tampered, wont decode or still legacy
-    /// plaintext, the sweep then doesnt touch anything. no session at all is a
-    /// read that names no bake
-    enum StoredBake: Equatable {
-        case read(fileName: String?)
-        case unreadable
+    /// True when there's an active session record at all (sealed or not),
+    /// without opening it. The library migration uses it to know there's work.
+    static var hasStoredSession: Bool {
+        defaultsProvider().data(forKey: key) != nil
     }
 
-    /// F6: the selector's say on whether a PDF is active or retained (nil =
-    /// unreadable), see storedBakeForSweep. Tests stub it
-    static var retainedPDFProbe: () -> Bool? = { ActiveMapSelectionStore.mayHavePDF() }
-
-    static func storedBakeForSweep() -> StoredBake {
+    /// Drop the per-file calibration library. After the WP5 migration the
+    /// imported-map library owns calibrations, so these records are dead.
+    @discardableResult
+    static func clearLibrary() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard let stored = defaultsProvider().data(forKey: key) else {
-            // F6: no record but the selector has a PDF active or retained (or cant
-            // be read): the session should be there and isnt, thats not "names nothing"
-            return retainedPDFProbe() == false ? .read(fileName: nil) : .unreadable
-        }
-        // still legacy plaintext: not the sealed record, load() seals it first. skip
-        guard SealedEnvelope.isSealedFile(stored),
-              let data = unseal(stored, Self.labelActive),
-              let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else { return .unreadable }
-        // a record load() would throw away names nothing either
-        return .read(fileName: dto.bake.flatMap { validBake($0) ? $0.fileName : nil })
+        let defaults = defaultsProvider()
+        defaults.removeObject(forKey: libraryKey)
+        return defaults.data(forKey: libraryKey) == nil
     }
 
     @discardableResult
@@ -641,15 +639,7 @@ enum PDFSessionStore {
     }
 
     /// a bake record we wrote: plain file name in offline_tiles, sane numbers
-    static func validBake(_ b: PDFBakeRecord) -> Bool {
-        let name = b.fileName
-        return !name.isEmpty && name == URL(fileURLWithPath: name).lastPathComponent
-            && !name.contains("/") && !name.contains("\\") && name.lowercased().hasSuffix(".mbtiles")
-            && b.bakeKey.count == 64 && b.bakeKey.allSatisfy { $0.isHexDigit }
-            && (16...1024).contains(b.tilePx)
-            && b.minZoom >= 0 && b.minZoom <= b.maxZoom && b.maxZoom <= PDFTileConstants.maxZoomCap
-            && b.bytes >= 0
-    }
+    static func validBake(_ b: PDFBakeRecord) -> Bool { b.isValidRecord }
 
     private static func valid(_ dto: PersistedPDF) -> Bool {
         let numbers = [dto.swLat, dto.swLng, dto.neLat, dto.neLng,
@@ -706,6 +696,10 @@ enum PDFSessionStore {
         contentKey: String,
         _ cal: PersistedCalibration
     ) {
+        // read-modify-write of the library, and migrateV1 calls this from load()'s
+        // unlocked phase, so it takes the (recursive) lock itself
+        lock.lock()
+        defer { lock.unlock() }
         guard validContentKey(contentKey), calibrationIsValid(cal) else { return }
         var lib = loadLibrary()
         lib.byContentHash[contentKey] = cal
@@ -910,11 +904,18 @@ enum ManagedImportedMapFileLifecycle {
     /// points at, and the full reconcile wont run while the stored PDF is
     /// missing. This one only looks at regular files directly inside directory
     /// named tacmap-bake-*.mbtiles (plus sqlite sidecars) and deletes the ones
-    /// that arent keeping. Callers only get here once the sealed session was
+    /// that arent keeping. Callers only get here once the sealed library was
     /// actually read, never on a locked or unreadable store. Bakes can always
     /// be made again, so its fine with the PDF missing
     @discardableResult
     static func sweepUnreferencedBakes(in directory: URL, keeping fileName: String?,
+                                       fileManager: FileManager = .default) -> Bool {
+        sweepUnreferencedBakes(in: directory, keepingNames: fileName.map { Set([$0]) } ?? [], fileManager: fileManager)
+    }
+
+    /// same, keeping every bake the library names (one per PDF entry)
+    @discardableResult
+    static func sweepUnreferencedBakes(in directory: URL, keepingNames keep: Set<String>,
                                        fileManager: FileManager = .default) -> Bool {
         guard directory.isFileURL else { return false }
         return withManagedFilesLock {
@@ -931,7 +932,7 @@ enum ManagedImportedMapFileLifecycle {
                 let name = child.lastPathComponent
                 let base = sqliteSidecarSuffixes.first(where: { name.hasSuffix($0) })
                     .map { String(name.dropLast($0.count)) } ?? name
-                guard isGeneratedBakeName(base), base != fileName else { continue }
+                guard isGeneratedBakeName(base), !keep.contains(base) else { continue }
                 guard let v = try? child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
                       v.isSymbolicLink != true, v.isRegularFile == true else {
                     // a dir or link wearing a bake name is never followed
@@ -950,10 +951,13 @@ enum ManagedImportedMapFileLifecycle {
         }
     }
 
+    /// - Parameter inFlight: partials of an import/bake that hasn't committed
+    ///   yet. Never touched, even though they look like crash residue.
     @discardableResult
     static func reconcile(
         directories: [URL],
         keeping: Set<URL>,
+        inFlight: Set<URL> = [],
         fileManager: FileManager = .default
     ) -> Bool {
         var complete = true
@@ -998,7 +1002,19 @@ enum ManagedImportedMapFileLifecycle {
                 complete = false
                 continue
             }
+            let busy = Set(inFlight.map { $0.standardizedFileURL.resolvingSymlinksInPath().standardizedFileURL.path })
             for child in children where isManagedCandidateName(child.lastPathComponent) {
+                let childPath = child.standardizedFileURL.resolvingSymlinksInPath().standardizedFileURL.path
+                if busy.contains(childPath) { continue }
+                // a kept MBTiles' -wal/-shm/-journal belong to it, an open SQLite
+                // handle may still need them
+                if let base = sqliteSidecarBase(child.lastPathComponent) {
+                    let dir = URL(fileURLWithPath: childPath).deletingLastPathComponent().path
+                    if canonicalKeep.contains(where: { $0.lastPathComponent.lowercased() == base
+                        && $0.deletingLastPathComponent().path == dir }) {
+                        continue
+                    }
+                }
                 guard let candidate = validatedManagedMap(
                     child,
                     canonicalDirectories: [root.canonical],
@@ -1039,6 +1055,13 @@ enum ManagedImportedMapFileLifecycle {
         let canonical = candidate.resolvingSymlinksInPath().standardizedFileURL
         guard canonicalDirectories.contains(canonical.deletingLastPathComponent()) else { return nil }
         return canonical
+    }
+
+    /// "map-x.mbtiles-wal" -> "map-x.mbtiles" (lowercased), nil for anything else
+    private static func sqliteSidecarBase(_ name: String) -> String? {
+        let lower = name.lowercased()
+        guard let suffix = sqliteSidecarSuffixes.first(where: lower.hasSuffix) else { return nil }
+        return String(lower.dropLast(suffix.count))
     }
 
     private static func isManagedCandidateName(_ name: String) -> Bool {

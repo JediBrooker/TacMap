@@ -217,6 +217,9 @@ class PdfBakeRemovalTest {
             ok.copy(fileName = "sub/tacmap-bake-1.mbtiles"),
             ok.copy(fileName = "a\\b.mbtiles"),
             ok.copy(fileName = "tacmap-bake-1.pdf"),
+            // D9: a plain .mbtiles that isn't one of ours, and the empty middle
+            ok.copy(fileName = "someones-pack.mbtiles"),
+            ok.copy(fileName = "tacmap-bake-.mbtiles"),
             ok.copy(bakeKey = "k"),
             ok.copy(bakeKey = "g".repeat(64)),
             ok.copy(bakeKey = key + "0"),

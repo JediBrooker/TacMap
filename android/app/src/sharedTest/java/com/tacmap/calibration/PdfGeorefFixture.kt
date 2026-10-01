@@ -56,11 +56,25 @@ internal object PdfGeorefFixture {
     fun JsonObject.boolOr(k: String, default: Boolean): Boolean = (this[k] as? JsonPrimitive)?.booleanOrNull ?: default
     fun JsonObject.has(k: String): Boolean = this[k] != null && this[k] !is JsonNull
 
-    /** json numbers, with "Infinity"/"NaN" strings meaning what Double() makes of them */
+    /** valueTypeCases: {"pdfNull": true} is the pdf null object */
+    fun isPdfNull(e: JsonElement?): Boolean = (e as? JsonObject)?.get("pdfNull")?.let { (it as? JsonPrimitive)?.booleanOrNull } == true
+
+    /**
+     * one pdf number slot. json number = pdf number; the older cases' "Infinity" strings
+     * = an overflowing real; any other json string is a pdf string that has to pass
+     * lgiRules.numericStrings (same helper the PDFBox reader uses); {"pdfReal": x} = a
+     * real; null / anything else = the wrong type
+     */
     fun num(e: JsonElement): Double? {
         if (e is JsonNull) return null
-        val p = e.jsonPrimitive
-        return p.doubleOrNull ?: p.contentOrNull?.toDoubleOrNull()
+        if (e is JsonObject) return (e["pdfReal"] as? JsonPrimitive)?.doubleOrNull
+        val p = e as? JsonPrimitive ?: return null
+        if (!p.isString) return p.doubleOrNull
+        return when (p.content) {
+            "Infinity" -> Double.POSITIVE_INFINITY
+            "-Infinity" -> Double.NEGATIVE_INFINITY
+            else -> PdfValueRules.numericString(p.content)
+        }
     }
 
     /** absent -> null; something that isn't an array stands for a wrong-typed pdf value -> [null] */
@@ -153,7 +167,7 @@ internal object PdfGeorefFixture {
         // rejections.note: a gcs that isn't an object, a non-string wkt or a non-integer
         // epsg stand in for the wrong pdf types
         val rawGcs = o["gcs"]?.takeIf { it !is JsonNull }
-        val gcs = rawGcs as? JsonObject
+        val gcs = (rawGcs as? JsonObject)?.takeUnless { isPdfNull(it) }
         var malformed = rawGcs != null && gcs == null
         val wkt = gcs?.get("wkt")?.let { w ->
             (w as? JsonPrimitive)?.takeIf { it.isString }?.content ?: run { malformed = true; null }
@@ -180,13 +194,13 @@ internal object PdfGeorefFixture {
     private fun lgiText(e: JsonElement?): String? = when {
         e == null || e is JsonNull -> null
         e is JsonPrimitive && e.isString -> e.content
+        // pdf null, a number, anything else: present with the wrong type
         else -> GeoPdfParser.INVALID_TEXT
     }
 
     private fun lgiNumber(e: JsonElement?): Double? = when {
         e == null || e is JsonNull -> null
-        e is JsonPrimitive -> num(e) ?: Double.NaN
-        else -> Double.NaN
+        else -> num(e) ?: Double.NaN
     }
 
     private fun lgiProjection(p: JsonObject): GeoPdfLgiProjectionData {
@@ -195,9 +209,12 @@ internal object PdfGeorefFixture {
             "StandardParallelOne", "StandardParallelTwo")) {
             p[key]?.let { params[key] = num(it) }
         }
-        val datum = when (val d = p["Datum"]) {
+        val rawDatum = p["Datum"]
+        // a pdf null or a real where a datum code goes is the wrong type
+        val wrongTypeDatum = rawDatum is JsonObject && (isPdfNull(rawDatum) || rawDatum.containsKey("pdfReal"))
+        val datum = when (val d = rawDatum) {
             null, is JsonNull -> null
-            is JsonObject -> {
+            is JsonObject -> if (wrongTypeDatum) LgiDatumData.Invalid else {
                 val ell = d["Ellipsoid"] as? JsonObject
                 LgiDatumData.Inline(
                     semiMajorAxis = ell?.get("SemiMajorAxis")?.let(::num),
@@ -209,6 +226,7 @@ internal object PdfGeorefFixture {
                     },
                 )
             }
+            // a name/string reads as the code, a pdf integer as its decimal digits
             is JsonPrimitive -> LgiDatumData.Code(d.content)
             else -> LgiDatumData.Invalid
         }
@@ -232,8 +250,9 @@ internal object PdfGeorefFixture {
             else -> listOf(null)
         },
         neatline = nums(o["neatline"]),
-        projection = (o["projection"] as? JsonObject)?.let(::lgiProjection),
-        display = (o["display"] as? JsonObject)?.let(::lgiProjection),
+        // null (or not a dict) /Projection, /Display read as not there, same as the reader
+        projection = (o["projection"] as? JsonObject)?.takeUnless(::isPdfNull)?.let(::lgiProjection),
+        display = (o["display"] as? JsonObject)?.takeUnless(::isPdfNull)?.let(::lgiProjection),
     )
 
     fun pageData(sheetOrCase: JsonObject, written: JsonObject?): GeoPdfPageData {

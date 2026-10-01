@@ -57,3 +57,6 @@ scripts/__pycache__/
 
 # local miniflare state from `wrangler dev`
 site/.wrangler/
+
+# Opt-in marker for staged WP4 simulator acceptance checks.
+.wp4-device-audit

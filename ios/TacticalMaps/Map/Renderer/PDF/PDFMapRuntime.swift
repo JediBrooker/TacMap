@@ -27,7 +27,10 @@ final class PDFMapRuntime: ObservableObject {
     /// device ram knobs, swappable for tests
     var physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
     /// the OD-F4 byte check, runs off main. tests swap it to order overlapping checks
-    var fileCheck: (PDFMapSource) -> Bool = { PDFSessionStore.storedFileMatches($0) }
+    var fileCheck: (PDFMapSource) -> Bool = { ImportedMapLibrary.storedFileMatches($0) }
+    /// OD-F4 verdict of the install on screen: true = the exact bytes are there
+    /// (again), false = missing or changed. The library row follows it
+    var onStoredFileVerdict: ((PDFMapSource, Bool) -> Void)?
 
     var currentContext: PDFRenderContext? { source?.context }
     /// key of the source the published status belongs to
@@ -128,6 +131,7 @@ final class PDFMapRuntime: ObservableObject {
                 // gone or swapped under a live map: flag it like a restore would,
                 // so the bake gate and the next install check too
                 if fileGone { pdf?.storedFileUnavailable = true }
+                if let pdf, fileCameBack || fileGone { self.onStoredFileVerdict?(pdf, fileCameBack) }
                 switch built {
                 case .success(let ctx):
                     if let reader { src.attachBake(reader) }
@@ -149,6 +153,16 @@ final class PDFMapRuntime: ObservableObject {
         let tilePx = PDFTileMath.tilePx(density: Double(scale))
         install(pdf: pdf, tilePx: tilePx, key: Self.sourceKey(pdf: pdf, tilePx: tilePx), isRetry: true)
         onNeedsLayout?()
+    }
+
+    /// the background hash check (WP4 restore step 4) found other bytes under
+    /// the map on screen: flag it and rebuild, the install's own check then
+    /// fails it as cannotOpen (G1, sticky, Try Again)
+    func storedFileChanged(for pdf: PDFMapSource) {
+        // flagged either way, so the next install (and the bake gate) check too
+        pdf.storedFileUnavailable = true
+        guard currentPDF === pdf else { return }
+        retry()
     }
 
     /// no PDF on screen any more
@@ -180,7 +194,7 @@ final class PDFMapRuntime: ObservableObject {
     func adoptBaseRaster(_ raster: PDFPageRaster, identity: PDFDocumentIdentity, url: URL) {
         let svc = PDFRenderService.acquire(identity, url: url)
         svc.adoptBaseRaster(raster)
-        // the registry lingers 30 s after this release, plenty for selectMapSource to pick it up
+        // the registry lingers 30 s after this release, plenty for the import commit to pick it up
         svc.release()
     }
 

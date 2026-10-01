@@ -1,6 +1,19 @@
 import SwiftUI
 
 extension PDFRenderFailure: LocalizedMessageError {
+    /// catalogue key of the reason line, the import probe error reports it too
+    var messageKey: String {
+        switch self {
+        case .cannotOpen: return "pdf_render_reason_cannot_open"
+        case .passwordProtected: return "pdf_render_reason_password_protected"
+        case .pageMissing: return "pdf_render_reason_page_missing"
+        case .pageGeometry: return "pdf_render_reason_page_geometry"
+        case .blank: return "pdf_render_reason_blank"
+        case .outOfMemory: return "pdf_render_reason_out_of_memory"
+        case .renderError: return "pdf_render_reason_render_error"
+        }
+    }
+
     /// shared reason copy, resolved at display time so a language switch follows
     var localizedMessage: LocalizedMessage {
         switch self {
@@ -171,7 +184,7 @@ struct PDFRenderChrome: ViewModifier {
                 Button(Messages.pdfRenderUseOnlineMap()) {
                     // H1: the user's own online style, not the built in default.
                     // a real selection like Android's restoreOnlineBasemap
-                    _ = mapVM.selectMapSource(mapVM.preferredOnlineBasemap())
+                    _ = mapVM.useOnlineMapAfterFailure()
                 }
                 Button(L10n.text("Not Now"), role: .cancel) {}
             } message: { f in
@@ -186,13 +199,14 @@ struct PDFRenderChrome: ViewModifier {
             } message: {
                 Text(Messages.pdfGuardCrashMessage())
             }
-            .alert(L10n.text("Delete imported map from this device?"), isPresented: $confirmingSuspectDelete) {
-                Button(L10n.text("Delete Map"), role: .destructive) {
+            // the library's own delete confirmation (s8.2), same as the Layers row
+            .alert(Messages.mapDeleteTitle(mapVM.pdfCrashSuspect?.displayName ?? ""), isPresented: $confirmingSuspectDelete) {
+                Button(L10n.text("Delete"), role: .destructive) {
                     _ = mapVM.deleteCrashSuspect()
                 }
                 Button(L10n.text("Cancel"), role: .cancel) {}
             } message: {
-                Text(L10n.text("This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone."))
+                Text(Messages.mapDeleteMessage())
             }
             .alert(launchNoticeTitle, isPresented: Binding(get: { mapVM.pdfLaunchNotice != nil && mapVM.pdfCrashSuspect == nil },
                                                            set: { if !$0 { mapVM.dismissLaunchNotice() } })) {

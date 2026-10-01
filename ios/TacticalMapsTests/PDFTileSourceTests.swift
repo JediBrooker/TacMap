@@ -138,16 +138,17 @@ final class PDFTileSourceTests: XCTestCase {
     func testContainerKeepsTheFailedSourceUntilTryAgain() throws {
         // R3-3: Try Again re-checks the stored bytes now, so the sheet has to
         // live where imported maps do and carry its real content key
+        // (the library's ImportedMaps since the WP4 merge)
         let fixture = try XCTUnwrap(F.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
-        let imported = FileManager.default.temporaryDirectory.appendingPathComponent("g1-\(UUID())", isDirectory: true)
-        try FileManager.default.createDirectory(at: imported, withIntermediateDirectories: true)
-        let oldImported = PDFSessionStore.importedMapsDirectoryProvider
-        PDFSessionStore.importedMapsDirectoryProvider = { imported }
+        let support = FileManager.default.temporaryDirectory.appendingPathComponent("g1-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let oldSupport = ImportedMapStorage.applicationSupportProvider
+        ImportedMapStorage.applicationSupportProvider = { support }
         defer {
-            PDFSessionStore.importedMapsDirectoryProvider = oldImported
-            try? FileManager.default.removeItem(at: imported)
+            ImportedMapStorage.applicationSupportProvider = oldSupport
+            try? FileManager.default.removeItem(at: support)
         }
-        let url = imported.appendingPathComponent("sheet.pdf")
+        let url = try ImportedMapStorage.importedMapsDirectory().appendingPathComponent("map-sheet.pdf")
         try FileManager.default.copyItem(at: fixture, to: url)
         let g = try XCTUnwrap(GeoPDFReader.read(url: url)?.georef)
         let pdf = PDFMapSource(url: url, georef: g, contentKey: PDFSessionStore.contentKey(for: url))
@@ -606,20 +607,17 @@ final class PDFRenderGuardStoreTests: XCTestCase {
         let store = PDFRenderGuard(url: url)
         let src = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
         let g = try XCTUnwrap(GeoPDFReader.read(url: src)?.georef)
-        let pdf = PDFMapSource(url: src, georef: g, contentKey: "sha256:" + String(repeating: "d", count: 64))
-        store.arm(kind: .vector, token: pdf.renderGuardToken)
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        let deps = MapSelectionDependencies(
-            persistSelection: { _, _ in true }, restoreActive: { .restored(pdf) }, restoreRetained: { .noRetainedMap },
-            removeRetained: { _ in }, snapshotPDFSession: { snapshot }, persistPDFSession: { _ in true },
-            restorePDFSession: { _ in true })
-        let vm = MapViewModel(mapSelectionDependencies: deps, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        let (entry, deps) = Self.activePDFLibrary(url: src, georef: g, contentKey: "sha256:" + String(repeating: "d", count: 64))
+        store.arm(kind: .vector, token: entry.renderGuardToken)
+        let vm = MapViewModel(libraryDependencies: deps, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
         vm.pdfRenderGuard = store
         _ = vm.restoreActiveMapSelection()
-        XCTAssertTrue(vm.pdfCrashSuspect === pdf)
+        XCTAssertEqual(vm.pdfCrashSuspect?.entryID, entry.id)
+        XCTAssertEqual(vm.pdfCrashSuspect?.renderGuardToken, entry.renderGuardToken)
         XCTAssertTrue(vm.mapSource is OnlineRasterBasemapSource, "suppressed: online in memory only")
+        XCTAssertEqual(vm.library?.activeEntryID, entry.id, "the durable selection is untouched")
         vm.openCrashSuspectAnyway()
-        XCTAssertTrue(vm.mapSource === pdf)
+        XCTAssertEqual((vm.mapSource as? PDFMapSource)?.entryID, entry.id)
         XCTAssertNil(vm.pdfCrashSuspect)
         XCTAssertNil(store.suspect)
     }
@@ -660,40 +658,35 @@ final class PDFRenderGuardStoreTests: XCTestCase {
         let store = PDFRenderGuard(url: url)
         let src = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
         let g = try XCTUnwrap(GeoPDFReader.read(url: src)?.georef)
-        let pdf = PDFMapSource(url: src, georef: g, contentKey: "sha256:" + String(repeating: "f", count: 64))
-        store.arm(kind: .base, token: pdf.renderGuardToken)
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        let deps = MapSelectionDependencies(
-            persistSelection: { _, _ in true }, restoreActive: { .restored(pdf) }, restoreRetained: { .noRetainedMap },
-            removeRetained: { _ in }, snapshotPDFSession: { snapshot }, persistPDFSession: { _ in true },
-            restorePDFSession: { _ in true })
-        let vm = MapViewModel(mapSelectionDependencies: deps, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
-        vm.pdfRenderGuard = store
         let preferred = try XCTUnwrap(BasemapStyle.allCases.first { $0 != OnlineRasterBasemapSource.defaultStyle && !$0.requiresEsriKey }
             ?? BasemapStyle.allCases.first { $0 != OnlineRasterBasemapSource.defaultStyle })
-        vm.preferredOnlineStyleProvider = { preferred }
+        // H1: the library keeps the preferred style next to an active imported map
+        let (entry, deps) = Self.activePDFLibrary(url: src, georef: g, contentKey: "sha256:" + String(repeating: "f", count: 64),
+                                                  preferredStyle: preferred)
+        store.arm(kind: .base, token: entry.renderGuardToken)
+        // a non online initial source, so the in memory last style can't leak in
+        let vm = MapViewModel(libraryDependencies: deps, initialMapSource: PDFMapSource(url: src, georef: g))
+        vm.pdfRenderGuard = store
         _ = vm.restoreActiveMapSelection()
-        XCTAssertTrue(vm.pdfCrashSuspect === pdf)
+        XCTAssertEqual(vm.pdfCrashSuspect?.entryID, entry.id)
         let shown = try XCTUnwrap(vm.mapSource as? OnlineRasterBasemapSource)
         let usable = preferred.requiresEsriKey && !EsriKey.isAvailable ? OnlineRasterBasemapSource.defaultStyle : preferred
         XCTAssertEqual(shown.style, usable)
-        vm.preferredOnlineStyleProvider = { nil }
         XCTAssertEqual(vm.preferredOnlineBasemap().style, usable, "in memory last online style wins")
-        let fresh = MapViewModel(mapSelectionDependencies: deps)
-        fresh.preferredOnlineStyleProvider = { nil }
+        let fresh = MapViewModel(libraryDependencies: Self.noLibrary(), initialMapSource: PDFMapSource(url: src, georef: g))
         XCTAssertEqual(fresh.preferredOnlineBasemap().style, OnlineRasterBasemapSource.defaultStyle, "nothing stored: the default")
     }
 
     func testInterruptedImportAndBakeAreReported() throws {
         let url = dir.appendingPathComponent("pdf_render_guard.json")
         PDFRenderGuard(url: url).arm(kind: .import, token: UUID().uuidString)
-        let vmImport = MapViewModel(mapSelectionDependencies: noSelectionDeps(), initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        let vmImport = MapViewModel(libraryDependencies: Self.noLibrary(), initialMapSource: OnlineRasterBasemapSource(.osmTopo))
         vmImport.pdfRenderGuard = PDFRenderGuard(url: url)
         _ = vmImport.restoreActiveMapSelection()
         XCTAssertEqual(vmImport.pdfLaunchNotice, .importInterrupted)
 
         PDFRenderGuard(url: url).arm(kind: .bake, token: UUID().uuidString)
-        let vmBake = MapViewModel(mapSelectionDependencies: noSelectionDeps(), initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        let vmBake = MapViewModel(libraryDependencies: Self.noLibrary(), initialMapSource: OnlineRasterBasemapSource(.osmTopo))
         vmBake.pdfRenderGuard = PDFRenderGuard(url: url)
         _ = vmBake.restoreActiveMapSelection()
         XCTAssertEqual(vmBake.pdfLaunchNotice, .bakeInterrupted)
@@ -705,7 +698,7 @@ final class PDFRenderGuardStoreTests: XCTestCase {
         let g = PDFRenderGuard(url: url)
         g.arm(kind: .bake, token: UUID().uuidString)
         g.arm(kind: .import, token: UUID().uuidString)
-        let vm = MapViewModel(mapSelectionDependencies: noSelectionDeps(), initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        let vm = MapViewModel(libraryDependencies: Self.noLibrary(), initialMapSource: OnlineRasterBasemapSource(.osmTopo))
         vm.pdfRenderGuard = PDFRenderGuard(url: url)
         _ = vm.restoreActiveMapSelection()
         XCTAssertEqual(vm.pdfLaunchNotice, .importInterrupted)
@@ -725,19 +718,14 @@ final class PDFRenderGuardStoreTests: XCTestCase {
         let url = dir.appendingPathComponent("pdf_render_guard.json")
         let src = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
         let geo = try XCTUnwrap(GeoPDFReader.read(url: src)?.georef)
-        let pdf = PDFMapSource(url: src, georef: geo, contentKey: "sha256:" + String(repeating: "9", count: 64))
+        let (entry, deps) = Self.activePDFLibrary(url: src, georef: geo, contentKey: "sha256:" + String(repeating: "9", count: 64))
         let g = PDFRenderGuard(url: url)
         g.arm(kind: .bake, token: UUID().uuidString)
-        XCTAssertTrue(g.arm(kind: .vector, token: pdf.renderGuardToken), "a bake marker doesnt block a first render")
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        let deps = MapSelectionDependencies(
-            persistSelection: { _, _ in true }, restoreActive: { .restored(pdf) }, restoreRetained: { .noRetainedMap },
-            removeRetained: { _ in }, snapshotPDFSession: { snapshot }, persistPDFSession: { _ in true },
-            restorePDFSession: { _ in true })
-        let vm = MapViewModel(mapSelectionDependencies: deps, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        XCTAssertTrue(g.arm(kind: .vector, token: entry.renderGuardToken), "a bake marker doesnt block a first render")
+        let vm = MapViewModel(libraryDependencies: deps, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
         vm.pdfRenderGuard = PDFRenderGuard(url: url)
         _ = vm.restoreActiveMapSelection()
-        XCTAssertTrue(vm.pdfCrashSuspect === pdf)
+        XCTAssertEqual(vm.pdfCrashSuspect?.entryID, entry.id)
         XCTAssertNil(vm.pdfLaunchNotice, "the decision's alert goes first")
         vm.dismissCrashSuspect()
         let end = Date().addingTimeInterval(3)
@@ -745,12 +733,44 @@ final class PDFRenderGuardStoreTests: XCTestCase {
         XCTAssertEqual(vm.pdfLaunchNotice, .bakeInterrupted)
     }
 
-    private func noSelectionDeps() -> MapSelectionDependencies {
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        return MapSelectionDependencies(
-            persistSelection: { _, _ in true }, restoreActive: { .noSelection }, restoreRetained: { .noRetainedMap },
-            removeRetained: { _ in }, snapshotPDFSession: { snapshot }, persistPDFSession: { _ in true },
-            restorePDFSession: { _ in true })
+    /// in memory library with nothing in it: no disk, no legacy stores
+    static func noLibrary() -> LibraryDependencies {
+        inMemoryLibrary(nil, fileURL: { _ in nil })
+    }
+
+    /// one georeferenced PDF entry, active, its file at url (size + mtime always ok)
+    static func activePDFLibrary(url: URL, georef: PdfGeoreference, contentKey: String,
+                                 preferredStyle: BasemapStyle? = nil) -> (ImportedMapEntry, LibraryDependencies) {
+        let info = ImportedMapEntry.PDFInfo(pageCount: 1, pageIndex: georef.page, rotate: 0, pageBox: georef.crop,
+                                            embedded: georef, embeddedIssue: nil, manual: nil, firstRenderPending: nil,
+                                            renderGuardToken: UUID().uuidString)
+        let entry = ImportedMapEntry(id: UUID(), kind: .pdf, fileName: "ImportedMaps/map-test.pdf", displayName: "Test sheet",
+                                     contentKey: contentKey, byteCount: 0, fileModifiedAtMs: 0, importedAtMs: 0,
+                                     derivedFromId: nil, pdf: info)
+        var state = LibraryState()
+        state.active = .entry(entry.id)
+        if let preferredStyle { state.preferredOnlineStyle = preferredStyle.rawValue }
+        state.entries = [entry]
+        return (entry, inMemoryLibrary(state, fileURL: { _ in url }))
+    }
+
+    static func inMemoryLibrary(_ initial: LibraryState?, fileURL: @escaping (ImportedMapEntry) -> URL?) -> LibraryDependencies {
+        final class Box { var state: LibraryState? }
+        let box = Box()
+        box.state = initial
+        return LibraryDependencies(
+            load: { box.state.map { .loaded($0) } ?? .empty },
+            write: { box.state = $0 },
+            reconcile: { _ in true },
+            legacyPresent: { false },
+            clearLegacy: {},
+            fileStatus: { _ in .ok },
+            fileURL: fileURL,
+            verify: { _, _, done in done(true) },
+            unlink: { _ in },
+            drafts: InMemoryCalibrationDraftStore(),
+            sweepBackup: {},
+            recoverInterruptedImport: { false })
     }
 }
 

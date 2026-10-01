@@ -3,136 +3,6 @@ import MapKit
 import PDFKit
 import UniformTypeIdentifiers
 
-enum ImportedMapFileCopier {
-    static let maxPDFBytes = 512 * 1024 * 1024
-    static let maxMBTilesBytes = 2 * 1024 * 1024 * 1024
-    /// Copy an imported map (PDF/GeoPDF/MBTiles) into the app-private,
-    /// file-protected ImportedMaps dir - NOT Documents. Keeps the picture of
-    /// your AO off the Files.app / Finder file-sharing surface, where it used
-    /// to sit readable to anyone with the unlocked device or a paired host.
-    static func copyToImportedMaps(_ source: URL,
-                                   maximumBytes: Int = maxPDFBytes,
-                                   preferredExtension: String? = nil,
-                                   fileManager: FileManager = .default) throws -> URL {
-        let dir = try importedMapsDirectory(fileManager: fileManager)
-        let dest = try copy(
-            source,
-            into: dir,
-            maximumBytes: maximumBytes,
-            preferredExtension: preferredExtension,
-            fileManager: fileManager
-        )
-        // After-first-unlock so a backgrounded map / recording read still
-        // works; matches the migration path in PDFSessionStore.
-        do {
-            try fileManager.setAttributes(
-                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-                ofItemAtPath: dest.path)
-        } catch {
-            try? fileManager.removeItem(at: dest)
-            throw error
-        }
-        return dest
-    }
-
-    static func copy(_ source: URL,
-                     into directory: URL,
-                     maximumBytes: Int = maxPDFBytes,
-                     preferredExtension: String? = nil,
-                     fileManager: FileManager = .default,
-                     chunkSize: Int = 1_048_576,
-                     beforeCreate: ((URL) throws -> Void)? = nil,
-                     afterChunk: (() throws -> Void)? = nil) throws -> URL {
-        try Task.checkCancellation()
-        let keys: Set<URLResourceKey> = [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]
-        let before = try source.resourceValues(forKeys: keys)
-        guard before.isRegularFile == true, before.isSymbolicLink != true,
-              let size = before.fileSize, size >= 0, size <= maximumBytes else {
-            throw CocoaError(.fileReadTooLarge)
-        }
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let destination = uniqueDestination(
-            for: source,
-            in: directory,
-            preferredExtension: preferredExtension,
-            fileManager: fileManager
-        )
-        var ownsDestination = false
-        do {
-            // Create without replacing an import that won the same-name race.
-            // The chunk loop provides prompt task cancellation for large maps;
-            // any failure removes the partial private copy below.
-            try beforeCreate?(destination)
-            try Data().write(to: destination, options: .withoutOverwriting)
-            ownsDestination = true
-            let input = try FileHandle(forReadingFrom: source)
-            defer { try? input.close() }
-            let output = try FileHandle(forWritingTo: destination)
-            defer { try? output.close() }
-            let readSize = max(1, chunkSize)
-            var copiedBytes = 0
-            while true {
-                try Task.checkCancellation()
-                guard let chunk = try input.read(upToCount: readSize), !chunk.isEmpty else { break }
-                guard copiedBytes <= size,
-                      chunk.count <= size - copiedBytes,
-                      copiedBytes <= maximumBytes,
-                      chunk.count <= maximumBytes - copiedBytes else {
-                    throw CocoaError(.fileReadCorruptFile)
-                }
-                try output.write(contentsOf: chunk)
-                copiedBytes += chunk.count
-                try afterChunk?()
-            }
-            try Task.checkCancellation()
-            guard copiedBytes == size else { throw CocoaError(.fileReadCorruptFile) }
-            try output.synchronize()
-            let copied = try destination.resourceValues(forKeys: keys)
-            guard copied.isRegularFile == true, copied.isSymbolicLink != true,
-                  let copiedSize = copied.fileSize, copiedSize == size, copiedSize <= maximumBytes else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-        } catch {
-            if ownsDestination { try? fileManager.removeItem(at: destination) }
-            throw error
-        }
-        return destination
-    }
-
-    private static func uniqueDestination(for source: URL,
-                                          in directory: URL,
-                                          preferredExtension: String?,
-                                          fileManager: FileManager) -> URL {
-        let ext = preferredExtension ?? source.pathExtension
-        let rawStem = source.deletingPathExtension().lastPathComponent
-        let stem = rawStem.isEmpty ? L10n.text("Imported Map") : rawStem
-
-        func candidate(_ suffix: Int?) -> URL {
-            let name = suffix.map { "\(stem)-\($0)" } ?? stem
-            let base = directory.appendingPathComponent(name, isDirectory: false)
-            return ext.isEmpty ? base : base.appendingPathExtension(ext)
-        }
-
-        var next = candidate(nil)
-        var suffix = 1
-        while fileManager.fileExists(atPath: next.path) {
-            next = candidate(suffix)
-            suffix += 1
-        }
-        return next
-    }
-
-    /// App Support dir for imported maps. Stored here (not Documents/) so
-    /// they stay hidden from Files.app and get stronger file protection.
-    static func importedMapsDirectory(fileManager: FileManager = .default) throws -> URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dir = appSupport.appendingPathComponent("ImportedMaps", isDirectory: true)
-        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true,
-                                        attributes: [.protectionKey: FileProtectionType.complete])
-        return dir
-    }
-}
-
 private enum BoundedImportReader {
     static func read(_ url: URL, maximumBytes: Int) throws -> Data {
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
@@ -304,176 +174,6 @@ enum ExternalImportWorker {
     }
 }
 
-/// Refused GeoPDF parked until the user picks calibrate-by-hand or cancel.
-struct PendingGeorefRejection: Identifiable {
-    let id = UUID()
-    let payload: ImportedMapWorker.PDFPayload
-    let reason: PdfGeorefRejectReason
-    let camera: CLLocationCoordinate2D
-}
-
-struct PDFRectPayload: Sendable {
-    let x: Double
-    let y: Double
-    let width: Double
-    let height: Double
-
-    init(_ rect: CGRect) {
-        x = Double(rect.origin.x)
-        y = Double(rect.origin.y)
-        width = Double(rect.size.width)
-        height = Double(rect.size.height)
-    }
-
-    var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
-}
-
-enum ImportedMapWorker {
-    struct PDFPayload: Sendable {
-        let destination: URL
-        /// georef, plain PDF, or declared-but-refused (with the reason)
-        let outcome: GeoPDFReader.Outcome
-        let page: GeoPDFReader.PageGeometry
-        let contentKey: String
-        let performedWorkOffMainThread: Bool
-        /// crash guard id the map keeps for life (sealed with its session)
-        var renderGuardToken: String = UUID().uuidString
-        /// the import probe's base raster, adopted so the first paint is instant
-        var baseRaster: PDFPageRaster? = nil
-        var pageIndex: Int = 0
-
-        var mediaBox: PDFRectPayload { PDFRectPayload(page.mediaBox) }
-    }
-
-    struct MBTilesPayload: Sendable {
-        let destination: URL
-        let metadata: MBTilesStore.Metadata
-        let performedWorkOffMainThread: Bool
-    }
-
-    enum WorkerError: LocalizedMessageError, LocalizedError {
-        case invalidMBTiles
-
-        var errorDescription: String? { localizedMessage.text }
-        var localizedMessage: LocalizedMessage {
-            switch self {
-            case .invalidMBTiles: return Messages.displayCouldnTOpenThisFileAsAnMbtilesMapMessage()
-            }
-        }
-    }
-
-    static func preparePDF(url: URL) async throws -> PDFPayload {
-        let worker = Task.detached(priority: .userInitiated) {
-            let offMainThread = importWorkerIsOffMainThread()
-            var destination: URL?
-            do {
-                try Task.checkCancellation()
-                let prepared = try SecurityScopedImportAccess.withCoordinatedRead(of: url) { coordinatedURL in
-                    let copied = try PDFMapImporter.copyAndValidate(coordinatedURL)
-                    destination = copied
-                    try Task.checkCancellation()
-                    guard let readout = GeoPDFReader.read(url: copied) else {
-                        throw PDFMapImportError.invalidPDF
-                    }
-                    guard let contentKey = PDFSessionStore.contentKey(for: copied) else {
-                        throw PDFMapImportError.invalidPDF
-                    }
-                    return (copied, readout, contentKey)
-                }
-                try Task.checkCancellation()
-                var payload = PDFPayload(destination: prepared.0,
-                                         outcome: prepared.1.outcome,
-                                         page: prepared.1.page,
-                                         contentKey: prepared.2,
-                                         performedWorkOffMainThread: offMainThread)
-                // draw it once here, before it's saved anywhere: a PDF that
-                // crashes the renderer dies in the import, not on every launch
-                let probe = try probePDF(payload)
-                payload.baseRaster = probe.raster
-                payload.pageIndex = probe.pageIndex
-                try Task.checkCancellation()
-                return payload
-            } catch {
-                if let destination { try? FileManager.default.removeItem(at: destination) }
-                throw error
-            }
-        }
-        return try await withTaskCancellationHandler(
-            operation: { try await worker.value },
-            onCancel: { worker.cancel() }
-        )
-    }
-
-    /// The import probe (contract M): arm the guard, render the base raster
-    /// + blank check, complete. Plain and refused sheets get a stand-in
-    /// provisional georef, the base raster only depends on the page box.
-    static func probePDF(_ payload: PDFPayload) throws -> (raster: PDFPageRaster, pageIndex: Int) {
-        let georef: PdfGeoreference
-        if case .georeferenced(let g) = payload.outcome {
-            georef = g
-        } else if let g = PdfGeoreference.provisional(pageBox: payload.page.cropBox, rotation: payload.page.rotation,
-                                                      centredOn: CLLocationCoordinate2D(latitude: 0, longitude: 0)) {
-            georef = g
-        } else {
-            throw PDFMapImportError.invalidPDF
-        }
-        let guardStore = PDFRenderGuard.shared
-        guardStore.arm(kind: .import, token: payload.renderGuardToken)
-        // a clean failure isnt a crash, so the marker comes off either way
-        defer { guardStore.complete(kind: .import, token: payload.renderGuardToken) }
-        do {
-            let (_, page) = try PDFTileRenderer.openPage(url: payload.destination, pageIndex: georef.page)
-            let ctx = try PDFRenderContext(
-                url: payload.destination,
-                identity: PDFDocumentIdentity(contentKey: payload.contentKey, pageIndex: georef.page),
-                georef: georef, pageBox: PDFTileRenderer.pageBox(page), tilePx: 512,
-                guardToken: payload.renderGuardToken,
-                baseBudgetPx: PDFMemoryTier.baseBudgetPx(physicalMemory: ProcessInfo.processInfo.physicalMemory))
-            let raster = try autoreleasepool {
-                try PDFTileRenderer.renderBaseRaster(page: page, plan: ctx.basePlan, footprint: ctx.footprint)
-            }
-            if raster.blank { throw PDFRenderFailure.blank }
-            return (raster, georef.page)
-        } catch let f as PDFRenderFailure {
-            throw PDFMapImportError.cannotDraw(f)
-        }
-    }
-
-    static func prepareMBTiles(url: URL) async throws -> MBTilesPayload {
-        let worker = Task.detached(priority: .userInitiated) {
-            let offMainThread = importWorkerIsOffMainThread()
-            var destination: URL?
-            do {
-                try Task.checkCancellation()
-                let prepared = try SecurityScopedImportAccess.withCoordinatedRead(of: url) { coordinatedURL in
-                    let copied = try ImportedMapFileCopier.copyToImportedMaps(
-                        coordinatedURL,
-                        maximumBytes: ImportedMapFileCopier.maxMBTilesBytes,
-                        preferredExtension: "mbtiles"
-                    )
-                    destination = copied
-                    try Task.checkCancellation()
-                    guard let store = MBTilesStore(url: copied) else {
-                        throw WorkerError.invalidMBTiles
-                    }
-                    return (copied, store.metadata)
-                }
-                try Task.checkCancellation()
-                return MBTilesPayload(destination: prepared.0,
-                                      metadata: prepared.1,
-                                      performedWorkOffMainThread: offMainThread)
-            } catch {
-                if let destination { try? FileManager.default.removeItem(at: destination) }
-                throw error
-            }
-        }
-        return try await withTaskCancellationHandler(
-            operation: { try await worker.value },
-            onCancel: { worker.cancel() }
-        )
-    }
-}
-
 struct ContentView: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @StateObject private var locationService: LocationService
@@ -485,6 +185,7 @@ struct ContentView: View {
     @StateObject private var visibility      = LayerVisibility()
     @StateObject private var mapVM           = MapViewModel()
     @StateObject private var calibration     = CalibrationSession()
+    @StateObject private var importController = MapImportController()
     @StateObject private var trackRecorder: TrackRecorder
     @StateObject private var recordingCoordinator: RecordingCoordinator
 
@@ -497,8 +198,19 @@ struct ContentView: View {
     @Environment(\.undoManager) private var undoManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var canUndo = false
-    /// v1 PDF session being migrated off main, see restoreActiveBasemap
+    /// library migration running off main, see restoreActiveBasemap
     @State private var basemapMigrationInFlight = false
+    /// "x was never georeferenced" after the library migration, shown once
+    @State private var migrationUncalibratedName: String?
+    @State private var importInterrupted = false
+    /// E3 decided for this launch (it runs once, after the first Loaded restore)
+    @State private var autoResumeDecided = false
+    #if DEBUG
+    /// OD-F2: the import hook waits for a Loaded library instead of being dropped
+    @State private var debugImportPending: URL?
+    #endif
+    /// whether the calibrated entry was a preview (non-durable) when it started
+    @State private var calibrationDisplayWasPreview = false
     @State private var canRedo = false
     /// Freeze all graphic interaction (select/drag/vertex-edit/settings).
     @State private var graphicsLocked = false
@@ -517,10 +229,6 @@ struct ContentView: View {
     @State private var appLockOverlayActive = AppLock.isEnabled
     @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: LocalizedMessage? = nil
-    /// A GeoPDF whose declared georef we refused, waiting on the user.
-    @State private var pendingGeorefRejection: PendingGeorefRejection?
-    /// Restored map is a plain PDF on its provisional placement.
-    @State private var promptUncalibratedMap = false
     @State private var pendingImportRetry: ExternalImportCommitProgress?
     @State private var importWorkTask: Task<Void, Never>?
     @State private var missionUnlockError: LocalizedMessage? = nil
@@ -606,6 +314,9 @@ struct ContentView: View {
 
     /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
     private var basemapLabel: String? {
+        // calibrating reads calibrating (s7.8), a failure mid calibration still gets
+        // its alert. Same order as Android
+        if calibration.isCalibrating { return Messages.calibrationHeaderLabel() }
         if pdfRenderFailed { return Messages.pdfRenderFailedLabel() }
         if pdfPreparing { return Messages.pdfRenderDrawingLabel() }
         if uncalibratedPDFLoaded { return Messages.pdfMapUncalibratedLabel() }
@@ -614,12 +325,22 @@ struct ContentView: View {
         return nil
     }
     private var basemapColor: Color {
+        if calibration.isCalibrating { return Color(red: 1, green: 0.65, blue: 0.18) }  // amber, not a basemap yet
         if pdfRenderFailed { return PDFRenderStatusColors.failed }
         if pdfPreparing { return PDFRenderStatusColors.preparing }
         if uncalibratedPDFLoaded { return Color(red: 1, green: 0.65, blue: 0.18) }  // amber, not a basemap yet
         return importedMapLoaded
             ? PDFRenderStatusColors.ready                  // offline: the pinned green
             : Color(red: 1.0, green: 0.35, blue: 0.35)    // online: red
+    }
+
+    /// Calibrating: no coordinate on a provisional guess, PREVIEW on an unsaved fit (s7.8)
+    private var calibrationHeaderReadout: CalibrationHeaderReadout? {
+        guard calibration.isCalibrating, let d = calibration.display else { return nil }
+        if d.isProvisional { return .notGeoreferenced }
+        guard d.isFit else { return .preview(showTag: false) }
+        let saved = calibration.entryID.flatMap { mapVM.entry($0)?.pdf?.manual?.georef }
+        return .preview(showTag: saved.map { $0.affine != d.georef.affine || $0.crs != d.georef.crs || $0.datum != d.georef.datum } ?? true)
     }
 
     /// The coordinate the banner is reading out: the crosshair when browsing,
@@ -823,6 +544,8 @@ struct ContentView: View {
                     visibility: visibility
                 )
                 .ignoresSafeArea()
+                // symbology hidden while calibrating, the setting itself stays (s7.9)
+                .opacity(calibration.isCalibrating ? 0 : 1)
                 .allowsHitTesting(!drawingSession.isDrawing
                                   && !calibration.isCalibrating)
 
@@ -847,7 +570,13 @@ struct ContentView: View {
                 // does - otherwise it centres on the safe-area rect (~14pt low
                 // since the top inset > the bottom) and drifts below the user
                 // dot, which sits at the map's true geometric centre.
-                if !drawingSession.isDrawing {
+                if calibration.isCalibrating {
+                    // open centred reticle so the printed intersection shows through (s7.6)
+                    CalibrationReticle()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                } else if !drawingSession.isDrawing {
                     CrosshairOverlay()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea()
@@ -857,6 +586,10 @@ struct ContentView: View {
                 freehandCaptureOverlay
 
                 hudOverlay(bottomInset: geo.safeAreaInsets.bottom)
+
+                calibrationOverlays
+
+                ImportProgressHUD(controller: importController)
 
                 syncToastOverlay
             }
@@ -979,6 +712,15 @@ struct ContentView: View {
             ) {
                 locationService.start()
             }
+            // the bake's record writes go through the library from here on
+            mapVM.bindBakeController(PDFBakeController.shared)
+            // OD-F2: wired before the restore and the debug hooks, an import with
+            // no view model to talk to was silently dropped
+            importController.mapVM = mapVM
+            importController.startCalibration = { startCalibration(entryID: $0) }
+            // F3: Retry on the locked library re-runs the migration too
+            mapVM.reloadRequested = { restoreActiveBasemap() }
+            mapVM.resumeCalibrationRequested = { startCalibration(entryID: $0, resumeSilently: true) }
             restoreActiveBasemap()
             // a bake (or its removal) that finished for an older object of the map on
             // screen, eg after switching away and back mid bake: keep the live one in step
@@ -999,7 +741,8 @@ struct ContentView: View {
             )
         }
         .onReceive(locationService.$deviceHeading.compactMap { $0 }) { heading in
-            if opsec.mapOrientationMode == .headingUp {
+            // calibrating pauses heading-up (rotation is the user's), the setting stays
+            if opsec.mapOrientationMode == .headingUp && !calibration.isCalibrating {
                 mapVM.orientMap(to: heading)
             }
         }
@@ -1048,20 +791,35 @@ struct ContentView: View {
                         mapVM: mapVM,
                         drawingStore: drawingStore,
                         waypointStore: waypointStore,
-                        onCalibrate: startCalibration,
+                        onCalibrate: { id in
+                            // the sheet animates out first, then calibration takes over
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { startCalibration(entryID: id) }
+                        },
+                        onChoosePage: { entry in
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { importController.choosePage(for: entry) }
+                        },
                         isCalibrating: calibration.isCalibrating)
                 .padSheetSizing()
         }
         .nightSheet(isPresented: Binding(
-            get: { calibration.pendingTap != nil },
-            set: { if !$0 { calibration.clearPendingTap() } }
+            get: { calibration.phase == .pointsSheet },
+            set: { if !$0, calibration.phase == .pointsSheet { calibration.phase = .placing } }
         )) {
-            CalibrationInputSheet(
-                session: calibration,
-                onCancel: { calibration.clearPendingTap() },
-                currentLocation: locationService.lastLocation?.coordinate
-            )
-            .padSheetSizing()
+            CalibrationPointsSheet(session: calibration)
+                .presentationDetents([.medium, .large])
+        }
+        .nightSheet(isPresented: Binding(
+            get: { calibration.phase == .datumSheet },
+            set: { if !$0, calibration.phase == .datumSheet { calibration.phase = .placing } }
+        )) {
+            CalibrationDatumSheet(session: calibration)
+                .presentationDetents([.medium, .large])
+        }
+        .nightSheet(item: $importController.pagePicker) { req in
+            PDFPagePickerSheet(request: req,
+                               onPick: { importController.choosePage($0) },
+                               onCancel: { importController.cancelPagePicker() })
+                .interactiveDismissDisabled()
         }
         .nightSheet(isPresented: $showExportSheet) {
             ExportSheet(waypointStore: waypointStore, drawingStore: drawingStore)
@@ -1276,7 +1034,8 @@ struct ContentView: View {
     /// presentations on ContentView go in here too
     private var rootPresentationsOnTop: [Bool] {
         [showWaypointSheet, quickSymbolDraft != nil, showDrawingsSheet, showLayersSheet,
-         calibration.pendingTap != nil, showExportSheet, showGPXExporter, showWeatherSheet,
+         calibration.phase == .pointsSheet, calibration.phase == .datumSheet,
+         importController.pagePicker != nil, showExportSheet, showGPXExporter, showWeatherSheet,
          showAppLockSheet, profileRequest != nil, showOpsecSheet, showSyncSheet, chatRoute != nil,
          showSearchSheet, showAboutSheet, showPaywallSheet, missionObjectExportURL != nil,
          showImporter, showGeoJSONImporter, showMBTilesImporter, showKMLImporter]
@@ -1285,13 +1044,12 @@ struct ContentView: View {
     var body: some View {
         importerContent
         // OD3-R3-1: stands down while anything is presented over the root. Layers
-        // hosts it itself while open, any other sheet just defers it until it closes
+        // hosts it itself while open, any other sheet just defers it until it closes.
+        // commit handles its own retry now, so a Retry here never ends a calibration
         .mapSelectionIssueAlert(
             mapVM: mapVM,
             isActive: MapSelectionIssueAlertGate.rootHostIsActive(presentationsOnTop: rootPresentationsOnTop)
-        ) { retried in
-            if retried, calibration.isCalibrating { calibration.cancel() }
-        }
+        ) { _ in }
         .alert(L10n.text("Import"),
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),
@@ -1308,25 +1066,42 @@ struct ContentView: View {
         } message: { msg in
             Text(msg.text)
         }
-        .alert(Messages.pdfGeorefRejectedTitle(),
-               isPresented: Binding(get: { pendingGeorefRejection != nil },
-                                    set: { if !$0 { pendingGeorefRejection = nil } }),
-               presenting: pendingGeorefRejection) { pending in
-            // buttons get their own copy, the binding may clear the state first
-            Button(Messages.pdfGeorefCalibrateManually()) {
-                placeForCalibration(pending.payload, camera: pending.camera)
-            }
-            Button(L10n.text("Cancel"), role: .cancel) {
-                try? FileManager.default.removeItem(at: pending.payload.destination)
-            }
-        } message: { pending in
-            Text(Messages.pdfGeorefRejectedMessage(pending.reason.displayReason))
+        .modifier(MapImportAlerts(controller: importController,
+                                  migrationUncalibratedName: $migrationUncalibratedName,
+                                  importInterrupted: $importInterrupted,
+                                  onCalibrate: { startCalibration(entryID: $0) }))
+        .modifier(CalibrationAlerts(session: calibration,
+                                    onFinish: commitCalibration,
+                                    onLeave: { keep in
+                                        calibration.leave(keepDraft: keep)
+                                        finishCalibrationSession()
+                                    }))
+        .onReceive(calibration.toasts) { showTransientToast($0) }
+        .onReceive(importController.toasts) { showTransientToast($0) }
+        .onReceive(calibration.flyRequests) { mapVM.centreRequests.send($0) }
+        .onReceive(NotificationCenter.default.publisher(for: DataKey.lockChanged)) { _ in
+            if !DataKey.isAuthBound || DataKey.isUnlocked { calibration.onDataKeyUnlocked() }
         }
-        .alert(Messages.pdfMapUncalibratedTitle(), isPresented: $promptUncalibratedMap) {
-            Button(Messages.pdfMapCalibrateNow()) { startCalibration() }
-            Button(L10n.text("Not Now"), role: .cancel) {}
-        } message: {
-            Text(Messages.pdfMapUncalibratedMessage())
+        .onChange(of: mapVM.libraryStatus) { status in
+            guard status == .loaded else { return }
+            // a Retry / unlock / rebuild that made it Loaded: E3 gets its one go now
+            maybeAutoResume()
+            #if DEBUG
+            if let url = debugImportPending {
+                debugImportPending = nil
+                importController.importPDF(url: url, completion: debugApplyCamera)
+            }
+            #endif
+        }
+        .onChange(of: mapVM.mapSource.id) { _ in
+            // the shown map moved to another entry mid calibration (e.g. a Retry
+            // of an older failed write): stop, keep the points (s2.8)
+            guard calibration.isCalibrating else { return }
+            let shownEntry = (mapVM.mapSource as? PDFMapSource)?.entryID
+            if shownEntry != calibration.entryID {
+                calibration.suspend()
+                finishCalibrationSession(restoreDisplay: false)
+            }
         }
         .onDisappear {
             importWorkTask?.cancel()
@@ -1398,7 +1173,7 @@ struct ContentView: View {
                 elevation: mapVM.centreElevation ?? (mapVM.isBrowsing ? nil : locationService.lastAltitude),
                 elevationIsApproximate: mapVM.centreElevationIsApproximate,
                 coordinate: headerCoordinate,
-                onDropPin: { coord, displayedCoordinate in
+                onDropPin: calibrationHeaderReadout == .notGeoreferenced ? nil : { coord, displayedCoordinate in
                     let layerID = drawingStore.activeLayerID
                         ?? drawingStore.layers.first?.id
                         ?? DrawingLayer.legacyFallbackID
@@ -1412,7 +1187,8 @@ struct ContentView: View {
                     } catch {
                         missionMutationMessage = Messages.displayTheDroppedSymbolWasNotAddedCheckAvailableStorageMessage("").withArgument(0, error.displayMessage)
                     }
-                }
+                },
+                calibrationReadout: calibrationHeaderReadout
             )
             .tourTarget(.header)
             .padding(.horizontal, 12)
@@ -1434,6 +1210,19 @@ struct ContentView: View {
 
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
+                  if calibration.isCalibrating {
+                    // the only way out, top left and well away from Finish (s10)
+                    Button { calibration.leaveTapped(); if !calibration.isCalibrating { finishCalibrationSession() } } label: {
+                        Image(systemName: "xmark")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 56, height: 56)
+                            .background(.black.opacity(0.85), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.15)))
+                    }
+                    .accessibilityLabel(Messages.calibrationClose())
+                    .accessibilityIdentifier("calibration.close")
+                  } else {
                     HamburgerMenu(
                         isPurchased: store.isPurchased,
                         trialDaysRemaining: trial.daysRemaining(),
@@ -1526,11 +1315,13 @@ struct ContentView: View {
                         onAbout:     {
                             drawingsPanelOpen = false
                             showAboutSheet = true
-                        }
+                        },
+                        importsEnabled: !importController.isRunning
                     )
                     .tourTarget(.menu)
+                  }
 
-                    if syncManager.room?.hasPrefix("3:") == true {
+                    if syncManager.room?.hasPrefix("3:") == true, !calibration.isCalibrating {
                         TacMapChatShortcutButton(store: syncManager.chatStore) {
                             drawingsPanelOpen = false
                             presentChat(.room)
@@ -1546,10 +1337,12 @@ struct ContentView: View {
                             .tourTarget(.add)
                     }
 
-                    UnitLabelsToggle(active: visibility.unitLabelsVisible) {
-                        visibility.unitLabelsVisible.toggle()
+                    if !calibration.isCalibrating {
+                        UnitLabelsToggle(active: visibility.unitLabelsVisible) {
+                            visibility.unitLabelsVisible.toggle()
+                        }
+                        .tourTarget(.labels)
                     }
-                    .tourTarget(.labels)
 
                     NightModeToggle(active: opsec.nightMode) {
                         _ = opsec.setNightMode(!opsec.nightMode)
@@ -1579,7 +1372,7 @@ struct ContentView: View {
                         onTap: handleCompassTap
                     )
                     .tourTarget(.compass)
-                    if canUndo || canRedo {
+                    if (canUndo || canRedo) && !calibration.isCalibrating {
                         UndoRedoButtons(
                             canUndo: canUndo,
                             canRedo: canRedo,
@@ -1587,14 +1380,16 @@ struct ContentView: View {
                             onRedo: { undoManager?.redo() }
                         )
                     }
-                    LockButton(locked: graphicsLocked) {
-                        graphicsLocked.toggle()
-                        if graphicsLocked {
-                            mapVM.selectedWaypointID = nil
-                            mapVM.selectedDrawingID = nil
+                    if !calibration.isCalibrating {
+                        LockButton(locked: graphicsLocked) {
+                            graphicsLocked.toggle()
+                            if graphicsLocked {
+                                mapVM.selectedWaypointID = nil
+                                mapVM.selectedDrawingID = nil
+                            }
                         }
+                        .tourTarget(.lock)
                     }
-                    .tourTarget(.lock)
                 }
             }
             .padding(.horizontal, 12)
@@ -1620,13 +1415,11 @@ struct ContentView: View {
     @ViewBuilder
     private func hudBottomBar(bottomInset: CGFloat) -> some View {
         if calibration.isCalibrating {
-            CalibrationOverlay(
-                session: calibration,
-                onFinish: finishCalibration,
-                onCancel: { calibration.cancel() }
-            )
-            .padding(.horizontal, 12)
-            .padding(.bottom, max(bottomInset, 8) + 6)
+            if calibration.pendingEntry == nil {
+                CalibrationPanel(session: calibration, mapVM: mapVM, onFinish: commitCalibration)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, max(bottomInset, 8) + 6)
+            }
         } else if drawingSession.isDrawing {
             DrawToolbar(session: drawingSession) {
                 if let shape = drawingSession.finish() {
@@ -1725,7 +1518,8 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(.black.opacity(0.78), in: Capsule())
-                    .padding(.bottom, 80)
+                    // clear of the calibration panel, it sat right on Add point
+                    .padding(.bottom, calibration.isCalibrating ? 250 : 80)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             .allowsHitTesting(false)
@@ -1857,18 +1651,17 @@ struct ContentView: View {
     /// keep the usable online default; the saved PDF remains available from
     /// Layers, but is no longer incorrectly assumed to have been active.
     private func restoreActiveBasemap() {
-        // first launch after the v2 upgrade re-parses the saved PDF, seconds on a
-        // big USGS sheet. do that off main and leave the online default up meanwhile
+        // first launch after the WP5 upgrade moves the old stores into the
+        // library, which can re-parse a v1 PDF (seconds on a big USGS sheet). do
+        // that off main and leave the online default up meanwhile
         guard !basemapMigrationInFlight else { return }
-        if PDFSessionStore.needsMigration {
+        if !ImportedMapLibrary.exists() && ImportedMapLibraryMigration.legacyPresent {
             basemapMigrationInFlight = true
-            let shown = mapVM.mapSource.id
             DispatchQueue.global(qos: .userInitiated).async {
-                PDFSessionStore.migrateStoredSession()
+                let result = ImportedMapLibraryMigration.migrateIfNeeded()
                 DispatchQueue.main.async {
                     basemapMigrationInFlight = false
-                    // user picked another map while we were busy, don't yank it away
-                    guard mapVM.mapSource.id == shown else { return }
+                    if case .migrated(let name?) = result { migrationUncalibratedName = name }
                     publishRestoredBasemap()
                 }
             }
@@ -1878,12 +1671,29 @@ struct ContentView: View {
     }
 
     private func publishRestoredBasemap() {
-        guard let source = mapVM.restoreActiveMapSelection() else { return }
-        NSLog("[MapVM] restored active basemap -> kind=\(source.kind)")
-        // includes v1 sessions whose old camera box couldn't be trusted
-        if (source as? PDFMapSource)?.isUncalibrated == true, !calibration.isCalibrating,
-           mapVM.pdfCrashSuspect == nil {
-            promptUncalibratedMap = true
+        _ = mapVM.restoreActiveMapSelection()
+        if mapVM.recoverInterruptedImport() { importInterrupted = true }
+        maybeAutoResume()
+    }
+
+    /// E3: the app died mid calibration, put the user straight back (s2.1).
+    /// Once per launch, after the first Loaded restore. Not while any crash
+    /// suspect is pending, the resume would draw the very sheet it suspects
+    /// (M10, C8); the draft stays active for next time
+    private func maybeAutoResume() {
+        guard !autoResumeDecided, !calibration.isCalibrating, mapVM.libraryStatus == .loaded else { return }
+        let draft = mapVM.drafts.activeDraft()
+        let entry = mapVM.autoResumeEntry()
+        let action = CalibrationAutoResume.decide(draftActive: draft?.active,
+                                                  entry: entry.map { ImportedMapStates.state($0, file: mapVM.fileStatus($0)) },
+                                                  library: mapVM.libraryStatus,
+                                                  suspectPending: mapVM.crashSuspectPending)
+        switch action {
+        case .deferUntilLoaded: return
+        case .skip: autoResumeDecided = true
+        case .resume:
+            autoResumeDecided = true
+            if let entry { startCalibration(entryID: entry.id, resumeSilently: true) }
         }
     }
 
@@ -2011,186 +1821,171 @@ struct ContentView: View {
         }
     }
 
-    private func startCalibration() {
-        guard let pdfSource = mapVM.mapSource as? PDFMapSource else { return }
-        calibration.start(for: pdfSource)
+    // MARK: - calibration (WP4 s2)
+
+    /// s2.3, the whole start sequence in one place. E1 (after import), E2
+    /// (Layers) and E3 (auto-resume) all come through here.
+    private func startCalibration(entryID: UUID, resumeSilently: Bool = false) {
+        guard !calibration.isCalibrating, mapVM.libraryStatus == .loaded,
+              let entry = mapVM.entry(entryID), entry.kind == .pdf, let pdf = entry.pdf,
+              let key = entry.contentKey, mapVM.fileStatus(entry) == .ok,
+              ImportedMapStates.state(entry, file: .ok) != .unavailable else { return }
+        // C2: calibrating the held back map is the user's Open Anyway
+        mapVM.resolveSuspectForCalibration(entryID)
+        // 1-3: measure, drawing, free draw, selections, previews, menus and quick-add off
+        drawingSession.cancel()
+        measureSession.cancel()
+        drawingsPanelOpen = false
+        mapVM.selectedWaypointID = nil
+        mapVM.selectedDrawingID = nil
+        drawingControlsPreview = nil
+        mapPressPoint = nil
+        quickSymbolDraft = nil
+        // 4-6: heading-up paused (the heading receiver checks), first fix ignored,
+        // header on the crosshair. The orientation setting itself isn't touched
+        mapVM.calibrationActive = true
+        let target = CalibrationTarget(entryID: entryID, contentKey: key, pageIndex: pdf.pageIndex,
+                                       pageBox: pdf.pageBox, rotate: pdf.rotate)
+        let base: PdfGeoreference
+        var wasPreview = false
+        if let effective = pdf.effectiveGeoref {
+            // 9: georeferenced and not active -> active durably, framed
+            if mapVM.activeEntryID != entryID { _ = mapVM.activateLibraryEntry(entryID) }
+            base = effective
+            var shown = effective
+            shown.crop = pdf.pageBox
+            _ = mapVM.beginCalibrationDisplay(entry: entry, georef: shown, reframe: false)
+        } else {
+            // 8: no georef -> a NON durable provisional preview at the camera, framed
+            // once. An uncalibrated PDF never becomes a durable basemap (D2-06, D5-02)
+            // provisional() always says page 0, the tile renderer opens georef.page
+            guard let g = PdfGeoreference.provisional(pageBox: target.pageRect, rotation: pdf.rotate,
+                                                      centredOn: mapVM.cameraCentre).map({ p -> PdfGeoreference in
+                      var onPage = p
+                      onPage.page = pdf.pageIndex
+                      return onPage
+                  }),
+                  mapVM.beginCalibrationDisplay(entry: entry, georef: g, reframe: true) else {
+                mapVM.calibrationActive = false
+                return
+            }
+            base = g
+            wasPreview = true
+        }
+        calibrationDisplayWasPreview = wasPreview
+        var embeddedDatum: String?
+        if let d = pdf.embedded?.datum, !d.isCustom, CalibrationDatumChoice.order.contains(d.id) { embeddedDatum = d.id }
+        calibration.start(target: target, entryName: entry.displayName, base: base,
+                          seed: pdf.manual?.state ?? CalibrationState(), embeddedDatumID: embeddedDatum,
+                          wasPreview: wasPreview, resumeSilently: resumeSilently)
     }
 
-    private func finishCalibration() {
-        guard let source = calibration.source else { return }
-        let result: CalibrationSession.FinishResult
-        do {
-            result = try calibration.finish()
-        } catch AffineFitError.degenerate {
-            showTransientToast(Messages.calibrationCollinear())
-            return
-        } catch {
-            showTransientToast(Messages.calibrationFailed())
-            return
-        }
-        // Build fresh source so MapContainerView rebuilds overlay
-        // (sync logic keys on source.id).
-        let newSource = PDFMapSource(url: source.url, georef: source.georef, contentKey: source.contentKey,
-                                     renderGuardToken: source.renderGuardToken)
-        newSource.applyCalibration(
-            transform: result.transform,
-            fiduciaries: calibration.fiduciaries
-        )
-        guard newSource.calibration != nil else { return }
-        let bounds = newSource.bounds
-        guard mapVM.selectMapSource(newSource) else { return }
-        calibration.cancel()
-        showTransientToast(Messages.calibrationDone(DisplayFormat.height(result.rmsMetres)))
-        if let b = bounds {
-            let span = MKCoordinateSpan(
-                latitudeDelta:  abs(b.northEast.latitude  - b.southWest.latitude)  * 1.2,
-                longitudeDelta: abs(b.northEast.longitude - b.southWest.longitude) * 1.2
-            )
-            mapVM.cameraRequests.send(MKCoordinateRegion(center: b.centre, span: span))
+    /// after the session ended (leave, suspend, finish): chrome and heading back
+    private func finishCalibrationSession(restoreDisplay: Bool = true) {
+        mapVM.calibrationActive = false
+        // C4: a suspend (or a commit that published) has nothing to go back to
+        if restoreDisplay { mapVM.endCalibrationDisplay() } else { mapVM.clearCalibrationReturn() }
+        mapVM.noteDraftsChanged()
+        if opsec.mapOrientationMode == .headingUp, let heading = locationService.deviceHeading {
+            mapVM.orientMap(to: heading)
         }
     }
+
+    /// Finish (s2.6): ONE library write (manual + active), the camera stays put.
+    /// A failed write keeps the session and the draft and offers Retry.
+    private func commitCalibration(_ manual: ManualCalibration) {
+        guard let t = calibration.target else { return }
+        if mapVM.commitCalibration(entryID: t.entryID, manual: manual, contentKey: t.contentKey, pageIndex: t.pageIndex) {
+            calibration.didCommit()
+            finishCalibrationSession(restoreDisplay: false)
+        } else {
+            calibration.commitFailed()
+        }
+    }
+
+    @ViewBuilder
+    private var calibrationOverlays: some View {
+        if calibration.isCalibrating {
+            // [+] [-] on the right edge, +-1 zoom about the centre (s7.7)
+            HStack {
+                Spacer()
+                VStack(spacing: 10) {
+                    calibrationZoomButton(+1, symbol: "plus", label: Messages.calibrationZoomIn(), id: "calibration.zoomIn")
+                    calibrationZoomButton(-1, symbol: "minus", label: Messages.calibrationZoomOut(), id: "calibration.zoomOut")
+                }
+                .padding(.trailing, 12)
+            }
+            .frame(maxHeight: .infinity)
+            if calibration.pendingEntry != nil {
+                VStack {
+                    CalibrationEntryCard(session: calibration, mapVM: mapVM, location: locationService.lastLocation)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 6)
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private func calibrationZoomButton(_ step: Double, symbol: String, label: String, id: String) -> some View {
+        Button { mapVM.zoomStepRequests.send(step) } label: {
+            Image(systemName: symbol)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.15)))
+        }
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
+    }
+
+    // MARK: - map imports (WP5 s9)
 
     private func handleImport(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result, let url = urls.first else {
-            if case .failure(let error) = result {
-                importMessage = Messages.importFailedMessage("").withArgument(0, error.displayMessage)
-            }
-            return
-        }
-        importPDF(url)
-    }
-
-    /// picked file (or the debug hook's) through the one import pipeline
-    private func importPDF(_ url: URL, completion: (() -> Void)? = nil) {
-        let cameraAtImport = mapVM.cameraCentre
-        importWorkTask?.cancel()
-        importWorkTask = Task { @MainActor in
-            var copiedURL: URL?
-            do {
-                let payload = try await ImportedMapWorker.preparePDF(url: url)
-                copiedURL = payload.destination
-                try Task.checkCancellation()
-                switch payload.outcome {
-                case .georeferenced(let georef):
-                    let source = PDFMapSource(url: payload.destination, georef: georef,
-                                              contentKey: payload.contentKey,
-                                              renderGuardToken: payload.renderGuardToken)
-                    // If PDF was calibrated in a previous session, restore
-                    // fiduciaries + fit so it re-imports already aligned.
-                    PDFSessionStore.applyCalibrationIfKnown(to: source)
-                    adoptProbeRaster(payload)
-                    // a failed select leaves the retry transition owning the copy
-                    copiedURL = nil
-                    _ = mapVM.selectMapSource(source)
-                case .notGeoreferenced:
-                    copiedURL = nil
-                    placeForCalibration(payload, camera: cameraAtImport)
-                case .rejected(let reason):
-                    // loud: say why and let them calibrate by hand, nothing is
-                    // placed until they choose (no silent camera-centred box)
-                    copiedURL = nil
-                    pendingGeorefRejection = PendingGeorefRejection(
-                        payload: payload, reason: reason, camera: cameraAtImport)
-                }
-                completion?()
-            } catch is CancellationError {
-                if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
-            } catch let error as PDFMapImportError {
-                importMessage = error.displayMessage
-            } catch {
-                if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
-                importMessage = Messages.displayCouldnTImportThisPdfMapMessage("").withArgument(0, error.displayMessage)
-            }
-        }
-    }
-
-    /// Plain PDF (or a refused GeoPDF the user chose to calibrate): put it on
-    /// a provisional, clearly uncalibrated placement at the camera and go
-    /// straight into calibration. A known calibration for these bytes wins.
-    private func placeForCalibration(_ payload: ImportedMapWorker.PDFPayload, camera: CLLocationCoordinate2D) {
-        let georef = PdfGeoreference.provisional(pageBox: payload.page.cropBox,
-                                                 rotation: payload.page.rotation,
-                                                 centredOn: camera)
-        guard let georef else {
-            try? FileManager.default.removeItem(at: payload.destination)
-            importMessage = PDFMapImportError.invalidPDF.displayMessage
-            return
-        }
-        let source = PDFMapSource(url: payload.destination, georef: georef, contentKey: payload.contentKey,
-                                  renderGuardToken: payload.renderGuardToken)
-        PDFSessionStore.applyCalibrationIfKnown(to: source)
-        adoptProbeRaster(payload)
-        guard mapVM.selectMapSource(source) else { return }
-        if source.isUncalibrated { startCalibration() }
+        importController.importPDF(result)
     }
 
     #if DEBUG
     /// launch env hooks for device verification, see docs/DEBUG_HOOKS.md
     private func runDebugHooks() {
         if DebugHooks.gridOn { visibility.mgrsGridVisible = true }
-        let applyCamera = {
-            guard let cam = DebugHooks.camera else { return }
-            // after the import has framed the sheet, so ours wins
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                mapVM.isBrowsing = true
+        if let url = DebugHooks.importPDF {
+            // the same pipeline as the picker, probe and all. A migration still
+            // running (or a locked library) means the library isn't Loaded yet:
+            // wait for it instead of dropping the hook (OD-F2)
+            if mapVM.libraryStatus == .loaded {
+                importController.importPDF(url: url, completion: debugApplyCamera)
+            } else {
+                NSLog("[DebugHooks] import waits for the library to load")
+                debugImportPending = url
+            }
+        } else {
+            debugApplyCamera()
+        }
+    }
+
+    private func debugApplyCamera() {
+        guard DebugHooks.camera != nil || DebugHooks.calibrationPoint != nil else { return }
+        // after the import has framed the sheet, so ours wins
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            mapVM.isBrowsing = true
+            if let point = DebugHooks.calibrationPoint, let display = calibration.display,
+               let centre = display.georef.toWGS84(x: point.x, y: point.y) {
+                mapVM.exactCameraRequests.send((centre, DebugHooks.camera?.zoom ?? 18, 0))
+            } else if let cam = DebugHooks.camera {
                 mapVM.exactCameraRequests.send((CLLocationCoordinate2D(latitude: cam.latitude, longitude: cam.longitude),
                                                 cam.zoom, cam.heading))
             }
         }
-        if let url = DebugHooks.importPDF {
-            importPDF(url, completion: applyCamera)
-        } else {
-            applyCamera()
-        }
     }
     #endif
 
-    /// the base raster from the import probe is page space, any georef can use it
-    private func adoptProbeRaster(_ payload: ImportedMapWorker.PDFPayload) {
-        guard let raster = payload.baseRaster else { return }
-        mapVM.pdfRuntime.adoptBaseRaster(raster,
-                                         identity: PDFDocumentIdentity(contentKey: payload.contentKey,
-                                                                       pageIndex: payload.pageIndex),
-                                         url: payload.destination)
-    }
-
-    /// Import local MBTiles raster pyramid as offline basemap. Copies the
-    /// picked file into app-private, file-protected storage (not Documents),
-    /// installs an OfflineTileMapSource served with no network.
+    /// Import a local MBTiles raster pyramid as an offline basemap: copied into
+    /// app-private, file-protected storage under an opaque name, then added to
+    /// the library and shown.
     private func handleMBTilesImport(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result, let url = urls.first else {
-            if case .failure(let error) = result {
-                importMessage = Messages.importFailedMessage("").withArgument(0, error.displayMessage)
-            }
-            return
-        }
-
-        importWorkTask?.cancel()
-        importWorkTask = Task { @MainActor in
-            var copiedURL: URL?
-            do {
-                let payload = try await ImportedMapWorker.prepareMBTiles(url: url)
-                let destination = payload.destination
-                copiedURL = destination
-                try Task.checkCancellation()
-                let source = OfflineTileMapSource(
-                    prevalidatedURL: destination,
-                    metadata: payload.metadata
-                )
-                guard mapVM.selectMapSource(source) else {
-                    // Preserve the validated private copy for the Retry action.
-                    copiedURL = nil
-                    return
-                }
-                copiedURL = nil
-                importMessage = Messages.displayLoadedOfflineTilesMessage(source.displayName)
-            } catch is CancellationError {
-                if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
-            } catch {
-                if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
-                importMessage = Messages.displayCouldnTImportThisMbtilesMapMessage("").withArgument(0, error.displayMessage)
-            }
-        }
+        importController.importMBTiles(result)
     }
 }
 
@@ -2245,4 +2040,119 @@ private struct QuickSymbolDraft: Identifiable {
 #Preview {
     ContentView(store: StoreManager())
         .preferredColorScheme(.dark)
+}
+
+/// Import alerts: errors, the rejected-georef prompt, the one-time migration
+/// and interrupted-import notices. Pulled out to keep ContentView's body
+/// inside the type checker's budget.
+private struct MapImportAlerts: ViewModifier {
+    @ObservedObject private var appLanguage = AppLanguage.shared
+    @ObservedObject var controller: MapImportController
+    @Binding var migrationUncalibratedName: String?
+    @Binding var importInterrupted: Bool
+    var onCalibrate: (UUID) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .alert(L10n.text("Import"),
+                   isPresented: Binding(get: { controller.error != nil }, set: { if !$0 { controller.error = nil } }),
+                   presenting: controller.error) { _ in
+                Button(Messages.acknowledge(), role: .cancel) { controller.error = nil }
+            } message: { e in
+                Text(e.text)
+            }
+            .alert(Messages.pdfGeorefRejectedTitle(),
+                   isPresented: Binding(get: { controller.rejectedPrompt != nil },
+                                        set: { if !$0 { controller.rejectedPrompt = nil } }),
+                   presenting: controller.rejectedPrompt) { prompt in
+                Button(Messages.mapImportCalibrateNow()) { onCalibrate(prompt.entryID) }
+                Button(Messages.mapImportLater(), role: .cancel) {}
+            } message: { prompt in
+                Text(prompt.message)
+            }
+            .alert(Messages.mapLibrarySection(),
+                   isPresented: Binding(get: { migrationUncalibratedName != nil },
+                                        set: { if !$0 { migrationUncalibratedName = nil } }),
+                   presenting: migrationUncalibratedName) { _ in
+                Button(Messages.acknowledge(), role: .cancel) { migrationUncalibratedName = nil }
+            } message: { name in
+                Text(Messages.mapMigrationUncalibrated(name))
+            }
+            // E1: changing the page throws the hand calibration away, ask first
+            .alert(Messages.mapActionChoosePage(),
+                   isPresented: Binding(get: { controller.changePageConfirm != nil },
+                                        set: { if !$0 { controller.changePageConfirm = nil } })) {
+                Button(Messages.mapActionChoosePage(), role: .destructive) { controller.confirmChangePage() }
+                Button(L10n.text("Cancel"), role: .cancel) { controller.changePageConfirm = nil }
+            } message: {
+                Text(Messages.mapChangePageConfirm())
+            }
+            .alert(L10n.text("Import"), isPresented: $importInterrupted) {
+                Button(Messages.acknowledge(), role: .cancel) {}
+            } message: {
+                Text(Messages.mapImportInterrupted())
+            }
+    }
+}
+
+/// Calibration dialogs (s2.6, s2.7, s2.3 resume): leave, finish with
+/// warnings, resume, save failed. All bound to the session phase.
+private struct CalibrationAlerts: ViewModifier {
+    @ObservedObject private var appLanguage = AppLanguage.shared
+    @ObservedObject var session: CalibrationSession
+    var onFinish: (ManualCalibration) -> Void
+    var onLeave: (_ keepDraft: Bool) -> Void
+
+    private func binding(_ match: @escaping (CalibrationSession.Phase) -> Bool) -> Binding<Bool> {
+        Binding(get: { match(session.phase) },
+                set: { if !$0, match(session.phase) { session.phase = .placing } })
+    }
+
+    private var confirmReasons: [CalibrationConfirmReason] {
+        if case .finishConfirm(let r) = session.phase { return r }
+        return []
+    }
+
+    func body(content: Content) -> some View {
+        content
+            // an alert, not a confirmationDialog: iOS 26 drops the cancel button
+            // from the dialog and the contract wants all three on screen
+            .alert(Messages.calibrationLeaveTitle(), isPresented: binding { $0 == .leaveDialog }) {
+                Button(Messages.calibrationLeaveKeep()) { onLeave(true) }
+                Button(Messages.calibrationLeaveDiscard(), role: .destructive) { onLeave(false) }
+                Button(Messages.calibrationLeaveContinue(), role: .cancel) { session.continueCalibrating() }
+            } message: {
+                Text(Messages.calibrationLeaveMessage())
+            }
+            .alert(Messages.calibrationFinishConfirmTitle(),
+                   isPresented: binding { if case .finishConfirm = $0 { return true } else { return false } }) {
+                Button(Messages.calibrationAddMore(), role: .cancel) { session.phase = .placing }
+                Button(Messages.calibrationFinishAnyway()) {
+                    if let manual = session.finishAnyway() { onFinish(manual) }
+                }
+            } message: {
+                Text(session.report.confirmMessages.map(\.text).joined(separator: "\n\n"))
+            }
+            .alert(Messages.calibrationResumeTitle(), isPresented: binding { $0 == .resumePrompt }) {
+                Button(Messages.calibrationResume()) { session.resume() }
+                Button(Messages.calibrationStartOver(), role: .destructive) { session.startOver() }
+            } message: {
+                let d = session.resumeDraft
+                let age = d.map { draft -> String in
+                    let f = RelativeDateTimeFormatter()
+                    f.locale = DisplayFormat.currentLocale   // app language, not the phone's
+                    return f.localizedString(for: Date(timeIntervalSince1970: Double(draft.updatedAtMs) / 1000), relativeTo: Date())
+                } ?? ""
+                Text(Messages.calibrationResumeMessage(Messages.calibrationPointCount(d?.points.count ?? 0), age))
+            }
+            .alert(L10n.text("Map change not saved"), isPresented: binding { $0 == .saveFailed }) {
+                Button(L10n.text("Retry")) {
+                    session.phase = .placing
+                    if let manual = session.manualCalibration() { onFinish(manual) }
+                }
+                Button(L10n.text("Not Now"), role: .cancel) { session.phase = .placing }
+            } message: {
+                Text(Messages.calibrationSaveFailed())
+            }
+    }
 }

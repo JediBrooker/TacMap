@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
             restorePendingDocumentImport(savedInstanceState)
         )
         pendingDocumentImport.value = pendingImportCoordinator.current()
+        releaseOrphanedImportGrants(pendingImportCoordinator.current())
         credentialLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
             runCatching { DataKey.key() }
@@ -459,31 +460,26 @@ class MainActivity : ComponentActivity() {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             true
         }.getOrDefault(false)
+        // memory + savedInstanceState only (D5-18): the key's locked right now anyway,
+        // and a plaintext pref would leave the picked file's name on disk
         val pending = pendingImportCoordinator.publish(kind, uri.toString(), grantTaken)
-        if (persistPendingDocumentImport(pending)) {
-            pendingDocumentImport.value = pending
-        } else {
-            pendingImportCoordinator = PendingDocumentImportCoordinator()
-            pendingDocumentImport.value = null
-            releaseDocumentImportGrant(pending)
-        }
+        pendingDocumentImport.value = pending
     }
 
     private fun completeDocumentImport(token: String) {
-        val pending = pendingImportCoordinator.current()?.takeIf { it.token == token } ?: return
-        // Durable clear first. If it fails, abandon the claim and retain the
-        // grant so a recreated Activity can safely retry instead of duplicating
-        // a PDF/MBTiles import whose completion marker was lost.
-        if (!persistPendingDocumentImport(null)) {
-            pendingImportCoordinator.abandon(token)
-            return
-        }
-        val completed = pendingImportCoordinator.complete(token) ?: run {
-            persistPendingDocumentImport(pending)
-            return
-        }
+        val completed = pendingImportCoordinator.complete(token) ?: return
         pendingDocumentImport.value = null
         releaseDocumentImportGrant(completed)
+    }
+
+    /** a pick the app never finished keeps its persisted grant forever otherwise */
+    private fun releaseOrphanedImportGrants(pending: PendingDocumentImport?) {
+        val held = runCatching { contentResolver.persistedUriPermissions.map { it.uri.toString() } }.getOrDefault(emptyList())
+        PendingDocumentImportRestore.orphanedGrants(held, pending).forEach { uri ->
+            runCatching {
+                contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
     }
 
     private fun releaseDocumentImportGrant(pending: PendingDocumentImport) {
@@ -502,41 +498,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun restorePendingDocumentImport(savedInstanceState: Bundle?): PendingDocumentImport? {
-        fun fromValues(token: String?, kind: String?, uri: String?, grant: Boolean): PendingDocumentImport? {
-            if (token.isNullOrBlank() || uri.isNullOrBlank()) return null
-            val parsedKind = DocumentImportKind.fromSavedValue(kind) ?: return null
-            return PendingDocumentImport(token, parsedKind, uri, grant)
-        }
-
-        fromValues(
+        val fromBundle = PendingDocumentImportRestore.fromValues(
             savedInstanceState?.getString(PENDING_IMPORT_TOKEN),
             savedInstanceState?.getString(PENDING_IMPORT_KIND),
             savedInstanceState?.getString(PENDING_IMPORT_URI),
             savedInstanceState?.getBoolean(PENDING_IMPORT_GRANT, false) ?: false,
-        )?.let { return it }
-
-        val prefs = getSharedPreferences(PENDING_IMPORT_PREFS, Context.MODE_PRIVATE)
-        return fromValues(
-            prefs.getString(PENDING_IMPORT_TOKEN, null),
-            prefs.getString(PENDING_IMPORT_KIND, null),
-            prefs.getString(PENDING_IMPORT_URI, null),
-            prefs.getBoolean(PENDING_IMPORT_GRANT, false),
         )
-    }
-
-    private fun persistPendingDocumentImport(pending: PendingDocumentImport?): Boolean {
-        val edit = getSharedPreferences(PENDING_IMPORT_PREFS, Context.MODE_PRIVATE).edit().clear()
-        if (pending != null) {
-            edit.putString(PENDING_IMPORT_TOKEN, pending.token)
-                .putString(PENDING_IMPORT_KIND, pending.kind.savedValue)
-                .putString(PENDING_IMPORT_URI, pending.uri)
-                .putBoolean(PENDING_IMPORT_GRANT, pending.persistableGrantTaken)
+        // older builds kept the pick in plaintext prefs: adopt it once, wipe the file
+        val prefs = getSharedPreferences(PendingDocumentImportRestore.LEGACY_PREFS, Context.MODE_PRIVATE)
+        val legacy = object : LegacyPendingImportPrefs {
+            override fun getString(key: String): String? = prefs.getString(key, null)
+            override fun getBoolean(key: String): Boolean = prefs.getBoolean(key, false)
+            override fun clearAll(): Boolean = prefs.edit().clear().commit()
         }
-        val saved = edit.commit()
-        if (!saved) {
-            missionKeyError.value = Messages.missionKeyCouldNotPreserveThePendingDocumentImportAcrossProcessMessage()
-        }
-        return saved
+        return PendingDocumentImportRestore.restore(fromBundle, legacy.takeIf { prefs.all.isNotEmpty() })
     }
 
     private fun requestAuthBoundChange(target: Boolean) {
@@ -736,10 +711,10 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val LIVE_MAP_LOCATION_PREFS = "live_map_location_ui_v1"
         const val LIVE_MAP_LOCATION_REQUESTED = "permission_requested"
-        const val PENDING_IMPORT_PREFS = "pending_document_import_v1"
-        const val PENDING_IMPORT_TOKEN = "pending_import_token"
-        const val PENDING_IMPORT_KIND = "pending_import_kind"
-        const val PENDING_IMPORT_URI = "pending_import_uri"
-        const val PENDING_IMPORT_GRANT = "pending_import_grant"
+        // savedInstanceState keys, same names the old prefs file used
+        const val PENDING_IMPORT_TOKEN = PendingDocumentImportRestore.KEY_TOKEN
+        const val PENDING_IMPORT_KIND = PendingDocumentImportRestore.KEY_KIND
+        const val PENDING_IMPORT_URI = PendingDocumentImportRestore.KEY_URI
+        const val PENDING_IMPORT_GRANT = PendingDocumentImportRestore.KEY_GRANT
     }
 }

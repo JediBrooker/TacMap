@@ -121,7 +121,14 @@ class PdfRenderGuardState {
         if (ip.kind == GuardKind.BASE || ip.kind == GuardKind.VECTOR) inProgress = null
     }
 
-    fun launch(restoredToken: String?): GuardLaunchDecision {
+    fun launch(restoredToken: String?): GuardLaunchDecision = launch(listOfNotNull(restoredToken))
+
+    /**
+     * same table, but more than one map can come back on its own at launch: the active PDF
+     * and the entry a calibration auto-resume would preview (C8). Whichever of them was
+     * drawing when the process died is the suspect
+     */
+    fun launch(restoredTokens: Collection<String>): GuardLaunchDecision {
         val ip = inProgress
         // an older build kept the bake in inProgress, fromJson moves that into the slot
         val bakeInterrupted = bakeInProgress != null || ip?.kind == GuardKind.BAKE
@@ -129,11 +136,11 @@ class PdfRenderGuardState {
             ip != null && ip.kind == GuardKind.IMPORT ->
                 GuardLaunchDecision(GuardLaunchDecision.Decision.IMPORT_INTERRUPTED, ip.op, bakeInterrupted)
             ip != null && (ip.kind == GuardKind.BASE || ip.kind == GuardKind.VECTOR) &&
-                restoredToken != null && ip.token == restoredToken -> {
-                suspect = restoredToken
+                ip.token in restoredTokens -> {
+                suspect = ip.token
                 GuardLaunchDecision(GuardLaunchDecision.Decision.SUPPRESS, null, bakeInterrupted)
             }
-            restoredToken != null && suspect == restoredToken ->
+            suspect != null && suspect in restoredTokens ->
                 GuardLaunchDecision(GuardLaunchDecision.Decision.SUPPRESS, null, bakeInterrupted)
             else -> GuardLaunchDecision(GuardLaunchDecision.Decision.NONE, null, bakeInterrupted)
         }
@@ -217,7 +224,7 @@ class PdfRenderGuardState {
 class PdfRenderGuard(private val file: File) {
     private val lock = Any()
     private var state: PdfRenderGuardState = load()
-    private var launchDecision: Pair<String?, GuardLaunchDecision>? = null
+    private var launchDecision: Pair<Set<String>, GuardLaunchDecision>? = null
 
     /** set when the last write didn't make it to disk */
     @Volatile var lastWriteFailed: Boolean = false
@@ -255,18 +262,28 @@ class PdfRenderGuard(private val file: File) {
      * later callers get the same answer for the same token. A restore that happens
      * after the decision just checks the standing suspect.
      */
-    fun launchDecision(restoredToken: String?): GuardLaunchDecision = synchronized(lock) {
-        launchDecision?.let { (token, decision) ->
-            if (token == restoredToken) return decision
-            return if (restoredToken != null && state.suspect == restoredToken) {
+    fun launchDecision(restoredToken: String?): GuardLaunchDecision = launchDecision(listOfNotNull(restoredToken))
+
+    /** [launchDecision] for every map that restores on its own (active PDF + an auto-resume preview) */
+    fun launchDecision(restoredTokens: Collection<String>): GuardLaunchDecision = synchronized(lock) {
+        val wanted = restoredTokens.toSet()
+        launchDecision?.let { (tokens, decision) ->
+            if (tokens == wanted) return decision
+            return if (state.suspect != null && state.suspect in wanted) {
                 GuardLaunchDecision(GuardLaunchDecision.Decision.SUPPRESS)
             } else GuardLaunchDecision.NONE
         }
-        val decision = state.launch(restoredToken)
+        val decision = state.launch(wanted)
         persist()
-        launchDecision = restoredToken to decision
+        launchDecision = wanted to decision
         decision
     }
+
+    /** the launch step already ran this process */
+    val launchDecided: Boolean get() = synchronized(lock) { launchDecision != null }
+
+    /** [token] is the standing crash suspect (only Open Anyway or Delete clears it) */
+    fun isSuspect(token: String?): Boolean = synchronized(lock) { token != null && state.suspect == token }
 
     private var noticeTaken = false
 

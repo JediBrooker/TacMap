@@ -28,6 +28,8 @@ internal object ManagedImportedMapFileLifecycle {
         managedParent: File,
         directories: List<File>,
         keeping: Set<File>,
+        /** imports / bakes still being written (.partial and not-yet-committed copies), never touched */
+        inFlight: Set<File> = emptySet(),
     ): Boolean {
         val canonicalParent = validateDirectory(managedParent, expectedParent = null)
             ?: return false
@@ -45,12 +47,18 @@ internal object ManagedImportedMapFileLifecycle {
 
         val canonicalKeep = mutableSetOf<File>()
         keeping.forEach { retained ->
+            // a library entry's sqlite sidecars are kept with it, so residue names count here too
             val validated = validateManagedMap(
                 retained,
                 roots,
-                authoritativeOnly = true,
+                authoritativeOnly = !isSqliteSidecar(retained.name),
             ) ?: return false
             canonicalKeep += validated
+        }
+        // in flight files may not exist yet (or any more), only the ones that do matter
+        inFlight.forEach { busy ->
+            if (!busy.exists()) return@forEach
+            canonicalKeep += runCatching { busy.canonicalFile }.getOrNull() ?: return false
         }
 
         roots.forEach { root ->
@@ -114,8 +122,15 @@ internal object ManagedImportedMapFileLifecycle {
      * can't get while the PDF is missing. No recursion, symlinks and dirs are left alone and
      * reported. Caller holds the managed files lock and has actually read the record
      */
-    fun sweepBakes(root: File, keep: String?): Boolean {
+    fun sweepBakes(root: File, keep: String?): Boolean = sweepBakes(root, setOfNotNull(keep))
+
+    /**
+     * same, keeping every name in [keep] (the library can hold a bake per PDF) and anything
+     * a bake publish still has in flight (moved in, record not written yet)
+     */
+    fun sweepBakes(root: File, keep: Set<String>, inFlight: Set<File> = emptySet()): Boolean {
         if (!root.exists()) return true
+        val busy = inFlight.mapNotNullTo(HashSet()) { runCatching { it.canonicalPath }.getOrNull() }
         if (Files.isSymbolicLink(root.toPath()) || !Files.isDirectory(root.toPath(), LinkOption.NOFOLLOW_LINKS)) return false
         val dir = runCatching { root.canonicalFile }.getOrNull() ?: return false
         val children = dir.listFiles() ?: return false
@@ -124,7 +139,8 @@ internal object ManagedImportedMapFileLifecycle {
             val name = child.name
             if (!name.startsWith(BAKE_PREFIX)) continue
             val base = sqliteSidecarSuffixes.firstOrNull(name::endsWith)?.let { name.removeSuffix(it) } ?: name
-            if (!isGeneratedBakeName(base) || base == keep) continue
+            if (!isGeneratedBakeName(base) || base in keep) continue
+            if (runCatching { File(dir, base).canonicalPath }.getOrNull() in busy) continue
             val path = child.toPath()
             if (Files.isSymbolicLink(path) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
                 clean = false
@@ -173,6 +189,11 @@ internal object ManagedImportedMapFileLifecycle {
     private fun isAuthoritativeMapName(name: String): Boolean {
         val lower = name.lowercase()
         return lower.endsWith(".pdf") || lower.endsWith(".mbtiles")
+    }
+
+    private fun isSqliteSidecar(name: String): Boolean {
+        val lower = name.lowercase()
+        return sqliteSidecarSuffixes.any { lower.endsWith(".mbtiles$it") }
     }
 
     private fun isCrashResidueName(name: String): Boolean {

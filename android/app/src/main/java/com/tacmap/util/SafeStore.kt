@@ -157,6 +157,9 @@ object SafeStore {
 
     private fun sealedOnlyMarker(file: File) = File(file.parentFile, ".${file.name}.sealed-only-v1")
 
+    /** a sealed write to [file] happened at some point (the marker outlives the file) */
+    fun wasWritten(file: File): Boolean = sealedOnlyMarker(file).exists()
+
     internal fun isSealedOnlyAuthenticated(label: String): Boolean = migrationPolicy.isSealedOnly(label)
 
     internal fun markSealedOnlyAuthenticated(label: String) = migrationPolicy.markSealedOnly(label)

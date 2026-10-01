@@ -3,14 +3,278 @@ enum Messages {
     static func aboutScreenTitle() -> String {
         L10n.message("id.about_screen_title", fallback: "About TacMap")
     }
-    static func calibrationCollinear() -> String {
-        L10n.message("id.calibration_collinear", fallback: "Calibration needs 3 points that aren't in a straight line.")
+    static func calibrationActionDone() -> String {
+        L10n.message("id.calibration_action_done", fallback: "Done")
     }
-    static func calibrationDone(_ error: String) -> String {
-        L10n.message("id.calibration_done", fallback: "Map calibrated · RMS error %1$@", error)
+    static func calibrationActionEdit() -> String {
+        L10n.message("id.calibration_action_edit", fallback: "Edit coordinate")
     }
-    static func calibrationFailed() -> String {
-        L10n.message("id.calibration_failed", fallback: "Calibration failed. Check the grid references and try again.")
+    static func calibrationActionMove() -> String {
+        L10n.message("id.calibration_action_move", fallback: "Move")
+    }
+    static func calibrationAddMore() -> String {
+        L10n.message("id.calibration_add_more", fallback: "Add more points")
+    }
+    static func calibrationAddPoint() -> String {
+        L10n.message("id.calibration_add_point", fallback: "Add point")
+    }
+    static func calibrationAmbiguous(_ first: String, _ second: String) -> String {
+        L10n.message("id.calibration_ambiguous", fallback: "Point %1$@ or %2$@ is wrong. Add another point to find out which.", first, second)
+    }
+    static func calibrationCellFeature(_ size: String, _ half: String) -> String {
+        L10n.message("id.calibration_cell_feature", fallback: "centre of the %1$@ square (±%2$@)", size, half)
+    }
+    static func calibrationCellIntersection(_ size: String) -> String {
+        L10n.message("id.calibration_cell_intersection", fallback: "corner of the %1$@ square", size)
+    }
+    static func calibrationClose() -> String {
+        L10n.message("id.calibration_close", fallback: "Leave calibration")
+    }
+    static func calibrationCompletedFrom(_ number: String) -> String {
+        L10n.message("id.calibration_completed_from", fallback: "Zone and square from point %1$@", number)
+    }
+    static func calibrationCompletedFromMap() -> String {
+        L10n.message("id.calibration_completed_from_map", fallback: "Zone and square from the map")
+    }
+    static func calibrationDatumChanged(_ datum: String) -> String {
+        L10n.message("id.calibration_datum_changed", fallback: "Datum changed to %1$@. All points were re-read.", datum)
+    }
+    static func calibrationDatumHelp() -> String {
+        L10n.message("id.calibration_datum_help", fallback: "Choose the horizontal datum shown in the sheet's margin or legend. The wrong datum can shift the map by 200 m or more.")
+    }
+    static func calibrationDatumNationalGridNote() -> String {
+        L10n.message("id.calibration_datum_national_grid_note", fallback: "National grids such as the British National Grid can't be typed. Enter latitude/longitude instead.")
+    }
+    static func calibrationDatumTitle() -> String {
+        L10n.message("id.calibration_datum_title", fallback: "Datum printed on the map")
+    }
+    static func calibrationDatumUnsure() -> String {
+        L10n.message("id.calibration_datum_unsure", fallback: "Not sure (use WGS84)")
+    }
+    static func calibrationDegenerate() -> String {
+        L10n.message("id.calibration_degenerate", fallback: "The points are almost in a line or too close together. Add one well away from the others.")
+    }
+    static func calibrationDisagree(_ distance: String) -> String {
+        L10n.message("id.calibration_disagree", fallback: "Points disagree by up to %1$@. Check the points with the largest error.", distance)
+    }
+    static func calibrationDisagreeAddFifth(_ distance: String) -> String {
+        L10n.message("id.calibration_disagree_add_fifth", fallback: "Points disagree by up to %1$@. Add a 5th point so TacMap can find the wrong one.", distance)
+    }
+    static func calibrationDone(_ points: String, _ rms: String) -> String {
+        L10n.message("id.calibration_done", fallback: "Map calibrated · %1$@ · RMS %2$@", points, rms)
+    }
+    static func calibrationDoneExact() -> String {
+        L10n.message("id.calibration_done_exact", fallback: "Map calibrated with 3 points (unchecked).")
+    }
+    static func calibrationDraftUnsaved() -> String {
+        L10n.message("id.calibration_draft_unsaved", fallback: "Points not saved on this device yet. Unlock mission data to save them.")
+    }
+    static func calibrationEntryPlaceholder() -> String {
+        L10n.message("id.calibration_entry_placeholder", fallback: "MGRS, UTM or lat/long")
+    }
+    static func calibrationEntryTitle(_ number: String) -> String {
+        L10n.message("id.calibration_entry_title", fallback: "Point %1$@", number)
+    }
+    static func calibrationErrBand(_ band: String) -> String {
+        L10n.message("id.calibration_err_band", fallback: "The northing isn't in latitude band %1$@. Check the band letter.", band)
+    }
+    static func calibrationErrNeedsFull() -> String {
+        L10n.message("id.calibration_err_needs_full", fallback: "For the first point, enter the full reference with zone and square, e.g. 56H LH 349 522.")
+    }
+    static func calibrationErrOddDigits() -> String {
+        L10n.message("id.calibration_err_odd_digits", fallback: "Enter the same number of easting and northing figures.")
+    }
+    static func calibrationErrOldLettering(_ datum: String) -> String {
+        L10n.message("id.calibration_err_old_lettering", fallback: "Sheets on %1$@ use the older MGRS lettering, which TacMap can't read yet. Enter UTM or latitude/longitude instead.", datum)
+    }
+    static func calibrationErrPolar() -> String {
+        L10n.message("id.calibration_err_polar", fallback: "Polar (UPS) references aren't supported. Enter latitude/longitude.")
+    }
+    static func calibrationErrRange() -> String {
+        L10n.message("id.calibration_err_range", fallback: "Latitude must be within ±90° and longitude within ±180°, with minutes and seconds under 60.")
+    }
+    static func calibrationErrSquare(_ square: String, _ zone: String) -> String {
+        L10n.message("id.calibration_err_square", fallback: "%1$@ isn't a valid 100 km square in zone %2$@.", square, zone)
+    }
+    static func calibrationErrTooCoarse() -> String {
+        L10n.message("id.calibration_err_too_coarse", fallback: "Too coarse. Use at least 4 figures at a grid intersection (e.g. LH 34 52), or 6 for a feature.")
+    }
+    static func calibrationErrUnrecognised() -> String {
+        L10n.message("id.calibration_err_unrecognised", fallback: "Not a recognised MGRS, UTM or lat/long coordinate.")
+    }
+    static func calibrationExactFit() -> String {
+        L10n.message("id.calibration_exact_fit", fallback: "3 points: exact fit, not checked. Add a 4th point to check accuracy.")
+    }
+    static func calibrationFinishAnyway() -> String {
+        L10n.message("id.calibration_finish_anyway", fallback: "Finish anyway")
+    }
+    static func calibrationFinishConfirmExact() -> String {
+        L10n.message("id.calibration_finish_confirm_exact", fallback: "With only 3 points a typing mistake can't be detected.")
+    }
+    static func calibrationFinishConfirmPoor(_ rms: String) -> String {
+        L10n.message("id.calibration_finish_confirm_poor", fallback: "The fit is poor (RMS %1$@). Positions read from this map may be wrong.", rms)
+    }
+    static func calibrationFinishConfirmSpread() -> String {
+        L10n.message("id.calibration_finish_confirm_spread", fallback: "The points cover only a small part of the sheet, so its edges may be off.")
+    }
+    static func calibrationFinishConfirmTitle() -> String {
+        L10n.message("id.calibration_finish_confirm_title", fallback: "Finish with warnings?")
+    }
+    static func calibrationFitSummary(_ points: String, _ rms: String, _ grade: String) -> String {
+        L10n.message("id.calibration_fit_summary", fallback: "%1$@ · RMS %2$@ · %3$@", points, rms, grade)
+    }
+    static func calibrationGpsTooCoarse(_ accuracy: String) -> String {
+        L10n.message("id.calibration_gps_too_coarse", fallback: "GPS accuracy is ±%1$@. Wait for ±20 m or better.", accuracy)
+    }
+    static func calibrationGradeFair() -> String {
+        L10n.message("id.calibration_grade_fair", fallback: "Fair")
+    }
+    static func calibrationGradeGood() -> String {
+        L10n.message("id.calibration_grade_good", fallback: "Good")
+    }
+    static func calibrationGradePoor() -> String {
+        L10n.message("id.calibration_grade_poor", fallback: "Poor")
+    }
+    static func calibrationGridToggle() -> String {
+        L10n.message("id.calibration_grid_toggle", fallback: "Grid")
+    }
+    static func calibrationHeaderLabel() -> String {
+        L10n.message("id.calibration_header_label", fallback: "Calibrating")
+    }
+    static func calibrationHideKeyboard() -> String {
+        L10n.message("id.calibration_hide_keyboard", fallback: "Hide keyboard")
+    }
+    static func calibrationImplausible() -> String {
+        L10n.message("id.calibration_implausible", fallback: "These points can't all be right: the map would be stretched or scaled impossibly. Check each point's zone and square letters.")
+    }
+    static func calibrationIntro() -> String {
+        L10n.message("id.calibration_intro", fallback: "Place the crosshair on a known point, then tap Add point.")
+    }
+    static func calibrationInvalid() -> String {
+        L10n.message("id.calibration_invalid", fallback: "These points put part of the sheet off the Earth. Check each coordinate, especially the grid zone.")
+    }
+    static func calibrationKindFeature() -> String {
+        L10n.message("id.calibration_kind_feature", fallback: "Feature")
+    }
+    static func calibrationKindIntersection() -> String {
+        L10n.message("id.calibration_kind_intersection", fallback: "Grid intersection")
+    }
+    static func calibrationLabelPlaceholder() -> String {
+        L10n.message("id.calibration_label_placeholder", fallback: "Label (optional)")
+    }
+    static func calibrationLeaveContinue() -> String {
+        L10n.message("id.calibration_leave_continue", fallback: "Continue calibrating")
+    }
+    static func calibrationLeaveDiscard() -> String {
+        L10n.message("id.calibration_leave_discard", fallback: "Discard changes")
+    }
+    static func calibrationLeaveKeep() -> String {
+        L10n.message("id.calibration_leave_keep", fallback: "Keep points for later")
+    }
+    static func calibrationLeaveMessage() -> String {
+        L10n.message("id.calibration_leave_message", fallback: "You can keep your points on this device and finish later.")
+    }
+    static func calibrationLeaveTitle() -> String {
+        L10n.message("id.calibration_leave_title", fallback: "Leave calibration?")
+    }
+    static func calibrationMaxPoints(_ max: String) -> String {
+        L10n.message("id.calibration_max_points", fallback: "You've placed the maximum of %1$@ points.", max)
+    }
+    static func calibrationMoveToCrosshair() -> String {
+        L10n.message("id.calibration_move_to_crosshair", fallback: "Move to crosshair")
+    }
+    static func calibrationMoving(_ number: String) -> String {
+        L10n.message("id.calibration_moving", fallback: "Move point %1$@: put the crosshair on the right spot, then tap Set here.", number)
+    }
+    static func calibrationNeedPoints(_ placed: String) -> String {
+        L10n.message("id.calibration_need_points", fallback: "%1$@ of 3 points placed. Spread them across the sheet.", placed)
+    }
+    static func calibrationNextCornerBottomLeft() -> String {
+        L10n.message("id.calibration_next_corner_bottom_left", fallback: "Next: add a point near the bottom-left corner.")
+    }
+    static func calibrationNextCornerBottomRight() -> String {
+        L10n.message("id.calibration_next_corner_bottom_right", fallback: "Next: add a point near the bottom-right corner.")
+    }
+    static func calibrationNextCornerTopLeft() -> String {
+        L10n.message("id.calibration_next_corner_top_left", fallback: "Next: add a point near the top-left corner.")
+    }
+    static func calibrationNextCornerTopRight() -> String {
+        L10n.message("id.calibration_next_corner_top_right", fallback: "Next: add a point near the top-right corner.")
+    }
+    static func calibrationNotGeoreferenced() -> String {
+        L10n.message("id.calibration_not_georeferenced", fallback: "NOT GEOREFERENCED")
+    }
+    static func calibrationOffSheet() -> String {
+        L10n.message("id.calibration_off_sheet", fallback: "The crosshair is off the map sheet.")
+    }
+    static func calibrationOutlier(_ number: String, _ distance: String) -> String {
+        L10n.message("id.calibration_outlier", fallback: "Point %1$@ doesn't match the others (%2$@ off). Check its figures, move it or delete it.", number, distance)
+    }
+    static func calibrationPaused() -> String {
+        L10n.message("id.calibration_paused", fallback: "Calibration paused because the map changed. Your points are kept.")
+    }
+    static func calibrationPointDeleted(_ number: String) -> String {
+        L10n.message("id.calibration_point_deleted", fallback: "Point %1$@ deleted.", number)
+    }
+    static func calibrationPointsButton() -> String {
+        L10n.message("id.calibration_points_button", fallback: "Points")
+    }
+    static func calibrationPointsTitle() -> String {
+        L10n.message("id.calibration_points_title", fallback: "Calibration points")
+    }
+    static func calibrationPreviewTag() -> String {
+        L10n.message("id.calibration_preview_tag", fallback: "PREVIEW")
+    }
+    static func calibrationReadsAs(_ text: String) -> String {
+        L10n.message("id.calibration_reads_as", fallback: "Reads as %1$@", text)
+    }
+    static func calibrationResume() -> String {
+        L10n.message("id.calibration_resume", fallback: "Resume")
+    }
+    static func calibrationResumeMessage(_ points: String, _ age: String) -> String {
+        L10n.message("id.calibration_resume_message", fallback: "An unfinished calibration of this map has %1$@, last changed %2$@.", points, age)
+    }
+    static func calibrationResumeTitle() -> String {
+        L10n.message("id.calibration_resume_title", fallback: "Resume calibration?")
+    }
+    static func calibrationResumed(_ points: String) -> String {
+        L10n.message("id.calibration_resumed", fallback: "Calibration resumed (%1$@).", points)
+    }
+    static func calibrationRowResidual(_ distance: String) -> String {
+        L10n.message("id.calibration_row_residual", fallback: "%1$@ off", distance)
+    }
+    static func calibrationSave() -> String {
+        L10n.message("id.calibration_save", fallback: "Save point")
+    }
+    static func calibrationSaveAnyway() -> String {
+        L10n.message("id.calibration_save_anyway", fallback: "Save anyway")
+    }
+    static func calibrationSaveFailed() -> String {
+        L10n.message("id.calibration_save_failed", fallback: "The calibration couldn't be saved securely. Your points are kept. Check storage, then tap Retry.")
+    }
+    static func calibrationSetHere() -> String {
+        L10n.message("id.calibration_set_here", fallback: "Set here")
+    }
+    static func calibrationSpreadLow() -> String {
+        L10n.message("id.calibration_spread_low", fallback: "The points cover only a small part of the sheet.")
+    }
+    static func calibrationStartOver() -> String {
+        L10n.message("id.calibration_start_over", fallback: "Start over")
+    }
+    static func calibrationUseGps(_ accuracy: String) -> String {
+        L10n.message("id.calibration_use_gps", fallback: "Use my position (±%1$@)", accuracy)
+    }
+    static func calibrationWarnFar(_ distance: String) -> String {
+        L10n.message("id.calibration_warn_far", fallback: "This is %1$@ from where the map currently puts the crosshair. Check the figures.", distance)
+    }
+    static func calibrationZoomHint() -> String {
+        L10n.message("id.calibration_zoom_hint", fallback: "Zoom in to place the point precisely.")
+    }
+    static func calibrationZoomIn() -> String {
+        L10n.message("id.calibration_zoom_in", fallback: "Zoom in")
+    }
+    static func calibrationZoomOut() -> String {
+        L10n.message("id.calibration_zoom_out", fallback: "Zoom out")
     }
     static func chatRecipientHeading() -> String {
         L10n.message("id.chat_recipient_heading", fallback: "RECIPIENT")
@@ -141,6 +405,129 @@ enum Messages {
     static func legacyLayerHistoryHelpMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.legacy_layer_history_help", fallback: "Some legacy layers have ambiguous default-layer history. Confirm each one as custom or default before renaming, recolouring, or deleting it.", arguments: [])
     }
+    static func mapActionCalibrate() -> String {
+        L10n.message("id.map_action_calibrate", fallback: "Calibrate / refine…")
+    }
+    static func mapActionChoosePage() -> String {
+        L10n.message("id.map_action_choose_page", fallback: "Choose page…")
+    }
+    static func mapActionDelete() -> String {
+        L10n.message("id.map_action_delete", fallback: "Delete…")
+    }
+    static func mapActionUseEmbedded() -> String {
+        L10n.message("id.map_action_use_embedded", fallback: "Use the PDF's own georeferencing")
+    }
+    static func mapChangePageConfirm() -> String {
+        L10n.message("id.map_change_page_confirm", fallback: "Changing the page removes this map's calibration.")
+    }
+    static func mapChoosePageMessage(_ pages: String) -> String {
+        L10n.message("id.map_choose_page_message", fallback: "This PDF has %1$@ pages. Choose the page with the map.", pages)
+    }
+    static func mapDeleteFailed(_ detail: String) -> String {
+        L10n.message("id.map_delete_failed", fallback: "The map couldn't be deleted: %1$@", detail)
+    }
+    static func mapDeleteMessage() -> String {
+        L10n.message("id.map_delete_message", fallback: "Removes the map file, its calibration and any offline tiles made from it from this device. Mission objects aren't affected. This can't be undone.")
+    }
+    static func mapDeleteTitle(_ name: String) -> String {
+        L10n.message("id.map_delete_title", fallback: "Delete “%1$@”?", name)
+    }
+    static func mapImportCalibrateNow() -> String {
+        L10n.message("id.map_import_calibrate_now", fallback: "Calibrate now")
+    }
+    static func mapImportCancelled() -> String {
+        L10n.message("id.map_import_cancelled", fallback: "Import cancelled.")
+    }
+    static func mapImportChoosePageMessage(_ pages: String) -> String {
+        L10n.message("id.map_import_choose_page_message", fallback: "This PDF has %1$@ pages and none has usable georeferencing. Choose the page with the map.", pages)
+    }
+    static func mapImportChoosePageTitle() -> String {
+        L10n.message("id.map_import_choose_page_title", fallback: "Choose the map page")
+    }
+    static func mapImportCopying(_ percent: String) -> String {
+        L10n.message("id.map_import_copying", fallback: "Importing map… %1$@", percent)
+    }
+    static func mapImportDuplicate(_ name: String) -> String {
+        L10n.message("id.map_import_duplicate", fallback: "Already in your maps as “%1$@”. Opened it.", name)
+    }
+    static func mapImportGeorefRejected(_ reason: String) -> String {
+        L10n.message("id.map_import_georef_rejected", fallback: "This PDF has georeferencing TacMap can't use (%1$@). You can calibrate it with known points.", reason)
+    }
+    static func mapImportInterrupted() -> String {
+        L10n.message("id.map_import_interrupted", fallback: "The last map import didn't finish and was removed.")
+    }
+    static func mapImportInvalidMbtiles() -> String {
+        L10n.message("id.map_import_invalid_mbtiles", fallback: "This file isn't a readable MBTiles map.")
+    }
+    static func mapImportInvalidPdf() -> String {
+        L10n.message("id.map_import_invalid_pdf", fallback: "This file isn't a readable PDF.")
+    }
+    static func mapImportLater() -> String {
+        L10n.message("id.map_import_later", fallback: "Later")
+    }
+    static func mapImportLibraryFull(_ limit: String) -> String {
+        L10n.message("id.map_import_library_full", fallback: "You have %1$@ imported maps. Delete one to import another.", limit)
+    }
+    static func mapImportNoSpace(_ size: String) -> String {
+        L10n.message("id.map_import_no_space", fallback: "Not enough free storage to import this map (%1$@ needed).", size)
+    }
+    static func mapImportPageBadgeRejected() -> String {
+        L10n.message("id.map_import_page_badge_rejected", fallback: "Unreadable map data")
+    }
+    static func mapImportPageLabel(_ page: String) -> String {
+        L10n.message("id.map_import_page_label", fallback: "Page %1$@", page)
+    }
+    static func mapImportPageSize() -> String {
+        L10n.message("id.map_import_page_size", fallback: "This PDF's page size is outside what TacMap can display.")
+    }
+    static func mapImportPageUsed(_ page: String, _ pages: String) -> String {
+        L10n.message("id.map_import_page_used", fallback: "Using page %1$@ of %2$@, which has the map's georeferencing.", page, pages)
+    }
+    static func mapImportPassword() -> String {
+        L10n.message("id.map_import_password", fallback: "This PDF is password-protected. Remove the password, then import it again.")
+    }
+    static func mapImportReadFailed(_ detail: String) -> String {
+        L10n.message("id.map_import_read_failed", fallback: "The map couldn't be imported: %1$@", detail)
+    }
+    static func mapImportReading(_ page: String, _ pages: String) -> String {
+        L10n.message("id.map_import_reading", fallback: "Reading map… page %1$@ of %2$@", page, pages)
+    }
+    static func mapImportSaving() -> String {
+        L10n.message("id.map_import_saving", fallback: "Saving map…")
+    }
+    static func mapImportTooComplex() -> String {
+        L10n.message("id.map_import_too_complex", fallback: "This PDF is too complex to read safely on this device.")
+    }
+    static func mapImportTooLarge(_ limit: String) -> String {
+        L10n.message("id.map_import_too_large", fallback: "This file is larger than the %1$@ import limit.", limit)
+    }
+    static func mapImportTooManyPages(_ limit: String) -> String {
+        L10n.message("id.map_import_too_many_pages", fallback: "This PDF has more than %1$@ pages. Import a single sheet instead.", limit)
+    }
+    static func mapImportUnlockFirst() -> String {
+        L10n.message("id.map_import_unlock_first", fallback: "Unlock mission data before importing a map.")
+    }
+    static func mapLibraryCorruptMessage() -> String {
+        L10n.message("id.map_library_corrupt_message", fallback: "The saved map library couldn't be read. A recovery copy was kept and no map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.")
+    }
+    static func mapLibraryCorruptMessageMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.map_library_corrupt_message", fallback: "The saved map library couldn't be read. A recovery copy was kept and no map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.", arguments: [])
+    }
+    static func mapLibraryEmpty() -> String {
+        L10n.message("id.map_library_empty", fallback: "No imported maps. Use Import to add a PDF, GeoPDF or MBTiles map.")
+    }
+    static func mapLibraryFooter(_ maps: String, _ size: String) -> String {
+        L10n.message("id.map_library_footer", fallback: "%1$@ · %2$@ on this device. Imported maps stay on this device until you delete them and aren't included in backups.", maps, size)
+    }
+    static func mapLibraryLocked() -> String {
+        L10n.message("id.map_library_locked", fallback: "Unlock mission data to see and change imported maps.")
+    }
+    static func mapLibrarySection() -> String {
+        L10n.message("id.map_library_section", fallback: "Imported maps")
+    }
+    static func mapMigrationUncalibrated(_ name: String) -> String {
+        L10n.message("id.map_migration_uncalibrated", fallback: "“%1$@” was never georeferenced, so it's no longer shown as a basemap. Calibrate it from Layers.", name)
+    }
     static func mapPointCopy() -> String {
         L10n.message("id.map_point_copy", fallback: "Copy Coordinates")
     }
@@ -155,6 +542,39 @@ enum Messages {
     }
     static func mapPointSunMoon() -> String {
         L10n.message("id.map_point_sun_moon", fallback: "Sun and Moon Here")
+    }
+    static func mapRecoveredName(_ number: String) -> String {
+        L10n.message("id.map_recovered_name", fallback: "Recovered map %1$@", number)
+    }
+    static func mapStateCalibrated(_ points: String, _ rms: String) -> String {
+        L10n.message("id.map_state_calibrated", fallback: "Calibrated · %1$@ · RMS %2$@", points, rms)
+    }
+    static func mapStateCalibratedExact(_ points: String) -> String {
+        L10n.message("id.map_state_calibrated_exact", fallback: "Calibrated · %1$@ (unchecked)", points)
+    }
+    static func mapStateDerived(_ name: String) -> String {
+        L10n.message("id.map_state_derived", fallback: "Offline tiles from “%1$@”", name)
+    }
+    static func mapStateDraft(_ points: String) -> String {
+        L10n.message("id.map_state_draft", fallback: "Calibration in progress · %1$@", points)
+    }
+    static func mapStateGeopdf() -> String {
+        L10n.message("id.map_state_geopdf", fallback: "GeoPDF")
+    }
+    static func mapStateNeedsCalibration() -> String {
+        L10n.message("id.map_state_needs_calibration", fallback: "Not georeferenced – tap to calibrate")
+    }
+    static func mapStateOfflineTiles() -> String {
+        L10n.message("id.map_state_offline_tiles", fallback: "Offline tiles")
+    }
+    static func mapStateRejected() -> String {
+        L10n.message("id.map_state_rejected", fallback: "Georeferencing unreadable – tap to calibrate")
+    }
+    static func mapStateUnavailable() -> String {
+        L10n.message("id.map_state_unavailable", fallback: "File missing or changed – delete it and import again")
+    }
+    static func mapUseEmbeddedConfirm() -> String {
+        L10n.message("id.map_use_embedded_confirm", fallback: "Remove your calibration and use the georeferencing stored in the PDF?")
     }
     static func newLayerSaveFailed(_ detail: String) -> String {
         L10n.message("id.new_layer_save_failed", fallback: "Could not save new layer to disk: %1$@", detail)
@@ -191,6 +611,9 @@ enum Messages {
     }
     static func pdfBakeConfirmMessage(_ name: String, _ duration: String) -> String {
         L10n.message("id.pdf_bake_confirm_message", fallback: "“%1$@” stays on this device and remains the active map. This takes about %2$@.", name, duration)
+    }
+    static func pdfBakeConfirmMessageInactive(_ name: String, _ duration: String) -> String {
+        L10n.message("id.pdf_bake_confirm_message_inactive", fallback: "“%1$@” stays on this device and the map on screen doesn't change. This takes about %2$@.", name, duration)
     }
     static func pdfBakeConfirmTitle() -> String {
         L10n.message("id.pdf_bake_confirm_title", fallback: "Generate offline tiles?")
@@ -1097,12 +1520,6 @@ enum Messages {
     }
     static func displayCouldnTOpenThisFileAsAnMbtilesMapMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_couldn_t_open_this_file_as_an_mbtiles_map_ccbb0968", fallback: "Couldn't open this file as an MBTiles map.", arguments: [])
-    }
-    static func displayCouldnTParseMgrsFormatZoneBandSquareEasting() -> String {
-        L10n.message("id.ui_couldn_t_parse_mgrs_format_zone_band_square_east_7aed166b", fallback: "Couldn't parse MGRS. Format: <zone><band><square> <easting> <northing>, e.g. 56HLH 12345 67890")
-    }
-    static func displayCouldnTParseMgrsFormatZoneBandSquareEastingMessage() -> LocalizedMessage {
-        LocalizedMessage(id: "id.ui_couldn_t_parse_mgrs_format_zone_band_square_east_7aed166b", fallback: "Couldn't parse MGRS. Format: <zone><band><square> <easting> <northing>, e.g. 56HLH 12345 67890", arguments: [])
     }
     static func displayCouldnTParseThisFileAs(_ detail1: String, _ detail2: String) -> String {
         L10n.message("id.ui_couldn_t_parse_this_file_as_1_2_4fba71e5", fallback: "Couldn't parse this file as %1$@: %2$@", detail1, detail2)
@@ -2400,4 +2817,8 @@ enum Messages {
     static func newDrawingCountMessage(_ count: Int) -> LocalizedMessage { .quantity("new_drawing", count) }
     static func newLayerCount(_ count: Int) -> String { L10n.quantity("new_layer", count) }
     static func newLayerCountMessage(_ count: Int) -> LocalizedMessage { .quantity("new_layer", count) }
+    static func calibrationPointCount(_ count: Int) -> String { L10n.quantity("calibration_point", count) }
+    static func calibrationPointCountMessage(_ count: Int) -> LocalizedMessage { .quantity("calibration_point", count) }
+    static func importedMapCount(_ count: Int) -> String { L10n.quantity("imported_map", count) }
+    static func importedMapCountMessage(_ count: Int) -> LocalizedMessage { .quantity("imported_map", count) }
 }

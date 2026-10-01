@@ -45,6 +45,35 @@ struct AdobeViewportInput: Equatable {
     var gcs: PdfGcsInput = .missing
 }
 
+/// lgiRules.numericStrings: a pdf string standing in for a number has to look
+/// like one. Swift's Double() also takes hex floats, inf and nan, Kotlin's
+/// toDouble takes 10d/10f, so both apps gate on the same grammar first.
+enum PdfNumericString {
+    private static let grammar = try? NSRegularExpression(pattern: #"^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$"#)
+
+    /// trimmed of fiduciaryFits.whiteSpaceCodePoints, both ends only
+    static func trim(_ s: String) -> String {
+        let ws = CoordinateInputParser.whiteSpaceCodePoints
+        var scalars = Array(s.unicodeScalars)
+        while let f = scalars.first, ws.contains(f.value) { scalars.removeFirst() }
+        while let l = scalars.last, ws.contains(l.value) { scalars.removeLast() }
+        var v = String.UnicodeScalarView()
+        v.append(contentsOf: scalars)
+        return String(v)
+    }
+
+    /// nil = not a number string at all (the wrong type). A match too big for a
+    /// double comes back infinite, like an overflowing pdf real
+    static func parse(_ raw: String) -> Double? {
+        let t = trim(raw)
+        let ns = t as NSString
+        guard !t.isEmpty, let grammar,
+              let m = grammar.firstMatch(in: t, range: NSRange(location: 0, length: ns.length)),
+              m.range.length == ns.length else { return nil }
+        return Double(t) ?? .infinity
+    }
+}
+
 /// LGIDict values can be names, strings, numbers or dicts depending on the producer.
 /// Names and strings stay apart: both are text, only strings can be numbers
 /// (pdfbox on Android never reads a name as a number either).
@@ -53,32 +82,41 @@ indirect enum LgiValue: Equatable {
     case text(String)
     /// a pdf name
     case name(String)
+    /// a pdf real
     case number(Double)
+    /// a pdf integer, kept apart from reals: a /Datum integer reads as its
+    /// digits, a /Datum real is malformed (lgiRules.valueTypes)
+    case integer(Int64)
     case dictionary([String: LgiValue])
+    /// the pdf null object. PRESENT with the wrong type, never "absent"
+    /// (lgiRules.nullValues), so it can't open a /Display or default fallback
+    case null
     case other
 
-    /// name or string, trimmed. numbers aren't text (ProjectionType 5 is malformed)
+    /// name or string, trimmed of the shared whitespace set. numbers aren't
+    /// text (ProjectionType 5 is malformed)
     var text: String? {
         switch self {
-        case .text(let s), .name(let s): return s.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .text(let s), .name(let s): return PdfNumericString.trim(s)
         default: return nil
         }
     }
 
-    /// Datum code: text, or a bare whole number read as its digits (same as Android)
+    /// Datum code: text, or a pdf integer of any size read as its digits (same as Android)
     var code: String? {
         if let t = text { return t }
-        if case .number(let v) = self, v.isFinite, v == v.rounded(), abs(v) < 1e9 { return String(Int(v)) }
+        if case .integer(let n) = self { return String(n) }
         return nil
     }
 
-    /// finite numbers, or numeric strings like (-122.6). never a name, and
-    /// never inf/nan, so callers can range check and Int() it safely
+    /// finite numbers, or numeric strings like (-122.6) that pass the grammar.
+    /// never a name, and never inf/nan, so callers can range check and Int() it safely
     var number: Double? {
         let v: Double?
         switch self {
         case .number(let n): v = n
-        case .text(let s): v = Double(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        case .integer(let n): v = Double(n)
+        case .text(let s): v = PdfNumericString.parse(s)
         default: v = nil
         }
         guard let v, v.isFinite else { return nil }
@@ -576,7 +614,14 @@ enum PdfGeorefBuilder {
                   let lat0 = num("OriginLatitude"), abs(lat0) < 89.999,
                   let cm = num("CentralMeridian"), abs(cm) <= 360,
                   let fe = num("FalseEasting"), let fn = num("FalseNorthing") else { return .failure(.malformed) }
-            let p2 = num("StandardParallelTwo") ?? p1
+            // a present StandardParallelTwo that's null or junk doesn't default to the first one
+            let p2: Double
+            if p["StandardParallelTwo"] != nil {
+                guard let v = num("StandardParallelTwo") else { return .failure(.malformed) }
+                p2 = v
+            } else {
+                p2 = p1
+            }
             guard abs(p2) < 89.999 else { return .failure(.malformed) }
             crs = .lambertConformalConic2SP(lat1: p1, lat2: p2, lat0: lat0, lon0: cm, fe: fe * unit, fn: fn * unit)
         }

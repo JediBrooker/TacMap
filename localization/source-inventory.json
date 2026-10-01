@@ -99,18 +99,6 @@
     "reviewStatus": "manual-review-needed"
   },
   {
-    "path": "ios/TacticalMaps/Calibration/CalibrationInputSheet.swift",
-    "platform": "ios",
-    "area": "maps-calibration",
-    "reviewStatus": "manual-review-needed"
-  },
-  {
-    "path": "ios/TacticalMaps/Calibration/CalibrationOverlay.swift",
-    "platform": "ios",
-    "area": "maps-calibration",
-    "reviewStatus": "manual-review-needed"
-  },
-  {
     "path": "ios/TacticalMaps/Calibration/CalibrationSession.swift",
     "platform": "ios",
     "area": "maps-calibration",
@@ -192,12 +180,6 @@
     "path": "ios/TacticalMaps/Calibration/OnlineRasterBasemapSource.swift",
     "platform": "ios",
     "area": "maps-calibration",
-    "reviewStatus": "manual-review-needed"
-  },
-  {
-    "path": "ios/TacticalMaps/Calibration/PDFMapImporter.swift",
-    "platform": "ios",
-    "area": "import-export",
     "reviewStatus": "manual-review-needed"
   },
   {
@@ -2059,12 +2041,6 @@
     "reviewStatus": "manual-review-needed"
   },
   {
-    "path": "ios/TacticalMaps/Map/PDFPageMarkersView.swift",
-    "platform": "ios",
-    "area": "maps-calibration",
-    "reviewStatus": "manual-review-needed"
-  },
-  {
     "path": "android/app/src/main/java/com/tacmap/app/AppLockBiometric.kt",
     "platform": "android",
     "area": "navigation-settings",
@@ -2284,6 +2260,300 @@
     "path": "ios/TacticalMaps/Map/Renderer/PDF/PDFTileSource.swift",
     "platform": "ios",
     "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/CalibrationDraftStore.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/ImportLimits.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/ImportedMapLibrary.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/ImportedMapLibraryMigration.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/ImportedMapLibraryStore.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/InFlightImportFiles.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/LegacyMapReader.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfInspector.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/QuietLog.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/fiducial/CalibrationCameraAnchor.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/fiducial/CalibrationFitReport.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/fiducial/CalibrationPoint.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/fiducial/CalibrationState.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/fiducial/Geodesic.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CalibrationController.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CalibrationMapBridge.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CalibrationReticle.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CalibrationScreenLayer.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CalibrationText.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/CalibrationUi.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ImportProgressCard.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ImportedMapsSection.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapImportPipeline.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/PdfPagePickerDialog.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/CalibrationMarkersLayer.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/mgrs/CoordinateInputParser.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/LibraryReducer.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/LibraryMapFiles.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfValueRules.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/MapImportController.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/MapImportPipeline.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationDraftStore.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationEntryCard.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationFitReport.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationMessageText.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationModel.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationPanel.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationReticle.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/CalibrationSheets.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/ImportLimits.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/ImportedMapLibrary.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/ImportedMapLibraryMigration.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/ImportedMapStorage.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Drawing/ImportedMapsSection.swift",
+    "platform": "ios",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/MGRS/CoordinateInputParser.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/CalibrationMarkersOverlayView.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/LibraryRecovery.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/ImportUiRules.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/MapImportCommit.kt",
+    "platform": "android",
+    "area": "import-export",
     "reviewStatus": "manual-review-needed"
   }
 ]

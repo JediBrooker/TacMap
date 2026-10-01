@@ -21,10 +21,10 @@ final class PDFBakeTests: XCTestCase {
         controller = PDFBakeController()
         controller.finalDirectory = dir.appendingPathComponent("offline_tiles", isDirectory: true)
         controller.guardStore = PDFRenderGuard(url: dir.appendingPathComponent("guard.json"))
-        controller.persist = { [unowned self] p in self.persisted.append(p); return true }
+        controller.detachRecord = { [unowned self] _, p in self.persisted.append(p); return true }
         controller.attachRecord = { [unowned self] _, p, _ in self.persisted.append(p); return .attached }
-        // persist is stubbed, so the sealed session the sweep would read isnt ours
-        controller.storedBake = { .read(fileName: nil) }
+        // the record writes are stubbed, so the library the sweep would read isnt ours
+        controller.storedBake = { [] }
         persisted = []
     }
 
@@ -128,7 +128,7 @@ final class PDFBakeTests: XCTestCase {
         let record = try XCTUnwrap(pdf.bake)
         XCTAssertEqual(record.maxZoom, z)
         XCTAssertEqual(record.minZoom, 0)
-        XCTAssertTrue(persisted.first === pdf, "the record goes into the sealed session")
+        XCTAssertTrue(persisted.first === pdf, "the record goes onto the library entry")
         XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.url.path), "the PDF is kept (D5-05)")
         let file = controller.finalDirectory.appendingPathComponent(record.fileName)
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
@@ -617,9 +617,9 @@ final class PDFBakeTests: XCTestCase {
         let orphan = "tacmap-bake-\(UUID().uuidString).mbtiles"
         let mine = [name, name + "-journal", name + "-wal", name + "-shm"]
         for n in mine + [other, orphan, orphan + "-wal"] { try Data([1]).write(to: tiles.appendingPathComponent(n)) }
-        // R3-2: the sealed session (another sheet, say) still names other. it stays,
+        // R3-2: the library (another sheet, say) still names other. it stays,
         // the unnamed orphan goes with the Remove's sweep
-        controller.storedBake = { .read(fileName: other) }
+        controller.storedBake = { [other] }
         let record = PDFBakeRecord(fileName: name, bakeKey: String(repeating: "a", count: 64), minZoom: 0,
                                    maxZoom: 14, tilePx: 512, bytes: 1)
         pdf.bake = record
@@ -637,11 +637,11 @@ final class PDFBakeTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: tiles.appendingPathComponent(n).path), "\(n) swept")
         }
 
-        // a persist that fails keeps the record and the file
+        // a record write that fails keeps the record and the file
         let keep = PDFBakeRecord(fileName: other, bakeKey: String(repeating: "b", count: 64), minZoom: 0,
                                  maxZoom: 14, tilePx: 512, bytes: 1)
         pdf.bake = keep
-        controller.persist = { _ in false }
+        controller.detachRecord = { _, _ in false }
         XCTAssertFalse(controller.removeBake(from: pdf))
         XCTAssertEqual(pdf.bake, keep)
         XCTAssertTrue(FileManager.default.fileExists(atPath: tiles.appendingPathComponent(other).path))
@@ -714,12 +714,12 @@ final class PDFBakeTests: XCTestCase {
         try FileManager.default.createDirectory(at: tiles, withIntermediateDirectories: true)
         let a = "tacmap-bake-\(UUID().uuidString).mbtiles"
         try Data([1]).write(to: tiles.appendingPathComponent(a))
-        XCTAssertFalse(PDFBakeController.sweepUnreferencedBakes(in: tiles, storedBake: { .unreadable }))
+        XCTAssertFalse(PDFBakeController.sweepUnreferencedBakes(in: tiles, storedBake: { nil }))
         XCTAssertTrue(FileManager.default.fileExists(atPath: tiles.appendingPathComponent(a).path), "locked = untouched")
-        XCTAssertTrue(PDFBakeController.sweepUnreferencedBakes(in: tiles, storedBake: { .read(fileName: a) }))
+        XCTAssertTrue(PDFBakeController.sweepUnreferencedBakes(in: tiles, storedBake: { [a] }))
         XCTAssertTrue(FileManager.default.fileExists(atPath: tiles.appendingPathComponent(a).path), "named = kept")
-        XCTAssertTrue(PDFBakeController.sweepUnreferencedBakes(in: tiles, storedBake: { .read(fileName: nil) }))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: tiles.appendingPathComponent(a).path), "no session = swept")
+        XCTAssertTrue(PDFBakeController.sweepUnreferencedBakes(in: tiles, storedBake: { [] }))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tiles.appendingPathComponent(a).path), "named by nobody = swept")
     }
 
     // MARK: R2-S4 flagged sources
@@ -911,213 +911,5 @@ final class PDFBakeTests: XCTestCase {
         print(String(format: "[J3] USGS z%d @768 n=%d mean %.0f B max %d B min PSNR %.2f dB",
                      z, sizes.count, mean, sizes.max() ?? 0, worst))
         XCTAssertGreaterThanOrEqual(worst, PDFTileConstants.bakePsnrGateDb)
-    }
-}
-
-/// S1: publishing a bake goes through the real sealed session store. It must
-/// never write the captured (maybe stale) map object back over a newer session.
-final class PDFBakePublishTests: XCTestCase {
-    typealias F = PDFTileRenderFixtureTests
-    private let testKey = Data((0..<32).map { UInt8(90 + $0) })
-    private var root: URL!
-    private var imported: URL!
-    private var suite: String!
-    private var originalDefaults: (() -> UserDefaults)!
-    private var originalImported: (() throws -> URL)!
-    private var originalLegacy: (() -> URL?)!
-    private var originalProbe: (() -> Bool?)!
-    var controller: PDFBakeController!
-
-    override func setUp() {
-        super.setUp()
-        originalDefaults = PDFSessionStore.defaultsProvider
-        originalImported = PDFSessionStore.importedMapsDirectoryProvider
-        originalLegacy = PDFSessionStore.legacyDocumentsDirectoryProvider
-        originalProbe = PDFSessionStore.retainedPDFProbe
-        // the selector here would be the test host's real one, nothing retained
-        PDFSessionStore.retainedPDFProbe = { false }
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("bake-publish-\(UUID().uuidString)")
-        imported = root.appendingPathComponent("ImportedMaps", isDirectory: true)
-        try? FileManager.default.createDirectory(at: imported, withIntermediateDirectories: true)
-        suite = "PDFBakePublishTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        let dir = imported!
-        PDFSessionStore.defaultsProvider = { defaults }
-        PDFSessionStore.importedMapsDirectoryProvider = { dir }
-        PDFSessionStore.legacyDocumentsDirectoryProvider = { nil }
-        SafeStore.keyProvider = { [testKey] in testKey }
-        SealedMigrationPolicy.resetForTests(key: testKey)
-        controller = PDFBakeController()
-        controller.finalDirectory = root.appendingPathComponent("offline_tiles", isDirectory: true)
-        controller.guardStore = PDFRenderGuard(url: root.appendingPathComponent("guard.json"))
-    }
-
-    override func tearDown() {
-        controller.cancel()
-        PDFSessionStore.clear()
-        PDFSessionStore.defaultsProvider().removePersistentDomain(forName: suite)
-        PDFSessionStore.defaultsProvider = originalDefaults
-        PDFSessionStore.importedMapsDirectoryProvider = originalImported
-        PDFSessionStore.legacyDocumentsDirectoryProvider = originalLegacy
-        PDFSessionStore.retainedPDFProbe = originalProbe
-        SafeStore.keyProvider = { try DataKey.key() }
-        SealedMigrationPolicy.resetForTests(key: testKey)
-        try? FileManager.default.removeItem(at: root)
-        super.tearDown()
-    }
-
-    func waitFor(_ what: String, timeout: Double = 60, _ cond: () -> Bool) {
-        let end = Date().addingTimeInterval(timeout)
-        while !cond(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
-        XCTAssertTrue(cond(), "timed out waiting for \(what)")
-    }
-
-    func importedPDF() throws -> PDFMapSource {
-        let src = try XCTUnwrap(F.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
-        let url = imported.appendingPathComponent("imported-\(UUID().uuidString).pdf")
-        try FileManager.default.copyItem(at: src, to: url)
-        let g = try XCTUnwrap(GeoPDFReader.read(url: url)?.georef)
-        let pdf = PDFMapSource(url: url, georef: g, contentKey: PDFSessionStore.contentKey(for: url))
-        XCTAssertTrue(PDFSessionStore.save(pdf))
-        return pdf
-    }
-
-    func confirm(_ pdf: PDFMapSource) throws -> PDFBakeProposal {
-        controller.prepare(pdf: pdf, runtime: nil)
-        waitFor("estimate") { controller.state != .estimating }
-        guard case .confirming(let p) = controller.state else {
-            // D2: a failed estimate fails the test, it never skips it
-            XCTFail("estimate ended in \(controller.state)")
-            throw PDFBakeTests.EstimateDidntConfirm()
-        }
-        return p
-    }
-
-    /// what finishCalibration does: a new object, same file + token, new georef
-    func recalibrated(_ pdf: PDFMapSource) throws -> PDFMapSource {
-        let fresh = PDFMapSource(url: pdf.url, georef: pdf.georef, contentKey: pdf.contentKey,
-                                 renderGuardToken: pdf.renderGuardToken)
-        let fids = [(72.0, 72.0, 37.73011820966, -122.47797518349), (752.3, 72.0, 37.72979703305, -122.4098881143),
-                    (752.3, 979.0, 37.80189927136, -122.40931491011), (72.0, 979.0, 37.80222127862, -122.47746810775)]
-            .map { Fiduciary(pdfX: $0.0, pdfY: $0.1, mgrs: "", latitude: $0.2, longitude: $0.3, label: nil) }
-        fresh.applyCalibration(transform: try XCTUnwrap(fresh.georef.bestFitLatLonAffine()), fiduciaries: fids)
-        XCTAssertNotNil(fresh.calibration)
-        return fresh
-    }
-
-    /// R3-6: Remove with the stored PDF missing, through the real sealed store.
-    /// the record is cleared in the session itself, the files go, and the
-    /// session still reads (so the sweep could run)
-    func testRemoveWithThePdfMissingClearsTheRealSessionsBake() throws {
-        let pdf = try importedPDF()
-        let tiles = controller.finalDirectory
-        try FileManager.default.createDirectory(at: tiles, withIntermediateDirectories: true)
-        let name = "tacmap-bake-\(UUID().uuidString).mbtiles"
-        let orphan = "tacmap-bake-\(UUID().uuidString).mbtiles"
-        for n in [name, name + "-wal", orphan] { try Data([1]).write(to: tiles.appendingPathComponent(n)) }
-        pdf.bake = PDFBakeRecord(fileName: name, bakeKey: String(repeating: "a", count: 64), minZoom: 0,
-                                 maxZoom: 14, tilePx: 512, bytes: 1)
-        XCTAssertTrue(PDFSessionStore.save(pdf))
-        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .read(fileName: name))
-        try FileManager.default.removeItem(at: pdf.url)
-        let restored = try XCTUnwrap(PDFSessionStore.load())
-        XCTAssertTrue(restored.storedFileUnavailable)
-        XCTAssertEqual(restored.bake?.fileName, name)
-
-        XCTAssertTrue(controller.removeBake(from: restored))
-        XCTAssertNil(restored.bake)
-        let after = try XCTUnwrap(PDFSessionStore.load(), "the session itself is kept (OD-F4)")
-        XCTAssertTrue(after.storedFileUnavailable)
-        XCTAssertNil(after.bake, "the sealed record has no bake any more")
-        XCTAssertEqual(after.renderGuardToken, pdf.renderGuardToken)
-        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .read(fileName: nil))
-        let left = (try? FileManager.default.contentsOfDirectory(atPath: tiles.path)) ?? []
-        XCTAssertEqual(left, [], "bake, sidecar and the unnamed orphan all gone")
-    }
-
-    /// the sweep only trusts a sealed record it actually opened
-    func testSweepReadsOnlyASealedSession() throws {
-        let defaults = PDFSessionStore.defaultsProvider()
-        XCTAssertTrue(PDFSessionStore.clear())
-        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .read(fileName: nil), "no record names nothing")
-        defaults.set(Data("{\"fileName\":\"legacy.pdf\"}".utf8), forKey: "active_pdf_v1")
-        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .unreadable, "legacy plaintext")
-        defaults.set(Data("TMSEAL junk".utf8), forKey: "active_pdf_v1")
-        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .unreadable, "wont open")
-        let pdf = try importedPDF()
-        SafeStore.keyProvider = { throw CocoaError(.fileReadNoPermission) }
-        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .unreadable, "locked")
-        SafeStore.keyProvider = { [testKey] in testKey }
-        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .read(fileName: nil))
-        XCTAssertNil(pdf.bake)
-    }
-
-    func testBakeLandsInTheStoredSessionAndOnlyTouchesTheBakeField() throws {
-        let pdf = try importedPDF()
-        let p = try confirm(pdf)
-        controller.start(maxZoom: try XCTUnwrap(p.options.first).maxZoom)
-        waitFor("bake") { !controller.isRunning }
-        XCTAssertEqual(controller.state, .idle)
-        let record = try XCTUnwrap(pdf.bake)
-        let stored = try XCTUnwrap(PDFSessionStore.load())
-        XCTAssertEqual(stored.bake, record)
-        XCTAssertEqual(stored.georef, pdf.georef)
-        XCTAssertEqual(stored.renderGuardToken, pdf.renderGuardToken)
-    }
-
-    func testRecalibrationDuringTheBakeIsNotReverted() throws {
-        let pdf = try importedPDF()
-        let p = try confirm(pdf)
-        controller.start(maxZoom: try XCTUnwrap(p.options.first).maxZoom)
-        XCTAssertTrue(controller.isRunning)
-        // the user recalibrates mid bake, a brand new object gets saved
-        let newer = try recalibrated(pdf)
-        XCTAssertTrue(PDFSessionStore.save(newer))
-        waitFor("bake") { !controller.isRunning }
-        XCTAssertEqual(controller.state, .failed(.sourceChanged))
-        let stored = try XCTUnwrap(PDFSessionStore.load())
-        XCTAssertEqual(stored.georef, newer.georef, "the newer calibration survives")
-        XCTAssertNotNil(stored.calibration)
-        XCTAssertNil(stored.bake)
-        let finals = (try? FileManager.default.contentsOfDirectory(atPath: controller.finalDirectory.path)) ?? []
-        XCTAssertTrue(finals.isEmpty, "nothing published")
-    }
-
-    /// R2-S4: a restored flagged source estimates once the file at its stored
-    /// path hashes to the stored key again, and never off swapped bytes
-    func testFlaggedSourceEstimatesOnlyOffTheStoredBytes() throws {
-        let pdf = try importedPDF()
-        pdf.storedFileUnavailable = true
-        _ = try confirm(pdf)
-        controller.dismiss()
-        // same path, different bytes
-        let other = try XCTUnwrap(F.testdataURL("geopdf/tacmap_grid_sf_plain.pdf"))
-        try FileManager.default.removeItem(at: pdf.url)
-        try FileManager.default.copyItem(at: other, to: pdf.url)
-        controller.prepare(pdf: pdf, runtime: nil)
-        waitFor("estimate") { controller.state != .estimating }
-        XCTAssertEqual(controller.state, .failed(.renderFailed))
-        controller.dismiss()
-        // and missing altogether
-        try FileManager.default.removeItem(at: pdf.url)
-        controller.prepare(pdf: pdf, runtime: nil)
-        waitFor("estimate") { controller.state != .estimating }
-        XCTAssertEqual(controller.state, .failed(.renderFailed))
-    }
-
-    func testReimportUnderANewFileNameDuringTheBakeIsSourceChanged() throws {
-        let pdf = try importedPDF()
-        let p = try confirm(pdf)
-        controller.start(maxZoom: try XCTUnwrap(p.options.first).maxZoom)
-        // same bytes imported again: new file, new token, same content key
-        let copy = imported.appendingPathComponent("imported-\(UUID().uuidString).pdf")
-        try FileManager.default.copyItem(at: pdf.url, to: copy)
-        let again = PDFMapSource(url: copy, georef: pdf.georef, contentKey: pdf.contentKey)
-        XCTAssertTrue(PDFSessionStore.save(again))
-        waitFor("bake") { !controller.isRunning }
-        XCTAssertEqual(controller.state, .failed(.sourceChanged))
-        let stored = try XCTUnwrap(PDFSessionStore.load())
-        XCTAssertEqual(stored.url.lastPathComponent, copy.lastPathComponent)
-        XCTAssertEqual(stored.renderGuardToken, again.renderGuardToken)
     }
 }

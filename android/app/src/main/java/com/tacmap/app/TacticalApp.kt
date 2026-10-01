@@ -48,6 +48,9 @@ class TacticalApp : Application() {
         com.tacmap.waypoints.CustomSymbolStore.initialize(this)
         appLock = AppLock(this)
         cleanupExportArtifacts(this)
+        // S5: PDFBox spills plaintext stream bytes into cacheDir/pdfbox (PdfInspector's scratch).
+        // nothing can be parsing yet, so whatever's there is from a parse that died mid way
+        runCatching { java.io.File(cacheDir, "pdfbox").deleteRecursively() }
         opsec = OpsecSettings(this)
         unitSyncRuntime = UnitSyncRuntime(this, opsec)
         trackRecorder = TrackRecorder(this)

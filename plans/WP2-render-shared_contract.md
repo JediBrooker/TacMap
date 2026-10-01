@@ -3,6 +3,8 @@
 
 All constants below live in the new fixture `testdata/pdf_tile_render.json`, section `constants`. Both suites assert them.
 
+**Amendment 2026-10-02 (WP4 merge).** With WP4/WP5 the sealed imported-map library is the only authority. Wherever this contract says the bake record or the crash-guard token is stored "in the sealed session", read "on the PDF's library entry"; the old session/selection stores are migration-only readers. Delete Map is one library write (no two-store rollback). See WP4 contract s0 amendment M1-M10 for the full set.
+
 ## A. Tiles and the camera
 
 - **Tiles:** standard XYZ, 256 logical units (pt/dp) per tile.

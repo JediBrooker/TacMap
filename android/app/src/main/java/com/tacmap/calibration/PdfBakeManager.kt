@@ -63,6 +63,8 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
         val options: List<OptionEstimate>,
         /** what the confirm opens on (J2): the default if it fits, else the biggest that does, else the default */
         val initial: OptionEstimate,
+        /** which PDF this is for, so the confirm can tell whether it's the one on screen (OD-F9) */
+        val renderGuardToken: String = "",
     )
 
     sealed class State {
@@ -78,6 +80,12 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
     data class Published(val renderGuardToken: String, val bake: PersistedPdfBake)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * the library side of a publish (M3), MapViewModel plugs itself in while it's alive.
+     * nothing plugged in = a finished bake can't be recorded and fails closed
+     */
+    @Volatile var recorder: PdfBakeRecorder? = null
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -159,14 +167,13 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
         var handedOver = false
         val token = pdfSource.render.renderGuardToken
         try {
-            // the estimate's sample renders sit under the bake slot too (F3), so the token has
-            // to be in the sealed session before anything arms on it
-            if (pdfSource.render.tokenMinted) PdfSessionStore(app).persistRenderMeta(pdfSource)
+            // the estimate's sample renders sit under the bake slot too (F3). the token is the
+            // library entry's, already sealed with it
             armBakeSlot(gen, token)
             val tilePx = PdfZoomPolicy.tilePx(density.toDouble())
             val s = createPdfTileSource(app, pdfSource, tilePx, "bake:${System.nanoTime()}", null, { true }, forBake = true)
             src = s
-            val proposal = propose(s, pdfSource.displayName)
+            val proposal = propose(s, pdfSource.displayName).copy(renderGuardToken = token)
             synchronized(lock) {
                 if (generation == gen) {
                     parked = Parked(s, pdfSource, proposal)
@@ -294,12 +301,10 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
             val georef = pdf.placement ?: throw PdfBakeException(PdfBakeError.SOURCE_CHANGED)
             val georefJson = georef.canonicalJson()
             val bakeKey = PdfBakePlan.bakeKey(georefJson, src.tilePx)
-            // the publish step matches on the guard token, an older session may only have it in memory
-            if (pdf.render.tokenMinted) PdfSessionStore(app).persistRenderMeta(pdf)
             armBakeSlot(gen, token)
             src.session.claimBake(gen)
             PdfBaker.bake(
-                app, src, pdf, choice.option.maxZoom, bakeKey, georefJson,
+                app, src, pdf, choice.option.maxZoom, bakeKey, recorder,
                 onProgress = { done, total -> setStateIf(gen, State.Running(done, total, token)) },
                 // straight from inside the publish: it's attached, so the view model hears about
                 // it even if a cancel lands a moment later (F1)

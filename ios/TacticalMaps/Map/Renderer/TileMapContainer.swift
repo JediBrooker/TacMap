@@ -103,40 +103,46 @@ struct TileMapContainer: UIViewRepresentable {
         context.coordinator.editing.onMutationError = onMutationError
         context.coordinator.editing.onPresenceTap = onPeerTap
         context.coordinator.editing.onEmptyMapLongPress = onEmptyMapLongPress
-        view.isRotationGestureEnabled = opsec.mapOrientationMode == .northUp
+        // calibrating keeps rotate live whatever Heading Up says (s2.3 step 4)
+        view.isRotationGestureEnabled = opsec.mapOrientationMode == .northUp || calibration.isCalibrating
         // Only swap the source on an actual style change (assigning it clears the
         // tile cache), and only republish when the waypoint set changes - else
         // publish() mutates mapVM, re-runs updateUIView, and loops.
         // calibrating always shows the sheet, you cant place points on a hidden map
+        // calibration first: a new generation's tile source + camera go in together
+        context.coordinator.syncCalibration(calibration, view: view)
         context.coordinator.syncSource(view: view, mapSource: mapVM.mapSource,
                                        onlineBasemaps: opsec.onlineBasemaps,
                                        importedMapVisible: visibility.importedMapVisible || calibration.isCalibrating)
         context.coordinator.syncWaypoints(waypointStore.waypoints, view: view)
         context.coordinator.syncDrawingControlsPreview(drawingControlsPreview)
+        // calibrating: effective visibility only, persisted settings untouched (s7.9)
+        let calibrating = calibration.isCalibrating
+        let provisional = calibration.display?.isProvisional ?? true
         context.coordinator.updateOverlays(
-            drawings: DrawingVectorShapes.build(
+            drawings: calibrating ? [] : DrawingVectorShapes.build(
                 drawings: drawingStore.visibleShapes,
                 drawingsVisible: visibility.drawingsVisible,
                 selectedDrawingID: mapVM.selectedDrawingID,
                 session: drawingSession,
                 measure: measureSession),
-            gridVisible: visibility.mgrsGridVisible,
-            peers: peers,
-            decorations: Coordinator.buildDecorations(
+            gridVisible: calibrating ? (calibration.gridOn && !provisional) : visibility.mgrsGridVisible,
+            peers: calibrating ? [:] : peers,
+            decorations: calibrating ? .init() : Coordinator.buildDecorations(
                 drawingStore: drawingStore, drawingSession: drawingSession,
                 measureSession: measureSession, visibility: visibility),
-            handles: Coordinator.buildEditHandles(
+            handles: calibrating ? [] : Coordinator.buildEditHandles(
                 selectedID: mapVM.selectedDrawingID, drawingStore: drawingStore),
             graphicsLocked: graphicsLocked)
-        context.coordinator.syncCalibrationMarkers(calibration)
         context.coordinator.syncHeatmap(
-            visible: visibility.terrainHeatmapVisible,
+            visible: visibility.terrainHeatmapVisible && !calibrating,
             onlineLookups: opsec.onlineLookups
         )
         context.coordinator.syncUserLocation(
             coordinate: locationService.lastLocation?.coordinate,
             accuracy: locationService.lastLocation?.horizontalAccuracy ?? 0,
-            visible: visibility.userLocationVisible)
+            // a dot on a made-up placement means nothing
+            visible: visibility.userLocationVisible && !(calibrating && provisional))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -172,15 +178,25 @@ struct TileMapContainer: UIViewRepresentable {
         private var gridGeneration: UInt64 = 0
         private let gridQueue = DispatchQueue(label: "com.tacmap.mgrs-grid", qos: .userInitiated)
 
-        /// Calibration markers on the imported PDF (page space -> georef -> camera).
-        private var markersView: PDFPageMarkersView?
-        /// georef the markers + calibration taps go through (the active PDF's)
-        private var markerGeoref: PdfGeoreference?
         /// grid build in flight + the newest request that arrived meanwhile.
         /// latest wins: a pinch never queues a pile of full rebuilds
         private var gridBuildInFlight = false
         private var gridQueuedRequest: MGRSGridRenderer.BuildRequest?
         private var gridCancel: MGRSGridRenderer.CancelToken?
+
+        /// Calibration: the georef the map is drawing right now (s7.2) and its
+        /// generation. nil = not calibrating, the PDF uses its own placement.
+        private(set) var installedGeoref: PdfGeoreference?
+        private(set) var installedGeneration = 0
+        private var calibrationPageBox: [PdfPagePoint] = []
+        private var markersView: CalibrationMarkersOverlayView?
+        /// the PDF drawn at the installed generation (WP2 tile source, no bake),
+        /// nil when not calibrating
+        private var calibrationSource: PDFMapSource?
+        /// a generation waiting for its one runloop turn (see syncCalibration)
+        private var pendingGeneration: Int?
+        private var zoomSink: AnyCancellable?
+        private var centreSink: AnyCancellable?
 
         /// Sync presence peers, on top of everything.
         private var presenceView: PresenceOverlayView?
@@ -255,25 +271,40 @@ struct TileMapContainer: UIViewRepresentable {
             let project: (CLLocationCoordinate2D) -> CGPoint = { [weak view] coord in
                 view?.camera.screenPoint(for: coord) ?? .zero
             }
+            zoomSink = mapVM.zoomStepRequests.sink { [weak view] step in
+                guard let view else { return }
+                var next = view.camera
+                next.zoom = min(max(next.zoom + step, CalibrationLimits.cameraZoomMin), CalibrationLimits.cameraZoomMax)
+                view.camera = next
+            }
+            centreSink = mapVM.centreRequests.sink { [weak view] coord in
+                guard let view else { return }
+                var next = view.camera
+                next.center = coord
+                view.camera = next
+            }
+            mapVM.calibrationCapture = { [weak self] in self?.captureCalibrationPoint() }
+
             let heatmap = HeatmapOverlayView()
             let grid = MGRSGridOverlayView()
+            let markers = CalibrationMarkersOverlayView()
             let drawings = DrawingsOverlayView()
-            let markers = PDFPageMarkersView()
             let decorations = DrawingDecorationsOverlayView()
             let handles = VertexHandlesOverlayView()
             let presence = PresenceOverlayView()
             let userLocation = UserLocationOverlayView()
             // Heatmap is a ground layer (just above the basemap), so it goes
             // first; the user dot sits on top of everything.
-            for v in [heatmap, grid, drawings, markers, decorations, handles, presence, userLocation] as [UIView] {
+            for v in [heatmap, grid, markers, drawings, decorations, handles, presence, userLocation] as [UIView] {
                 v.frame = view.bounds
                 v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 view.addSubview(v)
             }
             heatmap.project = project
             grid.camera = { [weak view] in view?.camera }
-            drawings.project = project
             markers.project = project
+            markersView = markers
+            drawings.project = project
             decorations.project = project
             handles.project = project
             presence.project = project
@@ -281,7 +312,6 @@ struct TileMapContainer: UIViewRepresentable {
             heatmapView = heatmap
             gridView = grid
             drawingsView = drawings
-            markersView = markers
             decorationsView = decorations
             handlesView = handles
             presenceView = presence
@@ -316,25 +346,17 @@ struct TileMapContainer: UIViewRepresentable {
                 self?.renderDrawingDecorations()
                 self?.renderDrawingHandles()
             }
-            // a tap goes screen -> camera -> georef.toPage, the same georef that
-            // draws the tiles, so it lands exactly where you tapped at any zoom
-            editing.pdfScreenTapToPDFPoint = { [weak self] pt in
-                guard let self, let view = self.view, let g = self.markerGeoref,
-                      let p = g.toPage(view.camera.coordinate(for: pt)) else { return nil }
-                let clip = mapVM.pdfRuntime.currentContext?.footprint.clipPolygon ?? g.crop
-                guard PDFClip.contains(clip.map { (x: $0.x, y: $0.y) }, Double(p.x), Double(p.y)) else { return nil }
-                return p
-            }
-            editing.refreshCalibrationMarkers = { [weak self] in
-                self?.syncCalibrationMarkers(calibration)
+            // a tap near a marker selects it, a tap never places a point (s7.5)
+            editing.calibrationMarkerHitTest = { [weak self] pt in
+                self?.markersView?.pointID(at: pt)
             }
         }
 
         /// Redraw overlays after a camera move (positions move; grid re-tessellates
         /// only when the visible cells change).
         func reprojectOverlays() {
-            drawingsView?.reproject()
             markersView?.reproject()
+            drawingsView?.reproject()
             gridView?.reproject()
             presenceView?.reproject()
             decorationsView?.reproject()
@@ -401,15 +423,127 @@ struct TileMapContainer: UIViewRepresentable {
             userLocationView?.reproject(metresPerPoint: view?.camera.metresPerPoint ?? 1)
         }
 
-        /// Fiduciary markers on the sheet while calibrating, nothing otherwise.
-        func syncCalibrationMarkers(_ calibration: CalibrationSession) {
-            markerGeoref = (mapVM?.mapSource as? PDFMapSource)?.georef
-            if calibration.isCalibrating, let g = markerGeoref {
-                markersView?.update(georef: g, fiduciaries: calibration.fiduciaries,
-                                    pendingPagePoint: calibration.pendingTap?.pdfPoint)
-            } else {
-                markersView?.update(georef: nil, fiduciaries: [], pendingPagePoint: nil)
+        /// Install the session's displayed georef (s7.2). A new generation gets a
+        /// fresh WP2 tile source (no bake, the service + its base raster are
+        /// shared) and the anchored camera (same page point under the crosshair,
+        /// same on-screen page scale, heading untouched) in ONE main thread step,
+        /// so no frame draws the new georef with the old camera or old tiles with
+        /// the new one. That step runs one runloop turn later: building a PDF tile
+        /// source publishes render status, which SwiftUI won't take mid update
+        /// (same reason syncSource defers it). WP2 has no prefetch, so a brief
+        /// dark placeholder after a refit is the accepted fallback.
+        func syncCalibration(_ calibration: CalibrationSession, view: TileMapView) {
+            guard calibration.isCalibrating, let display = calibration.display else {
+                if installedGeoref != nil || calibrationSource != nil || pendingGeneration != nil {
+                    installedGeoref = nil
+                    installedGeneration = 0
+                    calibrationPageBox = []
+                    calibrationSource = nil
+                    pendingGeneration = nil
+                    markersView?.clear()
+                    reprojectOverlays()
+                }
+                return
             }
+            calibrationPageBox = calibration.target?.pageBox ?? []
+            let wanted = display.generation
+            if (installedGeoref == nil || wanted != installedGeneration), pendingGeneration != wanted {
+                pendingGeneration = wanted
+                DispatchQueue.main.async { [weak self, weak view, weak calibration] in
+                    // a newer generation (or the end of the session) wins
+                    guard let self, let view, let calibration, self.pendingGeneration == wanted,
+                          calibration.isCalibrating, let now = calibration.display, now.generation == wanted else { return }
+                    self.pendingGeneration = nil
+                    self.install(now, calibration: calibration, view: view)
+                }
+            }
+            updateCalibrationMarkers(calibration)
+        }
+
+        private func install(_ display: CalibrationSession.Display, calibration: CalibrationSession, view: TileMapView) {
+            let old = installedGeoref
+            installedGeoref = display.georef
+            installedGeneration = display.generation
+            // the tile source for this generation, swapped in right here with the camera
+            if let pdf = mapVM?.mapSource as? PDFMapSource, let runtime = mapVM?.pdfRuntime {
+                let src = PDFMapSource(url: pdf.url, georef: display.georef, contentKey: pdf.contentKey,
+                                       entryID: pdf.entryID, displayName: pdf.displayName,
+                                       renderGuardToken: pdf.renderGuardToken, bake: nil)
+                src.storedFileUnavailable = pdf.storedFileUnavailable
+                calibrationSource = src
+                let scale = view.traitCollection.displayScale > 0 ? view.traitCollection.displayScale : UIScreen.main.scale
+                currentSourceKey = runtime.sourceKey(for: src, screenScale: scale) + "#\(runtime.retryGeneration)"
+                view.source = runtime.tileSource(for: src, screenScale: scale)
+            }
+            if let old, let moved = CalibrationCameraAnchor.adjust(camera: view.camera, from: old, to: display.georef),
+               moved != view.camera {
+                view.camera = moved   // fires reprojectOverlays through onCameraChange
+            } else if old == nil, let framed = Self.pageFrame(display.georef, pageBox: calibrationPageBox, camera: view.camera,
+                                                                 viewport: view.bounds.size) {
+                // first install with the crosshair off the sheet (auto resume at
+                // launch shows the draft's fit, the camera's still wherever the
+                // app started): frame the page once, heading kept
+                view.camera = framed
+            } else {
+                reprojectOverlays()
+            }
+            updateCalibrationMarkers(calibration)
+        }
+
+        /// markers always go through the georef that's actually installed
+        private func updateCalibrationMarkers(_ calibration: CalibrationSession) {
+            guard let g = installedGeoref, let display = calibration.display else {
+                markersView?.clear()
+                return
+            }
+            let report = calibration.report
+            let datum = calibration.state.sheetDatum
+            var model = CalibrationMarkersOverlayView.Model()
+            model.georef = g
+            model.generation = installedGeneration
+            model.markers = calibration.state.points.map {
+                .init(id: $0.id, number: $0.number, page: $0.page, flagged: report.flagged.contains($0.number),
+                      typed: $0.typedWGS84(sheetDatum: datum))
+            }
+            model.pending = calibration.pendingEntry?.page
+            model.movingID = calibration.movingID
+            model.selectedID = calibration.selectedID
+            // residuals only make sense once the shown georef IS the fit
+            model.showResiduals = display.isFit && display.generation == installedGeneration && report.n >= 3
+            markersView?.update(model)
+        }
+
+        /// "Add point" / "Set here": the live camera through the installed
+        /// georef, read at tap time (no publish debounce in the way, s7.4)
+        func captureCalibrationPoint() -> CalibrationCapture? {
+            guard let view, let g = installedGeoref, !calibrationPageBox.isEmpty else { return nil }
+            return CalibrationCapture.capture(georef: g, pageBox: calibrationPageBox, camera: view.camera,
+                                              generation: installedGeneration)
+        }
+
+        /// Camera that shows the whole page through g, nil when the crosshair is
+        /// already on the sheet (then nothing should move). Heading stays.
+        static func pageFrame(_ g: PdfGeoreference, pageBox: [PdfPagePoint], camera: MapCamera,
+                              viewport: CGSize) -> MapCamera? {
+            guard !pageBox.isEmpty else { return nil }
+            if let c = CalibrationCapture.capture(georef: g, pageBox: pageBox, camera: camera, generation: 0), c.onSheet {
+                return nil
+            }
+            let b = CalibrationFitEvaluator.boxCorners(pageBox)
+            let mid = PdfPagePoint(x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2)
+            guard let centre = g.toWGS84(x: mid.x, y: mid.y),
+                  let s = CalibrationCameraAnchor.scale(g, at: mid) else { return nil }
+            // bounds can still be zero on the very first layout pass
+            let size = viewport.width > 0 && viewport.height > 0 ? viewport : UIScreen.main.bounds.size
+            let w = abs(b.x1 - b.x0) * s, h = abs(b.y1 - b.y0) * s
+            guard w > 0, h > 0 else { return nil }
+            // leave room for the header up top and the panel at the bottom
+            let z = log2(min(Double(size.width) * 0.9 / w, Double(size.height) * 0.6 / h))
+            guard z.isFinite else { return nil }
+            var out = camera
+            out.center = centre
+            out.zoom = min(max(z, CalibrationLimits.cameraZoomMin), CalibrationLimits.cameraZoomMax)
+            return out
         }
 
         /// Push new overlay geometry (drawings changed / selection changed).
@@ -620,8 +754,10 @@ struct TileMapContainer: UIViewRepresentable {
             case let offline as OfflineTileMapSource:
                 key = "offline:\(offline.id)"
                 make = { OfflineRasterTileSource(offline) }
-            case let pdf as PDFMapSource:
+            case var pdf as PDFMapSource:
                 guard let runtime = mapVM?.pdfRuntime else { key = "blank"; make = { nil }; break }
+                // calibrating: the installed generation's source, not the published preview
+                if let cal = calibrationSource, cal.entryID == pdf.entryID, cal.url == pdf.url { pdf = cal }
                 let scale = view.traitCollection.displayScale > 0 ? view.traitCollection.displayScale : UIScreen.main.scale
                 hidden = !importedMapVisible
                 // a failed source stays put (G1): cached tiles and fallbacks keep

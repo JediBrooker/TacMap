@@ -16,22 +16,104 @@ import com.tacmap.map.render.pdf.PdfRenderExecutor
 import kotlinx.coroutines.runBlocking
 import java.io.File
 
+/** whole displayed page bitmap + the renderer's int page size it was stretched from */
+data class RenderedPdfPage(
+    val bitmap: Bitmap,
+    val rendererWidth: Int,
+    val rendererHeight: Int,
+)
+
+internal data class PdfRenderSize(val width: Int, val height: Int) {
+    val byteCount: Long get() = width.toLong() * height.toLong() * 4L
+}
+
+/**
+ * A whole-page bitmap (the page picker thumbnails) inside a predictable ARGB budget,
+ * never blown up past the page's own size.
+ */
+internal fun boundedPdfRenderSize(
+    pageWidth: Int,
+    pageHeight: Int,
+    maxDimension: Int = 4096,
+    maxBytes: Long = 32L * 1024L * 1024L,
+): PdfRenderSize {
+    require(pageWidth > 0 && pageHeight > 0) { "PDF page dimensions must be positive." }
+    require(maxDimension > 0 && maxBytes >= 4L) { "PDF render limits must be positive." }
+    val maxPixels = maxBytes / 4L
+    val dimensionScale = maxDimension.toDouble() / kotlin.math.max(pageWidth, pageHeight).toDouble()
+    val memoryScale = kotlin.math.sqrt(maxPixels.toDouble() / (pageWidth.toLong() * pageHeight.toLong()).toDouble())
+    val scale = minOf(1.0, dimensionScale, memoryScale)
+    return PdfRenderSize(
+        width = (pageWidth * scale).toInt().coerceAtLeast(1),
+        height = (pageHeight * scale).toInt().coerceAtLeast(1),
+    )
+}
+
 /**
  * The little bits of PdfRenderer that aren't map tiles: the import preflight's page
- * size and a raw user space window for tests and calibration zoom ins. Both go
- * through the pdfium thread like everything else (WP2). Map rendering itself lives
- * in map/render/pdf (PdfTileRenderer), the old single image overlay is gone.
+ * size, page count, the page picker's thumbnails and a raw user space window for
+ * tests. All of it goes through the pdfium thread like everything else (WP2). Map
+ * rendering itself lives in map/render/pdf (PdfTileRenderer), the old single image
+ * overlay and the tiler are gone. Blocking, call these off main.
  */
 object PdfPageRenderer {
+    private const val MAX_RENDER_DIMENSION_PX = 4096
+    private const val MAX_RENDER_BYTES = 32L * 1024L * 1024L
     private const val MAX_REGION_DIMENSION_PX = 2048
     private const val MAX_REGION_BYTES = 16L * 1024L * 1024L
 
-    /** PdfRenderer's own (truncated int, rotated) size of page 0. blocks a worker thread */
-    fun firstPageRendererSize(context: Context, uri: Uri): Pair<Int, Int> = runBlocking {
-        PdfRenderExecutor.run(PdfRenderExecutor.Band.VISIBLE, background = true) {
-            openDescriptor(context, uri).use { descriptor ->
-                PdfRenderer(descriptor).use { renderer ->
-                    renderer.openPage(0).use { page -> page.width to page.height }
+    private fun <T> onPdfiumThread(block: () -> T): T = runBlocking {
+        PdfRenderExecutor.run(PdfRenderExecutor.Band.VISIBLE, background = true, block = block)
+    }
+
+    /** PdfRenderer's own (truncated int, rotated) size of page 0 */
+    fun firstPageRendererSize(context: Context, uri: Uri): Pair<Int, Int> = pageRendererSize(context, uri, 0)
+
+    /** same for any page */
+    fun pageRendererSize(context: Context, uri: Uri, pageIndex: Int): Pair<Int, Int> = onPdfiumThread {
+        openDescriptor(context, uri).use { descriptor ->
+            PdfRenderer(descriptor).use { renderer ->
+                renderer.openPage(pageIndex).use { page -> page.width to page.height }
+            }
+        }
+    }
+
+    fun pageCount(context: Context, uri: Uri): Int = onPdfiumThread {
+        openDescriptor(context, uri).use { descriptor -> PdfRenderer(descriptor).use { it.pageCount } }
+    }
+
+    /** whole displayed page (visible box, /Rotate applied), stretched onto a bounded bitmap */
+    fun renderFirstPage(context: Context, uri: Uri): RenderedPdfPage = renderPage(context, uri, 0)
+
+    fun renderPage(
+        context: Context,
+        uri: Uri,
+        pageIndex: Int,
+        maxDimension: Int = MAX_RENDER_DIMENSION_PX,
+        config: Bitmap.Config = Bitmap.Config.ARGB_8888,
+    ): RenderedPdfPage = onPdfiumThread {
+        openDescriptor(context, uri).use { descriptor ->
+            PdfRenderer(descriptor).use { renderer ->
+                renderer.openPage(pageIndex).use { page ->
+                    val size = boundedPdfRenderSize(
+                        pageWidth = page.width,
+                        pageHeight = page.height,
+                        maxDimension = maxDimension,
+                        maxBytes = MAX_RENDER_BYTES,
+                    )
+                    // pdfium only renders into ARGB_8888, a 565 thumbnail gets copied down after
+                    val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
+                    try {
+                        bitmap.eraseColor(Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        val out = if (config == Bitmap.Config.ARGB_8888) bitmap else {
+                            bitmap.copy(config, false).also { bitmap.recycle() }
+                        }
+                        RenderedPdfPage(out, page.width, page.height)
+                    } catch (failure: Throwable) {
+                        bitmap.recycle()
+                        throw failure
+                    }
                 }
             }
         }

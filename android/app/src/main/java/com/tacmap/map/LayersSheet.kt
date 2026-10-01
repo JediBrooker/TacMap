@@ -45,8 +45,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.ButtonDefaults
 import com.tacmap.calibration.BasemapStyle
-import com.tacmap.calibration.Calibration
-import com.tacmap.calibration.MapSourceKind
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.localization.DisplayFormat
 
@@ -54,12 +52,6 @@ private data class PendingLayerVisibilityMutation(
     val message: String,
     val retry: () -> DrawingMutationUiResult,
 )
-
-/** Which imported map a pending "Delete…" confirmation is about. */
-private enum class ImportedMapDeletion { PDF, OFFLINE_TILES, SAVED }
-
-/** How an imported PDF is placed on the map, shown under its name in Layers. */
-internal enum class PdfGeoreferencing { GEOREFERENCED, MANUAL, NONE }
 
 /** the Layers subtitle under a PDF, by where its placement came from (L2, same as iOS georefLabel) */
 internal enum class PdfGeorefLabel { ADOBE_VP, LGI_DICT, MANUAL, PROVISIONAL }
@@ -73,35 +65,13 @@ internal fun pdfGeorefLabel(origin: com.tacmap.calibration.GeorefOrigin?): PdfGe
 }
 
 /**
- * iOS shows "Georeferenced" for a GeoPDF, "Manually placed" for a sheet the
- * user calibrated, and the map-centre fallback when there is no calibration.
- * Android stores auto-parsed GeoPDF correspondences as fiduciaries without an
- * MGRS string; user-entered fiduciaries always carry one.
- */
-internal fun pdfGeoreferencing(kind: MapSourceKind, calibration: Calibration?): PdfGeoreferencing =
-    when (calibration) {
-        null -> PdfGeoreferencing.NONE
-        is Calibration.Parsed -> PdfGeoreferencing.GEOREFERENCED
-        is Calibration.Fiduciaries -> when {
-            kind == MapSourceKind.GEO_PDF -> PdfGeoreferencing.GEOREFERENCED
-            calibration.fids.none { it.mgrs.isNotBlank() } -> PdfGeoreferencing.GEOREFERENCED
-            else -> PdfGeoreferencing.MANUAL
-        }
-    }
-
-/** Fiduciaries behind a manual calibration, or null when there is none. */
-internal fun manualFiduciaryCount(kind: MapSourceKind, calibration: Calibration?): Int? =
-    (calibration as? Calibration.Fiduciaries)?.fids?.size
-        ?.takeIf { pdfGeoreferencing(kind, calibration) == PdfGeoreferencing.MANUAL }
-
-/**
  * Overlay + label toggles, plus imported-map management. Opened from
  * "Layers" menu row - mirrors iOS so toggles live here instead of
  * cluttering the hamburger menu.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LayersSheet(
+internal fun LayersSheet(
     symbologyVisible: Boolean,
     drawingsVisible: Boolean,
     mgrsGridVisible: Boolean,
@@ -125,35 +95,34 @@ fun LayersSheet(
     onSetLayerVisible: (String, Boolean) -> DrawingMutationUiResult,
     activeBaseMap: BasemapStyle?,
     onSelectBaseMap: (BasemapStyle) -> Unit,
-    retainedImportedMapName: String?,
-    retainedImportedMapIssue: String?,
-    importedMapActive: Boolean,
-    onReturnToImportedMap: () -> Unit,
-    onDeleteRetainedImportedMap: () -> Unit,
-    onRemoveUnavailableRetainedMap: () -> Unit,
-    pdfMap: PdfMapSource?,
-    hasOfflineTiles: Boolean,
+    importedMaps: ImportedMapsUi,
+    onImportedMapTap: (ImportedMapRowUi) -> Unit,
+    onImportedMapAction: (ImportedMapRowUi, com.tacmap.calibration.EntryMenuAction) -> Unit,
+    /**
+     * the PDF on screen (WP2 block, M15): Show Imported Map, the failed row with Try Again
+     * and its offline tiles. null for anything else. Delete, Calibrate and the rest live on
+     * its row in Imported maps
+     */
+    pdfMap: com.tacmap.calibration.PdfMapSource? = null,
+    /** OD-F10: a hand calibrated PDF's state label, replaces the georef origin line */
+    pdfMapCalibratedLabel: String? = null,
     /** Show Imported Map (WP2 contract H), forced on and locked while calibrating */
     importedMapVisible: Boolean = true,
     importedMapToggleEnabled: Boolean = true,
     onImportedMapVisibleChange: (Boolean) -> Unit = {},
     bakeState: com.tacmap.calibration.PdfBakeManager.State = com.tacmap.calibration.PdfBakeManager.State.Idle,
+    onGenerateTiles: () -> Unit = {},
     onCancelBake: () -> Unit = {},
     onRemoveBake: () -> Unit = {},
     renderFailed: Boolean = false,
     /** the reason line under the failed label, same copy as the alert (OD2-R2-5) */
     renderFailureReason: String? = null,
     onRetryRender: () -> Unit = {},
-    onCalibratePdf: () -> Unit,
-    onGenerateTiles: () -> Unit,
-    onUnloadPdf: () -> Unit,
-    onUnloadOfflineTiles: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var pendingVisibility by remember { mutableStateOf<PendingLayerVisibilityMutation?>(null) }
-    var pendingDeletion by remember { mutableStateOf<ImportedMapDeletion?>(null) }
-    val savedMapOnly = !importedMapActive && retainedImportedMapName != null
+    val importedMapActive = importedMaps.rows.any { it.active }
     fun attemptVisibility(retry: () -> DrawingMutationUiResult) {
         pendingVisibility = when (val result = retry()) {
             DrawingMutationUiResult.Saved -> null
@@ -209,128 +178,47 @@ fun LayersSheet(
                         onClick = { onSelectBaseMap(style) }
                     )
                 }
-            retainedImportedMapName?.let { name ->
-                BasemapRow(
-                    label = L10n.text("Imported: %1\$s", name),
-                    selected = importedMapActive,
-                    onClick = onReturnToImportedMap,
-                )
-            }
-            if (importedMapActive) {
-                Text(
-                    L10n.text("The imported map is active. Choose an online basemap above to switch away without removing it."),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-            if (!importedMapActive && retainedImportedMapName != null) {
-                Text(
-                    L10n.text("Your imported map is retained. Select its row to return to it."),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            if (!importedMapActive && retainedImportedMapIssue != null) {
-                Text(
-                    Messages.layersSavedMapUnavailable(),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFFF9800),
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                Text(retainedImportedMapIssue, fontSize = 11.sp, color = Color(0xFF8A938A))
-                OutlinedButton(
-                    onClick = onRemoveUnavailableRetainedMap,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                ) { Text(Messages.layersRemoveSavedMapEntry()) }
-            }
-
-            if (pdfMap != null || hasOfflineTiles || savedMapOnly) {
+            if (pdfMap != null) {
                 SectionHeader(L10n.text("Imported Map"))
-                if (pdfMap != null) {
-                    Text(pdfMap.displayName, fontSize = 15.sp)
+                Text(pdfMap.displayName, fontSize = 15.sp)
+                Text(
+                    pdfMapCalibratedLabel ?: when (pdfGeorefLabel(pdfMap.placement?.origin)) {
+                        PdfGeorefLabel.ADOBE_VP -> Messages.pdfGeorefAdobeLabel()
+                        // the same catalogue entries iOS georefLabel uses (B6)
+                        PdfGeorefLabel.LGI_DICT -> L10n.text("Georeferenced (GeoPDF LGIDict)")
+                        PdfGeorefLabel.MANUAL -> L10n.text("Manually placed bounds")
+                        PdfGeorefLabel.PROVISIONAL -> L10n.text("No georeferencing — using map-centre fallback")
+                    },
+                    fontSize = 11.sp,
+                    color = Color(0xFF8A938A)
+                )
+                ToggleRow(Messages.importedMapShowToggle(), importedMapVisible, onImportedMapVisibleChange, importedMapToggleEnabled)
+                if (renderFailed) {
                     Text(
-                        when (pdfGeorefLabel(pdfMap.placement?.origin)) {
-                            PdfGeorefLabel.ADOBE_VP -> Messages.pdfGeorefAdobeLabel()
-                            // the same catalogue entries iOS georefLabel uses (B6)
-                            PdfGeorefLabel.LGI_DICT -> L10n.text("Georeferenced (GeoPDF LGIDict)")
-                            PdfGeorefLabel.MANUAL -> L10n.text("Manually placed bounds")
-                            PdfGeorefLabel.PROVISIONAL -> L10n.text("No georeferencing — using map-centre fallback")
-                        },
-                        fontSize = 11.sp,
-                        color = Color(0xFF8A938A)
+                        Messages.pdfRenderFailedLabel(),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFF5A5A),
+                        modifier = Modifier.padding(top = 4.dp),
                     )
-                    manualFiduciaryCount(pdfMap.kind, pdfMap.calibration)?.let { count ->
-                        Text(
-                            Messages.layersPdfFiduciaryCount(DisplayFormat.number(count.toDouble(), 0)),
-                            fontSize = 11.sp,
-                            color = Color(0xFF8A938A)
-                        )
-                    }
-                    ToggleRow(Messages.importedMapShowToggle(), importedMapVisible, onImportedMapVisibleChange, importedMapToggleEnabled)
-                    if (renderFailed) {
-                        Text(
-                            Messages.pdfRenderFailedLabel(),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFF5A5A),
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                        renderFailureReason?.let { reason ->
-                            Text(reason, fontSize = 11.sp, color = Color(0xFF8A938A))
-                        }
-                        OutlinedButton(
-                            onClick = onRetryRender,
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                        ) { Text(Messages.pdfRenderTryAgain()) }
+                    renderFailureReason?.let { reason ->
+                        Text(reason, fontSize = 11.sp, color = Color(0xFF8A938A))
                     }
                     OutlinedButton(
-                        onClick = onCalibratePdf,
+                        onClick = onRetryRender,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                    ) { Text(L10n.text("Calibrate PDF Map")) }
-                    PdfBakeSection(pdfMap, bakeState, renderFailed, onGenerateTiles, onCancelBake, onRemoveBake)
-                    DeleteMapButton(Messages.layersDeletePdfMap()) {
-                        pendingDeletion = ImportedMapDeletion.PDF
-                    }
+                    ) { Text(Messages.pdfRenderTryAgain()) }
                 }
-                if (hasOfflineTiles) {
-                    DeleteMapButton(Messages.layersDeleteOfflineMap()) {
-                        pendingDeletion = ImportedMapDeletion.OFFLINE_TILES
-                    }
-                }
-                if (savedMapOnly) {
-                    Text(retainedImportedMapName.orEmpty(), fontSize = 15.sp)
-                    DeleteMapButton(Messages.layersDeleteSavedImportedMap()) {
-                        pendingDeletion = ImportedMapDeletion.SAVED
-                    }
-                }
+                PdfBakeSection(pdfMap, bakeState, renderFailed, onGenerateTiles, onCancelBake, onRemoveBake)
             }
+            ImportedMapsSection(
+                ui = importedMaps,
+                onRowTap = onImportedMapTap,
+                onAction = onImportedMapAction,
+            )
 
             Spacer(Modifier.height(24.dp))
         }
-    }
-    pendingDeletion?.let { deletion ->
-        AlertDialog(
-            onDismissRequest = { pendingDeletion = null },
-            title = { Text(Messages.layersDeleteImportedTitle()) },
-            text = { Text(Messages.layersDeleteImportedMessage()) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingDeletion = null
-                        when (deletion) {
-                            ImportedMapDeletion.PDF -> onUnloadPdf()
-                            ImportedMapDeletion.OFFLINE_TILES -> onUnloadOfflineTiles()
-                            ImportedMapDeletion.SAVED -> onDeleteRetainedImportedMap()
-                        }
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF5A5A)),
-                ) { Text(Messages.layersDeleteImportedConfirm()) }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDeletion = null }) { Text(L10n.text("Cancel")) }
-            },
-        )
     }
     pendingVisibility?.let { pending ->
         AlertDialog(
@@ -345,16 +233,6 @@ fun LayersSheet(
             },
         )
     }
-}
-
-/** Destructive imported-map action; always confirmed before anything is deleted. */
-@Composable
-private fun DeleteMapButton(label: String, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5A5A)),
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-    ) { Text(label) }
 }
 
 @Composable
