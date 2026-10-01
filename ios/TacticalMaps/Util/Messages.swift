@@ -6,6 +6,18 @@ enum Messages {
     static func chatRecipientHeading() -> String {
         L10n.message("id.chat_recipient_heading", fallback: "RECIPIENT")
     }
+    static func chatRecipientInBackground() -> String {
+        L10n.message("id.chat_recipient_in_background", fallback: "That unit's TacMap is in the background and can't receive chat until it is opened again.")
+    }
+    static func chatRecipientInBackgroundMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.chat_recipient_in_background", fallback: "That unit's TacMap is in the background and can't receive chat until it is opened again.", arguments: [])
+    }
+    static func chatReplayTableFull() -> String {
+        L10n.message("id.chat_replay_table_full", fallback: "A message from a new unit session was blocked because this room's chat replay protection is full. Create a new join code to keep chatting with new sessions.")
+    }
+    static func chatReplayTableFullMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.chat_replay_table_full", fallback: "A message from a new unit session was blocked because this room's chat replay protection is full. Create a new join code to keep chatting with new sessions.", arguments: [])
+    }
     static func acknowledge() -> String {
         L10n.message("id.common_ok", fallback: "OK")
     }
@@ -429,17 +441,101 @@ enum Messages {
     static func symbolsSymbolPackHelp() -> String {
         L10n.message("id.symbols_symbol_pack_help", fallback: "Choose a TacMap symbol pack (.json). Imported symbols work offline and travel with shared markers.")
     }
+    static func syncBackgroundPaused(_ time: String) -> String {
+        L10n.message("id.sync_background_paused", fallback: "Background location sharing paused at %1$@ because the connection was lost. Open TacMap to resume.", time)
+    }
+    static func syncBackgroundPausedMessage(_ time: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_background_paused", fallback: "Background location sharing paused at %1$@ because the connection was lost. Open TacMap to resume.", arguments: [time])
+    }
     static func syncConfiguredRelayUnavailable() -> String {
         L10n.message("id.sync_configured_relay_unavailable", fallback: "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.")
     }
     static func syncConfiguredRelayUnavailableMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.sync_configured_relay_unavailable", fallback: "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.", arguments: [])
     }
+    static func syncIdentityRejected() -> String {
+        L10n.message("id.sync_identity_rejected", fallback: "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.")
+    }
+    static func syncIdentityRejectedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_identity_rejected", fallback: "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.", arguments: [])
+    }
+    static func syncObjectTooLarge() -> String {
+        L10n.message("id.sync_object_too_large", fallback: "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.")
+    }
+    static func syncObjectTooLargeMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_object_too_large", fallback: "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.", arguments: [])
+    }
+    static func syncRecordsSkippedUnsupported(_ count: String) -> String {
+        L10n.message("id.sync_records_skipped_unsupported", fallback: "Some synced objects use a format this version of TacMap can't display, so they were skipped (count: %1$@). Update TacMap to see them.", count)
+    }
+    static func syncRecordsSkippedUnsupportedMessage(_ count: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_records_skipped_unsupported", fallback: "Some synced objects use a format this version of TacMap can't display, so they were skipped (count: %1$@). Update TacMap to see them.", arguments: [count])
+    }
+    static func syncRecordsSkippedUnverified(_ count: String) -> String {
+        L10n.message("id.sync_records_skipped_unverified", fallback: "Some synced objects failed verification and were ignored (count: %1$@). Your other data is unaffected. If this keeps happening, create a new join code.", count)
+    }
+    static func syncRecordsSkippedUnverifiedMessage(_ count: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_records_skipped_unverified", fallback: "Some synced objects failed verification and were ignored (count: %1$@). Your other data is unaffected. If this keeps happening, create a new join code.", arguments: [count])
+    }
     static func syncRecoveryDetail(_ detail: String, _ recovery: String) -> String {
         L10n.message("id.sync_recovery_detail", fallback: "%1$@ %2$@", detail, recovery)
     }
     static func syncRecoveryDetailMessage(_ detail: String, _ recovery: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.sync_recovery_detail", fallback: "%1$@ %2$@", arguments: [detail, recovery])
+    }
+    static func syncRelayBusy() -> String {
+        L10n.message("id.sync_relay_busy", fallback: "The Unit Sync room or relay is busy. Retrying automatically in a few minutes.")
+    }
+    static func syncRelayBusyMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_relay_busy", fallback: "The Unit Sync room or relay is busy. Retrying automatically in a few minutes.", arguments: [])
+    }
+    static func syncRelayRateLimited() -> String {
+        L10n.message("id.sync_relay_rate_limited", fallback: "The relay is limiting new connections from this network. Retrying automatically in about a minute.")
+    }
+    static func syncRelayRateLimitedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_relay_rate_limited", fallback: "The relay is limiting new connections from this network. Retrying automatically in about a minute.", arguments: [])
+    }
+    static func syncRelayRefusedRoom() -> String {
+        L10n.message("id.sync_relay_refused_room", fallback: "The relay refused this room. Check that TacMap is up to date and the join code is correct, then tap Retry.")
+    }
+    static func syncRelayRefusedRoomMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_relay_refused_room", fallback: "The relay refused this room. Check that TacMap is up to date and the join code is correct, then tap Retry.", arguments: [])
+    }
+    static func syncRoomFullCannotJoin() -> String {
+        L10n.message("id.sync_room_full_cannot_join", fallback: "This Unit Sync room is full and can't add this device. Ask your unit to delete unused objects, or create a new join code. Tap Retry to try again.")
+    }
+    static func syncRoomFullCannotJoinMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_room_full_cannot_join", fallback: "This Unit Sync room is full and can't add this device. Ask your unit to delete unused objects, or create a new join code. Tap Retry to try again.", arguments: [])
+    }
+    static func syncRoomResetChangesPaused() -> String {
+        L10n.message("id.sync_room_reset_changes_paused", fallback: "This Unit Sync room was reset by the relay and can no longer accept changes from this device. Your map stays saved here, and positions and chat still work. Create a new join code and share it with your unit.")
+    }
+    static func syncRoomResetChangesPausedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_room_reset_changes_paused", fallback: "This Unit Sync room was reset by the relay and can no longer accept changes from this device. Your map stays saved here, and positions and chat still work. Create a new join code and share it with your unit.", arguments: [])
+    }
+    static func syncRoomResetSuspected() -> String {
+        L10n.message("id.sync_room_reset_suspected", fallback: "The relay sent an older copy of this room than this device has already seen. The room may have been reset after a long idle period, or the relay may be misbehaving. If this keeps happening, create a new join code.")
+    }
+    static func syncRoomResetSuspectedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_room_reset_suspected", fallback: "The relay sent an older copy of this room than this device has already seen. The room may have been reset after a long idle period, or the relay may be misbehaving. If this keeps happening, create a new join code.", arguments: [])
+    }
+    static func syncSessionConflict() -> String {
+        L10n.message("id.sync_session_conflict", fallback: "Another session with this device's Unit Sync identity keeps replacing this one. Close TacMap on any other copy of this device, then tap Retry.")
+    }
+    static func syncSessionConflictMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_session_conflict", fallback: "Another session with this device's Unit Sync identity keeps replacing this one. Close TacMap on any other copy of this device, then tap Retry.", arguments: [])
+    }
+    static func syncSessionCounterBehind() -> String {
+        L10n.message("id.sync_session_counter_behind", fallback: "The relay keeps rejecting this device's session counter after a storage reset, so sync stopped. Create a new join code for your unit.")
+    }
+    static func syncSessionCounterBehindMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_session_counter_behind", fallback: "The relay keeps rejecting this device's session counter after a storage reset, so sync stopped. Create a new join code for your unit.", arguments: [])
+    }
+    static func syncSnapshotMalformedStopped() -> String {
+        L10n.message("id.sync_snapshot_malformed_stopped", fallback: "The relay keeps sending a malformed room snapshot, so sync stopped. No unverified data was used. Check the relay, then tap Retry.")
+    }
+    static func syncSnapshotMalformedStoppedMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_snapshot_malformed_stopped", fallback: "The relay keeps sending a malformed room snapshot, so sync stopped. No unverified data was used. Check the relay, then tap Retry.", arguments: [])
     }
     static func syncedLayersSaveFailed(_ detail: String) -> String {
         L10n.message("id.synced_layers_save_failed", fallback: "Could not save synced layers to disk: %1$@", detail)

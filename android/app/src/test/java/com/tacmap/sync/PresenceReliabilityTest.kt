@@ -24,14 +24,20 @@ class PresenceReliabilityTest {
         assertFalse(isCurrentSocketCallback(7, 7, false))
     }
 
+    // Used to pin the old 1 s base, +-20% jitter and reset at handshake. plans/04
+    // section 8 replaces that with full jitter over a 250 ms floor, reset only
+    // once a session proved stable; testdata/sync_client_behaviour.json has the vectors.
     @Test
-    fun reconnectBackoffIsExponentialBoundedAndHandshakeResettable() {
-        val policy = SyncReconnectBackoff(randomUnit = { 0.5 })
-        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L),
-            List(6) { policy.nextDelayMs() })
-        assertEquals(6, policy.attemptCount)
-        policy.reset()
-        assertEquals(1_000L, policy.nextDelayMs())
+    fun reconnectBackoffIsFullJitterBoundedAndOnlyResetWhenStable() {
+        val policy = SyncBackoffPolicy(random = { 0.5 })
+        assertEquals(listOf(625L, 1_000L, 1_750L, 3_250L, 6_250L, 12_250L, 15_125L),
+            List(7) { policy.nextDelay(SyncBackoffClass.TRANSIENT).toLong() })
+        assertEquals(7, policy.attempt)
+        policy.connected(nowMs = 0L)
+        assertEquals(7, policy.attempt)
+        policy.opAcked()
+        assertEquals(0, policy.attempt)
+        assertEquals(625L, policy.nextDelay(SyncBackoffClass.TRANSIENT).toLong())
     }
 
     @Test

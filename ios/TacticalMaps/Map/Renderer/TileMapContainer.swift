@@ -72,7 +72,10 @@ struct TileMapContainer: UIViewRepresentable {
     @ObservedObject var opsec = OpsecSettings.shared
     var graphicsLocked: Bool = false
     var drawingControlsPreview: DrawingShape?
-    var peers: [String: PresencePeer] = [:]
+    /// Not observed on purpose (contract 20.2): the coordinator subscribes and
+    /// moves the presence markers itself, so a loc frame never reruns
+    /// updateUIView and never redraws the drawings.
+    let presence: SyncPresenceModel?
     var onPeerTap: (String) -> Void
     var onMutationError: (LocalizedMessage) -> Void
     var onEmptyMapLongPress: ((CLLocationCoordinate2D) -> Void)? = nil
@@ -96,6 +99,7 @@ struct TileMapContainer: UIViewRepresentable {
             calibration: calibration, onMutationError: onMutationError)
         context.coordinator.editing.onPresenceTap = onPeerTap
         context.coordinator.editing.onEmptyMapLongPress = onEmptyMapLongPress
+        context.coordinator.observePresence(presence)
         return view
     }
 
@@ -121,7 +125,6 @@ struct TileMapContainer: UIViewRepresentable {
                 session: drawingSession,
                 measure: measureSession),
             gridVisible: visibility.mgrsGridVisible,
-            peers: peers,
             decorations: Coordinator.buildDecorations(
                 drawingStore: drawingStore, drawingSession: drawingSession,
                 measureSession: measureSession, visibility: visibility),
@@ -175,6 +178,7 @@ struct TileMapContainer: UIViewRepresentable {
 
         /// Sync presence peers, on top of everything.
         private var presenceView: PresenceOverlayView?
+        private var presenceSink: AnyCancellable?
 
         /// The blue "you are here" dot (MKMapView drew this for free).
         private var userLocationView: UserLocationOverlayView?
@@ -405,6 +409,18 @@ struct TileMapContainer: UIViewRepresentable {
             pdfView = pv
         }
 
+        /// Presence goes straight from the model to the overlay. Only marker
+        /// subviews move, nothing else on the map is rebuilt (S5-12).
+        @MainActor
+        func observePresence(_ presence: SyncPresenceModel?) {
+            presenceSink = nil
+            guard let presence else { return }
+            presenceView?.update(peers: presence.peers)
+            presenceSink = presence.$peers
+                .receive(on: RunLoop.main)
+                .sink { [weak self] peers in self?.presenceView?.update(peers: peers) }
+        }
+
         /// Position/toggle the blue user-location dot.
         func syncUserLocation(coordinate: CLLocationCoordinate2D?, accuracy: Double, visible: Bool) {
             userLocationView?.update(coordinate: coordinate, accuracyMetres: accuracy, visible: visible)
@@ -425,12 +441,10 @@ struct TileMapContainer: UIViewRepresentable {
 
         /// Push new overlay geometry (drawings changed / selection changed).
         func updateOverlays(drawings: [PDFVectorShape], gridVisible: Bool,
-                            peers: [String: PresencePeer],
                             decorations: DrawingDecorationsOverlayView.Model,
                             handles: [EditHandle], graphicsLocked: Bool) {
             durableDrawingVectors = drawings
             renderDrawingVectors()
-            presenceView?.update(peers: peers)
             durableDrawingDecorations = decorations
             renderDrawingDecorations()
             durableDrawingHandles = handles

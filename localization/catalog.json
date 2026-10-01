@@ -16670,5 +16670,240 @@
     "legacy": false,
     "accessor": "onlineLookupsPrivacyHelp",
     "parameters": []
+  },
+  "sync_records_skipped_unsupported": {
+    "en": "Some synced objects use a format this version of TacMap can't display, so they were skipped (count: {1}). Update TacMap to see them.",
+    "de": "Einige synchronisierte Objekte verwenden ein Format, das diese TacMap-Version nicht anzeigen kann, und wurden übersprungen (Anzahl: {1}). Aktualisiere TacMap, um sie zu sehen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncRecordsSkippedUnsupported",
+    "deferred": true,
+    "context": "Unit Sync notice, once per room join. Some authenticated synced objects use a newer format this app version cannot show. {1} is a count. Not a security warning.",
+    "parameters": [
+      {
+        "name": "count",
+        "type": "string"
+      }
+    ]
+  },
+  "sync_records_skipped_unverified": {
+    "en": "Some synced objects failed verification and were ignored (count: {1}). Your other data is unaffected. If this keeps happening, create a new join code.",
+    "de": "Einige synchronisierte Objekte haben die Prüfung nicht bestanden und wurden ignoriert (Anzahl: {1}). Deine übrigen Daten sind nicht betroffen. Wenn das weiterhin passiert, erstelle einen neuen Beitrittscode.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncRecordsSkippedUnverified",
+    "deferred": true,
+    "context": "Unit Sync security notice, once per room join. Some synced records failed signature or encryption checks and were ignored. {1} is a count. Recommend a new join code if it repeats.",
+    "parameters": [
+      {
+        "name": "count",
+        "type": "string"
+      }
+    ]
+  },
+  "sync_room_reset_suspected": {
+    "en": "The relay sent an older copy of this room than this device has already seen. The room may have been reset after a long idle period, or the relay may be misbehaving. If this keeps happening, create a new join code.",
+    "de": "Das Relay hat einen älteren Stand dieses Raums gesendet, als dieses Gerät bereits kennt. Der Raum wurde möglicherweise nach langer Inaktivität zurückgesetzt, oder das Relay verhält sich fehlerhaft. Wenn das weiterhin passiert, erstelle einen neuen Beitrittscode.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncRoomResetSuspected",
+    "deferred": true,
+    "context": "Unit Sync security notice when the relay sends an older room state than this device saw. Could be a relay reset after long idle time or relay misbehaviour. Sync keeps running.",
+    "parameters": []
+  },
+  "sync_room_reset_changes_paused": {
+    "en": "This Unit Sync room was reset by the relay and can no longer accept changes from this device. Your map stays saved here, and positions and chat still work. Create a new join code and share it with your unit.",
+    "de": "Dieser Unit-Sync-Raum wurde vom Relay zurückgesetzt und kann keine Änderungen von diesem Gerät mehr annehmen. Deine Karte bleibt hier gespeichert, Positionen und Chat funktionieren weiterhin. Erstelle einen neuen Beitrittscode und teile ihn mit deiner Einheit.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncRoomResetChangesPaused",
+    "deferred": true,
+    "context": "Unit Sync notice: the relay was reset and rejects this device changes for the rest of the room membership. Positions and chat keep working. Shown once per join.",
+    "parameters": []
+  },
+  "sync_object_too_large": {
+    "en": "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.",
+    "de": "Ein Objekt ist zu groß für die Synchronisierung und bleibt nur auf diesem Gerät. Vereinfache es oder zerlege es in kleinere Teile, um es zu teilen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncObjectTooLarge",
+    "deferred": true,
+    "context": "Unit Sync notice when one map object is too big to send to the relay. The object stays saved on this device only.",
+    "parameters": []
+  },
+  "sync_relay_busy": {
+    "en": "The Unit Sync room or relay is busy. Retrying automatically in a few minutes.",
+    "de": "Der Unit-Sync-Raum oder das Relay ist ausgelastet. Neuer Versuch automatisch in einigen Minuten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncRelayBusy",
+    "deferred": true,
+    "context": "Unit Sync notice after repeated busy or storage errors from the relay. The app keeps retrying on its own with a longer wait.",
+    "parameters": []
+  },
+  "sync_relay_rate_limited": {
+    "en": "The relay is limiting new connections from this network. Retrying automatically in about a minute.",
+    "de": "Das Relay begrenzt neue Verbindungen aus diesem Netzwerk. Neuer Versuch automatisch in etwa einer Minute.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncRelayRateLimited",
+    "deferred": true,
+    "context": "Unit Sync notice when the relay rate limits new connections from this network. The app retries on its own.",
+    "parameters": []
+  },
+  "sync_room_full_cannot_join": {
+    "en": "This Unit Sync room is full and can't add this device. Ask your unit to delete unused objects, or create a new join code. Tap Retry to try again.",
+    "de": "Dieser Unit-Sync-Raum ist voll und kann dieses Gerät nicht aufnehmen. Bitte deine Einheit, nicht benötigte Objekte zu löschen, oder erstelle einen neuen Beitrittscode. Tippe auf „Erneut versuchen“, um es noch einmal zu versuchen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncRoomFullCannotJoin",
+    "deferred": true,
+    "context": "Unit Sync stop message: the room has no space for another device. Mentions the existing Retry button by its label.",
+    "parameters": []
+  },
+  "sync_relay_refused_room": {
+    "en": "The relay refused this room. Check that TacMap is up to date and the join code is correct, then tap Retry.",
+    "de": "Das Relay hat diesen Raum abgelehnt. Prüfe, ob TacMap aktuell und der Beitrittscode korrekt ist, und tippe dann auf „Erneut versuchen“.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncRelayRefusedRoom",
+    "deferred": true,
+    "context": "Unit Sync stop message when the relay rejects the room at connect time (outdated app or wrong code). Mentions the existing Retry button by its label.",
+    "parameters": []
+  },
+  "sync_identity_rejected": {
+    "en": "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.",
+    "de": "Das Relay hat die signierte Unit-Sync-Identität dieses Geräts abgelehnt, daher wurde die Synchronisierung beendet. Verlasse den Raum und tritt erneut bei. Wenn das weiterhin passiert, erstelle einen neuen Beitrittscode.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncIdentityRejected",
+    "deferred": true,
+    "context": "Unit Sync security stop: the relay rejected this device signed identity. User should leave and rejoin, or create a new join code.",
+    "parameters": []
+  },
+  "sync_session_conflict": {
+    "en": "Another session with this device's Unit Sync identity keeps replacing this one. Close TacMap on any other copy of this device, then tap Retry.",
+    "de": "Eine andere Sitzung mit der Unit-Sync-Identität dieses Geräts ersetzt diese immer wieder. Schließe TacMap auf allen anderen Kopien dieses Geräts und tippe dann auf „Erneut versuchen“.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncSessionConflict",
+    "deferred": true,
+    "context": "Unit Sync stop message when another copy of this device identity keeps taking over the session. Mentions the existing Retry button by its label.",
+    "parameters": []
+  },
+  "sync_session_counter_behind": {
+    "en": "The relay keeps rejecting this device's session counter after a storage reset, so sync stopped. Create a new join code for your unit.",
+    "de": "Das Relay lehnt den Sitzungszähler dieses Geräts nach einem Speicher-Reset weiterhin ab, daher wurde die Synchronisierung beendet. Erstelle einen neuen Beitrittscode für deine Einheit.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncSessionCounterBehind",
+    "deferred": true,
+    "context": "Unit Sync stop message when the relay keeps rejecting the session counter after local storage was reset. Recommend a new join code.",
+    "parameters": []
+  },
+  "sync_snapshot_malformed_stopped": {
+    "en": "The relay keeps sending a malformed room snapshot, so sync stopped. No unverified data was used. Check the relay, then tap Retry.",
+    "de": "Das Relay sendet wiederholt einen fehlerhaften Raum-Datenstand, daher wurde die Synchronisierung beendet. Ungeprüfte Daten wurden nicht verwendet. Prüfe das Relay und tippe dann auf „Erneut versuchen“.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncSnapshotMalformedStopped",
+    "deferred": true,
+    "context": "Unit Sync security stop after the relay sent a broken room snapshot several times. No unverified data was used. Mentions the existing Retry button by its label.",
+    "parameters": []
+  },
+  "sync_background_paused": {
+    "en": "Background location sharing paused at {1} because the connection was lost. Open TacMap to resume.",
+    "de": "Die Standortfreigabe im Hintergrund wurde um {1} pausiert, weil die Verbindung verloren ging. Öffne TacMap, um fortzufahren.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncBackgroundPaused",
+    "deferred": true,
+    "context": "Background Unit Sync paused notice. {1} is a localised clock time. User opens the app to resume.",
+    "parameters": [
+      {
+        "name": "time",
+        "type": "string"
+      }
+    ]
+  },
+  "sync_background_paused_title": {
+    "en": "Background Unit Sync paused",
+    "de": "Unit Sync im Hintergrund pausiert",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncBackgroundPausedTitle",
+    "deferred": true,
+    "context": "Android notification title when background Unit Sync location sharing paused because the connection was lost.",
+    "parameters": []
+  },
+  "chat_recipient_in_background": {
+    "en": "That unit's TacMap is in the background and can't receive chat until it is opened again.",
+    "de": "TacMap dieser Einheit läuft im Hintergrund und kann erst wieder Chatnachrichten empfangen, wenn die App geöffnet wird.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "chatRecipientInBackground",
+    "deferred": true,
+    "context": "Chat send blocked: the selected unit app is in the background and cannot receive chat until it is opened again.",
+    "parameters": []
+  },
+  "chat_replay_table_full": {
+    "en": "A message from a new unit session was blocked because this room's chat replay protection is full. Create a new join code to keep chatting with new sessions.",
+    "de": "Eine Nachricht aus einer neuen Sitzung einer Einheit wurde blockiert, weil der Wiedergabeschutz des Chats in diesem Raum voll ist. Erstelle einen neuen Beitrittscode, um weiter mit neuen Sitzungen zu chatten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "chatReplayTableFull",
+    "deferred": true,
+    "context": "Chat notice when a message from a new unit session was blocked because the room chat replay protection table is full. Recommend a new join code.",
+    "parameters": []
   }
 }

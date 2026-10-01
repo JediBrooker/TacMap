@@ -15,6 +15,9 @@ enum GeoJSONExporter {
     static func export(waypoints: [Waypoint] = [],
                        drawings:  [DrawingShape] = [],
                        layers:    [DrawingLayer] = []) throws -> String {
+        #if DEBUG
+        SyncCostCounters.bump(SyncCostCounters.geoJSONExport)
+        #endif
         var features: [[String: Any]] = []
         features.reserveCapacity(waypoints.count + drawings.count)
 

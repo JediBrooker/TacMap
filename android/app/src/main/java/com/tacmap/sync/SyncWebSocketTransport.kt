@@ -24,6 +24,11 @@ internal interface SyncWebSocket {
     fun send(text: String): Boolean
     fun close(code: Int, reason: String): Boolean
     fun cancel()
+    /** Bytes handed to send() that haven't left for the network yet. */
+    fun queuedBytes(): Long = 0L
+    fun sendPing(): Boolean = false
+    /** Library keepalive interval; background mode slows it down (plans/04 section 21.1). */
+    fun setKeepaliveSeconds(seconds: Int) {}
 }
 
 internal interface SyncWebSocketListener {
@@ -32,13 +37,17 @@ internal interface SyncWebSocketListener {
     fun onBinaryMessage(webSocket: SyncWebSocket, bytes: ByteArray, consumed: () -> Unit)
     fun onClosed(webSocket: SyncWebSocket, code: Int, reason: String)
     fun onFailure(webSocket: SyncWebSocket, failure: Throwable)
+    /** Any inbound bytes at all, called on the reader thread. Keep it cheap. */
+    fun onInboundProgress(webSocket: SyncWebSocket) {}
 }
 
 /**
- * Applies reader-thread backpressure until the main-thread protocol consumer
- * has handled the current frame. This keeps a fast hostile relay from queuing
- * an unbounded number of decoded Strings/coroutines ahead of the receive-rate
- * budget. CountDownLatch makes duplicate completion harmless.
+ * Applies reader-thread backpressure until the protocol side has taken the
+ * frame. SyncManager calls consumed as soon as the frame sits in its bounded
+ * inbound queue (plans/04 section 1.1), so the reader only really waits when
+ * that queue is full, which keeps a fast hostile relay from piling up decoded
+ * Strings ahead of the receive budget. CountDownLatch makes duplicate
+ * completion harmless.
  */
 internal class SyncInboundCallbackGate(
     private val timeoutMs: Long = SyncWebSocketTransport.CALLBACK_DRAIN_TIMEOUT_MS,
@@ -100,10 +109,10 @@ internal class SyncWireReceiveBudget(
  * compression extension is offered, so a small compressed frame cannot inflate
  * past the same ceiling.
  */
-internal class SyncWebSocketTransport {
+internal class SyncWebSocketTransport : SyncTransportFactory {
     private val sockets = ConcurrentHashMap.newKeySet<BoundedSocket>()
 
-    fun newWebSocket(
+    override fun newWebSocket(
         url: String,
         headers: Map<String, String>,
         listener: SyncWebSocketListener,
@@ -119,7 +128,7 @@ internal class SyncWebSocketTransport {
         return socket
     }
 
-    fun shutdown() {
+    override fun shutdown() {
         sockets.toList().forEach(BoundedSocket::cancel)
         sockets.clear()
     }
@@ -129,22 +138,23 @@ internal class SyncWebSocketTransport {
         const val MAX_OUTBOUND_QUEUE_BYTES = 16L * 1024L * 1024L
         private const val MAX_FRAME_OVERHEAD_BYTES = 14L
         const val CONNECT_TIMEOUT_MS = 10_000
-        const val CALLBACK_DRAIN_TIMEOUT_MS = 10_000L
+        // plans/04 watchdogs.inboundQueueSpaceTimeoutMs: a reader that waits
+        // this long for the protocol side is a slow consumer and gets cut
+        const val CALLBACK_DRAIN_TIMEOUT_MS = 60_000L
         const val KEEPALIVE_SECONDS = 20
         const val MAX_FRAGMENT_COUNT = 128
-        // A valid v3 initial join can contain ~56 maximum-sized snapshot
-        // chunks plus three ephemeral frames for each of the other 63 room
-        // members. Keep this pre-protocol raw-frame ceiling above that relay
-        // envelope; SyncLiveReceiveBudget still enforces 200 application
-        // messages / 4 MiB after the snapshot fence.
-        const val MAX_WIRE_FRAMES_PER_WINDOW = 512
-        const val MAX_WIRE_BYTES_PER_WINDOW = SyncLiveReceiveBudget.MAX_INITIAL_BYTES.toLong()
+        // Raw RFC 6455 frame ceiling, below the protocol budgets. It has to sit
+        // above the biggest legit live window (room budget at its 4,000 cap plus
+        // 400 self-responses, plus pings/pongs and continuation frames) or the
+        // transport would trip before SyncReceiveBudget ever gets a say.
+        const val MAX_WIRE_FRAMES_PER_WINDOW = 8_192
+        const val MAX_WIRE_BYTES_PER_WINDOW = SyncReceiveBudget.INITIAL_MAX_BYTES
         const val WIRE_WINDOW_NANOS = 10_000_000_000L
         const val FOLLOWS_REDIRECTS = false
         const val OFFERS_COMPRESSION = false
         const val VERIFIES_TLS_HOSTNAME = true
 
-        fun boundedDraft(): Draft_6455 = BoundedDraft()
+        fun boundedDraft(onProgress: (() -> Unit)? = null): Draft_6455 = BoundedDraft(onProgress)
     }
 
     /**
@@ -154,7 +164,9 @@ internal class SyncWebSocketTransport {
      * `copyInstance` is essential because WebSocketImpl clones the supplied
      * draft for each client connection.
      */
-    private class BoundedDraft : Draft_6455(emptyList<IExtension>(), MAX_FRAME_BYTES) {
+    private class BoundedDraft(
+        private val onProgress: (() -> Unit)?,
+    ) : Draft_6455(emptyList<IExtension>(), MAX_FRAME_BYTES) {
         private var fragmentedPayloadBytes = 0L
         private var fragmentedMessageActive = false
         private var fragmentedFrameCount = 0
@@ -209,7 +221,14 @@ internal class SyncWebSocketTransport {
             }
         }
 
-        override fun copyInstance(): Draft = BoundedDraft()
+        // every socket read lands here, so it's the cheapest "bytes are still
+        // arriving" signal for the handshake stall watchdog (plans/04 section 9)
+        override fun translateFrame(buffer: ByteBuffer): MutableList<Framedata> {
+            if (buffer.hasRemaining()) onProgress?.invoke()
+            return super.translateFrame(buffer)
+        }
+
+        override fun copyInstance(): Draft = BoundedDraft(onProgress)
 
         override fun reset() {
             clearFragmentedState()
@@ -242,7 +261,7 @@ internal class SyncWebSocketTransport {
         private val inboundCallbackGate = SyncInboundCallbackGate()
         private val client = object : WebSocketClient(
             uri,
-            boundedDraft(),
+            boundedDraft { listener.onInboundProgress(this@BoundedSocket) },
             headers,
             CONNECT_TIMEOUT_MS,
         ) {
@@ -306,6 +325,21 @@ internal class SyncWebSocketTransport {
         override fun close(code: Int, reason: String): Boolean {
             if (terminal.get()) return false
             return runCatching { client.close(code, reason) }.isSuccess
+        }
+
+        /** Framed bytes still sitting in Java-WebSocket's out queue. */
+        override fun queuedBytes(): Long =
+            (client.connection as? WebSocketImpl)?.outQueue?.sumOf { it.remaining().toLong() } ?: 0L
+
+        override fun sendPing(): Boolean {
+            if (terminal.get() || client.readyState != ReadyState.OPEN) return false
+            return runCatching { client.sendPing() }.isSuccess
+        }
+
+        // Java-WebSocket restarts its lost-connection timer when this changes
+        override fun setKeepaliveSeconds(seconds: Int) {
+            if (terminal.get()) return
+            runCatching { client.connectionLostTimeout = seconds }
         }
 
         override fun cancel() {

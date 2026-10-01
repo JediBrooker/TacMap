@@ -119,6 +119,8 @@ Current Android permissions:
 
 - `INTERNET`
 - `ACCESS_NETWORK_STATE`
+- `WAKE_LOCK` (normal permission; a partial wake lock of at most 20 s while
+  screen-off Unit Sync checks its socket before sending a position)
 - `ACCESS_FINE_LOCATION`
 - `ACCESS_COARSE_LOCATION`
 - `FOREGROUND_SERVICE`

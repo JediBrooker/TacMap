@@ -31,6 +31,8 @@ final class TacMapChatStore: ObservableObject {
         case accepted
         case duplicate
         case rejected
+        /// 256 live sessions and nothing superseded to prune (CHAT_REPLAY_FULL)
+        case rejectedReplayFull
     }
 
     struct ReplayFence: Codable, Equatable {
@@ -47,7 +49,8 @@ final class TacMapChatStore: ObservableObject {
                 && TacMapChatMessage.isCanonical32(sessionDomain)
                 && TacMapChatMessage.isCanonical32(keyId)
                 && counter > 0
-                && recentFingerprints.count <= Document.maximumRecentFingerprints
+                // files written before the 16 cap may carry up to 64, still readable
+                && recentFingerprints.count <= TacMapChatStore.fingerprintsAcceptedOnLoad
                 && recentFingerprints.allSatisfy(TacMapChatMessage.isCanonical32)
                 && Set(recentFingerprints).count == recentFingerprints.count
         }
@@ -55,8 +58,8 @@ final class TacMapChatStore: ObservableObject {
 
     private struct Document: Codable {
         static let schemaVersion = 2
-        static let maximumReplayFences = 256
-        static let maximumRecentFingerprints = 16
+        static let maximumReplayFences = ChatReplayPruner.maxFences
+        static let maximumRecentFingerprints = TacMapChatStore.fingerprintsKeptOnWrite
 
         var version: Int = schemaVersion
         var messages: [TacMapChatMessage] = []
@@ -117,6 +120,8 @@ final class TacMapChatStore: ObservableObject {
         let needsRewrite: Bool
     }
 
+    nonisolated static let fingerprintsKeptOnWrite = 16
+    nonisolated static let fingerprintsAcceptedOnLoad = 64
     nonisolated static let maximumMessagesPerRoom = 500
     nonisolated static let maximumEncodedHistoryBytes = 2_097_152
     nonisolated static let replayAdvanceWindow: Int64 = 10_000
@@ -129,6 +134,10 @@ final class TacMapChatStore: ObservableObject {
     /// Aggregate only; message IDs and conversation membership remain private
     /// to the sealed store.
     @Published private(set) var unreadMessageCount = 0
+
+    /// actor -> session domain the durable replay state currently holds for
+    /// it. Set by SyncManager while a v3 room is joined.
+    var durableSessionDomain: ((String) -> String?)?
 
     private let containerURL: URL
     private var fileURL: URL?
@@ -253,6 +262,9 @@ final class TacMapChatStore: ObservableObject {
         fileURL = url
         label = storeLabel
         isLocked = false
+        // superseded fences go in memory now, the next real write drops them
+        // on disk (no write just to prune)
+        pruneSupersededFences(&document)
         var recovered = document
         if document.messages.contains(where: { $0.isOutgoing && $0.deliveryState == .sending }) {
             // Pending relay frames and session keys are deliberately
@@ -269,7 +281,7 @@ final class TacMapChatStore: ObservableObject {
         }
         if needsRewrite {
             do {
-                try persist(recovered)
+                recovered = try persist(recovered)
             } catch {
                 fail(.persistenceFailed)
                 throw StoreError.persistenceFailed
@@ -311,8 +323,7 @@ final class TacMapChatStore: ObservableObject {
         var candidate = document
         candidate.messages.append(message)
         pruneByAcceptanceOrder(&candidate)
-        try persist(candidate)
-        publish(candidate)
+        publish(try persist(candidate))
         return true
     }
 
@@ -353,15 +364,18 @@ final class TacMapChatStore: ObservableObject {
         }
         if document.messages.contains(where: { $0.id == message.id }) { return .duplicate }
 
-        // Never evict a durable high-water mark to admit another sender: that
-        // would make an older frame from the evicted endpoint acceptable after
-        // restart. A room beyond this defensive ceiling fails closed instead.
-        if document.replay[fenceKey] == nil,
-           document.replay.count >= Document.maximumReplayFences {
-            return .rejected
-        }
-
         var candidate = document
+        // Never evict a live durable high-water mark to admit another sender:
+        // that would make an older frame from the evicted endpoint acceptable
+        // after restart. Fences of sessions the replay state has moved past
+        // can never be consulted again though (contract 15.1), drop those
+        // first. Still full after that: reject and let the caller say so.
+        if candidate.replay[fenceKey] == nil {
+            pruneSupersededFences(&candidate)
+            if candidate.replay.count >= Document.maximumReplayFences {
+                return .rejectedReplayFull
+            }
+        }
         var fingerprints = candidate.replay[fenceKey]?.recentFingerprints ?? []
         fingerprints.append(fingerprint)
         if fingerprints.count > Document.maximumRecentFingerprints {
@@ -377,8 +391,7 @@ final class TacMapChatStore: ObservableObject {
         candidate.messages.append(message)
         candidate.unreadMessageIds.append(message.id)
         pruneByAcceptanceOrder(&candidate)
-        try persist(candidate)
-        publish(candidate)
+        publish(try persist(candidate))
         return .accepted
     }
 
@@ -391,8 +404,7 @@ final class TacMapChatStore: ObservableObject {
         candidate.messages[index].deliveryState = state
         candidate.messages[index].failureCode = failureCode.map { String($0.prefix(64)) }
         guard candidate.messages[index].isValid else { throw StoreError.invalidRecord }
-        try persist(candidate)
-        publish(candidate)
+        publish(try persist(candidate))
         return true
     }
 
@@ -431,17 +443,41 @@ final class TacMapChatStore: ObservableObject {
             )
         }
         guard candidate.unreadMessageIds != document.unreadMessageIds else { return false }
-        try persist(candidate)
-        publish(candidate)
+        publish(try persist(candidate))
         return true
     }
 
-    private func persist(_ value: Document) throws {
+    /// Writes the document and returns exactly what landed on disk, which can
+    /// be smaller than the input: superseded fences, extra fingerprints and
+    /// (over 2 MiB) the oldest messages get trimmed on the way.
+    @discardableResult
+    private func persist(_ value: Document) throws -> Document {
         guard !isLocked, let fileURL, let label else { throw StoreError.locked }
-        guard value.isValid else { throw StoreError.invalidRecord }
+        var candidate = value
+        pruneSupersededFences(&candidate)
+        for (key, fence) in candidate.replay where fence.recentFingerprints.count > Document.maximumRecentFingerprints {
+            var trimmed = fence
+            trimmed.recentFingerprints.removeFirst(fence.recentFingerprints.count - Document.maximumRecentFingerprints)
+            candidate.replay[key] = trimmed
+        }
+        guard candidate.isValid else { throw StoreError.invalidRecord }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(value)
+        var data = try encoder.encode(candidate)
+        if data.count > Self.maximumEncodedHistoryBytes {
+            // byte cap, not just the 500 count: escaped bodies used to push the
+            // file past 2 MiB and every later write failed for good (S4-07)
+            let sizes = try candidate.messages.map { try encoder.encode($0).count }
+            let messageBytes = sizes.reduce(0, +) + max(0, sizes.count - 1)
+            let drop = ChatHistoryBudget.dropCount(
+                fixedOverheadBytes: data.count - messageBytes,
+                separatorBytes: 1,
+                messageBytes: sizes)
+            candidate.messages.removeFirst(min(drop, candidate.messages.count))
+            let retained = Set(candidate.messages.map(\.id))
+            candidate.unreadMessageIds.removeAll { !retained.contains($0) }
+            data = try encoder.encode(candidate)
+        }
         guard data.count <= Self.maximumEncodedHistoryBytes else {
             throw StoreError.historyTooLarge
         }
@@ -452,6 +488,16 @@ final class TacMapChatStore: ObservableObject {
         )
         try SafeStore.write(data, to: fileURL, label: label)
         pendingIssue = nil
+        return candidate
+    }
+
+    private func pruneSupersededFences(_ value: inout Document) {
+        guard let lookup = durableSessionDomain else { return }
+        value.replay = value.replay.filter { _, fence in
+            !ChatReplayPruner.isSuperseded(
+                .init(actorId: fence.actorId, sessionDomain: fence.sessionDomain, keyId: fence.keyId),
+                durableSessionDomain: lookup)
+        }
     }
 
     private func publish(_ value: Document) {

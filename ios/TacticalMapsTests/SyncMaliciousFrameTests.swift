@@ -105,38 +105,30 @@ final class SyncMaliciousFrameTests: XCTestCase {
         XCTAssertTrue(gate.claimClose(generation: 42))
     }
 
-    func testLiveReceiveBudgetCountsEveryPreParseFrameAndResetsByWindow() {
-        let budget = SyncLiveReceiveBudget()
-        for _ in 0..<SyncLiveReceiveBudget.maxFrames {
-            XCTAssertTrue(budget.admit(generation: 7, byteCount: 1, phase: .live, now: 100))
+    // These two used to pin a flat 200 frames / 4 MiB live budget, the same as
+    // the relay's per-sender allowance, so one member's import closed every
+    // peer (S2-04, S4-02). Contract section 12 scales the room budget with
+    // the number of sessions and counts our own acks separately.
+    func testLiveReceiveBudgetScalesWithSessionsAndResetsByWindow() {
+        let budget = SyncReceiveBudget()
+        let limit = SyncReceiveBudget.roomLimits(sessions: 0).frames
+        XCTAssertEqual(limit, 600)
+        for _ in 0..<limit {
+            XCTAssertTrue(budget.admit(generation: 7, phase: .live, frameType: "loc", byteCount: 1, activeSessions: 0, nowMs: 100))
         }
-        XCTAssertFalse(budget.admit(generation: 7, byteCount: 1, phase: .live, now: 100))
-        XCTAssertTrue(
-            budget.admit(
-                generation: 7,
-                byteCount: SyncLiveReceiveBudget.maxBytes,
-                phase: .live,
-                now: 110
-            )
-        )
-        XCTAssertFalse(budget.admit(generation: 7, byteCount: 1, phase: .live, now: 110))
-        XCTAssertTrue(budget.admit(generation: 8, byteCount: 1, phase: .live, now: 110))
+        XCTAssertFalse(budget.admit(generation: 7, phase: .live, frameType: "loc", byteCount: 1, activeSessions: 0, nowMs: 100))
+        XCTAssertTrue(budget.admit(generation: 7, phase: .live, frameType: "op-ack", byteCount: 1, activeSessions: 0, nowMs: 100),
+                      "our own acks have their own budget")
+        XCTAssertTrue(budget.admit(generation: 7, phase: .live, frameType: "loc", byteCount: 1, activeSessions: 0, nowMs: 10_100))
+        XCTAssertTrue(budget.admit(generation: 8, phase: .live, frameType: "loc", byteCount: 1, activeSessions: 0, nowMs: 10_100))
     }
 
     func testInitialReceiveBudgetCountsMalformedFramesThenResetsForLivePhase() {
-        let budget = SyncLiveReceiveBudget()
-        XCTAssertTrue(
-            budget.admit(
-                generation: 9,
-                byteCount: SyncLiveReceiveBudget.maxInitialBytes,
-                phase: .initial,
-                now: 1
-            )
-        )
-        XCTAssertFalse(
-            budget.admit(generation: 9, byteCount: 1, phase: .initial, now: 2)
-        )
-        XCTAssertTrue(budget.admit(generation: 9, byteCount: 1, phase: .live, now: 2))
+        let budget = SyncReceiveBudget()
+        XCTAssertTrue(budget.admit(generation: 9, phase: .initial, frameType: nil,
+                                   byteCount: SyncReceiveBudget.initialMaxBytes, activeSessions: 0, nowMs: 1))
+        XCTAssertFalse(budget.admit(generation: 9, phase: .initial, frameType: nil, byteCount: 1, activeSessions: 0, nowMs: 2))
+        XCTAssertTrue(budget.admit(generation: 9, phase: .live, frameType: nil, byteCount: 1, activeSessions: 0, nowMs: 2))
     }
 
     func testVeryLargeAsciiIsRejectedBeforeDataDuplicationContract() {

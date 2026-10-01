@@ -149,9 +149,13 @@ class SyncWebSocketTransportTest {
         assertFalse(SyncWebSocketTransport.FOLLOWS_REDIRECTS)
         assertTrue(SyncWebSocketTransport.VERIFIES_TLS_HOSTNAME)
         assertEquals(16L * 1024L * 1024L, SyncWebSocketTransport.MAX_OUTBOUND_QUEUE_BYTES)
-        assertEquals(512, SyncWebSocketTransport.MAX_WIRE_FRAMES_PER_WINDOW)
+        // raised from 512 so the transport never trips before the room receive
+        // budget does (4,000 room + 400 self-response frames, plans/04 section 12)
+        assertEquals(8_192, SyncWebSocketTransport.MAX_WIRE_FRAMES_PER_WINDOW)
+        assertTrue(SyncWebSocketTransport.MAX_WIRE_FRAMES_PER_WINDOW >
+            SyncReceiveBudget.ROOM_MAX_FRAMES + SyncReceiveBudget.SELF_MAX_FRAMES)
         assertEquals(
-            SyncLiveReceiveBudget.MAX_INITIAL_BYTES.toLong(),
+            SyncReceiveBudget.INITIAL_MAX_BYTES,
             SyncWebSocketTransport.MAX_WIRE_BYTES_PER_WINDOW,
         )
     }

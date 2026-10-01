@@ -122,6 +122,15 @@ struct OnlineMember: Identifiable, Equatable {
     var metadataUpdatedAt: Date?
 
     var id: String { clientId }
+
+    /// Same thing on screen. lastSeenAt / metadataUpdatedAt move on every
+    /// frame but nothing shows them, so they do not count (S5-12).
+    func sameDisplay(as other: OnlineMember) -> Bool {
+        clientId == other.clientId && displayName == other.displayName
+            && callsign == other.callsign && affiliation == other.affiliation
+            && echelon == other.echelon && function == other.function
+            && isHQ == other.isHQ && joinedAt == other.joinedAt
+    }
 }
 
 struct V3ActiveSession: Equatable {

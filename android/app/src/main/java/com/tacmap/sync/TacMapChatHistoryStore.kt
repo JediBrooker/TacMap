@@ -22,7 +22,14 @@ import java.io.File
 
 internal enum class TacMapChatHistoryAvailability { CLOSED, READY, LOCKED, CORRUPT, UNAVAILABLE }
 
-internal enum class TacMapChatInboundResult { ACCEPTED, DUPLICATE, REPLAY_REJECTED, STORE_UNAVAILABLE }
+internal enum class TacMapChatInboundResult {
+    ACCEPTED,
+    DUPLICATE,
+    REPLAY_REJECTED,
+    /** A new session identity didn't fit even after pruning superseded fences. */
+    REPLAY_TABLE_FULL,
+    STORE_UNAVAILABLE,
+}
 
 /**
  * Encrypted, bounded chat history. Chat has never had a plaintext format, so a
@@ -46,6 +53,13 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
     val availability: StateFlow<TacMapChatHistoryAvailability> = _availability.asStateFlow()
     private val _issue = MutableStateFlow<LocalizedMessage?>(null)
     val issue: StateFlow<LocalizedMessage?> = _issue.asStateFlow()
+
+    /**
+     * Durable session domain per actor from the room's replay state. A fence
+     * whose actor now has a different durable sd can never validate again
+     * (plans/04 section 15.1), so it gets dropped instead of filling the table.
+     */
+    @Volatile var durableSessionDomain: (String) -> String? = { null }
 
     private var activeRoomId: String? = null
     private var activeFile: File? = null
@@ -209,10 +223,12 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
             // Reusing a message ID under a newer header is a protocol violation.
             return TacMapChatInboundResult.REPLAY_REJECTED
         }
-        if (prior == null && replay.size >= MAX_REPLAY_IDENTITIES) {
-            // Replay fences are security state, not a cache. Never evict an old
-            // high-water mark merely to admit a 257th endpoint identity.
-            return TacMapChatInboundResult.REPLAY_REJECTED
+        // Replay fences are security state, not a cache. Only fences that can
+        // never be consulted again (superseded sessions) make room; a live
+        // high-water mark is never evicted to admit a new identity.
+        val current = if (prior == null) prunedReplay(replay) else replay
+        if (prior == null && !ChatReplayPruner.canAdmitNewIdentity(current.size)) {
+            return TacMapChatInboundResult.REPLAY_TABLE_FULL
         }
 
         val nextRecord = TacMapChatReplayRecord(
@@ -220,11 +236,16 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
             sessionDomain = sessionDomain,
             chatKeyId = chatKeyId,
             highCounterHex = counterHex,
+            // 16 on write is plenty; an older exact retry just turns from
+            // DUPLICATE into REPLAY_REJECTED, both get dropped
             recentFingerprints = ((prior?.recentFingerprints ?: emptyList()) + fingerprint)
-                .takeLast(TacMapChatReplayRecord.MAX_RECENT_FINGERPRINTS),
+                .takeLast(ChatReplayPruner.FINGERPRINTS_KEPT_ON_WRITE),
         )
-        val nextReplay = replay.toMutableList().apply {
-            if (identityIndex >= 0) set(identityIndex, nextRecord) else add(nextRecord)
+        val nextReplay = current.toMutableList().apply {
+            val index = indexOfFirst {
+                it.actorId == actorId && it.sessionDomain == sessionDomain && it.chatKeyId == chatKeyId
+            }
+            if (index >= 0) set(index, nextRecord) else add(nextRecord)
         }
         // Retention follows authenticated local acceptance order. The sender's
         // createdAt value is display-only and must not control eviction.
@@ -352,9 +373,44 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
             )
         }
         _messages.value = normalizedMessages
-        replay = value.replay
+        // superseded fences go now in memory; the next write persists that
+        replay = prunedReplay(value.replay)
         publishUnread(value.unreadInboundMessageIds.toSet())
         return true
+    }
+
+    private fun prunedReplay(records: List<TacMapChatReplayRecord>): List<TacMapChatReplayRecord> =
+        ChatReplayPruner.prune(records, { it.actorId to it.sessionDomain }, durableSessionDomain)
+
+    /**
+     * Drop the oldest messages (local acceptance order) once the document would
+     * pass 2 MiB, down to 1.5 MiB so we're not pruning on every write (S4-07).
+     */
+    private fun envelopeWithinBudget(
+        candidateMessages: List<TacMapChatMessage>,
+        candidateReplay: List<TacMapChatReplayRecord>,
+        candidateUnread: Set<String>,
+    ): Pair<TacMapChatHistoryEnvelope, String>? {
+        var messages = candidateMessages.takeLast(ChatHistoryBudget.MAX_MESSAGES)
+        repeat(4) {
+            val envelope = TacMapChatHistoryEnvelope(
+                version = STORE_VERSION,
+                messages = messages,
+                replay = candidateReplay,
+                unreadInboundMessageIds = retainedUnreadInboundMessageIds(messages, candidateUnread),
+            )
+            val encoded = runCatching { json.encodeToString(envelope) }.getOrNull() ?: return null
+            val total = encoded.toByteArray(Charsets.UTF_8).size.toLong()
+            if (total <= ChatHistoryBudget.MAX_ENCODED_BYTES) return envelope to encoded
+            val sizes = messages.map { message ->
+                json.encodeToString(TacMapChatMessage.serializer(), message).toByteArray(Charsets.UTF_8).size
+            }
+            val overhead = total - ChatHistoryBudget.encodedSize(0L, 1, sizes)
+            val drop = ChatHistoryBudget.dropCount(overhead, 1, sizes)
+            if (drop == 0 || messages.isEmpty()) return null
+            messages = messages.drop(drop)
+        }
+        return null
     }
 
     private fun persistAndPublish(
@@ -364,29 +420,23 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
     ): Boolean {
         val file = activeFile ?: return false
         val label = activeLabel ?: return false
-        val normalizedUnread = retainedUnreadInboundMessageIds(
+        // every write also drops fences that can never validate again
+        val replayToWrite = prunedReplay(candidateReplay)
+        val (envelope, encoded) = envelopeWithinBudget(
             candidateMessages,
+            replayToWrite,
             candidateUnreadInboundMessageIds,
-        )
-        val envelope = TacMapChatHistoryEnvelope(
-            version = STORE_VERSION,
-            messages = candidateMessages,
-            replay = candidateReplay,
-            unreadInboundMessageIds = normalizedUnread,
-        )
-        val encoded = runCatching { json.encodeToString(envelope) }.getOrElse {
-            _issue.value = Messages.chatChatHistoryCouldNotBeEncodedMessage()
-            return false
-        }
-        if (encoded.toByteArray(Charsets.UTF_8).size > MAX_ENCODED_HISTORY_BYTES) {
+        ) ?: run {
             _issue.value = Messages.chatChatHistoryReachedItsProtectedStorageLimitMessage()
             return false
         }
+        val retainedMessages = envelope.messages
+        val normalizedUnread = envelope.unreadInboundMessageIds
         return runCatching { SafeStore.writeAtomically(file, label, encoded) }
             .fold(
                 onSuccess = {
-                    _messages.value = candidateMessages
-                    replay = candidateReplay
+                    _messages.value = retainedMessages
+                    replay = replayToWrite
                     publishUnread(normalizedUnread.toSet())
                     _issue.value = null
                     true

@@ -28,6 +28,14 @@ object Messages {
         LocalizedMessage("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.", listOf())
     fun chatRecipientHeading(): String =
         L10n.message("id.chat_recipient_heading", "RECIPIENT")
+    fun chatRecipientInBackground(): String =
+        L10n.message("id.chat_recipient_in_background", "That unit's TacMap is in the background and can't receive chat until it is opened again.")
+    fun chatRecipientInBackgroundMessage(): LocalizedMessage =
+        LocalizedMessage("id.chat_recipient_in_background", "That unit's TacMap is in the background and can't receive chat until it is opened again.", listOf())
+    fun chatReplayTableFull(): String =
+        L10n.message("id.chat_replay_table_full", "A message from a new unit session was blocked because this room's chat replay protection is full. Create a new join code to keep chatting with new sessions.")
+    fun chatReplayTableFullMessage(): LocalizedMessage =
+        LocalizedMessage("id.chat_replay_table_full", "A message from a new unit session was blocked because this room's chat replay protection is full. Create a new join code to keep chatting with new sessions.", listOf())
     fun acknowledge(): String =
         L10n.message("id.common_ok", "OK")
     fun drawingsQuarantined(value: String): String =
@@ -300,6 +308,14 @@ object Messages {
         L10n.message("id.symbols_symbol_pack_failed", "Symbol pack not imported")
     fun symbolsSymbolPackHelp(): String =
         L10n.message("id.symbols_symbol_pack_help", "Choose a TacMap symbol pack (.json). Imported symbols work offline and travel with shared markers.")
+    fun syncBackgroundPaused(time: String): String =
+        L10n.message("id.sync_background_paused", "Background location sharing paused at %1\$s because the connection was lost. Open TacMap to resume.", time)
+    fun syncBackgroundPausedMessage(time: String): LocalizedMessage =
+        LocalizedMessage("id.sync_background_paused", "Background location sharing paused at %1\$s because the connection was lost. Open TacMap to resume.", listOf(time))
+    fun syncBackgroundPausedTitle(): String =
+        L10n.message("id.sync_background_paused_title", "Background Unit Sync paused")
+    fun syncBackgroundPausedTitleMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_background_paused_title", "Background Unit Sync paused", listOf())
     fun syncCodeTooShort(value: String): String =
         L10n.message("id.sync_code_too_short", "Too short to be safe. Use at least %1\$s characters, or tap Generate.", value)
     fun syncCodeTooShortMessage(value: String): LocalizedMessage =
@@ -310,6 +326,10 @@ object Messages {
         LocalizedMessage("id.sync_configured_relay_unavailable", "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.", listOf())
     fun syncDialogTitle(): String =
         L10n.message("id.sync_dialog_title", "Unit Sync")
+    fun syncIdentityRejected(): String =
+        L10n.message("id.sync_identity_rejected", "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.")
+    fun syncIdentityRejectedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_identity_rejected", "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.", listOf())
     fun syncJoinLocationConsent(value: String): String =
         L10n.message("id.sync_join_location_consent", "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately %1\$s while the screen is off.", value)
     fun syncJoinLocationConsentMessage(value: String): LocalizedMessage =
@@ -330,6 +350,54 @@ object Messages {
         L10n.message("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.")
     fun syncMetadataPrivacyMessage(): LocalizedMessage =
         LocalizedMessage("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.", listOf())
+    fun syncObjectTooLarge(): String =
+        L10n.message("id.sync_object_too_large", "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.")
+    fun syncObjectTooLargeMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_object_too_large", "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.", listOf())
+    fun syncRecordsSkippedUnsupported(count: String): String =
+        L10n.message("id.sync_records_skipped_unsupported", "Some synced objects use a format this version of TacMap can't display, so they were skipped (count: %1\$s). Update TacMap to see them.", count)
+    fun syncRecordsSkippedUnsupportedMessage(count: String): LocalizedMessage =
+        LocalizedMessage("id.sync_records_skipped_unsupported", "Some synced objects use a format this version of TacMap can't display, so they were skipped (count: %1\$s). Update TacMap to see them.", listOf(count))
+    fun syncRecordsSkippedUnverified(count: String): String =
+        L10n.message("id.sync_records_skipped_unverified", "Some synced objects failed verification and were ignored (count: %1\$s). Your other data is unaffected. If this keeps happening, create a new join code.", count)
+    fun syncRecordsSkippedUnverifiedMessage(count: String): LocalizedMessage =
+        LocalizedMessage("id.sync_records_skipped_unverified", "Some synced objects failed verification and were ignored (count: %1\$s). Your other data is unaffected. If this keeps happening, create a new join code.", listOf(count))
+    fun syncRelayBusy(): String =
+        L10n.message("id.sync_relay_busy", "The Unit Sync room or relay is busy. Retrying automatically in a few minutes.")
+    fun syncRelayBusyMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_relay_busy", "The Unit Sync room or relay is busy. Retrying automatically in a few minutes.", listOf())
+    fun syncRelayRateLimited(): String =
+        L10n.message("id.sync_relay_rate_limited", "The relay is limiting new connections from this network. Retrying automatically in about a minute.")
+    fun syncRelayRateLimitedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_relay_rate_limited", "The relay is limiting new connections from this network. Retrying automatically in about a minute.", listOf())
+    fun syncRelayRefusedRoom(): String =
+        L10n.message("id.sync_relay_refused_room", "The relay refused this room. Check that TacMap is up to date and the join code is correct, then tap Retry.")
+    fun syncRelayRefusedRoomMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_relay_refused_room", "The relay refused this room. Check that TacMap is up to date and the join code is correct, then tap Retry.", listOf())
+    fun syncRoomFullCannotJoin(): String =
+        L10n.message("id.sync_room_full_cannot_join", "This Unit Sync room is full and can't add this device. Ask your unit to delete unused objects, or create a new join code. Tap Retry to try again.")
+    fun syncRoomFullCannotJoinMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_room_full_cannot_join", "This Unit Sync room is full and can't add this device. Ask your unit to delete unused objects, or create a new join code. Tap Retry to try again.", listOf())
+    fun syncRoomResetChangesPaused(): String =
+        L10n.message("id.sync_room_reset_changes_paused", "This Unit Sync room was reset by the relay and can no longer accept changes from this device. Your map stays saved here, and positions and chat still work. Create a new join code and share it with your unit.")
+    fun syncRoomResetChangesPausedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_room_reset_changes_paused", "This Unit Sync room was reset by the relay and can no longer accept changes from this device. Your map stays saved here, and positions and chat still work. Create a new join code and share it with your unit.", listOf())
+    fun syncRoomResetSuspected(): String =
+        L10n.message("id.sync_room_reset_suspected", "The relay sent an older copy of this room than this device has already seen. The room may have been reset after a long idle period, or the relay may be misbehaving. If this keeps happening, create a new join code.")
+    fun syncRoomResetSuspectedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_room_reset_suspected", "The relay sent an older copy of this room than this device has already seen. The room may have been reset after a long idle period, or the relay may be misbehaving. If this keeps happening, create a new join code.", listOf())
+    fun syncSessionConflict(): String =
+        L10n.message("id.sync_session_conflict", "Another session with this device's Unit Sync identity keeps replacing this one. Close TacMap on any other copy of this device, then tap Retry.")
+    fun syncSessionConflictMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_session_conflict", "Another session with this device's Unit Sync identity keeps replacing this one. Close TacMap on any other copy of this device, then tap Retry.", listOf())
+    fun syncSessionCounterBehind(): String =
+        L10n.message("id.sync_session_counter_behind", "The relay keeps rejecting this device's session counter after a storage reset, so sync stopped. Create a new join code for your unit.")
+    fun syncSessionCounterBehindMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_session_counter_behind", "The relay keeps rejecting this device's session counter after a storage reset, so sync stopped. Create a new join code for your unit.", listOf())
+    fun syncSnapshotMalformedStopped(): String =
+        L10n.message("id.sync_snapshot_malformed_stopped", "The relay keeps sending a malformed room snapshot, so sync stopped. No unverified data was used. Check the relay, then tap Retry.")
+    fun syncSnapshotMalformedStoppedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_snapshot_malformed_stopped", "The relay keeps sending a malformed room snapshot, so sync stopped. No unverified data was used. Check the relay, then tap Retry.", listOf())
     fun tipsDone(): String =
         L10n.message("id.tips_done", "Get Started")
     fun tipsNext(): String =

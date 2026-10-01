@@ -28,11 +28,25 @@ internal class SyncIssueLifecycle {
     private var generation: Long = 0
     private var transientIssue: SyncIssue? = null
     private var persistentSecurityIssue: SyncIssue? = null
+    // stop states and "changes paused": a later clean connection doesn't
+    // retire these, only dismiss, Retry or leaving the room does
+    private var pinnedIssue: SyncIssue? = null
 
     val issue: SyncIssue?
         get() = transientIssue?.takeIf { it.kind == SyncIssueKind.SECURITY }
             ?: persistentSecurityIssue
+            ?: pinnedIssue
             ?: transientIssue
+
+    fun reportPinned(message: LocalizedMessage, kind: SyncIssueKind, atGeneration: Long = generation): SyncIssue? {
+        pinnedIssue = SyncIssue(message, kind, atGeneration)
+        return issue
+    }
+
+    fun clearPinned(): SyncIssue? {
+        pinnedIssue = null
+        return issue
+    }
 
     fun beginConnection(): Long {
         generation += 1
@@ -85,6 +99,7 @@ internal class SyncIssueLifecycle {
 
     fun dismiss(): SyncIssue? {
         transientIssue = null
+        pinnedIssue = null
         return issue
     }
 }

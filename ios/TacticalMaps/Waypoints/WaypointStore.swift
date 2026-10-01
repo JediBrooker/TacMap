@@ -217,6 +217,45 @@ final class WaypointStore: ObservableObject {
         return true
     }
 
+    /// Authenticated Unit Sync records of one inbound batch or snapshot in one
+    /// durable write and one publish (contract 17). Upserts replace in place or
+    /// append, deletes of missing ids are no-ops. No undo step: a synced change
+    /// is not the user's edit, and one undo for a whole snapshot would publish
+    /// room-wide deletes. Returns false when nothing actually changed.
+    @discardableResult
+    func commitRemoteBatch(upserts: [Waypoint], deletes: Set<UUID>) throws -> Bool {
+        guard !locked else { throw WaypointMutationError.locked }
+        guard !upserts.isEmpty || !deletes.isEmpty else { return false }
+        var pending: [UUID: Waypoint] = [:]
+        var appendOrder: [UUID] = []
+        for waypoint in upserts {
+            if pending.updateValue(waypoint, forKey: waypoint.id) == nil { appendOrder.append(waypoint.id) }
+        }
+        var candidate: [Waypoint] = []
+        candidate.reserveCapacity(waypoints.count + pending.count)
+        for waypoint in waypoints {
+            if deletes.contains(waypoint.id) { continue }
+            if let replacement = pending.removeValue(forKey: waypoint.id) {
+                candidate.append(replacement)
+            } else {
+                candidate.append(waypoint)
+            }
+        }
+        for id in appendOrder {
+            if let added = pending[id], !deletes.contains(id) { candidate.append(added) }
+        }
+        guard candidate != waypoints else { return false }
+        do {
+            try write(candidate)
+        } catch {
+            pendingLoadError = Messages.couldNotSaveWaypointChangeToDiskMessage("").withArgument(0, error.displayMessage)
+            throw WaypointMutationError.persistenceFailed(error)
+        }
+        waypoints = candidate
+        if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
+        return true
+    }
+
     /// Durably moves every waypoint off a layer before publishing the candidate.
     /// A no-op retry does not rewrite the store.
     @discardableResult

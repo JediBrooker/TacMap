@@ -9,8 +9,6 @@ import com.tacmap.localization.L10n
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
-import android.os.SystemClock
-import android.util.Base64
 import com.tacmap.drawings.DrawingDocument
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.export.GeoJsonExporter
@@ -42,30 +40,26 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-private val STRICT_SYNC_UUID = Regex(
-    "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-)
+/** v2 wire ids may arrive in either case (shipped iOS sends uppercase), state is keyed lowercase. */
+internal fun canonicalLegacySyncId(raw: String): String? = LegacyV2Ids.stateKey(raw)
 
-internal fun canonicalLegacySyncId(raw: String): String? {
-    if (!STRICT_SYNC_UUID.matches(raw)) return null
-    return runCatching { UUID.fromString(raw).toString() }
-        .getOrNull()
-        ?.takeIf { it == raw }
-}
-
-/** Canonicalizes before the version lookup so casing can never create a second key. */
+/** Canonicalizes before the version lookup so casing can never create a second key.
+ * Equal versions go to the larger `by`, same as the relay (plans/04 section 16). */
 internal fun acceptedLegacySyncRecordId(
     rawId: String,
     version: Long,
+    by: String,
     versions: Map<String, Long>,
+    lastBy: Map<String, String>,
 ): String? {
     val id = canonicalLegacySyncId(rawId) ?: return null
-    return id.takeIf { (versions[id] ?: Long.MIN_VALUE) < version }
+    return id.takeIf { LegacyV2Ids.beats(version, by, versions[id], lastBy[id]) }
 }
 
 internal fun isValidLegacySyncPut(
@@ -73,14 +67,13 @@ internal fun isValidLegacySyncPut(
     kind: String,
     parsed: GeoJsonImporter.Result,
 ): Boolean {
-    val canonicalRecordId = canonicalLegacySyncId(recordId) ?: return false
+    canonicalLegacySyncId(recordId) ?: return false
     val objectId = when (kind) {
         "waypoint" -> parsed.waypoints.singleOrNull()?.id?.takeIf { parsed.drawings.isEmpty() }
         "drawing" -> parsed.drawings.singleOrNull()?.id?.takeIf { parsed.waypoints.isEmpty() }
         else -> null
     } ?: return false
-    val canonicalObjectId = canonicalLegacySyncId(objectId) ?: return false
-    return canonicalObjectId == canonicalRecordId && objectId == recordId
+    return LegacyV2Ids.embeddedMatches(recordId, objectId)
 }
 
 internal enum class V3DepartureKind { EXPLICIT, TRANSIENT, REPLACEMENT }
@@ -156,12 +149,19 @@ internal fun peerAfterV3Departure(
  * two devices against the live relay.
  */
 @OptIn(FlowPreview::class)
-class SyncManager(
+class SyncManager internal constructor(
     waypointStore: WaypointStore,
     drawingStore: DrawingStore,
     parentScope: CoroutineScope,
-    context: Context,
+    private val env: SyncEnvironment,
 ) {
+    constructor(
+        waypointStore: WaypointStore,
+        drawingStore: DrawingStore,
+        parentScope: CoroutineScope,
+        context: Context,
+    ) : this(waypointStore, drawingStore, parentScope, SyncEnvironment.android(context))
+
     enum class Status { OFFLINE, CONNECTING, SNAPSHOTTING, CONNECTED }
 
     private var waypointStoreRef: WaypointStore? = waypointStore
@@ -171,14 +171,15 @@ class SyncManager(
     /** Drawing widths are stored as renderer pixels on Android but travel as
      * screen-independent units. Keep one application-context density for every
      * Sync import/export boundary; never rewrite the existing persisted file. */
-    private val displayDensity = context.applicationContext.resources.displayMetrics.density
+    private val displayDensity = env.displayDensity
+    private val syncClock: SyncClock = env.clock
     // Keep the transport independent of a Compose scope so the app-scoped
     // runtime can retain one already-authenticated v3 presence session while
     // MapScreen is removed for the mission-key lock. dispose() is still the
     // sole terminal owner of this job.
     private val managerJob = SupervisorJob()
     private val scope = CoroutineScope(
-        parentScope.coroutineContext + managerJob + Dispatchers.Main.immediate
+        parentScope.coroutineContext + managerJob + env.dispatcher
     )
 
     private val _status = MutableStateFlow(Status.OFFLINE)
@@ -224,14 +225,19 @@ class SyncManager(
 
     /** Hook up a location supplier so sendPresence can grab the latest fix. */
     var locationProvider: (() -> Location?)? = null
+    /** Test seam, the JVM can't build a Location. Wins over [locationProvider] when set. */
+    internal var locationSampleProvider: (() -> PresenceFixSample?)? = null
+
+    private fun currentLocationSample(): PresenceFixSample? =
+        locationSampleProvider?.invoke() ?: locationProvider?.invoke()?.let(PresenceFixSample::from)
 
     /** Installed only by [UnitSyncRuntime]. Direct test clients retain the
      * historical standalone lifecycle. */
     internal var runtimeStateChanged: (() -> Unit)? = null
     internal var backgroundTransportEnded: (() -> Unit)? = null
 
-    private val appFilesDir: File = context.applicationContext.filesDir
-    private val chatHistoryStore = TacMapChatHistoryStore(context.applicationContext)
+    private val appFilesDir: File = env.filesDir
+    private val chatHistoryStore = env.chatHistoryStore
     val chatMessages: StateFlow<List<TacMapChatMessage>> = chatHistoryStore.messages
     /** Aggregate unread metadata for chrome; no message content is exposed here. */
     val unreadChatMessageCount: StateFlow<Int> = chatHistoryStore.unreadCount
@@ -247,15 +253,15 @@ class SyncManager(
         Messages.chatJoinAConnectedVUnitSyncRoomToUseMessage()
     )
     val chatAvailabilityMessage: StateFlow<LocalizedMessage?> = _chatAvailabilityMessage.asStateFlow()
-    private val prefs = context.applicationContext.getSharedPreferences("sync", Context.MODE_PRIVATE)
+    private val prefs = env.preferences
     private val clientId: String = prefs.getString("clientId", null)
         ?: UUID.randomUUID().toString().also { prefs.edit().putString("clientId", it).apply() }
 
-    private val webSocketTransport = SyncWebSocketTransport()
+    private val webSocketTransport = env.transportFactory
 
     private var ws: SyncWebSocket? = null
     private val inboundFrameCloseGate = SyncInboundFrameCloseGate()
-    private val liveReceiveBudget = SyncLiveReceiveBudget()
+    private val receiveBudget = SyncReceiveBudget()
     private var roomKey: ByteArray? = null
     private var authToken: String? = null
     // Resolved from OPSEC settings at join time so a self-hoster's relay is
@@ -264,7 +270,47 @@ class SyncManager(
     private var wantConnected = false
     private val lifecycleGate = SyncLifecycleGate()
     private var reconnectJob: Job? = null
-    private val reconnectBackoff = SyncReconnectBackoff()
+    private var reconnectRoomId: String? = null
+    private val backoff = SyncBackoffPolicy(env.random)
+    private val failureCounters = SyncFailureCounters()
+    private val handshakeWatchdog = SyncHandshakeWatchdog()
+    private var watchdogJob: Job? = null
+    private var stableSessionJob: Job? = null
+    // written on the transport reader thread, read by the watchdog
+    private val lastInboundProgressMs = java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE)
+    private var socketOpened = false
+    private var localCloseGeneration: Long? = null
+    private var localCloseReason: SyncLocalClose? = null
+    private var nextSessionAfter4008 = false
+    private var rejectedHelloEpoch: java.math.BigInteger? = null
+    private var sessionHelloEpoch: java.math.BigInteger? = null
+    private var livenessProbeJob: Job? = null
+    private val liveWindowResync = LiveWindowResyncPolicy()
+    private var liveResyncJob: Job? = null
+    private val _pausedActionRequired = MutableStateFlow(false)
+    /** Sync stopped on its own (room full, identity rejected, ...). The dialog shows Retry. */
+    val pausedActionRequired: StateFlow<Boolean> = _pausedActionRequired.asStateFlow()
+    private var pausedRetryOnForeground = false
+    /** Hooked up by UnitSyncRuntime; reserves the background spare epochs (plans/04 section 14). */
+    internal var backgroundPresenceOptIn: () -> Boolean = { false }
+
+    // outbound pacing (plans/04 section 11)
+    private var pacer = SyncOutboundPacer<OutboundFrame>(0.0)
+    private var pumpJob: Job? = null
+    private val ackTimer = SyncAckTimer()
+    private var ackCheckJob: Job? = null
+    private var writePollJob: Job? = null
+    private var enqueuedWireBytes = 0L
+    private val pendingWrites = LinkedHashMap<String, Long>() // rid -> stream offset of its last byte
+    private val writtenUnacked = LinkedHashSet<String>()
+    private var diffJob: Job? = null
+
+    // scoped to one room membership, cleared on join and leave
+    private val surfacedIssueKeys = HashSet<String>()
+    private val skippedWireIds = HashMap<String, SnapshotRecordCategory>()
+    private val suppressedUntilLocalEdit = HashMap<String, Long>() // localId -> journal generation
+    private var mutationsPaused = false
+    private val lastByV2 = HashMap<String, String>()
     private var observeJob: Job? = null
     private var revisionJob: Job? = null
     private val modelRevisionJournal = LocalModelRevisionJournal(appFilesDir)
@@ -309,7 +355,10 @@ class SyncManager(
     private var snapshotSeq: Long? = null
     private var snapshotSawFinalPage = false
     private var snapshotItemCount = 0
-    private var snapshotInvalid = false
+    private var snapshotSeqRegressed = false
+    private var pendingVerifiedClean = true
+    // off-main record checks for the snapshot in flight (plans/04 section 19)
+    private var snapshotRun: SnapshotRun? = null
     private var awaitingHelloAck = false
     private var localHelloVersion: String? = null
     private var chatEphemeralKey: TacMapChatEphemeralKey? = null
@@ -322,47 +371,281 @@ class SyncManager(
     private val pendingChat = HashMap<String, TacMapChatAck>()
     private var snapshotAggregateBytes = 0L
     private val snapshotWireIds = HashSet<String>()
-    private val pendingSnapshot = ArrayList<ValidatedV3>()
     private val snapshotConfirmedLocalDeletes = HashMap<String, String>()
     private val forcedLocalDiff = HashSet<String>()
     private val forcedLegacyDeletes = HashMap<String, LegacyDeleteRecovery>()
     private var resolvingPendingModel = false
     private val outboundDeliveries = OutboundDeliveryTracker()
-    private val deliveryRetryJobs = HashMap<String, Job>()
     private val v2SnapshotGate = V2SnapshotGate(MAX_SNAPSHOT_ITEMS, MAX_SNAPSHOT_AGGREGATE_BYTES)
     private var v2SnapshotTimeoutJob: Job? = null
     private var v2SnapshotFailureGeneration: Long? = null
-    private var v3HandshakeTimeoutJob: Job? = null
     private var v3HandshakeFailureGeneration: Long? = null
     private var lastGoodLocalPresenceFix: PresenceLocationFix? = null
     private var localPresenceCandidateCluster: PresenceCandidateCluster? = null
     private val remotePresenceCandidateClusters = HashMap<String, PresenceCandidateCluster>()
 
-    private sealed interface ValidatedV3 {
-        val mutation: SyncReplayState.AuthenticatedMutation
+    // SP3 (plans/04 sections 1, 17-21)
+    private var wireIndex: WireIdIndex? = null
+    private var liveValidator: SnapshotValidator? = null
+    private var liveBatch: LiveBatch? = null
+    private val inbound = InboundQueue()
+    private val presencePolicy = PresenceSendPolicy()
+    private var presenceFlushJob: Job? = null
+    private var joinJob: Job? = null
+    private var joinToken = 0L
+    private var backgroundProbeJob: Job? = null
+    private var backgroundPausedAtWallMs: Long? = null
+    /** UnitSyncRuntime swaps the service notification for a paused one (section 21.5). */
+    internal var backgroundPresencePaused: ((pausedAtWallMs: Long) -> Unit)? = null
 
-        data class Put(
-            override val mutation: SyncReplayState.AuthenticatedMutation,
-            val parsed: GeoJsonImporter.Result,
+    /** What the pacer holds. Deliveries carry their rid so acks and retries line up. */
+    private sealed interface OutboundFrame {
+        val text: String
+
+        class Plain(
+            override val text: String,
+            /** Checked right before the write, e.g. presence consent. */
+            val guard: (() -> Boolean)? = null,
+            val afterWrite: (() -> Unit)? = null,
+        ) : OutboundFrame
+
+        class Delivery(
+            override val text: String,
+            val requestId: String,
             val localId: String,
-            val expectedModelHash: String,
-        ) : ValidatedV3
+        ) : OutboundFrame
+    }
 
-        data class Delete(
-            override val mutation: SyncReplayState.AuthenticatedMutation,
-            val localId: String?,
-        ) : ValidatedV3
+    /** What the transport hands over, kept in arrival order with everything else from that socket. */
+    private sealed class InboundEvent(val socket: SyncWebSocket, val generation: Long) {
+        class Text(socket: SyncWebSocket, generation: Long, val text: String) : InboundEvent(socket, generation)
+        class Binary(socket: SyncWebSocket, generation: Long, val size: Int) : InboundEvent(socket, generation)
+        class Opened(socket: SyncWebSocket, generation: Long) : InboundEvent(socket, generation)
+        class Ended(socket: SyncWebSocket, generation: Long, val roomId: String, val end: SocketEnd) :
+            InboundEvent(socket, generation)
+    }
+
+    /**
+     * Bounded FIFO between the reader threads and the protocol worker
+     * (plans/04 section 1.1). A reader is let go as soon as its frame is
+     * queued; only a full queue makes it wait, and the transport gate cuts a
+     * reader that waits 60 s. One worker drains it in batches of up to 64.
+     */
+    private inner class InboundQueue {
+        private val lock = Any()
+        private val events = ArrayDeque<InboundEvent>()
+        private val waiting = ArrayDeque<Pair<InboundEvent, () -> Unit>>()
+        private var frames = 0
+        private var bytes = 0L
+        private var draining = false
+
+        // frames are base64 and JSON, so chars are bytes near enough
+        private fun size(event: InboundEvent): Long = when (event) {
+            is InboundEvent.Text -> event.text.length.toLong()
+            is InboundEvent.Binary -> event.size.toLong()
+            else -> 0L
+        }
+
+        private fun isFrame(event: InboundEvent) = event is InboundEvent.Text || event is InboundEvent.Binary
+
+        private fun fits(event: InboundEvent): Boolean = !isFrame(event) || frames == 0 ||
+            (frames < INBOUND_QUEUE_MAX_FRAMES && bytes + size(event) <= INBOUND_QUEUE_MAX_BYTES)
+
+        private fun push(event: InboundEvent) {
+            events.addLast(event)
+            if (isFrame(event)) {
+                frames += 1
+                bytes += size(event)
+            }
+        }
+
+        /** Reader thread. [consumed] releases the reader, now or once there's room. */
+        fun offer(event: InboundEvent, consumed: () -> Unit) {
+            val release: Boolean
+            val start: Boolean
+            synchronized(lock) {
+                release = waiting.isEmpty() && fits(event)
+                if (release) push(event) else waiting.addLast(event to consumed)
+                start = !draining
+                draining = true
+            }
+            if (release) consumed()
+            if (start) startDrain()
+        }
+
+        /** Opens and closes never wait, they're tiny and must not sit behind a full queue. */
+        fun offerControl(event: InboundEvent) {
+            val start: Boolean
+            synchronized(lock) {
+                push(event)
+                start = !draining
+                draining = true
+            }
+            if (start) startDrain()
+        }
+
+        /** Next batch, or null (and the worker stops) once the queue is empty. */
+        fun takeBatch(max: Int): List<InboundEvent>? {
+            val released = ArrayList<() -> Unit>()
+            val batch: List<InboundEvent>?
+            synchronized(lock) {
+                if (events.isEmpty()) {
+                    draining = false
+                    batch = null
+                } else {
+                    val out = ArrayList<InboundEvent>(minOf(max, events.size))
+                    while (out.size < max && events.isNotEmpty()) {
+                        val event = events.removeFirst()
+                        if (isFrame(event)) {
+                            frames -= 1
+                            bytes -= size(event)
+                        }
+                        out += event
+                    }
+                    while (waiting.isNotEmpty() && fits(waiting.first().first)) {
+                        val (event, consumed) = waiting.removeFirst()
+                        push(event)
+                        released += consumed
+                    }
+                    batch = out
+                }
+            }
+            released.forEach { it() }
+            return batch
+        }
+
+        fun stopped() {
+            synchronized(lock) { draining = false }
+        }
+
+        fun clear() {
+            val released: List<() -> Unit>
+            synchronized(lock) {
+                events.clear()
+                frames = 0
+                bytes = 0L
+                released = waiting.map { it.second }
+                waiting.clear()
+            }
+            // the socket is going away anyway, don't leave its reader parked for 60 s
+            released.forEach { it() }
+        }
+    }
+
+    /**
+     * Consecutive live put/del/loc/hello frames of one inbound batch share one
+     * replay transaction (plans/04 section 1.3). Peers, online members and the
+     * model only change after that transaction is durable.
+     */
+    private class LiveBatch(
+        val replay: SyncReplayState,
+        val layers: MutableList<com.tacmap.drawings.DrawingLayer>,
+    ) {
+        val records = ArrayList<ValidatedV3>()
+        var peers: Map<String, PresencePeer>? = null
+        var onlineMembers: Map<String, OnlineMember>? = null
+        var chatRecipientsDirty = false
+        var failed = false
+    }
+
+    /**
+     * One snapshot's record checks on the validation worker (plans/04 section
+     * 19): sequential in item order, layers staged as they go, nothing
+     * committed until snapshot-end. Pages get validated as they arrive.
+     */
+    private class SnapshotRun(
+        private val validator: SnapshotValidator,
+        val committedLayers: List<com.tacmap.drawings.DrawingLayer>,
+        parent: Job,
+        dispatcher: kotlinx.coroutines.CoroutineDispatcher,
+        private val onProgress: () -> Unit,
+    ) {
+        private val job = SupervisorJob(parent)
+        private val workerScope = CoroutineScope(job + dispatcher)
+        private val staged = ArrayList(committedLayers)
+        // written by the worker, read on the protocol thread only after join()
+        private val results = ArrayList<V3Check>()
+        private var tail: Job? = null
+        private var submitted = 0
+
+        init {
+            job.invokeOnCompletion { validator.close() }
+        }
+
+        fun submit(items: List<Pair<JSONObject, String>>) {
+            submitted += items.size
+            val previous = tail
+            tail = workerScope.launch {
+                previous?.join()
+                for ((rec, wireId) in items) {
+                    val check = try {
+                        validator.check(rec, wireId, staged)
+                    } catch (cancel: kotlinx.coroutines.CancellationException) {
+                        throw cancel
+                    } catch (_: Throwable) {
+                        // couldn't check it, so it's not trusted. same as the relay leaving it out
+                        V3Check.Skip(wireId, SnapshotRecordReason.INNER_JSON_INVALID)
+                    }
+                    SnapshotValidator.stage(staged, check)
+                    results += check
+                }
+                onProgress()
+            }
+        }
+
+        /** Every submitted record, in item order, or null if the worker didn't finish them all. */
+        suspend fun await(): List<V3Check>? {
+            tail?.join()
+            return if (results.size == submitted) ArrayList(results) else null
+        }
+
+        /** Cancels pending checks; the validator zeroes its key copies once the worker is idle. */
+        fun close() {
+            job.cancel()
+        }
+    }
+
+    /** Id-indexed view of the committed stores so a batch never scans them per record. */
+    private inner class ModelLookup {
+        val document: DrawingDocument = drawingStore.committedDocument.value
+        val waypoints: Map<String, Waypoint> = waypointStore.committedWaypoints.value.associateBy { it.id }
+        val features: Map<String, DrawingFeature> = document.features.associateBy { it.id }
+
+        fun export(id: String?): String {
+            id ?: return ""
+            waypoints[id]?.let {
+                return GeoJsonExporter.export(listOf(it), emptyList(), document.layers, density = displayDensity)
+            }
+            features[id]?.let {
+                return GeoJsonExporter.export(emptyList(), listOf(it), document.layers, density = displayDensity)
+            }
+            return ""
+        }
+
+        fun hash(id: String?): String? {
+            val content = export(id)
+            if (content.isEmpty()) return null
+            return SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
+        }
+
+        fun kind(id: String): String? = when {
+            id in waypoints -> "waypoint"
+            id in features -> "drawing"
+            else -> null
+        }
     }
 
     private var presenceJob: Job? = null
     private var stalenessSweepJob: Job? = null
     private val presenceCadence = UnitSyncPresenceCadence()
     private val foregroundPresenceLiveness = ForegroundPresenceLiveness()
-    private val foregroundGpsFixRequester = ForegroundGpsFixRequester(context.applicationContext)
+    private val foregroundGpsFixRequester = env.foregroundFixRequester
     @Volatile private var backgroundPresenceOnly = false
     @Volatile private var awaitingForegroundStores = false
 
     init {
+        // chat fences for sessions the replay state has moved past get pruned
+        chatHistoryStore.durableSessionDomain = { actor -> replayState?.getPresenceSessionDomain(actor) }
         loadPresenceConfig()
         migrateLegacyLocalStoresAfterUnlock()
         revisionJournalAvailable = modelRevisionJournal.load()
@@ -373,6 +656,23 @@ class SyncManager(
 
     internal val isDisposed: Boolean get() = lifecycleGate.isDisposed
     internal val isBackgroundPresenceOnly: Boolean get() = backgroundPresenceOnly
+    /** Read-only peeks for the state machine tests. */
+    internal val currentIssueKind: SyncIssueKind? get() = issueLifecycle.issue?.kind
+    internal val replayStateForTests: SyncReplayState? get() = replayState
+    internal val myActorIdForTests: String? get() = myActorId
+
+    /** The dialog's Retry after a stop. Clears every failure counter and connects. */
+    fun retryAfterPause() {
+        if (lifecycleGate.isDisposed || !_pausedActionRequired.value) return
+        val roomId = activeRoomStorageId ?: return
+        clearPausedState()
+        failureCounters.reset()
+        backoff.reset()
+        rejectedHelloEpoch = null
+        if (backgroundPresenceOnly || awaitingForegroundStores) return
+        wantConnected = true
+        connect(roomId)
+    }
 
     internal fun canArmBackgroundLocationService(): Boolean =
         !lifecycleGate.isDisposed && protocolVersion == 3 &&
@@ -392,10 +692,10 @@ class SyncManager(
             waypointStoreRef == null || drawingStoreRef == null
         ) return false
 
-        val transitionNow = SystemClock.elapsedRealtimeNanos()
-        val transitionLocation = locationProvider?.invoke()?.takeIf { location ->
+        val transitionNow = syncClock.elapsedRealtimeNanos()
+        val transitionLocation = currentLocationSample()?.takeIf { location ->
             location.provider == android.location.LocationManager.GPS_PROVIDER &&
-                ForegroundPresenceLiveness.isGenuinelyRecentFix(
+                ForegroundPresenceLiveness.isBridgeableFix(
                     candidateFixElapsedRealtimeNanos = location.elapsedRealtimeNanos,
                     nowElapsedRealtimeNanos = transitionNow,
                 )
@@ -405,23 +705,34 @@ class SyncManager(
         // store once teardown begins.
         backgroundPresenceOnly = true
         awaitingForegroundStores = false
+        // clean point for the presence fences, the key is still unlocked here (17.1)
+        replayState?.persistExactPresence()
         detachMissionStateForKeyLock()
         presenceCadence.reset()
+        presencePolicy.reset()
+        backgroundPausedAtWallMs = null
+        // pings every 60 s now; the wake probe in sendBackgroundPresence does the real check (21.3)
+        ws?.setKeepaliveSeconds((BackgroundPresencePolicy.BACKGROUND_PING_INTERVAL_MS / 1_000L).toInt())
         // The previous foreground frame expires after 45 seconds. Bridge to the
-        // selected screen-off retention only with a genuinely recent GPS fix;
-        // otherwise wait for the service's next real GPS callback.
+        // selected screen-off retention with the newest GPS fix that's at most
+        // two minutes old (section 21.1); otherwise wait for the service's next
+        // real GPS callback. The fix keeps its own timestamp, nothing restamped.
         transitionLocation?.let { location ->
-            sendBackgroundPresence(location, interval)
+            sendPresenceAtCadence(
+                sample = location,
+                isBackground = true,
+                backgroundInterval = interval,
+                nowElapsedRealtimeNanos = transitionNow,
+            )
         }
         return true
     }
 
-    /** Preserve an opted-in v3 room through a transient CONNECTING/snapshot or
-     * unavailable-location pause, but keep no socket or background egress. */
+    /** Keep a joined room (v2 or v3) across an Activity pause with no socket
+     * and no egress. Room keys, replay state and chat binding stay in memory
+     * only; the DataKey and mission stores go (plans/04 section 13, S2-01). */
     internal fun suspendUntilForegroundStores(): Boolean {
-        if (lifecycleGate.isDisposed || protocolVersion != 3 ||
-            _room.value?.startsWith("3:") != true
-        ) return false
+        if (lifecycleGate.isDisposed || _room.value == null) return false
 
         val storesAttached = waypointStoreRef != null && drawingStoreRef != null
         val alreadyRestricted = backgroundPresenceOnly && awaitingForegroundStores &&
@@ -430,24 +741,32 @@ class SyncManager(
 
         backgroundPresenceOnly = true
         awaitingForegroundStores = true
-        if (storesAttached) detachMissionStateForKeyLock()
+        if (storesAttached) {
+            replayState?.persistExactPresence()
+            detachMissionStateForKeyLock()
+        }
         presenceCadence.reset()
+        presencePolicy.reset()
         closeSocketForLifecycleTransition("waiting for foreground unlock")
         return true
     }
 
     private fun detachMissionStateForKeyLock() {
         reconnectJob?.cancel(); reconnectJob = null
+        // nothing durable gets written behind the key lock, not even a presence flush
+        presenceFlushJob?.cancel(); presenceFlushJob = null
         observeJob?.cancel(); observeJob = null
         revisionJob?.cancel(); revisionJob = null
         presenceJob?.cancel(); presenceJob = null
         stalenessSweepJob?.cancel(); stalenessSweepJob = null
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
         cancelForegroundPresenceRefresh()
+        diffJob?.cancel(); diffJob = null
         clearOutboundDeliveries(markForReconciliation = true)
         resetSnapshot()
+        dropSessionIndexes()
         versions.clear()
+        lastByV2.clear()
         lastContent.clear()
         kindById.clear()
         forcedLegacyDeletes.clear()
@@ -486,7 +805,13 @@ class SyncManager(
         backgroundPresenceOnly = false
         awaitingForegroundStores = false
         presenceCadence.reset()
+        presencePolicy.reset()
+        backgroundProbeJob?.cancel(); backgroundProbeJob = null
         migrateLegacyLocalStoresAfterUnlock()
+        backgroundPausedAtWallMs?.let { pausedAt ->
+            backgroundPausedAtWallMs = null
+            reportError(Messages.syncBackgroundPausedMessage(formatPauseTime(pausedAt)), SyncIssueCode.BACKGROUND_PAUSED.kind)
+        }
 
         revisionJournalAvailable = modelRevisionJournal.load()
         startModelRevisionObservation()
@@ -496,6 +821,13 @@ class SyncManager(
             startObserving()
             startPresenceBroadcast()
             startStalenessSweep()
+            if (_pausedActionRequired.value) {
+                // a stop that doesn't retry on foreground waits for the Retry button
+                if (!pausedRetryOnForeground) return true
+                clearPausedState()
+                failureCounters.reset()
+                backoff.reset()
+            }
             wantConnected = true
             connect(roomId)
         }
@@ -518,23 +850,81 @@ class SyncManager(
         }
     }
 
-    /** Called only with a fresh callback from the foreground location service. */
+    /**
+     * Called only with a fresh callback from the foreground location service.
+     *
+     * The CPU sleeps between background fixes and the library pinger doesn't
+     * run then, so the socket can be dead without anyone noticing (S2-06).
+     * If nothing came in for 75 s, hold a short wake lock, ping, and only send
+     * once a pong or frame shows up; silence means the socket is dead and
+     * background sharing pauses loudly (plans/04 sections 21.3 and 21.5).
+     */
     internal fun sendBackgroundPresence(
         location: Location,
         interval: com.tacmap.settings.BackgroundUnitSyncInterval,
-        nowElapsedRealtimeNanos: Long = SystemClock.elapsedRealtimeNanos(),
+        nowElapsedRealtimeNanos: Long = syncClock.elapsedRealtimeNanos(),
+    ): Boolean = sendBackgroundPresence(PresenceFixSample.from(location), interval, nowElapsedRealtimeNanos)
+
+    internal fun sendBackgroundPresence(
+        location: PresenceFixSample,
+        interval: com.tacmap.settings.BackgroundUnitSyncInterval,
+        nowElapsedRealtimeNanos: Long = syncClock.elapsedRealtimeNanos(),
     ): Boolean {
         if (!backgroundPresenceOnly || awaitingForegroundStores ||
             protocolVersion != 3 || _status.value != Status.CONNECTED ||
             !presenceConfig.shareLocation
         ) return false
-        return sendPresenceAtCadence(
-            location = location,
-            isBackground = true,
-            backgroundInterval = interval,
-            nowElapsedRealtimeNanos = nowElapsedRealtimeNanos,
-        )
+        val socket = ws ?: return false
+        val now = nowMs()
+        val lastInbound = lastInboundProgressMs.get().takeIf { it != Long.MIN_VALUE }
+        if (!BackgroundPresencePolicy.needsProbe(now, lastInbound)) {
+            return sendPresenceAtCadence(
+                sample = location,
+                isBackground = true,
+                backgroundInterval = interval,
+                nowElapsedRealtimeNanos = nowElapsedRealtimeNanos,
+            )
+        }
+        if (backgroundProbeJob?.isActive == true) return false
+        val wakeLock = env.wakeLock
+        wakeLock?.acquire(BackgroundPresencePolicy.WAKE_LOCK_MAX_MS)
+        if (!socket.sendPing()) {
+            wakeLock?.release()
+            closeLocally(SyncLocalClose.LIVENESS_TIMEOUT, socket)
+            return false
+        }
+        val generation = activeConnectionGeneration
+        backgroundProbeJob = scope.launch {
+            try {
+                val deadline = now + BackgroundPresencePolicy.PROBE_PONG_TIMEOUT_MS
+                while (lastInboundProgressMs.get() < now && nowMs() < deadline) {
+                    kotlinx.coroutines.delay(BACKGROUND_PROBE_POLL_MS)
+                }
+                lifecycleGate.runIfActive {
+                    if (ws !== socket || activeConnectionGeneration != generation || !backgroundPresenceOnly) {
+                        return@runIfActive
+                    }
+                    if (lastInboundProgressMs.get() >= now) {
+                        sendPresenceAtCadence(
+                            sample = location,
+                            isBackground = true,
+                            backgroundInterval = interval,
+                            nowElapsedRealtimeNanos = syncClock.elapsedRealtimeNanos(),
+                        )
+                    } else {
+                        // half-open or reset socket: close it, handleSocketEnded pauses and says so
+                        closeLocally(SyncLocalClose.LIVENESS_TIMEOUT, socket)
+                    }
+                }
+            } finally {
+                wakeLock?.release()
+            }
+        }
+        return true
     }
+
+    private fun formatPauseTime(wallMs: Long): String =
+        java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(wallMs))
 
     private data class PresenceConfigUpdateResult(
         val succeeded: Boolean,
@@ -660,17 +1050,48 @@ class SyncManager(
         // before every bounded WebSocket is created.
         relayBase = configuredRelay
 
+        // PBKDF2 (210k rounds) runs off the UI thread; the result only lands if
+        // this join is still the current one (plans/04 section 20.3, S5-13)
+        val token = ++joinToken
+        _status.value = Status.CONNECTING
+        val v3 = code.startsWith("3:")
+        joinJob = scope.launch {
+            val derived = withContext(env.deriveDispatcher) {
+                runCatching {
+                    if (v3) env.deriveRoomV3(code.removePrefix("3:")) else env.deriveRoomV2(code.removePrefix("2:"))
+                }
+            }
+            lifecycleGate.runIfActive {
+                if (token != joinToken) {
+                    wipeDerived(derived.getOrNull())
+                    return@runIfActive
+                }
+                joinJob = null
+                completeJoin(code, derived, requestedRoomName)
+            }
+        }
+    }
+
+    private fun wipeDerived(keys: Any?) {
+        when (keys) {
+            is SyncCrypto.V3RoomKeys -> { keys.roomIdRaw.fill(0); keys.roomKey.fill(0); keys.metadataKey.fill(0) }
+            is SyncCrypto.RoomKeys -> keys.roomKey.fill(0)
+        }
+    }
+
+    private fun completeJoin(code: String, derived: Result<Any>, requestedRoomName: String) {
         if (code.startsWith("3:")) {
             val setup = runCatching {
                 // Resolving the signing identity can fail while the at-rest key
                 // is locked or if the sealed seed is corrupt. Never rotate it.
                 val pubRaw = myPublicKeyRaw
-                val keys = SyncCrypto.deriveRoomV3(code.removePrefix("3:"))
+                val keys = derived.getOrThrow() as SyncCrypto.V3RoomKeys
                 val actor = SyncIdentity.actorId(keys.roomIdRaw, pubRaw)
                 val replay = SyncReplayState(keys.roomId, appFilesDir)
                 check(replay.load(actor, myPublicKey)) { L10n.text("replay state unavailable") }
                 Triple(keys, replay, actor)
             }.getOrElse {
+                wipeDerived(derived.getOrNull())
                 _status.value = Status.OFFLINE
                 reportError(
                     Messages.syncSyncIdentityOrRollbackStateIsLockedOrDamagedMessage(),
@@ -688,18 +1109,27 @@ class SyncManager(
             activateRoomName(setup.first.roomId, requestedRoomName)
             _room.value = code
             wantConnected = true
+            env.reachability?.start(reachabilityListener)
             connect(setup.first.roomId)
         } else {
             // v2 protocol: unchanged
+            val keys = derived.getOrNull() as? SyncCrypto.RoomKeys ?: run {
+                _status.value = Status.OFFLINE
+                reportError(
+                    Messages.syncSyncIdentityOrRollbackStateIsLockedOrDamagedMessage(),
+                    SyncIssueKind.SECURITY,
+                )
+                return
+            }
             protocolVersion = 2
             chatHistoryStore.close()
             clearChatTransport(markPendingFailed = true)
-            val keys = SyncCrypto.deriveRoom(code.removePrefix("2:"))
             roomKey = keys.roomKey
             authToken = keys.authToken
             activateRoomName(keys.roomId, requestedRoomName)
             _room.value = code
             wantConnected = true
+            env.reachability?.start(reachabilityListener)
             connect(keys.roomId)
         }
         startObserving()
@@ -709,20 +1139,29 @@ class SyncManager(
     }
 
     fun leave() {
+        joinToken += 1
+        joinJob?.cancel(); joinJob = null
         backgroundPresenceOnly = false
         awaitingForegroundStores = false
         presenceCadence.reset()
-        reconnectBackoff.reset()
+        presencePolicy.reset()
+        backgroundProbeJob?.cancel(); backgroundProbeJob = null
+        backgroundPausedAtWallMs = null
         wantConnected = false
         reconnectJob?.cancel(); reconnectJob = null
         observeJob?.cancel(); observeJob = null
         presenceJob?.cancel(); presenceJob = null
         stalenessSweepJob?.cancel(); stalenessSweepJob = null
         cancelForegroundPresenceRefresh()
+        cancelSessionTimers()
+        env.reachability?.stop()
         val leavingSocket = ws
+        markLocalClose(SyncLocalClose.LEAVE)
+        // the signed leave goes straight out, the pacer queue dies with the socket
         if (leavingSocket != null) sendExplicitLeaveV3(leavingSocket)
         if (leavingSocket?.close(1000, "leave") == false) leavingSocket.cancel()
         ws = null
+        resetJoinScopedState()
         clearChatTransport(markPendingFailed = true)
         chatHistoryStore.close()
         clearRoomSecrets()
@@ -741,13 +1180,15 @@ class SyncManager(
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
         v2SnapshotGate.cancel()
         v2SnapshotFailureGeneration = null
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
         v3HandshakeFailureGeneration = null
         peerKeys.clear(); peerTs.clear()
         lastGoodLocalPresenceFix = null
         localPresenceCandidateCluster = null
         remotePresenceCandidateClusters.clear()
         // v3 state: clear transport-session fields but NOT replayState (durable)
+        dropSessionIndexes()
+        // clean point (17.1): exact counters so the next load needs no crash floor
+        replayState?.let { replay -> if (!replay.isInBatch) replay.persistExactPresence() }
         myActorId = null
         presenceCounter = 0L
         activeSessions.clear()
@@ -785,14 +1226,19 @@ class SyncManager(
         }
         lifecycleGate.dispose(secretBuffers) {
             wantConnected = false
+            joinToken += 1
+            runCatching { replayState?.takeUnless { it.isInBatch }?.persistExactPresence() }
             managerJob.cancel()
+            inbound.clear()
             reconnectJob?.cancel(); reconnectJob = null
             observeJob?.cancel(); observeJob = null
             revisionJob?.cancel(); revisionJob = null
             presenceJob?.cancel(); presenceJob = null
             stalenessSweepJob?.cancel(); stalenessSweepJob = null
             cancelForegroundPresenceRefresh()
-            v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
+            cancelSessionTimers()
+            env.reachability?.stop()
+            markLocalClose(SyncLocalClose.LEAVE)
             ws?.close(1000, "dispose")
             ws?.cancel()
             ws = null
@@ -902,9 +1348,9 @@ class SyncManager(
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
         v2SnapshotGate.cancel()
         v2SnapshotFailureGeneration = null
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
         v3HandshakeFailureGeneration = null
         cancelForegroundPresenceRefresh()
+        resetJoinScopedState()
         peerKeys.clear(); peerTs.clear()
         myActorId = null
         replayState = null
@@ -914,6 +1360,7 @@ class SyncManager(
         awaitingHelloAck = false
         localHelloVersion = null
         resetSnapshot()
+        dropSessionIndexes()
         revisionJournalAvailable = false
         waypointStoreRef = null
         drawingStoreRef = null
@@ -925,9 +1372,10 @@ class SyncManager(
 
     private fun closeSocketForLifecycleTransition(reason: String) {
         reconnectJob?.cancel(); reconnectJob = null
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
+        cancelSessionTimers()
         cancelForegroundPresenceRefresh()
         val socket = ws
+        markLocalClose(SyncLocalClose.LIFECYCLE_PAUSE)
         ws = null
         socket?.close(1000, reason)
         socket?.cancel()
@@ -947,6 +1395,149 @@ class SyncManager(
         refreshChatAvailability()
     }
 
+    /** Wire index, live validator and any open batch die with the stores or the room (section 18). */
+    private fun dropSessionIndexes() {
+        liveBatch?.let { batch ->
+            liveBatch = null
+            batch.replay.abortBatch()
+        }
+        wireIndex?.close(); wireIndex = null
+        liveValidator?.close(); liveValidator = null
+    }
+
+    private fun cancelSessionTimers() {
+        presenceFlushJob?.cancel(); presenceFlushJob = null
+        watchdogJob?.cancel(); watchdogJob = null
+        handshakeWatchdog.cancel()
+        stableSessionJob?.cancel(); stableSessionJob = null
+        livenessProbeJob?.cancel(); livenessProbeJob = null
+        liveResyncJob?.cancel(); liveResyncJob = null
+        pumpJob?.cancel(); pumpJob = null
+        ackCheckJob?.cancel(); ackCheckJob = null
+        writePollJob?.cancel(); writePollJob = null
+    }
+
+    /** Remember why we're closing so the close callback isn't read as relay data. */
+    private fun markLocalClose(reason: SyncLocalClose) {
+        localCloseGeneration = activeConnectionGeneration
+        localCloseReason = reason
+    }
+
+    private fun closeLocally(reason: SyncLocalClose, socket: SyncWebSocket? = ws) {
+        val target = socket ?: return
+        if (target === ws) markLocalClose(reason)
+        val code = SyncCloseClassifier.classifyLocal(reason).localCloseCode ?: 1000
+        if (!target.close(code, reason.wireName)) target.cancel()
+    }
+
+    /** Everything that lives exactly as long as one room membership. */
+    private fun resetJoinScopedState() {
+        surfacedIssueKeys.clear()
+        skippedWireIds.clear()
+        suppressedUntilLocalEdit.clear()
+        mutationsPaused = false
+        lastByV2.clear()
+        failureCounters.reset()
+        backoff.reset()
+        liveWindowResync.reset()
+        rejectedHelloEpoch = null
+        sessionHelloEpoch = null
+        nextSessionAfter4008 = false
+        clearPausedState()
+        _lastError.value = issueLifecycle.clearPinned()?.pendingMessage
+    }
+
+    private fun clearPausedState() {
+        _pausedActionRequired.value = false
+        pausedRetryOnForeground = false
+    }
+
+    /** PAUSED_ACTION_REQUIRED: no socket, no reconnect, room and keys kept, Retry shown. */
+    private fun enterPausedActionRequired(issue: SyncIssueCode, retryOnForeground: Boolean) {
+        wantConnected = false
+        reconnectJob?.cancel(); reconnectJob = null
+        cancelSessionTimers()
+        _status.value = Status.OFFLINE
+        pausedRetryOnForeground = retryOnForeground
+        _pausedActionRequired.value = true
+        surfacePinned(issue, issueMessage(issue))
+        runtimeStateChanged?.invoke()
+    }
+
+    /** Report an issue at most once per [key] within the current join. */
+    private fun surfaceOnce(code: SyncIssueCode, key: String, message: LocalizedMessage = issueMessage(code)) {
+        if (!surfacedIssueKeys.add(code.name + "|" + key)) return
+        reportError(message, code.kind)
+    }
+
+    private fun surfaceOncePerSession(code: SyncIssueCode) =
+        surfaceOnce(code, "session:$activeConnectionGeneration")
+
+    /** Survives reconnects until dismissed, Retry, or leave. */
+    private fun surfacePinned(code: SyncIssueCode, message: LocalizedMessage) {
+        _lastError.value = issueLifecycle.reportPinned(message, code.kind, activeConnectionGeneration)?.pendingMessage
+        _remoteUpdates.tryEmit(message.text)
+    }
+
+    private fun issueMessage(code: SyncIssueCode, count: Int = 1): LocalizedMessage = when (code) {
+        SyncIssueCode.SKIPPED_UNSUPPORTED -> Messages.syncRecordsSkippedUnsupportedMessage(count.toString())
+        SyncIssueCode.SKIPPED_UNVERIFIED -> Messages.syncRecordsSkippedUnverifiedMessage(count.toString())
+        SyncIssueCode.ROOM_RESET_SUSPECTED -> Messages.syncRoomResetSuspectedMessage()
+        SyncIssueCode.ROOM_RESET_CHANGES_PAUSED -> Messages.syncRoomResetChangesPausedMessage()
+        SyncIssueCode.OBJECT_TOO_LARGE -> Messages.syncObjectTooLargeMessage()
+        SyncIssueCode.ROOM_QUOTA_NACK -> Messages.syncTheUnitSyncRoomIsFullSoThisSavedMessage()
+        SyncIssueCode.RELAY_INVALID_NACK -> Messages.syncTheUnitSyncRelayRejectedAChangeAsInvalidMessage()
+        SyncIssueCode.UNCONFIRMED_RECONNECT -> Messages.syncAUnitSyncChangeIsStillUnconfirmedAfterBoundedMessage()
+        SyncIssueCode.SNAPSHOT_STRUCTURAL ->
+            Messages.syncSyncSnapshotAuthenticationFailedNoUnverifiedRoomDataWasMessage()
+        SyncIssueCode.RELAY_BUSY -> Messages.syncRelayBusyMessage()
+        SyncIssueCode.RELAY_RATE_LIMITED -> Messages.syncRelayRateLimitedMessage()
+        SyncIssueCode.ROOM_FULL_CANNOT_JOIN -> Messages.syncRoomFullCannotJoinMessage()
+        SyncIssueCode.RELAY_REFUSED_ROOM -> Messages.syncRelayRefusedRoomMessage()
+        SyncIssueCode.IDENTITY_REJECTED -> Messages.syncIdentityRejectedMessage()
+        SyncIssueCode.SESSION_CONFLICT -> Messages.syncSessionConflictMessage()
+        SyncIssueCode.SESSION_COUNTER_BEHIND -> Messages.syncSessionCounterBehindMessage()
+        SyncIssueCode.SNAPSHOT_MALFORMED_STOPPED -> Messages.syncSnapshotMalformedStoppedMessage()
+        SyncIssueCode.CHAT_REPLAY_FULL -> Messages.chatReplayTableFullMessage()
+        SyncIssueCode.BACKGROUND_PAUSED -> Messages.syncBackgroundPausedMessage(formatPauseTime(syncClock.wallClockMs()))
+    }
+
+    private val reachabilityListener = object : SyncReachability.Listener {
+        override fun onNetworkAvailable() {
+            scope.launch { lifecycleGate.runIfActive { onNetworkAvailableOnMain() } }
+        }
+
+        override fun onNetworkLostOrChanged() {
+            scope.launch { lifecycleGate.runIfActive { startLivenessProbe() } }
+        }
+    }
+
+    /** A transient reconnect gets pulled in, never closer than 2 s after the last try. */
+    private fun onNetworkAvailableOnMain() {
+        if (reconnectJob?.isActive != true || backgroundPresenceOnly || awaitingForegroundStores) return
+        val roomId = reconnectRoomId ?: return
+        val before = backoff.pendingReconnectAtMs() ?: return
+        val at = backoff.networkAvailable(nowMs()) ?: return
+        if (at >= before) return
+        scheduleReconnectAt(at, roomId, activeConnectionGeneration)
+    }
+
+    /** Path changed under a live socket: ping, and treat silence as transport loss. */
+    private fun startLivenessProbe() {
+        if (_status.value != Status.CONNECTED || backgroundPresenceOnly) return
+        val socket = ws ?: return
+        if (livenessProbeJob?.isActive == true) return
+        val sentAt = nowMs()
+        if (!socket.sendPing()) return
+        livenessProbeJob = scope.launch {
+            kotlinx.coroutines.delay(PATH_CHANGE_PROBE_TIMEOUT_MS)
+            if (ws !== socket) return@launch
+            if (lastInboundProgressMs.get() < sentAt) closeLocally(SyncLocalClose.LIVENESS_TIMEOUT, socket)
+        }
+    }
+
+    private fun nowMs(): Long = syncClock.elapsedRealtimeMs()
+
     private fun shouldReconnectInForeground(): Boolean =
         wantConnected && !backgroundPresenceOnly && !awaitingForegroundStores &&
             waypointStoreRef != null && drawingStoreRef != null && !lifecycleGate.isDisposed
@@ -958,37 +1549,84 @@ class SyncManager(
         }
     }
 
-    /** The WebSocket transport invokes listeners on its own threads; all protocol state enters
-     * the manager scope through this socket+generation fence. */
-    private fun dispatchSocketCallback(
-        socket: SyncWebSocket,
-        connectionGeneration: Long,
-        onComplete: () -> Unit = {},
-        block: () -> Unit,
-    ) {
-        val job = scope.launch {
-            lifecycleGate.runIfActive callback@{
-                if (!isCurrentSocketCallback(
-                        connectionGeneration,
-                        activeConnectionGeneration,
-                        ws === socket,
-                    )
-                ) {
-                    return@callback
+    private fun startDrain() {
+        scope.launch(env.inboundDispatcher) { drainInbound() }
+    }
+
+    /** The protocol worker: batches of up to 64 already-queued events, never waiting for more. */
+    private suspend fun drainInbound() {
+        try {
+            while (true) {
+                val batch = inbound.takeBatch(INBOUND_BATCH_MAX_FRAMES) ?: return
+                if (lifecycleGate.isDisposed) {
+                    inbound.clear()
+                    continue
                 }
-                block()
+                processInboundBatch(batch)
+            }
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            inbound.stopped()
+            throw cancel
+        }
+    }
+
+    private suspend fun processInboundBatch(batch: List<InboundEvent>) {
+        for (event in batch) {
+            if (lifecycleGate.isDisposed) return
+            when (event) {
+                is InboundEvent.Text -> handleTextEvent(event)
+                is InboundEvent.Binary -> {
+                    flushLiveBatch()
+                    lifecycleGate.runIfActive {
+                        if (!isCurrentSocketCallback(event.generation, activeConnectionGeneration, ws === event.socket)) {
+                            return@runIfActive
+                        }
+                        val rejection = SyncInboundFramePolicy.inspectBinary(event.size)
+                            as SyncInboundFrameDecision.Reject
+                        rejectInboundFrame(event.socket, event.generation, rejection.reason)
+                    }
+                }
+                is InboundEvent.Opened -> {
+                    flushLiveBatch()
+                    lifecycleGate.runIfActive { onSocketOpened(event.socket, event.generation) }
+                }
+                is InboundEvent.Ended -> {
+                    flushLiveBatch()
+                    lifecycleGate.runIfActive {
+                        handleSocketEnded(event.socket, event.roomId, event.generation, event.end)
+                    }
+                }
             }
         }
-        // invokeOnCompletion also runs when disposal cancels this job before
-        // its body starts, so the reader thread can never wait indefinitely.
-        job.invokeOnCompletion { onComplete() }
+        flushLiveBatch()
+    }
+
+    private fun onSocketOpened(webSocket: SyncWebSocket, connectionGeneration: Long) {
+        if (!isCurrentSocketCallback(connectionGeneration, activeConnectionGeneration, ws === webSocket)) return
+        socketOpened = true
+        handshakeWatchdog.opened(nowMs())
+        // v3 is not allowed to publish until a complete authenticated
+        // snapshot fence has been applied.
+        if (protocolVersion == 2) {
+            // v2 keeps its own snapshot timer once the socket is open
+            handshakeWatchdog.cancel()
+            watchdogJob?.cancel(); watchdogJob = null
+            v2SnapshotGate.start(webSocket, connectionGeneration)
+            scheduleV2SnapshotTimeout(webSocket, connectionGeneration)
+        }
+    }
+
+    /** How a socket ended, before deciding what that means. */
+    private sealed interface SocketEnd {
+        data class Closed(val code: Int, val reason: String) : SocketEnd
+        data class Failed(val detail: String) : SocketEnd
     }
 
     private fun handleSocketEnded(
         socket: SyncWebSocket,
         roomId: String,
         connectionGeneration: Long,
-        detail: String?,
+        end: SocketEnd,
     ) {
         if (!isCurrentSocketCallback(
                 connectionGeneration,
@@ -996,6 +1634,8 @@ class SyncManager(
                 ws === socket,
             )
         ) return
+        val opened = socketOpened
+        val local = localCloseReason.takeIf { localCloseGeneration == connectionGeneration }
         ws = null
         _status.value = Status.OFFLINE
         clearChatTransport(markPendingFailed = true)
@@ -1005,29 +1645,106 @@ class SyncManager(
         markPeersStale()
         snapshotConfirmedLocalDeletes.clear()
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
+        cancelSessionTimers()
+        backoff.sessionEnded()
         cancelForegroundPresenceRefresh()
         v2SnapshotGate.cancel()
         clearOutboundDeliveries(markForReconciliation = true)
-        if (shouldReconnectInForeground()) {
-            if (v2SnapshotFailureGeneration != connectionGeneration &&
-                v3HandshakeFailureGeneration != connectionGeneration
+        awaitingHelloAck = false
+        resetSnapshot()
+        backgroundProbeJob?.cancel(); backgroundProbeJob = null
+        if (!shouldReconnectInForeground()) {
+            if (backgroundPresenceOnly && !awaitingForegroundStores && local != SyncLocalClose.LEAVE &&
+                local != SyncLocalClose.LIFECYCLE_PAUSE
             ) {
-                val message = detail?.takeIf { it.isNotBlank() }?.let {
-                    Messages.syncUnitSyncConnectionFailedCheckTheRelayOrNetworkMessage(it)
-                } ?: Messages.syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnectingMessage()
-                reportError(message)
+                // lost while screen-off. THREAT_MODEL section 7 says pause, not a new
+                // background session (21.4 waits on D1), so pause loudly (21.5)
+                val pausedAt = syncClock.wallClockMs()
+                backgroundPausedAtWallMs = pausedAt
+                backgroundPresencePaused?.invoke(pausedAt)
             }
-            reconnectJob?.cancel()
-            val delayMs = reconnectBackoff.nextDelayMs()
-            reconnectJob = scope.launch {
-                kotlinx.coroutines.delay(delayMs)
-                if (activeConnectionGeneration == connectionGeneration &&
-                    shouldReconnectInForeground()
-                ) connect(roomId)
+            if (backgroundPresenceOnly || awaitingForegroundStores) backgroundTransportEnded?.invoke()
+            return
+        }
+        // our own closes are classified by why we closed, never by the echoed code
+        val decision = when {
+            local != null -> SyncCloseClassifier.classifyLocal(local)
+            end is SocketEnd.Closed && opened -> SyncCloseClassifier.classifyClose(end.code)
+            end is SocketEnd.Closed ->
+                SyncCloseClassifier.classifyHttp(SyncCloseClassifier.parseHandshakeStatus(end.reason))
+            end is SocketEnd.Failed && !opened ->
+                SyncCloseClassifier.classifyHttp(SyncCloseClassifier.parseHandshakeStatus(end.detail))
+            else -> SyncCloseClassifier.classifyClose(1006)
+        }
+        applyCloseDecision(decision, local, end, roomId, connectionGeneration)
+    }
+
+    private fun applyCloseDecision(
+        decision: SyncCloseDecision,
+        local: SyncLocalClose?,
+        end: SocketEnd,
+        roomId: String,
+        connectionGeneration: Long,
+    ) {
+        when (decision.action) {
+            SyncCloseAction.NONE -> return
+            SyncCloseAction.STOP -> {
+                enterPausedActionRequired(checkNotNull(decision.issue), decision.retryOnForeground)
+                return
             }
-        } else if (backgroundPresenceOnly || awaitingForegroundStores) {
-            backgroundTransportEnded?.invoke()
+            SyncCloseAction.RECONNECT_NOW -> {
+                // live window resync: not a failure, backoff untouched
+                scheduleReconnectAt(nowMs(), roomId, connectionGeneration)
+                return
+            }
+            SyncCloseAction.ESCALATE_EPOCH_THEN_RECONNECT -> {
+                if (!failureCounters.tryEscalateEpoch()) {
+                    enterPausedActionRequired(SyncIssueCode.SESSION_COUNTER_BEHIND, retryOnForeground = false)
+                    return
+                }
+                rejectedHelloEpoch = sessionHelloEpoch ?: rejectedHelloEpoch ?: java.math.BigInteger.ONE
+            }
+            SyncCloseAction.RECONNECT -> Unit
+        }
+        if (decision.countsAsSessionConflict && failureCounters.recordSessionConflict(nowMs())) {
+            enterPausedActionRequired(SyncIssueCode.SESSION_CONFLICT, retryOnForeground = true)
+            return
+        }
+        if (local == SyncLocalClose.STRUCTURAL_SNAPSHOT && failureCounters.recordStructuralFailure()) {
+            enterPausedActionRequired(SyncIssueCode.SNAPSHOT_MALFORMED_STOPPED, retryOnForeground = false)
+            return
+        }
+        if (decision.pacerAfter4008) nextSessionAfter4008 = true
+        val busy = decision.issue == SyncIssueCode.RELAY_BUSY || decision.issue == SyncIssueCode.RELAY_RATE_LIMITED
+        if (busy) {
+            if (failureCounters.recordBusy(decision)) reportError(issueMessage(checkNotNull(decision.issue)))
+        } else {
+            failureCounters.recordOtherFailure()
+        }
+        val alreadyExplained = busy || local == SyncLocalClose.ACK_EXHAUSTED ||
+            local == SyncLocalClose.STRUCTURAL_SNAPSHOT ||
+            v2SnapshotFailureGeneration == connectionGeneration ||
+            v3HandshakeFailureGeneration == connectionGeneration
+        if (!alreadyExplained) {
+            val detail = (end as? SocketEnd.Failed)?.detail?.takeIf { it.isNotBlank() }
+            reportError(
+                detail?.let { Messages.syncUnitSyncConnectionFailedCheckTheRelayOrNetworkMessage(it) }
+                    ?: Messages.syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnectingMessage()
+            )
+        }
+        val delayMs = backoff.scheduleReconnect(decision.backoffClass ?: SyncBackoffClass.TRANSIENT, nowMs())
+        scheduleReconnectAt(nowMs() + delayMs, roomId, connectionGeneration)
+    }
+
+    private fun scheduleReconnectAt(atMs: Long, roomId: String, connectionGeneration: Long) {
+        reconnectJob?.cancel()
+        reconnectRoomId = roomId
+        val delayMs = (atMs - nowMs()).coerceAtLeast(0L)
+        reconnectJob = scope.launch {
+            kotlinx.coroutines.delay(delayMs)
+            if (activeConnectionGeneration == connectionGeneration &&
+                shouldReconnectInForeground()
+            ) connect(roomId)
         }
     }
 
@@ -1035,7 +1752,7 @@ class SyncManager(
 
     private fun connect(roomId: String) {
         if (lifecycleGate.isDisposed || backgroundPresenceOnly || awaitingForegroundStores ||
-            waypointStoreRef == null || drawingStoreRef == null
+            waypointStoreRef == null || drawingStoreRef == null || _pausedActionRequired.value
         ) return
         val base = validatedRelayBaseForRuntime(relayBase)
         if (base == null) {
@@ -1048,13 +1765,23 @@ class SyncManager(
             return
         }
         relayBase = base
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
+        cancelSessionTimers()
         cancelForegroundPresenceRefresh()
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
         v2SnapshotGate.cancel()
         clearOutboundDeliveries(markForReconciliation = true)
         val connectionGeneration = issueLifecycle.beginConnection()
         activeConnectionGeneration = connectionGeneration
+        socketOpened = false
+        localCloseGeneration = null
+        localCloseReason = null
+        sessionHelloEpoch = null
+        lastInboundProgressMs.set(Long.MIN_VALUE)
+        val startedAt = nowMs()
+        backoff.attemptStarted(startedAt)
+        pacer = SyncOutboundPacer(startedAt.toDouble(), after4008 = nextSessionAfter4008)
+        nextSessionAfter4008 = false
+        enqueuedWireBytes = 0L
         forcedLegacyDeletes.replaceAll { _, recovery ->
             recovery.copy(snapshotGeneration = connectionGeneration)
         }
@@ -1079,6 +1806,7 @@ class SyncManager(
             lastContent.clear()
             kindById.clear()
             versions.clear()
+            lastByV2.clear()
         }
         val path = if (protocolVersion == 3) "v3/room/" else "room/"
         val url = "$base/$path$roomId"
@@ -1091,60 +1819,221 @@ class SyncManager(
         }
         lifecycleGate.runIfActive {
         ws = webSocketTransport.newWebSocket(url, headers, object : SyncWebSocketListener {
+            // reader threads only enqueue; one protocol worker does the rest in order (section 1.1)
             override fun onOpen(webSocket: SyncWebSocket) {
-                dispatchSocketCallback(webSocket, connectionGeneration) {
-                    // v3 is not allowed to publish until a complete authenticated
-                    // snapshot fence has been applied.
-                    if (protocolVersion == 2) {
-                        v2SnapshotGate.start(webSocket, connectionGeneration)
-                        scheduleV2SnapshotTimeout(webSocket, connectionGeneration)
-                    } else {
-                        scheduleV3HandshakeTimeout(webSocket, connectionGeneration)
-                    }
-                }
+                inbound.offerControl(InboundEvent.Opened(webSocket, connectionGeneration))
             }
             override fun onTextMessage(
                 webSocket: SyncWebSocket,
                 text: String,
                 consumed: () -> Unit,
             ) {
-                dispatchSocketCallback(webSocket, connectionGeneration, consumed) {
-                    handleMessage(text, webSocket, connectionGeneration)
-                }
+                inbound.offer(InboundEvent.Text(webSocket, connectionGeneration, text), consumed)
             }
             override fun onBinaryMessage(
                 webSocket: SyncWebSocket,
                 bytes: ByteArray,
                 consumed: () -> Unit,
             ) {
-                dispatchSocketCallback(webSocket, connectionGeneration, consumed) {
-                    val rejection = SyncInboundFramePolicy.inspectBinary(bytes.size)
-                        as SyncInboundFrameDecision.Reject
-                    rejectInboundFrame(
-                        webSocket,
-                        connectionGeneration,
-                        rejection.reason,
-                    )
-                }
+                inbound.offer(InboundEvent.Binary(webSocket, connectionGeneration, bytes.size), consumed)
             }
             override fun onClosed(webSocket: SyncWebSocket, code: Int, reason: String) {
-                dispatchSocketCallback(webSocket, connectionGeneration) {
-                    handleSocketEnded(webSocket, roomId, connectionGeneration, null)
-                }
+                inbound.offerControl(
+                    InboundEvent.Ended(webSocket, connectionGeneration, roomId, SocketEnd.Closed(code, reason))
+                )
             }
             override fun onFailure(webSocket: SyncWebSocket, failure: Throwable) {
-                dispatchSocketCallback(webSocket, connectionGeneration) {
-                    val detail = failure.message?.takeIf { it.isNotBlank() }
-                        ?: failure.javaClass.simpleName
-                    handleSocketEnded(webSocket, roomId, connectionGeneration, detail)
-                }
+                val detail = failure.message?.takeIf { it.isNotBlank() }
+                    ?: failure.javaClass.simpleName
+                inbound.offerControl(
+                    InboundEvent.Ended(webSocket, connectionGeneration, roomId, SocketEnd.Failed(detail))
+                )
+            }
+            override fun onInboundProgress(webSocket: SyncWebSocket) {
+                // reader thread: just stamp the time, the watchdog picks it up
+                lastInboundProgressMs.set(nowMs())
             }
         })
         }
+        handshakeWatchdog.socketCreated(startedAt)
+        scheduleWatchdog(connectionGeneration)
     }
 
-    private fun sendFrame(frame: String): Boolean =
-        lifecycleGate.sendIfActive { ws?.send(frame) == true }
+    /** Sleeps until the next pre-CONNECTED deadline (plans/04 section 9). */
+    private fun scheduleWatchdog(connectionGeneration: Long) {
+        watchdogJob?.cancel(); watchdogJob = null
+        val socket = ws ?: return
+        if (!handshakeWatchdog.isActive) return
+        watchdogJob = scope.launch {
+            while (true) {
+                val progressAt = lastInboundProgressMs.get()
+                if (progressAt != Long.MIN_VALUE) handshakeWatchdog.progress(progressAt)
+                val now = nowMs()
+                val fired = handshakeWatchdog.check(now)
+                if (fired != null) {
+                    lifecycleGate.runIfActive { onHandshakeWatchdog(fired, socket, connectionGeneration) }
+                    return@launch
+                }
+                val deadline = handshakeWatchdog.nextDeadlineMs() ?: return@launch
+                kotlinx.coroutines.delay((deadline - now).coerceAtLeast(1L))
+            }
+        }
+    }
+
+    private fun onHandshakeWatchdog(fired: SyncLocalClose, socket: SyncWebSocket, connectionGeneration: Long) {
+        if (ws !== socket || activeConnectionGeneration != connectionGeneration) return
+        v3HandshakeFailureGeneration = connectionGeneration
+        _status.value = Status.OFFLINE
+        reportError(
+            Messages.syncUnitSyncSecureHandshakeTimedOutCheckTheRelayMessage(),
+            SyncIssueKind.CONNECTION,
+            connectionGeneration,
+        )
+        closeLocally(fired, socket)
+    }
+
+    // ----- Outbound pacing (plans/04 section 11) -----
+
+    private fun utf8Size(text: String): Int = text.toByteArray(Charsets.UTF_8).size
+
+    /** Queue one frame behind the pacer. True means it belongs to this socket now. */
+    private fun enqueueFrame(
+        cls: SyncOutboundClass,
+        text: String,
+        guard: (() -> Boolean)? = null,
+        afterWrite: (() -> Unit)? = null,
+    ): Boolean {
+        if (ws == null || lifecycleGate.isDisposed) return false
+        pacer.offer(SyncOutboundPacer.Entry(cls, utf8Size(text), null, OutboundFrame.Plain(text, guard, afterWrite)))
+        pumpOutbound()
+        return true
+    }
+
+    private fun pumpOutbound() {
+        val socket = ws ?: return
+        while (true) {
+            val entry = pacer.poll(nowMs().toDouble()) ?: break
+            writeFrame(socket, entry)
+        }
+        pumpJob?.cancel(); pumpJob = null
+        val next = pacer.nextReadyAtMs(nowMs().toDouble()) ?: return
+        val delayMs = kotlin.math.ceil(next - nowMs()).toLong().coerceAtLeast(1L)
+        pumpJob = scope.launch {
+            kotlinx.coroutines.delay(delayMs)
+            lifecycleGate.runIfActive { if (ws === socket) pumpOutbound() }
+        }
+    }
+
+    private fun writeFrame(socket: SyncWebSocket, entry: SyncOutboundPacer.Entry<OutboundFrame>) {
+        when (val frame = entry.payload) {
+            is OutboundFrame.Plain -> {
+                val guard = frame.guard
+                val sent = if (guard != null) {
+                    // presence consent and the write share the config lock, so no
+                    // location frame starts after the UI has seen sharing turned off
+                    synchronized(presenceConfigLock) {
+                        guard() && lifecycleGate.sendIfActive { socket.send(frame.text) }
+                    }
+                } else {
+                    lifecycleGate.sendIfActive { socket.send(frame.text) }
+                }
+                if (sent) {
+                    noteEnqueued(frame.text)
+                    frame.afterWrite?.invoke()
+                }
+            }
+            is OutboundFrame.Delivery -> {
+                // superseded or resolved while it sat in the queue
+                if (outboundDeliveries.pending(frame.localId)?.requestId != frame.requestId) {
+                    if (entry.cls == SyncOutboundClass.MUTATION) pacer.release(frame.localId)
+                    return
+                }
+                if (!lifecycleGate.sendIfActive { socket.send(frame.text) }) return
+                pendingWrites[frame.requestId] = noteEnqueued(frame.text)
+                checkWrites()
+            }
+        }
+    }
+
+    /** Running position in the outbound byte stream, framing included. */
+    private fun noteEnqueued(text: String): Long {
+        val payload = utf8Size(text).toLong()
+        val lengthBytes = when {
+            payload < 126 -> 0L
+            payload < 65_536 -> 2L
+            else -> 8L
+        }
+        enqueuedWireBytes += payload + 2L + lengthBytes + 4L
+        return enqueuedWireBytes
+    }
+
+    /**
+     * A copy counts as written once the transport queue drained past its last
+     * byte. Only then does its ack timer start (plans/04 section 11.3, S3-06).
+     */
+    private fun checkWrites() {
+        val socket = ws ?: return
+        if (pendingWrites.isEmpty()) {
+            writePollJob?.cancel(); writePollJob = null
+            return
+        }
+        val drained = enqueuedWireBytes - socket.queuedBytes().coerceAtLeast(0L)
+        val now = nowMs()
+        val done = pendingWrites.filterValues { it <= drained }.keys.toList()
+        for (rid in done) {
+            pendingWrites.remove(rid)
+            val ahead = writtenUnacked.count { it != rid }
+            writtenUnacked += rid
+            ackTimer.writeComplete(rid, now, ahead)
+        }
+        if (done.isNotEmpty()) scheduleAckCheck()
+        if (pendingWrites.isNotEmpty() && writePollJob?.isActive != true) {
+            writePollJob = scope.launch {
+                while (pendingWrites.isNotEmpty() && ws === socket) {
+                    kotlinx.coroutines.delay(SyncAckTimer.ANDROID_WRITE_POLL_MS)
+                    lifecycleGate.runIfActive { checkWrites() }
+                }
+            }
+        }
+    }
+
+    private fun scheduleAckCheck() {
+        ackCheckJob?.cancel(); ackCheckJob = null
+        val next = ackTimer.nextDeadlineMs() ?: return
+        val socket = ws ?: return
+        ackCheckJob = scope.launch {
+            kotlinx.coroutines.delay((next - nowMs()).coerceAtLeast(0L))
+            lifecycleGate.runIfActive { if (ws === socket) runAckChecks() }
+        }
+    }
+
+    private fun runAckChecks() {
+        val now = nowMs()
+        for (rid in ackTimer.pendingRequestIds()) {
+            when (ackTimer.check(rid, now)) {
+                SyncAckTimer.Due.NOTHING -> Unit
+                SyncAckTimer.Due.RETRANSMIT -> {
+                    val pending = outboundDeliveries.all().firstOrNull { it.requestId == rid }
+                    if (pending == null || mutationsPaused) {
+                        ackTimer.resolved(rid)
+                        continue
+                    }
+                    pacer.offer(SyncOutboundPacer.Entry(
+                        SyncOutboundClass.RETRY, utf8Size(pending.frame), pending.localId,
+                        OutboundFrame.Delivery(pending.frame, rid, pending.localId),
+                    ))
+                }
+                SyncAckTimer.Due.EXHAUSTED -> {
+                    // no ack after three copies: a transport problem, reconnect and reconcile
+                    surfaceOncePerSession(SyncIssueCode.UNCONFIRMED_RECONNECT)
+                    closeLocally(SyncLocalClose.ACK_EXHAUSTED)
+                    return
+                }
+            }
+        }
+        pumpOutbound()
+        scheduleAckCheck()
+    }
 
     private fun newDeliveryRequestId(): String = UUID.randomUUID().toString().replace("-", "")
 
@@ -1155,40 +2044,37 @@ class SyncManager(
         SyncIdentity.urlB64(SyncIdentity.sha256(ciphertext.toByteArray(Charsets.UTF_8)))
 
     private fun queueDelivery(delivery: PendingOutboundDelivery) {
-        outboundDeliveries.register(delivery)?.let { prior ->
-            deliveryRetryJobs.remove(prior.requestId)?.cancel()
-        }
-        sendFrame(delivery.frame)
-        scheduleDeliveryRetry(delivery)
+        outboundDeliveries.register(delivery)?.let { prior -> dropDeliveryTimers(prior.requestId) }
+        ackTimer.enqueued(delivery.requestId)
+        pacer.offer(SyncOutboundPacer.Entry(
+            SyncOutboundClass.MUTATION, utf8Size(delivery.frame), delivery.localId,
+            OutboundFrame.Delivery(delivery.frame, delivery.requestId, delivery.localId),
+        ))
+        pumpOutbound()
     }
 
-    private fun scheduleDeliveryRetry(delivery: PendingOutboundDelivery) {
-        deliveryRetryJobs.remove(delivery.requestId)?.cancel()
-        val delayMs = (1_000L shl (delivery.attempts - 1).coerceIn(0, 3))
-        deliveryRetryJobs[delivery.requestId] = scope.launch {
-            kotlinx.coroutines.delay(delayMs)
-            val retry = outboundDeliveries.nextAttempt(
-                delivery.requestId,
-                delivery.connectionGeneration,
-                delivery.sessionDomain,
-            )
-            if (retry == null) {
-                if (outboundDeliveries.pending(delivery.localId)?.requestId == delivery.requestId) {
-                    reportError(
-                        Messages.syncAUnitSyncChangeIsStillUnconfirmedAfterBoundedMessage(),
-                    )
-                    ws?.cancel()
-                }
-                return@launch
-            }
-            sendFrame(retry.frame)
-            scheduleDeliveryRetry(retry)
-        }
+    private fun dropDeliveryTimers(requestId: String) {
+        ackTimer.resolved(requestId)
+        pendingWrites.remove(requestId)
+        writtenUnacked.remove(requestId)
+    }
+
+    /** Op is done (acked or a final nack): out of the tracker, the timers and the window. */
+    private fun resolveDelivery(delivery: PendingOutboundDelivery) {
+        outboundDeliveries.resolve(delivery.requestId)
+        dropDeliveryTimers(delivery.requestId)
+        pacer.release(delivery.localId)
+        pacer.removeQueuedIf { (it.payload as? OutboundFrame.Delivery)?.requestId == delivery.requestId }
     }
 
     private fun clearOutboundDeliveries(markForReconciliation: Boolean) {
-        deliveryRetryJobs.values.forEach(Job::cancel)
-        deliveryRetryJobs.clear()
+        ackTimer.clear()
+        pendingWrites.clear()
+        writtenUnacked.clear()
+        ackCheckJob?.cancel(); ackCheckJob = null
+        writePollJob?.cancel(); writePollJob = null
+        pumpJob?.cancel(); pumpJob = null
+        pacer.clear()
         val pending = outboundDeliveries.all()
         val unconfirmed = outboundDeliveries.resetForReconnect()
         if (markForReconciliation) {
@@ -1202,6 +2088,49 @@ class SyncManager(
                     )
                 }
         }
+    }
+
+    /** Coalesce diff passes; acks never run one synchronously (plans/04 section 17). */
+    private fun scheduleDiff() {
+        if (diffJob?.isActive == true) return
+        diffJob = scope.launch {
+            kotlinx.coroutines.delay(DIFF_DEBOUNCE_MS)
+            lifecycleGate.runIfActive {
+                if (_status.value == Status.CONNECTED && waypointStoreRef != null && drawingStoreRef != null) {
+                    syncLocalState(waypointStore.committedWaypoints.value, drawingStore.committedDocument.value)
+                }
+            }
+        }
+    }
+
+    private fun suppressUntilLocalEdit(localId: String) {
+        if (localId.startsWith("wire:")) return
+        suppressedUntilLocalEdit[localId] = modelRevisionJournal.generation(localId)
+    }
+
+    /** True while the user hasn't touched this object since we decided not to publish it. */
+    private fun isSuppressed(localId: String): Boolean {
+        val generation = suppressedUntilLocalEdit[localId] ?: return false
+        if (modelRevisionJournal.generation(localId) == generation) return true
+        suppressedUntilLocalEdit.remove(localId)
+        return false
+    }
+
+    /** counter-window: the relay proved it can't take our writes this join. */
+    private fun pauseMutationsForJoin() {
+        if (mutationsPaused) return
+        mutationsPaused = true
+        pacer.removeQueuedIf { it.payload is OutboundFrame.Delivery }
+        if (surfacedIssueKeys.add(SyncIssueCode.ROOM_RESET_CHANGES_PAUSED.name + "|join")) {
+            surfacePinned(SyncIssueCode.ROOM_RESET_CHANGES_PAUSED, issueMessage(SyncIssueCode.ROOM_RESET_CHANGES_PAUSED))
+        }
+    }
+
+    /** Record a skipped record for this join; an untouched local copy is not pushed over it. */
+    private fun recordSkip(wireId: String, category: SnapshotRecordCategory) {
+        skippedWireIds[wireId] = category
+        val localId = findLocalIdForWireId(wireId) ?: return
+        if (!suppressedUntilLocalEdit.containsKey(localId)) suppressUntilLocalEdit(localId)
     }
 
     private fun reportError(
@@ -1283,55 +2212,97 @@ class SyncManager(
                 forcedLegacyDeletes.remove(id)
             }
             if (lastContent[id] == content && id !in forcedLocalDiff) continue
+            if (isSuppressed(id)) continue
             val contentHash = contentHash(content)
             val pending = outboundDeliveries.pending(id)
             if (pending?.desiredContentHash == contentHash && pending.kind == kind) continue
             clock += 1
             versions[id] = clock
+            lastByV2[id] = clientId
             sendPut(id, clock, kind, content)
         }
         val gone = (lastContent.keys + forcedLocalDiff + forcedLegacyDeletes.keys + outboundDeliveries.all().map { it.localId })
             .filter { it !in current && !it.startsWith("wire:") }
             .distinct()
         for (id in gone) {
+            if (isSuppressed(id)) continue
             val pending = outboundDeliveries.pending(id)
             if (pending != null && pending.desiredContentHash == null && pending.kind == "del") continue
             clock += 1
+            versions[id] = clock
+            lastByV2[id] = clientId
             sendDel(id, clock)
         }
     }
 
     private fun syncLocalStateV3(current: HashMap<String, Pair<String, String>>) {
-        val keys = v3Keys ?: return
         val actor = myActorId ?: return
         val replay = replayState ?: return
+        val sd = sessionDomain ?: return
         if (!revisionJournalAvailable || resolvingPendingModel || replay.hasPendingModelApplications()) return
+        // counter-window: the relay proved it can't take our writes, stop trying for this join
+        if (mutationsPaused) return
+        if (replay.isInBatch) {
+            scheduleDiff()
+            return
+        }
+        val index = ensureWireIndex() ?: return
+        val session = SyncIdentity.urlB64(sd)
 
+        // every stamp of this pass in one replay write, frames only after it's durable (section 17)
+        class PendingSend(val localId: String, val wireId: String, val stamp: VersionStamp, val kind: String?, val content: String?)
+        val sends = ArrayList<PendingSend>()
+        var failed = false
+        replay.beginBatch()
         for ((id, kc) in current) {
             val (kind, content) = kc
-            val contentHash = SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
-            val wireId = runCatching {
-                SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
-            }.getOrNull() ?: continue
             if (lastContent[id] == content && id !in forcedLocalDiff) continue
+            if (isSuppressed(id)) continue
+            val contentHash = SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
             val pending = outboundDeliveries.pending(id)
             if (pending?.desiredContentHash == contentHash && pending.kind == kind) continue
+            val wireId = index.wireId(id) ?: continue
+            // measure before reserving: an object the relay can't take never burns a stamp
+            if (!OutboundSizeCheck.v3PutFits(wireId, actor, myPublicKey, session, kind, content)) {
+                suppressUntilLocalEdit(id)
+                surfaceOnce(SyncIssueCode.OBJECT_TOO_LARGE, "obj:$id")
+                continue
+            }
             val vs = replay.recoverableLocalPut(wireId, actor, myPublicKey, contentHash)
                 ?: replay.reserveLocalPut(wireId, actor, myPublicKey, contentHash)
-                ?: return persistenceFailure()
-            sendPutV3(id, wireId, vs, kind, content)
+            if (vs == null) {
+                failed = true
+                break
+            }
+            sends += PendingSend(id, wireId, vs, kind, content)
         }
-        val gone = (lastContent.keys + forcedLocalDiff + outboundDeliveries.all().map { it.localId })
-            .filter { it !in current && !it.startsWith("wire:") }.distinct()
-        for (id in gone) {
-            val pending = outboundDeliveries.pending(id)
-            if (pending != null && pending.desiredContentHash == null && pending.kind == "del") continue
-            val wireId = runCatching {
-                SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
-            }.getOrNull() ?: continue
-            val vs = replay.reserveLocalDelete(wireId, actor, myPublicKey)
-                ?: return persistenceFailure()
-            sendDelV3(id, wireId, vs)
+        if (!failed) {
+            val gone = (lastContent.keys + forcedLocalDiff + outboundDeliveries.all().map { it.localId })
+                .filter { it !in current && !it.startsWith("wire:") }.distinct()
+            for (id in gone) {
+                if (isSuppressed(id)) continue
+                val pending = outboundDeliveries.pending(id)
+                if (pending != null && pending.desiredContentHash == null && pending.kind == "del") continue
+                val wireId = index.wireId(id) ?: continue
+                val vs = replay.reserveLocalDelete(wireId, actor, myPublicKey)
+                if (vs == null) {
+                    failed = true
+                    break
+                }
+                sends += PendingSend(id, wireId, vs, null, null)
+            }
+        }
+        if (failed) {
+            replay.abortBatch()
+            return persistenceFailure()
+        }
+        if (!replay.commitBatch()) return persistenceFailure()
+        for (send in sends) {
+            if (send.content != null && send.kind != null) {
+                sendPutV3(send.localId, send.wireId, send.stamp, send.kind, send.content)
+            } else {
+                sendDelV3(send.localId, send.wireId, send.stamp)
+            }
         }
     }
 
@@ -1375,11 +2346,24 @@ class SyncManager(
 
     // -- v3 outbound --
 
-    private fun sendHelloV3(): Boolean {
-        val keys = v3Keys ?: return false
-        val actor = myActorId ?: return false
-        val sd = sessionDomain ?: return false
-        val epoch = replayState?.reserveHelloEpoch(actor, myPublicKey) ?: return false
+    private enum class HelloResult { SENT, EXHAUSTED, FAILED }
+
+    private fun sendHelloV3(): HelloResult {
+        val keys = v3Keys ?: return HelloResult.FAILED
+        val actor = myActorId ?: return HelloResult.FAILED
+        val sd = sessionDomain ?: return HelloResult.FAILED
+        val replay = replayState ?: return HelloResult.FAILED
+        // plans/04 section 14: time floor for lost state, doubling after 4014,
+        // spare block when background presence is on. Still persisted before signing.
+        val persisted = HelloEpochPolicy.parse(replay.getHelloEpoch(actor))
+        val rejected = rejectedHelloEpoch
+        val floor = HelloEpochPolicy.floor(persisted, syncClock.wallClockMs(), rejected != null, rejected)
+        val spare = if (backgroundPresenceOptIn()) HelloEpochPolicy.BACKGROUND_SPARE_BLOCK else 0
+        if (HelloEpochPolicy.reserve(persisted, floor, spare) is HelloEpochPolicy.Result.Exhausted) {
+            return HelloResult.EXHAUSTED
+        }
+        val epoch = replay.reserveHelloEpoch(actor, myPublicKey, floor, spare) ?: return HelloResult.FAILED
+        sessionHelloEpoch = java.math.BigInteger(epoch, 16)
         val vs = "$epoch:$actor"
         localHelloVersion = vs
         val preimage = SyncIdentity.buildPreimage(
@@ -1387,14 +2371,19 @@ class SyncManager(
             epoch, "", "hello", SyncIdentity.sha256(myPublicKeyRaw)
         )
         val sig = SyncSigning.sign(deviceSeed, preimage)
-        return sendFrame(JSONObject().apply {
+        val generation = activeConnectionGeneration
+        val queued = enqueueFrame(SyncOutboundClass.CONTROL, JSONObject().apply {
             put("t", "hello")
             put("by", actor)
             put("pub", myPublicKey)
             put("sd", SyncIdentity.urlB64(sd))
             put("vs", vs)
             put("sig", sig)
-        }.toString())
+        }.toString(), afterWrite = {
+            handshakeWatchdog.helloWritten(nowMs())
+            scheduleWatchdog(generation)
+        })
+        return if (queued) HelloResult.SENT else HelloResult.FAILED
     }
 
     private fun sendExplicitLeaveV3(socket: SyncWebSocket): Boolean {
@@ -1461,7 +2450,7 @@ class SyncManager(
             put("sig", signature)
         }.toString()
         localChatAdvertFrame = frame
-        val sent = sendFrame(frame)
+        val sent = enqueueFrame(SyncOutboundClass.CONTROL, frame)
         if (!sent) {
             ephemeral.clear()
             chatEphemeralKey = null
@@ -1487,7 +2476,7 @@ class SyncManager(
                     myActorId != actorId || this@SyncManager.sessionDomain?.let(SyncIdentity::urlB64) != sessionDomain ||
                     localChatKeyId != chatKeyId || _status.value != Status.CONNECTED
                 ) return@launch
-                sendFrame(exactFrame)
+                enqueueFrame(SyncOutboundClass.CONTROL, exactFrame)
             }
             kotlinx.coroutines.delay(CHAT_KEY_RETRY_DELAY_MS)
             if (!localChatKeyAcknowledged && localChatAdvertFrame == exactFrame &&
@@ -1529,6 +2518,15 @@ class SyncManager(
         if (gate is TacMapChatSendGate.Blocked) return gate.pendingReason
         if (target === TacMapChatTarget.EntireRoom && chatPeerKeys.isEmpty()) {
             return Messages.chatNoChatReadyUnitsAreAvailableMessage()
+        }
+        (target as? TacMapChatTarget.SelectedUnit)?.let { selected ->
+            // a session advertising the long screen-off retention drops chat unread (S6-04)
+            val retentionSeconds = _peers.value[selected.actorId]
+                ?.takeIf { it.sessionDomain == selected.sessionDomain }
+                ?.retentionWindowMs?.div(1_000L)
+            if (ChatSendGate.blockedForBackground(direct = true, recipientRetentionSeconds = retentionSeconds)) {
+                return Messages.chatRecipientInBackgroundMessage()
+            }
         }
         return null
     }
@@ -1672,7 +2670,7 @@ class SyncManager(
             recipientChatKeyId = selected?.chatKeyId,
         )
         pendingChat[messageId] = expectedAck
-        if (!sendFrame(frame)) {
+        if (!enqueueFrame(SyncOutboundClass.CHAT, frame)) {
             pendingChat.remove(messageId)
             chatHistoryStore.updateDelivery(messageId, TacMapChatDeliveryState.FAILED, "send_failed")
             refreshChatAvailability()
@@ -1761,62 +2759,189 @@ class SyncManager(
         private const val MAX_SNAPSHOT_ITEMS = 10_000
         private const val MAX_SNAPSHOT_AGGREGATE_BYTES = 54_525_952L
         internal const val V2_SNAPSHOT_TIMEOUT_MS = 10_000L
-        internal const val V3_HANDSHAKE_PROGRESS_TIMEOUT_MS = 20_000L
         private const val CHAT_KEY_RETRY_DELAY_MS = 2_000L
         private const val CHAT_KEY_MAX_ATTEMPTS = 4
         private const val MAX_VERSION = 1_000_000_000_000L   // matches relay MAX_V
+        internal const val PATH_CHANGE_PROBE_TIMEOUT_MS = 5_000L
+        internal const val DIFF_DEBOUNCE_MS = 250L
+        // plans/04 persistenceBatching
+        internal const val INBOUND_BATCH_MAX_FRAMES = 64
+        internal const val INBOUND_QUEUE_MAX_FRAMES = 1_024
+        internal const val INBOUND_QUEUE_MAX_BYTES = 16L * 1024L * 1024L
+        private val LIVE_BATCH_TYPES = setOf("put", "del", "loc", "hello")
+        internal const val BACKGROUND_PROBE_POLL_MS = 250L
+        private val V3_KIND_PATTERN = Regex("^[A-Za-z0-9_-]{1,32}$")
+        private val V3_OBJECT_KINDS = setOf("waypoint", "drawing")
     }
 
-    private fun handleMessage(text: String, socket: SyncWebSocket, connectionGeneration: Long) {
+    private class AdmittedFrame(val msg: JSONObject, val bytes: Int)
+
+    /**
+     * Size, budget and parse for one text frame, in arrival order. Null means
+     * it was dropped or the socket got closed for it.
+     */
+    private fun admitText(event: InboundEvent.Text): AdmittedFrame? {
+        var admitted: AdmittedFrame? = null
         lifecycleGate.runIfActive {
+            val socket = event.socket
+            val connectionGeneration = event.generation
             if (ws !== socket || activeConnectionGeneration != connectionGeneration) return@runIfActive
+            val text = event.text
             val decision = SyncInboundFramePolicy.inspectText(text)
             if (decision is SyncInboundFrameDecision.Reject) {
                 rejectInboundFrame(socket, connectionGeneration, decision.reason)
                 return@runIfActive
             }
             val frameBytes = (decision as SyncInboundFrameDecision.Accept).byteCount
-            if (!liveReceiveBudget.admit(
-                newGeneration = connectionGeneration,
-                byteCount = frameBytes,
-                newPhase = if (_status.value == Status.CONNECTED) {
-                    SyncLiveReceiveBudget.Phase.LIVE
-                } else {
-                    SyncLiveReceiveBudget.Phase.INITIAL
-                },
-                nowMs = SystemClock.elapsedRealtime(),
-            )) {
-                rejectInboundFrame(
-                    socket,
-                    connectionGeneration,
-                    SyncInboundFrameRejection.RATE_LIMITED,
-                )
+            val now = nowMs()
+            // a complete message also proves the upgrade went through
+            socketOpened = true
+            if (handshakeWatchdog.isActive) handshakeWatchdog.progress(now)
+            // The locked/background session is egress-only. Do not even parse
+            // relay traffic while mission stores and replay persistence are
+            // unavailable; it only counts against its own budget.
+            if (backgroundPresenceOnly || awaitingForegroundStores) {
+                if (!receiveBudget.admit(
+                        connectionGeneration, frameBytes, SyncReceiveBudget.Phase.BACKGROUND,
+                        SyncReceiveBudget.Bucket.ROOM, 0, now,
+                    )
+                ) rejectInboundFrame(socket, connectionGeneration, SyncInboundFrameRejection.RATE_LIMITED)
                 return@runIfActive
             }
-            // The locked/background session is egress-only. Do not even parse
-            // relay traffic while mission stores and replay persistence are unavailable.
-            if (backgroundPresenceOnly || awaitingForegroundStores) return@runIfActive
+            val msg = try {
+                JSONObject(text)
+            } catch (_: Throwable) {
+                null
+            }
+            // our own acks get their own budget, so a bulk publish can't trip us (S2-04)
+            val bucket = SyncReceiveBudget.bucketFor(msg?.opt("t") as? String)
+            val phase = if (_status.value == Status.CONNECTED) {
+                SyncReceiveBudget.Phase.LIVE
+            } else {
+                SyncReceiveBudget.Phase.INITIAL
+            }
+            if (!receiveBudget.admit(connectionGeneration, frameBytes, phase, bucket, activeSessions.size, now)) {
+                rejectInboundFrame(socket, connectionGeneration, SyncInboundFrameRejection.RATE_LIMITED)
+                return@runIfActive
+            }
+            if (msg != null) admitted = AdmittedFrame(msg, frameBytes)
+        }
+        return admitted
+    }
+
+    private suspend fun handleTextEvent(event: InboundEvent.Text) {
+        val frame = admitText(event)
+        if (frame == null) {
+            flushLiveBatch()
+            return
+        }
+        val msg = frame.msg
+        val type = msg.optString("t")
+        if (protocolVersion == 3 && type in LIVE_BATCH_TYPES && acceptsLiveInboundV3() && openLiveBatch() != null) {
+            lifecycleGate.runIfActive {
+                try {
+                    handleLiveFrameV3(msg, type)
+                } catch (_: Throwable) {
+                    // Silently drop -- don't log frame content (SEC-019).
+                }
+            }
+            return
+        }
+        flushLiveBatch()
+        if (protocolVersion == 3 && type == "snapshot-end") {
+            if (lifecycleGate.isDisposed) return
             try {
-                val msg = JSONObject(text)
+                finishSnapshotV3(msg, frame.bytes, event.socket, event.generation)
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Throwable) {
+                // same as any other unparseable frame
+            }
+            return
+        }
+        lifecycleGate.runIfActive {
+            try {
                 if (protocolVersion == 3) {
-                    handleMessageV3(
-                        msg,
-                        frameBytes,
-                        socket,
-                        connectionGeneration,
-                    )
+                    handleMessageV3(msg, frame.bytes)
                 } else {
-                    handleMessageV2(
-                        msg,
-                        frameBytes,
-                        socket,
-                        connectionGeneration,
-                    )
+                    handleMessageV2(msg, frame.bytes, event.socket, event.generation)
                 }
             } catch (_: Throwable) {
                 // Silently drop -- don't log frame content (SEC-019).
             }
         }
+    }
+
+    private fun handleLiveFrameV3(msg: JSONObject, type: String) {
+        when (type) {
+            "hello" -> applyHelloV3(msg)
+            "put", "del" -> applyLiveRecordV3(msg)
+            "loc" -> applyPresenceV3(msg)
+        }
+    }
+
+    /** Opens the replay batch for a run of live frames (one sealed write for the run). */
+    private fun openLiveBatch(): LiveBatch? {
+        liveBatch?.let { return it }
+        val replay = replayState ?: return null
+        val drawings = drawingStoreRef ?: return null
+        if (replay.isInBatch) return null
+        replay.beginBatch()
+        return LiveBatch(replay, ArrayList(drawings.committedDocument.value.layers)).also { liveBatch = it }
+    }
+
+    /**
+     * Ends the run: one replay write, then the model with one write per store,
+     * receiver hashes, one marker clear, and only then peers and members go
+     * out (plans/04 section 1.3).
+     */
+    private fun flushLiveBatch() {
+        val batch = liveBatch ?: return
+        liveBatch = null
+        lifecycleGate.runIfActive {
+            if (batch.failed || replayState !== batch.replay) {
+                batch.replay.abortBatch()
+                return@runIfActive
+            }
+            if (!batch.replay.commitBatch()) {
+                persistenceFailure()
+                return@runIfActive
+            }
+            if (batch.records.isNotEmpty() && waypointStoreRef != null && drawingStoreRef != null) {
+                resolvingPendingModel = true
+                val ok = try {
+                    val clears = applyRemoteRecords(batch.records)
+                    clears != null && batch.replay.clearPendingModelApplications(clears)
+                } finally {
+                    resolvingPendingModel = false
+                }
+                if (!ok) {
+                    persistenceFailure()
+                    return@runIfActive
+                }
+            }
+            batch.peers?.let { _peers.value = it }
+            batch.onlineMembers?.let { _onlineMembers.value = it }
+            if (batch.chatRecipientsDirty) publishChatRecipients()
+        }
+    }
+
+    /** Peers as this frame should see them: the open batch's staged copy, or live. */
+    private var peersView: Map<String, PresencePeer>
+        get() = liveBatch?.peers ?: _peers.value
+        set(value) {
+            val batch = liveBatch
+            if (batch != null) batch.peers = value else _peers.value = value
+        }
+
+    private fun publishOnlineMembers(value: Map<String, OnlineMember>) {
+        val batch = liveBatch
+        if (batch != null) batch.onlineMembers = value else _onlineMembers.value = value
+    }
+
+    private fun publishChatRecipientsAfterCommit() {
+        val batch = liveBatch
+        if (batch != null) batch.chatRecipientsDirty = true else publishChatRecipients()
     }
 
     private fun rejectInboundFrame(
@@ -1826,12 +2951,14 @@ class SyncManager(
     ) {
         if (ws !== socket || activeConnectionGeneration != connectionGeneration) return
         if (!inboundFrameCloseGate.claimClose(connectionGeneration)) return
-        val code = when (rejection) {
-            SyncInboundFrameRejection.OVERSIZED -> 1009
-            SyncInboundFrameRejection.BINARY -> 1003
-            SyncInboundFrameRejection.RATE_LIMITED -> 1008
-        }
-        if (!socket.close(code, L10n.text("Unsupported relay frame"))) socket.cancel()
+        closeLocally(
+            when (rejection) {
+                SyncInboundFrameRejection.OVERSIZED -> SyncLocalClose.OVERSIZED_INBOUND
+                SyncInboundFrameRejection.BINARY -> SyncLocalClose.BINARY_INBOUND
+                SyncInboundFrameRejection.RATE_LIMITED -> SyncLocalClose.RECEIVE_BUDGET_EXCEEDED
+            },
+            socket,
+        )
     }
 
     private fun handleMessageV2(
@@ -1854,7 +2981,7 @@ class SyncManager(
                     for (member in event.batch.members) applyPresence(member)
                     if (ws !== socket || activeConnectionGeneration != connectionGeneration) return
                     v2SnapshotFailureGeneration = null
-                    reconnectBackoff.reset()
+                    onSessionConnected()
                     _status.value = Status.CONNECTED
                     _lastError.value = issueLifecycle.connectionSucceeded(
                         atGeneration = connectionGeneration,
@@ -1881,98 +3008,80 @@ class SyncManager(
         }
     }
 
-    private fun handleMessageV3(
-        msg: JSONObject,
-        frameBytes: Int,
-        socket: SyncWebSocket,
-        connectionGeneration: Long,
-    ) {
+    /** Handshake done (v3 hello-ack or v2 snapshot). Backoff waits for a stable session. */
+    private fun onSessionConnected() {
+        handshakeWatchdog.connected()
+        watchdogJob?.cancel(); watchdogJob = null
+        failureCounters.helloAcked()
+        backoff.connected(nowMs())
+        stableSessionJob?.cancel()
+        stableSessionJob = scope.launch {
+            kotlinx.coroutines.delay(SyncBackoffPolicy.STABLE_SESSION_MS)
+            lifecycleGate.runIfActive { backoff.tick(nowMs()) }
+        }
+    }
+
+    private fun handleMessageV3(msg: JSONObject, frameBytes: Int) {
         when (msg.optString("t")) {
             "snapshot-begin" -> {
-                if (_status.value != Status.CONNECTING || snapshotSeq != null) return failSnapshot()
-                val seq = strictNonNegativeLong(msg, "seq") ?: return failSnapshot()
+                if (_status.value != Status.CONNECTING) {
+                    return failSnapshot(SnapshotRecordReason.BEGIN_WHEN_NOT_CONNECTING)
+                }
+                if (snapshotSeq != null) return failSnapshot(SnapshotRecordReason.SECOND_BEGIN)
+                val seq = strictNonNegativeLong(msg, "seq")
+                    ?: return failSnapshot(SnapshotRecordReason.SEQ_NOT_NONNEGATIVE_INTEGER)
+                val replay = replayState ?: return failSnapshot(SnapshotRecordReason.BEGIN_WHEN_NOT_CONNECTING)
+                val keys = v3Keys ?: return failSnapshot(SnapshotRecordReason.BEGIN_WHEN_NOT_CONNECTING)
+                val key = roomKey ?: return failSnapshot(SnapshotRecordReason.BEGIN_WHEN_NOT_CONNECTING)
                 snapshotSeq = seq
                 snapshotSawFinalPage = false
                 snapshotItemCount = 0
-                snapshotInvalid = false
                 snapshotAggregateBytes = frameBytes.toLong()
                 snapshotWireIds.clear()
-                pendingSnapshot.clear()
+                snapshotRun?.close()
+                // the worker gets copies: keys, actor pins, the committed layers (section 19)
+                val pins = replay.actorPinsCopy()
+                snapshotRun = SnapshotRun(
+                    validator = SnapshotValidator(key, keys.roomIdRaw, keys.metadataKey, pins::get, displayDensity),
+                    committedLayers = drawingStore.committedDocument.value.layers,
+                    parent = managerJob,
+                    dispatcher = env.validationDispatcher,
+                    // a finished page counts as handshake progress (section 9)
+                    onProgress = { lastInboundProgressMs.set(nowMs()) },
+                )
                 _status.value = Status.SNAPSHOTTING
-                scheduleV3HandshakeTimeout(socket, connectionGeneration)
-                val replay = replayState ?: return failSnapshot()
-                if (replay.lastSnapshotSeq >= 0 && seq < replay.lastSnapshotSeq) {
-                    android.util.Log.w("SyncManager", "Sync relay supplied an older snapshot fence")
-                    reportError(
-                        Messages.syncSyncRollbackWarningTheRelaySnapshotIsOlderThanMessage(),
-                        SyncIssueKind.SECURITY,
-                    )
-                }
+                // relay hint only: say it once per join and keep syncing, the
+                // per-object replay rules already refuse older state
+                snapshotSeqRegressed = SnapshotFence.isRegression(seq, replay.lastSnapshotSeq)
+                if (snapshotSeqRegressed) surfaceOnce(SyncIssueCode.ROOM_RESET_SUSPECTED, "join")
             }
             "snapshot" -> {
                 snapshotAggregateBytes += frameBytes
-                if (snapshotAggregateBytes > MAX_SNAPSHOT_AGGREGATE_BYTES) return failSnapshot()
-                if (_status.value != Status.SNAPSHOTTING || snapshotSeq == null || snapshotSawFinalPage) {
-                    return failSnapshot()
+                if (snapshotAggregateBytes > MAX_SNAPSHOT_AGGREGATE_BYTES) {
+                    return failSnapshot(SnapshotRecordReason.AGGREGATE_BYTES)
                 }
-                val items = msg.optJSONArray("items") ?: JSONArray()
+                if (_status.value != Status.SNAPSHOTTING || snapshotSeq == null) {
+                    return failSnapshot(SnapshotRecordReason.PAGE_BEFORE_BEGIN)
+                }
+                val run = snapshotRun ?: return failSnapshot(SnapshotRecordReason.PAGE_BEFORE_BEGIN)
+                if (snapshotSawFinalPage) return failSnapshot(SnapshotRecordReason.PAGE_AFTER_FINAL)
+                val more = msg.opt("more") as? Boolean ?: return failSnapshot(SnapshotRecordReason.MORE_NOT_BOOLEAN)
+                val items = msg.opt("items") as? JSONArray ?: return failSnapshot(SnapshotRecordReason.ITEMS_NOT_ARRAY)
                 snapshotItemCount += items.length()
-                if (snapshotItemCount > MAX_SNAPSHOT_ITEMS) return failSnapshot()
+                if (snapshotItemCount > MAX_SNAPSHOT_ITEMS) return failSnapshot(SnapshotRecordReason.ITEM_COUNT)
+                // structure stays here so a bad page fails fast; the crypto goes to the worker
+                val page = ArrayList<Pair<JSONObject, String>>(items.length())
                 for (i in 0 until items.length()) {
-                    val rec = items.optJSONObject(i)
-                    if (rec == null) {
-                        snapshotInvalid = true
-                        continue
-                    }
-                    val validated = validateRecordV3(rec)
-                    if (validated == null || !snapshotWireIds.add(validated.mutation.wireObjectId)) {
-                        snapshotInvalid = true
-                    } else pendingSnapshot += validated
+                    val rec = items.opt(i) as? JSONObject ?: return failSnapshot(SnapshotRecordReason.ITEM_NOT_OBJECT)
+                    val wireId = (rec.opt("id") as? String)?.takeIf { SyncIdentity.urlB64Decode32(it) != null }
+                        ?: return failSnapshot(SnapshotRecordReason.ITEM_ID_INVALID)
+                    // duplicate ids would let the relay pick the order, so that one stays fatal
+                    if (!snapshotWireIds.add(wireId)) return failSnapshot(SnapshotRecordReason.DUPLICATE_WIRE_ID)
+                    page += rec to wireId
                 }
-                val more = msg.opt("more") as? Boolean ?: return failSnapshot()
                 if (!more) snapshotSawFinalPage = true
-                scheduleV3HandshakeTimeout(socket, connectionGeneration)
-            }
-            "snapshot-end" -> {
-                snapshotAggregateBytes += frameBytes
-                if (snapshotAggregateBytes > MAX_SNAPSHOT_AGGREGATE_BYTES) return failSnapshot()
-                val expected = snapshotSeq ?: return failSnapshot()
-                val seq = strictNonNegativeLong(msg, "seq") ?: return failSnapshot()
-                if (_status.value != Status.SNAPSHOTTING || seq != expected || !snapshotSawFinalPage || snapshotInvalid) {
-                    return failSnapshot()
-                }
-                val replay = replayState ?: return failSnapshot()
-                val remoteMutations = pendingSnapshot.map { validated ->
-                    SyncReplayState.RemoteMutation(
-                        validated.mutation, modelContentHash(validated.localModelId()), validated.localModelId(),
-                        modelRevisionJournal.generation(validated.localModelId()), validated.expectedModelHash())
-                }
-                if (!replay.commitRemoteSnapshot(remoteMutations, seq)) {
-                    return persistenceFailure()
-                }
-                val actor = myActorId
-                snapshotConfirmedLocalDeletes.clear()
-                if (actor != null) pendingSnapshot.filterIsInstance<ValidatedV3.Delete>()
-                    .filter { it.mutation.stamp.actorId == actor }
-                    .forEach { snapshotConfirmedLocalDeletes[it.mutation.wireObjectId] = it.mutation.stamp.encode() }
-                resolvingPendingModel = true
-                try {
-                    for ((index, validated) in pendingSnapshot.withIndex()) {
-                        if (!resolvePendingModelApplication(validated, remoteMutations[index].priorModelHash)) {
-                            return persistenceFailure()
-                        }
-                    }
-                    if (!resolveUnmatchedPendingModelApplications()) return persistenceFailure()
-                } finally {
-                    resolvingPendingModel = false
-                }
-                resetSnapshot()
-                awaitingHelloAck = true
-                if (!sendHelloV3()) {
-                    awaitingHelloAck = false
-                    return failConnection()
-                }
-                scheduleV3HandshakeTimeout(socket, connectionGeneration)
+                run.submit(page)
+                handshakeWatchdog.progress(nowMs())
             }
             "hello-ack" -> applyHelloAckV3(msg)
             "chat-key-ack" -> applyChatKeyAckV3(msg)
@@ -2016,11 +3125,159 @@ class SyncManager(
         }
     }
 
+    /**
+     * snapshot-end (plans/04 sections 1.3, 3 and 19). Waits for the worker,
+     * then on this thread: recompute expected hashes if layers moved, resolve
+     * tombstones against the wire index and capture prior hashes and journal
+     * generations now, commit once (sealed off-main), apply the model with one
+     * write per store, check hashes, clear every marker once, send hello.
+     */
+    private suspend fun finishSnapshotV3(
+        msg: JSONObject,
+        frameBytes: Int,
+        socket: SyncWebSocket,
+        connectionGeneration: Long,
+    ) {
+        if (!stillCurrent(socket, connectionGeneration)) return
+        snapshotAggregateBytes += frameBytes
+        if (snapshotAggregateBytes > MAX_SNAPSHOT_AGGREGATE_BYTES) {
+            return failSnapshot(SnapshotRecordReason.AGGREGATE_BYTES)
+        }
+        val expected = snapshotSeq ?: return failSnapshot(SnapshotRecordReason.PAGE_BEFORE_BEGIN)
+        if (_status.value != Status.SNAPSHOTTING) return failSnapshot(SnapshotRecordReason.PAGE_BEFORE_BEGIN)
+        val seq = strictNonNegativeLong(msg, "seq")
+            ?: return failSnapshot(SnapshotRecordReason.SEQ_NOT_NONNEGATIVE_INTEGER)
+        if (!snapshotSawFinalPage) return failSnapshot(SnapshotRecordReason.END_BEFORE_FINAL)
+        if (seq != expected) return failSnapshot(SnapshotRecordReason.END_SEQ_MISMATCH)
+        handshakeWatchdog.snapshotEnded(nowMs())
+        val replay = replayState ?: return failSnapshot(SnapshotRecordReason.PAGE_BEFORE_BEGIN)
+        val run = snapshotRun ?: return failSnapshot(SnapshotRecordReason.PAGE_BEFORE_BEGIN)
+
+        val checks = run.await()
+        if (!stillCurrent(socket, connectionGeneration) || replayState !== replay || snapshotRun !== run) return
+        run.close()
+        snapshotRun = null
+        if (checks == null) return failSnapshot(SnapshotRecordReason.PAGE_BEFORE_BEGIN)
+
+        val validated = ArrayList<ValidatedV3>(checks.size)
+        val skips = LinkedHashMap<String, SnapshotRecordReason>()
+        for (check in checks) when (check) {
+            is V3Check.Valid -> validated += check.record
+            is V3Check.Skip -> skips[check.wireId] = check.reason
+        }
+        restageIfLayersChanged(validated, run.committedLayers)
+        val index = ensureWireIndex()
+        val before = ModelLookup()
+        val resolved = validated.map { record ->
+            if (record is ValidatedV3.Delete) record.copy(localId = index?.localId(record.mutation.wireObjectId)) else record
+        }
+        val remotes = resolved.map { record ->
+            SyncReplayState.RemoteMutation(
+                record.mutation, before.hash(record.localModelId), record.localModelId,
+                modelRevisionJournal.generation(record.localModelId), record.expectedModelHash,
+            )
+        }
+        resolvingPendingModel = true
+        try {
+            if (!replay.commitRemoteSnapshotOffMain(remotes, seq, env.persistenceDispatcher)) {
+                if (stillCurrent(socket, connectionGeneration)) persistenceFailure()
+                return
+            }
+            // committed but not applied is the same as a crash here: the markers
+            // get resolved by the next snapshot
+            if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
+            lifecycleGate.runIfActive {
+                // skips commit nothing; the seq still advances like the relay left them out
+                recordSnapshotSkips(skips)
+                val actor = myActorId
+                snapshotConfirmedLocalDeletes.clear()
+                if (actor != null) resolved.filterIsInstance<ValidatedV3.Delete>()
+                    .filter { it.mutation.stamp.actorId == actor }
+                    .forEach { snapshotConfirmedLocalDeletes[it.mutation.wireObjectId] = it.mutation.stamp.encode() }
+            }
+            if (lifecycleGate.isDisposed) return
+            val clears = applyRemoteRecords(resolved)?.let { applied ->
+                resolveUnmatchedPendingModelApplications(applied)?.let { unmatched -> applied + unmatched }
+            } ?: return persistenceFailure()
+            if (!replay.clearPendingModelApplicationsOffMain(clears, env.persistenceDispatcher)) {
+                if (stillCurrent(socket, connectionGeneration)) persistenceFailure()
+                return
+            }
+        } finally {
+            resolvingPendingModel = false
+        }
+        if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
+        lifecycleGate.runIfActive {
+            pendingVerifiedClean = !snapshotSeqRegressed &&
+                skips.values.none { it.category == SnapshotRecordCategory.SKIP_UNVERIFIED }
+            resetSnapshot()
+            awaitingHelloAck = true
+            when (sendHelloV3()) {
+                HelloResult.SENT -> Unit
+                HelloResult.EXHAUSTED -> {
+                    awaitingHelloAck = false
+                    enterPausedActionRequired(SyncIssueCode.SESSION_COUNTER_BEHIND, retryOnForeground = false)
+                    closeLocally(SyncLocalClose.LEAVE, socket)
+                }
+                HelloResult.FAILED -> {
+                    awaitingHelloAck = false
+                    failConnection(SyncLocalClose.LIVENESS_TIMEOUT)
+                }
+            }
+        }
+    }
+
+    private fun stillCurrent(socket: SyncWebSocket, connectionGeneration: Long): Boolean =
+        !lifecycleGate.isDisposed && ws === socket && activeConnectionGeneration == connectionGeneration
+
+    /** User touched layers while the snapshot was in flight: recompute against what's committed now (section 3). */
+    private fun restageIfLayersChanged(
+        validated: MutableList<ValidatedV3>,
+        committedAtBegin: List<com.tacmap.drawings.DrawingLayer>,
+    ) {
+        val current = drawingStore.committedDocument.value.layers
+        if (current == committedAtBegin) return
+        val staged = ArrayList(current)
+        for ((index, record) in validated.withIndex()) {
+            if (record !is ValidatedV3.Put) continue
+            SnapshotValidator.expectedModelHash(record.parsed, record.localId, staged, displayDensity)?.let { hash ->
+                validated[index] = record.copy(expectedModelHash = hash)
+            }
+            for (layer in record.parsed.newLayers) {
+                if (staged.none { it.id == layer.id }) staged += layer
+            }
+        }
+    }
+
+    private fun recordSnapshotSkips(skips: Map<String, SnapshotRecordReason>) {
+        if (skips.isEmpty()) return
+        var unverified = 0
+        var unsupported = 0
+        for ((wireId, reason) in skips) {
+            recordSkip(wireId, reason.category)
+            if (reason.category == SnapshotRecordCategory.SKIP_UNVERIFIED) unverified++ else unsupported++
+        }
+        if (unverified > 0) {
+            surfaceOnce(SyncIssueCode.SKIPPED_UNVERIFIED, "join", issueMessage(SyncIssueCode.SKIPPED_UNVERIFIED, unverified))
+        }
+        if (unsupported > 0) {
+            surfaceOnce(SyncIssueCode.SKIPPED_UNSUPPORTED, "join", issueMessage(SyncIssueCode.SKIPPED_UNSUPPORTED, unsupported))
+        }
+    }
+
     private fun applyDeliveryAck(msg: JSONObject, v3: Boolean) {
         val ack = parseDeliveryAckFrame(msg, v3) ?: return
         val delivered = outboundDeliveries.acknowledge(ack) ?: return
-        deliveryRetryJobs.remove(delivered.requestId)?.cancel()
+        resolveDelivery(delivered)
+        // first op-ack of the session proves it works, so the backoff can reset
+        backoff.opAcked()
+        establishBaseline(delivered)
+        if (_status.value == Status.CONNECTED) scheduleDiff()
+        pumpOutbound()
+    }
 
+    /** Echo baseline once the relay holds our write. */
+    private fun establishBaseline(delivered: PendingOutboundDelivery) {
         if (delivered.desiredContent != null) {
             if (reexport(delivered.localId) == delivered.desiredContent) {
                 lastContent[delivered.localId] = delivered.desiredContent
@@ -2038,32 +3295,45 @@ class SyncManager(
         } else {
             forcedLocalDiff += delivered.localId
         }
-        if (_status.value == Status.CONNECTED) {
-            syncLocalState(waypointStore.committedWaypoints.value, drawingStore.committedDocument.value)
+    }
+
+    /**
+     * plans/04 section 6. A nack is relay data: it can drop, retry, pause or
+     * reconnect our own work, never touch replay state and never be SECURITY.
+     */
+    private fun applyDeliveryNack(msg: JSONObject, v3: Boolean) {
+        val nack = parseDeliveryNackFrame(msg, v3) ?: return
+        val pending = outboundDeliveries.reject(nack) ?: return
+        val decision = SyncNackPolicy.decide(
+            nack.code,
+            nack.retryable,
+            rejectedStampEqualsOwnPersisted = v3 && ownStampStillPersisted(pending),
+            wireIdSkippedThisJoin = pending.wireObjectId in skippedWireIds,
+        )
+        when {
+            decision.resolveOp -> {
+                resolveDelivery(pending)
+                if (decision.markConfirmed) establishBaseline(pending)
+                if (decision.suppressUntilLocalEdit) suppressUntilLocalEdit(pending.localId)
+                if (decision.pauseMutationsForJoin) pauseMutationsForJoin()
+                decision.issue?.takeIf { it != SyncIssueCode.ROOM_RESET_CHANGES_PAUSED }
+                    ?.let(::surfaceOncePerSession)
+                pumpOutbound()
+            }
+            decision.retry -> {
+                val ahead = writtenUnacked.count { it != pending.requestId }
+                ackTimer.restartTimer(pending.requestId, nowMs(), ahead)
+                scheduleAckCheck()
+            }
+            decision.reconnect -> closeLocally(decision.localClose ?: SyncLocalClose.SESSION_NACK)
         }
     }
 
-    private fun applyDeliveryNack(msg: JSONObject, v3: Boolean) {
-        val nack = parseDeliveryNackFrame(msg, v3) ?: return
-        val code = nack.code
-        val retryable = nack.retryable
-        val pending = outboundDeliveries.reject(nack) ?: return
-        val message = when (code) {
-            "quota" -> Messages.syncTheUnitSyncRoomIsFullSoThisSavedMessage()
-            "storage" -> Messages.syncTheUnitSyncRelayCouldNotDurablySaveThisMessage()
-            "stale", "not-found", "counter-window" -> Messages.syncTheUnitSyncRelayRejectedAnOutOfDateMessage()
-            "session-replaced", "session-mismatch", "hello-required" -> Messages.syncThisUnitSyncSessionCanNoLongerConfirmChangesMessage()
-            else -> Messages.syncTheUnitSyncRelayRejectedAChangeAsInvalidMessage()
-        }
-        reportError(message, SyncIssueKind.SECURITY)
-        if (retryable) {
-            scheduleDeliveryRetry(pending)
-        } else {
-            deliveryRetryJobs.remove(pending.requestId)?.cancel()
-            if (code in setOf("stale", "not-found", "counter-window", "session-replaced", "session-mismatch", "hello-required")) {
-                ws?.cancel()
-            }
-        }
+    /** Relay says stale and still holds exactly the stamp we reserved: that's our write. */
+    private fun ownStampStillPersisted(pending: PendingOutboundDelivery): Boolean {
+        val replay = replayState ?: return false
+        val stamp = VersionStamp.parse(pending.version) ?: return false
+        return stamp.actorId == myActorId && replay.getStamp(pending.wireObjectId) == stamp
     }
 
     private fun localObjectExists(localId: String): Boolean =
@@ -2079,27 +3349,29 @@ class SyncManager(
         }
         val rawId = rec.optString("id").ifEmpty { return }
         val v = strictVersion(rec, "v") ?: return
-        // Monotonic per-id version: reject anything <= the highest we've applied,
-        // and keep rejecting even after a delete (versions[id] survives as a
-        // tombstone) so a relay can't resurrect a deleted object by replaying an
-        // older-but-validly-signed put.
-        val id = acceptedLegacySyncRecordId(rawId, v, versions) ?: return
+        val by = rec.optString("by")
+        // Monotonic per-id (v, by): reject anything not newer than what we
+        // applied, and keep rejecting after a delete (versions[id] survives as
+        // a tombstone) so a relay can't resurrect a deleted object by replaying
+        // an older-but-validly-signed put. Either case is fine on the wire,
+        // state is keyed by lowercase (S3-01), equal v goes to the larger by (S3-14).
+        val id = acceptedLegacySyncRecordId(rawId, v, by, versions, lastByV2) ?: return
         val key = roomKey ?: return
         val kind = rec.optString("kind", "unknown")
-        val by = rec.optString("by")
         val ctB64 = rec.optString("ct")
         if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return
-        val aad = SyncCrypto.aad(id, v, kind)
+        // AEAD and signature cover the id exactly as the sender wrote it
+        val aad = SyncCrypto.aad(rawId, v, kind)
         val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
         val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
         val content = inner.optString("c")
         // Device authorship: the write must be signed by the key pinned to `by`
         // (TOFU). A room member can't forge a write as another established
         // device; a key that doesn't match the pin is rejected as a swap.
-        if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(id, v, kind, by, content))) return
+        if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(rawId, v, kind, by, content))) return
         val doc = drawingStore.committedDocument.value
         val fallback = doc.layers.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID
-        val parsed = runCatching {
+        val imported = runCatching {
             GeoJsonImporter.parse(
                 content,
                 existingLayers = doc.layers,
@@ -2108,7 +3380,13 @@ class SyncManager(
                 keepRingAnchors = true,
             )
         }.getOrNull() ?: return
-        if (!isValidLegacySyncPut(id, kind, parsed)) return
+        if (!isValidLegacySyncPut(rawId, kind, imported)) return
+        // the local object lives under the lowercase key too, otherwise the next
+        // diff would see two ids and echo a delete back (S3-01 in reverse)
+        val parsed = imported.copy(
+            waypoints = imported.waypoints.map { if (it.id == id) it else it.copy(id = id) },
+            drawings = imported.drawings.map { if (it.id == id) it else it.copy(id = id) },
+        )
 
         if (forcedLegacyDeletes.containsKey(id)) {
             // An ack-lost local delete wins over an older reconnect snapshot.
@@ -2116,12 +3394,14 @@ class SyncManager(
             // fresh authenticated tombstone after the snapshot fence.
             clock = maxOf(clock, v)
             versions[id] = v
+            lastByV2[id] = by
             return
         }
         if (id in forcedLocalDiff) {
             val current = reexport(id)
             clock = maxOf(clock, v)
             versions[id] = v
+            lastByV2[id] = by
             if (current == content) {
                 lastContent[id] = current
                 kindById[id] = kind
@@ -2145,6 +3425,7 @@ class SyncManager(
         // durable model apply. Malformed records cannot poison the clock.
         clock = maxOf(clock, v)
         versions[id] = v
+        lastByV2[id] = by
         // re-export so echo guard matches what our next diff will see
         // (import -> export must be a fixed point)
         kindById[id] = kind
@@ -2161,17 +3442,17 @@ class SyncManager(
     private fun applyDelete(rec: JSONObject, snapshotGeneration: Long? = null) {
         val rawId = rec.optString("id").ifEmpty { return }
         val v = strictVersion(rec, "v") ?: return
-        val id = acceptedLegacySyncRecordId(rawId, v, versions) ?: return
-        val key = roomKey ?: return
         val by = rec.optString("by")
+        val id = acceptedLegacySyncRecordId(rawId, v, by, versions, lastByV2) ?: return
+        val key = roomKey ?: return
         val ctB64 = rec.optString("ct")
         if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return
         // Open the sealed proof (proves room-key possession, so a relay with no
         // room key can't forge a delete) then verify the device signature.
-        val aad = SyncCrypto.aad(id, v, "del")
+        val aad = SyncCrypto.aad(rawId, v, "del")
         val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
         val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
-        if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(id, v, "del", by, ""))) return
+        if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(rawId, v, "del", by, ""))) return
         val recovery = forcedLegacyDeletes[id]
         if (recovery != null) {
             val exactSnapshotConfirmation = snapshotGeneration != null &&
@@ -2186,8 +3467,9 @@ class SyncManager(
                 )
             clock = maxOf(clock, v)
             versions[id] = v
+            lastByV2[id] = by
             if (exactSnapshotConfirmation) {
-                deliveryRetryJobs.remove(recovery.requestId)?.cancel()
+                dropDeliveryTimers(recovery.requestId)
                 forcedLegacyDeletes.remove(id)
                 lastContent.remove(id)
                 kindById.remove(id)
@@ -2198,6 +3480,7 @@ class SyncManager(
         if (id in forcedLocalDiff && localObjectExists(id)) {
             clock = maxOf(clock, v)
             versions[id] = v
+            lastByV2[id] = by
             return
         }
         val kindLabel = when (kindById[id]) {
@@ -2214,6 +3497,7 @@ class SyncManager(
         }
         clock = maxOf(clock, v)
         versions[id] = v
+        lastByV2[id] = by
         lastContent.remove(id); kindById.remove(id)
         _remoteUpdates.tryEmit(L10n.text("%1\$s deleted by another device", kindLabel))
     }
@@ -2232,27 +3516,53 @@ class SyncManager(
         if (!SyncIdentity.helloAckMatches(
                 actor, sd, expectedVs, msg.optString("by"), msg.optString("sd"), msg.optString("vs"))) return
         awaitingHelloAck = false
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
-        reconnectBackoff.reset()
+        // not a backoff reset: that waits for the first op-ack or 30 s connected
+        onSessionConnected()
+        rejectedHelloEpoch = null
+        liveWindowResync.clearPending()
         _status.value = Status.CONNECTED
         startChatSessionV3()
         refreshChatAvailability()
         _lastError.value = issueLifecycle.connectionSucceeded(
             atGeneration = activeConnectionGeneration,
-            verifiedCleanSnapshot = true,
+            verifiedCleanSnapshot = pendingVerifiedClean,
         )?.pendingMessage
         // A reconnect rotates the v3 session domain, so publish on the new
         // authenticated transport immediately. A still-recent GPS fix may seed
         // this session once; older fixes must wait for a new OS callback.
         presenceCadence.beginAuthenticatedSession()
+        presencePolicy.beginSession()
+        startPresenceFenceFlush()
         sendCurrentOrRequestFreshForegroundPresence(forceFreshRequest = true)
-        replayState?.recoverableLocalDeletes(actor, myPublicKey)?.forEach { (wireId, stamp) ->
+        // paced like everything else, so a departed author's tombstone backlog
+        // can't trip the relay's rate window right after hello-ack
+        if (!mutationsPaused) replayState?.recoverableLocalDeletes(actor, myPublicKey)?.forEach { (wireId, stamp) ->
             if (!shouldResendRecoverableDelete(wireId, stamp, snapshotConfirmedLocalDeletes)) return@forEach
+            if (wireId in skippedWireIds) return@forEach
             val localId = findLocalIdForWireId(wireId) ?: "wire:$wireId"
+            if (isSuppressed(localId)) return@forEach
             sendDelV3(localId, wireId, stamp)
         }
         snapshotConfirmedLocalDeletes.clear()
         syncLocalState(waypointStore.committedWaypoints.value, drawingStore.committedDocument.value)
+    }
+
+    /** Flush accepted presence counters at most every 60 s while they're ahead of disk (17.1). */
+    private fun startPresenceFenceFlush() {
+        presenceFlushJob?.cancel()
+        val socket = ws ?: return
+        presenceFlushJob = scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(PresenceFencePersistence.FLUSH_MS)
+                lifecycleGate.runIfActive {
+                    if (ws !== socket) return@runIfActive
+                    val replay = replayState ?: return@runIfActive
+                    // a failed flush isn't a safety problem, the stride write before exposure is
+                    if (replay.hasUnflushedPresence && !replay.isInBatch) replay.flushPresence()
+                }
+                if (ws !== socket) return@launch
+            }
+        }
     }
 
     private fun applyHelloV3(msg: JSONObject) {
@@ -2275,7 +3585,7 @@ class SyncManager(
             remotePresenceCandidateClusters.remove(by)
         }
         if (activeSessions[by]?.second != sd) {
-            _peers.value[by]?.let { peer ->
+            peersView[by]?.let { peer ->
                 val nowUptimeMs = System.nanoTime() / 1_000_000L
                 val updated = if (peer.sessionDomain == sd) {
                     PresenceExpiryPolicy.transportRestored(peer, nowUptimeMs)
@@ -2283,16 +3593,16 @@ class SyncManager(
                     PresenceExpiryPolicy.markedStale(peer, nowUptimeMs)
                 }
                 if (updated != peer) {
-                    _peers.value = _peers.value + (by to updated)
+                    peersView = peersView + (by to updated)
                 }
             }
         }
         activeSessions[by] = pub to sd
-        _onlineMembers.value = onlineMemberTracker.authenticatedHello(
+        publishOnlineMembers(onlineMemberTracker.authenticatedHello(
             clientId = by,
             sessionDomain = sd,
             nowMs = System.currentTimeMillis(),
-        )
+        ))
     }
 
     private fun applyChatKeyV3(msg: JSONObject) {
@@ -2490,6 +3800,7 @@ class SyncManager(
                 )
             }
             TacMapChatInboundResult.REPLAY_REJECTED -> Unit
+            TacMapChatInboundResult.REPLAY_TABLE_FULL -> surfaceOnce(SyncIssueCode.CHAT_REPLAY_FULL, "join")
             TacMapChatInboundResult.STORE_UNAVAILABLE -> {
                 clearChatTransport(markPendingFailed = true)
                 refreshChatAvailability()
@@ -2497,153 +3808,98 @@ class SyncManager(
         }
     }
 
-    private data class OuterV3(
-        val wireId: String,
-        val stamp: VersionStamp,
-        val stampText: String,
-        val actorId: String,
-        val pub: String,
-        val pubRaw: ByteArray,
-        val sessionDomain: ByteArray,
-        val kind: String,
-        val ciphertext: ByteArray,
-        val deleted: Boolean,
-    )
-
-    private fun parseOuterV3(rec: JSONObject): OuterV3? {
-        val wireId = rec.optString("id").ifEmpty { return null }
-        if (SyncIdentity.urlB64Decode32(wireId) == null) return null
-        val vsStr = rec.optString("vs").ifEmpty { return null }
-        val vs = VersionStamp.parse(vsStr) ?: return null
-        val by = rec.optString("by").ifEmpty { return null }
-        val pub = rec.optString("pub").ifEmpty { return null }
-        val sdText = rec.optString("sd").ifEmpty { return null }
+    /** One validator per room session for live records, pins read straight from replay state. */
+    private fun liveValidatorOrNull(): SnapshotValidator? {
+        liveValidator?.let { return it }
         val keys = v3Keys ?: return null
-        val replay = replayState ?: return null
-        val pubRaw = SyncIdentity.urlB64Decode32(pub) ?: return null
-        val sd = SyncIdentity.urlB64Decode32(sdText) ?: return null
-        if (vs.actorId != by || SyncIdentity.actorId(keys.roomIdRaw, pubRaw) != by) return null
-        if (replay.getPinnedPubkey(by)?.let { it != pub } == true) return null
-        val type = rec.optString("t")
-        if (type.isNotEmpty() && type != "put" && type != "del") return null
-        val deletedField = rec.opt("deleted")
-        if (deletedField != null && deletedField !is Boolean) return null
-        val storedDeleted = deletedField as? Boolean ?: false
-        if ((type == "put" && storedDeleted) || (type == "del" && deletedField == false)) return null
-        val deleted = type == "del" || storedDeleted
-        val kind = rec.optString("kind").ifEmpty { return null }
-        if (!kind.matches(Regex("^[A-Za-z0-9_-]{1,32}$"))) return null
-        if ((deleted && kind != "del") || (!deleted && kind !in setOf("waypoint", "drawing"))) return null
-        val ctB64 = rec.optString("ct")
-        if (ctB64.isEmpty() || ctB64.length > MAX_BASE64_BYTES) return null
-        val ct = runCatching { SyncCrypto.decodeBase64(ctB64) }.getOrNull() ?: return null
-        if (ct.size < 28 || SyncCrypto.encodeBase64(ct) != ctB64) return null
-        return OuterV3(wireId, vs, vsStr, by, pub, pubRaw, sd, kind, ct, deleted)
+        val key = roomKey ?: return null
+        val validator = SnapshotValidator(
+            key, keys.roomIdRaw, keys.metadataKey,
+            pinnedKey = { actor -> replayState?.getPinnedPubkey(actor) },
+            displayDensity = displayDensity,
+        )
+        liveValidator = validator
+        return validator
     }
 
-    private fun validateRecordV3(rec: JSONObject): ValidatedV3? {
-        val outer = parseOuterV3(rec) ?: return null
-        val key = roomKey ?: return null
+    /**
+     * localId <-> wireId for this room session (plans/04 section 18), built
+     * once and folded forward from the store contents. Null without keys or
+     * stores.
+     */
+    private fun ensureWireIndex(): WireIdIndex? {
         val keys = v3Keys ?: return null
-        val aad = SyncCrypto.aadV3(outer.wireId, outer.stampText, outer.kind)
-        val plain = SyncCrypto.open(key, outer.ciphertext, aad) ?: return null
-        val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return null
-        val sig = inner.optString("sig").ifEmpty { return null }
-        if (outer.deleted) {
-            val hash = SyncIdentity.sha256(ByteArray(0))
-            val preimage = SyncIdentity.buildPreimage(
-                SyncIdentity.DOMAIN_DELETE, keys.roomIdRaw, outer.actorId, outer.sessionDomain,
-                VersionStamp.counterHex16(outer.stamp.counter), outer.wireId, "del", hash
-            )
-            if (!SyncSigning.verify(outer.pub, preimage, sig)) return null
-            return ValidatedV3.Delete(
-                SyncReplayState.AuthenticatedMutation(
-                    outer.wireId, outer.stamp, outer.pub, null, deleted = true
-                ),
-                findLocalIdForWireId(outer.wireId)
-            )
+        val waypoints = waypointStoreRef ?: return null
+        val drawings = drawingStoreRef ?: return null
+        val index = wireIndex ?: WireIdIndex(keys.metadataKey).also { created ->
+            wireIndex = created
+            lastContent.keys.forEach(created::add)
         }
-        val content = inner.optString("c").ifEmpty { return null }
-        val contentBytes = content.toByteArray(Charsets.UTF_8)
-        val payloadHash = SyncIdentity.sha256(contentBytes)
-        val preimage = SyncIdentity.buildPreimage(
-            SyncIdentity.DOMAIN_PUT, keys.roomIdRaw, outer.actorId, outer.sessionDomain,
-            VersionStamp.counterHex16(outer.stamp.counter), outer.wireId, outer.kind, payloadHash
-        )
-        if (!SyncSigning.verify(outer.pub, preimage, sig)) return null
-        val doc = drawingStore.committedDocument.value
-        val fallback = doc.layers.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID
-        val parsed = runCatching {
-            GeoJsonImporter.parse(
-                content,
-                existingLayers = doc.layers,
-                fallbackLayerId = fallback,
-                density = displayDensity,
-                keepRingAnchors = true,
-            )
-        }.getOrNull() ?: return null
-        if (parsed.invalidSkipped != 0) return null
-        val localId = when (outer.kind) {
-            "waypoint" -> parsed.waypoints.singleOrNull()?.id?.takeIf { parsed.drawings.isEmpty() }
-            "drawing" -> parsed.drawings.singleOrNull()?.id?.takeIf { parsed.waypoints.isEmpty() }
-            else -> null
-        } ?: return null
-        val expectedWireId = runCatching {
-            SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(localId))
-        }.getOrNull() ?: return null
-        if (expectedWireId != outer.wireId) return null
-        return ValidatedV3.Put(
-            SyncReplayState.AuthenticatedMutation(
-                outer.wireId, outer.stamp, outer.pub, SyncIdentity.bytesToHex(payloadHash), deleted = false
-            ),
-            parsed,
-            localId,
-            expectedModelHash(parsed, localId, doc.layers) ?: return null
-        )
+        index.refresh(waypoints.committedWaypoints.value, drawings.committedDocument.value.features)
+        return index
     }
 
     private fun applyLiveRecordV3(rec: JSONObject) {
-        val validated = validateRecordV3(rec) ?: return
-        val replay = replayState ?: return
-        if (!replay.canAcceptLive(validated.mutation.wireObjectId, validated.mutation.stamp)) return
-        val priorHash = modelContentHash(validated.localModelId())
-        if (!replay.commitRemoteAuthenticated(
-                SyncReplayState.RemoteMutation(
-                    validated.mutation, priorHash, validated.localModelId(),
-                    modelRevisionJournal.generation(validated.localModelId()), validated.expectedModelHash()))) {
-            return persistenceFailure()
-        }
-        resolvingPendingModel = true
+        val wireId = (rec.opt("id") as? String)?.takeIf { SyncIdentity.urlB64Decode32(it) != null } ?: return
+        val openedHere = liveBatch == null
+        val batch = openLiveBatch() ?: return
         try {
-            if (!resolvePendingModelApplication(validated, priorHash)) return persistenceFailure()
+            val validator = liveValidatorOrNull() ?: return
+            val checked = validator.check(rec, wireId, batch.layers)
+            var validated = when (checked) {
+                is V3Check.Skip -> {
+                    recordSkip(wireId, checked.reason.category)
+                    val code = if (checked.reason.category == SnapshotRecordCategory.SKIP_UNVERIFIED) {
+                        SyncIssueCode.SKIPPED_UNVERIFIED
+                    } else {
+                        SyncIssueCode.SKIPPED_UNSUPPORTED
+                    }
+                    surfaceOnce(code, "join", issueMessage(code, 1))
+                    return
+                }
+                is V3Check.Valid -> checked.record
+            }
+            if (validated is ValidatedV3.Delete) validated = validated.copy(localId = findLocalIdForWireId(wireId))
+            val replay = batch.replay
+            when (replay.liveDecision(validated.mutation.wireObjectId, validated.mutation.stamp)) {
+                SyncReplayState.LiveDecision.NOT_NEWER -> return
+                SyncReplayState.LiveDecision.OUTSIDE_WINDOW -> {
+                    // authentic and newer, but our baseline is too far behind: resync (section 4)
+                    onLiveWindowRejection()
+                    return
+                }
+                SyncReplayState.LiveDecision.ACCEPT -> Unit
+            }
+            // the model before this batch; nothing in the batch has touched it yet
+            val priorHash = modelContentHash(validated.localModelId)
+            if (!replay.commitRemoteAuthenticated(
+                    SyncReplayState.RemoteMutation(
+                        validated.mutation, priorHash, validated.localModelId,
+                        modelRevisionJournal.generation(validated.localModelId), validated.expectedModelHash))) {
+                return persistenceFailure()
+            }
+            // later records in the same batch see this one's layers (section 3)
+            SnapshotValidator.stage(batch.layers, checked)
+            batch.records += validated
         } finally {
-            resolvingPendingModel = false
+            if (openedHere) flushLiveBatch()
         }
     }
 
-    private fun ValidatedV3.localModelId(): String? = when (this) {
-        is ValidatedV3.Put -> localId
-        is ValidatedV3.Delete -> localId
-    }
-
-    private fun ValidatedV3.expectedModelHash(): String? = when (this) {
-        is ValidatedV3.Put -> expectedModelHash
-        is ValidatedV3.Delete -> null
-    }
-
-    /** Receiver-local fixed-point hash; the authenticated payload hash remains sender bytes. */
-    private fun expectedModelHash(
-        parsed: GeoJsonImporter.Result,
-        localId: String,
-        existingLayers: List<com.tacmap.drawings.DrawingLayer>,
-    ): String? {
-        val layers = (existingLayers + parsed.newLayers).distinctBy { it.id }
-        val content = parsed.waypoints.singleOrNull { it.id == localId }?.let {
-            GeoJsonExporter.export(listOf(it), emptyList(), layers, density = displayDensity)
-        } ?: parsed.drawings.singleOrNull { it.id == localId }?.let {
-            GeoJsonExporter.export(emptyList(), listOf(it), layers, density = displayDensity)
-        } ?: return null
-        return SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
+    private fun onLiveWindowRejection() {
+        if (liveWindowResync.windowRejection(nowMs())) {
+            closeLocally(SyncLocalClose.LIVE_WINDOW_RESYNC)
+            return
+        }
+        if (liveResyncJob?.isActive == true) return
+        val at = liveWindowResync.nextTickMs(nowMs()) ?: return
+        val socket = ws ?: return
+        liveResyncJob = scope.launch {
+            kotlinx.coroutines.delay((at - nowMs()).coerceAtLeast(0L))
+            lifecycleGate.runIfActive {
+                if (ws === socket && liveWindowResync.tick(nowMs())) closeLocally(SyncLocalClose.LIVE_WINDOW_RESYNC, socket)
+            }
+        }
     }
 
     private fun modelContentHash(localId: String?): String? {
@@ -2653,115 +3909,166 @@ class SyncManager(
         return SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
     }
 
-    /** Resolve durable model work without overwriting a divergent offline edit. */
-    private fun resolvePendingModelApplication(validated: ValidatedV3, currentHash: String?): Boolean {
-        val replay = replayState ?: return false
-        val mutation = validated.mutation
-        return when (replay.pendingModelDecision(
-            mutation, currentHash, modelRevisionJournal.generation(validated.localModelId()))) {
-            SyncReplayState.PendingModelDecision.APPLY_INCOMING -> {
-                applyValidatedV3(validated)
-                val expected = validated.expectedModelHash()
-                if (modelContentHash(validated.localModelId()) != expected) false
-                else replay.clearPendingModelApplication(mutation)
-            }
-            SyncReplayState.PendingModelDecision.ALREADY_APPLIED -> {
-                markModelBaseline(validated)
-                replay.clearPendingModelApplication(mutation)
-            }
-            SyncReplayState.PendingModelDecision.LOCAL_DIVERGED -> {
-                validated.localModelId()?.let { forcedLocalDiff += it }
-                replay.clearPendingModelApplication(mutation)
-            }
-            SyncReplayState.PendingModelDecision.NONE -> {
-                // An exact resolved record may establish the echo baseline, but
-                // must never overwrite a model that has since diverged.
-                if (replay.isExactPersistedMutation(mutation)) {
-                    val expected = validated.expectedModelHash()
-                    if (currentHash == expected) markModelBaseline(validated)
-                    else validated.localModelId()?.let { forcedLocalDiff += it }
+    /**
+     * Model side of one snapshot or live batch, without overwriting a
+     * divergent offline edit. Every record is decided against the model as it
+     * is now; the incoming ones go in with one write per store; every receiver
+     * hash is checked. Returns the markers to clear (in one replay write), or
+     * null when a store write or a hash check failed.
+     */
+    private fun applyRemoteRecords(records: List<ValidatedV3>): List<SyncReplayState.AuthenticatedMutation>? {
+        val replay = replayState ?: return null
+        if (records.isEmpty()) return emptyList()
+        val before = ModelLookup()
+        val clears = ArrayList<SyncReplayState.AuthenticatedMutation>()
+        val incoming = ArrayList<ValidatedV3>()
+        val baselines = ArrayList<ValidatedV3>()
+        for (record in records) {
+            val mutation = record.mutation
+            val current = before.hash(record.localModelId)
+            when (replay.pendingModelDecision(
+                mutation, current, modelRevisionJournal.generation(record.localModelId))) {
+                SyncReplayState.PendingModelDecision.APPLY_INCOMING -> {
+                    incoming += record
+                    clears += mutation
                 }
-                true
+                SyncReplayState.PendingModelDecision.ALREADY_APPLIED -> {
+                    baselines += record
+                    clears += mutation
+                }
+                SyncReplayState.PendingModelDecision.LOCAL_DIVERGED -> {
+                    record.localModelId?.let { forcedLocalDiff += it }
+                    clears += mutation
+                }
+                SyncReplayState.PendingModelDecision.NONE -> {
+                    // An exact resolved record may establish the echo baseline, but
+                    // must never overwrite a model that has since diverged.
+                    if (replay.isExactPersistedMutation(mutation)) {
+                        if (current == record.expectedModelHash) baselines += record
+                        else record.localModelId?.let { forcedLocalDiff += it }
+                    }
+                }
+            }
+        }
+        val after = if (incoming.isEmpty()) before else {
+            if (!writeIncoming(incoming, before)) return null
+            ModelLookup()
+        }
+        for (record in incoming) {
+            if (after.hash(record.localModelId) != record.expectedModelHash) return null
+        }
+        for (record in incoming) {
+            markModelBaseline(record, after)
+            announceRemoteChange(record, before)
+        }
+        for (record in baselines) markModelBaseline(record, after)
+        return clears
+    }
+
+    /** One write per store for everything [incoming] adds, changes or deletes. */
+    private fun writeIncoming(incoming: List<ValidatedV3>, before: ModelLookup): Boolean {
+        val layerIds = before.document.layers.mapTo(HashSet()) { it.id }
+        val newLayers = ArrayList<com.tacmap.drawings.DrawingLayer>()
+        val waypointUpserts = ArrayList<Waypoint>()
+        val featureUpserts = ArrayList<DrawingFeature>()
+        val waypointRemovals = HashSet<String>()
+        val featureRemovals = HashSet<String>()
+        for (record in incoming) when (record) {
+            is ValidatedV3.Put -> {
+                // first one wins, same rule the validator staged with
+                for (layer in record.parsed.newLayers) if (layerIds.add(layer.id)) newLayers += layer
+                waypointUpserts += record.parsed.waypoints
+                featureUpserts += record.parsed.drawings
+            }
+            is ValidatedV3.Delete -> record.localId?.let { id ->
+                when (before.kind(id)) {
+                    "waypoint" -> waypointRemovals += id
+                    "drawing" -> featureRemovals += id
+                    // already gone counts as an idempotent success
+                }
+            }
+        }
+        if (!waypointStore.applyRemoteBatch(waypointUpserts, waypointRemovals, ModelMutationOrigin.REMOTE_SYNC)) return false
+        if (!drawingStore.applyRemoteBatch(newLayers, featureUpserts, featureRemovals, ModelMutationOrigin.REMOTE_SYNC)) return false
+        val index = wireIndex
+        for (record in incoming) {
+            if (record is ValidatedV3.Put) index?.add(record.localId)
+        }
+        return true
+    }
+
+    private fun announceRemoteChange(record: ValidatedV3, before: ModelLookup) {
+        when (record) {
+            is ValidatedV3.Put -> {
+                val objectName = record.parsed.waypoints.firstOrNull()?.name
+                    ?: record.parsed.drawings.firstOrNull()?.name ?: L10n.text("Object")
+                val label = if (record.kind == "waypoint") L10n.text("Waypoint") else L10n.text("Drawing")
+                _remoteUpdates.tryEmit(L10n.text("%1\$s '%2\$s' updated by another device", label, objectName))
+            }
+            is ValidatedV3.Delete -> {
+                val id = record.localId ?: return
+                val kindLabel = when (before.kind(id) ?: kindById[id]) {
+                    "drawing" -> L10n.text("Drawing")
+                    "waypoint" -> L10n.text("Waypoint")
+                    else -> L10n.text("Object")
+                }
+                _remoteUpdates.tryEmit(L10n.text("%1\$s deleted by another device", kindLabel))
             }
         }
     }
 
-    private fun markModelBaseline(validated: ValidatedV3) {
-        when (validated) {
+    private fun markModelBaseline(record: ValidatedV3, lookup: ModelLookup) {
+        when (record) {
             is ValidatedV3.Put -> {
-                val content = reexport(validated.localId)
+                val content = lookup.export(record.localId)
                 if (content.isNotEmpty()) {
-                    lastContent[validated.localId] = content
-                    kindById[validated.localId] = if (validated.parsed.waypoints.isNotEmpty()) "waypoint" else "drawing"
+                    lastContent[record.localId] = content
+                    kindById[record.localId] = record.kind
                 }
-                forcedLocalDiff.remove(validated.localId)
+                forcedLocalDiff.remove(record.localId)
             }
-            is ValidatedV3.Delete -> validated.localId?.let {
+            is ValidatedV3.Delete -> record.localId?.let {
                 lastContent.remove(it); kindById.remove(it); forcedLocalDiff.remove(it)
             }
         }
     }
 
-    /** Pending records omitted or contradicted by the snapshot cannot be
-     * repaired safely. Preserve the model and force it to win at a new stamp. */
-    private fun resolveUnmatchedPendingModelApplications(): Boolean {
-        val replay = replayState ?: return false
-        for (remote in replay.pendingRemoteMutations()) {
+    /**
+     * Pending records omitted or contradicted by the snapshot cannot be
+     * repaired safely. Preserve the model and force it to win at a new stamp.
+     * [alreadyResolved] are this snapshot's own markers, cleared with these.
+     */
+    private fun resolveUnmatchedPendingModelApplications(
+        alreadyResolved: List<SyncReplayState.AuthenticatedMutation>,
+    ): List<SyncReplayState.AuthenticatedMutation>? {
+        val replay = replayState ?: return null
+        val resolved = alreadyResolved.toHashSet()
+        val leftovers = replay.pendingRemoteMutations().filter { it.mutation !in resolved }
+        if (leftovers.isEmpty()) return emptyList()
+        val lookup = ModelLookup()
+        val clears = ArrayList<SyncReplayState.AuthenticatedMutation>(leftovers.size)
+        for (remote in leftovers) {
             val localId = remote.localModelId
-            val current = modelContentHash(localId)
-            val incoming = remote.expectedModelHash
-            if (current == incoming) {
-                markCurrentModelBaseline(localId)
+            if (lookup.hash(localId) == remote.expectedModelHash) {
+                markCurrentModelBaseline(localId, lookup)
             } else {
                 localId?.let { forcedLocalDiff += it }
             }
-            if (!replay.clearPendingModelApplication(remote.mutation)) return false
+            clears += remote.mutation
         }
-        return true
+        return clears
     }
 
-    private fun markCurrentModelBaseline(localId: String?) {
+    private fun markCurrentModelBaseline(localId: String?, lookup: ModelLookup) {
         localId ?: return
-        val content = reexport(localId)
+        val content = lookup.export(localId)
         if (content.isEmpty()) {
             lastContent.remove(localId); kindById.remove(localId)
         } else {
             lastContent[localId] = content
-            kindById[localId] = if (waypointStore.committedWaypoints.value.any { it.id == localId }) "waypoint" else "drawing"
+            kindById[localId] = lookup.kind(localId) ?: "drawing"
         }
         forcedLocalDiff.remove(localId)
-    }
-
-    private fun applyValidatedV3(validated: ValidatedV3) {
-        when (validated) {
-            is ValidatedV3.Put -> {
-                val doc = drawingStore.committedDocument.value
-                for (layer in validated.parsed.newLayers) {
-                    if (doc.layers.none { it.id == layer.id }) {
-                        if (!drawingStore.addLayerVerbatim(layer, ModelMutationOrigin.REMOTE_SYNC)) return
-                    }
-                }
-                if (!validated.parsed.waypoints.all(::upsertWaypoint)) return
-                if (!validated.parsed.drawings.all(::upsertDrawing)) return
-                val kind = if (validated.parsed.waypoints.isNotEmpty()) "waypoint" else "drawing"
-                kindById[validated.localId] = kind
-                lastContent[validated.localId] = reexport(validated.localId)
-                val objectName = validated.parsed.waypoints.firstOrNull()?.name
-                    ?: validated.parsed.drawings.firstOrNull()?.name ?: L10n.text("Object")
-                val label = if (kind == "waypoint") L10n.text("Waypoint") else L10n.text("Drawing")
-                _remoteUpdates.tryEmit(L10n.text("%1\$s '%2\$s' updated by another device", label, objectName))
-            }
-            is ValidatedV3.Delete -> validated.localId?.let { sourceId ->
-                val kindLabel = when (kindById[sourceId]) {
-                "drawing" -> L10n.text("Drawing")
-                "waypoint" -> L10n.text("Waypoint")
-                else -> L10n.text("Object")
-                }
-                if (!removeSyncedObject(sourceId, kindById[sourceId])) return
-                lastContent.remove(sourceId); kindById.remove(sourceId)
-                _remoteUpdates.tryEmit(L10n.text("%1\$s deleted by another device", kindLabel))
-            }
-        }
     }
 
     /** Every Sync delete is durable-before-publish. Missing objects count as an
@@ -2865,7 +4172,7 @@ class SyncManager(
         if (!payload.isValid()) return
         val nowUptimeMs = System.nanoTime() / 1_000_000L
         if (horizontalAccuracyMetres != null) {
-            val previous = _peers.value[by]?.let { old ->
+            val previous = peersView[by]?.let { old ->
                 old.horizontalAccuracyMetres?.let { oldAccuracy ->
                     PresenceLocationFix(old.lat, old.lon, oldAccuracy, old.receivedAtUptimeMs)
                 }
@@ -2880,7 +4187,7 @@ class SyncManager(
                 previous = previous,
                 candidate = candidate,
                 existingCluster = remotePresenceCandidateClusters[by],
-                allowSimulatorTeleport = PresenceLocationQuality.allowsSimulatorTeleport(),
+                allowSimulatorTeleport = env.allowsSimulatorTeleport(),
             )
             if (!evaluation.accepted) {
                 evaluation.nextCluster?.let { remotePresenceCandidateClusters[by] = it }
@@ -2910,10 +4217,10 @@ class SyncManager(
             horizontalAccuracyMetres = horizontalAccuracyMetres,
             receivedAtUptimeMs = nowUptimeMs,
         )
-        _peers.value = _peers.value + (by to peer)
+        peersView = peersView + (by to peer)
         val now = System.currentTimeMillis()
         onlineMemberTracker.authenticatedActivity(by, sdText, now)
-        _onlineMembers.value = onlineMemberTracker.updatePresenceMetadata(
+        publishOnlineMembers(onlineMemberTracker.updatePresenceMetadata(
             clientId = by,
             sessionDomain = sdText,
             callsign = payload.callsign,
@@ -2922,8 +4229,8 @@ class SyncManager(
             function = payload.function,
             isHQ = payload.isHQ,
             nowMs = now,
-        )
-        publishChatRecipients()
+        ))
+        publishChatRecipientsAfterCommit()
     }
 
     private fun legacyPresencePayload(obj: JSONObject): PresencePayloadV3 =
@@ -2954,27 +4261,8 @@ class SyncManager(
         return canonical.toString().toByteArray(Charsets.UTF_8)
     }
 
-    /**
-     * Reverse-lookup: given a v3 wire object ID, find the local UUID that maps to it.
-     * This is O(n) over local objects, which is fine for typical room sizes.
-     */
-    private fun findLocalIdForWireId(wireId: String): String? {
-        val keys = v3Keys ?: return null
-        for (id in lastContent.keys) {
-            val computed = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id))
-            if (computed == wireId) return id
-        }
-        // also check current stores
-        for (wp in waypointStore.committedWaypoints.value) {
-            val computed = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(wp.id))
-            if (computed == wireId) return wp.id
-        }
-        for (f in drawingStore.committedDocument.value.features) {
-            val computed = SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(f.id))
-            if (computed == wireId) return f.id
-        }
-        return null
-    }
+    /** Reverse lookup through the wire index; a miss means no local object, never a scan (section 18). */
+    private fun findLocalIdForWireId(wireId: String): String? = ensureWireIndex()?.localId(wireId)
 
     /** TOFU-pin [by]'s signing key and verify [signed] under it. Shared by
      *  object puts and deletes and by presence, so a device has one identity per
@@ -3042,9 +4330,9 @@ class SyncManager(
             _status.value != Status.CONNECTED || !presenceConfig.shareLocation
         ) return
 
-        val now = SystemClock.elapsedRealtimeNanos()
+        val now = syncClock.elapsedRealtimeNanos()
         val lastSuccessfulFix = presenceCadence.latestSuccessfulFixElapsedRealtimeNanos
-        val current = locationProvider?.invoke()
+        val current = currentLocationSample()
         val currentIsGenuinelyFresh = current != null && (
             presenceCadence.isAuthenticatedSessionSeedFix(
                 fixElapsedRealtimeNanos = current.elapsedRealtimeNanos,
@@ -3059,7 +4347,7 @@ class SyncManager(
             val interval = OpsecSettings.shared?.backgroundUnitSyncInterval?.value
                 ?: com.tacmap.settings.BackgroundUnitSyncInterval.DEFAULT
             if (sendPresenceAtCadence(
-                    location = checkNotNull(current),
+                    sample = checkNotNull(current),
                     isBackground = false,
                     backgroundInterval = interval,
                     nowElapsedRealtimeNanos = now,
@@ -3085,7 +4373,7 @@ class SyncManager(
                 requestedLocation.provider != android.location.LocationManager.GPS_PROVIDER
             ) return@request
             scope.launch {
-                val receivedAt = SystemClock.elapsedRealtimeNanos()
+                val receivedAt = syncClock.elapsedRealtimeNanos()
                 if (ws !== expectedSocket || activeConnectionGeneration != expectedGeneration ||
                     backgroundPresenceOnly || awaitingForegroundStores ||
                     _status.value != Status.CONNECTED || !presenceConfig.shareLocation ||
@@ -3099,7 +4387,7 @@ class SyncManager(
                 val interval = OpsecSettings.shared?.backgroundUnitSyncInterval?.value
                     ?: com.tacmap.settings.BackgroundUnitSyncInterval.DEFAULT
                 sendPresenceAtCadence(
-                    location = requestedLocation,
+                    sample = PresenceFixSample.from(requestedLocation),
                     isBackground = false,
                     backgroundInterval = interval,
                     nowElapsedRealtimeNanos = receivedAt,
@@ -3114,12 +4402,12 @@ class SyncManager(
     }
 
     private fun sendPresenceAtCadence(
-        location: Location,
+        sample: PresenceFixSample,
         isBackground: Boolean,
         backgroundInterval: com.tacmap.settings.BackgroundUnitSyncInterval,
         nowElapsedRealtimeNanos: Long,
     ): Boolean {
-        val fixElapsedRealtimeNanos = location.elapsedRealtimeNanos
+        val fixElapsedRealtimeNanos = sample.elapsedRealtimeNanos
         if (!presenceCadence.isSendDue(
                 fixElapsedRealtimeNanos = fixElapsedRealtimeNanos,
                 nowElapsedRealtimeNanos = nowElapsedRealtimeNanos,
@@ -3127,9 +4415,19 @@ class SyncManager(
                 backgroundInterval = backgroundInterval,
             )
         ) return false
-        val qualityFix = PresenceLocationQuality.fromLocation(location) ?: return false
-        val heading = if (location.hasBearing()) location.bearing.toDouble() else 0.0
-        val speed = if (location.hasSpeed()) location.speed.toDouble() else 0.0
+        val qualityFix = sample.qualityFix() ?: return false
+        val heading = sample.bearingDegrees ?: 0.0
+        val speed = sample.speedMps ?: 0.0
+        // foreground only: a parked unit sends a 20 s heartbeat instead of every 5 s (S5-10)
+        val policyFix = PresenceSendPolicy.Fix(
+            lat = sample.latitude,
+            lon = sample.longitude,
+            speedMps = sample.speedMps,
+            courseDeg = sample.bearingDegrees,
+            horizontalAccuracyM = sample.accuracyMetres,
+        )
+        val policyConfig = presenceFingerprint()
+        if (!isBackground && !presencePolicy.shouldSend(policyFix, nowMs(), policyConfig)) return false
         if (!PresenceLocationQuality.hasValidWireValues(
                 qualityFix.latitude,
                 qualityFix.longitude,
@@ -3141,7 +4439,7 @@ class SyncManager(
             previous = lastGoodLocalPresenceFix,
             candidate = qualityFix,
             existingCluster = localPresenceCandidateCluster,
-            allowSimulatorTeleport = PresenceLocationQuality.allowsSimulatorTeleport(),
+            allowSimulatorTeleport = env.allowsSimulatorTeleport(),
         )
         localPresenceCandidateCluster = qualityEvaluation.nextCluster
         if (!qualityEvaluation.accepted) return false
@@ -3153,19 +4451,25 @@ class SyncManager(
             backgroundInterval = backgroundInterval,
         ).toInt()
         val successful = if (protocolVersion == 3) {
-            sendPresenceV3(location, retentionSeconds)
+            sendPresenceV3(sample, retentionSeconds)
         } else {
-            sendPresenceV2(location)
+            sendPresenceV2(sample)
         }
         presenceCadence.recordSendResult(
             successful = successful,
             fixElapsedRealtimeNanos = fixElapsedRealtimeNanos,
-            completedAtElapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos(),
+            completedAtElapsedRealtimeNanos = syncClock.elapsedRealtimeNanos(),
         )
+        if (successful && !isBackground) presencePolicy.recordSent(policyFix, nowMs(), policyConfig)
         return successful
     }
 
-    private fun sendPresenceV2(loc: Location): Boolean {
+    /** The parts of the presence config peers see; a change sends right away. */
+    private fun presenceFingerprint(): List<Any> = presenceConfig.let {
+        listOf(it.callsign, it.affiliation, it.echelon, it.function, it.isHQ)
+    }
+
+    private fun sendPresenceV2(loc: PresenceFixSample): Boolean {
         val key = roomKey ?: return false
         val cfg = presenceConfig
         if (!cfg.shareLocation) return false
@@ -3173,8 +4477,8 @@ class SyncManager(
         val ts = System.currentTimeMillis()
         val lat = loc.latitude
         val lon = loc.longitude
-        val heading = if (loc.hasBearing()) loc.bearing.toDouble() else 0.0
-        val speed = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0
+        val heading = loc.bearingDegrees ?: 0.0
+        val speed = loc.speedMps ?: 0.0
         if (!lat.isFinite() || lat !in -90.0..90.0 ||
             !lon.isFinite() || lon !in -180.0..180.0 ||
             !heading.isFinite() || !speed.isFinite()
@@ -3206,7 +4510,7 @@ class SyncManager(
         return sendPresenceFrameIfConfigCurrent(cfg, frame)
     }
 
-    private fun sendPresenceV3(loc: Location, retentionSeconds: Int): Boolean {
+    private fun sendPresenceV3(loc: PresenceFixSample, retentionSeconds: Int): Boolean {
         if (_status.value != Status.CONNECTED) return false
         val key = roomKey ?: return false
         val keys = v3Keys ?: return false
@@ -3217,10 +4521,11 @@ class SyncManager(
         val callsign = boundCallsign(cfg.callsign)
         val lat = loc.latitude
         val lon = loc.longitude
-        val heading = if (loc.hasBearing()) loc.bearing.toDouble() else 0.0
-        val speed = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0
+        val heading = loc.bearingDegrees ?: 0.0
+        val speed = loc.speedMps ?: 0.0
         if (presenceCounter >= VersionStamp.MAX_COUNTER) {
-            failConnection()
+            // counter space is gone for this session domain, rotate to a fresh one
+            failConnection(SyncLocalClose.LIVENESS_TIMEOUT)
             return false
         }
         val counter = ++presenceCounter
@@ -3251,7 +4556,7 @@ class SyncManager(
         envelope.put("p", exact.standardBase64)
         envelope.put("pub", myPublicKey)
         envelope.put("sig", sig)
-        val accuracyPayload = PresenceAccuracyV3.encodePayload(loc.accuracy.toDouble()) ?: return false
+        val accuracyPayload = PresenceAccuracyV3.encodePayload(loc.accuracyMetres ?: return false) ?: return false
         val accuracyPreimage = SyncIdentity.buildPreimage(
             SyncIdentity.DOMAIN_PRESENCE, keys.roomIdRaw, actor, sd,
             VersionStamp.counterHex16(vs.counter), "", PresenceAccuracyV3.SIGNATURE_KIND,
@@ -3297,7 +4602,10 @@ class SyncManager(
         if (!presenceConfig.shareLocation || presenceConfig != expectedConfig) {
             false
         } else {
-            sendFrame(frame)
+            // the pacer re-checks consent under the same lock right before the write
+            enqueueFrame(SyncOutboundClass.PRESENCE, frame, guard = {
+                presenceConfig.shareLocation && presenceConfig == expectedConfig
+            })
         }
     }
 
@@ -3423,10 +4731,9 @@ class SyncManager(
             .put("isHQ", cfg.isHQ)
             .toString()
         val sealed = runCatching {
-            Base64.encodeToString(
+            java.util.Base64.getEncoder().encodeToString(
                 SealedEnvelope.sealFile(
                     SafeStore.keyProvider.key(), jsonStr.toByteArray(Charsets.UTF_8), PRESENCE_LABEL),
-                Base64.NO_WRAP
             )
         }.getOrNull() ?: return false // key locked/unavailable: preserve disk + legacy
         return DurablePreferenceCommit.preferences(
@@ -3490,7 +4797,7 @@ class SyncManager(
     private fun readSealedPresenceConfig(): PresenceConfig? {
         val stored = prefs.getString(KEY_PRESENCE, null) ?: return null
         val obj = runCatching {
-            val blob = Base64.decode(stored, Base64.NO_WRAP)
+            val blob = java.util.Base64.getDecoder().decode(stored)
             SealedEnvelope.openFile(SafeStore.keyProvider.key(), blob, PRESENCE_LABEL)
                 ?.let { JSONObject(String(it, Charsets.UTF_8)) }
         }.getOrNull() ?: return null
@@ -3541,7 +4848,7 @@ class SyncManager(
         prefs.getString(KEY_DEVICE_SEED, null)?.let { stored ->
             val seed = try {
                 SealedEnvelope.openFile(
-                    SafeStore.keyProvider.key(), Base64.decode(stored, Base64.NO_WRAP), DEVICE_SEED_LABEL)
+                    SafeStore.keyProvider.key(), java.util.Base64.getDecoder().decode(stored), DEVICE_SEED_LABEL)
             } catch (t: Throwable) {
                 throw IllegalStateException(L10n.text("sync signing seed unavailable"), t)
             }
@@ -3550,8 +4857,8 @@ class SyncManager(
         }
         val seed = SyncSigning.generateSeed()
         try {
-            val sealed = Base64.encodeToString(
-                SealedEnvelope.sealFile(SafeStore.keyProvider.key(), seed, DEVICE_SEED_LABEL), Base64.NO_WRAP)
+            val sealed = java.util.Base64.getEncoder().encodeToString(
+                SealedEnvelope.sealFile(SafeStore.keyProvider.key(), seed, DEVICE_SEED_LABEL))
             if (!DurablePreferenceCommit.preferences(
                     preferences = prefs,
                     keys = setOf(KEY_DEVICE_SEED),
@@ -3571,8 +4878,9 @@ class SyncManager(
         snapshotSeq = null
         snapshotSawFinalPage = false
         snapshotItemCount = 0
-        snapshotInvalid = false
-        pendingSnapshot.clear()
+        snapshotSeqRegressed = false
+        snapshotRun?.close()
+        snapshotRun = null
         snapshotAggregateBytes = 0L
         snapshotWireIds.clear()
     }
@@ -3589,39 +4897,6 @@ class SyncManager(
         }
     }
 
-    /**
-     * v3 has two relay-controlled phases before publishing is safe: the fenced
-     * snapshot and the signed hello acknowledgement. Require progress in each
-     * phase so an incompatible or half-open relay cannot leave the UI stuck in
-     * SNAPSHOTTING forever. The socket identity and generation prevent an old
-     * timeout from cancelling a newer authenticated session.
-     */
-    private fun scheduleV3HandshakeTimeout(socket: SyncWebSocket, connectionGeneration: Long) {
-        v3HandshakeTimeoutJob?.cancel()
-        v3HandshakeTimeoutJob = scope.launch {
-            kotlinx.coroutines.delay(V3_HANDSHAKE_PROGRESS_TIMEOUT_MS)
-            val pending = _status.value == Status.CONNECTING ||
-                _status.value == Status.SNAPSHOTTING
-            if (!isCurrentPendingV3Handshake(
-                    expectedConnectionGeneration = connectionGeneration,
-                    activeConnectionGeneration = activeConnectionGeneration,
-                    expectedSocketIsCurrent = ws === socket,
-                    protocolVersion = protocolVersion,
-                    isHandshakePending = pending,
-                )
-            ) return@launch
-            v3HandshakeTimeoutJob = null
-            v3HandshakeFailureGeneration = connectionGeneration
-            _status.value = Status.OFFLINE
-            reportError(
-                Messages.syncUnitSyncSecureHandshakeTimedOutCheckTheRelayMessage(),
-                SyncIssueKind.CONNECTION,
-                connectionGeneration,
-            )
-            socket.cancel()
-        }
-    }
-
     private fun failV2Snapshot(socket: SyncWebSocket, connectionGeneration: Long, reason: String) {
         if (ws !== socket || activeConnectionGeneration != connectionGeneration) return
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
@@ -3632,7 +4907,8 @@ class SyncManager(
             SyncIssueKind.CONNECTION,
             connectionGeneration,
         )
-        socket.cancel()
+        // legacy rooms keep today's plain transient retry
+        closeLocally(SyncLocalClose.HANDSHAKE_STALL, socket)
     }
 
     internal fun boundCallsign(value: String): String {
@@ -3640,20 +4916,22 @@ class SyncManager(
         return if (count <= 64) value else value.substring(0, value.offsetByCodePoints(0, 64))
     }
 
-    private fun failSnapshot() {
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
+    /**
+     * Structural snapshot failure (plans/04 section 2.4): nothing from this
+     * snapshot is committed, say so once per session, close and retry with
+     * transient backoff. Three in a row without a hello-ack and we stop.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun failSnapshot(reason: SnapshotRecordReason) {
         v3HandshakeFailureGeneration = activeConnectionGeneration
         awaitingHelloAck = false
         resetSnapshot()
-        reportError(
-            Messages.syncSyncSnapshotAuthenticationFailedNoUnverifiedRoomDataWasMessage(),
-            SyncIssueKind.SECURITY,
-        )
-        failConnection(clearPeers = true)
+        surfaceOncePerSession(SyncIssueCode.SNAPSHOT_STRUCTURAL)
+        failConnection(SyncLocalClose.STRUCTURAL_SNAPSHOT, clearPeers = true)
     }
 
-    private fun failConnection(clearPeers: Boolean = false) {
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
+    private fun failConnection(reason: SyncLocalClose, clearPeers: Boolean = false) {
+        cancelSessionTimers()
         cancelForegroundPresenceRefresh()
         awaitingHelloAck = false
         _status.value = Status.OFFLINE
@@ -3662,11 +4940,12 @@ class SyncManager(
         remotePresenceCandidateClusters.clear()
         _onlineMembers.value = onlineMemberTracker.clear()
         if (clearPeers) _peers.value = emptyMap() else markPeersStale()
-        ws?.cancel()
+        closeLocally(reason)
     }
 
     private fun persistenceFailure() {
-        v3HandshakeTimeoutJob?.cancel(); v3HandshakeTimeoutJob = null
+        liveBatch?.failed = true
+        cancelSessionTimers()
         cancelForegroundPresenceRefresh()
         awaitingHelloAck = false
         wantConnected = false
@@ -3680,6 +4959,7 @@ class SyncManager(
             Messages.syncSyncStoppedBecauseRollbackStateCouldNotBeSecuredMessage(),
             SyncIssueKind.SECURITY,
         )
+        markLocalClose(SyncLocalClose.PERSISTENCE_FAILURE)
         ws?.close(4014, L10n.text("secure state unavailable"))
     }
 

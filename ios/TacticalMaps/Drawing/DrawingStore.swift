@@ -184,6 +184,54 @@ final class DrawingStore: ObservableObject {
         return additions.count
     }
 
+    /// Authenticated Unit Sync layers + drawings of one inbound batch or
+    /// snapshot in one durable write and one publish (contract 17). Layers are
+    /// added verbatim, first one wins, existing ids untouched. No undo step,
+    /// see WaypointStore.commitRemoteBatch. Returns false when nothing changed.
+    @discardableResult
+    func commitRemoteBatch(newLayers: [DrawingLayer],
+                           upserts: [DrawingShape],
+                           deletes: Set<UUID>) throws -> Bool {
+        guard !locked else { throw DrawingMutationError.locked }
+        var occupied = Set(layers.map(\.id))
+        let layerAdditions = newLayers.filter { occupied.insert($0.id).inserted }
+        var pending: [UUID: DrawingShape] = [:]
+        var appendOrder: [UUID] = []
+        for shape in upserts {
+            if pending.updateValue(shape, forKey: shape.id) == nil { appendOrder.append(shape.id) }
+        }
+        var candidateShapes: [DrawingShape] = []
+        candidateShapes.reserveCapacity(shapes.count + pending.count)
+        for shape in shapes {
+            if deletes.contains(shape.id) { continue }
+            if let replacement = pending.removeValue(forKey: shape.id) {
+                candidateShapes.append(replacement)
+            } else {
+                candidateShapes.append(shape)
+            }
+        }
+        for id in appendOrder {
+            if let added = pending[id], !deletes.contains(id) { candidateShapes.append(added) }
+        }
+        let shapesChanged = candidateShapes != shapes
+        guard !layerAdditions.isEmpty || shapesChanged else { return false }
+        let candidateLayers = layers + layerAdditions
+        let candidateActive = activeLayerID ?? candidateLayers.first?.id
+        do {
+            try write(layers: candidateLayers, shapes: candidateShapes, activeLayerID: candidateActive)
+        } catch {
+            pendingLoadError = Messages.couldNotSaveDrawingChangeToDiskMessage("").withArgument(0, error.displayMessage)
+            throw DrawingMutationError.persistenceFailed(error)
+        }
+        if !layerAdditions.isEmpty {
+            layers = candidateLayers
+            activeLayerID = candidateActive
+        }
+        if shapesChanged { shapes = candidateShapes }
+        if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
+        return true
+    }
+
     func isProtectedDefaultLayer(_ layer: DrawingLayer) -> Bool {
         protectedDefaultLayerIDs.contains(layer.id)
     }

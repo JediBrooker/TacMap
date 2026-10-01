@@ -624,18 +624,33 @@ struct ContentView: View {
         opsec.backgroundUnitSyncLocation
             && syncManager.presenceConfig.shareLocation
             && syncManager.room?.hasPrefix("3:") == true
-            && syncManager.status == .connected
+            // 21.4: a presence-only background reconnect keeps it eligible
+            && (syncManager.status == .connected || syncManager.backgroundPresenceSustained)
             && LiveLocationPermissionPolicy.shouldStartUpdates(
                 for: locationService.authorisationStatus
             )
     }
 
+    /// A transient .inactive (control centre, notification shade, an alert)
+    /// keeps Unit Sync and chat going when nothing actually locked. Only a
+    /// key lock, App Lock or detached stores end the session (S2-12).
     private var syncForegroundReady: Bool {
-        scenePhase == .active
-            && !appLockOverlayActive
-            && (!DataKey.isAuthBound || DataKey.isUnlocked)
-            && !waypointStore.locked
-            && !drawingStore.locked
+        _ = dataKeyEpoch
+        return SyncLifecyclePolicy.iosForegroundReady(
+            phase: syncScenePhase,
+            dataKeyAuthBound: DataKey.isAuthBound,
+            dataKeyUnlocked: DataKey.isUnlocked,
+            appLockOverlay: appLockOverlayActive,
+            storesLocked: waypointStore.locked || drawingStore.locked
+        )
+    }
+
+    private var syncScenePhase: SyncScenePhase {
+        switch scenePhase {
+        case .active: return .active
+        case .inactive: return .inactive
+        default: return .background
+        }
     }
 
     private func refreshUnitSyncLifecycle() {
@@ -752,7 +767,7 @@ struct ContentView: View {
                     calibration: calibration,
                     graphicsLocked: graphicsLocked,
                     drawingControlsPreview: drawingControlsPreview,
-                    peers: syncManager.peers,
+                    presence: syncManager.presence,
                     onPeerTap: presentDirectChat,
                     onMutationError: { missionMutationMessage = $0 },
                     onEmptyMapLongPress: { coordinate in
@@ -862,6 +877,9 @@ struct ContentView: View {
             if DataKey.isAuthBound && !DataKey.isUnlocked {
                 lockChatUIAndSecrets()
             }
+            // RootGate may lock an auth-bound key after our scenePhase handler
+            // already ran, so re-evaluate sync here too
+            refreshUnitSyncLifecycle()
         }
         .onReceive(NotificationCenter.default.publisher(for: AppLock.stateChanged)) { note in
             guard let value = note.object as? NSNumber else { return }
@@ -1091,7 +1109,8 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 restoreChatIfSecurityAllows()
-            } else {
+            } else if phase == .background || !syncForegroundReady {
+                // a transient .inactive that locked nothing keeps the chat key
                 lockChatUIAndSecrets()
             }
             refreshUnitSyncLifecycle()
@@ -1124,6 +1143,9 @@ struct ContentView: View {
             refreshUnitSyncLifecycle()
         }
         .onChange(of: syncManager.status) { _ in
+            refreshUnitSyncLifecycle()
+        }
+        .onChange(of: syncManager.backgroundPresenceSustained) { _ in
             refreshUnitSyncLifecycle()
         }
         .onChange(of: dataKeyEpoch) { _ in
