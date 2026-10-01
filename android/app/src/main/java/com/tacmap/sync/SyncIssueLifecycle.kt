@@ -29,14 +29,20 @@ internal class SyncIssueLifecycle {
     private var transientIssue: SyncIssue? = null
     private var persistentSecurityIssue: SyncIssue? = null
     // stop states and "changes paused": a later clean connection doesn't
-    // retire these, only dismiss, Retry or leaving the room does
+    // retire these, only Retry or leaving the room does (plans/04 0.1, 5)
     private var pinnedIssue: SyncIssue? = null
+    // once-per-join notices (skipped records, quota, too large, ...): they
+    // survive reconnects so the hello-ack of the very snapshot that raised
+    // one can't wipe it, gone on dismiss or leave. Same as iOS
+    private var noticeIssue: SyncIssue? = null
 
     val issue: SyncIssue?
         get() = transientIssue?.takeIf { it.kind == SyncIssueKind.SECURITY }
             ?: persistentSecurityIssue
-            ?: pinnedIssue
+            ?: pinnedIssue?.takeIf { it.kind == SyncIssueKind.SECURITY }
             ?: transientIssue
+            ?: pinnedIssue
+            ?: noticeIssue
 
     fun reportPinned(message: LocalizedMessage, kind: SyncIssueKind, atGeneration: Long = generation): SyncIssue? {
         pinnedIssue = SyncIssue(message, kind, atGeneration)
@@ -45,6 +51,18 @@ internal class SyncIssueLifecycle {
 
     fun clearPinned(): SyncIssue? {
         pinnedIssue = null
+        return issue
+    }
+
+    fun reportNotice(message: LocalizedMessage, atGeneration: Long = generation): SyncIssue? {
+        noticeIssue = SyncIssue(message, SyncIssueKind.CONNECTION, atGeneration)
+        return issue
+    }
+
+    /** Leave wipes everything that belonged to the join. */
+    fun resetForLeave(): SyncIssue? {
+        pinnedIssue = null
+        noticeIssue = null
         return issue
     }
 
@@ -97,9 +115,10 @@ internal class SyncIssueLifecycle {
         return issue
     }
 
+    /** Pinned issues stay: a stop waits for Retry, "changes paused" for leave. */
     fun dismiss(): SyncIssue? {
         transientIssue = null
-        pinnedIssue = null
+        noticeIssue = null
         return issue
     }
 }

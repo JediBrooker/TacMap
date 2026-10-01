@@ -398,6 +398,39 @@ class SyncManager internal constructor(
     /** UnitSyncRuntime swaps the service notification for a paused one (section 21.5). */
     internal var backgroundPresencePaused: ((pausedAtWallMs: Long) -> Unit)? = null
 
+    // presence-only screen-off reconnect (section 21.4), off until doc change D1
+    private val backgroundReconnectEnabled = env.backgroundReconnectEnabled
+    /** Epoch of the last foreground hello and how many spares above it are on disk already. */
+    private var lastForegroundHelloEpoch: java.math.BigInteger? = null
+    private var lastForegroundSpareCount = 0
+    private var backgroundReconnect: BackgroundReconnect? = null
+    private var backgroundSession: BackgroundSession? = null
+    private var backgroundInterval = com.tacmap.settings.BackgroundUnitSyncInterval.DEFAULT
+    /** Newest screen-off GPS sample and when it arrived, so a session that comes back can send it. */
+    private var lastBackgroundSample: PresenceFixSample? = null
+    private var lastBackgroundSampleAtMs = Long.MIN_VALUE
+    private var backgroundWakeLockHeld = false
+
+    /** Armed at background entry when a drop may be followed by a new presence-only session. */
+    private class BackgroundReconnect(lastForegroundEpoch: java.math.BigInteger, spares: Int) {
+        val policy = BackgroundPresencePolicy(reconnectEnabled = true)
+        val spares = BackgroundSpareEpochs(lastForegroundEpoch, spares)
+        var dropped = false
+        var droppedAtWallMs: Long? = null
+    }
+
+    /**
+     * The handshake of one presence-only session (21.4). The snapshot is
+     * drained, not read: fence order and the 4 MiB ceiling only, no record is
+     * opened, verified, applied or stored. Then hello, hello-ack, loc only.
+     */
+    private class BackgroundSession(val epoch: java.math.BigInteger) {
+        enum class Phase { AWAITING_BEGIN, RECEIVING, FINAL_PAGE, AWAITING_HELLO_ACK, LIVE }
+        var phase = Phase.AWAITING_BEGIN
+        var seq: Long? = null
+        var bytes = 0L
+    }
+
     /** What the pacer holds. Deliveries carry their rid so acks and retries line up. */
     private sealed interface OutboundFrame {
         val text: String
@@ -540,8 +573,20 @@ class SyncManager internal constructor(
     private class LiveBatch(
         val replay: SyncReplayState,
         val layers: MutableList<com.tacmap.drawings.DrawingLayer>,
+        lookupOnFirstUse: () -> ModelLookup,
     ) {
         val records = ArrayList<ValidatedV3>()
+        /**
+         * The committed stores, id indexed, built once the first record needs
+         * it. Nothing in the batch touches the model before the flush, so every
+         * record's prior hash and kind come from here instead of a store scan
+         * per record (S5-03). A presence-only batch never builds it.
+         */
+        val before: ModelLookup by lazy(LazyThreadSafetyMode.NONE, lookupOnFirstUse)
+        /** This batch's own puts, a later record in it sees them for the collision check. */
+        val stagedKinds = HashMap<String, String>()
+
+        fun localKind(localId: String): String? = stagedKinds[localId] ?: before.kind(localId)
         var peers: Map<String, PresencePeer>? = null
         var onlineMembers: Map<String, OnlineMember>? = null
         var chatRecipientsDirty = false
@@ -556,6 +601,8 @@ class SyncManager internal constructor(
     private class SnapshotRun(
         private val validator: SnapshotValidator,
         val committedLayers: List<com.tacmap.drawings.DrawingLayer>,
+        /** localId -> kind at snapshot-begin, a copy the worker can read safely. */
+        private val localKinds: Map<String, String>,
         parent: Job,
         dispatcher: kotlinx.coroutines.CoroutineDispatcher,
         private val onProgress: () -> Unit,
@@ -579,7 +626,7 @@ class SyncManager internal constructor(
                 previous?.join()
                 for ((rec, wireId) in items) {
                     val check = try {
-                        validator.check(rec, wireId, staged)
+                        SnapshotRecordClassifier.classify(validator, rec, wireId, staged, localKinds::get)
                     } catch (cancel: kotlinx.coroutines.CancellationException) {
                         throw cancel
                     } catch (_: Throwable) {
@@ -608,8 +655,16 @@ class SyncManager internal constructor(
     /** Id-indexed view of the committed stores so a batch never scans them per record. */
     private inner class ModelLookup {
         val document: DrawingDocument = drawingStore.committedDocument.value
-        val waypoints: Map<String, Waypoint> = waypointStore.committedWaypoints.value.associateBy { it.id }
+        private val waypointList: List<Waypoint> = waypointStore.committedWaypoints.value
+        val waypoints: Map<String, Waypoint> = waypointList.associateBy { it.id }
         val features: Map<String, DrawingFeature> = document.features.associateBy { it.id }
+
+        /** Committed values are immutable, so same instances means nothing moved since this was built. */
+        fun isCurrent(): Boolean =
+            drawingStoreRef?.committedDocument?.value === document &&
+                waypointStoreRef?.committedWaypoints?.value === waypointList
+        // the view never changes, so each object gets exported and hashed once at most
+        private val hashes = HashMap<String, String?>()
 
         fun export(id: String?): String {
             id ?: return ""
@@ -623,9 +678,13 @@ class SyncManager internal constructor(
         }
 
         fun hash(id: String?): String? {
+            id ?: return null
+            if (hashes.containsKey(id)) return hashes[id]
             val content = export(id)
-            if (content.isEmpty()) return null
-            return SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
+            val hash = if (content.isEmpty()) null
+            else SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
+            hashes[id] = hash
+            return hash
         }
 
         fun kind(id: String): String? = when {
@@ -660,12 +719,19 @@ class SyncManager internal constructor(
     internal val currentIssueKind: SyncIssueKind? get() = issueLifecycle.issue?.kind
     internal val replayStateForTests: SyncReplayState? get() = replayState
     internal val myActorIdForTests: String? get() = myActorId
+    /** Issue codes surfaced this join (the once-per-scope set, scope stripped). */
+    internal val surfacedIssueCodesForTests: Set<String>
+        get() = surfacedIssueKeys.mapTo(HashSet()) { it.substringBefore('|') }
+    internal fun skippedCategoryForTests(wireId: String): SnapshotRecordCategory? = skippedWireIds[wireId]
+    internal val lastSnapshotVerifiedCleanForTests: Boolean get() = pendingVerifiedClean
+    internal val mutationsPausedForTests: Boolean get() = mutationsPaused
 
     /** The dialog's Retry after a stop. Clears every failure counter and connects. */
     fun retryAfterPause() {
         if (lifecycleGate.isDisposed || !_pausedActionRequired.value) return
         val roomId = activeRoomStorageId ?: return
         clearPausedState()
+        retireStopIssue()
         failureCounters.reset()
         backoff.reset()
         rejectedHelloEpoch = null
@@ -711,6 +777,13 @@ class SyncManager internal constructor(
         presenceCadence.reset()
         presencePolicy.reset()
         backgroundPausedAtWallMs = null
+        backgroundInterval = interval
+        // a later drop may come back on one of the spares the last foreground
+        // hello already put on disk (21.4); with the switch off it pauses (21.5)
+        clearBackgroundReconnect()
+        if (backgroundReconnectEnabled) {
+            lastForegroundHelloEpoch?.let { backgroundReconnect = BackgroundReconnect(it, lastForegroundSpareCount) }
+        }
         // pings every 60 s now; the wake probe in sendBackgroundPresence does the real check (21.3)
         ws?.setKeepaliveSeconds((BackgroundPresencePolicy.BACKGROUND_PING_INTERVAL_MS / 1_000L).toInt())
         // The previous foreground frame expires after 45 seconds. Bridge to the
@@ -747,6 +820,7 @@ class SyncManager internal constructor(
         }
         presenceCadence.reset()
         presencePolicy.reset()
+        clearBackgroundReconnect()
         closeSocketForLifecycleTransition("waiting for foreground unlock")
         return true
     }
@@ -768,6 +842,7 @@ class SyncManager internal constructor(
         versions.clear()
         lastByV2.clear()
         lastContent.clear()
+        exportCache.clear()
         kindById.clear()
         forcedLegacyDeletes.clear()
         snapshotConfirmedLocalDeletes.clear()
@@ -788,6 +863,8 @@ class SyncManager internal constructor(
         if (!backgroundPresenceOnly && !awaitingForegroundStores) return
         awaitingForegroundStores = true
         backgroundPresenceOnly = true
+        // the foreground hello reserves above every spare, so a background session just ends
+        clearBackgroundReconnect()
         closeSocketForLifecycleTransition("foreground unlock")
     }
 
@@ -807,10 +884,11 @@ class SyncManager internal constructor(
         presenceCadence.reset()
         presencePolicy.reset()
         backgroundProbeJob?.cancel(); backgroundProbeJob = null
+        clearBackgroundReconnect()
         migrateLegacyLocalStoresAfterUnlock()
         backgroundPausedAtWallMs?.let { pausedAt ->
             backgroundPausedAtWallMs = null
-            reportError(Messages.syncBackgroundPausedMessage(formatPauseTime(pausedAt)), SyncIssueCode.BACKGROUND_PAUSED.kind)
+            surfaceIssue(SyncIssueCode.BACKGROUND_PAUSED, Messages.syncBackgroundPausedMessage(formatPauseTime(pausedAt)))
         }
 
         revisionJournalAvailable = modelRevisionJournal.load()
@@ -825,6 +903,7 @@ class SyncManager internal constructor(
                 // a stop that doesn't retry on foreground waits for the Retry button
                 if (!pausedRetryOnForeground) return true
                 clearPausedState()
+                retireStopIssue()
                 failureCounters.reset()
                 backoff.reset()
             }
@@ -840,6 +919,8 @@ class SyncManager internal constructor(
     internal fun revokeBackgroundLocationEligibility(reconnectIfForeground: Boolean) {
         if (lifecycleGate.isDisposed || protocolVersion != 3 || _room.value == null) return
         val roomId = activeRoomStorageId
+        // lost eligibility ends any presence-only session for good (21.4)
+        clearBackgroundReconnect()
         closeSocketForLifecycleTransition("background location disabled")
         presenceCadence.reset()
         if (reconnectIfForeground && !backgroundPresenceOnly && !awaitingForegroundStores &&
@@ -857,7 +938,8 @@ class SyncManager internal constructor(
      * run then, so the socket can be dead without anyone noticing (S2-06).
      * If nothing came in for 75 s, hold a short wake lock, ping, and only send
      * once a pong or frame shows up; silence means the socket is dead and
-     * background sharing pauses loudly (plans/04 sections 21.3 and 21.5).
+     * background sharing pauses loudly (plans/04 sections 21.3 and 21.5), or
+     * with the 21.4 switch on, this fix brings up a presence-only session.
      */
     internal fun sendBackgroundPresence(
         location: Location,
@@ -871,9 +953,16 @@ class SyncManager internal constructor(
         nowElapsedRealtimeNanos: Long = syncClock.elapsedRealtimeNanos(),
     ): Boolean {
         if (!backgroundPresenceOnly || awaitingForegroundStores ||
-            protocolVersion != 3 || _status.value != Status.CONNECTED ||
-            !presenceConfig.shareLocation
+            protocolVersion != 3 || !presenceConfig.shareLocation
         ) return false
+        backgroundInterval = interval
+        lastBackgroundSample = location
+        lastBackgroundSampleAtMs = nowMs()
+        backgroundReconnect?.let { reconnect ->
+            // the next send opportunity after a drop (21.4)
+            if (ws == null && reconnect.dropped) return backgroundReconnectDue(reconnect)
+        }
+        if (_status.value != Status.CONNECTED) return false
         val socket = ws ?: return false
         val now = nowMs()
         val lastInbound = lastInboundProgressMs.get().takeIf { it != Long.MIN_VALUE }
@@ -912,7 +1001,8 @@ class SyncManager internal constructor(
                             nowElapsedRealtimeNanos = syncClock.elapsedRealtimeNanos(),
                         )
                     } else {
-                        // half-open or reset socket: close it, handleSocketEnded pauses and says so
+                        // half-open or reset socket: close it, handleSocketEnded pauses and
+                        // says so, or comes back on a spare epoch when 21.4 is on
                         closeLocally(SyncLocalClose.LIVENESS_TIMEOUT, socket)
                     }
                 }
@@ -921,6 +1011,184 @@ class SyncManager internal constructor(
             }
         }
         return true
+    }
+
+    // ----- Presence-only background reconnect (plans/04 section 21.4) -----
+
+    private fun backgroundReconnectDue(reconnect: BackgroundReconnect): Boolean {
+        val action = reconnect.policy.onFixDue(
+            nowMs = nowMs(),
+            socketUsable = false,
+            sparesLeft = reconnect.spares.left,
+            eligible = canArmBackgroundLocationService(),
+        )
+        return when (action) {
+            BackgroundPresencePolicy.Action.CONNECT -> openBackgroundPresenceSession(reconnect)
+            BackgroundPresencePolicy.Action.PAUSE -> {
+                pauseBackgroundPresence()
+                false
+            }
+            BackgroundPresencePolicy.Action.WAIT, BackgroundPresencePolicy.Action.SEND -> false
+        }
+    }
+
+    /**
+     * Fresh in-memory session domain on a spare epoch the foreground already
+     * made durable. Nothing on this session writes to disk, opens a record or
+     * sends anything but hello and loc. Uses only the room keys and signing
+     * seed the screen-off path keeps anyway, never the DataKey or a store.
+     */
+    private fun openBackgroundPresenceSession(reconnect: BackgroundReconnect): Boolean {
+        val roomId = activeRoomStorageId
+        val base = validatedRelayBaseForRuntime(relayBase)
+        if (roomId == null || base == null || v3Keys == null || myActorId == null) {
+            pauseBackgroundPresence()
+            return false
+        }
+        val epoch = reconnect.spares.take() ?: run {
+            pauseBackgroundPresence()
+            return false
+        }
+        reconnect.dropped = false
+        cancelSessionTimers()
+        val connectionGeneration = issueLifecycle.beginConnection()
+        activeConnectionGeneration = connectionGeneration
+        socketOpened = false
+        localCloseGeneration = null
+        localCloseReason = null
+        lastInboundProgressMs.set(Long.MIN_VALUE)
+        val startedAt = nowMs()
+        pacer = SyncOutboundPacer(startedAt.toDouble())
+        enqueuedWireBytes = 0L
+        _status.value = Status.CONNECTING
+        sessionDomain?.fill(0)
+        sessionDomain = SyncIdentity.generateSessionDomain()
+        presenceCounter = 0L
+        activeSessions.clear()
+        awaitingHelloAck = false
+        localHelloVersion = null
+        backgroundSession = BackgroundSession(epoch)
+        // keep the CPU up through the handshake, the next wake might be an hour off
+        acquireBackgroundWakeLock()
+        openSocket(base, roomId, connectionGeneration, startedAt)
+        return true
+    }
+
+    /**
+     * One frame of a presence-only handshake. Only the snapshot fence order and
+     * the 4 MiB ceiling are checked, records stay unread, and any other room
+     * traffic is dropped like everything else in background.
+     */
+    private fun handleBackgroundSessionFrame(session: BackgroundSession, text: String, frameBytes: Int, socket: SyncWebSocket) {
+        if (session.phase == BackgroundSession.Phase.LIVE) return
+        val fail = { closeLocally(SyncLocalClose.STRUCTURAL_SNAPSHOT, socket) }
+        if (session.phase != BackgroundSession.Phase.AWAITING_HELLO_ACK) {
+            session.bytes += frameBytes
+            if (session.bytes > BackgroundPresencePolicy.MAX_SNAPSHOT_DRAIN_BYTES) {
+                // too big to drain on battery, give up until the user opens the app
+                pauseBackgroundPresence()
+                return
+            }
+        }
+        // junk is dropped like any other unparseable frame
+        val msg = try { JSONObject(text) } catch (_: Throwable) { return }
+        val type = msg.opt("t") as? String
+        if (session.phase == BackgroundSession.Phase.AWAITING_HELLO_ACK) {
+            if (type != "hello-ack") return
+            val actor = myActorId ?: return
+            val sd = sessionDomain ?: return
+            val expected = localHelloVersion ?: return
+            if (!SyncIdentity.helloAckMatches(
+                    actor, sd, expected, msg.optString("by"), msg.optString("sd"), msg.optString("vs"))) return
+            onBackgroundSessionLive(session, socket)
+            return
+        }
+        when (type) {
+            "snapshot-begin" -> {
+                if (session.phase != BackgroundSession.Phase.AWAITING_BEGIN) return fail()
+                session.seq = strictNonNegativeLong(msg, "seq") ?: return fail()
+                session.phase = BackgroundSession.Phase.RECEIVING
+            }
+            "snapshot" -> {
+                if (session.phase != BackgroundSession.Phase.RECEIVING) return fail()
+                val more = msg.opt("more") as? Boolean ?: return fail()
+                if (!more) session.phase = BackgroundSession.Phase.FINAL_PAGE
+            }
+            "snapshot-end" -> {
+                if (session.phase != BackgroundSession.Phase.FINAL_PAGE) return fail()
+                val seq = strictNonNegativeLong(msg, "seq") ?: return fail()
+                if (seq != session.seq) return fail()
+                session.phase = BackgroundSession.Phase.AWAITING_HELLO_ACK
+                handshakeWatchdog.snapshotEnded(nowMs())
+                // the spare is already covered on disk, so no reservation here
+                if (!enqueueSignedHello(HelloEpochPolicy.hex(session.epoch))) fail()
+            }
+            // room traffic before our hello-ack, dropped unread
+            else -> Unit
+        }
+    }
+
+    private fun onBackgroundSessionLive(session: BackgroundSession, socket: SyncWebSocket) {
+        session.phase = BackgroundSession.Phase.LIVE
+        backgroundReconnect?.let {
+            it.policy.attemptSucceeded()
+            it.dropped = false
+            it.droppedAtWallMs = null
+        }
+        handshakeWatchdog.connected()
+        watchdogJob?.cancel(); watchdogJob = null
+        _status.value = Status.CONNECTED
+        lastInboundProgressMs.set(nowMs())
+        socket.setKeepaliveSeconds((BackgroundPresencePolicy.BACKGROUND_PING_INTERVAL_MS / 1_000L).toInt())
+        presenceCadence.beginAuthenticatedSession()
+        // send the fix that brought us back, if it's still inside the two minute rule
+        val now = syncClock.elapsedRealtimeNanos()
+        lastBackgroundSample?.takeIf {
+            ForegroundPresenceLiveness.isBridgeableFix(it.elapsedRealtimeNanos, now)
+        }?.let { sample ->
+            sendPresenceAtCadence(
+                sample = sample,
+                isBackground = true,
+                backgroundInterval = backgroundInterval,
+                nowElapsedRealtimeNanos = now,
+            )
+        }
+        releaseBackgroundWakeLock()
+    }
+
+    /** Background sharing stops without the user asking: say when, here and on return (21.5). */
+    private fun pauseBackgroundPresence() {
+        val pausedAt = backgroundReconnect?.droppedAtWallMs ?: syncClock.wallClockMs()
+        clearBackgroundReconnect()
+        if (ws != null) closeSocketForLifecycleTransition("background presence paused")
+        backgroundPausedAtWallMs = pausedAt
+        backgroundPresencePaused?.invoke(pausedAt)
+        backgroundTransportEnded?.invoke()
+    }
+
+    private fun clearBackgroundReconnect() {
+        backgroundReconnect = null
+        backgroundSession = null
+        lastBackgroundSample = null
+        lastBackgroundSampleAtMs = Long.MIN_VALUE
+        releaseBackgroundWakeLock()
+    }
+
+    /** The fix that found a drop counts as the send opportunity only within the same wake. */
+    private fun backgroundSampleFromThisWake(): Boolean =
+        lastBackgroundSample != null && lastBackgroundSampleAtMs != Long.MIN_VALUE &&
+            nowMs() - lastBackgroundSampleAtMs <= BackgroundPresencePolicy.WAKE_LOCK_MAX_MS
+
+    private fun acquireBackgroundWakeLock() {
+        if (backgroundWakeLockHeld) return
+        env.wakeLock?.acquire(BackgroundPresencePolicy.WAKE_LOCK_MAX_MS)
+        backgroundWakeLockHeld = true
+    }
+
+    private fun releaseBackgroundWakeLock() {
+        if (!backgroundWakeLockHeld) return
+        backgroundWakeLockHeld = false
+        env.wakeLock?.release()
     }
 
     private fun formatPauseTime(wallMs: Long): String =
@@ -1147,6 +1415,9 @@ class SyncManager internal constructor(
         presencePolicy.reset()
         backgroundProbeJob?.cancel(); backgroundProbeJob = null
         backgroundPausedAtWallMs = null
+        clearBackgroundReconnect()
+        lastForegroundHelloEpoch = null
+        lastForegroundSpareCount = 0
         wantConnected = false
         reconnectJob?.cancel(); reconnectJob = null
         observeJob?.cancel(); observeJob = null
@@ -1173,7 +1444,7 @@ class SyncManager internal constructor(
         _status.value = Status.OFFLINE
         _peers.value = emptyMap()
         _onlineMembers.value = onlineMemberTracker.clear()
-        versions.clear(); lastContent.clear(); kindById.clear()
+        versions.clear(); lastContent.clear(); kindById.clear(); exportCache.clear()
         forcedLocalDiff.clear(); resolvingPendingModel = false
         forcedLegacyDeletes.clear()
         clearOutboundDeliveries(markForReconciliation = false)
@@ -1228,6 +1499,7 @@ class SyncManager internal constructor(
             wantConnected = false
             joinToken += 1
             runCatching { replayState?.takeUnless { it.isInBatch }?.persistExactPresence() }
+            clearBackgroundReconnect()
             managerJob.cancel()
             inbound.clear()
             reconnectJob?.cancel(); reconnectJob = null
@@ -1341,7 +1613,7 @@ class SyncManager internal constructor(
         _status.value = Status.OFFLINE
         _peers.value = emptyMap()
         _onlineMembers.value = onlineMemberTracker.clear()
-        versions.clear(); lastContent.clear(); kindById.clear()
+        versions.clear(); lastContent.clear(); kindById.clear(); exportCache.clear()
         forcedLocalDiff.clear(); resolvingPendingModel = false
         forcedLegacyDeletes.clear()
         clearOutboundDeliveries(markForReconciliation = false)
@@ -1444,7 +1716,7 @@ class SyncManager internal constructor(
         sessionHelloEpoch = null
         nextSessionAfter4008 = false
         clearPausedState()
-        _lastError.value = issueLifecycle.clearPinned()?.pendingMessage
+        _lastError.value = issueLifecycle.resetForLeave()?.pendingMessage
     }
 
     private fun clearPausedState() {
@@ -1467,7 +1739,37 @@ class SyncManager internal constructor(
     /** Report an issue at most once per [key] within the current join. */
     private fun surfaceOnce(code: SyncIssueCode, key: String, message: LocalizedMessage = issueMessage(code)) {
         if (!surfacedIssueKeys.add(code.name + "|" + key)) return
-        reportError(message, code.kind)
+        surfaceIssue(code, message)
+    }
+
+    /**
+     * Which banner slot an issue lands in, same split as iOS. Security and
+     * failure-chain issues are transient (a later clean connection retires
+     * them), changes-paused is pinned until leave, and every other once per
+     * join notice survives reconnects until it's dismissed. Without that the
+     * hello-ack of the snapshot that skipped a record wiped its own notice.
+     */
+    private fun surfaceIssue(code: SyncIssueCode, message: LocalizedMessage = issueMessage(code)) {
+        when {
+            code == SyncIssueCode.ROOM_RESET_CHANGES_PAUSED -> surfacePinned(code, message)
+            code.kind == SyncIssueKind.SECURITY || code in TRANSIENT_ISSUES -> reportError(message, code.kind)
+            else -> {
+                _lastError.value = issueLifecycle.reportNotice(message, activeConnectionGeneration)?.pendingMessage
+                _remoteUpdates.tryEmit(message.text)
+            }
+        }
+    }
+
+    /** A Retry (button or foreground) ends the stop, so its banner goes too. */
+    private fun retireStopIssue() {
+        _lastError.value = issueLifecycle.clearPinned()?.pendingMessage
+        // writes stay paused for the rest of the join, so the banner stays too
+        // (no second toast, that one was already said once this join)
+        if (mutationsPaused) {
+            val code = SyncIssueCode.ROOM_RESET_CHANGES_PAUSED
+            _lastError.value = issueLifecycle.reportPinned(issueMessage(code), code.kind, activeConnectionGeneration)
+                ?.pendingMessage
+        }
     }
 
     private fun surfaceOncePerSession(code: SyncIssueCode) =
@@ -1514,6 +1816,12 @@ class SyncManager internal constructor(
 
     /** A transient reconnect gets pulled in, never closer than 2 s after the last try. */
     private fun onNetworkAvailableOnMain() {
+        if (backgroundPresenceOnly && !awaitingForegroundStores) {
+            // screen-off: the network coming back is a reconnect opportunity too (21.4)
+            val reconnect = backgroundReconnect ?: return
+            if (ws == null && reconnect.dropped) backgroundReconnectDue(reconnect)
+            return
+        }
         if (reconnectJob?.isActive != true || backgroundPresenceOnly || awaitingForegroundStores) return
         val roomId = reconnectRoomId ?: return
         val before = backoff.pendingReconnectAtMs() ?: return
@@ -1654,11 +1962,31 @@ class SyncManager internal constructor(
         resetSnapshot()
         backgroundProbeJob?.cancel(); backgroundProbeJob = null
         if (!shouldReconnectInForeground()) {
+            val session = backgroundSession
+            backgroundSession = null
             if (backgroundPresenceOnly && !awaitingForegroundStores && local != SyncLocalClose.LEAVE &&
                 local != SyncLocalClose.LIFECYCLE_PAUSE
             ) {
-                // lost while screen-off. THREAT_MODEL section 7 says pause, not a new
-                // background session (21.4 waits on D1), so pause loudly (21.5)
+                val reconnect = backgroundReconnect
+                if (reconnect != null) {
+                    // 21.4: keep the location service (our only wake source) and
+                    // come back on a spare epoch at the next fix or network change
+                    if (session != null && session.phase != BackgroundSession.Phase.LIVE) {
+                        reconnect.policy.attemptFailed()
+                    }
+                    reconnect.dropped = true
+                    if (reconnect.droppedAtWallMs == null) reconnect.droppedAtWallMs = syncClock.wallClockMs()
+                    releaseBackgroundWakeLock()
+                    if (!reconnect.policy.canStillReconnect(reconnect.spares.left, canArmBackgroundLocationService())) {
+                        pauseBackgroundPresence()
+                    } else if (backgroundSampleFromThisWake()) {
+                        // the fix that just found the drop is that opportunity
+                        backgroundReconnectDue(reconnect)
+                    }
+                    return
+                }
+                // lost while screen-off with 21.4 off (it waits on doc change D1):
+                // THREAT_MODEL section 7 says pause, so pause loudly (21.5)
                 val pausedAt = syncClock.wallClockMs()
                 backgroundPausedAtWallMs = pausedAt
                 backgroundPresencePaused?.invoke(pausedAt)
@@ -1717,7 +2045,7 @@ class SyncManager internal constructor(
         if (decision.pacerAfter4008) nextSessionAfter4008 = true
         val busy = decision.issue == SyncIssueCode.RELAY_BUSY || decision.issue == SyncIssueCode.RELAY_RATE_LIMITED
         if (busy) {
-            if (failureCounters.recordBusy(decision)) reportError(issueMessage(checkNotNull(decision.issue)))
+            if (failureCounters.recordBusy(decision)) surfaceIssue(checkNotNull(decision.issue))
         } else {
             failureCounters.recordOtherFailure()
         }
@@ -1808,6 +2136,11 @@ class SyncManager internal constructor(
             versions.clear()
             lastByV2.clear()
         }
+        openSocket(base, roomId, connectionGeneration, startedAt)
+    }
+
+    /** Creates the socket for [connectionGeneration] and arms the handshake watchdogs. */
+    private fun openSocket(base: String, roomId: String, connectionGeneration: Long, startedAt: Long) {
         val path = if (protocolVersion == 3) "v3/room/" else "room/"
         val url = "$base/$path$roomId"
         val headers = buildMap {
@@ -1884,11 +2217,14 @@ class SyncManager internal constructor(
         if (ws !== socket || activeConnectionGeneration != connectionGeneration) return
         v3HandshakeFailureGeneration = connectionGeneration
         _status.value = Status.OFFLINE
-        reportError(
-            Messages.syncUnitSyncSecureHandshakeTimedOutCheckTheRelayMessage(),
-            SyncIssueKind.CONNECTION,
-            connectionGeneration,
-        )
+        // a screen-off attempt just counts as failed, nobody's looking at a banner
+        if (backgroundSession == null) {
+            reportError(
+                Messages.syncUnitSyncSecureHandshakeTimedOutCheckTheRelayMessage(),
+                SyncIssueKind.CONNECTION,
+                connectionGeneration,
+            )
+        }
         closeLocally(fired, socket)
     }
 
@@ -2184,16 +2520,38 @@ class SyncManager internal constructor(
         }
     }
 
+    /**
+     * Last export per object, keyed on the exact instances it came from. Store
+     * values are immutable and an edit swaps in a new instance, so the same
+     * instance plus the same layer list means the same GeoJSON. Without this
+     * every diff pass (every 250 ms while acks trickle in during a bulk publish)
+     * re-exported the whole map. Plaintext like lastContent, so it dies with it.
+     */
+    private class CachedExport(val source: Any, val layers: Any, val content: String)
+    private val exportCache = HashMap<String, CachedExport>()
+    /** Real GeoJSON exports done by the diff, for the efficiency tests. */
+    internal var diffExportsForTests = 0L
+        private set
+
+    private inline fun cachedExport(id: String, source: Any, layers: Any, export: () -> String): String {
+        exportCache[id]?.let { hit -> if (hit.source === source && hit.layers === layers) return hit.content }
+        diffExportsForTests += 1
+        return export().also { exportCache[id] = CachedExport(source, layers, it) }
+    }
+
     private fun syncLocalState(wps: List<Waypoint>, doc: DrawingDocument) {
         lifecycleGate.runIfActive {
             if (_status.value != Status.CONNECTED) return@runIfActive
             val current = HashMap<String, Pair<String, String>>() // id -> (kind, content)
-            for (wp in wps) current[wp.id] = "waypoint" to GeoJsonExporter.export(
-                listOf(wp), emptyList(), doc.layers, density = displayDensity,
-            )
-            for (f in doc.features) current[f.id] = "drawing" to GeoJsonExporter.export(
-                emptyList(), listOf(f), doc.layers, density = displayDensity,
-            )
+            val layers = doc.layers
+            for (wp in wps) current[wp.id] = "waypoint" to cachedExport(wp.id, wp, layers) {
+                GeoJsonExporter.export(listOf(wp), emptyList(), layers, density = displayDensity)
+            }
+            for (f in doc.features) current[f.id] = "drawing" to cachedExport(f.id, f, layers) {
+                GeoJsonExporter.export(emptyList(), listOf(f), layers, density = displayDensity)
+            }
+            // gone objects don't keep their old GeoJSON around
+            exportCache.keys.retainAll(current.keys)
 
             if (protocolVersion == 3) {
                 syncLocalStateV3(current)
@@ -2349,9 +2707,7 @@ class SyncManager internal constructor(
     private enum class HelloResult { SENT, EXHAUSTED, FAILED }
 
     private fun sendHelloV3(): HelloResult {
-        val keys = v3Keys ?: return HelloResult.FAILED
         val actor = myActorId ?: return HelloResult.FAILED
-        val sd = sessionDomain ?: return HelloResult.FAILED
         val replay = replayState ?: return HelloResult.FAILED
         // plans/04 section 14: time floor for lost state, doubling after 4014,
         // spare block when background presence is on. Still persisted before signing.
@@ -2359,20 +2715,30 @@ class SyncManager internal constructor(
         val rejected = rejectedHelloEpoch
         val floor = HelloEpochPolicy.floor(persisted, syncClock.wallClockMs(), rejected != null, rejected)
         val spare = if (backgroundPresenceOptIn()) HelloEpochPolicy.BACKGROUND_SPARE_BLOCK else 0
-        if (HelloEpochPolicy.reserve(persisted, floor, spare) is HelloEpochPolicy.Result.Exhausted) {
-            return HelloResult.EXHAUSTED
-        }
+        val planned = HelloEpochPolicy.reserve(persisted, floor, spare)
+        if (planned is HelloEpochPolicy.Result.Exhausted) return HelloResult.EXHAUSTED
         val epoch = replay.reserveHelloEpoch(actor, myPublicKey, floor, spare) ?: return HelloResult.FAILED
         sessionHelloEpoch = java.math.BigInteger(epoch, 16)
-        val vs = "$epoch:$actor"
+        // whatever spares this hello put on disk are what a screen-off reconnect may use (21.4)
+        lastForegroundHelloEpoch = sessionHelloEpoch
+        lastForegroundSpareCount = (planned as HelloEpochPolicy.Result.Next).spareCount
+        return if (enqueueSignedHello(epoch)) HelloResult.SENT else HelloResult.FAILED
+    }
+
+    /** Signs and queues the hello for an epoch that's already safe to use. */
+    private fun enqueueSignedHello(epochHex: String): Boolean {
+        val keys = v3Keys ?: return false
+        val actor = myActorId ?: return false
+        val sd = sessionDomain ?: return false
+        val vs = "$epochHex:$actor"
         localHelloVersion = vs
         val preimage = SyncIdentity.buildPreimage(
             SyncIdentity.DOMAIN_HELLO, keys.roomIdRaw, actor, sd,
-            epoch, "", "hello", SyncIdentity.sha256(myPublicKeyRaw)
+            epochHex, "", "hello", SyncIdentity.sha256(myPublicKeyRaw)
         )
         val sig = SyncSigning.sign(deviceSeed, preimage)
         val generation = activeConnectionGeneration
-        val queued = enqueueFrame(SyncOutboundClass.CONTROL, JSONObject().apply {
+        return enqueueFrame(SyncOutboundClass.CONTROL, JSONObject().apply {
             put("t", "hello")
             put("by", actor)
             put("pub", myPublicKey)
@@ -2383,7 +2749,6 @@ class SyncManager internal constructor(
             handshakeWatchdog.helloWritten(nowMs())
             scheduleWatchdog(generation)
         })
-        return if (queued) HelloResult.SENT else HelloResult.FAILED
     }
 
     private fun sendExplicitLeaveV3(socket: SyncWebSocket): Boolean {
@@ -2769,6 +3134,10 @@ class SyncManager internal constructor(
         internal const val INBOUND_QUEUE_MAX_FRAMES = 1_024
         internal const val INBOUND_QUEUE_MAX_BYTES = 16L * 1024L * 1024L
         private val LIVE_BATCH_TYPES = setOf("put", "del", "loc", "hello")
+        /** Issues a later clean connection retires, like any connection error. */
+        private val TRANSIENT_ISSUES = setOf(
+            SyncIssueCode.UNCONFIRMED_RECONNECT, SyncIssueCode.RELAY_BUSY, SyncIssueCode.RELAY_RATE_LIMITED,
+        )
         internal const val BACKGROUND_PROBE_POLL_MS = 250L
         private val V3_KIND_PATTERN = Regex("^[A-Za-z0-9_-]{1,32}$")
         private val V3_OBJECT_KINDS = setOf("waypoint", "drawing")
@@ -2805,7 +3174,12 @@ class SyncManager internal constructor(
                         connectionGeneration, frameBytes, SyncReceiveBudget.Phase.BACKGROUND,
                         SyncReceiveBudget.Bucket.ROOM, 0, now,
                     )
-                ) rejectInboundFrame(socket, connectionGeneration, SyncInboundFrameRejection.RATE_LIMITED)
+                ) {
+                    rejectInboundFrame(socket, connectionGeneration, SyncInboundFrameRejection.RATE_LIMITED)
+                    return@runIfActive
+                }
+                // a presence-only handshake looks at the fence and nothing else (21.4)
+                backgroundSession?.let { handleBackgroundSessionFrame(it, text, frameBytes, socket) }
                 return@runIfActive
             }
             val msg = try {
@@ -2887,7 +3261,8 @@ class SyncManager internal constructor(
         val drawings = drawingStoreRef ?: return null
         if (replay.isInBatch) return null
         replay.beginBatch()
-        return LiveBatch(replay, ArrayList(drawings.committedDocument.value.layers)).also { liveBatch = it }
+        return LiveBatch(replay, ArrayList(drawings.committedDocument.value.layers)) { ModelLookup() }
+            .also { liveBatch = it }
     }
 
     /**
@@ -2910,7 +3285,8 @@ class SyncManager internal constructor(
             if (batch.records.isNotEmpty() && waypointStoreRef != null && drawingStoreRef != null) {
                 resolvingPendingModel = true
                 val ok = try {
-                    val clears = applyRemoteRecords(batch.records)
+                    // same view the records were checked against, the commit above didn't touch the model
+                    val clears = applyRemoteRecords(batch.records, batch.before)
                     clears != null && batch.replay.clearPendingModelApplications(clears)
                 } finally {
                     resolvingPendingModel = false
@@ -3044,6 +3420,7 @@ class SyncManager internal constructor(
                 snapshotRun = SnapshotRun(
                     validator = SnapshotValidator(key, keys.roomIdRaw, keys.metadataKey, pins::get, displayDensity),
                     committedLayers = drawingStore.committedDocument.value.layers,
+                    localKinds = localObjectKinds(),
                     parent = managerJob,
                     dispatcher = env.validationDispatcher,
                     // a finished page counts as handshake progress (section 9)
@@ -3196,7 +3573,9 @@ class SyncManager internal constructor(
                     .forEach { snapshotConfirmedLocalDeletes[it.mutation.wireObjectId] = it.mutation.stamp.encode() }
             }
             if (lifecycleGate.isDisposed) return
-            val clears = applyRemoteRecords(resolved)?.let { applied ->
+            // the user may have edited while the commit was sealing; if not, the
+            // prior hashes above are still the model and don't need redoing
+            val clears = applyRemoteRecords(resolved, before.takeIf { it.isCurrent() })?.let { applied ->
                 resolveUnmatchedPendingModelApplications(applied)?.let { unmatched -> applied + unmatched }
             } ?: return persistenceFailure()
             if (!replay.clearPendingModelApplicationsOffMain(clears, env.persistenceDispatcher)) {
@@ -3334,6 +3713,14 @@ class SyncManager internal constructor(
         val replay = replayState ?: return false
         val stamp = VersionStamp.parse(pending.version) ?: return false
         return stamp.actorId == myActorId && replay.getStamp(pending.wireObjectId) == stamp
+    }
+
+    /** Every local object's kind by id, for the identity collision check (section 2.1). */
+    private fun localObjectKinds(): HashMap<String, String> {
+        val kinds = HashMap<String, String>()
+        drawingStoreRef?.committedDocument?.value?.features?.forEach { kinds[it.id] = "drawing" }
+        waypointStoreRef?.committedWaypoints?.value?.forEach { kinds[it.id] = "waypoint" }
+        return kinds
     }
 
     private fun localObjectExists(localId: String): Boolean =
@@ -3844,6 +4231,10 @@ class SyncManager internal constructor(
         val index = wireIndex ?: WireIdIndex(keys.metadataKey).also { created ->
             wireIndex = created
             lastContent.keys.forEach(created::add)
+            // objects deleted before the stores went away are still owed a
+            // tombstone. without them the hello-ack resend can't find the local
+            // id, files it under wire:, and the diff reserves a second delete
+            forcedLocalDiff.forEach(created::add)
         }
         index.refresh(waypoints.committedWaypoints.value, drawings.committedDocument.value.features)
         return index
@@ -3855,7 +4246,7 @@ class SyncManager internal constructor(
         val batch = openLiveBatch() ?: return
         try {
             val validator = liveValidatorOrNull() ?: return
-            val checked = validator.check(rec, wireId, batch.layers)
+            val checked = SnapshotRecordClassifier.classify(validator, rec, wireId, batch.layers, batch::localKind)
             var validated = when (checked) {
                 is V3Check.Skip -> {
                     recordSkip(wireId, checked.reason.category)
@@ -3881,7 +4272,7 @@ class SyncManager internal constructor(
                 SyncReplayState.LiveDecision.ACCEPT -> Unit
             }
             // the model before this batch; nothing in the batch has touched it yet
-            val priorHash = modelContentHash(validated.localModelId)
+            val priorHash = batch.before.hash(validated.localModelId)
             if (!replay.commitRemoteAuthenticated(
                     SyncReplayState.RemoteMutation(
                         validated.mutation, priorHash, validated.localModelId,
@@ -3891,6 +4282,7 @@ class SyncManager internal constructor(
             // later records in the same batch see this one's layers (section 3)
             SnapshotValidator.stage(batch.layers, checked)
             batch.records += validated
+            (validated as? ValidatedV3.Put)?.let { batch.stagedKinds[it.localId] = it.kind }
         } finally {
             if (openedHere) flushLiveBatch()
         }
@@ -3912,13 +4304,6 @@ class SyncManager internal constructor(
         }
     }
 
-    private fun modelContentHash(localId: String?): String? {
-        localId ?: return null
-        val content = reexport(localId)
-        if (content.isEmpty()) return null
-        return SyncIdentity.bytesToHex(SyncIdentity.sha256(content.toByteArray(Charsets.UTF_8)))
-    }
-
     /**
      * Model side of one snapshot or live batch, without overwriting a
      * divergent offline edit. Every record is decided against the model as it
@@ -3926,10 +4311,14 @@ class SyncManager internal constructor(
      * hash is checked. Returns the markers to clear (in one replay write), or
      * null when a store write or a hash check failed.
      */
-    private fun applyRemoteRecords(records: List<ValidatedV3>): List<SyncReplayState.AuthenticatedMutation>? {
+    private fun applyRemoteRecords(
+        records: List<ValidatedV3>,
+        /** Pass the batch's view when the model can't have moved since it was built. */
+        model: ModelLookup? = null,
+    ): List<SyncReplayState.AuthenticatedMutation>? {
         val replay = replayState ?: return null
         if (records.isEmpty()) return emptyList()
-        val before = ModelLookup()
+        val before = model ?: ModelLookup()
         val clears = ArrayList<SyncReplayState.AuthenticatedMutation>()
         val incoming = ArrayList<ValidatedV3>()
         val baselines = ArrayList<ValidatedV3>()

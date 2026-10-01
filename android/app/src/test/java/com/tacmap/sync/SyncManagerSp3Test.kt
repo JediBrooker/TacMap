@@ -328,6 +328,41 @@ class SyncManagerSp3Test {
         assertEquals(setOf(drawing.id), h.drawingStore.committedDocument.value.features.map { it.id }.toSet())
     }
 
+    @Test
+    fun anEditWhileTheSnapshotCommitSealsIsNotOverwritten() {
+        val h = start(separateWorkers = true)
+        val peer = FakeV3Peer(h.keys())
+        val mine = h.addWaypoint("local")
+        h.join()
+        h.deriveDispatcher.runCurrent(); h.runCurrent()
+        h.beginSnapshot()
+        h.snapshotPage(listOf(peer.waypointRecord(mine.copy(name = "remote"), 5)))
+        h.endSnapshot()
+        h.validationDispatcher.runCurrent()
+        h.runCurrent()
+        // the commit is sealing on the persistence worker, the user renames it meanwhile
+        assertTrue(h.waypointStore.update(mine.copy(name = "edited")))
+        h.runCurrent()
+        repeat(4) {
+            h.persistenceDispatcher.runCurrent()
+            h.runCurrent()
+        }
+        assertEquals("edited", h.waypointStore.committedWaypoints.value.single().name)
+        assertFalse(h.manager.replayStateForTests!!.hasPendingModelApplications())
+        assertNotEqualsSecurity(h)
+        val hello = h.socket.sentOfType("hello").single()
+        h.deliver(JSONObject().put("t", "hello-ack").put("by", hello.getString("by"))
+            .put("sd", hello.getString("sd")).put("vs", hello.getString("vs")))
+        repeat(3) {
+            h.advance(300)
+            h.persistenceDispatcher.runCurrent()
+            h.runCurrent()
+        }
+        // the local edit wins at a new stamp above the remote one
+        val put = h.socket.sentOfType("put").single { it.getString("id") == peer.wireId(mine.id) }
+        assertTrue(VersionStamp.parse(put.getString("vs"))!!.counter > 5)
+    }
+
     private fun assertNotEqualsSecurity(h: SyncHarness) {
         assertFalse("no persistence failure", h.manager.currentIssueKind == SyncIssueKind.SECURITY)
     }

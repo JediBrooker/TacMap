@@ -1139,7 +1139,13 @@ final class SyncReplayState {
         var effective: [String: Int64] = [:]
         for (actor, persisted) in decodedPresence {
             onDisk[actor] = PersistedPresence(sessionDomain: decodedSessions[actor], counter: persisted)
-            effective[actor] = PresenceFencePersistence.loadFloor(persisted: persisted, exact: fenceExact)
+        }
+        // 17.1 floor is for every session, incl one whose counter never made
+        // it to disk (persisted 0). It could still have shown 1...15 before
+        // the crash, so those stay rejected too.
+        for actor in decodedSessions.keys {
+            let floor = PresenceFencePersistence.loadFloor(persisted: decodedPresence[actor] ?? 0, exact: fenceExact)
+            if floor > 0 { effective[actor] = floor }
         }
         presenceSeq = effective
         persistedPresence = onDisk

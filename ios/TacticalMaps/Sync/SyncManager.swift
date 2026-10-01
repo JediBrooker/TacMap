@@ -631,15 +631,16 @@ enum SyncRemoteModelApplier {
                     outcome.refused[index] = .identityCollision(uuid)
                     continue
                 }
+                // no need to pull an earlier upsert of the same id back out of
+                // the list (that scan was O(upserts) per delete): the store's
+                // batch commit lets a delete win over any upsert of that id
                 if isWaypoint {
                     waypointDeletes.insert(uuid)
                     waypointIDs.remove(uuid)
-                    waypointUpserts.removeAll { $0.id == uuid }
                 }
                 if isDrawing {
                     shapeDeletes.insert(uuid)
                     drawingIDs.remove(uuid)
-                    shapeUpserts.removeAll { $0.id == uuid }
                 }
             }
         }
@@ -2539,9 +2540,12 @@ final class SyncManager: ObservableObject {
     /// status when the socket never opened), see contract section 7.
     private func endSession(socket: SyncSocket, cause: SessionEndCause, issueReported: Bool = false) {
         guard task === socket else { return }
-        let opened = socketOpened
         let remoteCode = socket.closeCode
         let httpStatus = socket.httpStatusCode
+        // didOpen and the receive failure hop to main separately, so a relay
+        // that upgrades and closes right away (4013, 4011..) can beat onOpen.
+        // A close code or a 101 only exist on a socket that did open.
+        let opened = socketOpened || remoteCode != 0 || httpStatus == 101
         let closedHelloEpoch = localHelloVersion.flatMap { UInt64($0.prefix(16), radix: 16) }
         let wasBackgroundPresence = wantConnected && !presenceCadence.foregroundReady
             && presenceCadence.backgroundEnabled && status == .connected

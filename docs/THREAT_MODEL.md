@@ -564,6 +564,22 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   If the authenticated socket drops, sharing pauses rather than creating a new
   background session. Force-quit, termination, permission loss, and unavailable
   GPS/network also stop delivery.
+- **A joined room survives a pause (iOS and Android).** A lifecycle change ends
+  the Unit Sync socket only when it locks the mission-data key, engages App
+  Lock, or detaches the mission stores. Leaving the Activity on Android always
+  does all of that, so the socket closes (without a signed leave) and the
+  stores go, but the joined room is kept, v2 or v3, with or without location
+  sharing: the derived room keys, the device signing seed and the replay-state
+  object stay **in memory only**, and the app reconnects by itself once the
+  key is unlocked and fresh stores are attached. On iOS a transient
+  `.inactive` scene phase (Control Center, a notification banner) keeps the
+  socket, chat key and inbound processing when the key stays unlocked
+  (device-bound mode) and no App Lock overlay is shown; in auth-bound mode the
+  key locks on `.inactive` and the session ends as before. That in-memory
+  material is what iOS already kept across backgrounding; it is cleared on
+  leave, on a join-code change and at process death. No mission store and no
+  DataKey stays available, and a foreground return still needs a fresh
+  connection and a verified snapshot.
 - **Peer identity: established devices are signed; brand-new ones are not.** Each
   device holds a per-device Ed25519 key and signs every **presence** update *and*
   every **object write/delete**, chat-key advert, and chat frame; the first time you see a client id you pin its

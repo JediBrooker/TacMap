@@ -338,7 +338,8 @@ final class SyncManagerHarness {
     init(joinCode: String = "3:sp2-harness-room-0001",
          offMainExecutor: SyncOffMainExecutor? = nil,
          realKeyDerivation: Bool = false,
-         backgroundReconnectEnabled: Bool = false) throws {
+         backgroundReconnectEnabled: Bool = false,
+         locationService: LocationService? = nil) throws {
         self.joinCode = joinCode
         previousKeyProvider = SafeStore.keyProvider
         SafeStore.keyProvider = { SyncManagerHarness.testKey }
@@ -396,7 +397,8 @@ final class SyncManagerHarness {
         )
         randomBox = { [weak self] in self?.randomValue ?? 0.5 }
         _ = slot
-        manager.configure(waypointStore: waypointStore, drawingStore: drawingStore)
+        manager.configure(waypointStore: waypointStore, drawingStore: drawingStore,
+                          locationService: locationService)
     }
 
     func tearDown() {

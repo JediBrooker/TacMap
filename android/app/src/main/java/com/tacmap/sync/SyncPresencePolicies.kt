@@ -184,6 +184,10 @@ internal class BackgroundPresencePolicy(
     fun attemptFailed() { consecutiveFailures += 1 }
     fun attemptSucceeded() { consecutiveFailures = 0 }
 
+    /** False once a later fix could only ever get PAUSE, so the caller can pause right at the drop. */
+    fun canStillReconnect(sparesLeft: Int, eligible: Boolean): Boolean =
+        reconnectEnabled && eligible && sparesLeft > 0 && consecutiveFailures < MAX_CONSECUTIVE_FAILURES
+
     fun reset() {
         consecutiveFailures = 0
         lastAttemptAtMs = null
@@ -205,5 +209,28 @@ internal class BackgroundPresencePolicy(
         /** Wake-safe keepalive (21.3): quiet for 75 s means ping and wait for a pong before sending. */
         fun needsProbe(nowMs: Long, lastInboundMs: Long?): Boolean =
             lastInboundMs == null || nowMs - lastInboundMs > LIVENESS_MAX_AGE_MS
+    }
+}
+
+/**
+ * The spare hello epochs above the last foreground hello (plans/04 sections
+ * 14 and 21.4). The foreground already wrote last + spares to disk before it
+ * signed anything, so handing these out in background needs no durable write
+ * and a crash can't make one get used twice. In memory only, each one once.
+ */
+internal class BackgroundSpareEpochs(lastForegroundEpoch: java.math.BigInteger, spares: Int) {
+    private var next: java.math.BigInteger = lastForegroundEpoch.add(java.math.BigInteger.ONE)
+
+    /** Never past ffffffffffffffff, whatever the caller claims. */
+    var left: Int = HelloEpochPolicy.MAX.subtract(lastForegroundEpoch)
+        .min(java.math.BigInteger.valueOf(spares.coerceAtLeast(0).toLong())).toInt()
+        private set
+
+    fun take(): java.math.BigInteger? {
+        if (left <= 0) return null
+        val epoch = next
+        next = next.add(java.math.BigInteger.ONE)
+        left -= 1
+        return epoch
     }
 }

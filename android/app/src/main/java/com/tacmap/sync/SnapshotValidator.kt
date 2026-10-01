@@ -127,7 +127,13 @@ internal class SnapshotValidator(
      * use is SKIP_UNSUPPORTED. Unknown kinds still get opened and verified with
      * their own kind so newer formats aren't mistaken for garbage.
      */
-    fun check(rec: JSONObject, wireId: String, layers: List<DrawingLayer>): V3Check {
+    fun check(
+        rec: JSONObject,
+        wireId: String,
+        layers: List<DrawingLayer>,
+        /** Kind of the local object with this UUID, if there is one. */
+        localKindOf: (String) -> String? = { null },
+    ): V3Check {
         fun skip(reason: SnapshotRecordReason) = V3Check.Skip(wireId, reason)
         if (closed) return skip(SnapshotRecordReason.AEAD_FAILED)
         val outer = when (val parsed = parseOuter(rec, wireId)) {
@@ -181,6 +187,11 @@ internal class SnapshotValidator(
             else -> null
         } ?: return skip(SnapshotRecordReason.KIND_CONTENT_MISMATCH)
         if (hasher.wireId(localId) != outer.wireId) return skip(SnapshotRecordReason.EMBEDDED_UUID_MISMATCH)
+        // a waypoint and a drawing never share one UUID. applying it anyway left
+        // two objects behind one id and the diff ping-ponged them forever
+        localKindOf(localId)?.let { existing ->
+            if (existing != outer.kind) return skip(SnapshotRecordReason.IDENTITY_COLLISION)
+        }
         val expected = expectedModelHash(parsed, localId, layers, displayDensity)
             ?: return skip(SnapshotRecordReason.EXPECTED_HASH_UNAVAILABLE)
         return V3Check.Valid(ValidatedV3.Put(

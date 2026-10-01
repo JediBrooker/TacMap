@@ -88,7 +88,10 @@ internal class SyncOutboundPacer<T>(
             frameTokens -= 1.0
             byteTokens -= head.bytes.toDouble()
             if (cls == SyncOutboundClass.MUTATION && head.key != null) {
-                inFlight[head.key] = head.bytes
+                // a newer copy of the same object takes over the old copy's
+                // slot. the old ack never matches anything anymore, so keeping
+                // its bytes would leak window space forever
+                inFlight.put(head.key, head.bytes)?.let { inFlightBytes -= it }
                 inFlightBytes += head.bytes
             }
             return head
@@ -132,9 +135,12 @@ internal class SyncOutboundPacer<T>(
     }
 
     private fun blockedByInFlight(entry: Entry<T>): Boolean {
-        if (inFlight.isEmpty()) return false
-        if (inFlight.size >= MAX_IN_FLIGHT_MUTATIONS) return true
-        return inFlightBytes + entry.bytes > MAX_IN_FLIGHT_BYTES
+        // whatever the same object already has in flight gets replaced, not added to
+        val replaced = entry.key?.let { inFlight[it] }
+        val others = if (replaced != null) inFlight.size - 1 else inFlight.size
+        if (others == 0) return false
+        if (others >= MAX_IN_FLIGHT_MUTATIONS) return true
+        return inFlightBytes - (replaced ?: 0) + entry.bytes > MAX_IN_FLIGHT_BYTES
     }
 
     private fun need(entry: Entry<T>): Pair<Double, Double> {

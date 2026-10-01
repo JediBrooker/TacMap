@@ -279,7 +279,8 @@ Each client persists per-room state, sealed at rest via SafeStore (label `"sync/
       "sd": "<base64url sessionDomain>",
       "counter": "0000000000000001"
     }
-  }
+  },
+  "presenceFenceExact": true
 }
 ```
 
@@ -316,8 +317,20 @@ Each client persists per-room state, sealed at rest via SafeStore (label `"sync/
 - Local outbound presence uses a separate, in-memory per-WebSocket counter
   starting at 1. It never advances the durable object counter or relay room
   high-water.
-- The local actor's hello epoch is incremented and durably reserved before each
-  new WebSocket hello.
+- The local actor's hello epoch is durably reserved before each new WebSocket
+  hello and is always strictly above the persisted value. It normally goes up
+  by one, but may skip values (client contract `plans/04` section 14):
+  `next = max(persisted + 1, unix minutes, 2 * rejected)`, where the Unix-minute
+  floor applies only when nothing is persisted for this actor (fresh or lost
+  replay state) or the previous socket closed 4014, and the doubling only after
+  4014. With background presence opted in, the persisted value is `next + 64`
+  so the spare epochs above `next` are already covered on disk. After three
+  4014 escalations in one join, or past `ffffffffffffffff`, the client stops
+  and waits for Retry. Skipping values cannot make an old hello acceptable
+  again: the relay and every peer accept only a strictly higher epoch, and the
+  client still persists before signing. The only new metadata is that the
+  first epoch after a fresh or lost state reveals the minute of a hello the
+  relay already observed live.
 - For a remote actor, a valid hello with a higher epoch atomically persists the
   new epoch and
   `presenceSeq[actorId] = { sd, counter: "0000000000000000" }`. A valid hello
@@ -327,8 +340,24 @@ Each client persists per-room state, sealed at rest via SafeStore (label `"sync/
   with different session context are rejected.
 - Remote presence is accepted only after that hello, when its `by`, `pub`, and
   `sd` match the active persisted session and its counter is strictly greater
-  than the persisted presence counter (and within the advance window). Persist
-  the new counter before exposing the peer in UI. `leave()` and process restart
+  than that session's acceptance floor (and within the advance window). The
+  floor is the last accepted counter in memory; after a load it is the
+  persisted counter, plus 15 when the file says `presenceFenceExact: false`
+  (an absent flag, as in files written before this rule, means exact).
+  Counters are persisted in strides (client contract `plans/04` section
+  17.1): accepting a counter 16 or more above the persisted one for its
+  session, or any counter while the file still says exact, first writes all
+  current counters in one transaction with `presenceFenceExact: false` and
+  only then exposes the peer; a smaller step is exposed without a write.
+  Counters ahead of disk are flushed at most every 60 s, and the clean points
+  (leave, background entry, disposal) write the exact counters with
+  `presenceFenceExact: true`, so the next acceptance writes `false` again
+  before exposing anything. The invariant replay protection needs is kept: a
+  counter at or below one already accepted is never accepted again, across
+  crashes, because no counter more than 15 above the persisted one is ever
+  exposed before it is written, so the post-crash floor rejects every counter
+  accepted before the crash. The cost is that up to 15 genuine positions per
+  peer can be hidden after a crash. `leave()` and process restart
   may clear the UI but MUST NOT clear this replay state. Consequently, the
   relay's cached equal-counter `loc` after reconnect is ignored; the sender's
   next higher periodic `loc` safely repopulates the UI.
@@ -342,7 +371,7 @@ ADVANCE_WINDOW = 10_000
 roomHighWater = max(all authenticated stamps.values + tombstones.values counter components)
 ```
 
-On receiving a live stamp with counter > roomHighWater + ADVANCE_WINDOW, reject the mutation. Snapshot records are first strictly decoded, actor-bound, AEAD-opened and signature-verified as a set; their authenticated maximum establishes the reconnect baseline before the live advance window is enabled. This permits a legitimate late join to a mature room without trusting the relay's unsigned `highWater` hint.
+On receiving a live stamp with counter > roomHighWater + ADVANCE_WINDOW, reject the mutation. Snapshot records are first strictly decoded, actor-bound, AEAD-opened and signature-verified; their authenticated maximum establishes the reconnect baseline before the live advance window is enabled. A record that fails one of those per-record checks is skipped (§10) and contributes nothing to the baseline, exactly as if the relay had left it out. This permits a legitimate late join to a mature room without trusting the relay's unsigned `highWater` hint.
 
 The relay applies the same window to durable writes against its own
 `meta:highWater`. Idle expiry and tombstone compaction keep that value (§16),
@@ -359,15 +388,25 @@ authenticated baseline more than `ADVANCE_WINDOW` below a returning mature
 actor, and its own window then drops that actor's live put/del until it
 reconnects and gets the stored records in a snapshot. This is not a regression
 (before SP1 the relay nacked that writer outright with `counter-window`,
-S1-01), but shipped clients drop silently. SP2 requirement: on a live window
-rejection the client resyncs (reconnects for a fresh snapshot) instead of
-dropping, and it still never trusts the relay's `highWater` hint.
+S1-01), but shipped clients drop silently. SP2 clients resync instead: an
+**authenticated** live put/del (binding, AEAD and signature pass) whose stamp
+beats local state but whose counter is past the window closes the socket
+cleanly and reconnects at once for a fresh snapshot. That reconnect is not a
+failure and does not touch the reconnect backoff. It is rate limited to one per
+60 s and six per hour; inside the cooldown the frame is dropped as before and
+one pending resync is remembered for the end of the cooldown. The client still
+never trusts the relay's `highWater` hint. Only a genuinely signed frame from a
+room member can trigger a resync, and a relay can force reconnects by closing
+sockets anyway, so the limits only bound the cost.
 
 ### 10. Snapshot gap detection
 
 On receiving `snapshot-begin { seq, highWater }`:
 - If `seq < lastSnapshotSeq` from replay state: the relay is serving older state
-  than previously seen. Log and surface a rollback diagnostic. Apply only
+  than previously seen. Surface it once per join as a security notice
+  (`ROOM_RESET_SUSPECTED`, which suggests a new join code) and keep syncing;
+  such a snapshot never counts as a verified clean snapshot. A seq regression
+  is only a relay hint, so it never stops sync or pauses writes. Apply only
   individually authenticated records that beat durable local mutations, plus
   complete exact matches carrying a matching pending-model marker needed to
   repair a persist-before-model crash; never apply a merely equal stamp, or an
@@ -378,8 +417,13 @@ On receiving `snapshot-begin { seq, highWater }`:
   `ROOM_PURGE_TTL_MS` (90 days) without activity it deletes the whole room
   (§16), and a device returning after that sees a fresh room at `seq` 0. That
   is indistinguishable from a malicious rollback, so the client raises the
-  diagnostic above; the guidance is to move to a new join code (SP2 clients
-  will surface this as its own state). Idle expiry and tombstone compaction
+  diagnostic above; the guidance is to move to a new join code. Writes stop
+  only when the relay proves it cannot take them: an `op-nack counter-window`
+  puts the client in a mutations-paused state for the rest of the join (no
+  `put`/`del` is reserved or sent; presence, chat and inbound apply continue)
+  and shows `ROOM_RESET_CHANGES_PAUSED` once, until leave. Nack codes are
+  unauthenticated relay statements, so this pauses only the client's own work
+  and never touches replay state. Idle expiry and tombstone compaction
   (§16) remove records without a mutation frame, so each pass that removes
   anything advances `seq` and records it in `meta:horizonSeq`. A later
   resume-from-seq extension must send a full snapshot to any client whose last
@@ -400,6 +444,48 @@ the entire snapshot, retains its previous durable replay state, and reconnects;
 it must not apply a relay-chosen duplicate ordering. `snapshot-end.seq` must
 exactly match `snapshot-begin.seq`, and no record or byte counters reset between
 pages.
+
+**Structural failure vs per-record skip** (client contract `plans/04`
+section 2; lists in `testdata/sync_client_behaviour.json` `snapshot`). Only
+structural and fence violations reject the whole snapshot: begin outside
+CONNECTING or a second begin, a non-integer `seq`, a page before begin or after
+the final page, `more` not boolean, `items` not an array, an item that is not
+an object or whose `id` is not a canonical 32-byte base64url value, a
+duplicate wire ID, end before the final page, an end `seq` mismatch, and the
+byte and record ceilings above. Nothing from such a snapshot is committed; the
+client reports the snapshot authentication failure, reconnects with ordinary
+backoff and, after three in a row without a `hello-ack`, stops until Retry.
+
+Every other per-record failure skips that one record:
+
+- *unverified*: bad `vs`, `by` differing from the stamp actor, non-canonical
+  `pub`/`sd`, actor binding mismatch, `pub` differing from the pin, invalid
+  `kind` syntax, inconsistent `t`/`deleted`, non-canonical or out-of-range
+  `ct`, AEAD failure, invalid inner JSON, a missing or invalid signature, or a
+  tombstone whose inner object has any key besides `sig`;
+- *unsupported*: authentic (AEAD and signature verify, an unknown `kind` is
+  still opened and verified under that kind) but not usable by this build:
+  unknown `kind`, empty content, importer failure or skipped features, not
+  exactly one object, kind/content mismatch, embedded UUID not matching the
+  wire ID, identity collision, or no receiver model hash.
+
+A skipped record commits nothing (no stamp, tombstone, actor pin, counter,
+content hash or pending marker) and touches no model. The snapshot still
+commits its other records and its `seq`. This is observably identical to the
+relay omitting the record, which it can already do because the snapshot is
+fenced by a relay-chosen `seq` and not authenticated as a set, so the
+authenticated baseline and the advance window are exactly what they would be
+without it. Authentic-but-unsupported records are deliberately not committed
+either, so a later app version that can parse them still applies them. A skip
+never causes a reconnect, and its outer `vs` is never used, not even to pick
+the next local counter. The client keeps the skipped wire IDs for the join: an
+untouched local copy of a skipped object is not republished (so version skew
+cannot push an older copy over a newer record), only a real local edit
+publishes it, and the `stale`-on-own-stamp confirmation (§15) is disabled for
+those IDs. Unverified skips are a once-per-join security notice and make the
+snapshot not verified-clean; unsupported skips are a once-per-join notice
+asking the user to update TacMap. Live `put`/`del` frames use the same
+classification.
 
 ### 11. Relay actor registration
 
@@ -578,6 +664,37 @@ their meaning. 1013 is new but only reaches a v3 socket with no accepted
 none). The one new upgrade response is 503 `Room reset during join` (§16),
 which clients treat like any other transient 503.
 
+**Client reactions** (SP2, client contract `plans/04` sections 6 to 12; tables
+in `testdata/sync_client_behaviour.json`). Nack codes, close codes and upgrade
+statuses are unauthenticated relay statements. They only drop, retry, pause or
+reconnect the client's own work, never change replay state or mark anything
+authentic, and only 4010/4011 (the relay rejected this device's own signed
+identity) are reported as a security issue.
+
+- `stale` (and the reserved `not-found`) is an ordinary last-writer-wins loss,
+  never a security event and never a reconnect. The op is resolved; if the
+  relay holds exactly this device's persisted stamp for that wire ID (and the
+  ID was not skipped this join, §10) it counts as confirmed, otherwise the
+  object is not republished until the user edits it again.
+- `counter-window` resolves the op and pauses mutations for the join (§10).
+  `quota` and `invalid` resolve the op, hold the object until a local edit and
+  show the existing message once per session. `storage` keeps the op and
+  retries on the acknowledgement schedule. `hello-required`,
+  `session-mismatch` and `session-replaced` reconnect; three session conflicts
+  (those nacks or 4015) within 10 minutes stop sync until Retry.
+- Upgrade 401/403/404/426 and closes 4010/4011/4013 stop until Retry (4013 also
+  retries on the next foreground return); 429, 503, 1011 and 1013 back off
+  with long floors; 4014 escalates the hello epoch (§8).
+- Reconnect delay is full jitter between a per-class floor and an exponential
+  ceiling, and the attempt counter resets only after a session proved stable
+  (first `op-ack`, or 30 s connected), never at `hello-ack`.
+- Everything outbound, including the post-`hello-ack` resend of unconfirmed
+  own tombstones and a first-join publish, goes through a pacer that stays
+  within `clientPacing` with at most 32 unacknowledged `put`/`del` frames
+  (1 MiB) in flight. A retransmission timer starts only once that copy was
+  actually written, at most three copies are sent, and an object whose
+  ciphertext would exceed `CT_MAX` is never reserved or sent.
+
 ### 16. Relay retention, idle expiry, idle purge and tombstone compaction
 
 What the relay stores per room: `meta:auth` (token hash), `meta:protocol`,
@@ -654,8 +771,10 @@ A device returning after the purge gets a fresh room: `seq` 0 and zero
 which a client cannot tell apart from a malicious rollback; its own deletes
 and its peers' are gone from the relay; and if its counters had passed
 `ADVANCE_WINDOW` its writes are nacked `counter-window` (§9). The guidance is
-to move to a new join code. SP2 clients are to recognise a fresh room under
-an old join code and say so plainly instead of only warning. In v2 whoever
+to move to a new join code. SP2 clients show that once per join as
+`ROOM_RESET_SUSPECTED`, a security notice that suggests a new join code and is
+never presented as a benign expiry, and keep syncing; only a `counter-window`
+nack pauses their writes (`ROOM_RESET_CHANGES_PAUSED`, §10). In v2 whoever
 connects first afterwards pins the fresh room, as at idle expiry before SP1;
 v3 room IDs are bound to the token (§1), so only holders of the join code can.
 
@@ -712,9 +831,10 @@ once right after `hello-ack` (both shipped clients do). With more than about
 `RATE_MAX_MSGS` of them that trips the rate window (4008) roughly once per 200
 before it converges, and the relay stores them all again with fresh `tomb:`
 rows, undoing the compaction for that author. Before SP1 the 7-day wipe caused
-the same burst for every author. SP2 removes it: the post-`hello-ack` resend
-goes through the client pacer, and own tombstones older than the TTL are not
-resent once a relay capability says compaction is in force.
+the same burst for every author. SP2 clients send that resend through their
+pacer (§15), so it stays within `clientPacing` and no longer trips the rate
+window. Not resending own tombstones older than the TTL at all needs a relay
+capability (SP4) and is not done.
 
 **Relay-version dependence.** Nothing in-band tells a client which retention
 semantics a relay implements, and pre-SP1 relays (including self-hosted ones

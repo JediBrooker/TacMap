@@ -3,10 +3,38 @@ import Combine
 import CoreLocation
 @testable import TacticalMaps
 
+/// Pre-SP3 numbers for the exact same scenarios. Measured once on 7022052
+/// (the PDF/sync integration branch, before any SP2/SP3 client work) by
+/// building that tree in a scratch dir with counting writers / an HMAC and
+/// export counter patched in, and driving its private v3 handler with the same
+/// peer frames, same page sizes, same simulator (iPhone, Xcode debug build).
+/// Wall times are simulator times, phones will be slower. The tests below
+/// print these next to the SP3 numbers and assert against them.
+enum SP3Baseline {
+    // 2,000 local waypoints, snapshot of 2,000 signed tombstones for absent ids
+    static let tombstoneHmacs = 4_000_000
+    static let tombstoneReplayWrites = 2_002
+    static let tombstoneReplayBytes = 1_407_803_850
+    static let tombstoneSnapshotEndMs = 43_833
+    // N new remote waypoints in one snapshot, empty map
+    static let snapshot300 = (replayWrites: 302, replayBytes: 39_989_350, storeWrites: 300,
+                              exports: 46_350, ms: 8_711)
+    static let snapshot1000 = (replayWrites: 1_002, replayBytes: 441_995_850, storeWrites: 1_000,
+                               exports: 504_500, ms: 82_781)
+    // 100 accepted loc frames from one peer with 2,000 stamps loaded
+    static let presenceReplayWrites = 100
+    static let presenceReplayBytes = 43_673_700
+    // 50 live puts from one peer arriving as a burst
+    static let liveBurstReplayWrites = 100
+    static let liveBurstStoreWrites = 50
+    // local import of 500 waypoints in one store event
+    static let importJournalWrites = 500
+}
+
 /// SP3 efficiency (contract sections 17-21). Every test counts the real
 /// durable writes / HMACs / exports the manager does through the S6-02 seam
-/// and prints a SP3-MEASURE line, so the before/after numbers in the change
-/// description come straight out of the test log.
+/// and prints a SP3-MEASURE line (with the SP3Baseline value where there is
+/// one), so the before/after numbers come straight out of the test log.
 @MainActor
 final class SyncEfficiencyTests: XCTestCase {
     private var harness: SyncManagerHarness!
@@ -52,42 +80,64 @@ final class SyncEfficiencyTests: XCTestCase {
 
     // MARK: 17 snapshot apply: one commit, one clear, one store write
 
-    func testSnapshotOfManyRecordsCommitsOncePerStore() throws {
+    /// N new remote waypoints in one snapshot into an empty map. Before SP3
+    /// (SP3Baseline, same scenario) every record cost a full store rewrite
+    /// plus a marker-clear rewrite of the whole replay file, and every store
+    /// publish re-exported the whole model.
+    private func runSnapshotApply(
+        count: Int,
+        before: (replayWrites: Int, replayBytes: Int, storeWrites: Int, exports: Int, ms: Int)
+    ) throws {
         let executor = ManualSyncOffMainExecutor()
         harness.tearDown()
         harness = try SyncManagerHarness(joinCode: "3:sp3-efficiency-room-0001", offMainExecutor: executor)
-        let count = 300
         let items = (0..<count).map { harness.peerWaypointPut(remoteWaypoint($0), counter: Int64($0 + 2)) }
         harness.join()
         executor.runAll()
         harness.beginSnapshot()
         deliverInPages(items)
         harness.writes.reset()
+        SyncCostCounters.reset()
         let start = CFAbsoluteTimeGetCurrent()
         harness.endSnapshot()
         let snapshotEndOnMainMs = ms(since: start)
         let timed = executor.runNextTimed()
         harness.pump()
         let writes = harness.writes
-        report("snapshotApply", ["records": count, "replayWrites": writes.replayWrites,
-                                 "waypointStoreWrites": writes.waypointWrites,
+        let exports = SyncCostCounters.value(SyncCostCounters.geoJSONExport)
+        let onMainMs = snapshotEndOnMainMs + timed.completionMs
+        report("snapshotApply", ["records": count,
+                                 "replayWrites": "\(before.replayWrites)->\(writes.replayWrites)",
+                                 "replayBytes": "\(before.replayBytes)->\(writes.replayBytes)",
+                                 "waypointStoreWrites": "\(before.storeWrites)->\(writes.waypointWrites)",
                                  "drawingStoreWrites": writes.drawingWrites,
                                  "journalWrites": writes.journalWrites,
+                                 "geoJSONExports": "\(before.exports)->\(exports)",
                                  "snapshotEndFrameOnMainMs": snapshotEndOnMainMs,
                                  "validationOffMainMs": timed.workMs,
                                  "commitAndApplyOnMainMs": timed.completionMs,
-                                 "ms": snapshotEndOnMainMs + timed.workMs + timed.completionMs])
+                                 "mainThreadMs": "\(before.ms)->\(onMainMs)"])
         XCTAssertNotNil(harness.lastHello, "hello goes out after the single commit")
         XCTAssertEqual(harness.waypointStore.waypoints.count, count)
-        // commit + marker clear + hello epoch
+        // commit + marker clear + hello epoch, whatever N is
         XCTAssertLessThanOrEqual(writes.replayWrites, 3)
         XCTAssertLessThanOrEqual(writes.waypointWrites, 1)
         XCTAssertLessThanOrEqual(writes.drawingWrites, 1)
         XCTAssertEqual(writes.journalWrites, 0, "a remote apply is not a local edit")
+        // expected hash off main + one verify export per record, nothing O(N^2)
+        XCTAssertLessThanOrEqual(exports, 3 * count)
         harness.ackHello()
         XCTAssertEqual(manager.status, .connected)
         harness.pump(1_000)
         XCTAssertTrue(harness.sentMutations().isEmpty, "applied remote records are never echoed")
+    }
+
+    func testSnapshotOfManyRecordsCommitsOncePerStore() throws {
+        try runSnapshotApply(count: 300, before: SP3Baseline.snapshot300)
+    }
+
+    func testThousandRecordSnapshotIsStillOneCommitPerStore() throws {
+        try runSnapshotApply(count: 1_000, before: SP3Baseline.snapshot1000)
     }
 
     // MARK: 18 wire-id index (S5-02, S4-03, S3-10)
@@ -106,6 +156,7 @@ final class SyncEfficiencyTests: XCTestCase {
         let tombstones = (0..<tombstoneCount).map { harness.peerDel(wireId: randomWireId(), counter: Int64($0 + 2)) }
 
         SyncCostCounters.reset()
+        harness.writes.reset()
         let joinStart = CFAbsoluteTimeGetCurrent()
         harness.join()
         executor.runAll()
@@ -118,24 +169,32 @@ final class SyncEfficiencyTests: XCTestCase {
         let snapshotMs = ms(since: snapshotStart)
         let totalMs = ms(since: joinStart)
         let hmacs = SyncCostCounters.value(SyncCostCounters.wireIdHmac)
+        let writes = harness.writes
         report("tombstoneReverseLookup", ["localObjects": localCount, "tombstones": tombstoneCount,
-                                          "wireIdHmacs": hmacs, "snapshotEndMs": snapshotMs,
+                                          "wireIdHmacs": "\(SP3Baseline.tombstoneHmacs)->\(hmacs)",
+                                          "replayWrites": "\(SP3Baseline.tombstoneReplayWrites)->\(writes.replayWrites)",
+                                          "replayBytes": "\(SP3Baseline.tombstoneReplayBytes)->\(writes.replayBytes)",
+                                          "snapshotEndMs": "\(SP3Baseline.tombstoneSnapshotEndMs)->\(snapshotMs)",
                                           "validationOffMainMs": timed.workMs,
                                           "commitOnMainMs": timed.completionMs,
                                           "joinToHelloMs": totalMs])
         XCTAssertNotNil(harness.lastHello)
         // the index is built once (one HMAC per local object), lookups are O(1)
         XCTAssertLessThanOrEqual(hmacs, localCount + 64)
+        XCTAssertLessThan(hmacs * 100, SP3Baseline.tombstoneHmacs)
+        // join reservation + snapshot commit + marker clear + hello epoch
+        XCTAssertLessThanOrEqual(writes.replayWrites, 4)
         XCTAssertEqual(harness.waypointStore.waypoints.count, localCount, "absent ids delete nothing")
     }
 
     // MARK: 17.1 presence fence persistence (S5-01, S3-12, S4-04)
 
     func testPresenceFramesAreNotResealedPerFrame() throws {
-        let tombstones = (0..<500).map { harness.peerDel(wireId: randomWireId(), counter: Int64($0 + 2)) }
+        // 2,000 stamps loaded, the audit's S3-12 / S5-01 setup
+        let tombstones = (0..<2_000).map { harness.peerDel(wireId: randomWireId(), counter: Int64($0 + 2)) }
         harness.join()
         harness.beginSnapshot()
-        deliverInPages(tombstones)
+        deliverInPages(tombstones, pageSize: 500)
         harness.endSnapshot()
         harness.ackHello()
         harness.socket.deliver(harness.peerHello())
@@ -147,10 +206,33 @@ final class SyncEfficiencyTests: XCTestCase {
             harness.pump(5_000)
         }
         let writes = harness.writes
-        report("presenceFrames", ["frames": frames, "cadenceMs": 5_000, "replayWrites": writes.replayWrites,
-                                  "replayBytes": writes.replayBytes])
+        report("presenceFrames", ["frames": frames, "stampsLoaded": 2_000, "cadenceMs": 5_000,
+                                  "replayWrites": "\(SP3Baseline.presenceReplayWrites)->\(writes.replayWrites)",
+                                  "replayBytes": "\(SP3Baseline.presenceReplayBytes)->\(writes.replayBytes)"])
         XCTAssertEqual(manager.peers[harness.peerActor]?.lat ?? 0, -33.86 + Double(frames) / 100_000, accuracy: 1e-9)
-        XCTAssertLessThanOrEqual(writes.replayWrites, frames / 10)
+        // 500 s of frames: the first one after the exact hello write, then one
+        // flush per 60 s, the stride never kicks in at a 5 s cadence
+        XCTAssertLessThanOrEqual(writes.replayWrites, 1 + 500 / 60)
+        XCTAssertLessThan(writes.replayBytes * 10, SP3Baseline.presenceReplayBytes)
+    }
+
+    /// A burst (frames queued faster than the 5 s cadence, e.g. after a stall)
+    /// is where the 16 stride matters: one write per 16 counters at most.
+    func testPresenceBurstWritesOncePerStride() throws {
+        harness.join()
+        harness.connect()
+        harness.socket.deliver(harness.peerHello())
+        harness.pump()
+        harness.writes.reset()
+        for counter in 1...100 {
+            harness.socket.deliver(harness.peerLoc(counter: Int64(counter), lat: -33.86 + Double(counter) / 100_000))
+        }
+        harness.pump()
+        let writes = harness.writes.replayWrites
+        report("presenceBurst", ["frames": 100, "replayWrites": "\(SP3Baseline.presenceReplayWrites)->\(writes)"])
+        XCTAssertEqual(manager.peers[harness.peerActor]?.lat ?? 0, -33.86 + 100.0 / 100_000, accuracy: 1e-9)
+        // counter 1 (first after the exact hello write), then 17, 33, 49, 65, 81, 97
+        XCTAssertLessThanOrEqual(writes, 1 + 100 / Int(PresenceFencePersistence.stride))
     }
 
     // MARK: 17 journal + outbound reservation batching (S5-03, S5 verifier note 1)
@@ -185,7 +267,8 @@ final class SyncEfficiencyTests: XCTestCase {
         harness.ack(first)
         harness.pump(250)
         let ackExports = SyncCostCounters.value(SyncCostCounters.geoJSONExport)
-        report("localImport", ["objects": count, "journalWrites": journalWrites,
+        report("localImport", ["objects": count,
+                               "journalWrites": "\(SP3Baseline.importJournalWrites)->\(journalWrites)",
                                "importExports": importExports, "importMs": importMs,
                                "diffReplayWrites": reservationWrites, "diffExports": diffExports,
                                "diffMs": diffMs, "exportsAfterOneAck": ackExports])
@@ -267,8 +350,9 @@ final class SyncEfficiencyTests: XCTestCase {
         for record in records { harness.socket.deliver(record) }
         harness.pump()
         let writes = harness.writes
-        report("liveRecordBurst", ["records": count, "replayWrites": writes.replayWrites,
-                                   "waypointStoreWrites": writes.waypointWrites,
+        report("liveRecordBurst", ["records": count,
+                                   "replayWrites": "\(SP3Baseline.liveBurstReplayWrites)->\(writes.replayWrites)",
+                                   "waypointStoreWrites": "\(SP3Baseline.liveBurstStoreWrites)->\(writes.waypointWrites)",
                                    "journalWrites": writes.journalWrites])
         XCTAssertEqual(harness.waypointStore.waypoints.count, count)
         XCTAssertEqual(writes.replayWrites, 2, "one commit before the model, one marker clear after")

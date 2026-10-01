@@ -52,6 +52,27 @@ internal enum class SnapshotRecordReason(val wireName: String, val category: Sna
     EXPECTED_HASH_UNAVAILABLE("expected_model_hash_unavailable", SnapshotRecordCategory.SKIP_UNSUPPORTED),
 }
 
+/**
+ * Same unit name as iOS (plans/04 section 23.1). The per-record crypto and
+ * parse checks live in [SnapshotValidator] so the snapshot worker can own its
+ * own key copies; this is the table the fixture lists are checked against and
+ * the one entry point both the snapshot and live paths classify through.
+ */
+internal object SnapshotRecordClassifier {
+    private val byWireName = SnapshotRecordReason.entries.associateBy { it.wireName }
+
+    /** FATAL kills the whole snapshot, the two SKIP_* drop one record. */
+    fun category(wireName: String): SnapshotRecordCategory? = byWireName[wireName]?.category
+
+    fun classify(
+        validator: SnapshotValidator,
+        rec: org.json.JSONObject,
+        wireId: String,
+        layers: List<com.tacmap.drawings.DrawingLayer>,
+        localKindOf: (String) -> String? = { null },
+    ): V3Check = validator.check(rec, wireId, layers, localKindOf)
+}
+
 /** Snapshot fence checks that don't need keys. Seq regression is a relay hint:
  * surface it once per join and keep syncing (plans/04 section 5). */
 internal object SnapshotFence {

@@ -273,6 +273,66 @@ final class SyncClientBehaviourSP3Tests: XCTestCase {
         }
     }
 
+    /// 17.1 says the crash floor is persisted + 15 for *every* session. A
+    /// session whose counter never hit the disk (fresh hello, then 1..15 shown
+    /// without a write because the fence was already non-exact) has persisted
+    /// 0, so its floor is 15. Without that a crash hands those 15 already shown
+    /// positions back to a replaying relay.
+    func testCrashFloorAlsoCoversASessionWhoseCounterWasNeverWritten() throws {
+        try withSandbox { directory in
+            let room = "sp3-presence-unwritten-session"
+            var writes = 0
+            let writer: SyncReplayState.PersistenceWriter = { data, url, label in
+                writes += 1
+                try SafeStore.write(data, to: url, label: label)
+            }
+            let otherActor = SyncIdentity.urlB64Encode(Data(repeating: 0x64, count: 32))
+            let otherPub = SyncIdentity.urlB64Encode(Data(repeating: 0x65, count: 32))
+            let otherSession = SyncIdentity.urlB64Encode(Data(repeating: 0x66, count: 32))
+            let newSession = SyncIdentity.urlB64Encode(Data(repeating: 0x67, count: 32))
+            let state = SyncReplayState(roomId: room, containerURL: directory, persistenceWriter: writer)
+            XCTAssertTrue(state.load())
+            XCTAssertTrue(try state.acceptHello(actorId: actor, pubkey: pub, sessionDomain: session,
+                                                epochHex: "0000000000000001"))
+            // first counter after an exact write goes down first, fence is non-exact from here
+            XCTAssertTrue(try state.acceptPresence(actorId: actor, sessionDomain: session, counter: 1))
+            XCTAssertFalse(state.presenceFenceExact)
+
+            // a second unit joins: hello durable, its counters are not
+            XCTAssertTrue(try state.acceptHello(actorId: otherActor, pubkey: otherPub, sessionDomain: otherSession,
+                                                epochHex: "0000000000000004"))
+            // and the first one comes back on a fresh session
+            XCTAssertTrue(try state.acceptHello(actorId: actor, pubkey: pub, sessionDomain: newSession,
+                                                epochHex: "0000000000000002"))
+            let before = writes
+            for counter in Int64(1)...15 {
+                XCTAssertTrue(try state.acceptPresence(actorId: otherActor, sessionDomain: otherSession, counter: counter))
+                XCTAssertTrue(try state.acceptPresence(actorId: actor, sessionDomain: newSession, counter: counter))
+            }
+            XCTAssertEqual(writes, before, "inside the stride nothing is written")
+
+            // crash, no clean point
+            let reloaded = SyncReplayState(roomId: room, containerURL: directory, persistenceWriter: writer)
+            XCTAssertTrue(reloaded.load())
+            for counter in Int64(1)...15 {
+                XCTAssertFalse(try reloaded.acceptPresence(actorId: otherActor, sessionDomain: otherSession,
+                                                           counter: counter), "counter \(counter) was shown already")
+                XCTAssertFalse(try reloaded.acceptPresence(actorId: actor, sessionDomain: newSession,
+                                                           counter: counter), "counter \(counter) was shown already")
+            }
+            XCTAssertTrue(try reloaded.acceptPresence(actorId: otherActor, sessionDomain: otherSession, counter: 16))
+            XCTAssertTrue(try reloaded.acceptPresence(actorId: actor, sessionDomain: newSession, counter: 16))
+
+            // an exact file still has no floor for such a session
+            try reloaded.writeCleanPresenceFence()
+            let clean = SyncReplayState(roomId: room, containerURL: directory, persistenceWriter: writer)
+            XCTAssertTrue(clean.load())
+            XCTAssertTrue(clean.presenceFenceExact)
+            XCTAssertFalse(try clean.acceptPresence(actorId: actor, sessionDomain: newSession, counter: 16))
+            XCTAssertTrue(try clean.acceptPresence(actorId: actor, sessionDomain: newSession, counter: 17))
+        }
+    }
+
     // MARK: 21.6 chat send gate
 
     func testChatBlockedToBackgroundPeer() {

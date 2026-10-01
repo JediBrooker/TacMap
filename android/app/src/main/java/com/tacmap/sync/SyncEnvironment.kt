@@ -147,6 +147,12 @@ internal class SyncEnvironment(
     val inboundDispatcher: CoroutineDispatcher = dispatcher,
     /** Build.FINGERPRINT check, a stub field on the plain JVM. */
     val allowsSimulatorTeleport: () -> Boolean = PresenceLocationQuality::allowsSimulatorTeleport,
+    /**
+     * Presence-only screen-off reconnect (plans/04 section 21.4). Ships as
+     * the policy constant, which stays false until doc change D1 lands; the
+     * tests turn it on to drive the path.
+     */
+    val backgroundReconnectEnabled: Boolean = BackgroundPresencePolicy.RECONNECT_ENABLED,
 ) {
     companion object {
         @OptIn(ExperimentalCoroutinesApi::class)

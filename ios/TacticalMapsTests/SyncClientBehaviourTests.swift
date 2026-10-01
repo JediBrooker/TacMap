@@ -208,7 +208,12 @@ final class SyncClientBehaviourTests: XCTestCase {
             let at = int(step["atMs"]) < 0 ? 0 : int(step["atMs"])
             switch step["event"] as? String {
             case "failure":
-                if step["attemptBefore"] != nil { policy = SyncBackoffPolicy(attempt: Int(int(step["attemptBefore"]))) }
+                if step["attemptBefore"] != nil {
+                    // jump the counter, but keep when the last attempt started
+                    let started = policy.lastAttemptStartMs
+                    policy = SyncBackoffPolicy(attempt: Int(int(step["attemptBefore"])))
+                    if let started { policy.attemptStarted(atMs: started) }
+                }
                 let cls = SyncBackoffClass(rawValue: step["class"] as! String)!
                 let delay = policy.failure(cls, random: double(step["random"]), nowMs: at)
                 XCTAssertEqual(delay, double(step["expectDelayMs"]), accuracy: 0.001, "\(id) @\(at)")
@@ -238,16 +243,9 @@ final class SyncClientBehaviourTests: XCTestCase {
     }
 
     func testReachabilityScenario() {
-        // attemptStarted is at 0, the failure keeps it (attemptBefore rebuilds the counter)
-        var policy = SyncBackoffPolicy()
-        policy.attemptStarted(atMs: 0)
-        var withAttempt = SyncBackoffPolicy(attempt: 6)
-        withAttempt.attemptStarted(atMs: 0)
-        XCTAssertEqual(withAttempt.failure(.transient, random: 1.0, nowMs: 100), 30_000)
-        XCTAssertEqual(withAttempt.reachabilityRegained(nowMs: 1_000), 2_000)
-        XCTAssertEqual(withAttempt.failure(.slowRate, random: 0.0, nowMs: 5_000), 60_000)
-        XCTAssertEqual(withAttempt.reachabilityRegained(nowMs: 6_000), 65_000)
-        _ = policy
+        // straight off the fixture: only a pending transient reconnect gets
+        // pulled in, never before lastAttemptStart + 2 s, slow classes stay put
+        runBackoffSteps("reachability_shortcuts_transient_only")
     }
 
     func testJitterAtTheCapIsSpreadNotPiledUp() {
@@ -820,24 +818,79 @@ final class SyncClientBehaviourTests: XCTestCase {
     // MARK: coverage of the scenario list
 
     func testEverySp2ScenarioHasAnIosRunner() {
-        let covered: Set<String> = [
-            "backoff_full_jitter_transient", "backoff_not_reset_at_hello_ack", "backoff_reset_after_stable_30s",
-            "backoff_slow_busy_503", "close_and_status_table", "session_conflict_stops_after_three",
-            "stale_nack_no_reconnect", "stale_on_own_persisted_stamp_is_confirmed",
-            "counter_window_pauses_mutations_once", "seq_regression_surfaced_once_per_join",
-            "poison_record_skipped", "structural_snapshot_stops_after_three",
-            "layer_metadata_staged_in_item_order", "live_window_resync_cooldown", "pacer_bulk_500_small",
-            "pacer_large_frames_bytes", "pacer_interactive_reserve", "retransmit_starts_at_write",
-            "no_retransmit_while_unwritten", "receive_budget_bulk_import_no_close",
-            "handshake_progress_watchdog", "handshake_stall_fires", "android_connect_open_timeout",
-            "hello_ack_timeout", "reachability_shortcuts_transient_only", "hello_epoch_vectors",
-            "chat_fence_pruning", "chat_history_byte_prune", "ios_transient_inactive_keeps_session",
-            "object_too_large_not_reserved", "v2_casing_and_tie",
-            // android only, its runner lives in the android suite
-            "android_pause_keeps_room"
+        // scenario -> the test methods that run it. Checked against the ObjC
+        // runtime so a renamed or deleted runner fails here, not silently.
+        let runners: [String: [(AnyClass, String)]] = [
+            "backoff_full_jitter_transient": [(Self.self, "testBackoffScenarios")],
+            "backoff_not_reset_at_hello_ack": [(Self.self, "testBackoffScenarios"),
+                                               (SyncManagerSessionTests.self, "testBackoffIsNotResetByHelloAck")],
+            "backoff_reset_after_stable_30s": [(Self.self, "testBackoffScenarios"),
+                                               (SyncManagerProveItTests.self, "testThirtySecondsConnectedIsAStableSession")],
+            "backoff_slow_busy_503": [(Self.self, "testBackoffScenarios"),
+                                      (SyncManagerSessionTests.self, "test503UpgradeBacksOffSlowlyAndSurfacesBusyOnTheSecond")],
+            "close_and_status_table": [(Self.self, "testCloseAndStatusTable"),
+                                       (SyncManagerContractTableTests.self, "testEveryCloseCodeRowThroughTheManager"),
+                                       (SyncManagerContractTableTests.self, "testEveryUpgradeStatusRowThroughTheManager")],
+            "session_conflict_stops_after_three": [(Self.self, "testSessionConflictStopsAfterThree"),
+                                                   (SyncManagerSessionTests.self, "testSessionReplacedThreeTimesInTenMinutesStops")],
+            "stale_nack_no_reconnect": [(SyncManagerContractTableTests.self, "testStaleNackNoReconnectScript")],
+            "stale_on_own_persisted_stamp_is_confirmed": [(Self.self, "testStaleOnOwnPersistedStampIsConfirmed"),
+                                                          (SyncManagerProveItTests.self, "testStaleOnOurOwnRecoveryResendIsConfirmedNotAReconnect")],
+            "counter_window_pauses_mutations_once": [(SyncManagerContractTableTests.self, "testCounterWindowScriptKeepsPresenceGoing")],
+            "seq_regression_surfaced_once_per_join": [(SyncManagerContractTableTests.self, "testSeqRegressionScript")],
+            "poison_record_skipped": [(SyncManagerSessionTests.self, "testPoisonRecordsAreSkippedAndTheHandshakeCompletes"),
+                                      (SyncHostileRecordTests.self, "testEverySkipCategoryInsideASnapshotIsSkippedAndTheHandshakeCompletes")],
+            "structural_snapshot_stops_after_three": [(Self.self, "testStructuralSnapshotStopsAfterThree"),
+                                                      (SyncManagerSessionTests.self, "testDuplicateWireIdRejectsTheWholeSnapshotThenStopsAfterThree")],
+            "layer_metadata_staged_in_item_order": [(SyncManagerSessionTests.self, "testSnapshotLayerMetadataIsStagedInItemOrder")],
+            "live_window_resync_cooldown": [(Self.self, "testLiveWindowResyncCooldown"),
+                                            (SyncManagerSessionTests.self, "testSignedLiveFrameBeyondOurWindowTriggersOneResync")],
+            "pacer_bulk_500_small": [(Self.self, "testPacerBulkSmallFrames"),
+                                     (SyncManagerSessionTests.self, "testBulkPublishIsPacedBelowTheRelayWindow")],
+            "pacer_large_frames_bytes": [(Self.self, "testPacerLargeFramesAreByteBound")],
+            "pacer_interactive_reserve": [(Self.self, "testPacerInteractiveReserveLetsPresenceAndChatThrough")],
+            "retransmit_starts_at_write": [(Self.self, "testAckTimeoutTable"), (Self.self, "testAckTimerScenarios"),
+                                           (SyncManagerSessionTests.self, "testRetransmitTimerStartsWhenTheFrameIsActuallyWritten")],
+            "no_retransmit_while_unwritten": [(Self.self, "testAckTimerScenarios")],
+            "receive_budget_bulk_import_no_close": [(Self.self, "testReceiveBudgetBulkImport"),
+                                                    (SyncManagerSessionTests.self, "testPeerBulkImportDoesNotTripTheReceiveBudget")],
+            "handshake_progress_watchdog": [(Self.self, "testWatchdogScenarios"),
+                                            (SyncManagerSessionTests.self, "testSlowButProgressingSnapshotIsNotKilledByTheWatchdog")],
+            "handshake_stall_fires": [(Self.self, "testWatchdogScenarios"),
+                                      (SyncManagerSessionTests.self, "testStalledHandshakeFiresAfterSixtySecondsWithoutProgress")],
+            "android_connect_open_timeout": [(Self.self, "testWatchdogScenarios"),
+                                             (SyncManagerContractTableTests.self, "testEveryLocalCloseRowReconnectsByItsOwnReason")],
+            "hello_ack_timeout": [(Self.self, "testWatchdogScenarios"),
+                                  (SyncManagerContractTableTests.self, "testEveryLocalCloseRowReconnectsByItsOwnReason")],
+            "reachability_shortcuts_transient_only": [(Self.self, "testReachabilityScenario"),
+                                                      (SyncManagerProveItTests.self, "testNetworkReturnNeverShortensASlowClassBackoff")],
+            "hello_epoch_vectors": [(Self.self, "testHelloEpochVectors"),
+                                    (SyncManagerProveItTests.self, "testStaleEpochDoublesThreeTimesThenStopsWithSessionCounterBehind")],
+            "chat_fence_pruning": [(Self.self, "testChatFencePruning"),
+                                   (TacMapChatRetentionTests.self, "testSupersededFencesArePrunedSoANewSessionStillGetsThrough")],
+            "chat_history_byte_prune": [(Self.self, "testChatHistoryBytePrune"),
+                                        (TacMapChatRetentionTests.self, "testHistoryIsPrunedByEncodedBytesInsteadOfFailingForGood")],
+            "ios_transient_inactive_keeps_session": [(Self.self, "testIosTransientInactivePolicy"),
+                                                     (SyncManagerSessionTests.self, "testTransientInactiveKeepsTheSessionAndChatKey")],
+            "object_too_large_not_reserved": [(Self.self, "testObjectTooLargeBoundary"),
+                                              (SyncManagerSessionTests.self, "testObjectTooLargeIsNeitherReservedNorSent")],
+            "v2_casing_and_tie": [(Self.self, "testLegacyV2CasingAndTieVectors"),
+                                  (SyncLegacyV2SessionTests.self, "testOutboundIdsAreLowercaseAndAndroidRecordsAreNotEchoedAsDeletes"),
+                                  (SyncLegacyV2SessionTests.self, "testEqualVersionTieGoesToTheHigherWriterLikeTheRelay")]
         ]
+        // android only, its runner lives in the android suite
+        let androidOnly: Set<String> = ["android_pause_keeps_room"]
         for s in contract["scenarios"] as? [[String: Any]] ?? [] where s["requiredBy"] as? String == "SP2" {
-            XCTAssertTrue(covered.contains(s["id"] as? String ?? ""), "no iOS runner for \(s["id"] ?? "?")")
+            let id = s["id"] as? String ?? "?"
+            if androidOnly.contains(id) { continue }
+            let list = runners[id] ?? []
+            XCTAssertFalse(list.isEmpty, "no iOS runner for \(id)")
+            for (cls, name) in list {
+                // a throwing test bridges to ObjC as nameAndReturnError:
+                let exists = cls.instancesRespond(to: NSSelectorFromString(name))
+                    || cls.instancesRespond(to: NSSelectorFromString(name + "AndReturnError:"))
+                XCTAssertTrue(exists, "\(id): \(cls).\(name) is gone")
+            }
         }
     }
 }

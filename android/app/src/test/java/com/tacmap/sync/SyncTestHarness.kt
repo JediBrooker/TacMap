@@ -244,6 +244,8 @@ internal class SyncHarness(
     val dir: File = Files.createTempDirectory("sync-harness").toFile(),
     /** Validation, sealed writes and PBKDF2 on their own virtual dispatchers, stepped by hand. */
     separateWorkers: Boolean = false,
+    /** The 21.4 switch; production ships it off until doc change D1. */
+    backgroundReconnect: Boolean = false,
 ) {
     val dispatcher = VirtualTimeDispatcher()
     val validationDispatcher = if (separateWorkers) VirtualTimeDispatcher() else dispatcher
@@ -284,6 +286,7 @@ internal class SyncHarness(
         deriveDispatcher = deriveDispatcher,
         wakeLock = wakeLock,
         allowsSimulatorTeleport = { false },
+        backgroundReconnectEnabled = backgroundReconnect,
     )
     val manager = SyncManager(waypointStore, drawingStore, scope, env)
 

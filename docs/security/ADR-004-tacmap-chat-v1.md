@@ -48,6 +48,16 @@ X25519 keypair in memory. It does not derive this key from the Ed25519 seed and
 does not persist the private key. It clears/releases the private key on socket
 replacement, disconnect, Leave, App Lock/DataKey lock, or manager disposal.
 
+Entering screen-off background presence is such a lock: the client releases
+its chat key and processes no chat until it is opened again, so a session in
+background presence mode is not a chat recipient. Its advert is not revoked on
+the wire (v1 has no revoke frame), but the session's signed presence says so:
+as it enters background it sends one presence frame with the long screen-off
+retention (using a fix no older than two minutes, if it has one), and any
+session whose latest accepted presence advertises a retention window above the
+45-second foreground window is treated as not chat-receiving (client contract
+`plans/04` section 21.6).
+
 The public key is advertised in this exact JSON object; unknown keys are not
 permitted:
 
@@ -248,6 +258,33 @@ after the corresponding verified hello and chat-key advert. Leave may clear the
 UI and live secrets but must not erase that state. Forget Room may delete it
 only with the existing rollback-protection warning.
 
+The fence table holds at most 256 `{actorId, sessionDomain, chatKeyId}`
+identities. A fence is **superseded** once the durable ADR-001 replay state
+records a different session domain for that actor, and superseded fences are
+deleted when the room's chat store opens, before a new identity is admitted,
+and on every chat-store write (client contract `plans/04` section 15.1).
+This is safe because chat is accepted only from the actor's current
+authenticated session, and a session only becomes current through a hello
+with a strictly higher epoch (or the identical session at an equal epoch).
+Once the durable state has moved that actor to another session at a higher
+epoch, the superseded session can never be reactivated, so its fence can
+never be consulted again; the same durable hello floor already protects
+presence. If the table is still full of current fences, the new identity's
+message is rejected as before and a "chat replay protection is full" notice
+is shown once per join. Each fence keeps its 16 most recent message
+fingerprints when written (up to 64 are still accepted when loading older
+files); an older exact retry then becomes a replay rejection instead of a
+duplicate, and both are dropped. If the replay state itself is lost, which is
+a visible security event at join, presence and chat replay protection degrade
+together and the message-ID check in history still rejects re-delivery of any
+retained message.
+
+Chat history is bounded by 500 messages and 2 MiB of encoded document. When a
+write would exceed 2 MiB, the oldest messages in local acceptance order are
+dropped until the document is at most 1.5 MiB, so a long conversation with
+large escaped bodies keeps working instead of failing every later write.
+Unread markers follow the retained messages.
+
 ### 6. Keep payload type and operational content encrypted
 
 Plaintext is strict UTF-8 JSON, at most 8,192 bytes. Unknown fields are rejected.
@@ -346,6 +383,13 @@ open, Send is disabled and the user must reselect the unit. The receiver labels
 the sender from the verified actor binding; payload text cannot choose its own
 sender identity.
 
+A selected-unit send to a session in background presence mode (§1) is blocked
+on the sender with "That unit's TacMap is in the background and can't receive
+chat until it is opened again" instead of being routed and shown as
+**Routed**; nothing is encrypted or sent. Entire-room sends are unchanged,
+because **Sent to room** never claimed that any particular member received the
+frame (§7).
+
 ## Relay storage and metadata
 
 The relay never puts a chat advert, message, or report into Durable
@@ -393,6 +437,11 @@ traffic-flow confidentiality or padding.
   transport acknowledgements. Chat v1 has no endpoint receipt, so **Routed**
   does not prove that a recipient decrypted, stored, displayed, or read a
   frame.
+- Between a peer going to background and its long-retention presence frame
+  reaching the sender (and for any peer whose app predates that frame), a
+  selected-unit message can still be routed to a session that drops it unread
+  and shows **Routed**. Closing that gap needs a chat-key revoke frame the relay
+  forwards, which is a future negotiated extension, not part of v1.
 - Direct chat has session forward secrecy after key erasure but no double
   ratchet or post-compromise security. Compromise during a live session can
   expose that session's direct traffic.
