@@ -52,13 +52,20 @@ final class DatumTests: XCTestCase {
     }
 
     func testModernDatumsAreIdentity() {
-        // WGS84 / GDA94 / NAD83 are coincident with WGS84 to sub-metre, so the
-        // fast-path must return the input byte-for-byte (zero shift).
-        for code in ["WE", "WD", "GD", "NA", "ZZ" /* unknown → identity */] {
+        // WGS84 / NAD83 are coincident with WGS84 to sub-metre, so the
+        // fast-path must return the input byte-for-byte (zero shift). GD used
+        // to sit in here too, but the shared table now gives GDA94 the same
+        // ICSM 7-param the fiduciary path uses (fixture discrepancies, ~1.5 m)
+        for code in ["WE", "WD", "NA", "ZZ" /* unknown -> identity */] {
             let w = DatumShift.toWGS84(lat: 51.5, lon: -0.12, datumCode: code)
             XCTAssertEqual(w.lat, 51.5, accuracy: 1e-12, "\(code) should be identity")
             XCTAssertEqual(w.lon, -0.12, accuracy: 1e-12, "\(code) should be identity")
         }
+        let sydney = (lat: -33.8568, lon: 151.2153)
+        let byCode = DatumShift.toWGS84(lat: sydney.lat, lon: sydney.lon, datumCode: "GD")
+        let byPicker = Datum.gda94.toWGS84(CLLocationCoordinate2D(latitude: sydney.lat, longitude: sydney.lon))
+        XCTAssertEqual(byCode.lat, byPicker.latitude, accuracy: 1e-9, "GeoPDF and calibration GDA94 agree now")
+        XCTAssertEqual(byCode.lon, byPicker.longitude, accuracy: 1e-9)
     }
 
     func testLegacyDatumShiftsMatchKnownHorizontalOffsets() {
@@ -115,11 +122,13 @@ final class DatumTests: XCTestCase {
 
     func testInlineParamsMatchNamedCodeForSameDatum() {
         // Inline-dict path and named-code path must agree when they describe the
-        // same datum: OSGB36 = Airy1830 + (446.448, -125.157, 542.06).
-        let byName = DatumShift.toWGS84(lat: 51.48, lon: -0.10, datumCode: "OS")
-        let byDict = DatumShift.toWGS84(lat: 51.48, lon: -0.10,
-                                        sourceEllipsoid: .airy1830,
-                                        dx: 446.448, dy: -125.157, dz: 542.06)
+        // same datum: ED50 = International 1924 + (-87, -98, -121). (Was OSGB36,
+        // but that row is the full 7-param EPSG:1314 now, the old translation
+        // alone was 13-15 m out, so a 3-param dict can't match it any more.)
+        let byName = DatumShift.toWGS84(lat: 43.30, lon: 5.40, datumCode: "EU")
+        let byDict = DatumShift.toWGS84(lat: 43.30, lon: 5.40,
+                                        sourceEllipsoid: .international1924,
+                                        dx: -87, dy: -98, dz: -121)
         XCTAssertEqual(byName.lat, byDict.lat, accuracy: 1e-9)
         XCTAssertEqual(byName.lon, byDict.lon, accuracy: 1e-9)
     }

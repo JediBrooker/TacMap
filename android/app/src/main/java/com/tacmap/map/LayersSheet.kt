@@ -43,12 +43,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.material3.ButtonDefaults
 import com.tacmap.calibration.BasemapStyle
+import com.tacmap.calibration.Calibration
+import com.tacmap.calibration.MapSourceKind
+import com.tacmap.calibration.PdfMapSource
+import com.tacmap.localization.DisplayFormat
 
 private data class PendingLayerVisibilityMutation(
     val message: String,
     val retry: () -> DrawingMutationUiResult,
 )
+
+/** Which imported map a pending "Delete…" confirmation is about. */
+private enum class ImportedMapDeletion { PDF, OFFLINE_TILES, SAVED }
+
+/** How an imported PDF is placed on the map, shown under its name in Layers. */
+internal enum class PdfGeoreferencing { GEOREFERENCED, MANUAL, NONE }
+
+/**
+ * iOS shows "Georeferenced" for a GeoPDF, "Manually placed" for a sheet the
+ * user calibrated, and the map-centre fallback when there is no calibration.
+ * Android stores auto-parsed GeoPDF correspondences as fiduciaries without an
+ * MGRS string; user-entered fiduciaries always carry one.
+ */
+internal fun pdfGeoreferencing(kind: MapSourceKind, calibration: Calibration?): PdfGeoreferencing =
+    when (calibration) {
+        null -> PdfGeoreferencing.NONE
+        is Calibration.Parsed -> PdfGeoreferencing.GEOREFERENCED
+        is Calibration.Fiduciaries -> when {
+            kind == MapSourceKind.GEO_PDF -> PdfGeoreferencing.GEOREFERENCED
+            calibration.fids.none { it.mgrs.isNotBlank() } -> PdfGeoreferencing.GEOREFERENCED
+            else -> PdfGeoreferencing.MANUAL
+        }
+    }
+
+/** Fiduciaries behind a manual calibration, or null when there is none. */
+internal fun manualFiduciaryCount(kind: MapSourceKind, calibration: Calibration?): Int? =
+    (calibration as? Calibration.Fiduciaries)?.fids?.size
+        ?.takeIf { pdfGeoreferencing(kind, calibration) == PdfGeoreferencing.MANUAL }
 
 /**
  * Overlay + label toggles, plus imported-map management. Opened from
@@ -82,9 +115,12 @@ fun LayersSheet(
     activeBaseMap: BasemapStyle?,
     onSelectBaseMap: (BasemapStyle) -> Unit,
     retainedImportedMapName: String?,
+    retainedImportedMapIssue: String?,
     importedMapActive: Boolean,
     onReturnToImportedMap: () -> Unit,
-    hasPdfMap: Boolean,
+    onDeleteRetainedImportedMap: () -> Unit,
+    onRemoveUnavailableRetainedMap: () -> Unit,
+    pdfMap: PdfMapSource?,
     hasOfflineTiles: Boolean,
     onCalibratePdf: () -> Unit,
     onGenerateTiles: () -> Unit,
@@ -94,6 +130,8 @@ fun LayersSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var pendingVisibility by remember { mutableStateOf<PendingLayerVisibilityMutation?>(null) }
+    var pendingDeletion by remember { mutableStateOf<ImportedMapDeletion?>(null) }
+    val savedMapOnly = !importedMapActive && retainedImportedMapName != null
     fun attemptVisibility(retry: () -> DrawingMutationUiResult) {
         pendingVisibility = when (val result = retry()) {
             DrawingMutationUiResult.Saved -> null
@@ -170,10 +208,41 @@ fun LayersSheet(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
+            if (!importedMapActive && retainedImportedMapIssue != null) {
+                Text(
+                    Messages.layersSavedMapUnavailable(),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFF9800),
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(retainedImportedMapIssue, fontSize = 11.sp, color = Color(0xFF8A938A))
+                OutlinedButton(
+                    onClick = onRemoveUnavailableRetainedMap,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                ) { Text(Messages.layersRemoveSavedMapEntry()) }
+            }
 
-            if (hasPdfMap || hasOfflineTiles) {
+            if (pdfMap != null || hasOfflineTiles || savedMapOnly) {
                 SectionHeader(L10n.text("Imported Map"))
-                if (hasPdfMap) {
+                if (pdfMap != null) {
+                    Text(pdfMap.displayName, fontSize = 15.sp)
+                    Text(
+                        when (pdfGeoreferencing(pdfMap.kind, pdfMap.calibration)) {
+                            PdfGeoreferencing.GEOREFERENCED -> Messages.layersPdfGeoreferenced()
+                            PdfGeoreferencing.MANUAL -> Messages.layersPdfManualBounds()
+                            PdfGeoreferencing.NONE -> Messages.layersPdfNoGeoreferencing()
+                        },
+                        fontSize = 11.sp,
+                        color = Color(0xFF8A938A)
+                    )
+                    manualFiduciaryCount(pdfMap.kind, pdfMap.calibration)?.let { count ->
+                        Text(
+                            Messages.layersPdfFiduciaryCount(DisplayFormat.number(count.toDouble(), 0)),
+                            fontSize = 11.sp,
+                            color = Color(0xFF8A938A)
+                        )
+                    }
                     OutlinedButton(
                         onClick = onCalibratePdf,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
@@ -187,21 +256,48 @@ fun LayersSheet(
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 2.dp)
                     )
-                    OutlinedButton(
-                        onClick = onUnloadPdf,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) { Text(L10n.text("Unload PDF Map")) }
+                    DeleteMapButton(Messages.layersDeletePdfMap()) {
+                        pendingDeletion = ImportedMapDeletion.PDF
+                    }
                 }
                 if (hasOfflineTiles) {
-                    OutlinedButton(
-                        onClick = onUnloadOfflineTiles,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) { Text(L10n.text("Unload Offline Tiles")) }
+                    DeleteMapButton(Messages.layersDeleteOfflineMap()) {
+                        pendingDeletion = ImportedMapDeletion.OFFLINE_TILES
+                    }
+                }
+                if (savedMapOnly) {
+                    Text(retainedImportedMapName.orEmpty(), fontSize = 15.sp)
+                    DeleteMapButton(Messages.layersDeleteSavedImportedMap()) {
+                        pendingDeletion = ImportedMapDeletion.SAVED
+                    }
                 }
             }
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+    pendingDeletion?.let { deletion ->
+        AlertDialog(
+            onDismissRequest = { pendingDeletion = null },
+            title = { Text(Messages.layersDeleteImportedTitle()) },
+            text = { Text(Messages.layersDeleteImportedMessage()) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDeletion = null
+                        when (deletion) {
+                            ImportedMapDeletion.PDF -> onUnloadPdf()
+                            ImportedMapDeletion.OFFLINE_TILES -> onUnloadOfflineTiles()
+                            ImportedMapDeletion.SAVED -> onDeleteRetainedImportedMap()
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF5A5A)),
+                ) { Text(Messages.layersDeleteImportedConfirm()) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeletion = null }) { Text(L10n.text("Cancel")) }
+            },
+        )
     }
     pendingVisibility?.let { pending ->
         AlertDialog(
@@ -216,6 +312,16 @@ fun LayersSheet(
             },
         )
     }
+}
+
+/** Destructive imported-map action; always confirmed before anything is deleted. */
+@Composable
+private fun DeleteMapButton(label: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5A5A)),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+    ) { Text(label) }
 }
 
 @Composable

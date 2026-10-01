@@ -88,54 +88,66 @@ func boundedPDFRasterSize(
     )
 }
 
-/// Rasterises a PDF's first page once and exposes result as a UIImage.
+/// Rasterises a PDF page once and exposes result as a UIImage.
 /// Used by PDFImageOverlayView to draw the PDF directly into map view's
 /// subview hierarchy. Sidesteps iOS 26 MapKit's broken MKOverlay /
 /// MKTileOverlay paths for satellite imagery.
 enum PDFRasteriser {
 
-    /// Render page 1 of a PDF to a UIImage.
-    /// - Parameter cropRect: optional crop in PDF user space (points, y-up,
-    ///   origin bottom-left). If nil, the full media box is rendered.
-    ///   Use the LGIDict Neatline bounding box here to drop legend/title
-    ///   marginalia and render only the map content.
+    /// Render a rect of the page's RAW user space (box origin included,
+    /// /Rotate ignored) - the same space every georef lives in.
+    ///
+    /// Goes through CGContext.drawPDFPage with our own CTM. PDFKit's
+    /// draw(with: .mediaBox) applies /Rotate and shifts by the box origin on
+    /// top of whatever we set up, which put rotated and offset-box sheets in
+    /// the wrong place (D1-04 / D3-06).
+    /// - Parameter cropRect: raw user-space rect to render. nil = crop box.
+    /// - Parameter cropPolygon: optional neatline/viewport outline; pixels
+    ///   outside it stay transparent so the collar doesn't pretend to be map.
     static func render(url: URL,
+                       pageIndex: Int = 0,
                        cropRect: CGRect? = nil,
+                       cropPolygon: [PdfPagePoint]? = nil,
                        maxPixelDimension: Int = 4096,
                        maxBytes: Int64 = 32 * 1024 * 1024) -> UIImage? {
-        guard let doc  = PDFDocument(url: url),
-              let page = doc.page(at: 0) else { return nil }
-        let pageRect = page.bounds(for: .mediaBox)
-        let renderRect = cropRect ?? pageRect
-        guard let rasterSize = boundedPDFRasterSize(
-            width: Double(renderRect.width),
-            height: Double(renderRect.height),
-            maxDimension: maxPixelDimension,
-            maxBytes: maxBytes
-        ) else { return nil }
+        guard let doc = CGPDFDocument(url as CFURL),
+              !doc.isEncrypted || doc.isUnlocked,
+              pageIndex >= 0, pageIndex < doc.numberOfPages,
+              let page = doc.page(at: pageIndex + 1) else { return nil }
+        let renderRect = (cropRect ?? GeoPDFReader.pageGeometry(page).cropBox).standardized
+        guard renderRect.width > 0, renderRect.height > 0,
+              let rasterSize = boundedPDFRasterSize(
+                width: Double(renderRect.width),
+                height: Double(renderRect.height),
+                maxDimension: maxPixelDimension,
+                maxBytes: maxBytes
+              ) else { return nil }
         let imageSize = CGSize(width: rasterSize.width, height: rasterSize.height)
-        let scale = min(
-            1,
-            CGFloat(rasterSize.width) / renderRect.width,
-            CGFloat(rasterSize.height) / renderRect.height
-        )
+        let sx = CGFloat(rasterSize.width) / renderRect.width
+        let sy = CGFloat(rasterSize.height) / renderRect.height
 
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 1
-        format.opaque = true
+        format.opaque = false
         let renderer = UIGraphicsImageRenderer(size: imageSize, format: format)
         return renderer.image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(origin: .zero, size: imageSize))
             let cg = ctx.cgContext
+            // raw user space -> image pixels: y flip, crop origin to the corner
+            let pageToImage = CGAffineTransform(a: sx, b: 0, c: 0, d: -sy,
+                                                tx: -renderRect.minX * sx,
+                                                ty: renderRect.maxY * sy)
             cg.saveGState()
-            // 1. Move origin to bottom-left of the output image.
-            cg.translateBy(x: 0, y: imageSize.height)
-            // 2. Flip Y so PDF (y-up) and CGContext (now y-up) agree.
-            cg.scaleBy(x: scale, y: -scale)
-            // 3. Translate so the crop's bottom-left maps to the image's origin.
-            cg.translateBy(x: -renderRect.minX, y: -renderRect.minY)
-            page.draw(with: .mediaBox, to: cg)
+            if let poly = cropPolygon, poly.count >= 3 {
+                let path = CGMutablePath()
+                path.addLines(between: poly.map { $0.cgPoint.applying(pageToImage) })
+                path.closeSubpath()
+                cg.addPath(path)
+                cg.clip()
+            }
+            UIColor.white.setFill()
+            cg.fill(CGRect(origin: .zero, size: imageSize))
+            cg.concatenate(pageToImage)
+            cg.drawPDFPage(page)
             cg.restoreGState()
         }
     }

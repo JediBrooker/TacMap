@@ -10,7 +10,7 @@ import java.util.UUID
 @Serializable
 data class Fiduciary(
     val id: String = UUID.randomUUID().toString(),
-    /** PDF user-space point: origin bottom-left, units = points. */
+    /** raw PDF user space of the page (y up, includes any box origin, ignores /Rotate), points */
     val pdfX: Double,
     val pdfY: Double,
     val mgrs: String,

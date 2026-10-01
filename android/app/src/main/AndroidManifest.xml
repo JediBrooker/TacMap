@@ -17,6 +17,8 @@
 
     <!-- Google Play Billing: the one-time "unlock_full" purchase. -->
     <uses-permission android:name="com.android.vending.BILLING" />
+    <!-- Fingerprint or face unlock for App Lock; the PIN stays the fallback. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <uses-feature
         android:name="android.hardware.location.gps"

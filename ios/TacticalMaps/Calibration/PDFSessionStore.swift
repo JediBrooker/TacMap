@@ -1,16 +1,31 @@
 import Foundation
+import CoreGraphics
 import CoreLocation
 import CryptoKit
+import PDFKit
 
 /// Persists the currently-active PDF map source across app launches. The PDF
 /// file is already copied to protected app storage on import so it
-/// survives a relaunch. What we add here is a small JSON sidecar in
-/// UserDefaults that captures the non-bitmap state: file name, GeoPDF
-/// bounds (sw/ne lat/lng), PDF crop rect, plus (when calibrated) the
-/// affine + fiduciaries. That way we can reconstruct the same PDFMapSource
-/// on startup without re-parsing or asking user to re-import.
+/// survives a relaunch. What we add here is a small sealed JSON sidecar in
+/// UserDefaults: file name + content key, the PdfGeoreference (version 2),
+/// plus the fiduciaries when hand calibrated.
+///
+/// v1 entries (a lat/lon box and affine, no georef) get migrated on load. With
+/// no fiduciaries the content-hash verified bytes get re-parsed for a GeoPDF
+/// georef. Fiduciaries get moved from the old PDFKit display space back to raw
+/// page space (see legacyDisplayToRaw) and refit in UTM of the first point. If
+/// neither works, which is what the old camera-centred fallback looks like, the
+/// map comes back uncalibrated and the UI asks for a calibration instead of
+/// trusting the made-up box. Points whose refit got refused stay on the source
+/// as pendingFiduciaries so that calibration starts with them placed.
 enum PDFSessionStore {
     private static let key = "active_pdf_v1"
+
+    /// The v1 migration runs off main (migrateStoredSession) while the UI can
+    /// still save/clear/restore on main. One lock round every entry point that
+    /// reads-then-writes, so a late migration save can't clobber a newer
+    /// session or bring back a cleared one. Recursive, load() calls save().
+    private static let lock = NSRecursiveLock()
 
     /// Exact encrypted preference bytes captured before a cross-store map
     /// transition. Keeping the sealed bytes opaque avoids decrypt/re-encrypt
@@ -75,24 +90,30 @@ enum PDFSessionStore {
     /// a `.pdf` selection that points at stale or missing session data.
     @discardableResult
     static func save(_ source: PDFMapSource) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
         guard let bounds = source.bounds else {
             /// No bounds at all, nothing to anchor page to.
             return false
         }
-        /// Plain PDFs use the camera-centred fallback bounds resolved at import.
-        /// Persist those bounds too: they are the exact placement the user saw,
-        /// and active-map restoration must not silently discard that map just
-        /// because it has not been fiduciary-calibrated yet.
+        /// Uncalibrated plain PDFs persist too (their provisional placement is
+        /// in the georef and flagged as such), so a relaunch mid-calibration
+        /// doesn't silently lose the map.
         let cropRect = source.pdfRenderRect
         let cal: PersistedCalibration?
         if case .fiduciaries(let fids, let transform) = source.calibration {
-            cal = PersistedCalibration(fids: fids, transform: transform)
+            cal = PersistedCalibration(fids: fids, transform: transform,
+                                       georef: source.georef.origin == .fiduciaries ? source.georef : nil,
+                                       rawPageSpace: true)
         } else {
             cal = nil
         }
+        // points a refit refused stay with the session so the next calibration starts from them
+        let pending = cal == nil && !source.pendingFiduciaries.isEmpty ? source.pendingFiduciaries : nil
         guard let contentKey = source.contentKey ?? Self.contentKey(for: source.url),
               validContentKey(contentKey),
-              cal.map(calibrationIsValid) ?? true else {
+              cal.map(calibrationIsValid) ?? true,
+              source.georef.isStructurallyValid else {
             return false
         }
         let dto = PersistedPDF(
@@ -108,7 +129,10 @@ enum PDFSessionStore {
             cropH: Double(cropRect.size.height),
             kind: source.kind.rawValue,
             calibration: cal,
-            placementAffine: bounds.placementAffine
+            placementAffine: bounds.placementAffine,
+            version: PersistedPDF.currentVersion,
+            georef: source.georef,
+            pendingFiduciaries: pending
         )
         guard valid(dto) else { return false }
         // Remember this PDF's calibration in the per-file library too, so it can
@@ -140,7 +164,26 @@ enum PDFSessionStore {
         }
     }
 
+    /// True when the saved session is a v1 (or filename-only) record, so the
+    /// next load() re-parses the PDF. Cheap, it only opens the small sealed JSON.
+    /// No lock on purpose, main must not wait on a migration that's mid parse.
+    static var needsMigration: Bool {
+        guard let stored = defaultsProvider().data(forKey: key),
+              let data = unseal(stored, Self.labelActive),
+              let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else { return false }
+        return dto.georef == nil || dto.contentKey == nil
+    }
+
+    /// The v1 -> v2 migration on its own: load() re-saves the record as v2 so
+    /// the main thread load() after it is the fast path. Call this OFF main,
+    /// re-parsing a 38 MB USGS sheet stalls for seconds (plan s5).
+    static func migrateStoredSession() {
+        _ = load()
+    }
+
     static func load() -> PDFMapSource? {
+        lock.lock()
+        defer { lock.unlock() }
         let defaults = defaultsProvider()
         guard let stored = defaults.data(forKey: key) else { return nil }
         // Locked key returns nil. Do NOT clear the entry: the user would lose
@@ -194,53 +237,149 @@ enum PDFSessionStore {
         // This prevents a same-name App Support collision from inheriting the
         // historical sheet's affine during an upgrade.
         if dto.contentKey == nil && resolved.legacyCorroboratedContentKey != actualContentKey {
-            let centre = CLLocationCoordinate2D(
-                latitude: (dto.swLat + dto.neLat) / 2,
-                longitude: (dto.swLng + dto.neLng) / 2
-            )
-            let parsedBounds = GeoPDFReader.bounds(from: url)
-            let safeBounds = parsedBounds ?? GeoPDFReader.fallbackBounds(centeredOn: centre)
-            let uncalibrated = PDFMapSource(
-                url: url,
-                bounds: safeBounds,
-                fromGeoPDF: parsedBounds != nil,
-                contentKey: actualContentKey
-            )
-            guard save(uncalibrated) else {
+            let rebuilt = rebuildFromBytes(url: url, contentKey: actualContentKey, legacy: dto)
+            guard save(rebuilt) else {
                 defaults.removeObject(forKey: key)
                 return nil
             }
             NSLog("[PDFSessionStore] legacy PDF identity was unverified; calibration must be repeated")
-            return uncalibrated
+            return rebuilt
         }
-        let bounds = GeoPDFReader.Bounds(
-            southWest: CLLocationCoordinate2D(latitude: dto.swLat, longitude: dto.swLng),
-            northEast: CLLocationCoordinate2D(latitude: dto.neLat, longitude: dto.neLng),
-            pdfCropRect: CGRect(
-                x: dto.cropX, y: dto.cropY,
-                width: dto.cropW, height: dto.cropH
-            ),
-            placementAffine: dto.placementAffine
-        )
-        let source = PDFMapSource(
-            url: url,
-            bounds: bounds,
-            fromGeoPDF: dto.kind == MapSourceKind.geoPDF.rawValue,
-            contentKey: actualContentKey
-        )
-        if let cal = dto.calibration {
-            source.applyCalibration(transform: cal.transform, fiduciaries: cal.fids)
+
+        let source: PDFMapSource
+        if let georef = dto.georef {
+            source = PDFMapSource(url: url, georef: georef, contentKey: actualContentKey)
+            if let cal = dto.calibration {
+                if georef.origin == .fiduciaries {
+                    source.adoptCalibration(georef: georef, fiduciaries: cal.fids, transform: cal.transform)
+                } else if !refit(source, fiduciaries: cal.fids) {
+                    source.keepPendingFiduciaries(cal.fids)
+                }
+            }
+            if source.calibration == nil, let pending = dto.pendingFiduciaries {
+                source.keepPendingFiduciaries(pending)
+            }
+        } else {
+            // no georef: a real v1 entry, or a v2 one whose georef didn't decode
+            // (its points are already raw, only v1 ones need the PDFKit undo)
+            source = migrateV1(dto, url: url, contentKey: actualContentKey,
+                               pointsAreRaw: (dto.version ?? 1) >= 2 || dto.calibration?.pointsAreRaw == true)
         }
-        // Corroborated legacy copies can now be rewritten with their byte
-        // identity so future renames restore without filename trust.
-        if dto.contentKey == nil {
+        // v1 and corroborated legacy copies get rewritten as content-bound v2
+        // so the next launch doesn't redo the migration (or trust a filename)
+        if dto.contentKey == nil || dto.georef == nil {
             _ = save(source)
         }
         return source
     }
 
+    /// v1 -> v2. See the type doc for the cases.
+    private static func migrateV1(_ dto: PersistedPDF, url: URL, contentKey: String,
+                                  pointsAreRaw: Bool) -> PDFMapSource {
+        if let cal = dto.calibration {
+            let crop = CGRect(x: dto.cropX, y: dto.cropY, width: dto.cropW, height: dto.cropH)
+            let source = uncalibratedSource(url: url, contentKey: contentKey, legacy: dto,
+                                            pageBox: crop, rotation: pageRotation(url) ?? 0)
+            // stored lat/lon are WGS84 (datum shifted at entry), refit in UTM.
+            // if the old page space can't be rebuilt, or the refit is refused
+            // (collinear etc), the map just stays uncalibrated. never refit
+            // display-space points as if they were raw, that lands the sheet
+            // a box-origin away (or 90 deg off) and still shows it as calibrated
+            guard let fids = pointsAreRaw ? cal.fids : rawFiduciaries(cal.fids, legacyDisplaySpaceOf: url) else {
+                // park the untouched v1 points in the library under the byte hash
+                // (still flagged as display space) so they aren't lost, a later
+                // applyCalibrationIfKnown gets another go at the undo
+                saveToLibrary(fileName: url.lastPathComponent, contentKey: contentKey, cal)
+                NSLog("[PDFSessionStore] v1 fiduciary page space unknown; map is uncalibrated, points kept pending")
+                return source
+            }
+            if !refit(source, fiduciaries: fids) {
+                // keep them (raw now) so calibration opens with them already placed,
+                // the user fixes the bad one instead of starting from scratch
+                source.keepPendingFiduciaries(fids)
+                NSLog("[PDFSessionStore] v1 fiduciaries could not be refit; map is uncalibrated, points kept pending")
+            }
+            return source
+        }
+        return rebuildFromBytes(url: url, contentKey: contentKey, legacy: dto)
+    }
+
+    /// Refit saved fiduciaries (raw page space, WGS84 lat/lon) onto the source
+    /// over its current crop, with the persisted lon/lat affine rebuilt from the
+    /// new georef so the record stays in one page space. false when refused.
+    @discardableResult
+    private static func refit(_ source: PDFMapSource, fiduciaries: [Fiduciary]) -> Bool {
+        let r = source.pdfRenderRect
+        guard r.width > 0, r.height > 0,
+              [r.minX, r.minY, r.maxX, r.maxY].allSatisfy({ $0.isFinite && abs($0) <= maximumSafePDFCoordinateMagnitude }),
+              let g = FiduciaryFitter.georeference(fromWGS84: fiduciaries, crop: r, page: source.georef.page),
+              let t = g.bestFitLatLonAffine() else { return false }
+        source.adoptCalibration(georef: g, fiduciaries: fiduciaries, transform: t)
+        return source.calibration != nil
+    }
+
+    /// The page space pre-v2 builds stored fiduciaries in. The old rasteriser
+    /// set up its own CTM for pdfRenderRect and then called PDFKit
+    /// draw(with: .mediaBox), which applies transform(for: .mediaBox) on top
+    /// (box origin shift plus /Rotate), and taps were mapped back through the
+    /// same rect. So stored = T(raw) whatever the rect was, and raw = T^-1(stored).
+    /// v1 only ever showed page 0. nil when the page can't be opened.
+    static func legacyDisplayToRaw(url: URL) -> CGAffineTransform? {
+        guard let page = PDFDocument(url: url)?.page(at: 0) else { return nil }
+        let t = page.transform(for: .mediaBox)
+        let det = t.a * t.d - t.b * t.c
+        guard [t.a, t.b, t.c, t.d, t.tx, t.ty].allSatisfy(\.isFinite), abs(det) > 1e-9 else { return nil }
+        return t.inverted()
+    }
+
+    static func rawFiduciaries(_ fids: [Fiduciary], legacyDisplaySpaceOf url: URL) -> [Fiduciary]? {
+        guard let inv = legacyDisplayToRaw(url: url) else { return nil }
+        return fids.map { f in
+            let p = CGPoint(x: f.pdfX, y: f.pdfY).applying(inv)
+            var raw = f
+            raw.pdfX = Double(p.x)
+            raw.pdfY = Double(p.y)
+            return raw
+        }
+    }
+
+    private static func pageRotation(_ url: URL) -> Int? {
+        guard let page = CGPDFDocument(url as CFURL)?.page(at: 1) else { return nil }
+        return GeoPDFReader.pageGeometry(page).rotation
+    }
+
+    /// Re-parse the bytes for a georef. Anything else (plain PDF, now
+    /// rejected metadata, the old camera box) comes back uncalibrated so the
+    /// user gets asked to calibrate instead of trusting a made-up placement.
+    private static func rebuildFromBytes(url: URL, contentKey: String, legacy dto: PersistedPDF) -> PDFMapSource {
+        let readout = GeoPDFReader.read(url: url)
+        if let g = readout?.georef {
+            return PDFMapSource(url: url, georef: g, contentKey: contentKey)
+        }
+        let pageBox = readout?.page.cropBox ?? CGRect(x: dto.cropX, y: dto.cropY, width: dto.cropW, height: dto.cropH)
+        return uncalibratedSource(url: url, contentKey: contentKey, legacy: dto,
+                                  pageBox: pageBox, rotation: readout?.page.rotation ?? 0)
+    }
+
+    private static func uncalibratedSource(url: URL, contentKey: String, legacy dto: PersistedPDF,
+                                           pageBox: CGRect, rotation: Int) -> PDFMapSource {
+        let centre = CLLocationCoordinate2D(
+            latitude: (dto.swLat + dto.neLat) / 2,
+            longitude: (dto.swLng + dto.neLng) / 2
+        )
+        if let g = PdfGeoreference.provisional(pageBox: pageBox, rotation: rotation, centredOn: centre) {
+            return PDFMapSource(url: url, georef: g, contentKey: contentKey)
+        }
+        return PDFMapSource(url: url, bounds: GeoPDFReader.Bounds(
+            southWest: CLLocationCoordinate2D(latitude: dto.swLat, longitude: dto.swLng),
+            northEast: CLLocationCoordinate2D(latitude: dto.neLat, longitude: dto.neLng),
+            pdfCropRect: pageBox), contentKey: contentKey)
+    }
+
     static func snapshotActiveSession() -> ActiveSessionSnapshot {
-        ActiveSessionSnapshot(stored: defaultsProvider().data(forKey: key))
+        lock.lock()
+        defer { lock.unlock() }
+        return ActiveSessionSnapshot(stored: defaultsProvider().data(forKey: key))
     }
 
     /// Restore the exact pre-transition PDF session after selector persistence
@@ -248,6 +387,8 @@ enum PDFSessionStore {
     /// bytes before reporting success.
     @discardableResult
     static func restoreActiveSession(_ snapshot: ActiveSessionSnapshot) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
         let defaults = defaultsProvider()
         if let stored = snapshot.stored {
             defaults.set(stored, forKey: key)
@@ -259,6 +400,8 @@ enum PDFSessionStore {
 
     @discardableResult
     static func clear() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
         let defaults = defaultsProvider()
         defaults.removeObject(forKey: key)
         return defaults.data(forKey: key) == nil
@@ -389,6 +532,7 @@ enum PDFSessionStore {
             && (dto.contentKey == nil || validContentKey(dto.contentKey!))
             && (dto.calibration.map(calibrationIsValid) ?? true)
             && (dto.placementAffine.map(affineIsValid) ?? true)
+            && (dto.georef?.isStructurallyValid ?? true)
     }
 
     // MARK: - Per-PDF calibration library
@@ -400,13 +544,28 @@ enum PDFSessionStore {
     private static let libraryKey = "pdf_calibrations_v1"
 
     /// Apply a previously-saved calibration for this source's file if any.
-    /// Called on import so re-imported PDF lands already calibrated.
+    /// Called on import so re-imported PDF lands already calibrated. A stored
+    /// v2 georef is used as is, older records get refit in UTM.
     static func applyCalibrationIfKnown(to source: PDFMapSource) {
+        lock.lock()
+        defer { lock.unlock() }
         let library = loadLibrary()
         guard let key = source.contentKey ?? contentKey(for: source.url) else { return }
         let cal = library.byContentHash[key]
         guard let cal, calibrationIsValid(cal) else { return }
-        source.applyCalibration(transform: cal.transform, fiduciaries: cal.fids)
+        if let g = cal.georef, g.origin == .fiduciaries {
+            source.adoptCalibration(georef: g, fiduciaries: cal.fids, transform: cal.transform)
+            if source.calibration != nil { return }
+        }
+        // older records keep their points in the old PDFKit display space, same
+        // bytes (content hash) so the same page transform undoes it
+        guard let fids = cal.pointsAreRaw ? cal.fids : rawFiduciaries(cal.fids, legacyDisplaySpaceOf: source.url) else {
+            NSLog("[PDFSessionStore] saved calibration page space unknown; not applied")
+            return
+        }
+        if !refit(source, fiduciaries: fids) {
+            source.keepPendingFiduciaries(fids)
+        }
     }
 
     private static func saveToLibrary(
@@ -625,12 +784,15 @@ enum ManagedImportedMapFileLifecycle {
 }
 
 private struct PersistedPDF: Codable {
+    static let currentVersion = 2
+
     /// displayName intentionally not stored: PDFMapSource derives it from
     /// the file URL on init, persisting it would just be dead data that
     /// could drift out of sync with the filename.
     let fileName: String
     /// Optional for v1 compatibility; all new writes bind the descriptor to bytes.
     let contentKey: String?
+    // v1 display box + crop, still written so a downgrade reads something sane
     let swLat: Double
     let swLng: Double
     let neLat: Double
@@ -644,11 +806,65 @@ private struct PersistedPDF: Codable {
     /// GeoPDF auto-fit placement affine (rotation/scale-correct). Optional so
     /// older persisted entries (which predate it) still decode to bbox fallback.
     let placementAffine: AffineTransform2D?
+    /// nil = v1
+    var version: Int? = nil
+    /// v2: the real placement
+    var georef: PdfGeoreference? = nil
+    /// v2: raw page space points that aren't a calibration (refit refused),
+    /// only written when there's no calibration
+    var pendingFiduciaries: [Fiduciary]? = nil
+}
+
+extension PersistedPDF {
+    /// Same keys as the synthesized one, but a georef that won't decode (or
+    /// isn't structurally valid any more) drops to nil instead of failing the
+    /// whole entry, so load() re-parses / refits rather than deleting the session.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fileName = try c.decode(String.self, forKey: .fileName)
+        contentKey = try c.decodeIfPresent(String.self, forKey: .contentKey)
+        swLat = try c.decode(Double.self, forKey: .swLat)
+        swLng = try c.decode(Double.self, forKey: .swLng)
+        neLat = try c.decode(Double.self, forKey: .neLat)
+        neLng = try c.decode(Double.self, forKey: .neLng)
+        cropX = try c.decode(Double.self, forKey: .cropX)
+        cropY = try c.decode(Double.self, forKey: .cropY)
+        cropW = try c.decode(Double.self, forKey: .cropW)
+        cropH = try c.decode(Double.self, forKey: .cropH)
+        kind = try c.decode(String.self, forKey: .kind)
+        calibration = try c.decodeIfPresent(PersistedCalibration.self, forKey: .calibration)
+        placementAffine = try c.decodeIfPresent(AffineTransform2D.self, forKey: .placementAffine)
+        version = try c.decodeIfPresent(Int.self, forKey: .version)
+        georef = try? c.decodeIfPresent(PdfGeoreference.self, forKey: .georef)
+        // junk here only loses the hint, never the session
+        pendingFiduciaries = (try? c.decodeIfPresent([Fiduciary].self, forKey: .pendingFiduciaries)) ?? nil
+    }
 }
 
 private struct PersistedCalibration: Codable, Equatable {
     let fids: [Fiduciary]
     let transform: AffineTransform2D
+    /// v2 fiduciary georef (UTM fit); nil in older libraries -> refit
+    var georef: PdfGeoreference? = nil
+    /// true = fids are raw page user space. nil on records from before the
+    /// raw-space renderer, their points sit in the old PDFKit display space
+    var rawPageSpace: Bool? = nil
+
+    var pointsAreRaw: Bool { rawPageSpace == true }
+}
+
+extension PersistedCalibration {
+    /// One unusable georef only drops that georef (the record gets refit), it
+    /// must not take the whole library or the active session down with it.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fids = try c.decode([Fiduciary].self, forKey: .fids)
+        transform = try c.decode(AffineTransform2D.self, forKey: .transform)
+        georef = try? c.decodeIfPresent(PdfGeoreference.self, forKey: .georef)
+        // records written with a georef key predate the flag but are raw already
+        rawPageSpace = try c.decodeIfPresent(Bool.self, forKey: .rawPageSpace)
+            ?? (c.contains(.georef) ? true : nil)
+    }
 }
 
 private struct PersistedCalibrationLibrary: Codable {

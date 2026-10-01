@@ -1,7 +1,5 @@
 package com.tacmap.map
 
-import com.tacmap.localization.DisplayFormat
-
 import com.tacmap.localization.Messages
 
 import com.tacmap.localization.L10n
@@ -14,9 +12,16 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import com.tacmap.calibration.AffineFitter
-import com.tacmap.calibration.GeoPdfParser
+import com.tacmap.calibration.Calibration
+import com.tacmap.calibration.FiduciaryFitter
+import com.tacmap.calibration.GeoPdfGeorefResult
+import com.tacmap.calibration.GeorefOrigin
+import com.tacmap.calibration.GeorefRejectReason
+import com.tacmap.calibration.MapSourceKind
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
+import com.tacmap.calibration.PdfDocumentInspector
+import com.tacmap.calibration.PdfGeorefIssue
+import com.tacmap.calibration.PdfSessionMigration
 import com.tacmap.calibration.MBTilesStore
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageRenderer
@@ -49,6 +54,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import android.os.Handler
 import android.os.Looper
+import kotlin.math.roundToInt
 
 // Non-composable helpers extracted from MapScreen.kt: angle normalisation,
 // drawing defaults/naming, PDF import + georeferencing, GeoJSON sharing.
@@ -62,20 +68,25 @@ internal data class PendingCalibrationTap(
     val pdfY: Double
 )
 
+/**
+ * Map tap -> raw PDF user space point under the finger. Goes back through the
+ * same display affine the overlay places the page with, so the point is where
+ * the user actually sees the feature, calibrated or provisional.
+ */
 internal fun PdfMapSource.pdfPointFor(latitude: Double, longitude: Double): PendingCalibrationTap? {
-    val bounds = coverage ?: return null
-    val info = pageInfo ?: return null
-    val latSpan = bounds.latitudeSpan
-    val lonSpan = bounds.longitudeSpan
-    if (kotlin.math.abs(latSpan) < 1e-12 || kotlin.math.abs(lonSpan) < 1e-12) return null
-
-    val yRatio = (latitude - bounds.southwest.latitude) / latSpan
-    val xRatio = (longitude - bounds.southwest.longitude) / lonSpan
-    if (xRatio !in -0.05..1.05 || yRatio !in -0.05..1.05) return null
-
+    val inverse = placement?.bestFitLatLonAffine?.inverted() ?: return null
+    // inverted() hands back pdfX as .longitude and pdfY as .latitude
+    val p = inverse.apply(longitude, latitude)
+    val x = p.longitude
+    val y = p.latitude
+    if (!x.isFinite() || !y.isFinite()) return null
+    val box = geometry.visibleBox
+    val marginX = box.width * 0.05
+    val marginY = box.height * 0.05
+    if (x !in (box.llx - marginX)..(box.urx + marginX) || y !in (box.lly - marginY)..(box.ury + marginY)) return null
     return PendingCalibrationTap(
-        pdfX = xRatio.coerceIn(0.0, 1.0) * info.pageWidth,
-        pdfY = yRatio.coerceIn(0.0, 1.0) * info.pageHeight
+        pdfX = x.coerceIn(box.llx, box.urx),
+        pdfY = y.coerceIn(box.lly, box.ury),
     )
 }
 
@@ -83,9 +94,30 @@ internal object DrawingDefaults {
     val DEFAULT_COLOR: Int = 0xFFFFA000.toInt()
     /** Portable width shared with iOS and interchange formats. */
     const val STROKE_WIDTH_DP: Float = 3f
+    /** Stroke width slider range and step in portable points, as on iOS. */
+    const val MIN_STROKE_WIDTH_DP: Float = 0.5f
+    const val MAX_STROKE_WIDTH_DP: Float = 16f
+    const val STROKE_WIDTH_STEP_DP: Float = 0.5f
+    /** Polygon fill opacity for new drawings and the reset button (20%). */
+    const val DEFAULT_FILL_ALPHA: Int = 0x33
+    /** Fill opacity presets in percent, matching the iOS fill menus. */
+    val FILL_OPACITY_PRESETS: List<Int> = listOf(0, 10, 20, 40, 60, 80, 100)
 
     fun rendererStrokeWidth(density: Float): Float =
         STROKE_WIDTH_DP * density.coerceAtLeast(0f)
+
+    /** Android stores renderer pixels; the slider and iOS use portable points
+     *  (`testdata/drawing_style.json`). */
+    fun portableStrokeWidth(storedPixels: Float, density: Float): Float =
+        if (density > 0f) storedPixels / density else storedPixels
+
+    fun storedStrokeWidth(portableWidth: Float, density: Float): Float =
+        portableWidth.coerceIn(MIN_STROKE_WIDTH_DP, MAX_STROKE_WIDTH_DP) * density.coerceAtLeast(0f)
+
+    fun fillAlpha(percent: Int): Int = (percent.coerceIn(0, 100) * 255f / 100f).roundToInt()
+
+    fun fillPercent(alpha: Int): Int = (alpha.coerceIn(0, 255) * 100f / 255f).roundToInt()
+
     val COLORS = listOf(
         DEFAULT_COLOR,
         0xFFE53935.toInt(),
@@ -162,44 +194,43 @@ internal fun DrawingPoint.isSameLocation(other: DrawingPoint): Boolean =
     kotlin.math.abs(latitude - other.latitude) < 0.0000001 &&
         kotlin.math.abs(longitude - other.longitude) < 0.0000001
 
-internal suspend fun shareGeoJson(
+/** The GeoJSON export file's text; [GeoJsonExportPreviewDialog] previews it before sharing. */
+internal fun geoJsonExportText(
     context: Context,
     waypoints: List<com.tacmap.waypoints.Waypoint>,
     drawings: List<DrawingFeature>,
     layers: List<com.tacmap.drawings.DrawingLayer>
-) {
+): String = GeoJsonExporter.export(
+    waypoints,
+    drawings,
+    layers,
+    density = context.resources.displayMetrics.density,
+)
+
+/** Shares [content], the previewed GeoJSON export, as a file. */
+internal suspend fun shareGeoJson(context: Context, content: String) {
     shareTextExport(
         context = context,
-        exportLabel = "GeoJSON",
+        exportLabel = GEOJSON_EXPORT_LABEL,
         fileName = "TacMap.geojson",
         mimeType = "application/geo+json",
         chooserTitle = L10n.text("Export GeoJSON"),
-    ) {
-        GeoJsonExporter.export(
-            waypoints,
-            drawings,
-            layers,
-            density = context.resources.displayMetrics.density,
-        )
-    }
+    ) { content }
 }
 
-internal suspend fun shareGpx(
-    context: Context,
-    points: List<com.tacmap.models.TrackPoint>
-) {
-    if (points.isEmpty()) {
-        Toast.makeText(context, L10n.text("No track recorded yet."), Toast.LENGTH_SHORT).show()
-        return
-    }
+/** Shares [content], the previewed GPX track export, as a file. */
+internal suspend fun shareGpx(context: Context, content: String) {
     shareTextExport(
         context = context,
         exportLabel = L10n.text("GPX track"),
         fileName = "TacMap-track.gpx",
         mimeType = "application/gpx+xml",
         chooserTitle = L10n.text("Export GPX"),
-    ) { com.tacmap.export.GpxExporter.export(points) }
+    ) { content }
 }
+
+/** File-format name used in export status messages; not translated. */
+internal const val GEOJSON_EXPORT_LABEL = "GeoJSON"
 
 /** Export all mission objects + their layer metadata as GeoJSON. Tracks stay in GPX. */
 internal suspend fun exportAllMissionObjects(
@@ -410,9 +441,6 @@ private class AndroidFileExportDriver(
 
 internal class PdfImportRejectedException(message: String) : Exception(message)
 
-internal fun pdfRotationRejectionMessage(rotationDegrees: Int): String =
-    Messages.pdfRotationUnsupported(DisplayFormat.number((rotationDegrees).toDouble(), 0))
-
 internal fun pdfImportUserMessage(failure: Throwable): String = when {
     failure is PdfImportRejectedException -> failure.message ?: L10n.text("Unable to import PDF map.")
     generateSequence(failure as Throwable?) { it.cause }
@@ -421,22 +449,38 @@ internal fun pdfImportUserMessage(failure: Throwable): String = when {
     else -> L10n.text("TacMap could not read the first page. The PDF may be invalid or password-protected.")
 }
 
-internal fun preflightPdfImport(context: Context, file: File): com.tacmap.calibration.PdfPageInfo {
-    val fileUri = Uri.fromFile(file)
-    val pageInfo = try {
-        PdfPageRenderer.firstPageInfo(context.applicationContext, fileUri)
+/**
+ * pdfium has to open page 0 or there's nothing to show. /Rotate is fine now: the
+ * georef lives in raw user space and the renderer maps it through the rotation.
+ */
+internal fun preflightPdfImport(context: Context, file: File): Pair<Int, Int> {
+    val size = try {
+        PdfPageRenderer.firstPageRendererSize(context.applicationContext, Uri.fromFile(file))
     } catch (_: Exception) {
         throw PdfImportRejectedException(
             L10n.text("TacMap could not read the first page. The PDF may be invalid or password-protected.")
         )
     }
-    val rotation = GeoPdfParser.pageRotation(context.applicationContext, fileUri)
-        ?: throw PdfImportRejectedException(
-            L10n.text("TacMap could not safely inspect this PDF's page rotation. Flatten or print it to a new PDF, then import that copy.")
+    if (size.first <= 0 || size.second <= 0) {
+        throw PdfImportRejectedException(
+            L10n.text("TacMap could not read the first page. The PDF may be invalid or password-protected.")
         )
-    if (rotation != 0) throw PdfImportRejectedException(pdfRotationRejectionMessage(rotation))
-    return pageInfo
+    }
+    return size
 }
+
+/** what the import found, so the UI can say it out loud instead of a quiet camera box */
+internal sealed class PdfImportOutcome {
+    data class Georeferenced(val origin: GeorefOrigin, val datumAssumed: Boolean) : PdfImportOutcome()
+    /** this exact file was calibrated before (content hash), put back from the library */
+    data object RestoredCalibration : PdfImportOutcome()
+    /** plain PDF: provisional placement, straight into calibration */
+    data object NoGeoreference : PdfImportOutcome()
+    /** declared but unusable: provisional placement, alert with the reason */
+    data class Rejected(val reason: GeorefRejectReason) : PdfImportOutcome()
+}
+
+internal data class PdfImportResult(val source: PdfMapSource, val outcome: PdfImportOutcome)
 
 internal fun importPdfMapSource(
     context: Context,
@@ -445,7 +489,7 @@ internal fun importPdfMapSource(
     cameraLng: Double,
     operationKey: String,
     copyJournal: DocumentImportCopyStateStore,
-): PdfMapSource {
+): PdfImportResult {
     val appContext = context.applicationContext
     val displayName = context.displayNameFor(sourceUri)
     val pdfDir = File(appContext.filesDir, "pdf_maps")
@@ -466,37 +510,83 @@ internal fun importPdfMapSource(
     ).execute(operationKey)
 
     val fileUri = Uri.fromFile(dest)
-    val pageInfo = preflightPdfImport(appContext, dest)
+    preflightPdfImport(appContext, dest)
+    val page = try {
+        PdfDocumentInspector.inspect(appContext, dest)
+    } catch (_: Exception) {
+        throw PdfImportRejectedException(
+            L10n.text("TacMap could not read the first page. The PDF may be invalid or password-protected.")
+        )
+    }
+    val geometry = page.geometry
     val baseName = displayName.removeSuffix(".pdf").removeSuffix(".PDF")
-    val base = PdfMapSource.imported(
-        uri = fileUri,
-        name = baseName,
-        center = Wgs84Coordinate(cameraLat, cameraLng),
-        pageInfo = pageInfo
-    )
+    val camera = Wgs84Coordinate(cameraLat, cameraLng)
 
     // Manual calibration (user-dropped fiduciaries with real MGRS strings)
     // wins over auto-parsing. Auto-parsed calibrations are NOT honored here
     // b/c they're reproducible from the PDF, so short-circuiting the re-parse
     // would pin a stale result that a parser fix can never correct on re-import.
-    // That's exactly what stranded the sheet at wrong longitude after the
-    // GeoPDF viewport fix. Auto correspondences leave MGRS blank, manual
-    // ones don't - thats how we tell them apart.
-    PdfSessionStore(appContext).calibration(dest)
+    // Stored lat/lon are WGS84, so refit them in UTM on the page's raw space.
+    PdfSessionStore(appContext).libraryFiduciaries(dest)
         ?.takeIf { saved -> saved.fids.any { it.mgrs.isNotBlank() } }
-        ?.let { saved -> return base.calibrated(saved.transform, saved.fids) }
+        ?.let { saved ->
+            val fids = if (saved.rawPageSpace) saved.fids else saved.fids.mapNotNull { fid ->
+                PdfSessionMigration.v1PointToRaw(fid.pdfX, fid.pdfY, geometry.rendererWidth, geometry.rendererHeight, geometry)
+                    ?.let { fid.copy(pdfX = it.x, pdfY = it.y) }
+            }
+            val georef = FiduciaryFitter.refitStored(fids, geometry.visibleCrop())?.georeference(geometry.visibleCrop())
+            if (georef != null) {
+                val restored = PdfMapSource(fileUri, baseName, MapSourceKind.CALIBRATED_PDF, Calibration.Fiduciaries(fids, georef), geometry)
+                if (restored.coverage != null) return PdfImportResult(restored, PdfImportOutcome.RestoredCalibration)
+            }
+        }
 
-    /// Try to pull georeferencing straight from the PDF (OGC GeoPDF /
-    /// Adobe LGIDict). If we get >=3 correspondences, fit an affine
-    /// and return a calibrated source - PDF lands in the right spot
-    /// with correct rotation+scale, no user calibration needed. If
-    /// no georef found, leave it uncalibrated and user can drop
-    /// fiduciaries manually.
-    val geo = GeoPdfParser.parse(appContext, fileUri) ?: return base
-    val fiducials = geo.correspondences.map { it.toFiduciary() }
-    val fit = runCatching { AffineFitter.fit(fiducials) }.getOrNull() ?: return base
-    Log.i("GeoPdfImport", "auto-parsed ${fiducials.size} correspondences")
-    return base.calibrated(fit.transform, fiducials)
+    // GeoPDF (/VP or LGIDict) straight into the plan 02 georef; anything declared
+    // but unusable, or nothing at all, comes back as its own outcome
+    return when (val result = page.georeference()) {
+        is GeoPdfGeorefResult.Georeferenced -> {
+            val source = PdfMapSource.geoPdf(fileUri, baseName, result.georef, geometry)
+            if (source.coverage != null) {
+                Log.i("GeoPdfImport", "georeferenced via ${result.georef.origin.code}")
+                PdfImportResult(source, PdfImportOutcome.Georeferenced(result.georef.origin, result.georef.datumAssumed))
+            } else {
+                PdfImportResult(
+                    PdfMapSource.uncalibrated(fileUri, baseName, geometry, camera, PdfGeorefIssue.Rejected(GeorefRejectReason.MALFORMED)),
+                    PdfImportOutcome.Rejected(GeorefRejectReason.MALFORMED),
+                )
+            }
+        }
+        is GeoPdfGeorefResult.Rejected -> PdfImportResult(
+            PdfMapSource.uncalibrated(fileUri, baseName, geometry, camera, PdfGeorefIssue.Rejected(result.reason)),
+            PdfImportOutcome.Rejected(result.reason),
+        )
+        GeoPdfGeorefResult.NoGeoreference -> PdfImportResult(
+            PdfMapSource.uncalibrated(fileUri, baseName, geometry, camera, PdfGeorefIssue.NoMetadata),
+            PdfImportOutcome.NoGeoreference,
+        )
+    }
+}
+
+/** a refused GeoPDF parked behind the alert: not on the map, not in the library yet */
+internal data class PendingGeorefRejection(val source: PdfMapSource, val reason: GeorefRejectReason)
+
+/** Cancel on the refused-GeoPDF alert: the private copy is ours alone (one file per import op), drop it */
+internal fun discardRejectedPdfImport(source: PdfMapSource) {
+    val path = source.uri.path ?: return
+    val file = File(path)
+    if (file.isFile && !file.delete()) Log.w("GeoPdfImport", "couldn't drop a refused import copy")
+}
+
+/** reason clause slotted into pdf_georef_rejected_message, shared catalog keys with iOS */
+internal fun pdfGeorefRejectionReason(reason: GeorefRejectReason): String = when (reason) {
+    GeorefRejectReason.LPTS_OUT_OF_RANGE -> Messages.pdfGeorefReasonLptsOutOfRange()
+    GeorefRejectReason.NON_FINITE -> Messages.pdfGeorefReasonNonFinite()
+    GeorefRejectReason.GPTS_OFF_EARTH -> Messages.pdfGeorefReasonOffEarth()
+    GeorefRejectReason.RMS_GATE -> Messages.pdfGeorefReasonRmsGate()
+    GeorefRejectReason.DEGENERATE_VIEWPORT -> Messages.pdfGeorefReasonDegenerate()
+    GeorefRejectReason.MALFORMED -> Messages.pdfGeorefReasonMalformed()
+    GeorefRejectReason.UNKNOWN_DATUM -> Messages.pdfGeorefReasonUnknownDatum()
+    GeorefRejectReason.UNSUPPORTED_PROJECTION -> Messages.pdfGeorefReasonUnsupportedProjection()
 }
 
 internal fun Context.displayNameFor(uri: Uri): String {
@@ -539,5 +629,9 @@ internal fun importMBTilesMapSource(
     return OfflineTileMapSourceAndroid.open(dest.path)
 }
 
+// iOS accepts 512 MB, but only the copy here streams. The rotation and GeoPDF
+// checks open the file with PDFBox-Android 2.0, which parses every object on
+// load and buffers stream contents in heap memory, so a larger sheet would run
+// out of memory during import. Raise this once those checks stop doing that.
 private const val MAX_PDF_IMPORT_BYTES = 256L * 1024 * 1024
 private const val MAX_MBTILES_IMPORT_BYTES = 4L * 1024 * 1024 * 1024

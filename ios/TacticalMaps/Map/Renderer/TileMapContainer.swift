@@ -6,8 +6,7 @@ import CoreLocation
 /// Small MapKit-typed helpers the container needs (MKCoordinateRegion is just a
 /// center+span struct; keeping this out of the MapKit-free MapCamera core).
 enum MapProjectionMath {
-    /// The lat/lon bounding box the camera currently shows, as a region - what
-    /// MGRSGridRenderer.build wants.
+    /// The lat/lon bounding box the camera currently shows, as a region.
     static func visibleRegion(_ camera: MapCamera) -> MKCoordinateRegion {
         let w = camera.viewportSize.width, h = camera.viewportSize.height
         let coords = [CGPoint(x: 0, y: 0), CGPoint(x: w, y: 0),
@@ -169,7 +168,10 @@ struct TileMapContainer: UIViewRepresentable {
         private var controlsDrawingPreview: DrawingShape?
         private var gridView: MGRSGridOverlayView?
         private var gridVisible = false
-        private var lastGridFingerprint = ""
+        /// What the installed (or in-flight) grid was built for. nil = rebuild.
+        private var gridRequest: MGRSGridRenderer.BuildRequest?
+        private var gridGeneration: UInt64 = 0
+        private let gridQueue = DispatchQueue(label: "com.tacmap.mgrs-grid", qos: .userInitiated)
 
         /// Imported PDF/GeoPDF image + the dark mask beneath it, below the grid.
         private var pdfView: PDFImageOverlayView?
@@ -257,7 +259,7 @@ struct TileMapContainer: UIViewRepresentable {
                 view.addSubview(v)
             }
             heatmap.project = project
-            grid.project = project
+            grid.camera = { [weak view] in view?.camera }
             drawings.project = project
             decorations.project = project
             handles.project = project
@@ -452,8 +454,14 @@ struct TileMapContainer: UIViewRepresentable {
             editing.graphicsLocked = graphicsLocked
             if gridVisible != self.gridVisible {
                 self.gridVisible = gridVisible
-                if !gridVisible { gridView?.clear(); lastGridFingerprint = "" }
-                else { refreshGrid() }
+                if !gridVisible {
+                    // bump the generation so a build still in flight can't land
+                    gridGeneration &+= 1
+                    gridRequest = nil
+                    gridView?.clear()
+                } else {
+                    refreshGrid()
+                }
             }
         }
 
@@ -556,27 +564,35 @@ struct TileMapContainer: UIViewRepresentable {
             return out
         }
 
-        /// Rebuild MGRS geometry for a heading-independent square around the
-        /// viewport. Compass samples then only reproject cached geometry; the
-        /// coarse fingerprint still avoids re-tessellating during small pans.
+        /// Rebuild MGRS geometry when the cache policy says the current build
+        /// no longer covers the camera (see MGRSGridRenderer.needsRebuild). The
+        /// build square is heading independent and bigger than anything a
+        /// 64 dp pan or 0.5 zoom-out can expose, so compass samples and small
+        /// pans only reproject. The build itself runs off the main queue; the
+        /// old geometry stays up until the new one lands.
         private func refreshGrid() {
             guard gridVisible, let view, let gridView else { return }
-            let region = MapProjectionMath.orientationInvariantRegion(view.camera)
-            let coverageWidth = hypot(
-                view.camera.viewportSize.width,
-                view.camera.viewportSize.height
-            )
-            let fp = String(format: "%.3f,%.3f,%.3f,%.3f,%.0f",
-                            region.center.latitude, region.center.longitude,
-                            region.span.latitudeDelta, region.span.longitudeDelta,
-                            coverageWidth)
-            guard fp != lastGridFingerprint else { return }
-            lastGridFingerprint = fp
-            let built = MGRSGridRenderer.build(
-                for: region,
-                mapWidthPoints: max(coverageWidth, 1)
-            )
-            gridView.update(lines: built.lines, labels: built.labels)
+            let camera = view.camera
+            guard camera.viewportSize.width > 0, camera.viewportSize.height > 0 else { return }
+            let pxPerDp = max(Double(gridView.traitCollection.displayScale),
+                              Double(gridView.contentScaleFactor), 1)
+            guard MGRSGridRenderer.needsRebuild(gridRequest, camera: camera, pxPerDp: pxPerDp) else { return }
+            let request = MGRSGridRenderer.BuildRequest(camera: camera, pxPerDp: pxPerDp)
+            gridRequest = request
+            gridGeneration &+= 1
+            let generation = gridGeneration
+            // zoomed right out nothing is drawn, no need to hop queues for that
+            guard !request.lod.drawn.isEmpty else {
+                gridView.update(grid: MGRSGridRenderer.Grid(lod: request.lod, pieces: [], squares: []))
+                return
+            }
+            gridQueue.async { [weak self] in
+                let grid = MGRSGridRenderer.build(request)
+                DispatchQueue.main.async {
+                    guard let self, generation == self.gridGeneration, self.gridVisible else { return }
+                    self.gridView?.update(grid: grid)
+                }
+            }
         }
 
         /// Set the view's tile source, but only when it actually changes -

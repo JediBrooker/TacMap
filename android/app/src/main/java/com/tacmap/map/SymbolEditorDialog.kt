@@ -1,8 +1,10 @@
 package com.tacmap.map
 
+import com.tacmap.localization.DecimalInput
+import com.tacmap.localization.DisplayFormat
 import com.tacmap.localization.L10n
+import com.tacmap.localization.Messages
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +14,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
@@ -24,15 +25,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import com.tacmap.ui.DropdownMenu
@@ -47,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,15 +56,16 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.core.graphics.toColorInt
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.ui.Dialog
@@ -84,53 +84,146 @@ import com.tacmap.waypoints.SymbolAffiliation
 import com.tacmap.waypoints.SymbolEchelon
 import com.tacmap.waypoints.SymbolFunction
 import com.tacmap.waypoints.TacticalControlMeasure
+import com.tacmap.waypoints.TaskColor
 import com.tacmap.waypoints.UNIQUE_IDENTIFIER_MAX_CODE_POINTS
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.boundUnitAmplifier
 import com.tacmap.waypoints.normalizedUnitAmplifiersForKind
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
-enum class SymbolEditorMode { MILITARY, TASK, MARKER }
+/** Kind a new-symbol builder opens on. The builder can switch between all four. */
+enum class SymbolEditorMode {
+    POINT, MILITARY, TASK, MARKER;
 
+    internal val segmentLabel: String
+        get() = when (this) {
+            POINT -> L10n.text("Point")
+            MILITARY -> Messages.symbolsKindMilitary()
+            TASK -> Messages.symbolsKindTasks()
+            MARKER -> Messages.symbolsKindMarkers()
+        }
+}
+
+/** Everything the new-symbol builder collects; the caller decides where it lands. */
+data class NewSymbolDraft(
+    val name: String,
+    val kind: WaypointKind,
+    val notes: String? = null,
+    val elevationMetres: Double? = null,
+    val rotation: Double = 0.0,
+    val scaleX: Double = 1.0,
+    val scaleY: Double = 1.0,
+    val higherFormation: String? = null,
+    val uniqueIdentifier: String? = null,
+    val reinforcementStatus: ReinforcementStatus = ReinforcementStatus.NONE,
+) {
+    fun toWaypoint(latitude: Double, longitude: Double, layerId: String): Waypoint = Waypoint(
+        name = name,
+        notes = notes,
+        latitude = latitude,
+        longitude = longitude,
+        elevationMetres = elevationMetres,
+        kind = kind,
+        rotation = rotation,
+        scaleX = scaleX,
+        scaleY = scaleY,
+        higherFormation = higherFormation,
+        uniqueIdentifier = uniqueIdentifier,
+        reinforcementStatus = reinforcementStatus,
+        layerId = layerId,
+    )
+}
+
+/**
+ * Normalizes the builder's fields the way iOS `WaypointCreationSheet.save`
+ * does: a blank name becomes the kind's name, blank notes and elevation are
+ * dropped, and rotation/scale only persist for tasks. Null when the elevation
+ * is not a number.
+ */
+internal fun newSymbolDraft(
+    name: String,
+    kind: WaypointKind,
+    notes: String,
+    elevationText: String,
+    rotation: Double,
+    scaleX: Double,
+    scaleY: Double,
+    higherFormation: String,
+    uniqueIdentifier: String,
+    reinforcementStatus: ReinforcementStatus,
+): NewSymbolDraft? {
+    val cleanElevation = elevationText.trim()
+    val elevation = if (cleanElevation.isEmpty()) null else DecimalInput.parse(cleanElevation) ?: return null
+    val isTask = kind is WaypointKind.ControlMeasure
+    val amplifiers = normalizedUnitAmplifiersForKind(
+        kind = kind,
+        higherFormation = higherFormation,
+        uniqueIdentifier = uniqueIdentifier,
+        reinforcementStatus = reinforcementStatus,
+    )
+    return NewSymbolDraft(
+        name = name.trim().ifEmpty { kind.displayName },
+        kind = kind,
+        notes = notes.trim().ifEmpty { null },
+        elevationMetres = elevation,
+        rotation = if (isTask) normalizedDegrees(rotation) else 0.0,
+        scaleX = if (isTask) scaleX.coerceIn(MIN_SYMBOL_SCALE, MAX_SYMBOL_SCALE) else 1.0,
+        scaleY = if (isTask) scaleY.coerceIn(MIN_SYMBOL_SCALE, MAX_SYMBOL_SCALE) else 1.0,
+        higherFormation = amplifiers.higherFormation,
+        uniqueIdentifier = amplifiers.uniqueIdentifier,
+        reinforcementStatus = amplifiers.reinforcementStatus,
+    )
+}
+
+/**
+ * Builder for a brand-new symbol, matching iOS `WaypointCreationSheet`: a
+ * live preview, the Point / Military / Tasks / Markers kinds, rotation and
+ * size with presets for tasks, and notes and elevation for every kind. Each
+ * kind keeps its own selections while the user switches between them.
+ * [defaultTaskScale] suits the current zoom (see [TaskGraphicSizing]).
+ */
 @Composable
 fun SymbolEditorDialog(
     mode: SymbolEditorMode,
-    initialKind: WaypointKind,
     initialName: String,
     crosshairLat: Double?,
     crosshairLng: Double?,
     title: String,
     actionLabel: String,
     fullScreen: Boolean = true,
+    defaultTaskScale: Double = 1.0,
     submissionError: String? = null,
     onDismiss: () -> Unit,
-    onConfirm: (
-        name: String,
-        kind: WaypointKind,
-        higherFormation: String?,
-        uniqueIdentifier: String?,
-        reinforcementStatus: ReinforcementStatus,
-    ) -> Unit
+    onConfirm: (NewSymbolDraft) -> Unit
 ) {
-    var name by remember(initialName, initialKind) { mutableStateOf(initialName) }
-    var militarySpec by remember(initialKind) {
-        mutableStateOf((initialKind as? WaypointKind.Military)?.spec ?: MilitarySymbolSpec())
-    }
-    var measure by remember(initialKind) {
-        mutableStateOf((initialKind as? WaypointKind.ControlMeasure)?.measure ?: TacticalControlMeasure.ASSEMBLY_AREA)
-    }
-    val initialMarker = (initialKind as? WaypointKind.Marker)?.marker
-    var markerSet by remember(initialKind) { mutableStateOf(initialMarker?.set ?: MarkerSet.AIRSOFT) }
-    var markerSymbolId by remember(initialKind) { mutableStateOf(initialMarker?.symbolId ?: "team") }
-    var markerColor by remember(initialKind) { mutableStateOf(initialMarker?.colorHex ?: "#3B7BE0") }
-    var higherFormation by remember(initialKind) { mutableStateOf("") }
-    var uniqueIdentifier by remember(initialKind) { mutableStateOf("") }
-    var reinforcementStatus by remember(initialKind) { mutableStateOf(ReinforcementStatus.NONE) }
+    var category by remember { mutableStateOf(mode) }
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    var militarySpec by remember { mutableStateOf(MilitarySymbolSpec()) }
+    var measure by remember { mutableStateOf(TacticalControlMeasure.ASSEMBLY_AREA) }
+    var markerSet by remember { mutableStateOf(MarkerSet.AIRSOFT) }
+    var markerSymbolId by remember { mutableStateOf("team") }
+    var markerColor by remember { mutableStateOf("#3B7BE0") }
+    var higherFormation by remember { mutableStateOf("") }
+    var uniqueIdentifier by remember { mutableStateOf("") }
+    var reinforcementStatus by remember { mutableStateOf(ReinforcementStatus.NONE) }
+    // New tasks start at a size that suits the zoom, square on both axes.
+    val initialScale = remember { defaultTaskScale.coerceIn(MIN_SYMBOL_SCALE, MAX_SYMBOL_SCALE) }
+    var rotation by remember { mutableDoubleStateOf(0.0) }
+    var scaleX by remember { mutableDoubleStateOf(initialScale) }
+    var scaleY by remember { mutableDoubleStateOf(initialScale) }
+    var notes by remember { mutableStateOf("") }
+    var elevationText by remember { mutableStateOf("") }
+    var elevationInvalid by remember { mutableStateOf(false) }
 
-    val currentKind = when (mode) {
+    val currentKind = when (category) {
+        SymbolEditorMode.POINT -> WaypointKind.Generic
         SymbolEditorMode.MILITARY -> WaypointKind.Military(militarySpec)
         SymbolEditorMode.TASK -> WaypointKind.ControlMeasure(measure)
-        SymbolEditorMode.MARKER -> WaypointKind.Marker(MarkerSymbol(markerSet, markerSymbolId, markerColor, initialMarker?.custom?.takeIf { it.id == markerSymbolId } ?: com.tacmap.waypoints.CustomSymbolStore.symbol(markerSymbolId)))
+        SymbolEditorMode.MARKER -> WaypointKind.Marker(
+            MarkerSymbol(markerSet, markerSymbolId, markerColor, com.tacmap.waypoints.CustomSymbolStore.symbol(markerSymbolId))
+        )
     }
 
     Dialog(
@@ -174,15 +267,6 @@ fun SymbolEditorDialog(
                 EditorTopBar(
                     title = title,
                     subtitle = currentKind.displayName,
-                    /// Live preview of the symbol about to be placed.
-                    /// Updates whenever affiliation/echelon/function/HQ
-                    /// changes. Generic waypoints just show the pin.
-                    kind = currentKind,
-                    fallbackIcon = when (mode) {
-                        SymbolEditorMode.MILITARY -> Icons.Default.Security
-                        SymbolEditorMode.TASK -> Icons.Default.Flag
-                        SymbolEditorMode.MARKER -> Icons.Default.Place
-                    },
                     onDismiss = onDismiss
                 )
 
@@ -207,28 +291,26 @@ fun SymbolEditorDialog(
                         )
                     }
 
-                    crosshairLat?.let { lat ->
-                        val lng = crosshairLng ?: 0.0
-                        item {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
-                                    .padding(12.dp)
-                            ) {
-                                Text(L10n.text("Placed at crosshair"), color = Color.White.copy(alpha = 0.62f), fontSize = 12.sp)
-                                Text(
-                                    MgrsFormatter.format(lat, lng),
-                                    color = Color.White,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
+                    item {
+                        /// Stretched tasks preview at the geometric mean of
+                        /// their scales, kept within 0.6-1.4× so the tile stays
+                        /// readable; the saved values span 0.1-20×.
+                        val previewScale = if (category == SymbolEditorMode.TASK) {
+                            sqrt(scaleX * scaleY).coerceIn(0.6, 1.4)
+                        } else 1.0
+                        SymbolPreviewPanel(
+                            kind = currentKind,
+                            iconSize = (64 * previewScale).dp,
+                            rotation = if (category == SymbolEditorMode.TASK) rotation else 0.0,
+                        )
                     }
 
-                    when (mode) {
+                    item {
+                        KindSegmentedPicker(selected = category, onSelected = { category = it })
+                    }
+
+                    when (category) {
+                        SymbolEditorMode.POINT -> Unit
                         SymbolEditorMode.MILITARY -> {
                             item {
                                 MilitaryTypeFields(spec = militarySpec, onChange = { militarySpec = it })
@@ -244,8 +326,21 @@ fun SymbolEditorDialog(
                                 )
                             }
                         }
-                        SymbolEditorMode.TASK -> item {
-                            TaskTypeField(measure = measure, onChange = { measure = it })
+                        SymbolEditorMode.TASK -> {
+                            item {
+                                TaskTypeField(measure = measure, onChange = { measure = it })
+                            }
+                            item {
+                                TaskOrientationFields(rotation = rotation, onChange = { rotation = it })
+                            }
+                            item {
+                                TaskSizeFields(
+                                    scaleX = scaleX,
+                                    scaleY = scaleY,
+                                    onScaleXChange = { scaleX = it },
+                                    onScaleYChange = { scaleY = it },
+                                )
+                            }
                         }
                         SymbolEditorMode.MARKER -> item {
                             MarkerTypeFields(
@@ -264,6 +359,52 @@ fun SymbolEditorDialog(
                                 },
                                 onColorChange = { markerColor = it }
                             )
+                        }
+                    }
+
+                    item {
+                        OutlinedTextField(
+                            value = notes,
+                            onValueChange = { notes = it },
+                            label = { Text(L10n.text("Notes")) },
+                            minLines = 3,
+                            maxLines = 5,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    item {
+                        OutlinedTextField(
+                            value = elevationText,
+                            onValueChange = { elevationText = it; elevationInvalid = false },
+                            label = { Text(L10n.text("Elevation (metres)")) },
+                            singleLine = true,
+                            isError = elevationInvalid,
+                            supportingText = {
+                                Text(if (elevationInvalid) ELEVATION_VALIDATION_ERROR else Messages.decimalInputHint())
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
+                    crosshairLat?.let { lat ->
+                        val lng = crosshairLng ?: 0.0
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+                                    .padding(12.dp)
+                            ) {
+                                Text(L10n.text("Placed at crosshair"), color = Color.White.copy(alpha = 0.62f), fontSize = 12.sp)
+                                Text(
+                                    MgrsFormatter.format(lat, lng),
+                                    color = Color.White,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
 
@@ -297,25 +438,19 @@ fun SymbolEditorDialog(
                                 }
                                 Button(
                                     onClick = {
-                                        val trimmed = name.trim()
-                                        val resolved = if (trimmed == initialKind.displayName) {
-                                            currentKind.displayName
-                                        } else {
-                                            trimmed.ifEmpty { currentKind.displayName }
-                                        }
-                                        val amplifiers = normalizedUnitAmplifiersForKind(
+                                        val draft = newSymbolDraft(
+                                            name = name,
                                             kind = currentKind,
+                                            notes = notes,
+                                            elevationText = elevationText,
+                                            rotation = rotation,
+                                            scaleX = scaleX,
+                                            scaleY = scaleY,
                                             higherFormation = higherFormation,
                                             uniqueIdentifier = uniqueIdentifier,
                                             reinforcementStatus = reinforcementStatus,
                                         )
-                                        onConfirm(
-                                            resolved,
-                                            currentKind,
-                                            amplifiers.higherFormation,
-                                            amplifiers.uniqueIdentifier,
-                                            amplifiers.reinforcementStatus,
-                                        )
+                                        if (draft == null) elevationInvalid = true else onConfirm(draft)
                                     },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(8.dp),
@@ -339,8 +474,6 @@ fun SymbolEditorDialog(
 private fun EditorTopBar(
     title: String,
     subtitle: String,
-    kind: WaypointKind,
-    fallbackIcon: ImageVector,
     onDismiss: () -> Unit
 ) {
     Row(
@@ -349,8 +482,6 @@ private fun EditorTopBar(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        SymbolPreviewTile(kind = kind, fallbackIcon = fallbackIcon)
-        Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
@@ -367,64 +498,197 @@ private fun EditorTopBar(
     }
 }
 
-/// White tile showing the symbol that'll be placed. Military = rendered
-/// SIDC frame + glyph, tasks = the task graphic. White bg for both b/c
-/// task graphics are black-on-transparent and unreadable on dark.
-///
-/// The bitmaps have transparent padding (HQ pole reserve, echelon dots
-/// etc) so we crop to visible pixels before scaling. Otherwise the
-/// glyph huddles in one corner of the tile.
+/// Live preview of the symbol being built or edited, on white because task
+/// graphics are black line art. Mirrors the iOS editors' 100 pt preview row.
 @Composable
-internal fun SymbolPreviewTile(
+internal fun SymbolPreviewPanel(
     kind: WaypointKind,
-    fallbackIcon: ImageVector
+    iconSize: Dp = 64.dp,
+    rotation: Double = 0.0,
+    taskColor: TaskColor = TaskColor.BLACK,
 ) {
-    val context = LocalContext.current
-    val bitmap = remember(kind) {
-        if (kind is WaypointKind.Generic) return@remember null
-        val placeholder = Waypoint(
-            name = "",
-            latitude = 0.0,
-            longitude = 0.0,
-            kind = kind
-        )
-        /// Reuse the factory's already-rasterised bitmap instead of
-        /// allocating a throwaway copy. Don't recycle it tho, the
-        /// factory's cache owns it.
-        val drawable = SymbolIconFactory.drawableFor(context, placeholder)
-        val full = (drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
-            ?: return@remember null
-        /// Crop transparent padding so Fit scales the visible glyph,
-        /// not the whole padded bitmap.
-        val visible = SymbolIconFactory.visibleBoundsFor(context, placeholder)
-        if (visible.width() in 1..(full.width) && visible.height() in 1..(full.height)) {
-            android.graphics.Bitmap.createBitmap(
-                full,
-                visible.left.coerceAtLeast(0),
-                visible.top.coerceAtLeast(0),
-                visible.width().coerceAtMost(full.width - visible.left),
-                visible.height().coerceAtMost(full.height - visible.top)
-            )
-        } else full
-    }
-
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .background(Color.White, RoundedCornerShape(8.dp))
-            .padding(6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
-            )
-        } else {
-            Icon(fallbackIcon, contentDescription = null, tint = Color.Black)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(Messages.symbolsPreview(), color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White, RoundedCornerShape(10.dp))
+                .padding(vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(Modifier.size(100.dp), contentAlignment = Alignment.Center) {
+                WaypointKindIcon(kind = kind, size = iconSize, rotation = rotation, taskColor = taskColor)
+            }
         }
+    }
+}
+
+/// Point / Military / Tasks / Markers, one row like the iOS segmented picker.
+@Composable
+private fun KindSegmentedPicker(
+    selected: SymbolEditorMode,
+    onSelected: (SymbolEditorMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(L10n.text("Kind"), color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                .padding(3.dp)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            SymbolEditorMode.entries.forEach { option ->
+                val isSelected = option == selected
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) Color(0xFF0A84FF) else Color.Transparent)
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.Tab,
+                            onClick = { onSelected(option) },
+                        )
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        option.segmentLabel,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// Rotation slider plus the 0/90/180/270° presets of the iOS builder.
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaskOrientationFields(rotation: Double, onChange: (Double) -> Unit) {
+    EditorCard(title = Messages.symbolsOrientation(), help = Messages.symbolsOrientationHelp()) {
+        DraftSlider(
+            label = L10n.text("Rotation"),
+            value = rotation.toFloat().coerceIn(0f, 360f),
+            valueLabel = DisplayFormat.number(rotation, 0) + "°",
+            range = 0f..360f,
+            // Whole degrees, like the iOS slider's 1° step.
+            onChange = { onChange(it.roundToInt().toDouble()) },
+            onReset = { onChange(0.0) },
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            listOf(0, 90, 180, 270).forEach { degrees ->
+                val formatted = DisplayFormat.number(degrees.toDouble(), 0)
+                PresetButton(
+                    label = "$formatted°",
+                    description = Messages.symbolsSetRotation(formatted),
+                    selected = rotation.roundToInt() == degrees,
+                    onClick = { onChange(degrees.toDouble()) },
+                )
+            }
+        }
+    }
+}
+
+/// Width and height sliders plus the "both axes" presets of the iOS builder.
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaskSizeFields(
+    scaleX: Double,
+    scaleY: Double,
+    onScaleXChange: (Double) -> Unit,
+    onScaleYChange: (Double) -> Unit,
+) {
+    val range = MIN_SYMBOL_SCALE.toFloat()..MAX_SYMBOL_SCALE.toFloat()
+    // Tenths, like the iOS slider's 0.1 step.
+    fun stepped(value: Float): Double = (value * 10f).roundToInt() / 10.0
+    EditorCard(title = Messages.symbolsSize(), help = Messages.symbolsSizeHelp()) {
+        DraftSlider(
+            label = L10n.text("Width scale"),
+            value = scaleX.toFloat().coerceIn(range.start, range.endInclusive),
+            valueLabel = DisplayFormat.number(scaleX, 2) + "×",
+            range = range,
+            onChange = { onScaleXChange(stepped(it)) },
+            onReset = { onScaleXChange(1.0) },
+        )
+        DraftSlider(
+            label = L10n.text("Height scale"),
+            value = scaleY.toFloat().coerceIn(range.start, range.endInclusive),
+            valueLabel = DisplayFormat.number(scaleY, 2) + "×",
+            range = range,
+            onChange = { onScaleYChange(stepped(it)) },
+            onReset = { onScaleYChange(1.0) },
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                Messages.symbolsBothScales(),
+                color = Color.White.copy(alpha = 0.62f),
+                fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.CenterVertically),
+            )
+            listOf(0.5, 1.0, 2.0, 5.0, 10.0).forEach { factor ->
+                val formatted = DisplayFormat.number(factor, if (factor < 1.0) 1 else 0)
+                PresetButton(
+                    label = "$formatted×",
+                    description = Messages.symbolsSetBothScales(formatted),
+                    selected = scaleX == factor && scaleY == factor,
+                    onClick = {
+                        onScaleXChange(factor)
+                        onScaleYChange(factor)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorCard(title: String, help: String, content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        content()
+        Text(help, color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun PresetButton(label: String, description: String, selected: Boolean, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .semantics {
+                contentDescription = description
+                this.selected = selected
+            },
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = if (selected) {
+            ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFF0A84FF).copy(alpha = 0.25f))
+        } else {
+            ButtonDefaults.outlinedButtonColors()
+        },
+    ) {
+        Text(label, color = Color.White, fontSize = 13.sp)
     }
 }
 

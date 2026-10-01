@@ -9,6 +9,7 @@ import com.tacmap.localization.L10n
 import android.content.Context
 import com.tacmap.util.SafeStore
 import com.tacmap.util.MissionStorePersistence
+import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.ModelMutationEvent
 import com.tacmap.models.ModelMutationOrigin
 import kotlinx.coroutines.channels.Channel
@@ -59,6 +60,11 @@ class DrawingStore private constructor(
 
     private val _canRedo = MutableStateFlow(false)
     val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
+
+    /** Called whenever a change records a new undo step, so the map can keep
+     *  one undo order across symbols and drawings ([MissionUndoHistory]). */
+    @Volatile
+    var undoStepListener: (() -> Unit)? = null
 
     init { load() }
 
@@ -458,11 +464,12 @@ class DrawingStore private constructor(
     }
 
     private fun pushUndo(snapshot: DrawingDocument) {
-        if (undoStack.size >= 50) undoStack.removeFirst()
+        if (undoStack.size >= MissionUndoHistory.STORE_UNDO_LIMIT) undoStack.removeFirst()
         undoStack.addLast(snapshot)
         redoStack.clear()
         _canUndo.value = true
         _canRedo.value = false
+        undoStepListener?.invoke()
     }
 
     /** True when the store couldn't be opened b/c the at-rest key is locked.

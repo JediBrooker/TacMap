@@ -66,7 +66,7 @@ class NightModeTest {
             Thread.sleep(500)
             assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "menu", device)
             military.click()
-            waitFor(device, By.text(L10n.text("New Military Unit")))
+            waitFor(device, By.text(Messages.symbolsNewSymbolTitle()))
             Thread.sleep(500)
             assertOnlyRed(instrumentation.uiAutomation.takeScreenshot(), "symbol dialog", device)
         } finally {

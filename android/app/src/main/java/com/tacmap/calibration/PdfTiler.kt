@@ -2,7 +2,6 @@ package com.tacmap.calibration
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.RectF
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -18,9 +17,11 @@ import kotlin.math.roundToInt
 
 /**
  * Bakes a calibrated [PdfMapSource] into an offline MBTiles raster pyramid
- * on-device, no desktop GDAL needed. Maps each Web-Mercator XYZ tile's WGS84
- * box back into PDF pixel space via the inverse calibration affine, renders
- * that region with [PdfPageRenderer], writes PNG tiles via [MBTilesWriter].
+ * on-device, no desktop GDAL needed. Every XYZ tile is cut into latitude strips
+ * and each strip's corners go back to raw page space through the georef's exact
+ * toPage ([TileWarp]), so the bake follows the sheet's real projection instead
+ * of a lon/lat affine. [PdfPageRenderer] maps raw space through the page geometry
+ * (crop origin, /Rotate), then [MBTilesWriter] stores PNGs.
  *
  * Any GeoPDF or calibrated scanned sheet becomes a true offline basemap
  * with zero desktop tooling.
@@ -35,16 +36,11 @@ object PdfTiler {
         source: PdfMapSource,
         onProgress: (Progress) -> Unit
     ): String? = withContext(Dispatchers.IO) {
-        val info = source.pageInfo ?: return@withContext null
-        val transform = when (val c = source.calibration) {
-            is Calibration.Fiduciaries -> c.transform
-            is Calibration.Parsed -> c.transform
-            null -> return@withContext null
-        }
-        val inverse = transform.inverted() ?: return@withContext null
+        val georef = source.calibration?.georef ?: return@withContext null
+        val geometry = source.geometry
         val coverage = source.coverage ?: return@withContext null
 
-        val (minZoom, maxZoom) = zoomRange(info, coverage)
+        val (minZoom, maxZoom) = zoomRange(georef, coverage)
         var totalTiles = 0L
         for (z in minZoom..maxZoom) totalTiles += WebMercatorTiles.tileRange(coverage, z).count
         if (totalTiles !in 1L..MAX_TILES.toLong()) return@withContext null
@@ -77,13 +73,11 @@ object PdfTiler {
                 for (tx in range.minX..range.maxX) {
                     for (ty in range.minY..range.maxY) {
                         ensureActive()
-                        val box = WebMercatorTiles.tileBounds(z, tx, ty)
-                        // whole-tile off-page gate; strips re-derive per-band rects
-                        if (pdfPixelRect(inverse, box, info) != null) {
-                            val strips = buildStrips(inverse, box, z, ty, info)
-                            check(strips.isNotEmpty()) { "Could not map generated PDF tile" }
+                        val strips = buildStrips(georef, geometry, z, tx, ty)
+                        // tiles off the page (or off the planet for this crs) stay out of the pack
+                        if (strips.isNotEmpty()) {
                             val bmp = PdfPageRenderer.renderFirstPageStrips(
-                                context, source.uri, strips, TILE, TILE
+                                context, source.uri, geometry, strips, TILE, TILE
                             )
                             val png = try {
                                 ByteArrayOutputStream().use {
@@ -130,37 +124,26 @@ object PdfTiler {
         }
     }
 
-    /** Map tile's WGS84 box to clamped PDF-pixel rect, null if off-page. */
-    private fun pdfPixelRect(
-        inverse: AffineTransform2D,
-        box: Wgs84Bounds,
-        info: PdfPageInfo
-    ): RectF? = pageRectForBand(
-        inverse,
-        west = box.southwest.longitude, east = box.northeast.longitude,
-        north = box.northeast.latitude, south = box.southwest.latitude,
-        info = info
-    )
-
     /**
-     * Split a tile into <=0.25 deg latitude horizontal strips, each mapped
-     * through the calibration affine at its true latitude edges (recovered
-     * from Mercator tile-Y via [WebMercatorTiles.tileYToLat]). A single
-     * region+FILL over the whole tile would warp anything spanning >~2 deg
-     * of latitude (large sheets at low zoom); strips cut residual to
-     * sub-pixel. Small high-zoom tiles yield one strip, same cost.
+     * Split a tile into <=0.25 deg latitude strips. Each strip gets its own raw ->
+     * pixel affine from three corners pushed through toPage, so a low zoom tile
+     * spanning degrees of latitude stays Mercator-correct and the sheet's own
+     * projection (UTM, LCC...) is honoured. High zoom tiles are one strip.
+     * Empty when the tile doesn't touch the visible page.
      */
-    private fun buildStrips(
-        inverse: AffineTransform2D,
-        box: Wgs84Bounds,
+    internal fun buildStrips(
+        georef: PdfGeoreference,
+        geometry: PdfPageGeometry,
         z: Int,
+        tx: Int,
         ty: Int,
-        info: PdfPageInfo
     ): List<PdfPageRenderer.RenderStrip> {
-        val north = box.northeast.latitude
-        val south = box.southwest.latitude
-        val west = box.southwest.longitude
-        val east = box.northeast.longitude
+        val page = geometry.visibleBox
+        val corners = listOf(0.0 to 0.0, TILE.toDouble() to 0.0, TILE.toDouble() to TILE.toDouble(), 0.0 to TILE.toDouble())
+            .map { (px, py) -> TileWarp.pixelToPage(georef, z, tx, ty, px, py, TILE) ?: return emptyList() }
+        if (!overlaps(corners, page)) return emptyList()
+        val north = WebMercatorTiles.tileYToLat(ty.toDouble(), z)
+        val south = WebMercatorTiles.tileYToLat(ty + 1.0, z)
         val strips = ceil((north - south) / 0.25).toInt().coerceIn(1, 16)
         val out = ArrayList<PdfPageRenderer.RenderStrip>(strips)
         for (i in 0 until strips) {
@@ -168,61 +151,60 @@ object PdfTiler {
             val topPx = (i.toDouble() * TILE / strips).roundToInt()
             val botPx = ((i + 1).toDouble() * TILE / strips).roundToInt()
             if (botPx <= topPx) continue
-            // Strip i covers tile-Y [ty+i/strips, ty+(i+1)/strips]; convert those
-            // Mercator edges back to their true latitudes.
-            val bandNorth = WebMercatorTiles.tileYToLat(ty + i.toDouble() / strips, z)
-            val bandSouth = WebMercatorTiles.tileYToLat(ty + (i + 1).toDouble() / strips, z)
-            val pageRect = pageRectForBand(inverse, west, east, bandNorth, bandSouth, info)
-                ?: continue // strip fully off-page, leave it white
-            out += PdfPageRenderer.RenderStrip(
-                pageRect = pageRect,
-                dest = RectF(0f, topPx.toFloat(), TILE.toFloat(), botPx.toFloat())
-            )
+            val q0 = TileWarp.pixelToPage(georef, z, tx, ty, 0.0, topPx.toDouble(), TILE) ?: continue
+            val q1 = TileWarp.pixelToPage(georef, z, tx, ty, TILE.toDouble(), topPx.toDouble(), TILE) ?: continue
+            val q2 = TileWarp.pixelToPage(georef, z, tx, ty, 0.0, botPx.toDouble(), TILE) ?: continue
+            val q3 = TileWarp.pixelToPage(georef, z, tx, ty, TILE.toDouble(), botPx.toDouble(), TILE) ?: continue
+            // strip fully off-page, leave it white
+            if (!overlaps(listOf(q0, q1, q3, q2), page)) continue
+            val affine = pageToStripPixels(q0, q1, q2, topPx, botPx) ?: continue
+            out += PdfPageRenderer.RenderStrip(affine, topPx, botPx)
         }
         return out
     }
 
-    /** PDF-pixel rect (y-down) for one lat/lon band, null if no meaningful
-     *  overlap with the page. */
-    private fun pageRectForBand(
-        inverse: AffineTransform2D,
-        west: Double, east: Double, north: Double, south: Double,
-        info: PdfPageInfo
-    ): RectF? {
-        // inverse.apply(lon, lat) -> Wgs84Coordinate with (pdfX as longitude, pdfY as latitude)
-        val corners = listOf(
-            inverse.apply(west, south),
-            inverse.apply(east, south),
-            inverse.apply(east, north),
-            inverse.apply(west, north)
+    /**
+     * raw page -> tile pixels for one strip, pinned by three corners: q0 at
+     * (0, top), q1 at (TILE, top), q2 at (0, bottom). Android Matrix order.
+     */
+    internal fun pageToStripPixels(q0: PagePoint, q1: PagePoint, q2: PagePoint, top: Int, bottom: Int): DoubleArray? {
+        val ux = q1.x - q0.x
+        val uy = q1.y - q0.y
+        val vx = q2.x - q0.x
+        val vy = q2.y - q0.y
+        val det = ux * vy - vx * uy
+        if (!det.isFinite() || det == 0.0) return null
+        // (s, t) = inverse([u v]) * (p - q0), pixel = (TILE * s, top + (bottom - top) * t)
+        val sa = vy / det
+        val sb = -vx / det
+        val ta = -uy / det
+        val tb = ux / det
+        val h = (bottom - top).toDouble()
+        val w = TILE.toDouble()
+        val out = doubleArrayOf(
+            w * sa, w * sb, -w * (sa * q0.x + sb * q0.y),
+            h * ta, h * tb, top - h * (ta * q0.x + tb * q0.y),
         )
-        val xs = corners.map { it.longitude }
-        val ys = corners.map { it.latitude }
-        val left = xs.min(); val right = xs.max()
-        val w = info.pageWidth.toDouble(); val h = info.pageHeight.toDouble()
-        // Calibration affine is in PDF user space (y-up, origin bottom-left,
-        // per GeoPDF georeferencing dicts) but PdfRenderer draws y-down
-        // (origin top-left). Flip Y here - feeding y-up coords straight to
-        // the renderer mirrored every tile north-for-south. iOS does the
-        // same flip in its CoreGraphics context.
-        val top = h - ys.max()
-        val bottom = h - ys.min()
-        // skip bands that don't overlap the page at all
-        if (right <= 0.0 || left >= w || bottom <= 0.0 || top >= h) return null
-        // need non-trivial on-page overlap, don't emit all-margin bands
-        val ovW = minOf(w, right) - maxOf(0.0, left)
-        val ovH = minOf(h, bottom) - maxOf(0.0, top)
-        if (ovW < 0.5 || ovH < 0.5) return null
-        // return FULL (unclamped) rect: renderer maps it onto the tile band
-        // so on-page content keeps true scale/position, off-page stays white
-        return RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
+        return out.takeIf { v -> v.all { it.isFinite() } }
+    }
+
+    private fun overlaps(quad: List<PagePoint>, box: PdfBox): Boolean {
+        val minX = quad.minOf { it.x }
+        val maxX = quad.maxOf { it.x }
+        val minY = quad.minOf { it.y }
+        val maxY = quad.maxOf { it.y }
+        val ovW = minOf(maxX, box.urx) - maxOf(minX, box.llx)
+        val ovH = minOf(maxY, box.ury) - maxOf(minY, box.lly)
+        // need a real sliver of page, not an all-margin band
+        return ovW >= 0.5 && ovH >= 0.5
     }
 
     /** Min zoom (coverage roughly fits one tile) up to native-res max, capped
      *  by total-tile budget so a huge sheet can't generate forever. */
-    private fun zoomRange(info: PdfPageInfo, coverage: Wgs84Bounds): Pair<Int, Int> {
+    private fun zoomRange(georef: PdfGeoreference, coverage: Wgs84Bounds): Pair<Int, Int> {
         val lonSpan = abs(coverage.longitudeSpan).coerceAtLeast(1e-9)
-        val pxPerDeg = info.pageWidth / lonSpan
+        val crop = georef.cropBounds()
+        val pxPerDeg = (crop[2] - crop[0]) / lonSpan
         var maxZoom = floor(log2(pxPerDeg * 360.0 / TILE)).toInt().coerceIn(1, 19)
 
         var minZoom = 0

@@ -414,5 +414,21 @@
     "literal": "\"sync/chat/$roomId\"",
     "occurrences": 1,
     "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
+  },
+  {
+    "id": "691e0c2cadb66b9a",
+    "path": "ios/TacticalMaps/Calibration/FiduciaryGeoreference.swift",
+    "sink": "property.message",
+    "literal": "\"exact fit - add a 4th point to check accuracy\"",
+    "occurrences": 1,
+    "reason": "Fit diagnostic pinned by testdata/pdf_georef.json for cross-platform parity; not shown in the UI (the calibration fit panel uses catalogue strings)."
+  },
+  {
+    "id": "61837d3d025d66d4",
+    "path": "ios/TacticalMaps/Map/Renderer/TileMapContainer.swift",
+    "sink": "DispatchQueue.label",
+    "literal": "\"com.tacmap.mgrs-grid\"",
+    "occurrences": 1,
+    "reason": "Dispatch queue label for the off-main MGRS grid build; never shown to users."
   }
 ]

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
+import androidx.annotation.WorkerThread
 import com.tacmap.util.DurablePreferenceCommit
 import com.tacmap.util.SafeStore
 import com.tacmap.util.SealedEnvelope
@@ -15,27 +16,29 @@ import java.io.IOException
 import java.security.MessageDigest
 
 /**
- * Persists the active calibrated PDF map source across app launches so
- * the user doesn't have to re-import every time they close the app.
+ * Persists the active PDF map source across app launches so the user doesn't
+ * have to re-import every time they close the app.
  *
- * The PDF file itself is already copied to internal `pdf_maps/` on
- * import so it survives restarts (unless OS clears app data). What we
- * add here is a small JSON sidecar in SharedPreferences with the
- * non-bitmap state (filename, display name, page dims, calibration
- * affine + the fiduciaries we fit it from) so we can reconstruct a
- * [PdfMapSource] with full GeoPDF accuracy on startup.
+ * The PDF file itself is already copied to internal pdf_maps/ on import so it
+ * survives restarts (unless OS clears app data). What we add here is a small
+ * sealed JSON sidecar in SharedPreferences with the non-bitmap state: page
+ * geometry, the plan 02 georef (schema 2) and the fiduciaries it came from.
  *
- * Calibrated, parsed, and uncalibrated PDF sources are all saved. Even a PDF
- * using its rough fallback box is still the user's active basemap and must not
- * disappear merely because the process was closed.
+ * Schema 1 sessions (a page -> lon/lat affine) are migrated on load: GeoPDFs are
+ * re-parsed, user fiduciaries refitted in UTM, and the old camera-centred
+ * fallback box becomes an honest "uncalibrated" source. See [PdfSessionMigration].
  */
 class PdfSessionStore(private val context: Context) {
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun save(source: PdfMapSource): Boolean {
-        val pageInfo = source.pageInfo ?: return false
+    fun save(source: PdfMapSource): Boolean = save(source, onlyIfStillStored = null)
+
+    /** the active blob a background write expects to still be there (null = nothing stored) */
+    private class StoredBlob(val value: String?)
+
+    private fun save(source: PdfMapSource, onlyIfStillStored: StoredBlob?): Boolean {
         val coverage = source.coverage ?: return false
         val pdfRoot = runCatching { File(context.filesDir, "pdf_maps").canonicalFile }
             .getOrNull() ?: return false
@@ -50,56 +53,85 @@ class PdfSessionStore(private val context: Context) {
             Log.w(TAG, "Rejected PDF session outside the private PDF map library")
             return false
         }
-        val persistedCalibration = when (val calibration = source.calibration) {
-            is Calibration.Fiduciaries -> PersistedCalibration(
-                fids = calibration.fids,
-                transform = calibration.transform
-            )
-            is Calibration.Parsed -> PersistedCalibration(
-                fids = emptyList(),
-                transform = calibration.transform
-            )
-            null -> null
-        }
-        val calibrationKind = when (source.calibration) {
-            is Calibration.Fiduciaries -> CALIBRATION_FIDUCIARIES
-            is Calibration.Parsed -> CALIBRATION_PARSED
-            null -> CALIBRATION_NONE
-        }
-        val calibrationCrs = (source.calibration as? Calibration.Parsed)?.crs
+        val calibration = source.calibration
         // Strip URI to just the basename inside our private `pdf_maps/`
         // dir. The full URI from import time is stable across the app's
         // lifetime but storing just the basename lets us recover if the
         // sandbox path ever shifts.
-        val fileName = sourceFile.name
         val dto = PersistedPdfSource(
-            fileName = fileName,
+            schemaVersion = SCHEMA_VERSION,
+            fileName = sourceFile.name,
             displayName = source.displayName,
-            pageWidth = pageInfo.pageWidth,
-            pageHeight = pageInfo.pageHeight,
+            pageWidth = source.geometry.rendererWidth,
+            pageHeight = source.geometry.rendererHeight,
             sourceKind = source.kind.name,
-            calibrationKind = calibrationKind,
-            calibrationCrs = calibrationCrs,
-            calibration = persistedCalibration,
-            coverage = coverage
+            calibrationKind = when (calibration) {
+                is Calibration.Fiduciaries -> PdfSessionMigration.KIND_FIDUCIARIES
+                is Calibration.Parsed -> PdfSessionMigration.KIND_PARSED
+                null -> PdfSessionMigration.KIND_NONE
+            },
+            calibration = (calibration as? Calibration.Fiduciaries)?.let {
+                PersistedCalibration(fids = it.fids, pageSpace = PAGE_SPACE_RAW)
+            } ?: source.pendingFiduciaries.takeIf { it.isNotEmpty() }?.let {
+                PersistedCalibration(fids = it, pageSpace = PAGE_SPACE_RAW)
+            },
+            coverage = coverage,
+            georef = calibration?.georef?.let(PdfGeoreferenceCodec::encode),
+            provisional = source.provisional?.let(PdfGeoreferenceCodec::encode),
+            geometry = source.geometry,
+            georefIssue = PdfGeoreferenceCodec.encodeIssue(source.georefIssue),
         )
         val persisted = runCatching { sealPref(LABEL_PDF, json.encodeToString(dto)) }
-            .map { prefs.edit().putString(KEY_PDF, it).putBoolean(KEY_PDF_SEALED_ONLY, true).commit() }
+            .map { sealed ->
+                synchronized(SESSION_LOCK) {
+                    // a background migration only writes over the exact blob it migrated, never
+                    // over a session the user saved in the meantime
+                    if (onlyIfStillStored != null && prefs.getString(KEY_PDF, null) != onlyIfStillStored.value) {
+                        Log.w(TAG, "PDF session changed while migrating, dropping the migrated copy")
+                        return false
+                    }
+                    prefs.edit().putString(KEY_PDF, sealed).putBoolean(KEY_PDF_SEALED_ONLY, true).commit()
+                }
+            }
             .onFailure { Log.w(TAG, "Couldn't encode PDF session for persistence") }
             .getOrDefault(false)
         // Also stash in the per-PDF library so switching PDFs and back
         // restores this one's calibration. Keyed by file CONTENT hash,
         // not display name - two different sheets that share a filename
         // must NOT inherit each other's affine.
-        (source.calibration as? Calibration.Fiduciaries)?.let { calibration ->
+        (calibration as? Calibration.Fiduciaries)?.let { fiducial ->
             PdfCalibrationIdentity.contentKey(sourceFile)?.let { key ->
-                saveToLibrary(key, calibration)
+                saveToLibrary(key, fiducial.fids)
             } ?: Log.w(TAG, "Couldn't fingerprint PDF; calibration library entry was not saved")
         }
         return persisted
     }
 
-    fun load(): PdfMapSource? {
+    /**
+     * Blocking restore, migration included. Can open and parse the PDF, so worker
+     * thread only; the UI goes through [loadSession] + [migrate].
+     */
+    @WorkerThread
+    fun load(): PdfMapSource? = when (val session = loadSession()) {
+        is PdfSessionLoad.Ready -> session.source
+        is PdfSessionLoad.NeedsMigration -> migrate(session)
+        null -> null
+    }
+
+    /** the active session's PDF, without restoring or migrating anything */
+    fun activeFile(): File? = when (val session = loadSession()) {
+        is PdfSessionLoad.Ready -> session.source.uri.path?.let(::File)
+        is PdfSessionLoad.NeedsMigration -> session.file
+        null -> null
+    }
+
+    /**
+     * What's persisted, read off prefs only: no PDF is opened, so this is fine on
+     * main. A schema 2 session comes straight back; a schema 1 one, or one whose
+     * georef no longer decodes, comes back as [PdfSessionLoad.NeedsMigration] for
+     * [migrate] to finish off main (a 38 MB GeoPDF parse at launch is an ANR).
+     */
+    fun loadSession(): PdfSessionLoad? {
         val stored = prefs.getString(KEY_PDF, null) ?: return null
         val raw = openPref(LABEL_PDF, stored) ?: return null
         val dto = runCatching { json.decodeFromString<PersistedPdfSource>(raw) }
@@ -140,27 +172,147 @@ class PdfSessionStore(private val context: Context) {
             clear()
             return null
         }
-        val calibration = when (dto.calibrationKind) {
-            CALIBRATION_NONE -> null
-            CALIBRATION_PARSED -> dto.calibration?.let {
-                Calibration.Parsed(dto.calibrationCrs.orEmpty(), it.transform)
-            }
-            else -> dto.calibration?.let {
-                Calibration.Fiduciaries(fids = it.fids, transform = it.transform)
-            }
+        // a legacy plaintext blob was just re-sealed above, the migration guard has to
+        // compare against what's in prefs now or it'd never be allowed to save
+        val current = if (isLegacyPlaintext(stored)) prefs.getString(KEY_PDF, null) else stored
+        return restoreOrDefer(dto, file, current)
+    }
+
+    /**
+     * Finish a session [loadSession] couldn't restore on its own: opens the PDF,
+     * re-parses / refits, and re-saves it as schema 2 (only over the exact blob
+     * that was loaded). null when the PDF won't open or the user saved another
+     * session meanwhile, in which case this result is stale anyway.
+     */
+    @WorkerThread
+    fun migrate(pending: PdfSessionLoad.NeedsMigration): PdfMapSource? {
+        val dto = pending.dto
+        val geometry = dto.geometry?.takeIf { dto.schemaVersion >= SCHEMA_VERSION && it.isValid() }
+        val source = if (geometry != null) recoverV2(dto, pending.file, geometry) else migrateV1(dto, pending.file)
+        source ?: return null
+        if (!save(source, onlyIfStillStored = StoredBlob(pending.stored))) {
+            Log.w(TAG, "Migrated PDF session wasn't re-saved, will migrate again next launch")
+            if (prefs.getString(KEY_PDF, null) != pending.stored) return null
         }
-        val sourceKind = dto.sourceKind
-            ?.let { saved -> MapSourceKind.entries.firstOrNull { it.name == saved } }
-            ?: if (calibration is Calibration.Parsed) MapSourceKind.GEO_PDF
-            else MapSourceKind.CALIBRATED_PDF
+        return source
+    }
+
+    /** schema 2 restores, anything needing the PDF or a re-save is deferred to [migrate] */
+    internal fun restoreOrDefer(dto: PersistedPdfSource, file: File, stored: String?): PdfSessionLoad {
+        val geometry = dto.geometry
+        if (dto.schemaVersion >= SCHEMA_VERSION && geometry != null && geometry.isValid()) {
+            val georef = dto.georef?.let(PdfGeoreferenceCodec::decode)
+            val lost = georef == null && dto.calibrationKind != PdfSessionMigration.KIND_NONE
+            if (!lost) return PdfSessionLoad.Ready(restore(dto, file, geometry, georef))
+        }
+        return PdfSessionLoad.NeedsMigration(dto, file, stored)
+    }
+
+    /** test hook: restore, or migrate on the calling thread */
+    @WorkerThread
+    internal fun restoreOrMigrate(dto: PersistedPdfSource, file: File): PdfMapSource? =
+        when (val session = restoreOrDefer(dto, file, stored = prefs.getString(KEY_PDF, null))) {
+            is PdfSessionLoad.Ready -> session.source
+            is PdfSessionLoad.NeedsMigration -> migrate(session)
+        }
+
+    private fun restore(dto: PersistedPdfSource, file: File, geometry: PdfPageGeometry, georef: PdfGeoreference?): PdfMapSource {
+        val uri = Uri.fromFile(file)
+        val fids = dto.calibration?.fids.orEmpty()
+        val calibration: Calibration? = when {
+            georef == null -> null
+            dto.calibrationKind == PdfSessionMigration.KIND_PARSED -> Calibration.Parsed(georef)
+            dto.calibrationKind == PdfSessionMigration.KIND_FIDUCIARIES && fids.size >= 3 ->
+                Calibration.Fiduciaries(fids, georef)
+            else -> null
+        }
+        if (calibration != null) {
+            val kind = if (calibration is Calibration.Parsed) MapSourceKind.GEO_PDF else MapSourceKind.CALIBRATED_PDF
+            return PdfMapSource(uri, dto.displayName, kind, calibration, geometry)
+        }
+        // an uncalibrated sheet comes back on its provisional placement, still labelled
+        val issue = PdfGeoreferenceCodec.decodeIssue(dto.georefIssue)
+            ?: if (dto.calibrationKind == PdfSessionMigration.KIND_NONE) PdfGeorefIssue.NoMetadata
+            else PdfGeorefIssue.CalibrationLost
+        val provisional = dto.provisional?.let(PdfGeoreferenceCodec::decode)
+            ?.takeIf { it.origin == GeorefOrigin.PROVISIONAL }
         return PdfMapSource(
-            uri = Uri.fromFile(file),
+            uri = uri,
             displayName = dto.displayName,
-            kind = sourceKind,
-            coverage = dto.coverage,
-            calibration = calibration,
-            pageInfo = PdfPageInfo(dto.pageWidth, dto.pageHeight)
+            kind = MapSourceKind.CALIBRATED_PDF,
+            calibration = null,
+            geometry = geometry,
+            provisional = provisional
+                ?: PdfGeoreference.provisional(dto.coverage?.center ?: Wgs84Coordinate(0.0, 0.0), geometry.visibleCrop(), geometry.rotation),
+            georefIssue = issue,
+            pendingFiduciaries = fids,
         )
+    }
+
+    /**
+     * Schema 1 -> 2. Needs the PDF itself (page frame, and a re-parse for GeoPDFs),
+     * so it's a one-off bit of file IO on the first launch after the update.
+     */
+    private fun migrateV1(dto: PersistedPdfSource, file: File): PdfMapSource? {
+        val page = runCatching { PdfDocumentInspector.inspect(context, file) }
+            .onFailure { Log.w(TAG, "Couldn't open the PDF behind a v1 session") }
+            .getOrNull() ?: return null
+        val outcome = PdfSessionMigration.migrate(
+            calibrationKind = dto.calibrationKind,
+            fiduciaries = dto.calibration?.fids.orEmpty(),
+            v1RendererWidth = dto.pageWidth,
+            v1RendererHeight = dto.pageHeight,
+            geometry = page.geometry,
+            reparse = { page.georeference() },
+        )
+        return sourceFor(dto, file, page.geometry, outcome)
+    }
+
+    /**
+     * Schema 2 whose georef didn't decode. Fiduciaries are raw already so they just
+     * refit; only a GeoPDF needs the file opened and re-parsed.
+     */
+    private fun recoverV2(dto: PersistedPdfSource, file: File, geometry: PdfPageGeometry): PdfMapSource? {
+        // a re-parse brings its own (current) page frame, a refit keeps the saved one
+        val page = if (dto.calibrationKind == PdfSessionMigration.KIND_PARSED) {
+            runCatching { PdfDocumentInspector.inspect(context, file) }
+                .onFailure { Log.w(TAG, "Couldn't re-read the PDF behind a lost georef") }
+                .getOrNull() ?: return null
+        } else {
+            null
+        }
+        val outcome = PdfSessionMigration.recover(
+            calibrationKind = dto.calibrationKind,
+            rawFiduciaries = dto.calibration?.fids.orEmpty(),
+            geometry = page?.geometry ?: geometry,
+            reparse = { page?.georeference() },
+        )
+        return sourceFor(dto, file, page?.geometry ?: geometry, outcome)
+    }
+
+    private fun sourceFor(
+        dto: PersistedPdfSource,
+        file: File,
+        geometry: PdfPageGeometry,
+        outcome: PdfSessionMigration.Outcome,
+    ): PdfMapSource? {
+        val uri = Uri.fromFile(file)
+        val source = when (outcome) {
+            is PdfSessionMigration.Outcome.Georeferenced -> {
+                val kind = if (outcome.calibration is Calibration.Parsed) MapSourceKind.GEO_PDF else MapSourceKind.CALIBRATED_PDF
+                PdfMapSource(uri, dto.displayName, kind, outcome.calibration, geometry)
+            }
+            is PdfSessionMigration.Outcome.Uncalibrated -> PdfMapSource.uncalibrated(
+                uri = uri,
+                name = dto.displayName,
+                geometry = geometry,
+                // where they last saw it, it's labelled uncalibrated so nobody reads grids off it
+                center = dto.coverage?.center ?: Wgs84Coordinate(0.0, 0.0),
+                issue = outcome.issue,
+                pendingFiduciaries = outcome.pendingFiduciaries,
+            )
+        }
+        return source.takeIf { it.coverage != null }
     }
 
     /** Capture the exact encrypted active-session preference for rollback. */
@@ -170,32 +322,34 @@ class PdfSessionStore(private val context: Context) {
     )
 
     /** Restore an exact pre-transition snapshot after selector persistence fails. */
-    internal fun restoreActiveSession(snapshot: PdfSessionSnapshot): Boolean {
+    internal fun restoreActiveSession(snapshot: PdfSessionSnapshot): Boolean = synchronized(SESSION_LOCK) {
         val editor = prefs.edit()
         if (snapshot.encodedSession == null) editor.remove(KEY_PDF)
         else editor.putString(KEY_PDF, snapshot.encodedSession)
         if (snapshot.sealedOnly) editor.putBoolean(KEY_PDF_SEALED_ONLY, true)
         else editor.remove(KEY_PDF_SEALED_ONLY)
-        return editor.commit()
+        editor.commit()
     }
 
-    fun clear(): Boolean = prefs.edit().remove(KEY_PDF).commit()
+    fun clear(): Boolean = synchronized(SESSION_LOCK) { prefs.edit().remove(KEY_PDF).commit() }
 
     /**
-     * Per-PDF calibration library. Only a content hash can prove that a saved
-     * affine belongs to these exact PDF bytes. Legacy filename-only entries are
+     * Per-PDF calibration library. Only a content hash can prove that saved
+     * fiduciaries belong to these exact PDF bytes. Legacy filename-only entries are
      * intentionally ignored: filenames are user-controlled and frequently
-     * reused for revisions of a sheet.
+     * reused for revisions of a sheet. Entries saved before schema 2 hold v1
+     * (renderer relative) page points; [StoredFiduciaries.rawPageSpace] says which.
      */
-    fun calibration(file: File?): Calibration.Fiduciaries? {
+    fun libraryFiduciaries(file: File?): StoredFiduciaries? {
         val lib = loadLibrary()
         val cal = PdfCalibrationIdentity.lookup(file, lib) ?: return null
-        return Calibration.Fiduciaries(cal.fids, cal.transform)
+        if (cal.fids.size < 3) return null
+        return StoredFiduciaries(cal.fids, rawPageSpace = cal.pageSpace == PAGE_SPACE_RAW)
     }
 
-    private fun saveToLibrary(key: String, cal: Calibration.Fiduciaries) {
+    private fun saveToLibrary(key: String, fids: List<Fiduciary>) {
         val lib = loadLibrary().toMutableMap()
-        lib[key] = PersistedCalibration(cal.fids, cal.transform)
+        lib[key] = PersistedCalibration(fids, pageSpace = PAGE_SPACE_RAW)
         runCatching { sealPref(LABEL_LIBRARY, json.encodeToString(lib)) }
             .onSuccess { prefs.edit().putString(KEY_LIBRARY, it).putBoolean(KEY_LIBRARY_SEALED_ONLY, true).commit() }
             .onFailure { Log.w(TAG, "Couldn't encode PDF calibration library") }
@@ -271,15 +425,16 @@ class PdfSessionStore(private val context: Context) {
     private fun isLegacyPlaintext(stored: String): Boolean = stored.startsWith("{")
 
     private companion object {
+        /** one per process: the UI and a background migration write the same pref */
+        val SESSION_LOCK = Any()
         const val PREFS_NAME = "pdf_session"
         const val KEY_PDF = "active_pdf"
         const val KEY_LIBRARY = "pdf_calibrations"
         const val KEY_PDF_SEALED_ONLY = "active_pdf_sealed_only_v1"
         const val KEY_LIBRARY_SEALED_ONLY = "pdf_calibrations_sealed_only_v1"
         const val TAG = "PdfSessionStore"
-        const val CALIBRATION_NONE = "none"
-        const val CALIBRATION_PARSED = "parsed"
-        const val CALIBRATION_FIDUCIARIES = "fiduciaries"
+        const val SCHEMA_VERSION = 2
+        const val PAGE_SPACE_RAW = "raw"
         /** AEAD associated data, keeps one pref's blob from opening as the other. */
         const val LABEL_PDF = "pdf_session/active_pdf"
         const val LABEL_LIBRARY = "pdf_session/pdf_calibrations"
@@ -365,21 +520,51 @@ internal data class PdfSessionSnapshot(
     val sealedOnly: Boolean,
 )
 
+/** what [PdfSessionStore.loadSession] found */
+sealed class PdfSessionLoad {
+    data class Ready(val source: PdfMapSource) : PdfSessionLoad()
+
+    /**
+     * Schema 1, or a schema 2 georef that won't decode: [PdfSessionStore.migrate]
+     * has to open the PDF. [stored] is the sealed blob this came from, so the
+     * migrated copy never lands on top of a newer session.
+     */
+    class NeedsMigration internal constructor(
+        internal val dto: PersistedPdfSource,
+        val file: File,
+        internal val stored: String?,
+    ) : PdfSessionLoad()
+}
+
+/** fiduciaries from the content-keyed library, v1 ones still in renderer space */
+data class StoredFiduciaries(val fids: List<Fiduciary>, val rawPageSpace: Boolean)
+
 @Serializable
-private data class PersistedPdfSource(
+internal data class PersistedPdfSource(
+    /** 1 = page -> lon/lat affine era (missing in those blobs), 2 = plan 02 georef */
+    val schemaVersion: Int = 1,
     val fileName: String,
     val displayName: String,
-    val pageWidth: Int,
-    val pageHeight: Int,
+    /** PdfRenderer int size; v1 page points are relative to this */
+    val pageWidth: Int = 0,
+    val pageHeight: Int = 0,
     val sourceKind: String? = null,
     val calibrationKind: String = "fiduciaries",
     val calibrationCrs: String? = null,
     val calibration: PersistedCalibration? = null,
-    val coverage: Wgs84Bounds
+    /** written in v2 too so an older build can still decode the blob and fail closed */
+    val coverage: Wgs84Bounds? = null,
+    val georef: PersistedGeoreference? = null,
+    val provisional: PersistedGeoreference? = null,
+    val geometry: PdfPageGeometry? = null,
+    val georefIssue: String? = null,
 )
 
 @Serializable
-private data class PersistedCalibration(
+internal data class PersistedCalibration(
     val fids: List<Fiduciary>,
-    val transform: AffineTransform2D
+    /** v1 only: the old page -> lon/lat affine, ignored now */
+    val transform: AffineTransform2D? = null,
+    /** "raw" for schema 2 raw user space points, missing = v1 renderer space */
+    val pageSpace: String? = null,
 )

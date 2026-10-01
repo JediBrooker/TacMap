@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.Button
@@ -45,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.drawings.DrawingFeature
 import com.tacmap.drawings.DrawingLayer
+import com.tacmap.waypoints.TaskColor
 import com.tacmap.waypoints.Waypoint
 import com.tacmap.waypoints.WaypointKind
 import com.tacmap.waypoints.WaypointStore
@@ -164,19 +164,23 @@ private fun Header(
     onDismiss: () -> Unit,
     onTitleClick: (() -> Unit)?
 ) {
+    // The rendered symbol, as on iOS: a larger tile for units, whose frame
+    // and echelon marks need the room.
+    val isUnit = waypoint.kind is WaypointKind.Military
+    val isTask = waypoint.kind is WaypointKind.ControlMeasure
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(if (isUnit) 44.dp else 28.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color.White),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                if (waypoint.kind is WaypointKind.ControlMeasure) Icons.Default.Flag else Icons.Default.GpsFixed,
-                contentDescription = null,
-                tint = if (waypoint.kind == WaypointKind.Generic) Color(0xFFB48800) else Color.Black,
-                modifier = Modifier.size(20.dp)
+            WaypointKindIcon(
+                kind = waypoint.kind,
+                size = if (isUnit) 38.dp else 22.dp,
+                rotation = if (isTask) waypoint.rotation else 0.0,
+                taskColor = if (isTask) waypoint.taskColor else TaskColor.BLACK,
             )
         }
         Spacer(Modifier.size(10.dp))

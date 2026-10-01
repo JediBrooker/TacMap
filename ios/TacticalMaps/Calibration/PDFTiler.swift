@@ -1,13 +1,13 @@
 import Foundation
 import UIKit
-import PDFKit
 import MapKit
 
-/// Bakes a calibrated PDFMapSource into an offline MBTiles raster pyramid
-/// on-device, no desktop GDAL step. Swift mirror of the Android PdfTiler:
-/// maps each Web-Mercator XYZ tile's WGS84 box back to PDF user-space via
-/// the inverse calibration affine, renders that region with PDFKit, writes
-/// PNG tiles via MBTilesWriter.
+/// Bakes a georeferenced PDFMapSource into an offline MBTiles raster pyramid
+/// on-device, no desktop GDAL step. For every tile strip the page points of
+/// its corners come from georef.toPage (true projection, not a lat/lon box)
+/// and the page is drawn in RAW user space via drawPDFPage with that CTM, so
+/// rotation/shear of the sheet survive and /Rotate + box origins can't
+/// double up (D1-04). The adaptive cell-warp renderer replaces this next.
 enum PDFTiler {
 
     struct Progress { let done: Int; let total: Int }
@@ -15,13 +15,14 @@ enum PDFTiler {
     /// Returns the written .mbtiles URL, or nil on failure / no calibration.
     static func generate(source: PDFMapSource,
                          progress: @escaping (Progress) -> Void) -> URL? {
-        guard let transform = source.placementTransform,
-              let inverse = transform.inverted(),
+        // a provisional placement is a guess, baking it would launder it into
+        // an "offline basemap" with no uncalibrated label on it
+        let georef = source.georef
+        guard !source.isUncalibrated,
               let region = source.coverage,
-              let doc = PDFDocument(url: source.url),
-              let page = doc.page(at: 0) else { return nil }
+              let doc = CGPDFDocument(source.url as CFURL),
+              let page = doc.page(at: georef.page + 1) else { return nil }
 
-        let mediaBox = page.bounds(for: .mediaBox)
         let minLat = region.center.latitude - region.span.latitudeDelta / 2
         let maxLat = region.center.latitude + region.span.latitudeDelta / 2
         let minLon = region.center.longitude - region.span.longitudeDelta / 2
@@ -76,11 +77,9 @@ enum PDFTiler {
                         removeMBTilesArtifacts(at: tmpURL)
                         return nil
                     }
-                    let box = WebMercatorTiles.tileBounds(z, tx, ty)
-                    if pdfRect(inverse: inverse, box: box, mediaBox: mediaBox) != nil,
-                       let data = renderTile(imageRenderer, page: page,
-                                             z: z, x: tx, y: ty,
-                                             inverse: inverse, mediaBox: mediaBox) {
+                    if touchesCrop(georef, z: z, x: tx, y: ty),
+                       let data = renderTile(imageRenderer, page: page, georef: georef,
+                                             z: z, x: tx, y: ty) {
                         writer.putTile(z: z, x: tx, y: ty, data: data)
                     }
                     done += 1
@@ -127,61 +126,47 @@ enum PDFTiler {
         removeMBTilesSidecars(at: file)
     }
 
-    /// Map a tile's WGS84 box to a PDF user-space rect (y-up). Only used as
-    /// the off-page skip gate - tiles whose PDF rect doesn't touch the page
-    /// aren't baked at all. The actual render (renderTile) re-derives per-strip.
-    private static func pdfRect(inverse: AffineTransform2D,
-                                box: WebMercatorTiles.Box,
-                                mediaBox: CGRect) -> CGRect? {
-        // inverse.apply(CGPoint(x: lon, y: lat)) -> (.longitude = pdfX, .latitude = pdfY)
-        let pts = [
-            inverse.apply(CGPoint(x: box.west, y: box.south)),
-            inverse.apply(CGPoint(x: box.east, y: box.south)),
-            inverse.apply(CGPoint(x: box.east, y: box.north)),
-            inverse.apply(CGPoint(x: box.west, y: box.north))
-        ]
-        let xs = pts.map { $0.longitude }
-        let ys = pts.map { $0.latitude }
-        guard let left = xs.min(), let right = xs.max(),
-              let bottom = ys.min(), let top = ys.max() else { return nil }
-        let rect = CGRect(x: left, y: bottom, width: right - left, height: top - bottom)
-        guard rect.width > 0.01, rect.height > 0.01, rect.intersects(mediaBox) else { return nil }
-        return rect
+    /// Off-sheet skip gate: does the tile's page-space quad touch the crop?
+    private static func touchesCrop(_ georef: PdfGeoreference, z: Int, x: Int, y: Int) -> Bool {
+        let corners = [(0.0, 0.0), (256.0, 0.0), (256.0, 256.0), (0.0, 256.0), (128.0, 128.0)]
+            .compactMap { PdfTileWarp.pagePoint(georef, z: z, x: x, y: y, px: $0.0, py: $0.1) }
+        guard corners.count == 5 else { return false }
+        let xs = corners.map(\.x), ys = corners.map(\.y)
+        let quad = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+        return quad.width > 0.01 && quad.height > 0.01 && quad.intersects(georef.cropBoundingRect)
     }
 
-    /// PDF-space bounding rect of the sub-band whose Web-Mercator tile-Y runs
-    /// [yTop, yBottom] (tile units). Longitude is linear in both Mercator and
-    /// the affine so only latitude edges need to be re-derived per strip.
-    private static func stripRect(inverse: AffineTransform2D,
-                                  west: Double, east: Double,
-                                  yTop: Double, yBottom: Double, z: Int) -> CGRect? {
-        let north = WebMercatorTiles.tileYToLat(yTop, z)
-        let south = WebMercatorTiles.tileYToLat(yBottom, z)
-        let pts = [
-            inverse.apply(CGPoint(x: west, y: south)),
-            inverse.apply(CGPoint(x: east, y: south)),
-            inverse.apply(CGPoint(x: east, y: north)),
-            inverse.apply(CGPoint(x: west, y: north))
-        ]
-        let xs = pts.map { $0.longitude }, ys = pts.map { $0.latitude }
-        guard let left = xs.min(), let right = xs.max(),
-              let bottom = ys.min(), let top = ys.max() else { return nil }
-        return CGRect(x: left, y: bottom, width: right - left, height: top - bottom)
+    /// page -> tile pixel affine that sends page points p0, p1, p2 to pixels
+    /// q0, q1, q2. nil when the page points are collinear.
+    static func pageToPixel(_ p0: CGPoint, _ p1: CGPoint, _ p2: CGPoint,
+                            _ q0: CGPoint, _ q1: CGPoint, _ q2: CGPoint) -> CGAffineTransform? {
+        let ux = p1.x - p0.x, uy = p1.y - p0.y
+        let vx = p2.x - p0.x, vy = p2.y - p0.y
+        let det = ux * vy - vx * uy
+        guard det.isFinite, abs(det) > 1e-12 else { return nil }
+        // L [u v] = [q1-q0 q2-q0]  ->  L = Q [u v]^-1
+        let qux = q1.x - q0.x, quy = q1.y - q0.y
+        let qvx = q2.x - q0.x, qvy = q2.y - q0.y
+        let a = (qux * vy - qvx * uy) / det
+        let c = (qvx * ux - qux * vx) / det
+        let b = (quy * vy - qvy * uy) / det
+        let d = (qvy * ux - quy * vx) / det
+        let t = CGAffineTransform(a: a, b: b, c: c, d: d,
+                                  tx: q0.x - (a * p0.x + c * p0.y),
+                                  ty: q0.y - (b * p0.x + d * p0.y))
+        return [t.a, t.b, t.c, t.d, t.tx, t.ty].allSatisfy(\.isFinite) ? t : nil
     }
 
-    /// Render one 256x256 tile north-up. To stay Web-Mercator-correct we split
-    /// the tile into horizontal strips that are each linear in tile-Y (Mercator)
-    /// and map each strip through the calibration affine at its true lat edges.
-    /// A single linear scale over the whole tile would warp tiles spanning more
-    /// than ~2 deg lat (large sheets at low zoom); strips reduce residual to
-    /// sub-pixel. Small high-zoom tiles span <0.25 deg so just one strip, no cost.
-    private static func renderTile(_ renderer: UIGraphicsImageRenderer,
-                                   page: PDFPage, z: Int, x: Int, y: Int,
-                                   inverse: AffineTransform2D, mediaBox: CGRect) -> Data? {
+    /// Render one 256x256 tile north-up. Each horizontal strip gets its own
+    /// page -> pixel affine through three toPage'd corners, which keeps the
+    /// Mercator/projection curvature under a pixel for any sane sheet.
+    static func renderTile(_ renderer: UIGraphicsImageRenderer, page: CGPDFPage,
+                           georef: PdfGeoreference, z: Int, x: Int, y: Int) -> Data? {
         let size: CGFloat = 256
         let box = WebMercatorTiles.tileBounds(z, x, y)
-        // One strip per <=0.25 deg of latitude, capped at 16 (residual warp << 1 px).
+        // one strip per <=0.25 deg of latitude, capped at 16
         let strips = max(1, min(16, Int(ceil((box.north - box.south) / 0.25))))
+        let crop = georef.crop.map(\.cgPoint)
 
         let image = renderer.image { rctx in
             let ctx = rctx.cgContext
@@ -189,25 +174,27 @@ enum PDFTiler {
             ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
 
             for i in 0..<strips {
-                // Strip i covers tile pixel rows [pixelTop, pixelBottom] from the
-                // top (north). Rounded integer edges so adjacent bands abut with
-                // no hairline seam.
+                // rounded integer edges so adjacent bands abut with no hairline seam
                 let pixelTop = CGFloat((Double(i) * Double(size) / Double(strips)).rounded())
                 let pixelBottom = CGFloat((Double(i + 1) * Double(size) / Double(strips)).rounded())
                 let bandH = pixelBottom - pixelTop
-                guard bandH > 0 else { continue }
-                let yTop = Double(y) + Double(i) / Double(strips)
-                let yBottom = Double(y) + Double(i + 1) / Double(strips)
-                guard let r = stripRect(inverse: inverse, west: box.west, east: box.east,
-                                        yTop: yTop, yBottom: yBottom, z: z),
-                      r.width > 0.01, r.height > 0.01, r.intersects(mediaBox) else { continue }
+                guard bandH > 0,
+                      let pTL = PdfTileWarp.pagePoint(georef, z: z, x: x, y: y, px: 0, py: Double(pixelTop)),
+                      let pTR = PdfTileWarp.pagePoint(georef, z: z, x: x, y: y, px: 256, py: Double(pixelTop)),
+                      let pBL = PdfTileWarp.pagePoint(georef, z: z, x: x, y: y, px: 0, py: Double(pixelBottom)),
+                      let m = pageToPixel(pTL, pTR, pBL,
+                                          CGPoint(x: 0, y: pixelTop), CGPoint(x: size, y: pixelTop),
+                                          CGPoint(x: 0, y: pixelBottom)) else { continue }
                 ctx.saveGState()
                 ctx.clip(to: CGRect(x: 0, y: pixelTop, width: size, height: bandH))
-                // Map strip rect (y-up PDF) onto pixel band [pixelTop, pixelBottom] (y-down).
-                ctx.translateBy(x: 0, y: pixelTop)
-                ctx.scaleBy(x: size / r.width, y: -bandH / r.height)
-                ctx.translateBy(x: -r.minX, y: -r.maxY)
-                page.draw(with: .mediaBox, to: ctx)
+                ctx.concatenate(m)
+                // neatline/viewport clip in page space, collar stays white
+                if crop.count >= 3 {
+                    ctx.addLines(between: crop)
+                    ctx.closePath()
+                    ctx.clip()
+                }
+                ctx.drawPDFPage(page)
                 ctx.restoreGState()
             }
         }

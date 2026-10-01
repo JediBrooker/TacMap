@@ -8,7 +8,7 @@ import Combine
 /// Basically: start(for:) enters calibration mode, user taps known features
 /// on the PDF, each tap becomes a pendingTap while we ask for MGRS coords,
 /// confirmFiduciary saves the (pdfPoint, lat/lon) pair. Once 3+ fiduciaries
-/// are placed user taps Finish and we run AffineFitter.
+/// are placed user taps Finish and we fit them in UTM (FiduciaryFitter).
 final class CalibrationSession: ObservableObject {
 
     /// Geometry of a tap that's awaiting MGRS entry.
@@ -37,10 +37,11 @@ final class CalibrationSession: ObservableObject {
     func start(for source: PDFMapSource) {
         self.source = source
         // Seed with existing fiduciaries so user can refine instead of
-        // starting over.
-        self.fiduciaries = source.fiduciaries ?? []
+        // starting over, and show how good that earlier fit was. no calibration
+        // yet but saved points that couldn't be refit (old v1 set) -> start from those
+        self.fiduciaries = source.fiduciaries ?? source.pendingFiduciaries
         self.pendingTap = nil
-        self.lastFitRMSMetres = nil
+        self.lastFitRMSMetres = Self.fitRMS(of: fiduciaries)
         self.isCalibrating = true
     }
 
@@ -89,17 +90,46 @@ final class CalibrationSession: ObservableObject {
 
     var canFinish: Bool { fiduciaries.count >= 3 }
 
-    /// Fit an affine to the current fiduciaries. Returns nil if fewer than 3
-    /// are placed or the points are degenerate.
-    func finish() -> AffineFitter.Result? {
-        guard canFinish else { return nil }
-        do {
-            let result = try AffineFitter.fit(fiduciaries)
-            lastFitRMSMetres = result.rmsMetres
-            return result
-        } catch {
-            print("[Calibration] affine fit failed")
-            return nil
+    struct FinishResult {
+        /// page -> UTM (zone of the first point) fit of the fiduciaries
+        let georef: PdfGeoreference
+        /// best-fit lon/lat view of it, what the persisted record keeps
+        let transform: AffineTransform2D
+        let rmsMetres: Double
+        let crossValidated: Bool
+    }
+
+    /// Fit the fiduciaries in UTM (zone of the first point) over the source's
+    /// crop. Throws AffineFitError so the caller can say why instead of doing
+    /// nothing, e.g. .degenerate when the points sit in a line or a clump.
+    func finish() throws -> FinishResult {
+        let result = try Self.fit(fiduciaries, crop: source?.pdfRenderRect, page: source?.georef.page ?? 0)
+        lastFitRMSMetres = result.rmsMetres
+        return result
+    }
+
+    /// RMS error of the fit through fiduciaries, or nil when they can't
+    /// be fitted (fewer than 3, or in a line).
+    static func fitRMS(of fiduciaries: [Fiduciary], crop: CGRect? = nil) -> Double? {
+        try? fit(fiduciaries, crop: crop, page: 0).rmsMetres
+    }
+
+    private static func fit(_ fids: [Fiduciary], crop: CGRect?, page: Int) throws -> FinishResult {
+        guard fids.count >= 3 else { throw AffineFitError.tooFewFiduciaries(minimum: 3) }
+        guard fids.allSatisfy(isSafeAffineInput) else { throw AffineFitError.invalidInput }
+        let pts = fids.map { PdfPagePoint(x: $0.pdfX, y: $0.pdfY) }
+        guard PlaneAffineFitter.eigenRatio(pts) >= FiduciaryFitter.degenerateEigenRatio else {
+            throw AffineFitError.degenerate
         }
+        // no source (tests, or the sheet went away) -> the points' own bbox is
+        // a fine stand-in, crop only feeds the span warning
+        let box = crop ?? pts.reduce(CGRect.null) { $0.union(CGRect(x: $1.x, y: $1.y, width: 0, height: 0)) }
+        guard let georef = FiduciaryFitter.georeference(fromWGS84: fids, crop: box, page: page),
+              let transform = georef.bestFitLatLonAffine() else {
+            throw AffineFitError.invalidResult
+        }
+        return FinishResult(georef: georef, transform: transform,
+                            rmsMetres: georef.fit?.rmsMetres ?? 0,
+                            crossValidated: georef.fit?.crossValidated ?? false)
     }
 }
