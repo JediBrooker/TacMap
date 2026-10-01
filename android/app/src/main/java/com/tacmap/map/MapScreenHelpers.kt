@@ -54,6 +54,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import android.os.Handler
 import android.os.Looper
+import kotlin.math.roundToInt
 
 // Non-composable helpers extracted from MapScreen.kt: angle normalisation,
 // drawing defaults/naming, PDF import + georeferencing, GeoJSON sharing.
@@ -93,9 +94,30 @@ internal object DrawingDefaults {
     val DEFAULT_COLOR: Int = 0xFFFFA000.toInt()
     /** Portable width shared with iOS and interchange formats. */
     const val STROKE_WIDTH_DP: Float = 3f
+    /** Stroke width slider range and step in portable points, as on iOS. */
+    const val MIN_STROKE_WIDTH_DP: Float = 0.5f
+    const val MAX_STROKE_WIDTH_DP: Float = 16f
+    const val STROKE_WIDTH_STEP_DP: Float = 0.5f
+    /** Polygon fill opacity for new drawings and the reset button (20%). */
+    const val DEFAULT_FILL_ALPHA: Int = 0x33
+    /** Fill opacity presets in percent, matching the iOS fill menus. */
+    val FILL_OPACITY_PRESETS: List<Int> = listOf(0, 10, 20, 40, 60, 80, 100)
 
     fun rendererStrokeWidth(density: Float): Float =
         STROKE_WIDTH_DP * density.coerceAtLeast(0f)
+
+    /** Android stores renderer pixels; the slider and iOS use portable points
+     *  (`testdata/drawing_style.json`). */
+    fun portableStrokeWidth(storedPixels: Float, density: Float): Float =
+        if (density > 0f) storedPixels / density else storedPixels
+
+    fun storedStrokeWidth(portableWidth: Float, density: Float): Float =
+        portableWidth.coerceIn(MIN_STROKE_WIDTH_DP, MAX_STROKE_WIDTH_DP) * density.coerceAtLeast(0f)
+
+    fun fillAlpha(percent: Int): Int = (percent.coerceIn(0, 100) * 255f / 100f).roundToInt()
+
+    fun fillPercent(alpha: Int): Int = (alpha.coerceIn(0, 255) * 100f / 255f).roundToInt()
+
     val COLORS = listOf(
         DEFAULT_COLOR,
         0xFFE53935.toInt(),
@@ -172,44 +194,43 @@ internal fun DrawingPoint.isSameLocation(other: DrawingPoint): Boolean =
     kotlin.math.abs(latitude - other.latitude) < 0.0000001 &&
         kotlin.math.abs(longitude - other.longitude) < 0.0000001
 
-internal suspend fun shareGeoJson(
+/** The GeoJSON export file's text; [GeoJsonExportPreviewDialog] previews it before sharing. */
+internal fun geoJsonExportText(
     context: Context,
     waypoints: List<com.tacmap.waypoints.Waypoint>,
     drawings: List<DrawingFeature>,
     layers: List<com.tacmap.drawings.DrawingLayer>
-) {
+): String = GeoJsonExporter.export(
+    waypoints,
+    drawings,
+    layers,
+    density = context.resources.displayMetrics.density,
+)
+
+/** Shares [content], the previewed GeoJSON export, as a file. */
+internal suspend fun shareGeoJson(context: Context, content: String) {
     shareTextExport(
         context = context,
-        exportLabel = "GeoJSON",
+        exportLabel = GEOJSON_EXPORT_LABEL,
         fileName = "TacMap.geojson",
         mimeType = "application/geo+json",
         chooserTitle = L10n.text("Export GeoJSON"),
-    ) {
-        GeoJsonExporter.export(
-            waypoints,
-            drawings,
-            layers,
-            density = context.resources.displayMetrics.density,
-        )
-    }
+    ) { content }
 }
 
-internal suspend fun shareGpx(
-    context: Context,
-    points: List<com.tacmap.models.TrackPoint>
-) {
-    if (points.isEmpty()) {
-        Toast.makeText(context, L10n.text("No track recorded yet."), Toast.LENGTH_SHORT).show()
-        return
-    }
+/** Shares [content], the previewed GPX track export, as a file. */
+internal suspend fun shareGpx(context: Context, content: String) {
     shareTextExport(
         context = context,
         exportLabel = L10n.text("GPX track"),
         fileName = "TacMap-track.gpx",
         mimeType = "application/gpx+xml",
         chooserTitle = L10n.text("Export GPX"),
-    ) { com.tacmap.export.GpxExporter.export(points) }
+    ) { content }
 }
+
+/** File-format name used in export status messages; not translated. */
+internal const val GEOJSON_EXPORT_LABEL = "GeoJSON"
 
 /** Export all mission objects + their layer metadata as GeoJSON. Tracks stay in GPX. */
 internal suspend fun exportAllMissionObjects(
@@ -608,5 +629,9 @@ internal fun importMBTilesMapSource(
     return OfflineTileMapSourceAndroid.open(dest.path)
 }
 
+// iOS accepts 512 MB, but only the copy here streams. The rotation and GeoPDF
+// checks open the file with PDFBox-Android 2.0, which parses every object on
+// load and buffers stream contents in heap memory, so a larger sheet would run
+// out of memory during import. Raise this once those checks stop doing that.
 private const val MAX_PDF_IMPORT_BYTES = 256L * 1024 * 1024
 private const val MAX_MBTILES_IMPORT_BYTES = 4L * 1024 * 1024 * 1024

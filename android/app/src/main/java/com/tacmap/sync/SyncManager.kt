@@ -2473,7 +2473,7 @@ class SyncManager(
             isOutgoing = false,
             deliveryState = TacMapChatDeliveryState.RECEIVED,
         )
-        when (chatHistoryStore.acceptInbound(
+        when (val accepted = chatHistoryStore.acceptInbound(
             message = message,
             actorId = frame.actorId,
             sessionDomain = frame.sessionDomain,
@@ -2488,6 +2488,16 @@ class SyncManager(
                     frame.sessionDomain,
                     System.currentTimeMillis(),
                 )
+                // Tell the map a new message arrived; a duplicate was already announced.
+                if (accepted == TacMapChatInboundResult.ACCEPTED) {
+                    _remoteUpdates.tryEmit(
+                        if (payload.kind == TacMapChatContentKind.REPORT) {
+                            Messages.chatNewReportNotice(senderName)
+                        } else {
+                            Messages.chatNewMessageNotice(senderName)
+                        },
+                    )
+                }
             }
             TacMapChatInboundResult.REPLAY_REJECTED -> Unit
             TacMapChatInboundResult.STORE_UNAVAILABLE -> {

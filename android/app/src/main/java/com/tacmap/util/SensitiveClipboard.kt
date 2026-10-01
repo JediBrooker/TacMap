@@ -28,7 +28,8 @@ private val PENDING_KEYS = (0 until MAX_PENDING_CLIPS).flatMapTo(mutableSetOf())
         pendingKey(slot, EXPIRES_WALL_SUFFIX),
     )
 }
-const val SENSITIVE_CLIP_TTL_MS = 60_000L
+/** Copied coordinates and room codes clear after two minutes, as on iOS. */
+const val SENSITIVE_CLIP_TTL_MS = 120_000L
 
 internal data class SensitiveClipExpiry(
     val token: String,

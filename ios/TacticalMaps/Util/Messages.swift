@@ -3,6 +3,15 @@ enum Messages {
     static func aboutScreenTitle() -> String {
         L10n.message("id.about_screen_title", fallback: "About TacMap")
     }
+    static func calibrationCollinear() -> String {
+        L10n.message("id.calibration_collinear", fallback: "Calibration needs 3 points that aren't in a straight line.")
+    }
+    static func calibrationDone(_ error: String) -> String {
+        L10n.message("id.calibration_done", fallback: "Map calibrated · RMS error %1$@", error)
+    }
+    static func calibrationFailed() -> String {
+        L10n.message("id.calibration_failed", fallback: "Calibration failed. Check the grid references and try again.")
+    }
     static func chatRecipientHeading() -> String {
         L10n.message("id.chat_recipient_heading", fallback: "RECIPIENT")
     }

@@ -1313,7 +1313,9 @@ struct ContentView: View {
                     latitude: headerCoordinate?.latitude,
                     longitude: headerCoordinate?.longitude),
                 distanceFromUser: distanceFromUserToCrosshair,
-                elevation: mapVM.centreElevation ?? locationService.lastAltitude,
+                // GPS altitude is only a stand-in while the banner reads out
+                // your own position, never for a crosshair somewhere else.
+                elevation: mapVM.centreElevation ?? (mapVM.isBrowsing ? nil : locationService.lastAltitude),
                 elevationIsApproximate: mapVM.centreElevationIsApproximate,
                 coordinate: headerCoordinate,
                 onDropPin: { coord, displayedCoordinate in
@@ -1930,8 +1932,17 @@ struct ContentView: View {
     }
 
     private func finishCalibration() {
-        guard let result = calibration.finish(),
-              let source = calibration.source else { return }
+        guard let source = calibration.source else { return }
+        let result: CalibrationSession.FinishResult
+        do {
+            result = try calibration.finish()
+        } catch AffineFitError.degenerate {
+            showTransientToast(Messages.calibrationCollinear())
+            return
+        } catch {
+            showTransientToast(Messages.calibrationFailed())
+            return
+        }
         // Build fresh source so MapContainerView rebuilds overlay
         // (sync logic keys on source.id).
         let newSource = PDFMapSource(url: source.url, georef: source.georef, contentKey: source.contentKey)
@@ -1943,6 +1954,7 @@ struct ContentView: View {
         let bounds = newSource.bounds
         guard mapVM.selectMapSource(newSource) else { return }
         calibration.cancel()
+        showTransientToast(Messages.calibrationDone(DisplayFormat.height(result.rmsMetres)))
         if let b = bounds {
             let span = MKCoordinateSpan(
                 latitudeDelta:  abs(b.northEast.latitude  - b.southWest.latitude)  * 1.2,

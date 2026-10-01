@@ -38,6 +38,10 @@ final class ElevationProfileUITests: XCTestCase {
 
     func testProfileExplainsWhenOnlineLookupsAreOff() {
         let app = launch(fakeTerrain: false)
+        // Same zoom as the test above, otherwise the two taps are a continent
+        // apart on the world view.
+        for _ in 0..<3 { app.pinch(withScale: 6, velocity: 3) }
+        sleep(1)
         measureTwoPoints(in: app)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'online lookups are off'"))
             .firstMatch.waitForExistence(timeout: 10), "The lookups-off message did not show")
@@ -47,10 +51,17 @@ final class ElevationProfileUITests: XCTestCase {
     /// open the profile from the Measure bar.
     private func measureTwoPoints(in app: XCUIApplication) {
         let window = app.windows.firstMatch
-        window.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.62)).press(forDuration: 1.6)
         let measure = app.buttons["Measure From Here"]
-        XCTAssertTrue(measure.waitForExistence(timeout: 5), "No point menu")
-        measure.tap()
+        // The menu wants a still 1 s hold. On a slow CI sim the camera can
+        // still be easing from launch or the pinch, which cancels the hold,
+        // so give it a moment and have another go if nothing opens.
+        for _ in 0..<3 {
+            sleep(1)
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.62)).press(forDuration: 1.6)
+            if measure.waitForExistence(timeout: 3) { break }
+        }
+        XCTAssertTrue(measure.exists, "No point menu")
+        tapWhenSettled(measure)
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.66)).tap()
         let profile = app.buttons["measure.profile"]
         XCTAssertTrue(profile.waitForExistence(timeout: 5), "No profile button on the Measure bar")
@@ -58,6 +69,19 @@ final class ElevationProfileUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 5), .completed, "Profile stays disabled after two points")
         attachScreenshot("measure-two-points")
         profile.tap()
+    }
+
+    /// The point menu slides up as it appears; a tap aimed while it moves
+    /// can land on the row above. Tap once its frame has stopped changing.
+    private func tapWhenSettled(_ element: XCUIElement) {
+        var frame = element.frame
+        for _ in 0..<20 {
+            usleep(100_000)
+            let next = element.frame
+            if next == frame { break }
+            frame = next
+        }
+        element.tap()
     }
 
     private func launch(fakeTerrain: Bool) -> XCUIApplication {

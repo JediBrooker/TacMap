@@ -37,11 +37,11 @@ final class CalibrationSession: ObservableObject {
     func start(for source: PDFMapSource) {
         self.source = source
         // Seed with existing fiduciaries so user can refine instead of
-        // starting over. no calibration yet but saved points that couldn't be
-        // refit (old v1 set) -> start from those
+        // starting over, and show how good that earlier fit was. no calibration
+        // yet but saved points that couldn't be refit (old v1 set) -> start from those
         self.fiduciaries = source.fiduciaries ?? source.pendingFiduciaries
         self.pendingTap = nil
-        self.lastFitRMSMetres = nil
+        self.lastFitRMSMetres = Self.fitRMS(of: fiduciaries)
         self.isCalibrating = true
     }
 
@@ -100,18 +100,36 @@ final class CalibrationSession: ObservableObject {
     }
 
     /// Fit the fiduciaries in UTM (zone of the first point) over the source's
-    /// crop. nil if fewer than 3 are placed or they're collinear/clustered.
-    func finish() -> FinishResult? {
-        guard canFinish, let source else { return nil }
-        guard let georef = FiduciaryFitter.georeference(fromWGS84: fiduciaries, crop: source.pdfRenderRect,
-                                                        page: source.georef.page),
-              let transform = georef.bestFitLatLonAffine() else {
-            print("[Calibration] fiduciary fit refused")
-            return nil
+    /// crop. Throws AffineFitError so the caller can say why instead of doing
+    /// nothing, e.g. .degenerate when the points sit in a line or a clump.
+    func finish() throws -> FinishResult {
+        let result = try Self.fit(fiduciaries, crop: source?.pdfRenderRect, page: source?.georef.page ?? 0)
+        lastFitRMSMetres = result.rmsMetres
+        return result
+    }
+
+    /// RMS error of the fit through fiduciaries, or nil when they can't
+    /// be fitted (fewer than 3, or in a line).
+    static func fitRMS(of fiduciaries: [Fiduciary], crop: CGRect? = nil) -> Double? {
+        try? fit(fiduciaries, crop: crop, page: 0).rmsMetres
+    }
+
+    private static func fit(_ fids: [Fiduciary], crop: CGRect?, page: Int) throws -> FinishResult {
+        guard fids.count >= 3 else { throw AffineFitError.tooFewFiduciaries(minimum: 3) }
+        guard fids.allSatisfy(isSafeAffineInput) else { throw AffineFitError.invalidInput }
+        let pts = fids.map { PdfPagePoint(x: $0.pdfX, y: $0.pdfY) }
+        guard PlaneAffineFitter.eigenRatio(pts) >= FiduciaryFitter.degenerateEigenRatio else {
+            throw AffineFitError.degenerate
         }
-        let rms = georef.fit?.rmsMetres ?? 0
-        lastFitRMSMetres = rms
-        return FinishResult(georef: georef, transform: transform, rmsMetres: rms,
+        // no source (tests, or the sheet went away) -> the points' own bbox is
+        // a fine stand-in, crop only feeds the span warning
+        let box = crop ?? pts.reduce(CGRect.null) { $0.union(CGRect(x: $1.x, y: $1.y, width: 0, height: 0)) }
+        guard let georef = FiduciaryFitter.georeference(fromWGS84: fids, crop: box, page: page),
+              let transform = georef.bestFitLatLonAffine() else {
+            throw AffineFitError.invalidResult
+        }
+        return FinishResult(georef: georef, transform: transform,
+                            rmsMetres: georef.fit?.rmsMetres ?? 0,
                             crossValidated: georef.fit?.crossValidated ?? false)
     }
 }
