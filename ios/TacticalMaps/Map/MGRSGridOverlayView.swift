@@ -1,23 +1,19 @@
 import UIKit
-import MapKit
-import MGRS
+import CoreLocation
 
-/// Draws MGRS grid (lines + labels) as a transparent subview, projecting each
-/// coordinate through a `project` closure and stroking with Core Graphics. Pure
-/// renderer - no MapKit tie of its own, so it runs on either the old MKMapView
-/// (PDF path) or the new TileMapView. Mirrors the Android Compose-canvas grid.
+/// Draws the MGRS grid (lines + labels) as a transparent subview above the
+/// basemap / PDF, projecting cached geometry through the live camera every
+/// frame. Geometry comes from MGRSGridRenderer.build (built off the main
+/// queue by the container), labels are placed per frame against the visible
+/// viewport. Mirrors Android's MgrsGridCanvas.
 final class MGRSGridOverlayView: UIView {
 
-    private struct Line {
-        let a: CLLocationCoordinate2D
-        let b: CLLocationCoordinate2D
-        let gridType: GridType
-    }
+    /// The camera to project with. Set by the host.
+    var camera: (() -> MapCamera?)?
 
-    /// Projects a WGS84 coordinate to a point in THIS view. Set by the host.
-    var project: ((CLLocationCoordinate2D) -> CGPoint)?
-    private var lines: [Line] = []
-    private var labels: [MGRSGridRenderer.LabelMark] = []
+    private(set) var grid: MGRSGridRenderer.Grid = .empty
+    /// text sizes barely change (2-char labels), no point re-measuring each frame
+    private var textSizes: [String: CGSize] = [:]
 
     init() {
         super.init(frame: .zero)
@@ -29,100 +25,81 @@ final class MGRSGridOverlayView: UIView {
         contentMode = .redraw
     }
 
-    /// Backward-compatible convenience for the MKMapView PDF path.
-    convenience init(mapView: MKMapView) {
-        self.init()
-        frame = mapView.bounds
-        project = { [weak mapView, weak self] coord in
-            guard let mapView, let self else { return .zero }
-            return mapView.convert(coord, toPointTo: self)
-        }
-    }
-
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// Replace grid geometry when visible cells change (pan/zoom into new
-    /// bucket). Screen projection is re-derived in draw() so this just
-    /// controls *which* lines exist.
-    func update(lines builtLines: [MGRSGridRenderer.LineSegment],
-                labels builtLabels: [MGRSGridRenderer.LabelMark]) {
-        lines = builtLines.map { seg in
-            var pts = [CLLocationCoordinate2D(latitude: 0, longitude: 0),
-                       CLLocationCoordinate2D(latitude: 0, longitude: 0)]
-            seg.polyline.getCoordinates(&pts, range: NSRange(location: 0, length: 2))
-            return Line(a: pts[0], b: pts[1], gridType: seg.gridType)
-        }
-        labels = builtLabels
+    /// Swap in freshly built geometry.
+    func update(grid newGrid: MGRSGridRenderer.Grid) {
+        grid = newGrid
         setNeedsDisplay()
     }
 
-    /// Re-project against current camera. Cheap, called on every camera
-    /// change; geometry is unchanged, only screen position moves.
-    func reproject() { setNeedsDisplay() }
+    /// Re-project against the current camera. Cheap, called on every camera
+    /// change; geometry is unchanged, only screen positions move.
+    func reproject() {
+        guard !grid.isEmpty else { return }
+        setNeedsDisplay()
+    }
 
     func clear() {
-        guard !lines.isEmpty || !labels.isEmpty else { return }
-        lines = []
-        labels = []
+        guard !grid.isEmpty else { return }
+        grid = .empty
         setNeedsDisplay()
     }
 
     override func draw(_ rect: CGRect) {
-        guard let project, let ctx = UIGraphicsGetCurrentContext() else { return }
-
-        ctx.setStrokeColor(MGRSGridRenderer.inkColor.cgColor)
-        ctx.setLineCap(.round)
-        for line in lines {
-            let p1 = project(line.a)
-            let p2 = project(line.b)
-            ctx.setLineWidth(MGRSGridRenderer.appliedLineWidth(
-                for: line.gridType,
-                screenScale: contentScaleFactor
-            ))
-            ctx.beginPath()
-            ctx.move(to: p1)
-            ctx.addLine(to: p2)
-            ctx.strokePath()
-        }
-
-        // Dark-grey bold text + white halo. Vertical (easting) labels
-        // rotated -90 so they run along the line.
-        //
-        // Declutter to one label per grid LINE: every crossing along a line
-        // carries the same value, so the library hands us the same label over
-        // and over (worst zoomed out). Bucket vertical labels by screen-x and
-        // horizontal by screen-y (a line's perpendicular coordinate is ~constant),
-        // and keep the copy nearest the top/left margin so it reads like a proper
-        // grid ruler. Distinct lines land in different buckets, so finer grids
-        // with unique per-line values are untouched.
-        let bucket: CGFloat = 55
-        var best: [String: (pt: CGPoint, mark: MGRSGridRenderer.LabelMark)] = [:]
-        for mark in labels {
-            let pt = project(mark.coordinate)
-            let b = Int(((mark.isVertical ? pt.x : pt.y) / bucket).rounded())
-            let key = "\(mark.isVertical ? "v" : "h")|\(b)|\(mark.text)"
-            let margin = mark.isVertical ? pt.y : pt.x   // smaller = nearer margin
-            if let ex = best[key] {
-                let exMargin = mark.isVertical ? ex.pt.y : ex.pt.x
-                if margin < exMargin { best[key] = (pt, mark) }
-            } else {
-                best[key] = (pt, mark)
-            }
-        }
-        for (_, v) in best { drawLabel(v.mark, at: v.pt, in: ctx) }
-    }
-
-    private func drawLabel(_ mark: MGRSGridRenderer.LabelMark, at pt: CGPoint, in ctx: CGContext) {
-        let font = UIFont.systemFont(ofSize: MGRSGridRenderer.labelFontSize(for: mark.gridType), weight: .bold)
-        let text = mark.text as NSString
-        let base: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: MGRSGridRenderer.labelTextColor]
-        let halo: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor(white: 1, alpha: 0.9)]
-        let size = text.size(withAttributes: base)
+        guard !grid.isEmpty, let camera = camera?(), let ctx = UIGraphicsGetCurrentContext() else { return }
+        let proj = MGRSGridRenderer.ScreenProjection(camera: camera)
+        // anything whose box misses the (rotated) viewport is skipped, a few pt
+        // of slack so a thick line on the edge still draws
+        let visible = proj.localBounds(of: bounds.insetBy(dx: -4, dy: -4))
 
         ctx.saveGState()
-        ctx.translateBy(x: pt.x, y: pt.y)
-        if mark.isVertical { ctx.rotate(by: -.pi / 2) }
+        ctx.setStrokeColor(MGRSGridRenderer.inkColor.cgColor)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        // fine first so the heavier lines sit on top. One path per level, so
+        // there's no double-inked overlap at piece joins
+        for level in MGRSGridRenderer.Level.allCases.reversed() {
+            let path = CGMutablePath()
+            for piece in grid.pieces where piece.level == level {
+                guard piece.points.count >= 2, proj.localBounds(of: piece.bounds).intersects(visible) else { continue }
+                path.move(to: proj.screen(piece.points[0]))
+                for p in piece.points.dropFirst() { path.addLine(to: proj.screen(p)) }
+            }
+            guard !path.isEmpty else { continue }
+            ctx.setLineWidth(MGRSGridRenderer.appliedLineWidth(for: level, screenScale: contentScaleFactor))
+            ctx.addPath(path)
+            ctx.strokePath()
+        }
+        ctx.restoreGState()
+
+        let labels = MGRSGridRenderer.layoutLabels(grid, camera: camera) { text, level in
+            self.textSize(text, level: level)
+        }
+        for label in labels { drawLabel(label, in: ctx) }
+    }
+
+    private func textSize(_ text: String, level: MGRSGridRenderer.Level) -> CGSize {
+        let key = "\(level.rawValue)|\(text)"
+        if let s = textSizes[key] { return s }
+        let s = MGRSGridRenderer.labelTextSize(text, level: level)
+        textSizes[key] = s
+        return s
+    }
+
+    /// Dark-grey bold text with a white halo. Easting labels rotated -90 so
+    /// they run along the line.
+    private func drawLabel(_ label: MGRSGridRenderer.PlacedLabel, in ctx: CGContext) {
+        let font = MGRSGridRenderer.labelFont(for: label.level)
+        let text = label.text as NSString
+        let base: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: MGRSGridRenderer.labelTextColor]
+        let halo: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor(white: 1, alpha: 0.9)]
+        let size = textSize(label.text, level: label.level)
+
+        ctx.saveGState()
+        ctx.translateBy(x: label.anchor.x, y: label.anchor.y)
+        if label.isVertical { ctx.rotate(by: -.pi / 2) }
         let origin = CGPoint(x: -size.width / 2, y: -size.height / 2)
         let o: CGFloat = 1
         for dx in [-o, o] {
