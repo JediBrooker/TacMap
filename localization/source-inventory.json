@@ -135,6 +135,30 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/Calibration/FiduciaryGeoreference.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/GeoCrs.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/GeoDatum.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/GeoGcsParser.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "ios/TacticalMaps/Calibration/GeoPDFReader.swift",
     "platform": "ios",
     "area": "maps-calibration",
@@ -201,7 +225,13 @@
     "reviewStatus": "manual-review-needed"
   },
   {
-    "path": "ios/TacticalMaps/Calibration/Projection.swift",
+    "path": "ios/TacticalMaps/Calibration/PdfGeorefBuilder.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/PdfGeoreference.swift",
     "platform": "ios",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
@@ -896,13 +926,37 @@
     "reviewStatus": "manual-review-needed"
   },
   {
-    "path": "android/app/src/main/java/com/tacmap/calibration/GeoPdfParser.kt",
+    "path": "android/app/src/main/java/com/tacmap/calibration/FiduciaryFit.kt",
     "platform": "android",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
   },
   {
-    "path": "android/app/src/main/java/com/tacmap/calibration/LgiProjection.kt",
+    "path": "android/app/src/main/java/com/tacmap/calibration/GcsParser.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/GeoCrs.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/GeoDatum.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/GeoPdfGeoreferencer.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/GeoPdfParser.kt",
     "platform": "android",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
@@ -938,13 +992,37 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfDocumentInspector.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfGeoreference.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/calibration/PdfMapSource.kt",
     "platform": "android",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfPageGeometry.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/calibration/PdfPageRenderer.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfSessionMigration.kt",
     "platform": "android",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
@@ -957,6 +1035,12 @@
   },
   {
     "path": "android/app/src/main/java/com/tacmap/calibration/PdfTiler.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/TileWarp.kt",
     "platform": "android",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"

@@ -11,32 +11,36 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/**
+ * LGIDict projection + datum decoding, now on the shared GeoCrs / GeoDatums the
+ * GeoPDF and fiduciary paths use too (the old LgiProjection/LgiDatum are gone).
+ * Same three contracts as before.
+ */
 class LgiProjectionTest {
     @Test
     fun utmAndEquivalentTransverseMercatorResolveSydney() {
         // EPSG:32756 coordinates for Sydney CBD.
         val easting = 334_368.6336
         val northing = 6_250_945.575
-        val datum = requireNotNull(LgiDatum.fromCode("WE"))
-        val utm = requireNotNull(LgiProjectionFactory.utm(56, true, datum.ellipsoid))
-        val tc = requireNotNull(
-            LgiProjectionFactory.transverseMercator(
-                centralMeridian = 153.0,
-                originLatitude = 0.0,
-                falseEasting = 500_000.0,
-                falseNorthing = 10_000_000.0,
-                scaleFactor = 0.9996,
-                ellipsoid = datum.ellipsoid,
-            )
+        val datum = requireNotNull(GeoDatums.forLgiCode("WE"))
+        val utm = GeoCrs.utm(56, true)
+        val tc = GeoCrs.TransverseMercator(
+            lat0 = 0.0,
+            lon0 = 153.0,
+            k0 = 0.9996,
+            fe = 500_000.0,
+            fn = 10_000_000.0,
         )
 
-        val fromUtm = requireNotNull(LgiCoordinateConverter(utm, datum).toWgs84(easting, northing))
-        val fromTc = requireNotNull(LgiCoordinateConverter(tc, datum).toWgs84(easting, northing))
+        val fromUtm = requireNotNull(utm.inverse(easting, northing, datum.ellipsoid))
+        val fromTc = requireNotNull(tc.inverse(easting, northing, datum.ellipsoid))
         // Cross-checked with NGA UTM 2.1.3's independent inverse.
-        assertEquals(-33.8688251, fromUtm.first, 1e-6)
-        assertEquals(151.2092995, fromUtm.second, 1e-6)
-        assertEquals(fromUtm.first, fromTc.first, 1e-10)
-        assertEquals(fromUtm.second, fromTc.second, 1e-10)
+        assertEquals(-33.8688251, fromUtm.latitude, 1e-6)
+        assertEquals(151.2092995, fromUtm.longitude, 1e-6)
+        assertEquals(fromUtm.latitude, fromTc.latitude, 1e-10)
+        assertEquals(fromUtm.longitude, fromTc.longitude, 1e-10)
+        assertEquals(56, utm.utmZone)
+        assertEquals('S', utm.hemisphere)
     }
 
     @Test
@@ -44,32 +48,27 @@ class LgiProjectionTest {
         val sourceLatitude = 35.68
         val sourceLongitude = 139.77
         val shifted = requireNotNull(
-            requireNotNull(LgiDatum.fromCode("TC")).toWgs84(sourceLatitude, sourceLongitude)
+            requireNotNull(GeoDatums.forLgiCode("TC")).toWGS84(sourceLatitude, sourceLongitude)
         )
 
-        assertEquals(464.0, distanceMetres(sourceLatitude, sourceLongitude, shifted.first, shifted.second), 50.0)
-        assertTrue(shifted.first in -90.0..90.0)
-        assertTrue(shifted.second in -180.0..180.0)
+        assertEquals(464.0, distanceMetres(sourceLatitude, sourceLongitude, shifted.latitude, shifted.longitude), 50.0)
+        assertTrue(shifted.latitude in -90.0..90.0)
+        assertTrue(shifted.longitude in -180.0..180.0)
     }
 
     @Test
     fun unsupportedAndIncompleteProjectionDefinitionsFailClosed() {
-        assertNull(LgiDatum.fromCode("UNKNOWN"))
-        assertNull(LgiDatum.inline(6_378_137.0, 0.0, 0.0, 0.0, 0.0))
-        assertNull(LgiProjectionFactory.utm(0, false, LgiEllipsoid.WGS84))
-        assertNull(LgiProjectionFactory.utm(61, false, LgiEllipsoid.WGS84))
-        assertNull(
-            LgiProjectionFactory.transverseMercator(
-                centralMeridian = Double.NaN,
-                originLatitude = 0.0,
-                falseEasting = 0.0,
-                falseNorthing = 0.0,
-                scaleFactor = 1.0,
-                ellipsoid = LgiEllipsoid.WGS84,
-            )
-        )
-        assertNull(LgiCoordinateConverter(LgiProjection.LongLat, LgiDatum.WGS84).toWgs84(500_000.0, 6_000_000.0))
-        assertNotNull(LgiDatum.fromCode("GD"))
+        assertNull(GeoDatums.forLgiCode("UNKNOWN"))
+        assertNull(GeoDatum.custom(6_378_137.0, 0.0))
+        assertNull(GeoCrs.TransverseMercator(0.0, Double.NaN, 1.0, 0.0, 0.0).projector(GeoEllipsoid.WGS84))
+        // lon/lat can't hold metres
+        assertNull(GeoCrs.Geographic.inverse(500_000.0, 6_000_000.0, GeoEllipsoid.WGS84))
+        assertNotNull(GeoDatums.forLgiCode("GD"))
+        // the real file codes the old table rejected (D1-06)
+        assertEquals("WGS84", GeoDatums.forLgiCode("WGE")?.id)
+        assertEquals("NAD83", GeoDatums.forLgiCode("NAR-C")?.id)
+        assertEquals("NAD27", GeoDatums.forLgiCode("NAS-C")?.id)
+        assertEquals("NAD27_CANADA", GeoDatums.forLgiCode("NAS-E")?.id)
     }
 
     private fun distanceMetres(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {

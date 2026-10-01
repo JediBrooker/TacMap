@@ -92,6 +92,36 @@ object Messages {
         L10n.message("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
     fun onlineBasemapsDisabledMessage(): LocalizedMessage =
         LocalizedMessage("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", listOf())
+    fun pdfGeorefCalibrateManually(): String =
+        L10n.message("id.pdf_georef_calibrate_manually", "Calibrate Manually")
+    fun pdfGeorefReasonDegenerate(): String =
+        L10n.message("id.pdf_georef_reason_degenerate", "its map frame or control points are degenerate")
+    fun pdfGeorefReasonLptsOutOfRange(): String =
+        L10n.message("id.pdf_georef_reason_lpts_out_of_range", "its control points lie outside the map frame")
+    fun pdfGeorefReasonMalformed(): String =
+        L10n.message("id.pdf_georef_reason_malformed", "its georeferencing data is malformed")
+    fun pdfGeorefReasonNonFinite(): String =
+        L10n.message("id.pdf_georef_reason_non_finite", "it contains numbers that are out of range")
+    fun pdfGeorefReasonOffEarth(): String =
+        L10n.message("id.pdf_georef_reason_off_earth", "its coordinates are not on the Earth")
+    fun pdfGeorefReasonRmsGate(): String =
+        L10n.message("id.pdf_georef_reason_rms_gate", "its control points disagree with each other")
+    fun pdfGeorefReasonUnknownDatum(): String =
+        L10n.message("id.pdf_georef_reason_unknown_datum", "its datum isn't supported")
+    fun pdfGeorefReasonUnsupportedProjection(): String =
+        L10n.message("id.pdf_georef_reason_unsupported_projection", "its map projection isn't supported")
+    fun pdfGeorefRejectedMessage(reason: String): String =
+        L10n.message("id.pdf_georef_rejected_message", "This PDF declares a georeference, but TacMap can't use it: %1\$s. It has not been placed on the map. You can calibrate it by hand with known points instead.", reason)
+    fun pdfGeorefRejectedTitle(): String =
+        L10n.message("id.pdf_georef_rejected_title", "Georeference not usable")
+    fun pdfMapCalibrateNow(): String =
+        L10n.message("id.pdf_map_calibrate_now", "Calibrate")
+    fun pdfMapUncalibratedLabel(): String =
+        L10n.message("id.pdf_map_uncalibrated_label", "Uncalibrated map")
+    fun pdfMapUncalibratedMessage(): String =
+        L10n.message("id.pdf_map_uncalibrated_message", "This PDF has no usable georeference, so where it sits on the map is only a guess. Calibrate it with known points before relying on any position.")
+    fun pdfMapUncalibratedTitle(): String =
+        L10n.message("id.pdf_map_uncalibrated_title", "Map not calibrated")
     fun pdfRotationUnsupported(value: String): String =
         L10n.message("id.pdf_rotation_unsupported", "This PDF's first page is rotated %1\$s°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy.", value)
     fun pdfRotationUnsupportedMessage(value: String): LocalizedMessage =

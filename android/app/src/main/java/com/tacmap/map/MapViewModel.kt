@@ -19,6 +19,7 @@ import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
+import com.tacmap.calibration.PdfSessionLoad
 import com.tacmap.calibration.PdfSessionStore
 import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LocationService
@@ -26,6 +27,9 @@ import com.tacmap.models.HeadingService
 import com.tacmap.models.TrackRecordingService
 import com.tacmap.map.render.MapCamera
 import com.tacmap.settings.MapOrientationMode
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -177,6 +181,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         OnlineRasterMapSourceAndroid(style)
     private fun onlineBasemap(): OnlineRasterMapSourceAndroid = baseMapSource(preferredBaseMap)
 
+    /**
+     * The one off-main migration of a schema 1 (or lost georef) PDF session, shared
+     * by the active and retained restores. Parsing a big GeoPDF on main at launch
+     * was an ANR waiting to happen.
+     */
+    private var pdfSessionMigration: Deferred<PdfMapSource?>? = null
+
     private val mapSelectionCommitCoordinator =
         ActiveMapSelectionCommitCoordinator<MapSource>(activeMapSelectionStore) { publication ->
             val previousActive = _mapSource.value
@@ -313,6 +324,22 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         when (val state = savedMapSelectionState) {
             is ActiveMapSelectionLoadState.Loaded -> {
                 val restored = restoreSelection(state.selection)
+                if (restored == null && state.selection.kind == ActiveMapKind.PDF && pdfSessionMigration != null) {
+                    // the PDF needs re-reading first. show the online map meanwhile, unpersisted,
+                    // and swap the sheet in when it's ready unless the user has moved on
+                    val placeholder = onlineBasemap()
+                    _mapSource.value = placeholder
+                    whenPdfSessionMigrated { migrated ->
+                        if (_mapSource.value !== placeholder) return@whenPdfSessionMigrated
+                        if (migrated != null) {
+                            _mapSource.value = migrated
+                            frameCameraFor(migrated)
+                        } else {
+                            activateAndPersist(onlineBasemap())
+                        }
+                    }
+                    return
+                }
                 if (restored != null) {
                     // This publication is already backed by the descriptor we
                     // just loaded; no second write is needed or useful.
@@ -324,9 +351,19 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             }
             ActiveMapSelectionLoadState.Missing -> {
                 val legacyPdf = if (activeMapSelectionStore.legacyPdfMigrationPending()) {
-                    pdfSessionStore.load()
+                    readyPdfSession()
                 } else {
                     null
+                }
+                if (legacyPdf == null && pdfSessionMigration != null) {
+                    val placeholder = onlineBasemap()
+                    _mapSource.value = placeholder
+                    whenPdfSessionMigrated { migrated ->
+                        if (_mapSource.value === placeholder) {
+                            activateAndPersist(migrated ?: onlineBasemap(), pdfSessionAlreadyPersisted = true)
+                        }
+                    }
+                    return
                 }
                 activateAndPersist(legacyPdf ?: onlineBasemap(), pdfSessionAlreadyPersisted = true)
             }
@@ -352,13 +389,52 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val selection = savedRetainedMapSelection ?: return
         if (selection.kind == ActiveMapKind.ONLINE) return
         _retainedImportedMapSource.value = restoreSelection(selection)
+        if (selection.kind == ActiveMapKind.PDF && _retainedImportedMapSource.value == null) {
+            whenPdfSessionMigrated { migrated ->
+                // only if nothing else took the retained slot meanwhile and the saved
+                // selector still says this PDF is the one to come back to
+                val stillRetained = (activeMapSelectionStore.loadRetainedImportedState() as? ActiveMapSelectionLoadState.Loaded)
+                    ?.selection?.kind == ActiveMapKind.PDF
+                if (migrated != null && _retainedImportedMapSource.value == null && stillRetained) {
+                    _retainedImportedMapSource.value = migrated
+                }
+            }
+        }
+    }
+
+    /**
+     * The persisted PDF session when it restores straight from prefs. One that
+     * needs the file re-read starts that off main (once) and gives null for now,
+     * [whenPdfSessionMigrated] picks it up.
+     */
+    private fun readyPdfSession(): PdfMapSource? = when (val session = pdfSessionStore.loadSession()) {
+        is PdfSessionLoad.Ready -> session.source
+        is PdfSessionLoad.NeedsMigration -> {
+            if (pdfSessionMigration == null) {
+                pdfSessionMigration = viewModelScope.async(Dispatchers.IO) {
+                    try {
+                        pdfSessionStore.migrate(session)
+                    } catch (e: Exception) {
+                        android.util.Log.w("MapViewModel", "PDF session migration failed", e)
+                        null
+                    }
+                }
+            }
+            null
+        }
+        null -> null
+    }
+
+    private fun whenPdfSessionMigrated(block: (PdfMapSource?) -> Unit) {
+        val migration = pdfSessionMigration ?: return
+        viewModelScope.launch { block(migration.await()) }
     }
 
     private fun restoreSelection(selection: ActiveMapSelection): MapSource? =
         when (selection.kind) {
             ActiveMapKind.ONLINE -> onlineBasemap()
             ActiveMapKind.PDF ->
-                (_retainedImportedMapSource.value as? PdfMapSource) ?: pdfSessionStore.load()
+                (_retainedImportedMapSource.value as? PdfMapSource) ?: readyPdfSession()
             ActiveMapKind.OFFLINE_TILES -> {
                 val path = activeMapSelectionStore.offlineFile(selection)?.path
                 if (path == null) null else {
@@ -475,9 +551,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun reconcileManagedImportedMapFiles(): Boolean =
         activeMapSelectionStore.reconcileManagedImportedMapFiles(
-            currentPdfFile = {
-                pdfSessionStore.load()?.uri?.path?.let { path -> java.io.File(path) }
-            },
+            // just the file, a session still waiting on migration keeps its PDF too
+            currentPdfFile = pdfSessionStore::activeFile,
             clearPdfSession = pdfSessionStore::clear,
         )
 

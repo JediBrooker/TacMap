@@ -877,8 +877,13 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
             ]
         )
 
-        XCTAssertFalse(PDFSessionStore.save(source))
-        XCTAssertNil(PDFSessionStore.load())
+        // the UTM refit refuses collinear points up front (plan 02 s1
+        // degeneracy gate), so nothing calibrated exists to persist at all;
+        // the map stays uncalibrated instead of the save failing later
+        XCTAssertNil(source.calibration)
+        XCTAssertTrue(source.isUncalibrated)
+        XCTAssertTrue(PDFSessionStore.save(source))
+        XCTAssertNil(PDFSessionStore.load()?.calibration)
     }
 
     func testLegacyActivePDFCalibrationMigratesToContentIdentity() throws {
@@ -886,7 +891,9 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         let legacyURL = directory.appendingPathComponent("legacy-active.pdf")
         let historicalURL = legacyDocumentsDirectory.appendingPathComponent("legacy-active.pdf")
         let renamedURL = directory.appendingPathComponent("renamed-after-migration.pdf")
-        let bytes = Data("legacy-active-sheet".utf8)
+        // a real (origin 0, unrotated) page now: v1 fiduciaries get moved out of
+        // PDFKit's display space on the way in, which needs the page to open
+        let bytes = minimalPDF(media: "0 0 100 100")
         try bytes.write(to: legacyURL)
         try bytes.write(to: historicalURL)
         try bytes.write(to: renamedURL)
@@ -995,6 +1002,51 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
     }
 
     @discardableResult
+    func testLegacyActivePDFCalibrationOnAnUnreadablePageStaysPendingNotRefit() throws {
+        let directory = try PDFSessionStore.importedMapsDirectoryProvider()
+        let legacyURL = directory.appendingPathComponent("legacy-unreadable.pdf")
+        let historicalURL = legacyDocumentsDirectory.appendingPathComponent("legacy-unreadable.pdf")
+        let bytes = Data("legacy-active-sheet".utf8)
+        try bytes.write(to: legacyURL)
+        try bytes.write(to: historicalURL)
+        pdfFixtureURLs.append(contentsOf: [legacyURL, historicalURL])
+        try storeLegacyActivePDFDescriptor(fileName: legacyURL.lastPathComponent)
+
+        // PDFKit can't open it, so the old display space can't be undone: never
+        // refit those points as if they were raw, leave the map uncalibrated
+        let restored = try XCTUnwrap(PDFSessionStore.load())
+        XCTAssertNil(restored.calibration)
+        XCTAssertTrue(restored.isUncalibrated)
+        // ...but the points aren't thrown away, they sit in the library still
+        // flagged as display space under the byte hash
+        let sealed = try XCTUnwrap(PDFSessionStore.defaultsProvider().data(forKey: "pdf_calibrations_v1"))
+        let plain = try XCTUnwrap(SealedEnvelope.openFile(key: testKey, blob: sealed, label: "pdf_session/pdf_calibrations"))
+        let library = try XCTUnwrap(JSONSerialization.jsonObject(with: plain) as? [String: Any])
+        let key = try XCTUnwrap(PDFSessionStore.contentKey(for: legacyURL))
+        let pending = try XCTUnwrap((library["byContentHash"] as? [String: Any])?[key] as? [String: Any])
+        XCTAssertEqual((pending["fids"] as? [[String: Any]])?.map { $0["pdfX"] as? Double }, [0, 100, 0])
+        XCTAssertNil(pending["rawPageSpace"])
+        XCTAssertNil(pending["georef"])
+    }
+
+    /// one empty page, enough for PDFKit to hand back its box transform
+    private func minimalPDF(media: String) -> Data {
+        let objects = ["<< /Type /Catalog /Pages 2 0 R >>",
+                       "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                       "<< /Type /Page /Parent 2 0 R /MediaBox [\(media)] /Resources << >> >>"]
+        var data = Data()
+        func append(_ s: String) { data.append(s.data(using: .isoLatin1)!) }
+        append("%PDF-1.7\n")
+        var offsets: [Int] = []
+        for (i, o) in objects.enumerated() { offsets.append(data.count); append("\(i + 1) 0 obj\n\(o)\nendobj\n") }
+        let xref = data.count
+        append("xref\n0 \(objects.count + 1)\n0000000000 65535 f \n")
+        offsets.forEach { append(String(format: "%010d 00000 n \n", $0)) }
+        append("trailer\n<< /Size \(objects.count + 1) /Root 1 0 R >>\nstartxref\n\(xref)\n%%EOF\n")
+        return data
+    }
+
+    @discardableResult
     private func storeLegacyActivePDFDescriptor(fileName: String) throws -> Data {
         let fids: [[String: Any]] = [
             ["id": "00000000-0000-0000-0000-000000000001",
@@ -1079,7 +1131,7 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
             northEast: CLLocationCoordinate2D(latitude: -32, longitude: 152),
             pdfCropRect: CGRect(x: 0, y: 0, width: 200, height: 300)
         )
-        return PDFMapSource(url: file, bounds: bounds, fromGeoPDF: false)
+        return PDFMapSource(url: file, bounds: bounds)
     }
 
     private var expectedCalibrationTransform: AffineTransform2D {
@@ -1094,7 +1146,6 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
                 northEast: CLLocationCoordinate2D(latitude: -32, longitude: 152),
                 pdfCropRect: CGRect(x: 0, y: 0, width: 200, height: 200)
             ),
-            fromGeoPDF: false,
             preflightMediaBox: CGRect(x: 0, y: 0, width: 200, height: 200)
         )
     }

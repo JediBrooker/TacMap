@@ -116,11 +116,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.tacmap.calibration.AffineFitter
 import com.tacmap.calibration.Calibration
 import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.Datum
-import com.tacmap.calibration.GeoPdfParser
+import com.tacmap.calibration.FiduciaryFitter
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
@@ -230,12 +229,20 @@ internal fun MapScreen(
     val importedMapLoaded = mapSource is com.tacmap.calibration.OfflineTileMapSourceAndroid ||
         mapSource is com.tacmap.calibration.PdfMapSource
     /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
+    /// A PDF with no real georef sits on a made up placement; say so every time it's
+    /// on screen so nobody reads a grid off it (plan 02 s1, D2-06 / D5-02).
+    val uncalibratedPdf = (mapSource as? com.tacmap.calibration.PdfMapSource)?.isGeoreferenced == false
     val basemapLabel: String? = when {
+        uncalibratedPdf -> Messages.pdfMapUncalibratedLabel()
         importedMapLoaded -> L10n.text("Offline basemap")
         onlineTilesActive -> L10n.text("Online basemap")
         else -> null
     }
-    val basemapColor = if (importedMapLoaded) Color(0xFF74E38A) else Color(0xFFFF5A5A)
+    val basemapColor = when {
+        uncalibratedPdf -> Color(0xFFFFB300)
+        importedMapLoaded -> Color(0xFF74E38A)
+        else -> Color(0xFFFF5A5A)
+    }
     val waypointStore = remember(unitSyncForegroundEpoch) { WaypointStore(context) }
     val waypoints by waypointStore.waypoints.collectAsState()
     val drawingStore = remember(unitSyncForegroundEpoch) { DrawingStore(context) }
@@ -403,6 +410,15 @@ internal fun MapScreen(
     var pendingCalibrationTap by remember { mutableStateOf<PendingCalibrationTap?>(null) }
     // Datum the sheet's MGRS is in; fiduciaries are shifted to WGS84 on save.
     var calibrationDatum by remember { mutableStateOf(Datum.WGS84) }
+    // a refused GeoPDF waits here until they pick Calibrate Manually or Cancel. Nothing
+    // goes on the map in between, never a quiet camera box (same flow + strings as iOS)
+    var pendingGeorefRejection by remember { mutableStateOf<PendingGeorefRejection?>(null) }
+    // relaunched into a PDF that still isn't calibrated: one generic prompt, like iOS restoreActiveBasemap
+    var promptUncalibratedPdf by remember { mutableStateOf(false) }
+    val restoredSourceId = remember { mapSource.id }
+    // plain PDF import starts calibrating as soon as the new source is live
+    var pendingCalibrationStartFor by remember { mutableStateOf<String?>(null) }
+    val uncalibratedPromptShownFor = remember { mutableSetOf<String>() }
     var activeDrawingName by remember { mutableStateOf("") }
     var activeStrokeColor by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_COLOR) }
     var activeStrokeStyle by remember { mutableStateOf(DrawingStrokeStyle.SOLID) }
@@ -443,7 +459,7 @@ internal fun MapScreen(
     val liveLocationControl = LiveMapLocationPermissionPolicy.controlFor(liveMapLocationState)
 
     suspend fun importSelectedPdf(uri: Uri, operationKey: String) {
-        val source = runCatching {
+        val imported = runCatching {
             withContext(Dispatchers.IO) {
                 importPdfMapSource(
                     context = context,
@@ -458,9 +474,22 @@ internal fun MapScreen(
             Toast.makeText(context, pdfImportUserMessage(it), Toast.LENGTH_LONG).show()
         }.getOrNull()
 
-        source?.let {
-            if (vm.setMapSource(it)) {
-                Toast.makeText(context, L10n.text("Imported %1\$s", it.displayName), Toast.LENGTH_SHORT).show()
+        imported?.let { result ->
+            val source = result.source
+            val outcome = result.outcome
+            if (outcome is PdfImportOutcome.Rejected) {
+                // loud: say why and offer a manual calibration, nothing is placed until they choose
+                pendingGeorefRejection = PendingGeorefRejection(source, outcome.reason)
+                return@let
+            }
+            // plain PDFs go straight into calibration on their labelled provisional placement
+            if (outcome == PdfImportOutcome.NoGeoreference) uncalibratedPromptShownFor += source.id
+            if (!vm.setMapSource(source)) return@let
+            when (outcome) {
+                is PdfImportOutcome.Georeferenced, PdfImportOutcome.RestoredCalibration ->
+                    Toast.makeText(context, L10n.text("Imported %1\$s", source.displayName), Toast.LENGTH_SHORT).show()
+                PdfImportOutcome.NoGeoreference -> pendingCalibrationStartFor = source.id
+                is PdfImportOutcome.Rejected -> Unit
             }
         }
     }
@@ -712,6 +741,14 @@ internal fun MapScreen(
             calibrationFiduciaries = emptyList()
             pendingCalibrationTap = null
         }
+        // the map we came back up on still isn't calibrated (plain, refused GeoPDF or an old
+        // camera-box session): ask once. Fresh imports already went into calibration
+        val pdf = mapSource as? PdfMapSource
+        if (pdf != null && pdf.id == restoredSourceId && !pdf.isGeoreferenced && !isCalibratingPdf &&
+            uncalibratedPromptShownFor.add(pdf.id)
+        ) {
+            promptUncalibratedPdf = true
+        }
     }
 
     val selected = waypoints.firstOrNull { it.id == selectedWaypointId }
@@ -842,22 +879,39 @@ internal fun MapScreen(
         activeDrawTool = null
         draftGeometry = null
         draftPoints = emptyList()
-        calibrationFiduciaries = (source.calibration as? Calibration.Fiduciaries)?.fids ?: emptyList()
+        calibrationFiduciaries = (source.calibration as? Calibration.Fiduciaries)?.fids
+            ?: source.pendingFiduciaries
         pendingCalibrationTap = null
         isCalibratingPdf = true
     }
 
+    LaunchedEffect(mapSource.id, pendingCalibrationStartFor) {
+        if (pendingCalibrationStartFor != null && pendingCalibrationStartFor == mapSource.id) {
+            pendingCalibrationStartFor = null
+            startPdfCalibration()
+        }
+    }
+
     fun finishPdfCalibration() {
         val source = pdfSource ?: return
-        val result = runCatching { AffineFitter.fit(calibrationFiduciaries) }.getOrNull()
-        if (result == null) {
-            Toast.makeText(context, L10n.text("Calibration needs 3 non-colinear points."), Toast.LENGTH_SHORT).show()
+        // plan 02 s1: fit in the UTM zone of the first point, refuse collinear/clustered sets
+        val crop = source.calibrationCrop
+        val fit = FiduciaryFitter.refitStored(calibrationFiduciaries, crop)
+        val georef = fit?.georeference(crop)
+        if (fit == null || georef == null) {
+            val message = if (fit?.degenerate == true) {
+                L10n.text("Fiduciaries are colinear or coincident")
+            } else {
+                L10n.text("Calibration needs 3 non-colinear points.")
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             return
         }
-        if (!vm.setMapSource(source.calibrated(result.transform, calibrationFiduciaries))) return
+        val calibrated = source.calibrated(calibrationFiduciaries, georef)
+        if (calibrated === source || !vm.setMapSource(calibrated)) return
         isCalibratingPdf = false
         pendingCalibrationTap = null
-        Toast.makeText(context, L10n.text("Calibration RMS %1\$sm", result.rmsMetres.toInt()), Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, L10n.text("Calibration RMS %1\$sm", fit.rmsMetres.toInt()), Toast.LENGTH_SHORT).show()
     }
 
     fun cancelPdfCalibration() {
@@ -1812,6 +1866,46 @@ internal fun MapScreen(
                 startTour()
             },
             onDismiss = { showOpsecSettings = false },
+        )
+    }
+
+    pendingGeorefRejection?.let { pending ->
+        // Cancel (or backing out) drops the private copy, it never made it to the map or library
+        fun discard() {
+            pendingGeorefRejection = null
+            scope.launch(Dispatchers.IO) { discardRejectedPdfImport(pending.source) }
+        }
+        AlertDialog(
+            onDismissRequest = ::discard,
+            title = { Text(Messages.pdfGeorefRejectedTitle()) },
+            text = { Text(Messages.pdfGeorefRejectedMessage(pdfGeorefRejectionReason(pending.reason))) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingGeorefRejection = null
+                        uncalibratedPromptShownFor += pending.source.id
+                        if (vm.setMapSource(pending.source)) pendingCalibrationStartFor = pending.source.id
+                    },
+                ) { Text(Messages.pdfGeorefCalibrateManually()) }
+            },
+            dismissButton = { TextButton(onClick = ::discard) { Text(L10n.text("Cancel")) } },
+        )
+    }
+
+    if (promptUncalibratedPdf) {
+        AlertDialog(
+            onDismissRequest = { promptUncalibratedPdf = false },
+            title = { Text(Messages.pdfMapUncalibratedTitle()) },
+            text = { Text(Messages.pdfMapUncalibratedMessage()) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        promptUncalibratedPdf = false
+                        if (!isCalibratingPdf) startPdfCalibration()
+                    },
+                ) { Text(Messages.pdfMapCalibrateNow()) }
+            },
+            dismissButton = { TextButton(onClick = { promptUncalibratedPdf = false }) { Text(L10n.text("Not now")) } },
         )
     }
 

@@ -131,7 +131,6 @@ class AffineFitterTest {
 
     @Test
     fun nonFiniteOrOverflowingTransformsCannotBeInvertedOrPublished() {
-        val info = PdfPageInfo(pageWidth = 600, pageHeight = 400)
         val nan = AffineTransform2D(Double.NaN, 0.0, 0.0, 0.0, 1.0, 0.0)
         val overflow = AffineTransform2D(
             Double.MAX_VALUE, 0.0, 0.0,
@@ -140,7 +139,16 @@ class AffineFitterTest {
 
         assertNull(nan.inverted())
         assertNull(overflow.inverted())
-        assertNull(calibratedPdfBounds(nan, info))
-        assertNull(calibratedPdfBounds(overflow, info))
+        // the georef is the publish boundary now (calibratedPdfBounds went with the
+        // lon/lat model): a junk affine never becomes a usable georef or coverage
+        val crop = listOf(PagePoint(0.0, 0.0), PagePoint(600.0, 0.0), PagePoint(600.0, 400.0), PagePoint(0.0, 400.0))
+        for (affine in listOf(
+            PlaneAffine(Double.NaN, 0.0, 0.0, 0.0, 1.0, 0.0),
+            PlaneAffine(Double.MAX_VALUE, 0.0, 0.0, 0.0, Double.MAX_VALUE, 0.0),
+        )) {
+            val georef = PdfGeoreference(0, GeoCrs.Geographic, GeoDatums.WGS84, affine, crop, GeorefOrigin.FIDUCIARIES)
+            assertFalse(georef.isUsable())
+            assertNull(georef.wgs84Bounds())
+        }
     }
 }

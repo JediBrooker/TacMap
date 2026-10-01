@@ -42,7 +42,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import com.tacmap.calibration.Calibration
 import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.Wgs84Bounds
@@ -801,10 +800,12 @@ fun PresenceLayer(peers: Map<String, PresencePeer>, camera: MapCamera, density: 
 }
 
 /** Imported PDF/GeoPDF ground overlay on the SDK-free renderer: renders the page
- *  bitmap once and warps it to its projected geo corners with a poly matrix, so
- *  it rides pan/zoom/rotate and lines up with the MGRS grid (same projection +
- *  affine that fixed the SDK path). Non-georeferenced PDFs use the axis-aligned
- *  bounds. */
+ *  bitmap once and warps it to its geo corners with a poly matrix, so it rides
+ *  pan/zoom/rotate. The bitmap corners are mapped back to raw page space through
+ *  the page geometry (crop origin, /Rotate, pdfium's int size) and placed with
+ *  the placement's best-fit lon/lat affine. That's a stopgap until the plan s2
+ *  tile renderer: a couple of metres on a 1:25k UTM sheet, not the km the old
+ *  fits could be off. Uncalibrated sheets ride their provisional placement. */
 @Composable
 fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -844,33 +845,17 @@ fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modi
         }
     }
     val image = bmp ?: return
-    val transform = (source.calibration as? Calibration.Fiduciaries)?.transform
-        ?: (source.calibration as? Calibration.Parsed)?.transform
-    val pageInfo = source.pageInfo
+    val display = source.placement?.bestFitLatLonAffine ?: return
+    // raw page points under the bitmap's TL, TR, BR, BL
+    val rawCorners = remember(source.geometry) { source.geometry.bitmapCornersRaw() }
 
     Canvas(
         modifier
             .fillMaxSize()
             .semantics { contentDescription = L10n.text("PDF map rendered: %1\$s", source.displayName) }
     ) {
-        // Corners in lat/lon: georeferenced -> the affine page corners (bitmap top
-        // = page-top = PDF maxY), else the coverage bounds box.
-        val corners: List<Pair<Double, Double>> = if (transform != null && pageInfo != null) {
-            val pw = pageInfo.pageWidth.toDouble(); val ph = pageInfo.pageHeight.toDouble()
-            listOf(
-                transform.apply(0.0, ph).let { it.latitude to it.longitude },   // top-left
-                transform.apply(pw, ph).let { it.latitude to it.longitude },    // top-right
-                transform.apply(pw, 0.0).let { it.latitude to it.longitude },   // bottom-right
-                transform.apply(0.0, 0.0).let { it.latitude to it.longitude }   // bottom-left
-            )
-        } else {
-            val b = source.coverage ?: return@Canvas
-            listOf(
-                b.northeast.latitude to b.southwest.longitude,  // TL
-                b.northeast.latitude to b.northeast.longitude,  // TR
-                b.southwest.latitude to b.northeast.longitude,  // BR
-                b.southwest.latitude to b.southwest.longitude   // BL
-            )
+        val corners: List<Pair<Double, Double>> = rawCorners.map { p ->
+            display.apply(p.x, p.y).let { it.latitude to it.longitude }
         }
         val dst = FloatArray(8)
         corners.forEachIndexed { i, (lat, lon) ->

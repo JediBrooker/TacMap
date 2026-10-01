@@ -165,6 +165,15 @@ struct LayersSheet: View {
         }
     }
 
+    private func georefLabel(_ pdf: PDFMapSource) -> String {
+        switch pdf.georef.origin {
+        case .provisional: return L10n.text("No georeferencing — using map-centre fallback")
+        case .adobeVP: return Messages.pdfGeorefAdobeLabel()
+        case .lgiDict: return L10n.text("Georeferenced (GeoPDF LGIDict)")
+        case .fiduciaries: return L10n.text("Manually placed bounds")
+        }
+    }
+
     /// Pulled out b/c the outer body was hitting SwiftUI's type-checker
     /// complexity limit.
     @ViewBuilder
@@ -174,13 +183,9 @@ struct LayersSheet: View {
                 Toggle(isOn: $visibility.pdfOverlayVisible) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(pdfSource.displayName).font(.callout)
-                        Text(pdfSource.bounds == nil
-                             ? L10n.text("No georeferencing — using map-centre fallback")
-                             : (pdfSource.kind == .geoPDF
-                                ? L10n.text("Georeferenced (GeoPDF LGIDict)")
-                                : L10n.text("Manually placed bounds")))
+                        Text(georefLabel(pdfSource))
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(pdfSource.isUncalibrated ? Color.orange : Color.secondary)
                     }
                 }
                 Button {
@@ -213,6 +218,8 @@ struct LayersSheet: View {
                     } label: {
                         Label(L10n.text("Generate Offline Tiles…"), systemImage: "square.stack.3d.down.right")
                     }
+                    // baking a guessed placement would pass it off as a real basemap
+                    .disabled(pdfSource.isUncalibrated)
                     Text(L10n.text("Bakes this calibrated map into an offline tile set on-device — no desktop tools."))
                         .font(.caption2).foregroundStyle(.secondary)
                 }

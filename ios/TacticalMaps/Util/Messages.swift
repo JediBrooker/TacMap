@@ -168,6 +168,54 @@ enum Messages {
     static func onlineBasemapsDisabledMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.online_basemaps_disabled", fallback: "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", arguments: [])
     }
+    static func pdfGeorefAdobeLabel() -> String {
+        L10n.message("id.pdf_georef_adobe_label", fallback: "Georeferenced (GeoPDF)")
+    }
+    static func pdfGeorefCalibrateManually() -> String {
+        L10n.message("id.pdf_georef_calibrate_manually", fallback: "Calibrate Manually")
+    }
+    static func pdfGeorefReasonDegenerate() -> String {
+        L10n.message("id.pdf_georef_reason_degenerate", fallback: "its map frame or control points are degenerate")
+    }
+    static func pdfGeorefReasonLptsOutOfRange() -> String {
+        L10n.message("id.pdf_georef_reason_lpts_out_of_range", fallback: "its control points lie outside the map frame")
+    }
+    static func pdfGeorefReasonMalformed() -> String {
+        L10n.message("id.pdf_georef_reason_malformed", fallback: "its georeferencing data is malformed")
+    }
+    static func pdfGeorefReasonNonFinite() -> String {
+        L10n.message("id.pdf_georef_reason_non_finite", fallback: "it contains numbers that are out of range")
+    }
+    static func pdfGeorefReasonOffEarth() -> String {
+        L10n.message("id.pdf_georef_reason_off_earth", fallback: "its coordinates are not on the Earth")
+    }
+    static func pdfGeorefReasonRmsGate() -> String {
+        L10n.message("id.pdf_georef_reason_rms_gate", fallback: "its control points disagree with each other")
+    }
+    static func pdfGeorefReasonUnknownDatum() -> String {
+        L10n.message("id.pdf_georef_reason_unknown_datum", fallback: "its datum isn't supported")
+    }
+    static func pdfGeorefReasonUnsupportedProjection() -> String {
+        L10n.message("id.pdf_georef_reason_unsupported_projection", fallback: "its map projection isn't supported")
+    }
+    static func pdfGeorefRejectedMessage(_ reason: String) -> String {
+        L10n.message("id.pdf_georef_rejected_message", fallback: "This PDF declares a georeference, but TacMap can't use it: %1$@. It has not been placed on the map. You can calibrate it by hand with known points instead.", reason)
+    }
+    static func pdfGeorefRejectedTitle() -> String {
+        L10n.message("id.pdf_georef_rejected_title", fallback: "Georeference not usable")
+    }
+    static func pdfMapCalibrateNow() -> String {
+        L10n.message("id.pdf_map_calibrate_now", fallback: "Calibrate")
+    }
+    static func pdfMapUncalibratedLabel() -> String {
+        L10n.message("id.pdf_map_uncalibrated_label", fallback: "Uncalibrated map")
+    }
+    static func pdfMapUncalibratedMessage() -> String {
+        L10n.message("id.pdf_map_uncalibrated_message", fallback: "This PDF has no usable georeference, so where it sits on the map is only a guess. Calibrate it with known points before relying on any position.")
+    }
+    static func pdfMapUncalibratedTitle() -> String {
+        L10n.message("id.pdf_map_uncalibrated_title", fallback: "Map not calibrated")
+    }
     static func profileClimb() -> String {
         L10n.message("id.profile_climb", fallback: "Total climb")
     }

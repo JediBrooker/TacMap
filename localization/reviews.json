@@ -12900,6 +12900,118 @@
         "translation": "65a5e85b56b3f97bfb54cc900019a544f292629062fa1ca6b72781a5ea9017c3",
         "status": "reviewed"
       }
+    },
+    "pdf_georef_rejected_title": {
+      "de": {
+        "source": "fd251600294a1e347564622759586f83fdef1fa2b4a6e79f26a03cca27fafbdc",
+        "translation": "9b433a4c250e8107fee123282761801d975002da4c871280b2c1d0a9c73c50f5",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_rejected_message": {
+      "de": {
+        "source": "782dcbbe7327ab1f5f995ab997d1794ac03b94a5a46e2a8ab55dce08c8ef0696",
+        "translation": "0fa5f2277d7aca6ca3a6b1cef57b774d04c0a42b5ec6f28d3405666b9aa95083",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_calibrate_manually": {
+      "de": {
+        "source": "c480d2172bd8e3bb92292e51e9ec67e6289edd23b4d2117d758dd9375b973717",
+        "translation": "4a68e03515da0c19e0b6d32656b77348ae09ff73501f798773e5ab90ac7e7486",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_reason_lpts_out_of_range": {
+      "de": {
+        "source": "0a6565076acfaa5c04f43bb3f8c82e1786b1eb0154804da7f3aabaf832f3203d",
+        "translation": "f715a93a9619dac33873df998cd01c439b9d38d78d791afec5ec33ab2a2f6770",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_reason_non_finite": {
+      "de": {
+        "source": "16f1e374c6f71fae2b163b7d7ee1de1371480b6c4ceacd1f5ae99a517e2918b7",
+        "translation": "7dd6497d1303d5a4914be156d0e2b8ad77d15a1c273c25f825f44efd029c68d2",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_reason_off_earth": {
+      "de": {
+        "source": "2fd47d3dfd4a6a526bb316a60d4c3548ed5b649b2b1d02467bb1e178b550f50e",
+        "translation": "f72887eb5f001310444070108b2d87534b52bf2dbe1f25b782e10bc9e3841ffd",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_reason_rms_gate": {
+      "de": {
+        "source": "7400cd5a905da96bec0deed55ad5bed59e88891695b91e3cb69e2c94ce35c616",
+        "translation": "674aa0b5b6bfac1c05e35b9c80b01077212d370734c6e1b49c5cf452265663da",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_reason_degenerate": {
+      "de": {
+        "source": "96df3c429cd41e74c98e9042ba02ccfd191b8e5a24b179ff316747d6cb92bd1b",
+        "translation": "739cffa9dca7d4cd6bd056d00b097a25c414a941087df9b51d9dcd5f242b763c",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_reason_malformed": {
+      "de": {
+        "source": "fa586b19080da6f630b6e848d0a49b2514cfecd6c21018f2ae8cb2e8c62dfd0a",
+        "translation": "b9b80e983e94139a635a65ea442c516012896d3a4615779bdb5cd2027687eb28",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_reason_unknown_datum": {
+      "de": {
+        "source": "a028a7885f99f1c747d8eef1c2a85bc484fcc1b49d215dfd4eb25673f189ecbe",
+        "translation": "6228ae200d6b38020c36aad14c460ca6e0185b80b71572fca35b0a12618edc6b",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_reason_unsupported_projection": {
+      "de": {
+        "source": "a87f0ff9296e25ebb2efb8b8cee39d90e88366610030a493eddcef3418ecbfbe",
+        "translation": "50ae91cc390a0e0a96ac4a1d293f1432324cd093be0734436cf39edf9b040b6b",
+        "status": "reviewed"
+      }
+    },
+    "pdf_georef_adobe_label": {
+      "de": {
+        "source": "6fcce2a829309295b3cea5a808a635afaa0c65066fb58f2ca0b9753c5edc8915",
+        "translation": "236f13d5c027de01b2de1941feb009975002f86ee0b83b89cf31d80c6322cfc4",
+        "status": "reviewed"
+      }
+    },
+    "pdf_map_uncalibrated_label": {
+      "de": {
+        "source": "e9d429ae1d5ee8588d393764968303404296306d4ea96ce6c116332f6d4ebffd",
+        "translation": "19d1bc74a95980a5a04a2e1d8502015756310b68560099583cf5e1e78e29aaa3",
+        "status": "reviewed"
+      }
+    },
+    "pdf_map_uncalibrated_title": {
+      "de": {
+        "source": "4151d8691f5abbda3c0e72c9f2d4b4ea1b31de04bc83d18b8f15d9b233e25d12",
+        "translation": "084e3793ac62833e44c673dab1dfd274ca0230a28b99ea61361e9019ddc0b532",
+        "status": "reviewed"
+      }
+    },
+    "pdf_map_uncalibrated_message": {
+      "de": {
+        "source": "e4583e840e398cff89fa2b96b37d247216a9e37ee27fca2dd3f37898926735b4",
+        "translation": "77eb2b8acefb4c7205d8b8601b32133d74e2600b273e1f7f81289ee2e9c9b259",
+        "status": "reviewed"
+      }
+    },
+    "pdf_map_calibrate_now": {
+      "de": {
+        "source": "caa9cfecbe9b54e12fd5e264d1befe9d499ebf6808156de3f97294055959ebc2",
+        "translation": "3bb3c77259e9feac268035e25d3e55926c0ab35d070f1d68bf2b1495534518a5",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

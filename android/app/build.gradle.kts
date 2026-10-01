@@ -321,6 +321,14 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+    // shared cross-platform fixtures ride along in the instrumented test apk only, so
+    // the PDFBox + PdfRenderer tests can open the real testdata/geopdf sheets on device
+    sourceSets {
+        getByName("androidTest").assets.srcDir("../../testdata")
+        // pdf_georef.json helpers both suites assert with
+        getByName("test").java.srcDir("src/sharedTest/java")
+        getByName("androidTest").java.srcDir("src/sharedTest/java")
+    }
 }
 
 configurations.all {

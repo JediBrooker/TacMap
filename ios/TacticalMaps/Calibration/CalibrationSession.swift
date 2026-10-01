@@ -8,7 +8,7 @@ import Combine
 /// Basically: start(for:) enters calibration mode, user taps known features
 /// on the PDF, each tap becomes a pendingTap while we ask for MGRS coords,
 /// confirmFiduciary saves the (pdfPoint, lat/lon) pair. Once 3+ fiduciaries
-/// are placed user taps Finish and we run AffineFitter.
+/// are placed user taps Finish and we fit them in UTM (FiduciaryFitter).
 final class CalibrationSession: ObservableObject {
 
     /// Geometry of a tap that's awaiting MGRS entry.
@@ -37,8 +37,9 @@ final class CalibrationSession: ObservableObject {
     func start(for source: PDFMapSource) {
         self.source = source
         // Seed with existing fiduciaries so user can refine instead of
-        // starting over.
-        self.fiduciaries = source.fiduciaries ?? []
+        // starting over. no calibration yet but saved points that couldn't be
+        // refit (old v1 set) -> start from those
+        self.fiduciaries = source.fiduciaries ?? source.pendingFiduciaries
         self.pendingTap = nil
         self.lastFitRMSMetres = nil
         self.isCalibrating = true
@@ -89,17 +90,28 @@ final class CalibrationSession: ObservableObject {
 
     var canFinish: Bool { fiduciaries.count >= 3 }
 
-    /// Fit an affine to the current fiduciaries. Returns nil if fewer than 3
-    /// are placed or the points are degenerate.
-    func finish() -> AffineFitter.Result? {
-        guard canFinish else { return nil }
-        do {
-            let result = try AffineFitter.fit(fiduciaries)
-            lastFitRMSMetres = result.rmsMetres
-            return result
-        } catch {
-            print("[Calibration] affine fit failed")
+    struct FinishResult {
+        /// page -> UTM (zone of the first point) fit of the fiduciaries
+        let georef: PdfGeoreference
+        /// best-fit lon/lat view of it, what the persisted record keeps
+        let transform: AffineTransform2D
+        let rmsMetres: Double
+        let crossValidated: Bool
+    }
+
+    /// Fit the fiduciaries in UTM (zone of the first point) over the source's
+    /// crop. nil if fewer than 3 are placed or they're collinear/clustered.
+    func finish() -> FinishResult? {
+        guard canFinish, let source else { return nil }
+        guard let georef = FiduciaryFitter.georeference(fromWGS84: fiduciaries, crop: source.pdfRenderRect,
+                                                        page: source.georef.page),
+              let transform = georef.bestFitLatLonAffine() else {
+            print("[Calibration] fiduciary fit refused")
             return nil
         }
+        let rms = georef.fit?.rmsMetres ?? 0
+        lastFitRMSMetres = rms
+        return FinishResult(georef: georef, transform: transform, rmsMetres: rms,
+                            crossValidated: georef.fit?.crossValidated ?? false)
     }
 }

@@ -16670,5 +16670,201 @@
     "legacy": false,
     "accessor": "onlineLookupsPrivacyHelp",
     "parameters": []
+  },
+  "pdf_georef_rejected_title": {
+    "en": "Georeference not usable",
+    "de": "Georeferenz nicht verwendbar",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefRejectedTitle",
+    "context": "Alert after importing a GeoPDF whose declared georeference TacMap refuses. Nothing is placed on the map until the user chooses manual calibration or cancels.",
+    "parameters": []
+  },
+  "pdf_georef_rejected_message": {
+    "en": "This PDF declares a georeference, but TacMap can't use it: {1}. It has not been placed on the map. You can calibrate it by hand with known points instead.",
+    "de": "Diese PDF enthält eine Georeferenz, die TacMap nicht verwenden kann: {1}. Sie wurde nicht auf der Karte platziert. Du kannst sie stattdessen von Hand mit bekannten Punkten kalibrieren.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefRejectedMessage",
+    "context": "Alert after importing a GeoPDF whose declared georeference TacMap refuses. Nothing is placed on the map until the user chooses manual calibration or cancels.",
+    "parameters": [
+      {
+        "name": "reason",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_georef_calibrate_manually": {
+    "en": "Calibrate Manually",
+    "de": "Von Hand kalibrieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefCalibrateManually",
+    "context": "Alert after importing a GeoPDF whose declared georeference TacMap refuses. Nothing is placed on the map until the user chooses manual calibration or cancels.",
+    "parameters": []
+  },
+  "pdf_georef_reason_lpts_out_of_range": {
+    "en": "its control points lie outside the map frame",
+    "de": "ihre Passpunkte liegen außerhalb des Kartenrahmens",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefReasonLptsOutOfRange",
+    "context": "Short lower-case clause inserted as {1} into pdf_georef_rejected_message, explaining why a GeoPDF's georeference was refused. No trailing full stop.",
+    "parameters": []
+  },
+  "pdf_georef_reason_non_finite": {
+    "en": "it contains numbers that are out of range",
+    "de": "sie enthält Zahlen außerhalb des gültigen Bereichs",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefReasonNonFinite",
+    "context": "Short lower-case clause inserted as {1} into pdf_georef_rejected_message, explaining why a GeoPDF's georeference was refused. No trailing full stop.",
+    "parameters": []
+  },
+  "pdf_georef_reason_off_earth": {
+    "en": "its coordinates are not on the Earth",
+    "de": "ihre Koordinaten liegen nicht auf der Erde",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefReasonOffEarth",
+    "context": "Short lower-case clause inserted as {1} into pdf_georef_rejected_message, explaining why a GeoPDF's georeference was refused. No trailing full stop.",
+    "parameters": []
+  },
+  "pdf_georef_reason_rms_gate": {
+    "en": "its control points disagree with each other",
+    "de": "ihre Passpunkte widersprechen einander",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefReasonRmsGate",
+    "context": "Short lower-case clause inserted as {1} into pdf_georef_rejected_message, explaining why a GeoPDF's georeference was refused. No trailing full stop.",
+    "parameters": []
+  },
+  "pdf_georef_reason_degenerate": {
+    "en": "its map frame or control points are degenerate",
+    "de": "ihr Kartenrahmen oder ihre Passpunkte sind entartet",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefReasonDegenerate",
+    "context": "Short lower-case clause inserted as {1} into pdf_georef_rejected_message, explaining why a GeoPDF's georeference was refused. No trailing full stop.",
+    "parameters": []
+  },
+  "pdf_georef_reason_malformed": {
+    "en": "its georeferencing data is malformed",
+    "de": "ihre Georeferenzierungsdaten sind fehlerhaft",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefReasonMalformed",
+    "context": "Short lower-case clause inserted as {1} into pdf_georef_rejected_message, explaining why a GeoPDF's georeference was refused. No trailing full stop.",
+    "parameters": []
+  },
+  "pdf_georef_reason_unknown_datum": {
+    "en": "its datum isn't supported",
+    "de": "ihr geodätisches Datum wird nicht unterstützt",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefReasonUnknownDatum",
+    "context": "Short lower-case clause inserted as {1} into pdf_georef_rejected_message, explaining why a GeoPDF's georeference was refused. No trailing full stop.",
+    "parameters": []
+  },
+  "pdf_georef_reason_unsupported_projection": {
+    "en": "its map projection isn't supported",
+    "de": "ihre Kartenprojektion wird nicht unterstützt",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefReasonUnsupportedProjection",
+    "context": "Short lower-case clause inserted as {1} into pdf_georef_rejected_message, explaining why a GeoPDF's georeference was refused. No trailing full stop.",
+    "parameters": []
+  },
+  "pdf_georef_adobe_label": {
+    "en": "Georeferenced (GeoPDF)",
+    "de": "Georeferenziert (GeoPDF)",
+    "platforms": [
+      "ios"
+    ],
+    "legacy": false,
+    "accessor": "pdfGeorefAdobeLabel",
+    "context": "Layers sheet status line for an imported map placed from its ISO 32000 GeoPDF metadata.",
+    "parameters": []
+  },
+  "pdf_map_uncalibrated_label": {
+    "en": "Uncalibrated map",
+    "de": "Unkalibrierte Karte",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfMapUncalibratedLabel",
+    "context": "Short header badge (replaces 'Offline basemap'). A plain PDF shown on a provisional, guessed placement until the user calibrates it with known points. Must make clear positions are not trustworthy.",
+    "parameters": []
+  },
+  "pdf_map_uncalibrated_title": {
+    "en": "Map not calibrated",
+    "de": "Karte nicht kalibriert",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfMapUncalibratedTitle",
+    "context": "Alert title on launch. A plain PDF shown on a provisional, guessed placement until the user calibrates it with known points. Must make clear positions are not trustworthy.",
+    "parameters": []
+  },
+  "pdf_map_uncalibrated_message": {
+    "en": "This PDF has no usable georeference, so where it sits on the map is only a guess. Calibrate it with known points before relying on any position.",
+    "de": "Diese PDF hat keine verwendbare Georeferenz, ihre Lage auf der Karte ist daher nur geschätzt. Kalibriere sie mit bekannten Punkten, bevor du dich auf eine Position verlässt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfMapUncalibratedMessage",
+    "context": "Alert body on launch. A plain PDF shown on a provisional, guessed placement until the user calibrates it with known points. Must make clear positions are not trustworthy.",
+    "parameters": []
+  },
+  "pdf_map_calibrate_now": {
+    "en": "Calibrate",
+    "de": "Kalibrieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfMapCalibrateNow",
+    "context": "Alert button that starts fiduciary calibration. A plain PDF shown on a provisional, guessed placement until the user calibrates it with known points. Must make clear positions are not trustworthy.",
+    "parameters": []
   }
 }

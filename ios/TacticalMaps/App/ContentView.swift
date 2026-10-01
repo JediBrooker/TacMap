@@ -304,57 +304,12 @@ enum ExternalImportWorker {
     }
 }
 
-struct PDFBoundsPayload: Sendable {
-    struct Affine: Sendable {
-        let a: Double
-        let b: Double
-        let c: Double
-        let d: Double
-        let e: Double
-        let f: Double
-    }
-
-    let south: Double
-    let west: Double
-    let north: Double
-    let east: Double
-    let cropX: Double?
-    let cropY: Double?
-    let cropWidth: Double?
-    let cropHeight: Double?
-    let affine: Affine?
-
-    init(_ bounds: GeoPDFReader.Bounds) {
-        south = bounds.southWest.latitude
-        west = bounds.southWest.longitude
-        north = bounds.northEast.latitude
-        east = bounds.northEast.longitude
-        cropX = bounds.pdfCropRect.map { Double($0.origin.x) }
-        cropY = bounds.pdfCropRect.map { Double($0.origin.y) }
-        cropWidth = bounds.pdfCropRect.map { Double($0.size.width) }
-        cropHeight = bounds.pdfCropRect.map { Double($0.size.height) }
-        affine = bounds.placementAffine.map {
-            Affine(a: $0.a, b: $0.b, c: $0.c, d: $0.d, e: $0.e, f: $0.f)
-        }
-    }
-
-    func makeBounds() -> GeoPDFReader.Bounds {
-        let crop: CGRect?
-        if let cropX, let cropY, let cropWidth, let cropHeight {
-            crop = CGRect(x: cropX, y: cropY, width: cropWidth, height: cropHeight)
-        } else {
-            crop = nil
-        }
-        let placement = affine.map {
-            AffineTransform2D(a: $0.a, b: $0.b, c: $0.c, d: $0.d, e: $0.e, f: $0.f)
-        }
-        return GeoPDFReader.Bounds(
-            southWest: CLLocationCoordinate2D(latitude: south, longitude: west),
-            northEast: CLLocationCoordinate2D(latitude: north, longitude: east),
-            pdfCropRect: crop,
-            placementAffine: placement
-        )
-    }
+/// Refused GeoPDF parked until the user picks calibrate-by-hand or cancel.
+struct PendingGeorefRejection: Identifiable {
+    let id = UUID()
+    let payload: ImportedMapWorker.PDFPayload
+    let reason: PdfGeorefRejectReason
+    let camera: CLLocationCoordinate2D
 }
 
 struct PDFRectPayload: Sendable {
@@ -376,10 +331,13 @@ struct PDFRectPayload: Sendable {
 enum ImportedMapWorker {
     struct PDFPayload: Sendable {
         let destination: URL
-        let geoBounds: PDFBoundsPayload?
-        let mediaBox: PDFRectPayload
+        /// georef, plain PDF, or declared-but-refused (with the reason)
+        let outcome: GeoPDFReader.Outcome
+        let page: GeoPDFReader.PageGeometry
         let contentKey: String
         let performedWorkOffMainThread: Bool
+
+        var mediaBox: PDFRectPayload { PDFRectPayload(page.mediaBox) }
     }
 
     struct MBTilesPayload: Sendable {
@@ -409,22 +367,19 @@ enum ImportedMapWorker {
                     let copied = try PDFMapImporter.copyAndValidate(coordinatedURL)
                     destination = copied
                     try Task.checkCancellation()
-                    guard let document = PDFDocument(url: copied),
-                          let page = document.page(at: 0) else {
+                    guard let readout = GeoPDFReader.read(url: copied) else {
                         throw PDFMapImportError.invalidPDF
                     }
-                    let mediaBox = PDFRectPayload(page.bounds(for: .mediaBox))
-                    let geoBounds = GeoPDFReader.bounds(from: copied).map(PDFBoundsPayload.init)
                     guard let contentKey = PDFSessionStore.contentKey(for: copied) else {
                         throw PDFMapImportError.invalidPDF
                     }
-                    return (copied, geoBounds, mediaBox, contentKey)
+                    return (copied, readout, contentKey)
                 }
                 try Task.checkCancellation()
                 return PDFPayload(destination: prepared.0,
-                                  geoBounds: prepared.1,
-                                  mediaBox: prepared.2,
-                                  contentKey: prepared.3,
+                                  outcome: prepared.1.outcome,
+                                  page: prepared.1.page,
+                                  contentKey: prepared.2,
                                   performedWorkOffMainThread: offMainThread)
             } catch {
                 if let destination { try? FileManager.default.removeItem(at: destination) }
@@ -495,6 +450,8 @@ struct ContentView: View {
     @Environment(\.undoManager) private var undoManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var canUndo = false
+    /// v1 PDF session being migrated off main, see restoreActiveBasemap
+    @State private var basemapMigrationInFlight = false
     @State private var canRedo = false
     /// Freeze all graphic interaction (select/drag/vertex-edit/settings).
     @State private var graphicsLocked = false
@@ -513,6 +470,10 @@ struct ContentView: View {
     @State private var appLockOverlayActive = AppLock.isEnabled
     @StateObject private var syncManager   = SyncManager()
     @State private var importMessage: LocalizedMessage? = nil
+    /// A GeoPDF whose declared georef we refused, waiting on the user.
+    @State private var pendingGeorefRejection: PendingGeorefRejection?
+    /// Restored map is a plain PDF on its provisional placement.
+    @State private var promptUncalibratedMap = false
     @State private var pendingImportRetry: ExternalImportCommitProgress?
     @State private var importWorkTask: Task<Void, Never>?
     @State private var missionUnlockError: LocalizedMessage? = nil
@@ -581,14 +542,21 @@ struct ContentView: View {
         mapVM.mapSource is OfflineTileMapSource || mapVM.mapSource is PDFMapSource
     }
 
+    /// Plain PDF on its made-up placement: positions off it mean nothing yet.
+    private var uncalibratedPDFLoaded: Bool {
+        (mapVM.mapSource as? PDFMapSource)?.isUncalibrated == true
+    }
+
     /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
     private var basemapLabel: String? {
+        if uncalibratedPDFLoaded { return Messages.pdfMapUncalibratedLabel() }
         if importedMapLoaded { return L10n.text("Offline basemap") }
         if onlineTilesActive { return L10n.text("Online basemap") }
         return nil
     }
     private var basemapColor: Color {
-        importedMapLoaded
+        if uncalibratedPDFLoaded { return Color(red: 1, green: 0.65, blue: 0.18) }  // amber, not a basemap yet
+        return importedMapLoaded
             ? Color(red: 0.45, green: 0.89, blue: 0.54)   // offline: green
             : Color(red: 1.0, green: 0.35, blue: 0.35)    // online: red
     }
@@ -1260,6 +1228,26 @@ struct ContentView: View {
         } message: { msg in
             Text(msg.text)
         }
+        .alert(Messages.pdfGeorefRejectedTitle(),
+               isPresented: Binding(get: { pendingGeorefRejection != nil },
+                                    set: { if !$0 { pendingGeorefRejection = nil } }),
+               presenting: pendingGeorefRejection) { pending in
+            // buttons get their own copy, the binding may clear the state first
+            Button(Messages.pdfGeorefCalibrateManually()) {
+                placeForCalibration(pending.payload, camera: pending.camera)
+            }
+            Button(L10n.text("Cancel"), role: .cancel) {
+                try? FileManager.default.removeItem(at: pending.payload.destination)
+            }
+        } message: { pending in
+            Text(Messages.pdfGeorefRejectedMessage(pending.reason.displayReason))
+        }
+        .alert(Messages.pdfMapUncalibratedTitle(), isPresented: $promptUncalibratedMap) {
+            Button(Messages.pdfMapCalibrateNow()) { startCalibration() }
+            Button(L10n.text("Not Now"), role: .cancel) {}
+        } message: {
+            Text(Messages.pdfMapUncalibratedMessage())
+        }
         .onDisappear {
             importWorkTask?.cancel()
             headingWatchdogTask?.cancel()
@@ -1783,8 +1771,33 @@ struct ContentView: View {
     /// keep the usable online default; the saved PDF remains available from
     /// Layers, but is no longer incorrectly assumed to have been active.
     private func restoreActiveBasemap() {
+        // first launch after the v2 upgrade re-parses the saved PDF, seconds on a
+        // big USGS sheet. do that off main and leave the online default up meanwhile
+        guard !basemapMigrationInFlight else { return }
+        if PDFSessionStore.needsMigration {
+            basemapMigrationInFlight = true
+            let shown = mapVM.mapSource.id
+            DispatchQueue.global(qos: .userInitiated).async {
+                PDFSessionStore.migrateStoredSession()
+                DispatchQueue.main.async {
+                    basemapMigrationInFlight = false
+                    // user picked another map while we were busy, don't yank it away
+                    guard mapVM.mapSource.id == shown else { return }
+                    publishRestoredBasemap()
+                }
+            }
+            return
+        }
+        publishRestoredBasemap()
+    }
+
+    private func publishRestoredBasemap() {
         guard let source = mapVM.restoreActiveMapSelection() else { return }
         NSLog("[MapVM] restored active basemap -> kind=\(source.kind)")
+        // includes v1 sessions whose old camera box couldn't be trusted
+        if (source as? PDFMapSource)?.isUncalibrated == true, !calibration.isCalibrating {
+            promptUncalibratedMap = true
+        }
     }
 
     /// Export all waypoints + drawings + layers to GeoJSON and show
@@ -1921,16 +1934,12 @@ struct ContentView: View {
               let source = calibration.source else { return }
         // Build fresh source so MapContainerView rebuilds overlay
         // (sync logic keys on source.id).
-        let newSource = PDFMapSource(
-            url: source.url,
-            bounds: nil,
-            fromGeoPDF: false,
-            contentKey: source.contentKey
-        )
+        let newSource = PDFMapSource(url: source.url, georef: source.georef, contentKey: source.contentKey)
         newSource.applyCalibration(
             transform: result.transform,
             fiduciaries: calibration.fiduciaries
         )
+        guard newSource.calibration != nil else { return }
         let bounds = newSource.bounds
         guard mapVM.selectMapSource(newSource) else { return }
         calibration.cancel()
@@ -1958,24 +1967,26 @@ struct ContentView: View {
                 let payload = try await ImportedMapWorker.preparePDF(url: url)
                 copiedURL = payload.destination
                 try Task.checkCancellation()
-                let parsedBounds = payload.geoBounds?.makeBounds()
-                let bounds = parsedBounds ?? GeoPDFReader.fallbackBounds(centeredOn: cameraAtImport)
-                let source = PDFMapSource(
-                    url: payload.destination,
-                    bounds: bounds,
-                    fromGeoPDF: parsedBounds != nil,
-                    preflightMediaBox: payload.mediaBox.rect,
-                    contentKey: payload.contentKey
-                )
-                // If PDF was calibrated in a previous session, restore
-                // fiduciaries + affine so it re-imports already aligned.
-                PDFSessionStore.applyCalibrationIfKnown(to: source)
-                guard mapVM.selectMapSource(source) else {
-                    // The retry transition owns this private copy now.
+                switch payload.outcome {
+                case .georeferenced(let georef):
+                    let source = PDFMapSource(url: payload.destination, georef: georef,
+                                              contentKey: payload.contentKey)
+                    // If PDF was calibrated in a previous session, restore
+                    // fiduciaries + fit so it re-imports already aligned.
+                    PDFSessionStore.applyCalibrationIfKnown(to: source)
+                    // a failed select leaves the retry transition owning the copy
                     copiedURL = nil
-                    return
+                    _ = mapVM.selectMapSource(source)
+                case .notGeoreferenced:
+                    copiedURL = nil
+                    placeForCalibration(payload, camera: cameraAtImport)
+                case .rejected(let reason):
+                    // loud: say why and let them calibrate by hand, nothing is
+                    // placed until they choose (no silent camera-centred box)
+                    copiedURL = nil
+                    pendingGeorefRejection = PendingGeorefRejection(
+                        payload: payload, reason: reason, camera: cameraAtImport)
                 }
-                copiedURL = nil
             } catch is CancellationError {
                 if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
             } catch let error as PDFMapImportError {
@@ -1985,6 +1996,24 @@ struct ContentView: View {
                 importMessage = Messages.displayCouldnTImportThisPdfMapMessage("").withArgument(0, error.displayMessage)
             }
         }
+    }
+
+    /// Plain PDF (or a refused GeoPDF the user chose to calibrate): put it on
+    /// a provisional, clearly uncalibrated placement at the camera and go
+    /// straight into calibration. A known calibration for these bytes wins.
+    private func placeForCalibration(_ payload: ImportedMapWorker.PDFPayload, camera: CLLocationCoordinate2D) {
+        let georef = PdfGeoreference.provisional(pageBox: payload.page.cropBox,
+                                                 rotation: payload.page.rotation,
+                                                 centredOn: camera)
+        guard let georef else {
+            try? FileManager.default.removeItem(at: payload.destination)
+            importMessage = PDFMapImportError.invalidPDF.displayMessage
+            return
+        }
+        let source = PDFMapSource(url: payload.destination, georef: georef, contentKey: payload.contentKey)
+        PDFSessionStore.applyCalibrationIfKnown(to: source)
+        guard mapVM.selectMapSource(source) else { return }
+        if source.isUncalibrated { startCalibration() }
     }
 
     /// Import local MBTiles raster pyramid as offline basemap. Copies the

@@ -7,25 +7,18 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Rect
-import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import java.io.File
 import kotlin.math.max
-import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-data class PdfPageInfo(
-    val pageWidth: Int,
-    val pageHeight: Int
-) {
-    val aspectRatio: Double get() = pageWidth.toDouble() / pageHeight.toDouble()
-}
-
+/** whole displayed page bitmap + the renderer's int page size it was stretched from */
 data class RenderedPdfPage(
     val bitmap: Bitmap,
-    val info: PdfPageInfo
+    val rendererWidth: Int,
+    val rendererHeight: Int,
 )
 
 internal data class PdfRenderSize(val width: Int, val height: Int) {
@@ -59,21 +52,26 @@ internal fun boundedPdfRenderSize(
     )
 }
 
+/**
+ * PdfRenderer wrapper. Everything above this layer speaks raw PDF user space (see
+ * [PdfPageGeometry]); the transforms here are built from the page geometry so the
+ * CropBox origin, /Rotate and pdfium's int page size can't shift the map.
+ */
 object PdfPageRenderer {
     private const val MAX_RENDER_DIMENSION_PX = 4096
     private const val MAX_RENDER_BYTES = 32L * 1024L * 1024L
     private const val MAX_REGION_DIMENSION_PX = 2048
     private const val MAX_REGION_BYTES = 16L * 1024L * 1024L
 
-    fun firstPageInfo(context: Context, uri: Uri): PdfPageInfo =
+    /** PdfRenderer's own (truncated int, rotated) size of page 0 */
+    fun firstPageRendererSize(context: Context, uri: Uri): Pair<Int, Int> =
         openDescriptor(context, uri).use { descriptor ->
             PdfRenderer(descriptor).use { renderer ->
-                renderer.openPage(0).use { page ->
-                    PdfPageInfo(page.width, page.height)
-                }
+                renderer.openPage(0).use { page -> page.width to page.height }
             }
         }
 
+    /** whole displayed page (visible box, /Rotate applied), stretched onto a bounded bitmap */
     fun renderFirstPage(context: Context, uri: Uri): RenderedPdfPage =
         openDescriptor(context, uri).use { descriptor ->
             PdfRenderer(descriptor).use { renderer ->
@@ -88,7 +86,7 @@ object PdfPageRenderer {
                     try {
                         bitmap.eraseColor(Color.WHITE)
                         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        RenderedPdfPage(bitmap, PdfPageInfo(page.width, page.height))
+                        RenderedPdfPage(bitmap, page.width, page.height)
                     } catch (failure: Throwable) {
                         bitmap.recycle()
                         throw failure
@@ -96,100 +94,51 @@ object PdfPageRenderer {
                 }
             }
         }
-
-    fun renderFirstPageRegion(
-        context: Context,
-        uri: Uri,
-        pageRect: RectF,
-        outputWidth: Int,
-        outputHeight: Int
-    ): Bitmap =
-        openDescriptor(context, uri).use { descriptor ->
-            PdfRenderer(descriptor).use { renderer ->
-                renderer.openPage(0).use { page ->
-                    require(pageRect.width() > 0f && pageRect.height() > 0f) {
-                        L10n.text("PDF render region must have positive size.")
-                    }
-                    requireBoundedOutput(outputWidth, outputHeight)
-                    val bitmap = Bitmap.createBitmap(
-                        outputWidth,
-                        outputHeight,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    try {
-                        bitmap.eraseColor(Color.WHITE)
-                        // Map the requested region onto the whole tile. Region can
-                        // extend past page edge for tiles that straddle the sheet
-                        // boundary. PdfRenderer only paints where page content exists
-                        // so off-page margins stay white and on-page content keeps
-                        // correct scale, no edge-tile stretching.
-                        val matrix = Matrix().apply {
-                            setRectToRect(
-                                pageRect,
-                                RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat()),
-                                Matrix.ScaleToFit.FILL
-                            )
-                        }
-                        page.render(
-                            bitmap,
-                            Rect(0, 0, bitmap.width, bitmap.height),
-                            matrix,
-                            PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
-                        )
-                        bitmap
-                    } catch (failure: Throwable) {
-                        bitmap.recycle()
-                        throw failure
-                    }
-                }
-            }
-        }
-
-    /** One horizontal render strip: [pageRect] (PDF-pixel space, y-down)
-     *  mapped onto [dest] band of the output tile. */
-    data class RenderStrip(val pageRect: RectF, val dest: RectF)
 
     /**
-     * Render a tile as a stack of horizontal [strips]. Each strip maps its own
-     * PDF region onto its dest band so a tile spanning several degrees of
-     * latitude stays Mercator-correct (a single region+FILL would warp it
-     * since tile rows are linear in Mercator-Y, not latitude). Small high-zoom
-     * tiles pass a single strip, same cost as [renderFirstPageRegion].
+     * One band of an output tile: raw user space -> output pixels for rows
+     * [destTop, destBottom). Affine in android Matrix order.
+     */
+    data class RenderStrip(val rawToDest: DoubleArray, val destTop: Int, val destBottom: Int) {
+        override fun equals(other: Any?): Boolean =
+            other is RenderStrip && rawToDest.contentEquals(other.rawToDest) &&
+                destTop == other.destTop && destBottom == other.destBottom
+
+        override fun hashCode(): Int = (rawToDest.contentHashCode() * 31 + destTop) * 31 + destBottom
+    }
+
+    /**
+     * Render a tile as a stack of horizontal [strips], each with its own raw ->
+     * pixel affine, so a tile spanning a lot of latitude stays Mercator-correct.
+     * Small high-zoom tiles pass a single strip.
      *
-     * Each strip re-opens page 0 (only one page open at a time; a second
-     * `render` on the same page throws on some devices) - cheap next to
-     * the one-time PDF parse, and multi-strip tiles only happen at low zooms.
+     * Each strip re-opens page 0 (only one page open at a time; a second render
+     * on the same page throws on some devices) - cheap next to the one-time PDF
+     * parse, and multi-strip tiles only happen at low zooms.
      */
     fun renderFirstPageStrips(
         context: Context,
         uri: Uri,
+        geometry: PdfPageGeometry,
         strips: List<RenderStrip>,
         outputWidth: Int,
-        outputHeight: Int
+        outputHeight: Int,
     ): Bitmap =
         openDescriptor(context, uri).use { descriptor ->
             PdfRenderer(descriptor).use { renderer ->
                 requireBoundedOutput(outputWidth, outputHeight)
-                val bitmap = Bitmap.createBitmap(
-                    outputWidth,
-                    outputHeight,
-                    Bitmap.Config.ARGB_8888
-                )
+                val bitmap = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
                 try {
                     bitmap.eraseColor(Color.WHITE)
                     for (s in strips) {
-                        if (s.pageRect.width() <= 0f || s.pageRect.height() <= 0f) continue
-                        if (s.dest.width() <= 0f || s.dest.height() <= 0f) continue
-                        val matrix = Matrix().apply {
-                            setRectToRect(s.pageRect, s.dest, Matrix.ScaleToFit.FILL)
-                        }
                         val clip = Rect(
-                            s.dest.left.roundToInt().coerceIn(0, outputWidth),
-                            s.dest.top.roundToInt().coerceIn(0, outputHeight),
-                            s.dest.right.roundToInt().coerceIn(0, outputWidth),
-                            s.dest.bottom.roundToInt().coerceIn(0, outputHeight)
+                            0,
+                            s.destTop.coerceIn(0, outputHeight),
+                            outputWidth,
+                            s.destBottom.coerceIn(0, outputHeight),
                         )
-                        if (clip.width() <= 0 || clip.height() <= 0) continue
+                        if (clip.height() <= 0) continue
+                        val matrix = rendererMatrix(geometry, s.rawToDest) ?: continue
                         renderer.openPage(0).use { page ->
                             page.render(bitmap, clip, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         }
@@ -201,6 +150,46 @@ object PdfPageRenderer {
                 }
             }
         }
+
+    /**
+     * Render the raw user space rect [x0,y0]-[x1,y1] (y up) onto a width x height
+     * bitmap, top of the rect at the top of the bitmap. Anything off the page stays
+     * white. Handy for calibration zoom-ins and for pinning the convention in tests.
+     */
+    fun renderRawRegion(
+        context: Context,
+        uri: Uri,
+        geometry: PdfPageGeometry,
+        x0: Double,
+        y0: Double,
+        x1: Double,
+        y1: Double,
+        outputWidth: Int,
+        outputHeight: Int,
+    ): Bitmap {
+        require(x1 > x0 && y1 > y0) { L10n.text("PDF render region must have positive size.") }
+        val sx = outputWidth / (x1 - x0)
+        val sy = outputHeight / (y1 - y0)
+        val rawToDest = doubleArrayOf(sx, 0.0, -x0 * sx, 0.0, -sy, y1 * sy)
+        return renderFirstPageStrips(
+            context, uri, geometry,
+            listOf(RenderStrip(rawToDest, 0, outputHeight)),
+            outputWidth, outputHeight,
+        )
+    }
+
+    private fun rendererMatrix(geometry: PdfPageGeometry, rawToDest: DoubleArray): Matrix? {
+        val t = geometry.rendererTransformFor(rawToDest) ?: return null
+        return Matrix().apply {
+            setValues(
+                floatArrayOf(
+                    t[0].toFloat(), t[1].toFloat(), t[2].toFloat(),
+                    t[3].toFloat(), t[4].toFloat(), t[5].toFloat(),
+                    0f, 0f, 1f,
+                )
+            )
+        }
+    }
 
     private fun requireBoundedOutput(outputWidth: Int, outputHeight: Int) {
         require(outputWidth in 1..MAX_REGION_DIMENSION_PX && outputHeight in 1..MAX_REGION_DIMENSION_PX) {
