@@ -132,7 +132,9 @@ enum PDFSessionStore {
             placementAffine: bounds.placementAffine,
             version: PersistedPDF.currentVersion,
             georef: source.georef,
-            pendingFiduciaries: pending
+            pendingFiduciaries: pending,
+            renderGuardToken: source.renderGuardToken,
+            bake: source.bake.flatMap { validBake($0) ? $0 : nil }
         )
         guard valid(dto) else { return false }
         // Remember this PDF's calibration in the per-file library too, so it can
@@ -162,6 +164,46 @@ enum PDFSessionStore {
             NSLog("[PDFSessionStore] failed to encode active PDF")
             return false
         }
+    }
+
+    enum BakeAttach: Equatable { case attached, sourceChanged, writeFailed }
+
+    /// S1: put a finished bake into the stored session, and only that field.
+    /// The stored session has to still be the sheet the bake was made from:
+    /// same file, same guard token, and its own georef has to give the same
+    /// bake key. Anything else (recalibrated, reimported, another map) is
+    /// sourceChanged. Never re-saves the object the bake started with, that
+    /// one can be stale
+    static func attachBake(_ record: PDFBakeRecord, fileName: String, renderGuardToken: String,
+                           bakeKey: String, tilePx: Int) -> BakeAttach {
+        lock.lock()
+        defer { lock.unlock() }
+        let defaults = defaultsProvider()
+        // R6: no session at all = it no longer matches the bake. one we cant
+        // unseal (locked) or decode is a write problem, not a different map
+        guard let stored = defaults.data(forKey: key) else { return .sourceChanged }
+        guard let data = unseal(stored, Self.labelActive),
+              var dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else { return .writeFailed }
+        guard dto.fileName == fileName, dto.renderGuardToken == renderGuardToken,
+              let georef = dto.georef,
+              PDFRenderContext.bakeKey(georef: georef, tilePx: tilePx) == bakeKey else { return .sourceChanged }
+        guard validBake(record) else { return .writeFailed }
+        dto.bake = record
+        guard valid(dto), let out = try? JSONEncoder().encode(dto), let sealed = seal(out, Self.labelActive),
+              commitSealedDefaults(sealed, key: key, defaults: defaults) else { return .writeFailed }
+        return .attached
+    }
+
+    /// content key of the saved active PDF, without resolving or hashing the
+    /// file. The bake uses it to make sure it isnt about to write its record
+    /// over a different map's session.
+    static func activeContentKey() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let stored = defaultsProvider().data(forKey: key),
+              let data = unseal(stored, Self.labelActive),
+              let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else { return nil }
+        return dto.contentKey
     }
 
     /// True when the saved session is a v1 (or filename-only) record, so the
@@ -208,22 +250,40 @@ enum PDFSessionStore {
                 return nil
             }
         }
+        // OD-F4: a content bound v2 session whose file is missing, truncated or
+        // swapped keeps the selection. The source comes back flagged, the
+        // renderer fails it as cannotOpen (G1, Try Again), and once the right
+        // bytes are back Try Again or the next launch just works. Nothing here
+        // ever draws bytes that dont match the stored key
+        let contentBound = dto.contentKey != nil && dto.georef != nil
         guard let resolved = resolveImportedMap(
             named: dto.fileName,
             expectedContentKey: dto.contentKey
         ) else {
+            if contentBound, let kept = unavailableSource(dto) {
+                NSLog("[PDFSessionStore] active PDF file missing or changed; keeping the session")
+                return kept
+            }
             NSLog("[PDFSessionStore] active PDF file vanished; clearing session")
             defaults.removeObject(forKey: key)
             return nil
         }
         let url = resolved.url
         guard let actualContentKey = Self.contentKey(for: url) else {
+            if contentBound, let kept = unavailableSource(dto) {
+                NSLog("[PDFSessionStore] active PDF could not be fingerprinted; keeping the session")
+                return kept
+            }
             NSLog("[PDFSessionStore] active PDF could not be fingerprinted; clearing stale session")
             defaults.removeObject(forKey: key)
             return nil
         }
         if let expectedContentKey = dto.contentKey {
             guard actualContentKey == expectedContentKey else {
+                if contentBound, let kept = unavailableSource(dto) {
+                    NSLog("[PDFSessionStore] active PDF content changed; keeping the session")
+                    return kept
+                }
                 NSLog("[PDFSessionStore] active PDF content changed; clearing stale session")
                 defaults.removeObject(forKey: key)
                 return nil
@@ -247,18 +307,9 @@ enum PDFSessionStore {
         }
 
         let source: PDFMapSource
+        let token = dto.renderGuardToken.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
         if let georef = dto.georef {
-            source = PDFMapSource(url: url, georef: georef, contentKey: actualContentKey)
-            if let cal = dto.calibration {
-                if georef.origin == .fiduciaries {
-                    source.adoptCalibration(georef: georef, fiduciaries: cal.fids, transform: cal.transform)
-                } else if !refit(source, fiduciaries: cal.fids) {
-                    source.keepPendingFiduciaries(cal.fids)
-                }
-            }
-            if source.calibration == nil, let pending = dto.pendingFiduciaries {
-                source.keepPendingFiduciaries(pending)
-            }
+            source = v2Source(dto, georef: georef, url: url, contentKey: actualContentKey, token: token)
         } else {
             // no georef: a real v1 entry, or a v2 one whose georef didn't decode
             // (its points are already raw, only v1 ones need the PDFKit undo)
@@ -266,11 +317,53 @@ enum PDFSessionStore {
                                pointsAreRaw: (dto.version ?? 1) >= 2 || dto.calibration?.pointsAreRaw == true)
         }
         // v1 and corroborated legacy copies get rewritten as content-bound v2
-        // so the next launch doesn't redo the migration (or trust a filename)
-        if dto.contentKey == nil || dto.georef == nil {
+        // so the next launch doesn't redo the migration (or trust a filename).
+        // Same for a session from before the crash guard: the token has to
+        // be stable across launches or the guard can never match it
+        if dto.contentKey == nil || dto.georef == nil || token == nil {
             _ = save(source)
         }
         return source
+    }
+
+    private static func v2Source(_ dto: PersistedPDF, georef: PdfGeoreference, url: URL, contentKey: String,
+                                 token: String?) -> PDFMapSource {
+        let source = PDFMapSource(url: url, georef: georef, contentKey: contentKey, renderGuardToken: token,
+                                  bake: dto.bake.flatMap { validBake($0) ? $0 : nil })
+        if let cal = dto.calibration {
+            if georef.origin == .fiduciaries {
+                source.adoptCalibration(georef: georef, fiduciaries: cal.fids, transform: cal.transform)
+            } else if !refit(source, fiduciaries: cal.fids) {
+                source.keepPendingFiduciaries(cal.fids)
+            }
+        }
+        if source.calibration == nil, let pending = dto.pendingFiduciaries {
+            source.keepPendingFiduciaries(pending)
+        }
+        return source
+    }
+
+    /// OD-F4: the session as stored, pointing at where its file should be,
+    /// flagged so the renderer re-checks the bytes before drawing anything.
+    /// Not saved, the stored record is left exactly as it was
+    private static func unavailableSource(_ dto: PersistedPDF) -> PDFMapSource? {
+        guard let georef = dto.georef, let key = dto.contentKey,
+              let directory = try? importedMapsDirectoryProvider() else { return nil }
+        let url = directory.appendingPathComponent(dto.fileName)
+        let token = dto.renderGuardToken.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
+        let source = v2Source(dto, georef: georef, url: url, contentKey: key, token: token)
+        source.storedFileUnavailable = true
+        return source
+    }
+
+    /// the runtime's re-check for a flagged source: true once the file at its
+    /// url is back and hashes to the stored key. off main, it hashes the file
+    static func storedFileMatches(_ source: PDFMapSource) -> Bool {
+        guard let key = source.contentKey, source.url.isFileURL,
+              let directory = try? importedMapsDirectoryProvider(),
+              source.url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
+              safeRegularFile(source.url) else { return false }
+        return contentKey(for: source.url) == key
     }
 
     /// v1 -> v2. See the type doc for the cases.
@@ -398,6 +491,35 @@ enum PDFSessionStore {
         return defaults.data(forKey: key) == snapshot.stored
     }
 
+    /// R3-2: what the sealed session says about its bake, for the bake only
+    /// sweep. unreadable = locked, tampered, wont decode or still legacy
+    /// plaintext, the sweep then doesnt touch anything. no session at all is a
+    /// read that names no bake
+    enum StoredBake: Equatable {
+        case read(fileName: String?)
+        case unreadable
+    }
+
+    /// F6: the selector's say on whether a PDF is active or retained (nil =
+    /// unreadable), see storedBakeForSweep. Tests stub it
+    static var retainedPDFProbe: () -> Bool? = { ActiveMapSelectionStore.mayHavePDF() }
+
+    static func storedBakeForSweep() -> StoredBake {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let stored = defaultsProvider().data(forKey: key) else {
+            // F6: no record but the selector has a PDF active or retained (or cant
+            // be read): the session should be there and isnt, thats not "names nothing"
+            return retainedPDFProbe() == false ? .read(fileName: nil) : .unreadable
+        }
+        // still legacy plaintext: not the sealed record, load() seals it first. skip
+        guard SealedEnvelope.isSealedFile(stored),
+              let data = unseal(stored, Self.labelActive),
+              let dto = try? JSONDecoder().decode(PersistedPDF.self, from: data) else { return .unreadable }
+        // a record load() would throw away names nothing either
+        return .read(fileName: dto.bake.flatMap { validBake($0) ? $0.fileName : nil })
+    }
+
     @discardableResult
     static func clear() -> Bool {
         lock.lock()
@@ -518,6 +640,17 @@ enum PDFSessionStore {
         }
     }
 
+    /// a bake record we wrote: plain file name in offline_tiles, sane numbers
+    static func validBake(_ b: PDFBakeRecord) -> Bool {
+        let name = b.fileName
+        return !name.isEmpty && name == URL(fileURLWithPath: name).lastPathComponent
+            && !name.contains("/") && !name.contains("\\") && name.lowercased().hasSuffix(".mbtiles")
+            && b.bakeKey.count == 64 && b.bakeKey.allSatisfy { $0.isHexDigit }
+            && (16...1024).contains(b.tilePx)
+            && b.minZoom >= 0 && b.minZoom <= b.maxZoom && b.maxZoom <= PDFTileConstants.maxZoomCap
+            && b.bytes >= 0
+    }
+
     private static func valid(_ dto: PersistedPDF) -> Bool {
         let numbers = [dto.swLat, dto.swLng, dto.neLat, dto.neLng,
                        dto.cropX, dto.cropY, dto.cropW, dto.cropH]
@@ -620,8 +753,53 @@ enum PDFSessionStore {
         return PersistedCalibrationLibrary()
     }
 
+    /// Remembered hashes so restore/reconcile dont SHA-256 a 40 MB sheet on
+    /// main every time (D5-08). Keyed by path + size + mtime + file id, any
+    /// change to the bytes changes at least one of those.
+    private struct ContentKeyStamp: Hashable {
+        let path: String
+        let size: Int
+        let modified: Date
+        let fileID: String
+    }
+    private static var contentKeyMemo: [ContentKeyStamp: String] = [:]
+    private static let contentKeyMemoLock = NSLock()
+    /// test hook: how many times we actually hashed a file
+    private(set) static var contentKeyHashCount = 0
+
+    private static func stamp(for url: URL) -> ContentKeyStamp? {
+        let std = url.standardizedFileURL
+        guard let v = try? std.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey]),
+              let size = v.fileSize, let modified = v.contentModificationDate else { return nil }
+        return ContentKeyStamp(path: std.path, size: size, modified: modified,
+                               fileID: v.fileResourceIdentifier.map { "\($0)" } ?? "")
+    }
+
     static func contentKey(for url: URL) -> String? {
-        guard url.isFileURL, let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        guard url.isFileURL else { return nil }
+        let before = stamp(for: url)
+        if let before {
+            contentKeyMemoLock.lock()
+            let hit = contentKeyMemo[before]
+            contentKeyMemoLock.unlock()
+            if let hit { return hit }
+        }
+        guard let key = hashContent(of: url) else { return nil }
+        // only trust it if nothing moved under us while hashing
+        if let before, stamp(for: url) == before {
+            contentKeyMemoLock.lock()
+            if contentKeyMemo.count > 64 { contentKeyMemo.removeAll() }
+            contentKeyMemo[before] = key
+            contentKeyMemoLock.unlock()
+        }
+        return key
+    }
+
+    private static func hashContent(of url: URL) -> String? {
+        contentKeyMemoLock.lock()
+        contentKeyHashCount += 1
+        contentKeyMemoLock.unlock()
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         var hasher = SHA256()
         do {
@@ -669,6 +847,108 @@ enum PDFSessionStore {
 /// ordinary temporary-directory tests.
 enum ManagedImportedMapFileLifecycle {
     private static let sqliteSidecarSuffixes = ["-wal", "-shm", "-journal"]
+    /// every bake we publish is tacmap-bake-<uuid>.mbtiles. the pre WP2 tiler
+    /// wrote tacmap-<uuid>.mbtiles, those never match
+    static let generatedBakePrefix = "tacmap-bake-"
+
+    static func isGeneratedBakeName(_ name: String) -> Bool {
+        name.hasPrefix(generatedBakePrefix) && name.count > generatedBakePrefix.count + ".mbtiles".count
+            && name.lowercased().hasSuffix(".mbtiles")
+    }
+
+    /// one lock for everything that lists or changes the managed map files
+    /// (reconcile, bake publish, Remove Offline Tiles). recursive, the store
+    /// calls back into itself under it
+    private static let managedFilesLock = NSRecursiveLock()
+
+    static func withManagedFilesLock<T>(_ body: () throws -> T) rethrows -> T {
+        managedFilesLock.lock()
+        defer { managedFilesLock.unlock() }
+        return try body()
+    }
+
+    /// R2-S2: Remove Offline Tiles deletes the bake file and its sqlite
+    /// sidecars straight away once the record is cleared, it doesnt wait for a
+    /// reconcile (which refuses to run while the stored PDF is missing). Only
+    /// a plain file directly inside directory with a name we wrote, never a
+    /// symlink or a directory. Gone already counts as done
+    @discardableResult
+    static func removeGeneratedBake(_ record: PDFBakeRecord, in directory: URL,
+                                    fileManager: FileManager = .default) -> Bool {
+        // R3-5: only ever a name we generated, whatever the record says
+        guard PDFSessionStore.validBake(record), isGeneratedBakeName(record.fileName),
+              directory.isFileURL else { return false }
+        return withManagedFilesLock {
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDir) else { return true }
+            guard isDir.boolValue,
+                  let dv = try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                  dv.isDirectory == true, dv.isSymbolicLink != true else { return false }
+            var complete = true
+            for suffix in [""] + sqliteSidecarSuffixes {
+                let file = directory.appendingPathComponent(record.fileName + suffix, isDirectory: false)
+                guard let v = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else {
+                    // not there (or unreadable, in which case lstat agrees its gone)
+                    if (try? fileManager.attributesOfItem(atPath: file.path)) != nil { complete = false }
+                    continue
+                }
+                guard v.isSymbolicLink != true, v.isRegularFile == true else { complete = false; continue }
+                do {
+                    try fileManager.removeItem(at: file)
+                } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                    // raced with a reconcile, same result
+                } catch {
+                    complete = false
+                }
+            }
+            return complete
+        }
+    }
+
+    /// R3-2: bake only sweep. A Remove (or the reconcile) that cleared the
+    /// record but couldnt delete the file left a plaintext MBTiles nothing
+    /// points at, and the full reconcile wont run while the stored PDF is
+    /// missing. This one only looks at regular files directly inside directory
+    /// named tacmap-bake-*.mbtiles (plus sqlite sidecars) and deletes the ones
+    /// that arent keeping. Callers only get here once the sealed session was
+    /// actually read, never on a locked or unreadable store. Bakes can always
+    /// be made again, so its fine with the PDF missing
+    @discardableResult
+    static func sweepUnreferencedBakes(in directory: URL, keeping fileName: String?,
+                                       fileManager: FileManager = .default) -> Bool {
+        guard directory.isFileURL else { return false }
+        return withManagedFilesLock {
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDir) else { return true }
+            guard isDir.boolValue,
+                  let dv = try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                  dv.isDirectory == true, dv.isSymbolicLink != true,
+                  let children = try? fileManager.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+                    options: [.skipsSubdirectoryDescendants, .skipsPackageDescendants]) else { return false }
+            var complete = true
+            for child in children {
+                let name = child.lastPathComponent
+                let base = sqliteSidecarSuffixes.first(where: { name.hasSuffix($0) })
+                    .map { String(name.dropLast($0.count)) } ?? name
+                guard isGeneratedBakeName(base), base != fileName else { continue }
+                guard let v = try? child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                      v.isSymbolicLink != true, v.isRegularFile == true else {
+                    // a dir or link wearing a bake name is never followed
+                    complete = false
+                    continue
+                }
+                do {
+                    try fileManager.removeItem(at: child)
+                } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                    // someone else got it first
+                } catch {
+                    complete = false
+                }
+            }
+            return complete
+        }
+    }
 
     @discardableResult
     static func reconcile(
@@ -813,6 +1093,10 @@ private struct PersistedPDF: Codable {
     /// v2: raw page space points that aren't a calibration (refit refused),
     /// only written when there's no calibration
     var pendingFiduciaries: [Fiduciary]? = nil
+    /// WP2: random UUID the crash guard tracks this map by
+    var renderGuardToken: String? = nil
+    /// WP2: offline tiles baked from this exact georef
+    var bake: PDFBakeRecord? = nil
 }
 
 extension PersistedPDF {
@@ -838,6 +1122,8 @@ extension PersistedPDF {
         georef = try? c.decodeIfPresent(PdfGeoreference.self, forKey: .georef)
         // junk here only loses the hint, never the session
         pendingFiduciaries = (try? c.decodeIfPresent([Fiduciary].self, forKey: .pendingFiduciaries)) ?? nil
+        renderGuardToken = (try? c.decodeIfPresent(String.self, forKey: .renderGuardToken)) ?? nil
+        bake = (try? c.decodeIfPresent(PDFBakeRecord.self, forKey: .bake)) ?? nil
     }
 }
 

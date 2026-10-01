@@ -80,6 +80,9 @@ class PdfSessionStore(private val context: Context) {
             provisional = source.provisional?.let(PdfGeoreferenceCodec::encode),
             geometry = source.geometry,
             georefIssue = PdfGeoreferenceCodec.encodeIssue(source.georefIssue),
+            renderGuardToken = source.render.renderGuardToken,
+            contentKey = source.render.contentKey,
+            bake = source.render.bake,
         )
         val persisted = runCatching { sealPref(LABEL_PDF, json.encodeToString(dto)) }
             .map { sealed ->
@@ -100,7 +103,8 @@ class PdfSessionStore(private val context: Context) {
         // not display name - two different sheets that share a filename
         // must NOT inherit each other's affine.
         (calibration as? Calibration.Fiduciaries)?.let { fiducial ->
-            PdfCalibrationIdentity.contentKey(sourceFile)?.let { key ->
+            // the import worker already hashed it, don't do a 38 MB sha256 on main again (D5-08)
+            (source.render.contentKey ?: PdfCalibrationIdentity.contentKey(sourceFile))?.let { key ->
                 saveToLibrary(key, fiducial.fids)
             } ?: Log.w(TAG, "Couldn't fingerprint PDF; calibration library entry was not saved")
         }
@@ -164,18 +168,31 @@ class PdfSessionStore(private val context: Context) {
                     name.endsWith(".pdf", ignoreCase = true)
             }
             ?.let { name -> runCatching { File(pdfRoot, name).canonicalFile }.getOrNull() }
-        if (file == null ||
-            !file.isFile ||
-            !file.path.startsWith(pdfRoot.path + File.separator)
-        ) {
-            Log.w(TAG, "Rejected missing or invalid persisted PDF path")
-            clear()
-            return null
-        }
         // a legacy plaintext blob was just re-sealed above, the migration guard has to
         // compare against what's in prefs now or it'd never be allowed to save
         val current = if (isLegacyPlaintext(stored)) prefs.getString(KEY_PDF, null) else stored
-        return restoreOrDefer(dto, file, current)
+        val restored = file?.let { restoreOrDefer(dto, it, current) }
+        return when (
+            storedFileVerdict(
+                validPath = file != null && file.path.startsWith(pdfRoot.path + File.separator),
+                fileThere = file?.isFile == true,
+                contentBound = dto.contentKey != null && restored is PdfSessionLoad.Ready,
+            )
+        ) {
+            StoredFileVerdict.RESTORE -> restored
+            StoredFileVerdict.KEEP_UNAVAILABLE -> {
+                // OD-F4: the record stays sealed as it is. The source points where the file
+                // should be, the render session checks the bytes against contentKey before
+                // drawing anything, so this is cannotOpen (G1) until the right file is back
+                Log.w(TAG, "Active PDF file is missing, keeping the session")
+                restored
+            }
+            StoredFileVerdict.REJECT -> {
+                Log.w(TAG, "Rejected missing or invalid persisted PDF path")
+                clear()
+                null
+            }
+        }
     }
 
     /**
@@ -226,9 +243,10 @@ class PdfSessionStore(private val context: Context) {
                 Calibration.Fiduciaries(fids, georef)
             else -> null
         }
+        val render = renderMeta(dto)
         if (calibration != null) {
             val kind = if (calibration is Calibration.Parsed) MapSourceKind.GEO_PDF else MapSourceKind.CALIBRATED_PDF
-            return PdfMapSource(uri, dto.displayName, kind, calibration, geometry)
+            return PdfMapSource(uri, dto.displayName, kind, calibration, geometry, render = render)
         }
         // an uncalibrated sheet comes back on its provisional placement, still labelled
         val issue = PdfGeoreferenceCodec.decodeIssue(dto.georefIssue)
@@ -246,6 +264,19 @@ class PdfSessionStore(private val context: Context) {
                 ?: PdfGeoreference.provisional(dto.coverage?.center ?: Wgs84Coordinate(0.0, 0.0), geometry.visibleCrop(), geometry.rotation),
             georefIssue = issue,
             pendingFiduciaries = fids,
+            render = render.copy(bake = null),
+        )
+    }
+
+    /** the stored render bits, a fresh token when an older blob has none */
+    private fun renderMeta(dto: PersistedPdfSource): PdfRenderMeta {
+        val token = dto.renderGuardToken?.takeIf { isUuid(it) }
+        return PdfRenderMeta(
+            renderGuardToken = token ?: java.util.UUID.randomUUID().toString(),
+            contentKey = dto.contentKey,
+            // a record we wouldn't have written never gets read, and the sweep treats it as naming nothing (F6)
+            bake = dto.bake?.takeIf(::isValidBakeRecord),
+            tokenMinted = token == null,
         )
     }
 
@@ -300,7 +331,8 @@ class PdfSessionStore(private val context: Context) {
         val source = when (outcome) {
             is PdfSessionMigration.Outcome.Georeferenced -> {
                 val kind = if (outcome.calibration is Calibration.Parsed) MapSourceKind.GEO_PDF else MapSourceKind.CALIBRATED_PDF
-                PdfMapSource(uri, dto.displayName, kind, outcome.calibration, geometry)
+                // a migrated georef isn't the one any old bake was keyed on
+                PdfMapSource(uri, dto.displayName, kind, outcome.calibration, geometry, render = renderMeta(dto).copy(bake = null))
             }
             is PdfSessionMigration.Outcome.Uncalibrated -> PdfMapSource.uncalibrated(
                 uri = uri,
@@ -310,9 +342,149 @@ class PdfSessionStore(private val context: Context) {
                 center = dto.coverage?.center ?: Wgs84Coordinate(0.0, 0.0),
                 issue = outcome.issue,
                 pendingFiduciaries = outcome.pendingFiduciaries,
+                render = renderMeta(dto),
             )
         }
         return source.takeIf { it.coverage != null }
+    }
+
+    /**
+     * Rewrite just the render bits of the stored session, and only when it's still the
+     * same PDF (same file + token). Background safe: a session the user switched away
+     * from meanwhile is never touched. [transform] gets the stored dto, null = no change.
+     */
+    @WorkerThread
+    private fun updateStored(
+        fileName: String,
+        expectToken: String?,
+        transform: (PersistedPdfSource) -> PersistedPdfSource?,
+    ): Boolean = updateStoredResult(fileName, expectToken, transform = transform) == StoredUpdate.Written
+
+    /** why an update did or didn't land, attachBake needs to tell these apart (R6) */
+    private sealed class StoredUpdate {
+        /** written, or nothing to change */
+        data object Written : StoredUpdate()
+        /** no session, a different PDF or token, or [transform] said no */
+        data object Mismatch : StoredUpdate()
+        /** sealing or the prefs commit failed */
+        data class WriteFailed(val cause: Throwable?) : StoredUpdate()
+    }
+
+    @WorkerThread
+    private fun updateStoredResult(
+        fileName: String,
+        expectToken: String?,
+        mismatchWhenUnchanged: Boolean = false,
+        transform: (PersistedPdfSource) -> PersistedPdfSource?,
+    ): StoredUpdate = synchronized(SESSION_LOCK) {
+        val stored = prefs.getString(KEY_PDF, null) ?: return StoredUpdate.Mismatch
+        if (isLegacyPlaintext(stored)) return StoredUpdate.Mismatch
+        val raw = openPref(LABEL_PDF, stored) ?: return StoredUpdate.Mismatch
+        val dto = runCatching { json.decodeFromString<PersistedPdfSource>(raw) }.getOrNull() ?: return StoredUpdate.Mismatch
+        if (dto.fileName != fileName) return StoredUpdate.Mismatch
+        if (expectToken != null && dto.renderGuardToken != null && dto.renderGuardToken != expectToken) return StoredUpdate.Mismatch
+        val next = transform(dto) ?: return if (mismatchWhenUnchanged) StoredUpdate.Mismatch else StoredUpdate.Written
+        val sealed = try {
+            sealPref(LABEL_PDF, json.encodeToString(next))
+        } catch (t: Throwable) {
+            return StoredUpdate.WriteFailed(t)
+        }
+        if (prefs.edit().putString(KEY_PDF, sealed).putBoolean(KEY_PDF_SEALED_ONLY, true).commit()) StoredUpdate.Written
+        else StoredUpdate.WriteFailed(null)
+    }
+
+    /** make a freshly minted guard token (and the content key) durable before anything arms on it */
+    @WorkerThread
+    fun persistRenderMeta(source: PdfMapSource): Boolean {
+        val name = source.uri.path?.let { File(it).name } ?: return false
+        return updateStored(name, expectToken = null) { dto ->
+            if (dto.renderGuardToken == source.render.renderGuardToken &&
+                (source.render.contentKey == null || dto.contentKey == source.render.contentKey)
+            ) null
+            else dto.copy(
+                renderGuardToken = dto.renderGuardToken?.takeIf { isUuid(it) } ?: source.render.renderGuardToken,
+                contentKey = source.render.contentKey ?: dto.contentKey,
+            )
+        }
+    }
+
+    /** what the publish step of a bake got (R6) */
+    sealed class AttachResult {
+        data object Attached : AttachResult()
+        /** the session isn't this PDF / token / georef any more */
+        data object SourceChanged : AttachResult()
+        /** sealing or committing the session failed. [cause] goes through the noSpace classifier */
+        data class WriteFailed(val cause: Throwable?) : AttachResult()
+    }
+
+    /** publish step of a bake: only lands on the session with this token + georef */
+    @WorkerThread
+    fun attachBake(fileName: String, token: String, georefJson: String, bake: PersistedPdfBake): AttachResult {
+        val r = updateStoredResult(fileName, expectToken = token, mismatchWhenUnchanged = true) { dto ->
+            val current = dto.georef?.let { canonicalGeorefJson(it) } ?: return@updateStoredResult null
+            if (dto.renderGuardToken != token || current != georefJson) return@updateStoredResult null
+            dto.copy(bake = bake)
+        }
+        return when (r) {
+            StoredUpdate.Mismatch -> AttachResult.SourceChanged
+            is StoredUpdate.WriteFailed -> AttachResult.WriteFailed(r.cause)
+            // commit said yes but it doesn't read back: that's a write problem, not a new source
+            StoredUpdate.Written -> if (loadStoredDto()?.bake == bake) AttachResult.Attached else AttachResult.WriteFailed(null)
+        }
+    }
+
+    @WorkerThread
+    fun clearBake(fileName: String, token: String): Boolean = takeBake(fileName, token) != null
+
+    /**
+     * Remove Offline Tiles (R2-S2): clear the record and say which file it named, "" when
+     * there wasn't one. null = not this session / token, or the write failed: keep the file
+     */
+    @WorkerThread
+    fun takeBake(fileName: String, token: String): String? {
+        var named: String? = null
+        val ok = updateStored(fileName, expectToken = token) { dto ->
+            if (dto.bake == null) null else {
+                named = dto.bake.fileName
+                dto.copy(bake = null)
+            }
+        }
+        return if (ok) named.orEmpty() else null
+    }
+
+    private fun loadStoredDto(): PersistedPdfSource? {
+        val stored = prefs.getString(KEY_PDF, null) ?: return null
+        if (isLegacyPlaintext(stored)) return null
+        val raw = openPref(LABEL_PDF, stored) ?: return null
+        return runCatching { json.decodeFromString<PersistedPdfSource>(raw) }.getOrNull()
+    }
+
+    /**
+     * For the bake sweep (R3-2): which bake the sealed record names, or Unreadable when it
+     * can't say for sure (locked or broken keystore, won't decode, legacy plaintext not
+     * migrated yet). No record at all is a clean read that names nothing, unless
+     * [selectorMayNamePdf] says a PDF should be there, then it's Unreadable too. A bake
+     * record that isn't one we'd have written ([isValidBakeRecord]) names nothing
+     */
+    @WorkerThread
+    internal fun readBakeRecord(selectorMayNamePdf: () -> Boolean): PdfBakeRecordRead {
+        val stored = prefs.getString(KEY_PDF, null)
+            ?: return if (selectorMayNamePdf()) PdfBakeRecordRead.Unreadable else PdfBakeRecordRead.Read(null)
+        if (isLegacyPlaintext(stored)) return PdfBakeRecordRead.Unreadable
+        val raw = openPref(LABEL_PDF, stored) ?: return PdfBakeRecordRead.Unreadable
+        val dto = runCatching { json.decodeFromString<PersistedPdfSource>(raw) }.getOrNull()
+            ?: return PdfBakeRecordRead.Unreadable
+        return PdfBakeRecordRead.Read(dto.bake?.takeIf(::isValidBakeRecord)?.fileName)
+    }
+
+    /** the stored guard token, cheap (no restore, no migration). launch decision input */
+    fun storedRenderToken(): String? = loadStoredDto()?.renderGuardToken?.takeIf { isUuid(it) }
+
+    /** the active session's baked tiles, for the reconcile keep set */
+    fun activeBakeFile(): File? {
+        val bake = loadStoredDto()?.bake?.takeIf(::isValidBakeRecord) ?: return null
+        val name = bake.fileName
+        return File(File(context.filesDir, "offline_tiles"), name).takeIf { it.isFile }
     }
 
     /** Capture the exact encrypted active-session preference for rollback. */
@@ -421,6 +593,9 @@ class PdfSessionStore(private val context: Context) {
         }.onFailure { Log.w(TAG, "Couldn't open sealed PDF preference") }.getOrNull()
     }
 
+    private fun isUuid(s: String): Boolean =
+        Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$").matches(s)
+
     /** Pre-encryption builds stored bare JSON. Base64 of the seal never starts with '{'. */
     private fun isLegacyPlaintext(stored: String): Boolean = stored.startsWith("{")
 
@@ -448,6 +623,69 @@ class PdfSessionStore(private val context: Context) {
  * without Android storage. A missing/unreadable file has no identity: callers
  * must never substitute a filename or display label.
  */
+/** what a restore does with the stored PDF path (OD-F4) */
+internal enum class StoredFileVerdict { RESTORE, KEEP_UNAVAILABLE, REJECT }
+
+/**
+ * OD-F4, pure: an invalid record (bad name, escapes pdf_maps, won't decode) is cleared.
+ * A content bound one (contentKey + a georef that restores without the file) whose file
+ * is missing is kept, the render side fails it as cannotOpen until the bytes are back.
+ * A legacy record with no content key can't prove which bytes it belongs to, so a
+ * missing file still clears it, same as iOS
+ */
+internal fun storedFileVerdict(validPath: Boolean, fileThere: Boolean, contentBound: Boolean): StoredFileVerdict = when {
+    !validPath -> StoredFileVerdict.REJECT
+    fileThere -> StoredFileVerdict.RESTORE
+    contentBound -> StoredFileVerdict.KEEP_UNAVAILABLE
+    else -> StoredFileVerdict.REJECT
+}
+
+/**
+ * The stored PDF's bytes against the session's contentKey (OD-F4). Memoised per
+ * path + size + mtime + file key so a 40 MB sheet gets hashed once a process, any
+ * change to the bytes changes one of those. Off main, it can hash the file
+ */
+internal object PdfStoredFile {
+    private data class Stamp(val path: String, val size: Long, val modified: Long, val fileKey: String)
+
+    private val memo = HashMap<Stamp, String>()
+    /** one lock per file path: a cold restore asks from 3 places at once, only the first hashes (AND-R2-3) */
+    private val inFlight = java.util.concurrent.ConcurrentHashMap<String, Any>()
+    /** what does the hashing, tests swap in a counting one */
+    @Volatile internal var hasher: (File) -> String? = PdfCalibrationIdentity::contentKey
+
+    private fun stamp(file: File): Stamp? = runCatching {
+        val a = java.nio.file.Files.readAttributes(
+            file.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java, java.nio.file.LinkOption.NOFOLLOW_LINKS,
+        )
+        if (!a.isRegularFile) return null
+        Stamp(file.canonicalPath, a.size(), a.lastModifiedTime().toMillis(), a.fileKey()?.toString().orEmpty())
+    }.getOrNull()
+
+    fun contentKey(file: File): String? {
+        val before = stamp(file) ?: return null
+        synchronized(memo) { memo[before] }?.let { return it }
+        // single flight per path. whoever waited here finds the memo filled when they get in
+        val lock = inFlight.computeIfAbsent(before.path) { Any() }
+        synchronized(lock) {
+            val now = stamp(file) ?: return null
+            synchronized(memo) { memo[now] }?.let { return it }
+            val key = hasher(file) ?: return null
+            // only trust it if nothing moved under us while hashing
+            if (stamp(file) == now) synchronized(memo) { memo[now] = key }
+            return key
+        }
+    }
+
+    /** true only when the file is there and hashes to [expected] */
+    fun matches(file: File, expected: String): Boolean = contentKey(file) == expected
+
+    /** the import worker just hashed it, no need to do 40 MB again on first paint */
+    fun remember(file: File, key: String) {
+        stamp(file)?.let { synchronized(memo) { memo[it] = key } }
+    }
+}
+
 internal object PdfCalibrationIdentity {
     private const val BUFFER_BYTES = 64 * 1024
     private val hex = "0123456789abcdef".toCharArray()
@@ -536,6 +774,33 @@ sealed class PdfSessionLoad {
     ) : PdfSessionLoad()
 }
 
+/**
+ * A bake record we'd have written: plain .mbtiles name, 64 hex bake key, sane tile size and
+ * zooms. Same rule as iOS PDFSessionStore.validBake
+ */
+internal fun isValidBakeRecord(b: PersistedPdfBake): Boolean {
+    val name = b.fileName
+    return name.isNotEmpty() && name == File(name).name && '/' !in name && '\\' !in name &&
+        name.lowercase().endsWith(".mbtiles") &&
+        b.bakeKey.length == 64 && b.bakeKey.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' } &&
+        b.tilePx in 16..1024 &&
+        b.minZoom >= 0 && b.minZoom <= b.maxZoom && b.maxZoom <= com.tacmap.map.render.pdf.PdfZoomPolicy.MAX_ZOOM_CAP &&
+        b.bytes >= 0
+}
+
+/** what [PdfSessionStore.readBakeRecord] found. only a Read lets the sweep delete anything */
+internal sealed class PdfBakeRecordRead {
+    data class Read(val fileName: String?) : PdfBakeRecordRead()
+    data object Unreadable : PdfBakeRecordRead()
+}
+
+private val canonicalJson = Json { ignoreUnknownKeys = true }
+
+internal fun canonicalGeorefJson(p: PersistedGeoreference): String = canonicalJson.encodeToString(p)
+
+/** canonical json of a georef: what the bake key, the tile cache key and attachBake compare */
+fun PdfGeoreference.canonicalJson(): String = canonicalGeorefJson(PdfGeoreferenceCodec.encode(this))
+
 /** fiduciaries from the content-keyed library, v1 ones still in renderer space */
 data class StoredFiduciaries(val fids: List<Fiduciary>, val rawPageSpace: Boolean)
 
@@ -558,6 +823,12 @@ internal data class PersistedPdfSource(
     val provisional: PersistedGeoreference? = null,
     val geometry: PdfPageGeometry? = null,
     val georefIssue: String? = null,
+    /** WP2: crash guard key, a random uuid. minted on first load when an older blob lacks it */
+    val renderGuardToken: String? = null,
+    /** sha256 of the pdf bytes, worked out once on the import worker */
+    val contentKey: String? = null,
+    /** Generate Offline Tiles output that goes with this exact georef */
+    val bake: PersistedPdfBake? = null,
 )
 
 @Serializable

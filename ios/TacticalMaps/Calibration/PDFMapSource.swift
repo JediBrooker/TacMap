@@ -10,9 +10,9 @@ import PDFKit
 /// that's only there so the user can calibrate. That last one has
 /// isUncalibrated set and the UI has to say so.
 ///
-/// The live overlay still pins one rasterised image with a single linear map,
-/// so bounds/placementTransform are a best-fit lon/lat view of the georef
-/// until the tile renderer rework lands.
+/// Drawn by PDFTileSource (warped web mercator tiles straight off the page
+/// through georef.toPage). bounds is just a lon/lat box for framing and the
+/// v1 fields of the saved session.
 final class PDFMapSource: MapSource {
     let id = UUID()
     let displayName: String
@@ -30,9 +30,22 @@ final class PDFMapSource: MapSource {
     /// lat/lon box + crop rect + best-fit lon/lat affine for the overlay/tiler
     private(set) var bounds: GeoPDFReader.Bounds?
 
-    /// Raw page user-space rect rasterised into cachedImage: the bounding
-    /// rect of the georef crop (box origin included, /Rotate ignored).
+    /// Bounding rect of the georef crop in raw page user space (box origin
+    /// included, /Rotate ignored). Calibration fits over it.
     private(set) var pdfRenderRect: CGRect = .zero
+
+    /// Random UUID the crash guard knows this map by. Lives in the sealed
+    /// session, never derived from the file or its name.
+    let renderGuardToken: String
+
+    /// Pre-rendered tiles for exactly this georef. A georef change drops it
+    /// and the reconcile reaps the file.
+    var bake: PDFBakeRecord?
+
+    /// OD-F4, memory only: at restore the stored file was missing or its bytes
+    /// didnt match contentKey. The renderer fails it as cannotOpen until a
+    /// re-check passes (Try Again, next launch), the selection is kept
+    var storedFileUnavailable = false
 
     /// Fiduciaries from the most recent calibration, if any.
     private(set) var fiduciaries: [Fiduciary]?
@@ -42,21 +55,21 @@ final class PDFMapSource: MapSource {
     /// nobody has to place them all again, same as Android pendingFiduciaries.
     private(set) var pendingFiduciaries: [Fiduciary] = []
 
-    private var cachedImage: UIImage?
-    private let cachedImageLock = NSLock()
-
     /// Plain PDF on a made-up placement. Never a basemap you can trust.
     var isUncalibrated: Bool { georef.origin == .provisional }
 
     /// PDF user space -> WGS84 for the single-affine overlay and tiler.
     var placementTransform: AffineTransform2D? { bounds?.placementAffine }
 
-    init(url: URL, georef: PdfGeoreference, contentKey: String? = nil) {
+    init(url: URL, georef: PdfGeoreference, contentKey: String? = nil,
+         renderGuardToken: String? = nil, bake: PDFBakeRecord? = nil) {
         self.url = url
         self.contentKey = contentKey
         self.displayName = url.deletingPathExtension().lastPathComponent
         self.georef = georef
         self.kind = Self.kind(for: georef.origin)
+        self.renderGuardToken = renderGuardToken.flatMap { UUID(uuidString: $0)?.uuidString } ?? UUID().uuidString
+        self.bake = bake
         publish(georef, displayBounds: nil)
     }
 
@@ -103,6 +116,8 @@ final class PDFMapSource: MapSource {
     }
 
     private func publish(_ g: PdfGeoreference, displayBounds: GeoPDFReader.Bounds?) {
+        // baked tiles belong to one exact georef
+        if g != georef { bake = nil }
         georef = g
         kind = Self.kind(for: g.origin)
         pdfRenderRect = g.cropBoundingRect
@@ -116,9 +131,6 @@ final class PDFMapSource: MapSource {
         } else {
             coverage = nil
         }
-        cachedImageLock.lock()
-        cachedImage = nil
-        cachedImageLock.unlock()
     }
 
     static func mediaBox(for url: URL) -> CGRect {
@@ -126,37 +138,6 @@ final class PDFMapSource: MapSource {
             return CGRect(x: 0, y: 0, width: 1, height: 1)
         }
         return GeoPDFReader.pageGeometry(page).cropBox
-    }
-
-    /// The rasterised page if already rendered, nil if not yet. Does NOT
-    /// trigger a blocking rasterisation. Lets the overlay sync render off
-    /// main thread and attach the page when its ready.
-    var cachedRenderedImage: UIImage? {
-        cachedImageLock.lock()
-        defer { cachedImageLock.unlock() }
-        return cachedImage
-    }
-
-    /// Cached rasterisation of the crop, in raw page user space.
-    /// Heavy (decodes page to bitmap) - call off main thread on first use;
-    /// subsequent calls just return the cache.
-    func renderedImage() -> UIImage? {
-        cachedImageLock.lock()
-        if let cached = cachedImage {
-            cachedImageLock.unlock()
-            return cached
-        }
-        let crop = georef.crop
-        let rect = pdfRenderRect
-        let pageIndex = georef.page
-        cachedImageLock.unlock()
-        guard let img = PDFRasteriser.render(url: url, pageIndex: pageIndex, cropRect: rect, cropPolygon: crop)
-        else { return nil }
-        cachedImageLock.lock()
-        defer { cachedImageLock.unlock() }
-        if let cached = cachedImage { return cached }
-        cachedImage = img
-        return img
     }
 
     /// Fiduciary calibration. The user's points (WGS84, already datum

@@ -72,13 +72,26 @@ final class PdfGeorefIntegrationTests: XCTestCase {
 
     // MARK: - raw user space in the raster paths (D1-04, D3-06)
 
-    func testRasteriserDrawsRawUserSpaceForOffsetBoxesAndRotatedPages() throws {
+    /// a georef whose crop is the whole box, just to drive the renderer
+    private func boxGeoref(_ box: CGRect, crop: [PdfPagePoint]? = nil) throws -> PdfGeoreference {
+        var g = try XCTUnwrap(PdfGeoreference.provisional(pageBox: box, rotation: 0,
+                                                          centredOn: CLLocationCoordinate2D(latitude: 37.77, longitude: -122.42)))
+        if let crop { g.crop = crop }
+        return g
+    }
+
+    func testRendererDrawsRawUserSpaceForOffsetBoxesAndRotatedPages() throws {
+        PDFTileRenderer.assertsOffMainThread = false
+        defer { PDFTileRenderer.assertsOffMainThread = true }
         // black 20 pt square at raw (200..220, 300..320) whatever the boxes/rotate say
         let square = "0 0 0 rg 200 300 20 20 re f"
         for extras in ["", "/Rotate 90", "/Rotate 270", "/Rotate 180 /CropBox [120 170 480 630]"] {
             let url = try writePDF(media: "100 150 500 650", extras: extras, content: square)
-            let crop = CGRect(x: 100, y: 150, width: 400, height: 500)
-            let image = try XCTUnwrap(PDFRasteriser.render(url: url, cropRect: crop)?.cgImage, extras)
+            let (_, page) = try PDFTileRenderer.openPage(url: url, pageIndex: 0)
+            let region = CGRect(x: 100, y: 150, width: 400, height: 500)
+            let fp = try PDFFootprint(georef: try boxGeoref(region), pageBox: PDFTileRenderer.pageBox(page))
+            let image = try XCTUnwrap(try PDFTileRenderer.renderRegion(page: page, region: region, width: 400, height: 500,
+                                                                         footprint: fp).makeImage(), extras)
             XCTAssertEqual(image.width, 400)
             let box = try XCTUnwrap(darkBox(image), extras)
             // pixel x = raw x - 100, pixel row (from top) = 650 - raw y
@@ -89,11 +102,16 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         }
     }
 
-    func testRasteriserLeavesEverythingOutsideTheCropPolygonClear() throws {
+    func testRendererLeavesEverythingOutsideTheCropPolygonClear() throws {
+        PDFTileRenderer.assertsOffMainThread = false
+        defer { PDFTileRenderer.assertsOffMainThread = true }
         let url = try writePDF(media: "0 0 400 400", content: "0 0 0 rg 0 0 400 400 re f")
+        let (_, page) = try PDFTileRenderer.openPage(url: url, pageIndex: 0)
         let triangle = [PdfPagePoint(x: 0, y: 0), PdfPagePoint(x: 400, y: 0), PdfPagePoint(x: 0, y: 400)]
-        let image = try XCTUnwrap(PDFRasteriser.render(url: url, cropRect: CGRect(x: 0, y: 0, width: 400, height: 400),
-                                                       cropPolygon: triangle)?.cgImage)
+        let region = CGRect(x: 0, y: 0, width: 400, height: 400)
+        let fp = try PDFFootprint(georef: try boxGeoref(region, crop: triangle), pageBox: PDFTileRenderer.pageBox(page))
+        let image = try XCTUnwrap(try PDFTileRenderer.renderRegion(page: page, region: region, width: 400, height: 400,
+                                                                     footprint: fp).makeImage())
         let box = try XCTUnwrap(darkBox(image))
         XCTAssertEqual(box.width, 400, accuracy: 1)
         // top-right corner pixel is outside the neatline triangle
@@ -106,26 +124,23 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         XCTAssertEqual(p[0 * 1600 + 395 * 4 + 3], 0, "outside the crop polygon must stay transparent")
     }
 
-    func testTilerDrawsThePageWhereTheGeorefPutsIt() throws {
+    func testTileWarpDrawsThePageWhereTheGeorefPutsIt() throws {
+        PDFTileRenderer.assertsOffMainThread = false
+        defer { PDFTileRenderer.assertsOffMainThread = true }
         let square = "0 0 0 rg 200 300 20 20 re f"
         for extras in ["", "/Rotate 90"] {
             let url = try writePDF(media: "100 150 500 650", extras: extras, content: square)
-            let doc = try XCTUnwrap(CGPDFDocument(url as CFURL))
-            let page = try XCTUnwrap(doc.page(at: 1))
-            let georef = try XCTUnwrap(PdfGeoreference.provisional(
-                pageBox: CGRect(x: 100, y: 150, width: 400, height: 500), rotation: 0,
-                centredOn: CLLocationCoordinate2D(latitude: 37.77, longitude: -122.42)))
-            // tile holding the square's centre at z16 (~2.4 m/px, square is ~350 m)
+            let (_, page) = try PDFTileRenderer.openPage(url: url, pageIndex: 0)
+            let georef = try boxGeoref(CGRect(x: 100, y: 150, width: 400, height: 500))
+            let fp = try PDFFootprint(georef: georef, pageBox: PDFTileRenderer.pageBox(page))
             let centre = try XCTUnwrap(georef.toWGS84(x: 210, y: 310))
             let z = 14
             let tx = Int(WebMercatorTiles.lonToTileX(centre.longitude, z))
             let ty = Int(WebMercatorTiles.latToTileY(centre.latitude, z))
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1
-            format.opaque = true
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256), format: format)
-            let png = try XCTUnwrap(PDFTiler.renderTile(renderer, page: page, georef: georef, z: z, x: tx, y: ty))
-            let tile = try XCTUnwrap(UIImage(data: png)?.cgImage)
+            let job = TileJob(z: z, x0: tx, y0: ty, cols: 1, rows: 1)
+            let plan = PDFTileWarp.plan(job: job, tilePx: 256, footprint: fp, georef: georef)
+            let out = try PDFTileRenderer.renderJob(job, tilePx: 256, plan: plan, footprint: fp, source: .vector(page))
+            guard case .image(let tile)? = out[TileIndex(z: z, x: tx, y: ty)] else { return XCTFail("\(extras) no tile") }
             let box = try XCTUnwrap(darkBox(tile), extras)
             // where the square's centre should be in tile pixels (y down)
             let fx = WebMercatorTiles.lonToTileX(centre.longitude, z) - Double(tx)
@@ -135,25 +150,15 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         }
     }
 
-    func testTilerPageToPixelSolvesThreeCorners() throws {
-        let m = try XCTUnwrap(PDFTiler.pageToPixel(CGPoint(x: 10, y: 20), CGPoint(x: 110, y: 30), CGPoint(x: 0, y: -80),
-                                                   CGPoint(x: 0, y: 0), CGPoint(x: 256, y: 0), CGPoint(x: 0, y: 256)))
-        for (p, q) in [(CGPoint(x: 10, y: 20), CGPoint(x: 0, y: 0)), (CGPoint(x: 110, y: 30), CGPoint(x: 256, y: 0)),
-                       (CGPoint(x: 0, y: -80), CGPoint(x: 0, y: 256))] {
-            let r = p.applying(m)
-            XCTAssertEqual(r.x, q.x, accuracy: 1e-9)
-            XCTAssertEqual(r.y, q.y, accuracy: 1e-9)
-        }
-        XCTAssertNil(PDFTiler.pageToPixel(.zero, CGPoint(x: 1, y: 1), CGPoint(x: 2, y: 2), .zero, .zero, .zero))
-    }
-
-    func testTilerRefusesToBakeAnUncalibratedPlacement() throws {
+    func testBakeRefusesAnUncalibratedPlacement() throws {
         let url = try writePDF(media: "0 0 400 400")
         let georef = try XCTUnwrap(PdfGeoreference.provisional(pageBox: CGRect(x: 0, y: 0, width: 400, height: 400),
                                                                rotation: 0, centredOn: CLLocationCoordinate2D(latitude: -35, longitude: 149)))
         let source = PDFMapSource(url: url, georef: georef)
         XCTAssertTrue(source.isUncalibrated)
-        XCTAssertNil(PDFTiler.generate(source: source) { _ in })
+        let bake = PDFBakeController()
+        bake.prepare(pdf: source, runtime: nil)
+        XCTAssertEqual(bake.state, .failed(.notCalibrated))
     }
 
     // MARK: - import outcomes (no silent camera box)
@@ -169,12 +174,13 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         scratch.append(plain.destination)
         XCTAssertEqual(plain.outcome, .notGeoreferenced)
 
-        // the real USGS LPTS pattern with one value pushed to 1.6: declared, refused, explained
+        // the real USGS LPTS pattern with one value pushed to 1.6: declared, refused, explained.
+        // something on the page, a blank page now fails the import probe first
         let refused = try writePDF(media: "0 0 1728 2088", extras: """
         /VP [<< /Type /Viewport /BBox [0 2088 1727.95998 56.69373] /Measure << /Type /Measure /Subtype /GEO
         /GPTS [37.73318 -122.52121 37.88898 -122.52021 37.88818 -122.35264 37.73238 -122.354]
         /LPTS [-0.00708 1 0 -0.00514 1.6 0 1 1.00514] >> >>]
-        """)
+        """, content: "0 0 0 rg 100 100 400 400 re f")
         let rejected = try await ImportedMapWorker.preparePDF(url: refused)
         scratch.append(rejected.destination)
         XCTAssertEqual(rejected.outcome, .rejected(.lptsOutOfRange))
@@ -194,7 +200,7 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         XCTAssertEqual(corner.longitude, -122.47797518349, accuracy: 1e-7)
         let source = PDFMapSource(url: try testdata("geopdf/tacmap_grid_rot90_iso.pdf"), georef: g)
         XCTAssertEqual(source.pdfRenderRect, g.cropBoundingRect)
-        XCTAssertNotNil(source.renderedImage())
+        XCTAssertFalse(try renderPDFBaseRaster(source).blank)
     }
 
     func testLgiDescriptionMatchesAsNameOrString() throws {

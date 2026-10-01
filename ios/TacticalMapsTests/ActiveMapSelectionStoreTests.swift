@@ -818,7 +818,12 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         let replacement = makeUncalibratedPDFSource(at: url)
         PDFSessionStore.applyCalibrationIfKnown(to: replacement)
         XCTAssertNil(replacement.calibration)
-        XCTAssertNil(PDFSessionStore.load(), "cold restore must reject changed bytes too")
+        // OD-F4 replaced "cold restore returns nil": the selection is kept, but
+        // flagged, and the renderer refuses the changed bytes (cannotOpen). the
+        // old calibration never gets drawn over sheet b
+        let restored = try XCTUnwrap(PDFSessionStore.load())
+        XCTAssertTrue(restored.storedFileUnavailable, "cold restore must reject changed bytes too")
+        XCTAssertFalse(PDFSessionStore.storedFileMatches(restored))
     }
 
     func testPDFCalibrationColdRestoreAndReimportRemainStable() throws {
@@ -1118,6 +1123,79 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         }
     }
 
+    /// OD-F4: a truncated, swapped or missing stored PDF keeps the selection.
+    /// The restore hands back the session flagged, the renderer fails it as
+    /// cannotOpen (G1, Try Again), never the "locked or unreadable" store
+    /// error, and once the exact bytes are back Try Again (or a relaunch) draws it
+    func testUnreadableStoredPDFKeepsTheSelectionAndRecovers() throws {
+        let fixture = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
+        let original = try Data(contentsOf: fixture)
+        let directory = try PDFSessionStore.importedMapsDirectoryProvider()
+        let file = directory.appendingPathComponent("import-\(UUID().uuidString).pdf")
+        try original.write(to: file)
+        pdfFixtureURLs.append(file)
+        let g = try XCTUnwrap(GeoPDFReader.read(url: file)?.georef)
+        let source = PDFMapSource(url: file, georef: g, contentKey: PDFSessionStore.contentKey(for: file))
+        XCTAssertTrue(PDFSessionStore.save(source))
+        XCTAssertTrue(ActiveMapSelectionStore.save(source))
+
+        for damage in ["truncated", "swapped", "missing"] {
+            switch damage {
+            case "truncated": try original.prefix(original.count / 3).write(to: file)
+            case "swapped":
+                try Data(contentsOf: try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_render_blank.pdf")))
+                    .write(to: file)
+            default: try FileManager.default.removeItem(at: file)
+            }
+            guard case .restored(let restored) = ActiveMapSelectionStore.restore(),
+                  let pdf = restored as? PDFMapSource else {
+                return XCTFail("\(damage): the PDF selection is kept, not unavailable")
+            }
+            XCTAssertTrue(pdf.storedFileUnavailable, damage)
+            XCTAssertEqual(pdf.renderGuardToken, source.renderGuardToken, damage)
+            XCTAssertEqual(pdf.contentKey, source.contentKey, damage)
+            XCTAssertEqual(pdf.georef, source.georef, damage)
+            XCTAssertEqual(pdf.url.lastPathComponent, file.lastPathComponent, damage)
+            // the stored session wasnt cleared or rewritten
+            XCTAssertEqual(PDFSessionStore.activeContentKey(), source.contentKey, damage)
+
+            // the view model publishes it, no "Map change not saved"
+            let snapshot = PDFSessionStore.snapshotActiveSession()
+            let deps = MapSelectionDependencies(
+                persistSelection: { _, _ in true }, restoreActive: { ActiveMapSelectionStore.restore() },
+                restoreRetained: { .noRetainedMap }, removeRetained: { _ in }, snapshotPDFSession: { snapshot },
+                persistPDFSession: { _ in true }, restorePDFSession: { _ in true })
+            let vm = MapViewModel(mapSelectionDependencies: deps, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+            vm.pdfRenderGuard = PDFRenderGuard(url: root.appendingPathComponent("guard-\(damage).json"))
+            let shown = try XCTUnwrap(vm.restoreActiveMapSelection() as? PDFMapSource)
+            XCTAssertTrue(vm.mapSource === shown, "\(damage): the PDF stays the active map")
+            XCTAssertNil(vm.mapSelectionPersistenceIssue, "\(damage): not a store failure")
+
+            // G1 failed state, then the file comes back and Try Again draws it
+            let runtime = PDFMapRuntime()
+            _ = runtime.tileSource(for: shown, screenScale: 2)
+            waitUntil("\(damage) cannotOpen") { runtime.status.failure != nil }
+            XCTAssertEqual(runtime.status, .failed(.cannotOpen), damage)
+            runtime.retry()
+            waitUntil("\(damage) still cannotOpen") { runtime.status.failure != nil }
+            XCTAssertEqual(runtime.status, .failed(.cannotOpen), "\(damage): retry before the file is back")
+            try original.write(to: file)
+            runtime.retry()
+            waitUntil("\(damage) ready") { runtime.status == .ready }
+            XCTAssertFalse(shown.storedFileUnavailable, damage)
+            // and a relaunch is a plain restore again
+            let again = try XCTUnwrap(PDFSessionStore.load())
+            XCTAssertFalse(again.storedFileUnavailable, damage)
+            runtime.reset()
+        }
+    }
+
+    private func waitUntil(_ what: String, timeout: Double = 20, _ cond: () -> Bool) {
+        let end = Date().addingTimeInterval(timeout)
+        while !cond(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        XCTAssertTrue(cond(), "timed out waiting for \(what)")
+    }
+
     private func makePersistablePDFSource() throws -> PDFMapSource {
         let directory = try PDFSessionStore.importedMapsDirectoryProvider()
         let file = directory.appendingPathComponent(
@@ -1161,5 +1239,406 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
             ]
         )
         return source
+    }
+}
+
+// MARK: - WP2: a PDF's baked tiles ride along with it
+
+extension ActiveMapSelectionStoreTests {
+    func testReconcileKeepsTheRetainedPDFsBakeAndDeleteReapsBoth() throws {
+        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        let pdf = try makePersistablePDFSource()
+        let generated = root.appendingPathComponent("offline_tiles", isDirectory: true)
+        try FileManager.default.createDirectory(at: generated, withIntermediateDirectories: true)
+        let bakeFile = generated.appendingPathComponent("tacmap-bake-keep.mbtiles")
+        let orphan = generated.appendingPathComponent("tacmap-bake-orphan.mbtiles")
+        try makeMinimalMBTiles(at: bakeFile)
+        try makeMinimalMBTiles(at: orphan)
+        pdf.bake = PDFBakeRecord(fileName: bakeFile.lastPathComponent, bakeKey: String(repeating: "a", count: 64),
+                                 minZoom: 0, maxZoom: 14, tilePx: 512, bytes: 1024)
+
+        XCTAssertTrue(viewModel.selectMapSource(pdf))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.url.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bakeFile.path), "the PDF's bake is kept")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path), "unreferenced bakes are reaped")
+
+        // still kept with the PDF parked behind an online map
+        XCTAssertTrue(viewModel.selectOnlineBasemap(.osmTopo))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bakeFile.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.url.path))
+
+        // the record survives the sealed session round trip
+        let restored = try XCTUnwrap(PDFSessionStore.load())
+        XCTAssertEqual(restored.bake, pdf.bake)
+        XCTAssertEqual(restored.renderGuardToken, pdf.renderGuardToken)
+
+        XCTAssertTrue(viewModel.deleteRetainedImportedMap(restored))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: pdf.url.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bakeFile.path), "deleting the map deletes its bake")
+    }
+
+    func testDroppingTheBakeRecordLetsReconcileReapTheFile() throws {
+        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        let pdf = try makePersistablePDFSource()
+        let generated = root.appendingPathComponent("offline_tiles", isDirectory: true)
+        try FileManager.default.createDirectory(at: generated, withIntermediateDirectories: true)
+        let bakeFile = generated.appendingPathComponent("tacmap-bake-drop.mbtiles")
+        try makeMinimalMBTiles(at: bakeFile)
+        pdf.bake = PDFBakeRecord(fileName: bakeFile.lastPathComponent, bakeKey: String(repeating: "b", count: 64),
+                                 minZoom: 0, maxZoom: 14, tilePx: 512, bytes: 1024)
+        XCTAssertTrue(viewModel.selectMapSource(pdf))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bakeFile.path))
+        let controller = PDFBakeController()
+        // Remove (and its R3-2 sweep) works on an empty scratch dir, so only the
+        // reconcile can be what reaps the file here
+        let scratch = root.appendingPathComponent("remove-scratch", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        controller.finalDirectory = scratch
+        XCTAssertTrue(controller.removeBake(from: pdf))
+        XCTAssertNil(pdf.bake)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bakeFile.path), "Remove didnt touch it")
+        XCTAssertTrue(ActiveMapSelectionStore.reconcileManagedImportedMapFiles())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bakeFile.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.url.path))
+    }
+
+    func testBakeRecordValidation() {
+        let ok = PDFBakeRecord(fileName: "tacmap-bake-1.mbtiles", bakeKey: String(repeating: "f", count: 64),
+                               minZoom: 0, maxZoom: 16, tilePx: 768, bytes: 1)
+        XCTAssertTrue(PDFSessionStore.validBake(ok))
+        var bad = ok; bad.fileName = "../escape.mbtiles"
+        XCTAssertFalse(PDFSessionStore.validBake(bad))
+        bad = ok; bad.fileName = "x.pdf"
+        XCTAssertFalse(PDFSessionStore.validBake(bad))
+        bad = ok; bad.bakeKey = "zz"
+        XCTAssertFalse(PDFSessionStore.validBake(bad))
+        bad = ok; bad.maxZoom = 40
+        XCTAssertFalse(PDFSessionStore.validBake(bad))
+    }
+}
+
+// MARK: - WP2 round 4: Delete Map leaves nothing, failures are loud, sweep, Try Again
+
+/// reads fall through to a stale value once ours is gone, like the sims device
+/// wide prefs copy of com.tacticalmaps.app did (OD3-R3-1)
+private final class ShadowedDefaults: UserDefaults {
+    var shadow: [String: Data] = [:]
+    override func data(forKey defaultName: String) -> Data? {
+        super.data(forKey: defaultName) ?? shadow[defaultName]
+    }
+}
+
+extension ActiveMapSelectionStoreTests {
+    private var generatedDir: URL { root.appendingPathComponent("offline_tiles", isDirectory: true) }
+
+    private func importedGeoPDF() throws -> PDFMapSource {
+        let fixture = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
+        let file = try PDFSessionStore.importedMapsDirectoryProvider()
+            .appendingPathComponent("usgs-\(UUID().uuidString).pdf")
+        try FileManager.default.copyItem(at: fixture, to: file)
+        pdfFixtureURLs.append(file)
+        let g = try XCTUnwrap(GeoPDFReader.read(url: file)?.georef)
+        return PDFMapSource(url: file, georef: g, contentKey: PDFSessionStore.contentKey(for: file))
+    }
+
+    private func files(in dir: URL) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).sorted()
+    }
+
+    private func assertNothingLeft(for pdf: PDFMapSource, _ what: String,
+                                   file: StaticString = #filePath, line: UInt = #line) throws {
+        XCTAssertEqual(files(in: try PDFSessionStore.importedMapsDirectoryProvider()), [], "\(what): ImportedMaps",
+                       file: file, line: line)
+        XCTAssertEqual(files(in: generatedDir), [], "\(what): offline_tiles", file: file, line: line)
+        XCTAssertNil(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), "\(what): session record",
+                     file: file, line: line)
+        XCTAssertNil(PDFSessionStore.load(), "\(what): session", file: file, line: line)
+        guard case .noRetainedMap = ActiveMapSelectionStore.restoreRetained() else {
+            return XCTFail("\(what): a saved entry is still there", file: file, line: line)
+        }
+    }
+
+    /// OD3-R3-1: Delete PDF Map on the visible PDF (its bake attached) leaves
+    /// no PDF, no tiles, no session record and no saved entry
+    func testDeleteMapLeavesNothingBehindForThatMap() throws {
+        let pdf = try importedGeoPDF()
+        try FileManager.default.createDirectory(at: generatedDir, withIntermediateDirectories: true)
+        let bake = "tacmap-bake-\(UUID().uuidString).mbtiles"
+        try makeMinimalMBTiles(at: generatedDir.appendingPathComponent(bake))
+        try Data([1]).write(to: generatedDir.appendingPathComponent(bake + "-wal"))
+        pdf.bake = PDFBakeRecord(fileName: bake, bakeKey: String(repeating: "d", count: 64),
+                                 minZoom: 0, maxZoom: 14, tilePx: 512, bytes: 1024)
+        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        XCTAssertTrue(viewModel.selectMapSource(pdf))
+        XCTAssertTrue(viewModel.mapSource === pdf)
+        XCTAssertNotNil(PDFSessionStore.load()?.bake)
+
+        XCTAssertTrue(viewModel.deleteRetainedImportedMap(pdf))
+        XCTAssertTrue(viewModel.mapSource is OnlineRasterBasemapSource)
+        XCTAssertNil(viewModel.mapSelectionPersistenceIssue)
+        try assertNothingLeft(for: pdf, "no bake running")
+        // and a relaunch has nothing to bring back
+        let relaunched = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmStreet))
+        XCTAssertFalse(relaunched.restoreActiveMapSelection() is PDFMapSource)
+        try assertNothingLeft(for: pdf, "after relaunch")
+    }
+
+    /// same with a real bake mid run: it is stopped, its partial goes, nothing is published
+    func testDeleteMapDuringABakeLeavesNothingBehind() throws {
+        let pdf = try importedGeoPDF()
+        let bake = PDFBakeController.shared
+        let oldFinal = bake.finalDirectory, oldGuard = bake.guardStore
+        bake.finalDirectory = generatedDir
+        bake.guardStore = PDFRenderGuard(url: root.appendingPathComponent("bake-guard.json"))
+        defer {
+            bake.cancel()
+            bake.finalDirectory = oldFinal
+            bake.guardStore = oldGuard
+        }
+        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        XCTAssertTrue(viewModel.selectMapSource(pdf))
+        bake.prepare(pdf: pdf, runtime: nil)
+        waitUntil("estimate", timeout: 60) { bake.state != .estimating }
+        guard case .confirming(let p) = bake.state, let top = p.options.last else {
+            return XCTFail("estimate ended in \(bake.state)")
+        }
+        let partialsBefore = Set(files(in: PDFBakeWorker.workDirectory))
+        bake.start(maxZoom: top.maxZoom)
+        XCTAssertTrue(bake.isRunning)
+        // let it get going so theres a partial on disk
+        waitUntil("partial", timeout: 30) { Set(self.files(in: PDFBakeWorker.workDirectory)) != partialsBefore }
+
+        XCTAssertTrue(viewModel.deleteRetainedImportedMap(pdf))
+        XCTAssertFalse(bake.isRunning)
+        XCTAssertNil(viewModel.mapSelectionPersistenceIssue)
+        // the bake thread notices the cancel and drops its partial
+        waitUntil("partial gone", timeout: 30) {
+            Set(self.files(in: PDFBakeWorker.workDirectory)).isSubset(of: partialsBefore)
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        try assertNothingLeft(for: pdf, "bake running")
+        XCTAssertNil(pdf.bake)
+    }
+
+    /// OD3-R3-1 root cause: clear() dropped our session and still read a stale
+    /// one back. The delete has to fail loudly (issue kept for Retry) and roll
+    /// BOTH stores back, so the library points at the real file and not the
+    /// stale session. Once the stale copy is gone Retry finishes the job
+    func testFailedDeleteRollsTheSessionBackAndRetryFinishesIt() throws {
+        let suite = "ActiveMapSelectionStoreTests.shadow.\(UUID().uuidString)"
+        let shadowed = ShadowedDefaults(suiteName: suite)!
+        defer { shadowed.removePersistentDomain(forName: suite) }
+        PDFSessionStore.defaultsProvider = { shadowed }
+        // the stale copy: a sealed session for some other file thats long gone
+        let stale = try importedGeoPDF()
+        XCTAssertTrue(PDFSessionStore.save(stale))
+        let staleBytes = try XCTUnwrap(shadowed.data(forKey: "active_pdf_v1"))
+        try FileManager.default.removeItem(at: stale.url)
+        XCTAssertTrue(PDFSessionStore.clear())
+        shadowed.shadow["active_pdf_v1"] = staleBytes
+
+        let pdf = try importedGeoPDF()
+        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        XCTAssertTrue(viewModel.selectMapSource(pdf))
+        XCTAssertTrue(viewModel.selectOnlineBasemap(.osmTopo))
+
+        XCTAssertFalse(viewModel.deleteRetainedImportedMap(pdf))
+        XCTAssertNotNil(viewModel.mapSelectionPersistenceIssue, "a failed delete is reported")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.url.path), "nothing deleted on the way out")
+        let kept = try XCTUnwrap(PDFSessionStore.load())
+        XCTAssertEqual(kept.url.lastPathComponent, pdf.url.lastPathComponent, "the real session is back")
+        XCTAssertFalse(kept.storedFileUnavailable)
+        guard case .restored(let entry as PDFMapSource) = ActiveMapSelectionStore.restoreRetained() else {
+            return XCTFail("the saved entry is kept for Retry")
+        }
+        XCTAssertEqual(entry.url.lastPathComponent, pdf.url.lastPathComponent)
+
+        // still stale: Retry fails the same way, again loudly
+        XCTAssertFalse(viewModel.retryMapSelectionPersistence())
+        XCTAssertNotNil(viewModel.mapSelectionPersistenceIssue)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.url.path))
+
+        shadowed.shadow = [:]
+        XCTAssertTrue(viewModel.retryMapSelectionPersistence())
+        XCTAssertNil(viewModel.mapSelectionPersistenceIssue)
+        try assertNothingLeft(for: pdf, "after retry")
+    }
+
+    /// R3-2: the launch restore sweeps bakes nobody names, even with the PDF
+    /// missing (the full reconcile refuses then). Locked session: no sweep
+    func testLaunchSweepsUnreferencedBakesOnlyWhenTheSessionReads() throws {
+        let pdf = try importedGeoPDF()
+        try FileManager.default.createDirectory(at: generatedDir, withIntermediateDirectories: true)
+        let named = "tacmap-bake-\(UUID().uuidString).mbtiles"
+        let orphan = "tacmap-bake-\(UUID().uuidString).mbtiles"
+        for n in [named, orphan, orphan + "-shm"] { try Data([1]).write(to: generatedDir.appendingPathComponent(n)) }
+        pdf.bake = PDFBakeRecord(fileName: named, bakeKey: String(repeating: "e", count: 64),
+                                 minZoom: 0, maxZoom: 14, tilePx: 512, bytes: 1)
+        XCTAssertTrue(PDFSessionStore.save(pdf))
+        XCTAssertTrue(ActiveMapSelectionStore.save(pdf))
+        try FileManager.default.removeItem(at: pdf.url)
+
+        // locked: the restore cant read the session, nothing is touched
+        SafeStore.keyProvider = { throw CocoaError(.fileReadNoPermission) }
+        let locked = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        _ = locked.restoreActiveMapSelection()
+        XCTAssertEqual(files(in: generatedDir), [named, orphan, orphan + "-shm"].sorted())
+
+        SafeStore.keyProvider = { [testKey] in testKey }
+        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        let restored = try XCTUnwrap(viewModel.restoreActiveMapSelection() as? PDFMapSource)
+        XCTAssertTrue(restored.storedFileUnavailable)
+        XCTAssertEqual(files(in: generatedDir), [named], "only the orphan and its sidecar go")
+    }
+
+    /// F6 (Android parity): no session record while the selector has a PDF
+    /// active or retained, or cant be read, is not "names nothing", the sweep
+    /// stays off. Only an online-only selector with no record lets it run
+    func testSweepTreatsAMissingSessionForAPossiblePDFAsUnreadable() throws {
+        let pdf = try importedGeoPDF()
+        try FileManager.default.createDirectory(at: generatedDir, withIntermediateDirectories: true)
+        let orphan = generatedDir.appendingPathComponent("tacmap-bake-\(UUID().uuidString).mbtiles")
+        try Data([1]).write(to: orphan)
+        let noRecord = { PDFSessionStore.defaultsProvider().removeObject(forKey: "active_pdf_v1") }
+        func assertSkipped(_ what: String, line: UInt = #line) {
+            noRecord()
+            XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .unreadable, what, line: line)
+            XCTAssertFalse(PDFBakeController.sweepUnreferencedBakes(in: generatedDir), what, line: line)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: orphan.path), what, line: line)
+        }
+
+        // active PDF (and retained)
+        XCTAssertTrue(PDFSessionStore.save(pdf))
+        XCTAssertTrue(ActiveMapSelectionStore.save(pdf))
+        XCTAssertEqual(ActiveMapSelectionStore.mayHavePDF(), true)
+        assertSkipped("active PDF")
+
+        // retained only, an online map in front
+        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
+        XCTAssertEqual(ActiveMapSelectionStore.mayHavePDF(), true)
+        assertSkipped("retained-only PDF")
+
+        // selector unavailable (locked): might be a PDF
+        SafeStore.keyProvider = { throw CocoaError(.fileReadNoPermission) }
+        XCTAssertNil(ActiveMapSelectionStore.mayHavePDF())
+        assertSkipped("selector locked")
+        SafeStore.keyProvider = { [testKey] in testKey }
+
+        // selector unavailable (corrupt)
+        let selection = ActiveMapSelectionStore.storageURLProvider()
+        let good = try Data(contentsOf: selection)
+        try Data("not sealed".utf8).write(to: selection)
+        XCTAssertNil(ActiveMapSelectionStore.mayHavePDF())
+        // SafeStore quarantined it on that read, the next one finds no file. still unknown
+        assertSkipped("selector corrupt")
+        XCTAssertNil(ActiveMapSelectionStore.mayHavePDF(), "quarantined this launch")
+        try good.write(to: selection)
+
+        // online only, no record: names nothing, the sweep runs
+        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo), clearRetained: true))
+        XCTAssertEqual(ActiveMapSelectionStore.mayHavePDF(), false)
+        noRecord()
+        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .read(fileName: nil))
+        XCTAssertTrue(PDFBakeController.sweepUnreferencedBakes(in: generatedDir))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
+    }
+
+    /// the reconcile keep set and the sweep agree on an invalid bake record:
+    /// neither keeps the file it names
+    func testInvalidBakeRecordIsIgnoredByRestoreReconcileAndSweep() throws {
+        let pdf = try importedGeoPDF()
+        try FileManager.default.createDirectory(at: generatedDir, withIntermediateDirectories: true)
+        let name = "tacmap-bake-\(UUID().uuidString).mbtiles"
+        let file = generatedDir.appendingPathComponent(name)
+        try makeMinimalMBTiles(at: file)
+        // a key no bake ever has, validBake says no
+        let bad = PDFBakeRecord(fileName: name, bakeKey: "zz", minZoom: 0, maxZoom: 14, tilePx: 512, bytes: 1)
+        XCTAssertFalse(PDFSessionStore.validBake(bad))
+        pdf.bake = bad
+        XCTAssertTrue(PDFSessionStore.save(pdf), "save drops an invalid bake rather than refusing")
+        XCTAssertTrue(ActiveMapSelectionStore.save(pdf))
+        XCTAssertNil(PDFSessionStore.load()?.bake, "restore drops it")
+        XCTAssertEqual(PDFSessionStore.storedBakeForSweep(), .read(fileName: nil), "the sweep names nothing")
+        XCTAssertTrue(ActiveMapSelectionStore.reconcileManagedImportedMapFiles())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "the keep set didnt keep it either")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.url.path))
+    }
+
+    /// F5: two Try Agains overlap and the older one's check lands last. it must
+    /// not overwrite what the newer (on screen) one found
+    func testOverlappingTryAgainsKeepTheNewestFileVerdict() throws {
+        let pdf = try importedGeoPDF()
+        let runtime = PDFMapRuntime()
+        _ = runtime.tileSource(for: pdf, screenScale: 2)
+        waitUntil("ready") { runtime.status == .ready }
+
+        let firstMayFinish = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var calls = 0
+        var firstDone = false
+        runtime.fileCheck = { _ in
+            lock.lock(); calls += 1; let n = calls; lock.unlock()
+            guard n == 1 else { return true }
+            // the first Try Again finds the file gone, but only after the second finished
+            firstMayFinish.wait()
+            lock.lock(); firstDone = true; lock.unlock()
+            return false
+        }
+        runtime.retry()
+        runtime.retry()
+        waitUntil("second ready") { runtime.status == .ready && calls == 2 }
+        XCTAssertFalse(pdf.storedFileUnavailable)
+        firstMayFinish.signal()
+        waitUntil("first check done") { lock.lock(); defer { lock.unlock() }; return firstDone }
+        // let its main hop land
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertFalse(pdf.storedFileUnavailable, "the stale verdict was dropped")
+        XCTAssertEqual(runtime.status, .ready)
+        runtime.reset()
+    }
+
+    /// F1: the alert host decisions
+    func testMapIssueAlertGate() {
+        typealias Gate = MapSelectionIssueAlertGate
+        let a = MapSelectionPersistenceIssue(id: UUID(), pendingMessage: Messages.displayThePdfMapCouldNotBeSavedForRelaunchMessage())
+        let b = MapSelectionPersistenceIssue(id: UUID(), pendingMessage: Messages.displayThePdfMapCouldNotBeSavedForRelaunchMessage())
+        // shows only the issue the key was made for, only while on top
+        XCTAssertEqual(Gate.issueToShow(for: .init(issueID: a.id, isActive: true), current: a), a)
+        XCTAssertNil(Gate.issueToShow(for: .init(issueID: a.id, isActive: false), current: a))
+        XCTAssertNil(Gate.issueToShow(for: .init(issueID: a.id, isActive: true), current: b), "replaced meanwhile")
+        XCTAssertNil(Gate.issueToShow(for: .init(issueID: a.id, isActive: true), current: nil), "dismissed meanwhile")
+        // either half changing is a new key, so the pending show is cancelled
+        XCTAssertNotEqual(Gate.Key(issueID: a.id, isActive: true), Gate.Key(issueID: a.id, isActive: false))
+        XCTAssertNotEqual(Gate.Key(issueID: a.id, isActive: true), Gate.Key(issueID: b.id, isActive: true))
+        // root stands down for any presentation on top
+        XCTAssertTrue(Gate.rootHostIsActive(presentationsOnTop: [false, false]))
+        XCTAssertFalse(Gate.rootHostIsActive(presentationsOnTop: [false, true, false]))
+        // a dropped presentation never loses the error, only Not Now does
+        XCTAssertFalse(Gate.clearsIssue(.dismissedBySystem))
+        XCTAssertTrue(Gate.clearsIssue(.notNow))
+    }
+
+    /// R3-3: Try Again re-checks the bytes even when nothing flagged the source
+    func testTryAgainAlwaysRechecksTheStoredBytes() throws {
+        let pdf = try importedGeoPDF()
+        let original = try Data(contentsOf: pdf.url)
+        XCTAssertFalse(pdf.storedFileUnavailable)
+        let runtime = PDFMapRuntime()
+        _ = runtime.tileSource(for: pdf, screenScale: 2)
+        waitUntil("ready") { runtime.status == .ready }
+
+        // swapped under the live map, then Try Again
+        let blank = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_render_blank.pdf"))
+        try Data(contentsOf: blank).write(to: pdf.url)
+        runtime.retry()
+        waitUntil("cannotOpen") { runtime.status.failure != nil }
+        XCTAssertEqual(runtime.status, .failed(.cannotOpen), "never draws bytes that dont match the key")
+        XCTAssertTrue(pdf.storedFileUnavailable, "flagged like a restore would")
+
+        try original.write(to: pdf.url)
+        runtime.retry()
+        waitUntil("ready again") { runtime.status == .ready }
+        XCTAssertFalse(pdf.storedFileUnavailable)
+        runtime.reset()
     }
 }

@@ -69,16 +69,15 @@ internal data class PendingCalibrationTap(
 )
 
 /**
- * Map tap -> raw PDF user space point under the finger. Goes back through the
- * same display affine the overlay places the page with, so the point is where
- * the user actually sees the feature, calibrated or provisional.
+ * Map tap -> raw PDF user space point under the finger, through georef.toPage (the
+ * tile renderer's own mapping), calibrated or provisional. WP4 replaces the tap with
+ * the crosshair flow.
  */
 internal fun PdfMapSource.pdfPointFor(latitude: Double, longitude: Double): PendingCalibrationTap? {
-    val inverse = placement?.bestFitLatLonAffine?.inverted() ?: return null
-    // inverted() hands back pdfX as .longitude and pdfY as .latitude
-    val p = inverse.apply(longitude, latitude)
-    val x = p.longitude
-    val y = p.latitude
+    // the same georef the tiles are drawn through, so the point is exactly what's under the finger
+    val p = placement?.toPage(latitude, longitude) ?: return null
+    val x = p.x
+    val y = p.y
     if (!x.isFinite() || !y.isFinite()) return null
     val box = geometry.visibleBox
     val marginX = box.width * 0.05
@@ -565,6 +564,61 @@ internal fun importPdfMapSource(
             PdfImportOutcome.NoGeoreference,
         )
     }
+}
+
+/**
+ * Contract M import step 2-4: with the crash guard armed, open the page, check its frame,
+ * draw the base raster and run the blank check on the import worker, before the map is
+ * persisted. A PDF that kills pdfium dies here, not on every launch after. The session
+ * (open page + raster) stays warm for 30 s so the first paint is immediate.
+ */
+internal suspend fun probeImportedPdf(
+    context: Context,
+    result: PdfImportResult,
+    operationKey: String,
+    guard: com.tacmap.map.render.pdf.PdfRenderGuard,
+): PdfImportResult {
+    val source = result.source
+    val file = source.uri.path?.let(::File) ?: throw PdfImportRejectedException(Messages.pdfRenderReasonCannotOpen())
+    // hash here on the worker so a later save never does it on main (D5-08)
+    val contentKey = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        com.tacmap.calibration.PdfCalibrationIdentity.contentKey(file)?.also { com.tacmap.calibration.PdfStoredFile.remember(file, it) }
+    }
+    val probed = source.withRender(source.render.copy(contentKey = contentKey))
+    val token = probed.render.renderGuardToken
+    val georef = probed.placement ?: return result.copy(source = probed)
+    guard.arm(com.tacmap.map.render.pdf.GuardKind.IMPORT, token, operationKey = operationKey)
+    try {
+        val footprint = com.tacmap.map.render.pdf.PdfFootprint.build(georef, probed.geometry.visibleBox)
+        val policy = com.tacmap.map.render.pdf.PdfZoomPolicy.of(georef, footprint)
+        val (ram, low) = com.tacmap.map.render.TileMemoryBudget.physicalMemory(context)
+        val plan = policy.baseRasterPlan(footprint, com.tacmap.map.render.TileMemoryBudget.baseBudgetPx(ram, low))
+        val session = com.tacmap.map.render.pdf.PdfRenderSessions.acquire(file, georef.page)
+        try {
+            session.baseRaster(plan, probed.geometry, footprint.clip, com.tacmap.map.render.pdf.PdfRenderExecutor.Band.VISIBLE, background = true).await()
+        } finally {
+            com.tacmap.map.render.pdf.PdfRenderSessions.release(session)
+        }
+    } catch (e: com.tacmap.map.render.pdf.PdfRenderException) {
+        throw PdfImportRejectedException(pdfRenderFailureMessage(e.failure))
+    } catch (oom: OutOfMemoryError) {
+        throw PdfImportRejectedException(pdfRenderFailureMessage(com.tacmap.map.render.pdf.PdfRenderFailure.OUT_OF_MEMORY))
+    } finally {
+        // the process lived through it either way, that's all the guard is about
+        guard.complete(com.tacmap.map.render.pdf.GuardKind.IMPORT, token)
+    }
+    return result.copy(source = probed)
+}
+
+/** the shared alert copy for each render failure (contract L) */
+internal fun pdfRenderFailureMessage(reason: com.tacmap.map.render.pdf.PdfRenderFailure): String = when (reason) {
+    com.tacmap.map.render.pdf.PdfRenderFailure.CANNOT_OPEN -> Messages.pdfRenderReasonCannotOpen()
+    com.tacmap.map.render.pdf.PdfRenderFailure.PASSWORD_PROTECTED -> Messages.pdfRenderReasonPasswordProtected()
+    com.tacmap.map.render.pdf.PdfRenderFailure.PAGE_MISSING -> Messages.pdfRenderReasonPageMissing()
+    com.tacmap.map.render.pdf.PdfRenderFailure.PAGE_GEOMETRY -> Messages.pdfRenderReasonPageGeometry()
+    com.tacmap.map.render.pdf.PdfRenderFailure.BLANK -> Messages.pdfRenderReasonBlank()
+    com.tacmap.map.render.pdf.PdfRenderFailure.OUT_OF_MEMORY -> Messages.pdfRenderReasonOutOfMemory()
+    com.tacmap.map.render.pdf.PdfRenderFailure.RENDER_ERROR -> Messages.pdfRenderReasonRenderError()
 }
 
 /** a refused GeoPDF parked behind the alert: not on the map, not in the library yet */

@@ -124,7 +124,6 @@ import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
-import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.calibration.Wgs84Coordinate
 import com.tacmap.app.DocumentImportKind
 import com.tacmap.app.AppLock
@@ -236,15 +235,27 @@ internal fun MapScreen(
     /// A PDF with no real georef sits on a made up placement; say so every time it's
     /// on screen so nobody reads a grid off it (plan 02 s1, D2-06 / D5-02).
     val uncalibratedPdf = (mapSource as? com.tacmap.calibration.PdfMapSource)?.isGeoreferenced == false
+    // WP2 contract G: a PDF that failed to draw or is still drawing says so, never a green
+    // "Offline basemap" over a blank map (D5-16)
+    val pdfRenderStatus by vm.pdfRuntime.status.collectAsState()
+    val pdfPreparingShown by vm.pdfRuntime.showPreparingLabel.collectAsState()
+    val pdfShown = mapSource is com.tacmap.calibration.PdfMapSource
+    val pdfRenderFailed = pdfShown && pdfRenderStatus is com.tacmap.map.render.pdf.PdfRenderStatus.Failed
+    val pdfDrawing = pdfShown && pdfPreparingShown &&
+        pdfRenderStatus == com.tacmap.map.render.pdf.PdfRenderStatus.Preparing
     val basemapLabel: String? = when {
+        pdfRenderFailed -> Messages.pdfRenderFailedLabel()
+        pdfDrawing -> Messages.pdfRenderDrawingLabel()
         uncalibratedPdf -> Messages.pdfMapUncalibratedLabel()
         importedMapLoaded -> L10n.text("Offline basemap")
         onlineTilesActive -> L10n.text("Online basemap")
         else -> null
     }
     val basemapColor = when {
+        pdfRenderFailed -> Color(com.tacmap.map.render.pdf.PdfRenderRules.FAILED_COLOR)
+        pdfDrawing -> Color(com.tacmap.map.render.pdf.PdfRenderRules.PREPARING_COLOR)
         uncalibratedPdf -> Color(0xFFFFB300)
-        importedMapLoaded -> Color(0xFF74E38A)
+        importedMapLoaded -> Color(com.tacmap.map.render.pdf.PdfRenderRules.READY_COLOR)
         else -> Color(0xFFFF5A5A)
     }
     val waypointStore = remember(unitSyncForegroundEpoch) { WaypointStore(context) }
@@ -390,11 +401,14 @@ internal fun MapScreen(
         }
     }
 
-    /// (done, total) while baking PDF into offline tiles, null when idle
-    var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    /// the running bake, so the progress dialog's Cancel can stop it
-    var tilingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    var tilingCancelling by remember { mutableStateOf(false) }
+    /// Generate Offline Tiles lives at app scope, this screen just shows it
+    val bakeState by vm.bakeManager.state.collectAsState()
+    val pdfRecovery by vm.pdfRecovery.collectAsState()
+    val pdfLaunchNotices by vm.pdfLaunchNotices.collectAsState()
+    /// the render failure the user already said Not Now to, so the alert doesn't nag
+    var dismissedRenderFailure by remember { mutableStateOf<String?>(null) }
+    var confirmDeleteSuspect by remember { mutableStateOf(false) }
+    var pdfRetryTick by remember { mutableIntStateOf(0) }
     /// lock toggle - when true no graphic can be moved. Extra guard
     /// against accidental drags in the field.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -408,9 +422,10 @@ internal fun MapScreen(
     var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
     var symbologyVisible by rememberPersistedBoolean("symbologyVisible", true)
     var drawingsVisible by rememberPersistedBoolean("drawingsVisible", true)
-    var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
+    var mgrsGridVisible by rememberPersistedBoolean(MGRS_GRID_VISIBLE_KEY, false)
     var terrainHeatmapVisible by rememberPersistedBoolean("terrainHeatmap", false)
     var userLocationVisible by rememberPersistedBoolean("userLocation", true)
+    var importedMapVisible by rememberPersistedBoolean(IMPORTED_MAP_VISIBLE_KEY, true)
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
     var isFreeDrawMode by remember { mutableStateOf(false) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
@@ -475,7 +490,7 @@ internal fun MapScreen(
 
     suspend fun importSelectedPdf(uri: Uri, operationKey: String) {
         val imported = runCatching {
-            withContext(Dispatchers.IO) {
+            val parsed = withContext(Dispatchers.IO) {
                 importPdfMapSource(
                     context = context,
                     sourceUri = uri,
@@ -484,6 +499,13 @@ internal fun MapScreen(
                     operationKey = operationKey,
                     copyJournal = documentCopyJournal,
                 )
+            }
+            // draw it once under the crash guard before anything is persisted (contract M)
+            try {
+                probeImportedPdf(context, parsed, operationKey, vm.pdfRuntime.guard)
+            } catch (rejected: PdfImportRejectedException) {
+                withContext(Dispatchers.IO) { discardRejectedPdfImport(parsed.source) }
+                throw rejected
             }
         }.onFailure {
             Toast.makeText(context, pdfImportUserMessage(it), Toast.LENGTH_LONG).show()
@@ -639,6 +661,13 @@ internal fun MapScreen(
     LaunchedEffect(pendingDocumentImport?.token) {
         val pending = pendingDocumentImport ?: return@LaunchedEffect
         if (!onClaimDocumentImport(pending.token)) return@LaunchedEffect
+        val interrupted = vm.interruptedImportOperationKey
+        if (pending.kind == DocumentImportKind.PDF && interrupted == "pdf:${pending.token}") {
+            // this exact import took the app down during its probe, replaying it would loop.
+            // drop it, the launch notice says what happened
+            onCompleteDocumentImport(pending.token)
+            return@LaunchedEffect
+        }
         var terminal = false
         try {
             processDocumentImport(pending)
@@ -654,6 +683,15 @@ internal fun MapScreen(
         } finally {
             if (terminal) onCompleteDocumentImport(pending.token)
         }
+    }
+
+    // DEBUG launch hook: the camera goes where the verification script asked, after any
+    // hook import has landed and framed itself (docs/DEBUG_HOOKS.md)
+    LaunchedEffect(pendingDocumentImport == null, mapSource.id) {
+        if (!com.tacmap.BuildConfig.DEBUG || pendingDocumentImport != null) return@LaunchedEffect
+        val cam = com.tacmap.app.DebugLaunchHooks.takeCamera() ?: return@LaunchedEffect
+        delay(600)
+        vm.applyDebugCamera(cam)
     }
 
     DisposableEffect(lifecycleOwner, hasPreciseLocation) {
@@ -751,6 +789,7 @@ internal fun MapScreen(
     }
 
     LaunchedEffect(mapSource.id) {
+        if (mapSource !is PdfMapSource) vm.pdfRuntime.release()
         if (mapSource !is PdfMapSource) {
             isCalibratingPdf = false
             calibrationFiduciaries = emptyList()
@@ -933,10 +972,18 @@ internal fun MapScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
+        val pdfTileSource = remember(mapSource, rendererDensity, pdfRetryTick) {
+            (mapSource as? PdfMapSource)?.let { vm.pdfRuntime.tileSource(it, rendererDensity) }
+        }
         CustomMapScreen(
                 modifier = Modifier.fillMaxSize(),
                 waypoints = waypoints,
                 mapSource = mapSource,
+                tileCache = vm.tileCache,
+                pdfTileSource = pdfTileSource,
+                // forced on while calibrating, you can't place points on a hidden sheet
+                importedMapHidden = !(importedMapVisible || isCalibratingPdf),
+                pdfRenderReady = pdfRenderStatus == com.tacmap.map.render.pdf.PdfRenderStatus.Ready,
                 onlineBasemapsEnabled = onlineBasemapsEnabled,
                 onlineLookupsEnabled = onlineLookupsEnabled,
                 drawings = drawingDocument.features,
@@ -971,6 +1018,7 @@ internal fun MapScreen(
                 initialCameraState = cameraViewportState,
                 pendingTarget = pendingTarget,
                 resetNorthRequests = vm.resetNorthRequests,
+                headingRequests = vm.headingRequests,
                 headingUpEnabled = mapOrientationMode == MapOrientationMode.HEADING_UP,
                 deviceHeadingDegrees = vm.headingService.headingDegrees,
                 onConsumePendingTarget = vm::consumePendingCameraTarget,
@@ -1664,6 +1712,15 @@ internal fun MapScreen(
                 .padding(bottom = 80.dp)
         )
 
+        // Generate Offline Tiles progress, stays up after the Layers sheet closes
+        PdfBakeChip(
+            state = bakeState,
+            onCancel = { vm.bakeManager.cancel() },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 140.dp),
+        )
+
         if (showTips) {
             MapTourOverlay(
                 targets = tourTargets,
@@ -2081,36 +2138,22 @@ internal fun MapScreen(
         )
     }
 
-    tilingProgress?.let { (done, total) ->
-        AlertDialog(
-            // Only the Cancel button stops the bake; a stray tap outside doesn't.
-            onDismissRequest = {},
-            confirmButton = {
-                // The dialog closes once the bake has stopped and cleaned up.
-                TextButton(
-                    onClick = {
-                        tilingCancelling = true
-                        tilingJob?.cancel()
-                    },
-                    enabled = !tilingCancelling,
-                ) { Text(L10n.text("Cancel")) }
-            },
-            title = { Text(L10n.text("Generating offline tiles")) },
-            text = {
-                Column {
-                    @Suppress("DEPRECATION")
-                    LinearProgressIndicator(
-                        progress = if (total > 0) done.toFloat() / total else 0f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        if (total > 0) L10n.text("%1\$s / %2\$s tiles", done, total) else L10n.text("Preparing…"),
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-        )
-    }
+    PdfRenderDialogs(
+        vm = vm,
+        mapSource = mapSource,
+        pdfRenderStatus = pdfRenderStatus,
+        dismissedRenderFailure = dismissedRenderFailure,
+        onDismissRenderFailure = { dismissedRenderFailure = it },
+        onRetry = {
+            vm.pdfRuntime.retry()
+            pdfRetryTick++
+        },
+        pdfRecovery = pdfRecovery,
+        confirmDeleteSuspect = confirmDeleteSuspect,
+        onConfirmDeleteSuspect = { confirmDeleteSuspect = it },
+        pdfLaunchNotice = pdfLaunchNotices.firstOrNull(),
+        bakeState = bakeState,
+    )
 
     if (showLayersSheet) {
         LayersSheet(
@@ -2152,45 +2195,28 @@ internal fun MapScreen(
             onRemoveUnavailableRetainedMap = { vm.removeUnavailableRetainedMapEntry() },
             pdfMap = pdfSource,
             hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
+            importedMapVisible = importedMapVisible || isCalibratingPdf,
+            importedMapToggleEnabled = !isCalibratingPdf,
+            onImportedMapVisibleChange = { importedMapVisible = it },
+            bakeState = bakeState,
+            onCancelBake = { vm.bakeManager.cancel() },
+            onRemoveBake = { vm.removePdfBake() },
+            renderFailed = pdfRenderFailed,
+            renderFailureReason = (pdfRenderStatus as? com.tacmap.map.render.pdf.PdfRenderStatus.Failed)
+                ?.takeIf { pdfRenderFailed }?.reason?.let(::pdfRenderFailureMessage),
+            onRetryRender = {
+                vm.pdfRuntime.retry()
+                pdfRetryTick++
+                dismissedRenderFailure = null
+            },
             onCalibratePdf = {
                 showLayersSheet = false
                 startPdfCalibration()
             },
             onGenerateTiles = {
-                val pdf = pdfSource
-                showLayersSheet = false
-                if (pdf == null) {
-                    Toast.makeText(context, L10n.text("Load a PDF map first"), Toast.LENGTH_SHORT).show()
-                } else {
-                    tilingJob = scope.launch {
-                        tilingCancelling = false
-                        tilingProgress = 0 to 0
-                        // Cancel stops PdfTiler at the next tile; it deletes its
-                        // partial output before the cancellation reaches here.
-                        val path = try {
-                            com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
-                                tilingProgress = p.done to p.total
-                            }
-                        } finally {
-                            tilingProgress = null
-                            tilingJob = null
-                        }
-                        if (path != null) {
-                            val activated = com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
-                                ?.let { vm.setMapSource(it) }
-                                ?: false
-                            if (activated) {
-                                Toast.makeText(context, L10n.text("Offline tiles ready"), Toast.LENGTH_SHORT).show()
-                            }
-                        } else {
-                            Toast.makeText(
-                                context,
-                                L10n.text("Couldn't generate tiles — calibrate the PDF first (3+ fiduciaries)."),
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
-                }
+                // estimate, then the confirm dialog with the zoom options. the bake itself is app
+                // scoped so closing the sheet or rotating doesn't stop it
+                pdfSource?.let { vm.bakeManager.prepare(it, rendererDensity) }
             },
             onUnloadPdf = {
                 showLayersSheet = false

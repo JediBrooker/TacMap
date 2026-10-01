@@ -26,11 +26,14 @@ class MBTilesStore private constructor(private val db: SQLiteDatabase) : Closeab
         val bounds: Wgs84Bounds? = null
     )
 
+    private val rows = linkedMapOf<String, String>()
     val metadata: Metadata = loadMetadata()
     private val closed = AtomicBoolean(false)
 
+    /** a metadata row as stored (keys lowercased), e.g. the PDF bake's tacmap_bake_key */
+    fun rawMetadata(key: String): String? = rows[key.lowercase(Locale.US)]
+
     private fun loadMetadata(): Metadata {
-        val rows = linkedMapOf<String, String>()
         db.rawQuery("SELECT name, value FROM metadata", null).use { c ->
             while (c.moveToNext()) {
                 val key = c.getString(0) ?: continue

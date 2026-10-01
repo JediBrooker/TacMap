@@ -81,6 +81,12 @@ enum Messages {
     static func importedLayerSaveFailedMessage(_ detail: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.imported_layer_save_failed", fallback: "Could not save imported layer to disk: %1$@", arguments: [detail])
     }
+    static func importedMapHiddenNotice() -> String {
+        L10n.message("id.imported_map_hidden_notice", fallback: "Imported map hidden")
+    }
+    static func importedMapShowToggle() -> String {
+        L10n.message("id.imported_map_show_toggle", fallback: "Show Imported Map")
+    }
     static func decimalInputHint() -> String {
         L10n.message("id.input_decimal_hint", fallback: "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
     }
@@ -177,6 +183,75 @@ enum Messages {
     static func onlineBasemapsDisabledMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.online_basemaps_disabled", fallback: "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", arguments: [])
     }
+    static func pdfBakeCaption() -> String {
+        L10n.message("id.pdf_bake_caption", fallback: "Pre-renders this map so it opens and zooms instantly. The PDF is kept.")
+    }
+    static func pdfBakeChip(_ percent: String) -> String {
+        L10n.message("id.pdf_bake_chip", fallback: "Offline tiles %1$@%%", percent)
+    }
+    static func pdfBakeConfirmMessage(_ name: String, _ duration: String) -> String {
+        L10n.message("id.pdf_bake_confirm_message", fallback: "“%1$@” stays on this device and remains the active map. This takes about %2$@.", name, duration)
+    }
+    static func pdfBakeConfirmTitle() -> String {
+        L10n.message("id.pdf_bake_confirm_title", fallback: "Generate offline tiles?")
+    }
+    static func pdfBakeDisabledCaption() -> String {
+        L10n.message("id.pdf_bake_disabled_caption", fallback: "Calibrate this map before generating offline tiles.")
+    }
+    static func pdfBakeDone() -> String {
+        L10n.message("id.pdf_bake_done", fallback: "Offline tiles ready")
+    }
+    static func pdfBakeErrorNoSpace(_ size: String) -> String {
+        L10n.message("id.pdf_bake_error_no_space", fallback: "Not enough free space. About %1$@ is needed.", size)
+    }
+    static func pdfBakeErrorRenderFailed() -> String {
+        L10n.message("id.pdf_bake_error_render_failed", fallback: "Part of this map couldn't be drawn, so no offline tiles were saved.")
+    }
+    static func pdfBakeErrorSourceChanged() -> String {
+        L10n.message("id.pdf_bake_error_source_changed", fallback: "The map changed while tiles were being generated. Nothing was saved.")
+    }
+    static func pdfBakeErrorTitle() -> String {
+        L10n.message("id.pdf_bake_error_title", fallback: "Offline tiles")
+    }
+    static func pdfBakeErrorTooLarge() -> String {
+        L10n.message("id.pdf_bake_error_too_large", fallback: "This map is too large to pre-render on this device.")
+    }
+    static func pdfBakeErrorWriteFailed() -> String {
+        L10n.message("id.pdf_bake_error_write_failed", fallback: "The offline tiles couldn't be saved. Nothing was changed.")
+    }
+    static func pdfBakeEstimating() -> String {
+        L10n.message("id.pdf_bake_estimating", fallback: "Estimating size…")
+    }
+    static func pdfBakeGenerate() -> String {
+        L10n.message("id.pdf_bake_generate", fallback: "Generate")
+    }
+    static func pdfBakeGenerateButton() -> String {
+        L10n.message("id.pdf_bake_generate_button", fallback: "Generate Offline Tiles…")
+    }
+    static func pdfBakeInfo(_ minZoom: String, _ maxZoom: String, _ size: String) -> String {
+        L10n.message("id.pdf_bake_info", fallback: "Offline tiles: zoom %1$@–%2$@ · %3$@", minZoom, maxZoom, size)
+    }
+    static func pdfBakeInterruptedMessage() -> String {
+        L10n.message("id.pdf_bake_interrupted_message", fallback: "TacMap closed before the offline tiles were finished. Nothing was saved.")
+    }
+    static func pdfBakeInterruptedTitle() -> String {
+        L10n.message("id.pdf_bake_interrupted_title", fallback: "Offline tiles not finished")
+    }
+    static func pdfBakeMinutes(_ minutes: String) -> String {
+        L10n.message("id.pdf_bake_minutes", fallback: "%1$@ min", minutes)
+    }
+    static func pdfBakeOptionNoSpace() -> String {
+        L10n.message("id.pdf_bake_option_no_space", fallback: " · not enough free space")
+    }
+    static func pdfBakeOptionRow(_ zoom: String, _ tiles: String, _ size: String) -> String {
+        L10n.message("id.pdf_bake_option_row", fallback: "Up to zoom %1$@ · %2$@ tiles · about %3$@", zoom, tiles, size)
+    }
+    static func pdfBakeRemove() -> String {
+        L10n.message("id.pdf_bake_remove", fallback: "Remove Offline Tiles")
+    }
+    static func pdfBakeRunning(_ done: String, _ total: String) -> String {
+        L10n.message("id.pdf_bake_running", fallback: "Generating offline tiles — %1$@/%2$@", done, total)
+    }
     static func pdfGeorefAdobeLabel() -> String {
         L10n.message("id.pdf_georef_adobe_label", fallback: "Georeferenced (GeoPDF)")
     }
@@ -213,6 +288,24 @@ enum Messages {
     static func pdfGeorefRejectedTitle() -> String {
         L10n.message("id.pdf_georef_rejected_title", fallback: "Georeference not usable")
     }
+    static func pdfGuardCrashMessage() -> String {
+        L10n.message("id.pdf_guard_crash_message", fallback: "The map wasn't opened automatically in case it causes the same problem. The online map is shown instead.")
+    }
+    static func pdfGuardCrashTitle(_ name: String) -> String {
+        L10n.message("id.pdf_guard_crash_title", fallback: "TacMap closed while drawing “%1$@”", name)
+    }
+    static func pdfGuardDeleteMap() -> String {
+        L10n.message("id.pdf_guard_delete_map", fallback: "Delete Map…")
+    }
+    static func pdfGuardImportInterruptedMessage() -> String {
+        L10n.message("id.pdf_guard_import_interrupted_message", fallback: "The map wasn't imported. Try again, or print the PDF to a new file and import that copy.")
+    }
+    static func pdfGuardImportInterruptedTitle() -> String {
+        L10n.message("id.pdf_guard_import_interrupted_title", fallback: "TacMap closed while preparing an imported map")
+    }
+    static func pdfGuardOpenAnyway() -> String {
+        L10n.message("id.pdf_guard_open_anyway", fallback: "Open Anyway")
+    }
     static func pdfMapCalibrateNow() -> String {
         L10n.message("id.pdf_map_calibrate_now", fallback: "Calibrate")
     }
@@ -224,6 +317,42 @@ enum Messages {
     }
     static func pdfMapUncalibratedTitle() -> String {
         L10n.message("id.pdf_map_uncalibrated_title", fallback: "Map not calibrated")
+    }
+    static func pdfRenderDrawingLabel() -> String {
+        L10n.message("id.pdf_render_drawing_label", fallback: "Drawing map…")
+    }
+    static func pdfRenderFailedLabel() -> String {
+        L10n.message("id.pdf_render_failed_label", fallback: "Map couldn't be drawn")
+    }
+    static func pdfRenderFailedTitle(_ name: String) -> String {
+        L10n.message("id.pdf_render_failed_title", fallback: "Couldn't draw “%1$@”", name)
+    }
+    static func pdfRenderReasonBlank() -> String {
+        L10n.message("id.pdf_render_reason_blank", fallback: "Nothing on this PDF page could be drawn.")
+    }
+    static func pdfRenderReasonCannotOpen() -> String {
+        L10n.message("id.pdf_render_reason_cannot_open", fallback: "The PDF file is missing or can't be read.")
+    }
+    static func pdfRenderReasonOutOfMemory() -> String {
+        L10n.message("id.pdf_render_reason_out_of_memory", fallback: "This PDF is too large to draw on this device.")
+    }
+    static func pdfRenderReasonPageGeometry() -> String {
+        L10n.message("id.pdf_render_reason_page_geometry", fallback: "This PDF's page layout doesn't match its georeference.")
+    }
+    static func pdfRenderReasonPageMissing() -> String {
+        L10n.message("id.pdf_render_reason_page_missing", fallback: "The georeferenced page is missing from this PDF.")
+    }
+    static func pdfRenderReasonPasswordProtected() -> String {
+        L10n.message("id.pdf_render_reason_password_protected", fallback: "This PDF is password-protected. Remove the password and import it again.")
+    }
+    static func pdfRenderReasonRenderError() -> String {
+        L10n.message("id.pdf_render_reason_render_error", fallback: "TacMap couldn't draw this PDF.")
+    }
+    static func pdfRenderTryAgain() -> String {
+        L10n.message("id.pdf_render_try_again", fallback: "Try Again")
+    }
+    static func pdfRenderUseOnlineMap() -> String {
+        L10n.message("id.pdf_render_use_online_map", fallback: "Use Online Map")
     }
     static func profileClimb() -> String {
         L10n.message("id.profile_climb", fallback: "Total climb")

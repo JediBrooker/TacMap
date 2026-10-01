@@ -504,3 +504,26 @@ final class PdfSessionMigrationTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(PDFSessionStore.legacyDisplayToRaw(url: plain)).isIdentity)
     }
 }
+
+// MARK: - WP2 session fields
+
+extension PdfSessionMigrationTests {
+    func testGuardTokenIsStableAcrossLaunchesAndMintedForOldSessions() throws {
+        let file = try importFixture("tacmap_grid_sf_iso.pdf")
+        let g = try XCTUnwrap(GeoPDFReader.read(url: file)?.georef)
+        let source = PDFMapSource(url: file, georef: g, contentKey: PDFSessionStore.contentKey(for: file))
+        XCTAssertNotNil(UUID(uuidString: source.renderGuardToken))
+        XCTAssertTrue(PDFSessionStore.save(source))
+        let a = try XCTUnwrap(PDFSessionStore.load())
+        let b = try XCTUnwrap(PDFSessionStore.load())
+        XCTAssertEqual(a.renderGuardToken, source.renderGuardToken)
+        XCTAssertEqual(b.renderGuardToken, source.renderGuardToken)
+        // a v1 session has none: it gets one, and keeps it next launch
+        try storeV1(file: file, kind: .geoPDF, sw: (37.73, -122.48), ne: (37.80, -122.41),
+                    crop: CGRect(x: 72, y: 72, width: 680, height: 907))
+        let migrated = try XCTUnwrap(PDFSessionStore.load())
+        let again = try XCTUnwrap(PDFSessionStore.load())
+        XCTAssertEqual(migrated.renderGuardToken, again.renderGuardToken)
+        XCTAssertNotEqual(migrated.renderGuardToken, source.renderGuardToken)
+    }
+}

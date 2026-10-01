@@ -418,8 +418,70 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   through Files/Finder file sharing) but as their original bytes. They reveal your
   area of interest to anyone who extracts them at the filesystem level. Only the
   *calibration sidecar* (which sheet, what ground it covers, the fitted affine) is
-  sealed. Encrypting the packs themselves would mean SQLCipher and streaming
+  sealed. On both platforms the sidecar is bound to the sheet's SHA-256: if the stored
+  file goes missing or its bytes change, the selection and sidecar are kept but nothing
+  is drawn, baked tiles included (the map shows "couldn't be drawn"), until bytes with
+  that exact hash are back, so a calibration is never applied to a different file. The
+  hash is checked at restore and on every Try Again, whether or not the sheet was
+  already flagged (iOS; a sheet that fails it there is flagged from then on), and at
+  restore, on Try Again, at each document open and whenever a new tile source is built
+  (Android). On both, a memo keyed on path, size, mtime and file identity keeps repeat
+  checks of an untouched file to a stat (Android: concurrent checks share one hash); on
+  iOS a restored sheet that has not passed the check
+  yet can't start an offline-tile bake either (the estimate re-checks the bytes itself).
+  A fresh import of the same bytes is a new map and draws at once. While the file is
+  missing the managed-file reconcile deletes nothing (Remove Offline Tiles and the
+  bake-only sweep, below, still delete bake files). A legacy sidecar with no
+  recorded hash can't prove which bytes it belongs to and is still cleared when its file
+  is gone. Encrypting the packs themselves would mean SQLCipher and streaming
   decryption; it is not done.
+  The same goes for **baked offline tiles** ("Generate Offline Tiles"): a plaintext
+  MBTiles raster of the imported sheet's AO, `offline_tiles/tacmap-bake-<uuid>.mbtiles`
+  in Application Support (Android: `filesDir/offline_tiles`), written first as
+  `pdf_bake_work/<uuid>.mbtiles.partial`. A bake cancelled at any point, including
+  while its writer is still being created, deletes its `.partial` (on iOS the writer is
+  created synchronously on the bake thread, so the cancel cleanup always runs after it);
+  anything left in `pdf_bake_work` is cleared at process start.
+  The file's metadata never names the sheet: `name` is always the fixed "TacMap offline
+  tiles". The `.partial` is written with no on-disk rollback journal: both apps ask
+  SQLite for `journal_mode=OFF`, read the answer back, fall back to `MEMORY` (the iOS
+  system SQLite runs in defensive mode and ignores `OFF`), and fail the bake closed if
+  neither sticks, so no stray `-journal` copy of tile pages is left next to it.
+  On iOS the file and both directories are `NSFileProtectionCompleteUntilFirstUserAuthentication`
+  and excluded from backup; Android has `allowBackup=false` and data-extraction rules
+  that exclude everything. Only the bake record (file name, bake key, zooms) is in the
+  sealed PDF session. "Remove Offline Tiles" clears the bake from the sealed PDF
+  session, then deletes the named file and its `-journal`/`-wal`/`-shm` sidecars
+  directly, but only if the name starts with `tacmap-bake-` (only plain files inside
+  `offline_tiles`, under the same managed-files lock the reconcile and the bake publish
+  take). A bake-only sweep follows, and also runs at every launch (iOS: on every restore
+  of the active map, i.e. launch, unlock and Retry). It deletes regular
+  `tacmap-bake-*.mbtiles` files and their sidecars directly inside `offline_tiles` that
+  the sealed session record does not name. It never recurses or follows symlinks, and
+  runs under the same managed-files lock as bake publish, which moves the file and
+  writes its record as one step. It runs only when the sealed session was actually read
+  (no record counts as a read that names nothing). If the store is locked, the record
+  won't decrypt or decode, or it is still legacy plaintext, the sweep is skipped; it is
+  also skipped when there is no session record but the active or retained map selection
+  is, or may be, a PDF. A bake record the app would not have written names nothing, and
+  nothing treats a name outside the `tacmap-bake-<id>.mbtiles` form as a bake. It
+  does not depend on the PDF being present, so plaintext tiles left by a failed delete
+  don't outlive the next launch. Files from the pre-WP2 tiler (`tacmap-<uuid>.mbtiles`)
+  and user-imported packs never match the prefix. On Android, Remove runs off the main
+  thread. A georef change and Delete Map drop the record, and the managed-file
+  reconcile then deletes the unreferenced file.
+  On iOS, Delete Map clears the selector entry first, then the sealed PDF session, then
+  the PDF itself, so the PDF is never deleted while a session still points at it. If a
+  step fails (for example the session still reads back after it was cleared), the PDF
+  session is restored to its exact previous bytes and the selector to its previous
+  contents, the PDF stays on disk, and a "Map change not saved" alert with Retry is
+  shown. The visible map stays switched to online and a running bake stays cancelled.
+  If the rollback itself fails, a distinct error is shown and the next reconcile either
+  finishes the delete or offers to remove the broken entry. The alert is hosted by the
+  Layers sheet while it is open, otherwise by the main screen once nothing else is
+  presented over it (it waits behind any other sheet), and only Not Now or a Retry
+  that succeeds clears it, so a failed delete can't be closed unseen along with the
+  sheet.
 - **Custom symbol packs.** Pack import is an explicit local document-picker action.
   The app does not fetch GitHub releases, follow artwork URLs, execute SVG/scripts,
   or contact a pack author. A cloud-backed system document provider may download
@@ -587,6 +649,18 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   — there is no `MKMapView`, so `geod` is never asked for a basemap tile.)
 - OPSEC defaults: `settings/OpsecSettings.kt` and the iOS equivalent.
 - Crash handling: `CrashReporter` (local file only).
+- Debug-only verification hooks: `TACMAP_DEBUG_IMPORT_PDF`, `TACMAP_DEBUG_CAMERA`,
+  `TACMAP_DEBUG_GRID` and (Android) `TACMAP_DEBUG_OPSEC_ALLOW_SCREENSHOTS` are read
+  from the launch environment (Android: launch intent extras) only in debug builds
+  (`#if DEBUG` in `ios/.../App/DebugHooks.swift`, `BuildConfig.DEBUG` in
+  `android/.../app/DebugLaunchHooks.kt` + `MainActivity`) and are compiled out of
+  release builds. The Android screenshot switch never touches the stored OPSEC
+  setting and ends with the process. They exist for on-device screenshot/alignment tests; see
+  `docs/DEBUG_HOOKS.md`.
+- Imported-PDF crash-loop guard: `pdf_render_guard.json` in app support (Android:
+  `noBackupFilesDir`), outside backups, holds only random UUIDs (no file names or paths, which would reveal the
+  AO). Rendered PDF tiles are memory-only; the explicit "Generate Offline Tiles"
+  bake is the only rendered output written to disk.
 
 Issues and disclosures welcome via the repository.
 

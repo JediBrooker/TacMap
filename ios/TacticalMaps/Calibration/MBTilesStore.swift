@@ -435,6 +435,27 @@ final class MBTilesStore: @unchecked Sendable {
         return readTilePayload(z: z, x: x, tmsRow: tmsRow, expectedLength: length)
     }
 
+    /// One of our own extension keys (tacmap_bake_key, tacmap_tile_px).
+    /// Text only and length bounded, anything else reads as missing.
+    func extensionMetadata(_ key: String, maximumCharacters: Int = 128) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard openDatabaseIfNeeded() else { return nil }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT CASE WHEN typeof(value)='text' AND length(value) <= ?2 THEN value END " +
+            "FROM metadata WHERE name = ?1 LIMIT 1",
+            -1, &stmt, nil
+        ) == SQLITE_OK else { return nil }
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(stmt, 1, key, -1, transient)
+        sqlite3_bind_int(stmt, 2, Int32(maximumCharacters))
+        guard sqlite3_step(stmt) == SQLITE_ROW, let text = sqlite3_column_text(stmt, 0) else { return nil }
+        return String(cString: text)
+    }
+
     /// Permanently retires this reader before its app-managed backing file is
     /// deleted. The same lock used by tile queries guarantees SQLite is never
     /// unlinked underneath an in-flight read, and late renderer callbacks fail

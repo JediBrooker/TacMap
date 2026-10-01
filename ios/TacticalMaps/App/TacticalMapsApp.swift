@@ -22,6 +22,9 @@ struct TacticalMapsApp: App {
         _ = ExportFileSecurity.purgeStaleArtifactsOnLaunch()
         // Local-only crash capture (no telemetry). Field crashes shouldn't be silent.
         CrashReporter.install()
+        // a bake .partial still lying around is from a process that died mid
+        // bake, nothing can resume it (the guard reports it on restore)
+        PDFBakeController.cleanWorkDirectory()
         // Start the trial clock on first launch.
         TrialManager().startIfNeeded()
     }
@@ -133,7 +136,8 @@ private struct RootGate: View {
     /// Keep Screen On only suppresses auto-lock while TacMap is frontmost;
     /// iOS restores its normal idle timer whenever another app is active.
     private func applyKeepScreenOn() {
-        UIApplication.shared.isIdleTimerDisabled = opsec.keepScreenOn
+        // a running offline tile bake keeps the screen on while we're in front too
+        UIApplication.shared.isIdleTimerDisabled = opsec.keepScreenOn || PDFBakeController.shared.isRunning
     }
 }
 

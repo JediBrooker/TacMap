@@ -7,19 +7,6 @@ import XCTest
 @testable import TacticalMaps
 
 final class PDFImportSmokeTests: XCTestCase {
-    func testRasterSizingDoesNotUpscaleSmallPagesAndBoundsHugeAllocations() throws {
-        XCTAssertEqual(
-            boundedPDFRasterSize(width: 612, height: 792),
-            PDFRasterSize(width: 612, height: 792)
-        )
-        let huge = try XCTUnwrap(boundedPDFRasterSize(width: 12_000, height: 6_000))
-        XCTAssertLessThanOrEqual(huge.width, 4096)
-        XCTAssertLessThanOrEqual(huge.height, 4096)
-        XCTAssertLessThanOrEqual(huge.byteCount, 32 * 1024 * 1024)
-        XCTAssertEqual(Double(huge.width) / Double(huge.height), 2, accuracy: 0.002)
-        XCTAssertNil(boundedPDFRasterSize(width: .infinity, height: 100))
-    }
-
     func testGeneratedPDFImportsAndRendersAsMapSource() throws {
         let fixture = FileManager.default.temporaryDirectory
             .appendingPathComponent("tacmap-pdf-smoke-\(UUID().uuidString).pdf")
@@ -52,12 +39,12 @@ final class PDFImportSmokeTests: XCTestCase {
         XCTAssertEqual(frame.center.latitude, camera.latitude, accuracy: 0.001)
         XCTAssertEqual(frame.center.longitude, camera.longitude, accuracy: 0.001)
 
-        let image = try XCTUnwrap(source.renderedImage())
-        XCTAssertGreaterThan(image.size.width, 0)
-        XCTAssertGreaterThan(image.size.height, 0)
-        let raster = try XCTUnwrap(image.cgImage)
-        XCTAssertEqual(raster.width, 200, "small pages must not be device-scale upsampled")
-        XCTAssertEqual(raster.height, 300, "small pages must not be device-scale upsampled")
+        // drawn by the tile renderer now: base raster of the whole page,
+        // capped at 4x for a small page and inside the 6 Mpx budget
+        let raster = try renderPDFBaseRaster(source)
+        XCTAssertEqual(raster.levels[0].width, 800)
+        XCTAssertEqual(raster.levels[0].height, 1200)
+        XCTAssertLessThanOrEqual(raster.levels[0].width * raster.levels[0].height, PDFTileConstants.baseBudgetPx)
     }
 
     func testInvalidPDFIsRejectedAndRemoved() throws {
@@ -148,11 +135,10 @@ final class PDFImportSmokeTests: XCTestCase {
                 cameraCentre: CLLocationCoordinate2D(latitude: -34, longitude: 150)
             ) else { return XCTFail("rotated plain page should still import") }
 
-            let raster = try XCTUnwrap(source.renderedImage()?.cgImage)
+            let raster = try renderPDFBaseRaster(source).levels[0]
             XCTAssertGreaterThan(raster.width, 0)
             XCTAssertGreaterThan(raster.height, 0)
-            XCTAssertLessThanOrEqual(Int64(raster.width) * Int64(raster.height) * 4,
-                                     32 * 1024 * 1024)
+            XCTAssertLessThanOrEqual(raster.width * raster.height, PDFTileConstants.baseBudgetPx)
         }
     }
 

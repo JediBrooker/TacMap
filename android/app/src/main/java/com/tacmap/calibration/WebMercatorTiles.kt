@@ -57,8 +57,8 @@ object WebMercatorTiles {
      * at zoom `z`. Clamped to valid 0..(2^z - 1) grid.
      *
      * Antimeridian: a box crossing +/-180 (west lon > east) yields
-     * minX > maxX so [TileRange.count] is 0 and [PdfTiler] treats the bake
-     * as failed rather than producing wrong tiles. Full wrap-around tiling
+     * minX > maxX so [TileRange.count] is 0, callers get nothing rather than
+     * wrong tiles. Full wrap-around tiling
      * is intentionally unsupported - the calibration affine is linear in
      * longitude and can't represent the +/-180 discontinuity, so a sheet
      * straddling the date line needs unwrapped-longitude fiduciaries fixed

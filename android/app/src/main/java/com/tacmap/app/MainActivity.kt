@@ -104,6 +104,8 @@ class MainActivity : ComponentActivity() {
     // (e.g. days later) without a cold restart
     private val resumeTick = mutableLongStateOf(System.currentTimeMillis())
     private var restoreAfterRedeem = false
+    /** DEBUG: launched with verification hooks (docs/DEBUG_HOOKS.md) */
+    private var debugHooksActive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -180,8 +182,12 @@ class MainActivity : ComponentActivity() {
         // OPSEC: keep the map (w/ live position) out of recents thumbnail,
         // screenshots, screen recordings. Follows user's setting reactively.
         val opsec = (application as TacticalApp).opsec
+        // debug builds only: on-device verification hooks (docs/DEBUG_HOOKS.md). BuildConfig.DEBUG
+        // is a compile time false in release so R8 drops all of this
+        if (com.tacmap.BuildConfig.DEBUG && savedInstanceState == null) applyDebugLaunchHooks(intent)
         lifecycleScope.launch {
-            opsec.blockScreenCapture.collect { block ->
+            opsec.blockScreenCapture.collect { requested ->
+                val block = requested && !(com.tacmap.BuildConfig.DEBUG && DebugLaunchHooks.allowScreenshots)
                 if (block) {
                     window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
                 } else {
@@ -314,6 +320,38 @@ class MainActivity : ComponentActivity() {
                 }
             }
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // PDF tiles only render for a visible map, a bake keeps going (WP2 contract E)
+        com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = false
+        (application as TacticalApp).pdfRenderGuard.disarmBackground()
+    }
+
+    /**
+     * DEBUG ONLY. Import a PDF as if it was picked, preset the camera and grid, and lift
+     * FLAG_SECURE for this process so the verification scripts can screenshot.
+     */
+    private fun applyDebugLaunchHooks(launch: Intent?) {
+        if (!com.tacmap.BuildConfig.DEBUG) return
+        val request = DebugLaunchHooks.parse { name -> launch?.getStringExtra(name) } ?: return
+        DebugLaunchHooks.apply(request)
+        debugHooksActive = true
+        // nothing on top of the map in a hook run: no tour, no initial location prompt
+        com.tacmap.map.FirstRunTips.markSeen(this)
+        if (request.grid) {
+            getSharedPreferences(com.tacmap.map.LAYER_PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean(com.tacmap.map.MGRS_GRID_VISIBLE_KEY, true).commit()
+        }
+        request.importPdfPath?.let { path ->
+            receiveDocumentImportResult(DocumentImportKind.PDF, Uri.fromFile(java.io.File(path)))
         }
     }
 
@@ -592,6 +630,8 @@ class MainActivity : ComponentActivity() {
 
     private fun requestInitialLiveMapLocationIfReady() {
         if (locked.value || !missionKeyReady.value) return
+        // debug hook runs want an unobstructed map for screenshots (docs/DEBUG_HOOKS.md)
+        if (com.tacmap.BuildConfig.DEBUG && debugHooksActive) return
         if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
         if (!LiveMapLocationPermissionPolicy.shouldRequestOnInitialMapPresentation(
                 liveMapLocationState.value

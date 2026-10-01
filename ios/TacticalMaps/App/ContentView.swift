@@ -336,6 +336,11 @@ enum ImportedMapWorker {
         let page: GeoPDFReader.PageGeometry
         let contentKey: String
         let performedWorkOffMainThread: Bool
+        /// crash guard id the map keeps for life (sealed with its session)
+        var renderGuardToken: String = UUID().uuidString
+        /// the import probe's base raster, adopted so the first paint is instant
+        var baseRaster: PDFPageRaster? = nil
+        var pageIndex: Int = 0
 
         var mediaBox: PDFRectPayload { PDFRectPayload(page.mediaBox) }
     }
@@ -376,11 +381,18 @@ enum ImportedMapWorker {
                     return (copied, readout, contentKey)
                 }
                 try Task.checkCancellation()
-                return PDFPayload(destination: prepared.0,
-                                  outcome: prepared.1.outcome,
-                                  page: prepared.1.page,
-                                  contentKey: prepared.2,
-                                  performedWorkOffMainThread: offMainThread)
+                var payload = PDFPayload(destination: prepared.0,
+                                         outcome: prepared.1.outcome,
+                                         page: prepared.1.page,
+                                         contentKey: prepared.2,
+                                         performedWorkOffMainThread: offMainThread)
+                // draw it once here, before it's saved anywhere: a PDF that
+                // crashes the renderer dies in the import, not on every launch
+                let probe = try probePDF(payload)
+                payload.baseRaster = probe.raster
+                payload.pageIndex = probe.pageIndex
+                try Task.checkCancellation()
+                return payload
             } catch {
                 if let destination { try? FileManager.default.removeItem(at: destination) }
                 throw error
@@ -390,6 +402,41 @@ enum ImportedMapWorker {
             operation: { try await worker.value },
             onCancel: { worker.cancel() }
         )
+    }
+
+    /// The import probe (contract M): arm the guard, render the base raster
+    /// + blank check, complete. Plain and refused sheets get a stand-in
+    /// provisional georef, the base raster only depends on the page box.
+    static func probePDF(_ payload: PDFPayload) throws -> (raster: PDFPageRaster, pageIndex: Int) {
+        let georef: PdfGeoreference
+        if case .georeferenced(let g) = payload.outcome {
+            georef = g
+        } else if let g = PdfGeoreference.provisional(pageBox: payload.page.cropBox, rotation: payload.page.rotation,
+                                                      centredOn: CLLocationCoordinate2D(latitude: 0, longitude: 0)) {
+            georef = g
+        } else {
+            throw PDFMapImportError.invalidPDF
+        }
+        let guardStore = PDFRenderGuard.shared
+        guardStore.arm(kind: .import, token: payload.renderGuardToken)
+        // a clean failure isnt a crash, so the marker comes off either way
+        defer { guardStore.complete(kind: .import, token: payload.renderGuardToken) }
+        do {
+            let (_, page) = try PDFTileRenderer.openPage(url: payload.destination, pageIndex: georef.page)
+            let ctx = try PDFRenderContext(
+                url: payload.destination,
+                identity: PDFDocumentIdentity(contentKey: payload.contentKey, pageIndex: georef.page),
+                georef: georef, pageBox: PDFTileRenderer.pageBox(page), tilePx: 512,
+                guardToken: payload.renderGuardToken,
+                baseBudgetPx: PDFMemoryTier.baseBudgetPx(physicalMemory: ProcessInfo.processInfo.physicalMemory))
+            let raster = try autoreleasepool {
+                try PDFTileRenderer.renderBaseRaster(page: page, plan: ctx.basePlan, footprint: ctx.footprint)
+            }
+            if raster.blank { throw PDFRenderFailure.blank }
+            return (raster, georef.page)
+        } catch let f as PDFRenderFailure {
+            throw PDFMapImportError.cannotDraw(f)
+        }
     }
 
     static func prepareMBTiles(url: URL) async throws -> MBTilesPayload {
@@ -547,17 +594,31 @@ struct ContentView: View {
         (mapVM.mapSource as? PDFMapSource)?.isUncalibrated == true
     }
 
+    /// imported PDF is up but its renderer gave up (sticky until Try Again)
+    private var pdfRenderFailed: Bool {
+        mapVM.mapSource is PDFMapSource && mapVM.pdfRuntime.status.failure != nil
+    }
+
+    /// first draw of the imported PDF still going after 300 ms
+    private var pdfPreparing: Bool {
+        mapVM.mapSource is PDFMapSource && mapVM.pdfRuntime.showPreparingLabel
+    }
+
     /// Basemap status shown in the MGRS banner (replaces Live Location/Map Centre).
     private var basemapLabel: String? {
+        if pdfRenderFailed { return Messages.pdfRenderFailedLabel() }
+        if pdfPreparing { return Messages.pdfRenderDrawingLabel() }
         if uncalibratedPDFLoaded { return Messages.pdfMapUncalibratedLabel() }
         if importedMapLoaded { return L10n.text("Offline basemap") }
         if onlineTilesActive { return L10n.text("Online basemap") }
         return nil
     }
     private var basemapColor: Color {
+        if pdfRenderFailed { return PDFRenderStatusColors.failed }
+        if pdfPreparing { return PDFRenderStatusColors.preparing }
         if uncalibratedPDFLoaded { return Color(red: 1, green: 0.65, blue: 0.18) }  // amber, not a basemap yet
         return importedMapLoaded
-            ? Color(red: 0.45, green: 0.89, blue: 0.54)   // offline: green
+            ? PDFRenderStatusColors.ready                  // offline: the pinned green
             : Color(red: 1.0, green: 0.35, blue: 0.35)    // online: red
     }
 
@@ -732,6 +793,9 @@ struct ContentView: View {
                 .overlay {
                     if basemapBlank { NoBasemapNotice() }
                 }
+                .modifier(PDFRenderChrome(mapVM: mapVM, runtime: mapVM.pdfRuntime,
+                                          bake: PDFBakeController.shared, visibility: visibility,
+                                          calibration: calibration, layersSheetShowing: showLayersSheet))
 
                 if onlineTilesActive && onlineTileHealth.temporarilyUnavailable {
                     VStack {
@@ -901,7 +965,12 @@ struct ContentView: View {
                 _ = opsec.setMapOrientationMode(.northUp)
             }
             refreshHeadingLifecycle()
-            if LiveLocationPermissionPolicy.shouldRequestOnInitialAppearance(
+            #if DEBUG
+            let askForLocation = !DebugHooks.active
+            #else
+            let askForLocation = true
+            #endif
+            if askForLocation, LiveLocationPermissionPolicy.shouldRequestOnInitialAppearance(
                 for: locationService.authorisationStatus
             ) {
                 locationService.requestAuthorisation()
@@ -911,6 +980,17 @@ struct ContentView: View {
                 locationService.start()
             }
             restoreActiveBasemap()
+            // a bake (or its removal) that finished for an older object of the map on
+            // screen, eg after switching away and back mid bake: keep the live one in step
+            PDFBakeController.shared.onPublished = { [mapVM] pdf in
+                guard let shown = mapVM.mapSource as? PDFMapSource, shown !== pdf,
+                      shown.contentKey == pdf.contentKey, shown.georef == pdf.georef else { return }
+                shown.bake = pdf.bake
+                if let record = pdf.bake { mapVM.pdfRuntime.attachBake(record, for: shown) } else { mapVM.pdfRuntime.detachBake() }
+            }
+            #if DEBUG
+            runDebugHooks()
+            #endif
         }
         .onReceive(locationService.$lastLocation.compactMap { $0 }) { loc in
             mapVM.userLocationDidUpdate(
@@ -968,7 +1048,8 @@ struct ContentView: View {
                         mapVM: mapVM,
                         drawingStore: drawingStore,
                         waypointStore: waypointStore,
-                        onCalibrate: startCalibration)
+                        onCalibrate: startCalibration,
+                        isCalibrating: calibration.isCalibrating)
                 .padSheetSizing()
         }
         .nightSheet(isPresented: Binding(
@@ -1190,28 +1271,27 @@ struct ContentView: View {
         )
     }
 
+    /// every sheet / picker ContentView presents over itself. The map issue
+    /// alert on the root waits while any of them is up (OD3-R3-1 F1). New
+    /// presentations on ContentView go in here too
+    private var rootPresentationsOnTop: [Bool] {
+        [showWaypointSheet, quickSymbolDraft != nil, showDrawingsSheet, showLayersSheet,
+         calibration.pendingTap != nil, showExportSheet, showGPXExporter, showWeatherSheet,
+         showAppLockSheet, profileRequest != nil, showOpsecSheet, showSyncSheet, chatRoute != nil,
+         showSearchSheet, showAboutSheet, showPaywallSheet, missionObjectExportURL != nil,
+         showImporter, showGeoJSONImporter, showMBTilesImporter, showKMLImporter]
+    }
+
     var body: some View {
         importerContent
-        .background(
-            EmptyView()
-                .alert(L10n.text("Map change not saved"),
-                       isPresented: Binding(
-                        get: { mapVM.mapSelectionPersistenceIssue != nil },
-                        set: { if !$0 { mapVM.dismissMapSelectionPersistenceIssue() } }
-                       ),
-                       presenting: mapVM.mapSelectionPersistenceIssue) { _ in
-                    Button(L10n.text("Retry")) {
-                        if mapVM.retryMapSelectionPersistence(), calibration.isCalibrating {
-                            calibration.cancel()
-                        }
-                    }
-                    Button(L10n.text("Not Now"), role: .cancel) {
-                        mapVM.dismissMapSelectionPersistenceIssue()
-                    }
-                } message: { issue in
-                    Text(issue.message)
-                }
-        )
+        // OD3-R3-1: stands down while anything is presented over the root. Layers
+        // hosts it itself while open, any other sheet just defers it until it closes
+        .mapSelectionIssueAlert(
+            mapVM: mapVM,
+            isActive: MapSelectionIssueAlertGate.rootHostIsActive(presentationsOnTop: rootPresentationsOnTop)
+        ) { retried in
+            if retried, calibration.isCalibrating { calibration.cancel() }
+        }
         .alert(L10n.text("Import"),
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),
@@ -1677,6 +1757,10 @@ struct ContentView: View {
     /// Starts the guided tour on first run, or when About asked to replay it.
     private func presentTipsIfNeeded() {
         guard !appLockOverlayActive, !missionDataLocked, tourStep == nil else { return }
+        #if DEBUG
+        // scripted verification runs want the bare map
+        if DebugHooks.active { return }
+        #endif
         if replayTourRequested {
             replayTourRequested = false
         } else if !FirstRunTips.shouldShow() {
@@ -1797,7 +1881,8 @@ struct ContentView: View {
         guard let source = mapVM.restoreActiveMapSelection() else { return }
         NSLog("[MapVM] restored active basemap -> kind=\(source.kind)")
         // includes v1 sessions whose old camera box couldn't be trusted
-        if (source as? PDFMapSource)?.isUncalibrated == true, !calibration.isCalibrating {
+        if (source as? PDFMapSource)?.isUncalibrated == true, !calibration.isCalibrating,
+           mapVM.pdfCrashSuspect == nil {
             promptUncalibratedMap = true
         }
     }
@@ -1945,7 +2030,8 @@ struct ContentView: View {
         }
         // Build fresh source so MapContainerView rebuilds overlay
         // (sync logic keys on source.id).
-        let newSource = PDFMapSource(url: source.url, georef: source.georef, contentKey: source.contentKey)
+        let newSource = PDFMapSource(url: source.url, georef: source.georef, contentKey: source.contentKey,
+                                     renderGuardToken: source.renderGuardToken)
         newSource.applyCalibration(
             transform: result.transform,
             fiduciaries: calibration.fiduciaries
@@ -1971,6 +2057,11 @@ struct ContentView: View {
             }
             return
         }
+        importPDF(url)
+    }
+
+    /// picked file (or the debug hook's) through the one import pipeline
+    private func importPDF(_ url: URL, completion: (() -> Void)? = nil) {
         let cameraAtImport = mapVM.cameraCentre
         importWorkTask?.cancel()
         importWorkTask = Task { @MainActor in
@@ -1982,10 +2073,12 @@ struct ContentView: View {
                 switch payload.outcome {
                 case .georeferenced(let georef):
                     let source = PDFMapSource(url: payload.destination, georef: georef,
-                                              contentKey: payload.contentKey)
+                                              contentKey: payload.contentKey,
+                                              renderGuardToken: payload.renderGuardToken)
                     // If PDF was calibrated in a previous session, restore
                     // fiduciaries + fit so it re-imports already aligned.
                     PDFSessionStore.applyCalibrationIfKnown(to: source)
+                    adoptProbeRaster(payload)
                     // a failed select leaves the retry transition owning the copy
                     copiedURL = nil
                     _ = mapVM.selectMapSource(source)
@@ -1999,6 +2092,7 @@ struct ContentView: View {
                     pendingGeorefRejection = PendingGeorefRejection(
                         payload: payload, reason: reason, camera: cameraAtImport)
                 }
+                completion?()
             } catch is CancellationError {
                 if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
             } catch let error as PDFMapImportError {
@@ -2022,10 +2116,42 @@ struct ContentView: View {
             importMessage = PDFMapImportError.invalidPDF.displayMessage
             return
         }
-        let source = PDFMapSource(url: payload.destination, georef: georef, contentKey: payload.contentKey)
+        let source = PDFMapSource(url: payload.destination, georef: georef, contentKey: payload.contentKey,
+                                  renderGuardToken: payload.renderGuardToken)
         PDFSessionStore.applyCalibrationIfKnown(to: source)
+        adoptProbeRaster(payload)
         guard mapVM.selectMapSource(source) else { return }
         if source.isUncalibrated { startCalibration() }
+    }
+
+    #if DEBUG
+    /// launch env hooks for device verification, see docs/DEBUG_HOOKS.md
+    private func runDebugHooks() {
+        if DebugHooks.gridOn { visibility.mgrsGridVisible = true }
+        let applyCamera = {
+            guard let cam = DebugHooks.camera else { return }
+            // after the import has framed the sheet, so ours wins
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                mapVM.isBrowsing = true
+                mapVM.exactCameraRequests.send((CLLocationCoordinate2D(latitude: cam.latitude, longitude: cam.longitude),
+                                                cam.zoom, cam.heading))
+            }
+        }
+        if let url = DebugHooks.importPDF {
+            importPDF(url, completion: applyCamera)
+        } else {
+            applyCamera()
+        }
+    }
+    #endif
+
+    /// the base raster from the import probe is page space, any georef can use it
+    private func adoptProbeRaster(_ payload: ImportedMapWorker.PDFPayload) {
+        guard let raster = payload.baseRaster else { return }
+        mapVM.pdfRuntime.adoptBaseRaster(raster,
+                                         identity: PDFDocumentIdentity(contentKey: payload.contentKey,
+                                                                       pageIndex: payload.pageIndex),
+                                         url: payload.destination)
     }
 
     /// Import local MBTiles raster pyramid as offline basemap. Copies the

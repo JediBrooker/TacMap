@@ -168,6 +168,10 @@ object Messages {
         L10n.message("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", summary, count)
     fun importInvalidSummaryMessage(summary: String, count: String): LocalizedMessage =
         LocalizedMessage("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", listOf(summary, count))
+    fun importedMapHiddenNotice(): String =
+        L10n.message("id.imported_map_hidden_notice", "Imported map hidden")
+    fun importedMapShowToggle(): String =
+        L10n.message("id.imported_map_show_toggle", "Show Imported Map")
     fun decimalInputHint(): String =
         L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
     fun layersDeleteImportedConfirm(): String =
@@ -184,12 +188,6 @@ object Messages {
         L10n.message("id.layers_delete_saved_imported_map", "Delete Saved Imported Map…")
     fun layersPdfFiduciaryCount(count: String): String =
         L10n.message("id.layers_pdf_fiduciary_count", "Currently calibrated with %1\$s fiduciaries", count)
-    fun layersPdfGeoreferenced(): String =
-        L10n.message("id.layers_pdf_georeferenced", "Georeferenced (GeoPDF LGIDict)")
-    fun layersPdfManualBounds(): String =
-        L10n.message("id.layers_pdf_manual_bounds", "Manually placed bounds")
-    fun layersPdfNoGeoreferencing(): String =
-        L10n.message("id.layers_pdf_no_georeferencing", "No georeferencing — using map-centre fallback")
     fun layersRemoveSavedMapEntry(): String =
         L10n.message("id.layers_remove_saved_map_entry", "Remove Saved Map Entry")
     fun layersSavedMapUnavailable(): String =
@@ -224,6 +222,54 @@ object Messages {
         L10n.message("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
     fun onlineBasemapsDisabledMessage(): LocalizedMessage =
         LocalizedMessage("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", listOf())
+    fun pdfBakeCaption(): String =
+        L10n.message("id.pdf_bake_caption", "Pre-renders this map so it opens and zooms instantly. The PDF is kept.")
+    fun pdfBakeChip(percent: String): String =
+        L10n.message("id.pdf_bake_chip", "Offline tiles %1\$s%%", percent)
+    fun pdfBakeConfirmMessage(name: String, duration: String): String =
+        L10n.message("id.pdf_bake_confirm_message", "“%1\$s” stays on this device and remains the active map. This takes about %2\$s.", name, duration)
+    fun pdfBakeConfirmTitle(): String =
+        L10n.message("id.pdf_bake_confirm_title", "Generate offline tiles?")
+    fun pdfBakeDisabledCaption(): String =
+        L10n.message("id.pdf_bake_disabled_caption", "Calibrate this map before generating offline tiles.")
+    fun pdfBakeDone(): String =
+        L10n.message("id.pdf_bake_done", "Offline tiles ready")
+    fun pdfBakeErrorNoSpace(size: String): String =
+        L10n.message("id.pdf_bake_error_no_space", "Not enough free space. About %1\$s is needed.", size)
+    fun pdfBakeErrorRenderFailed(): String =
+        L10n.message("id.pdf_bake_error_render_failed", "Part of this map couldn't be drawn, so no offline tiles were saved.")
+    fun pdfBakeErrorSourceChanged(): String =
+        L10n.message("id.pdf_bake_error_source_changed", "The map changed while tiles were being generated. Nothing was saved.")
+    fun pdfBakeErrorTitle(): String =
+        L10n.message("id.pdf_bake_error_title", "Offline tiles")
+    fun pdfBakeErrorTooLarge(): String =
+        L10n.message("id.pdf_bake_error_too_large", "This map is too large to pre-render on this device.")
+    fun pdfBakeErrorWriteFailed(): String =
+        L10n.message("id.pdf_bake_error_write_failed", "The offline tiles couldn't be saved. Nothing was changed.")
+    fun pdfBakeEstimating(): String =
+        L10n.message("id.pdf_bake_estimating", "Estimating size…")
+    fun pdfBakeGenerate(): String =
+        L10n.message("id.pdf_bake_generate", "Generate")
+    fun pdfBakeGenerateButton(): String =
+        L10n.message("id.pdf_bake_generate_button", "Generate Offline Tiles…")
+    fun pdfBakeInfo(minZoom: String, maxZoom: String, size: String): String =
+        L10n.message("id.pdf_bake_info", "Offline tiles: zoom %1\$s–%2\$s · %3\$s", minZoom, maxZoom, size)
+    fun pdfBakeInterruptedMessage(): String =
+        L10n.message("id.pdf_bake_interrupted_message", "TacMap closed before the offline tiles were finished. Nothing was saved.")
+    fun pdfBakeInterruptedTitle(): String =
+        L10n.message("id.pdf_bake_interrupted_title", "Offline tiles not finished")
+    fun pdfBakeMinutes(minutes: String): String =
+        L10n.message("id.pdf_bake_minutes", "%1\$s min", minutes)
+    fun pdfBakeOptionNoSpace(): String =
+        L10n.message("id.pdf_bake_option_no_space", " · not enough free space")
+    fun pdfBakeOptionRow(zoom: String, tiles: String, size: String): String =
+        L10n.message("id.pdf_bake_option_row", "Up to zoom %1\$s · %2\$s tiles · about %3\$s", zoom, tiles, size)
+    fun pdfBakeRemove(): String =
+        L10n.message("id.pdf_bake_remove", "Remove Offline Tiles")
+    fun pdfBakeRunning(done: String, total: String): String =
+        L10n.message("id.pdf_bake_running", "Generating offline tiles — %1\$s/%2\$s", done, total)
+    fun pdfGeorefAdobeLabel(): String =
+        L10n.message("id.pdf_georef_adobe_label", "Georeferenced (GeoPDF)")
     fun pdfGeorefCalibrateManually(): String =
         L10n.message("id.pdf_georef_calibrate_manually", "Calibrate Manually")
     fun pdfGeorefReasonDegenerate(): String =
@@ -246,6 +292,18 @@ object Messages {
         L10n.message("id.pdf_georef_rejected_message", "This PDF declares a georeference, but TacMap can't use it: %1\$s. It has not been placed on the map. You can calibrate it by hand with known points instead.", reason)
     fun pdfGeorefRejectedTitle(): String =
         L10n.message("id.pdf_georef_rejected_title", "Georeference not usable")
+    fun pdfGuardCrashMessage(): String =
+        L10n.message("id.pdf_guard_crash_message", "The map wasn't opened automatically in case it causes the same problem. The online map is shown instead.")
+    fun pdfGuardCrashTitle(name: String): String =
+        L10n.message("id.pdf_guard_crash_title", "TacMap closed while drawing “%1\$s”", name)
+    fun pdfGuardDeleteMap(): String =
+        L10n.message("id.pdf_guard_delete_map", "Delete Map…")
+    fun pdfGuardImportInterruptedMessage(): String =
+        L10n.message("id.pdf_guard_import_interrupted_message", "The map wasn't imported. Try again, or print the PDF to a new file and import that copy.")
+    fun pdfGuardImportInterruptedTitle(): String =
+        L10n.message("id.pdf_guard_import_interrupted_title", "TacMap closed while preparing an imported map")
+    fun pdfGuardOpenAnyway(): String =
+        L10n.message("id.pdf_guard_open_anyway", "Open Anyway")
     fun pdfMapCalibrateNow(): String =
         L10n.message("id.pdf_map_calibrate_now", "Calibrate")
     fun pdfMapUncalibratedLabel(): String =
@@ -254,6 +312,30 @@ object Messages {
         L10n.message("id.pdf_map_uncalibrated_message", "This PDF has no usable georeference, so where it sits on the map is only a guess. Calibrate it with known points before relying on any position.")
     fun pdfMapUncalibratedTitle(): String =
         L10n.message("id.pdf_map_uncalibrated_title", "Map not calibrated")
+    fun pdfRenderDrawingLabel(): String =
+        L10n.message("id.pdf_render_drawing_label", "Drawing map…")
+    fun pdfRenderFailedLabel(): String =
+        L10n.message("id.pdf_render_failed_label", "Map couldn't be drawn")
+    fun pdfRenderFailedTitle(name: String): String =
+        L10n.message("id.pdf_render_failed_title", "Couldn't draw “%1\$s”", name)
+    fun pdfRenderReasonBlank(): String =
+        L10n.message("id.pdf_render_reason_blank", "Nothing on this PDF page could be drawn.")
+    fun pdfRenderReasonCannotOpen(): String =
+        L10n.message("id.pdf_render_reason_cannot_open", "The PDF file is missing or can't be read.")
+    fun pdfRenderReasonOutOfMemory(): String =
+        L10n.message("id.pdf_render_reason_out_of_memory", "This PDF is too large to draw on this device.")
+    fun pdfRenderReasonPageGeometry(): String =
+        L10n.message("id.pdf_render_reason_page_geometry", "This PDF's page layout doesn't match its georeference.")
+    fun pdfRenderReasonPageMissing(): String =
+        L10n.message("id.pdf_render_reason_page_missing", "The georeferenced page is missing from this PDF.")
+    fun pdfRenderReasonPasswordProtected(): String =
+        L10n.message("id.pdf_render_reason_password_protected", "This PDF is password-protected. Remove the password and import it again.")
+    fun pdfRenderReasonRenderError(): String =
+        L10n.message("id.pdf_render_reason_render_error", "TacMap couldn't draw this PDF.")
+    fun pdfRenderTryAgain(): String =
+        L10n.message("id.pdf_render_try_again", "Try Again")
+    fun pdfRenderUseOnlineMap(): String =
+        L10n.message("id.pdf_render_use_online_map", "Use Online Map")
     fun pdfRotationUnsupported(value: String): String =
         L10n.message("id.pdf_rotation_unsupported", "This PDF's first page is rotated %1\$s°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy.", value)
     fun pdfRotationUnsupportedMessage(value: String): LocalizedMessage =

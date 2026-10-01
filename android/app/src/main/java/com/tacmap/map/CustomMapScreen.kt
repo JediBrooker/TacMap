@@ -37,7 +37,6 @@ import com.tacmap.map.render.MgrsGridCanvas
 import com.tacmap.map.render.OnlineRasterTileSource
 import com.tacmap.map.render.CalibrationFiduciariesLayer
 import com.tacmap.map.render.HeatmapGroundLayer
-import com.tacmap.map.render.PdfGroundLayer
 import com.tacmap.map.render.PresenceLayer
 import com.tacmap.map.render.TileMapView
 import com.tacmap.map.render.TileSource
@@ -65,6 +64,14 @@ fun CustomMapScreen(
     modifier: Modifier = Modifier,
     waypoints: List<Waypoint> = emptyList(),
     mapSource: MapSource? = null,
+    /** the tile view's memory cache, MapViewModel owns it so rotation keeps it */
+    tileCache: com.tacmap.map.render.TileBitmapCache,
+    /** the imported PDF as a tile source (MapViewModel.pdfRuntime), null for other maps */
+    pdfTileSource: TileSource? = null,
+    /** Layers > Show Imported Map off: background only, overlays stay */
+    importedMapHidden: Boolean = false,
+    /** the PDF's first tiles are on screen (render status ready) */
+    pdfRenderReady: Boolean = false,
     drawings: List<DrawingFeature> = emptyList(),
     drawingLayers: List<DrawingLayer> = emptyList(),
     draftDrawing: DrawingFeature? = null,
@@ -96,6 +103,8 @@ fun CustomMapScreen(
     initialCameraState: MapViewportState? = null,
     pendingTarget: Triple<Double, Double, Float>? = null,
     resetNorthRequests: Flow<Unit>? = null,
+    /** set the heading outright (debug camera hook) */
+    headingRequests: Flow<Double>? = null,
     headingUpEnabled: Boolean = false,
     deviceHeadingDegrees: Flow<Double?>,
     onConsumePendingTarget: () -> Unit = {},
@@ -130,9 +139,10 @@ fun CustomMapScreen(
             is OnlineRasterMapSourceAndroid ->
                 if (onlineBasemapsEnabled) OnlineRasterTileSource(mapSource.style) else null
             is OfflineTileMapSourceAndroid -> mapSource.renderTileSource()
-            else -> null // PDF draws as an overlay; otherwise blank
+            else -> null
         }
     }
+    val tileSource: TileSource? = if (mapSource is PdfMapSource) pdfTileSource else source
     val wantsOnlineRaster = mapSource is OnlineRasterMapSourceAndroid
     val basemapBlank = !onlineBasemapsEnabled && wantsOnlineRaster
 
@@ -151,6 +161,11 @@ fun CustomMapScreen(
     }
     LaunchedEffect(resetNorthRequests) {
         resetNorthRequests?.collect { camera = camera.copy(headingDegrees = 0.0) }
+    }
+    LaunchedEffect(headingRequests) {
+        headingRequests?.collect { h ->
+            if (h.isFinite()) camera = camera.copy(headingDegrees = normalizedHeadingDegrees(h))
+        }
     }
     LaunchedEffect(headingUpEnabled, deviceHeadingDegrees) {
         if (headingUpEnabled) {
@@ -232,18 +247,18 @@ fun CustomMapScreen(
         TileMapView(
             camera = camera,
             onCameraChange = { camera = it },
-            source = source,
+            source = tileSource,
+            cache = tileCache,
+            hidden = importedMapHidden && mapSource is PdfMapSource,
+            contentDescription = (mapSource as? PdfMapSource)
+                ?.takeIf { pdfRenderReady && !importedMapHidden }
+                ?.let { L10n.text("PDF map rendered: %1\$s", it.displayName) },
             // The full-screen interaction overlay below owns the entire pointer
             // stream so a transform can take over even when finger one started
             // on a waypoint/drawing.
             gesturesEnabled = false,
             modifier = Modifier.fillMaxSize()
         )
-
-        // Imported PDF/GeoPDF sits just above the basemap.
-        (mapSource as? PdfMapSource)?.let { pdf ->
-            PdfGroundLayer(source = pdf, camera = camera, density = density)
-        }
 
         // Terrain heatmap sits above the basemap/PDF, under the grid + symbols.
         if (terrainHeatmapVisible) {
@@ -272,7 +287,10 @@ fun CustomMapScreen(
         }
 
         // Calibration fiducial pins (only while calibrating a PDF).
-        CalibrationFiduciariesLayer(calibrationFiduciaries, camera, density)
+        CalibrationFiduciariesLayer(
+            calibrationFiduciaries, camera, density,
+            placement = (mapSource as? PdfMapSource)?.placement,
+        )
 
         // Labels above the symbols.
         WaypointLabelsLayer(visibleWaypoints, camera, density, unitLabelsVisible, taskLabelsVisible)
@@ -307,8 +325,9 @@ fun CustomMapScreen(
                 onDrawingTap = onDrawingFeatureTap,
                 onPresencePeerTap = onPresencePeerTap,
                 onDrawingMoved = onShapeMoved,
-                minZoom = source?.minZoom?.toDouble() ?: 2.0,
-                maxZoom = source?.maxZoom?.toDouble() ?: 22.0,
+                // camera limits only, every source overzooms past its own max (WP2 contract A)
+                minZoom = MapCamera.MIN_ZOOM,
+                maxZoom = MapCamera.MAX_ZOOM,
                 rotationEnabled = !headingUpEnabled,
                 onCameraChange = {
                     camera = it
@@ -330,7 +349,25 @@ fun CustomMapScreen(
         if (basemapBlank) {
             NoBasemapNoticeCustom(Modifier.align(Alignment.Center))
         }
+        if (importedMapHidden && mapSource is PdfMapSource) {
+            ImportedMapHiddenCapsule(Modifier.align(Alignment.Center))
+        }
     }
+}
+
+/** Layers > Show Imported Map is off: say so, the dark map is deliberate */
+@Composable
+private fun ImportedMapHiddenCapsule(modifier: Modifier = Modifier) {
+    androidx.compose.material3.Text(
+        Messages.importedMapHiddenNotice(),
+        color = androidx.compose.ui.graphics.Color.White,
+        fontSize = 13.sp,
+        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+        modifier = modifier
+            .padding(24.dp)
+            .background(androidx.compose.ui.graphics.Color(0xCC000000), RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }
 
 /** North-up square around the viewport half-diagonal. It contains the visible

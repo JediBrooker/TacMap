@@ -83,7 +83,9 @@ internal object MapCameraLifecyclePolicy {
             zoom = zoom.toDouble(),
             bearingDegrees = current.headingDegrees,
         )
+        // programmatic targets get the same 2..22 the pinch does (WP2 contract A)
         return candidate.takeIf(MapViewportState::isUsable)?.toCamera()?.copy(
+            zoom = com.tacmap.map.render.MapCamera.clampZoom(candidate.zoom),
             viewportWidth = current.viewportWidth,
             viewportHeight = current.viewportHeight,
         )

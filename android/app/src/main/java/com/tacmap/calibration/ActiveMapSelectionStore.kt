@@ -274,6 +274,17 @@ class ActiveMapSelectionStore private constructor(
     internal fun reconcileManagedImportedMapFiles(
         currentPdfFile: () -> File?,
         clearPdfSession: () -> Boolean,
+        /**
+         * The PDF's Generate Offline Tiles output, lives in offline_tiles next to imported
+         * packs. No default on purpose: a caller that forgets it reaps the bake (D3)
+         */
+        currentPdfBakeFile: () -> File?,
+    ): Boolean = withManagedFilesLock { reconcileLocked(currentPdfFile, clearPdfSession, currentPdfBakeFile) }
+
+    private fun reconcileLocked(
+        currentPdfFile: () -> File?,
+        clearPdfSession: () -> Boolean,
+        currentPdfBakeFile: () -> File?,
     ): Boolean {
         val container = loadActiveContainer() as? ActiveMapSelectionContainerLoad.Loaded
             ?: return false
@@ -283,7 +294,8 @@ class ActiveMapSelectionStore private constructor(
         val keep = when (retained?.kind) {
             ActiveMapKind.PDF -> {
                 if (active?.kind == ActiveMapKind.OFFLINE_TILES) return false
-                setOf(currentPdfFile() ?: return false)
+                // the bake goes with the PDF. an in-progress bake sits in pdf_bake_work, never listed here
+                setOfNotNull(currentPdfFile() ?: return false, currentPdfBakeFile())
             }
             ActiveMapKind.OFFLINE_TILES -> {
                 if (active?.kind == ActiveMapKind.PDF ||
@@ -404,6 +416,13 @@ class ActiveMapSelectionStore private constructor(
     }
 
     internal companion object {
+        // process wide, not per instance: the bake publisher (app scope) and the view model's
+        // reconcile each have their own store object but have to take turns on the same files
+        private val MANAGED_FILES_LOCK = Any()
+
+        /** run [block] while no reconcile can list or delete managed map files */
+        fun <T> withManagedFilesLock(block: () -> T): T = synchronized(MANAGED_FILES_LOCK) { block() }
+
         private const val FILE_NAME = "active_map_source.json"
         private const val LABEL = "active_map_source.json"
         private const val RETAINED_FILE_NAME = "retained_imported_map_source.json"
@@ -479,3 +498,81 @@ internal enum class ActiveMapKind {
     PDF,
     OFFLINE_TILES
 }
+
+/**
+ * Remove Offline Tiles (R2-S2): drop the bake record, then delete the file + sidecars in
+ * offline_tiles right away, all under the managed files lock. Doesn't wait on the reconcile,
+ * that one refuses to run while the PDF is missing and the plaintext tiles would just sit
+ * there. [takeRecord] clears it and names the file ("" none, null = not cleared, delete
+ * nothing). [onCleared] runs before the delete, it's where the live reader lets go. A name
+ * without the tacmap-bake- prefix isn't ours and never gets deleted (R3-5). Returns null when
+ * nothing was cleared, else whether the file is gone
+ */
+internal fun removePdfBakeFile(filesDir: File, takeRecord: () -> String?, onCleared: () -> Unit = {}): Boolean? =
+    ActiveMapSelectionStore.withManagedFilesLock {
+        val name = takeRecord() ?: return@withManagedFilesLock null
+        onCleared()
+        name.isEmpty() || ManagedImportedMapFileLifecycle.isGeneratedBakeName(name) &&
+            ManagedImportedMapFileLifecycle.deleteMBTiles(File(filesDir, "offline_tiles"), name)
+    }
+
+/**
+ * The app's Remove Offline Tiles against the sealed session, what MapViewModel calls (worker
+ * thread, it seals + commits prefs). Then the bake sweep, so an earlier Remove whose delete
+ * failed doesn't leave plaintext tiles around for good. True when the named file is gone
+ * and the sweep didn't trip over anything
+ */
+@androidx.annotation.WorkerThread
+internal fun PdfSessionStore.removeBake(
+    filesDir: File,
+    pdfFileName: String,
+    token: String,
+    selection: ActiveMapSelectionStore,
+    onCleared: () -> Unit = {},
+): Boolean? {
+    val deleted = removePdfBakeFile(filesDir, { takeBake(pdfFileName, token) }, onCleared) ?: return null
+    return deleted && sweepOrphanBakes(filesDir, selection) != false
+}
+
+/**
+ * Bake-only sweep (R3-2), at launch and after Remove: tacmap-bake-*.mbtiles + sidecars in
+ * offline_tiles the sealed record doesn't name. Record read and sweep under the managed files
+ * lock, so a publish can't land a file in between. Unreadable record = skip, null back; never
+ * delete on a guess. Fine with the PDF missing, a bake can always be made again
+ */
+internal fun sweepOrphanPdfBakes(filesDir: File, readRecord: () -> PdfBakeRecordRead): Boolean? =
+    ActiveMapSelectionStore.withManagedFilesLock {
+        val keep = when (val r = readRecord()) {
+            is PdfBakeRecordRead.Read -> r.fileName
+            PdfBakeRecordRead.Unreadable -> return@withManagedFilesLock null
+        }
+        ManagedImportedMapFileLifecycle.sweepBakes(File(filesDir, "offline_tiles"), keep)
+    }
+
+/**
+ * The sweep the app runs. No session record while the selector still says a PDF is (or might
+ * be) the active or retained map isn't a clean "names nothing", it's a record we failed to
+ * see, so that skips too (same rule as iOS)
+ */
+@androidx.annotation.WorkerThread
+internal fun PdfSessionStore.sweepOrphanBakes(filesDir: File, selection: ActiveMapSelectionStore): Boolean? =
+    sweepOrphanPdfBakes(filesDir) { readBakeRecord(selectorMayNamePdf = selection::mayNamePdf) }
+
+/** active or retained selector is a PDF, or can't be read right now so it might be */
+internal fun ActiveMapSelectionStore.mayNamePdf(): Boolean =
+    listOf(loadState(), loadRetainedImportedState()).any {
+        it is ActiveMapSelectionLoadState.Unavailable ||
+            (it as? ActiveMapSelectionLoadState.Loaded)?.selection?.kind == ActiveMapKind.PDF
+    }
+
+/**
+ * The reconcile the app runs: keep set straight off the sealed PDF session, PDF and its bake
+ * (D3, F5). MapViewModel goes through here so the instrumented test covers the real wiring
+ */
+internal fun ActiveMapSelectionStore.reconcileWithPdfSession(session: PdfSessionStore): Boolean =
+    reconcileManagedImportedMapFiles(
+        // just the file, a session still waiting on migration keeps its PDF too
+        currentPdfFile = session::activeFile,
+        clearPdfSession = session::clear,
+        currentPdfBakeFile = session::activeBakeFile,
+    )

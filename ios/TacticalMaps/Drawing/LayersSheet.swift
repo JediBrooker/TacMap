@@ -10,14 +10,16 @@ struct LayersSheet: View {
     /// Called when user wants to calibrate the current PDF. ContentView
     /// dismisses this sheet and kicks off CalibrationSession.
     var onCalibrate: () -> Void = {}
+    /// J1: while calibrating the imported map is forced on, the toggle shows
+    /// that and cant be changed. its stored value comes back afterwards
+    var isCalibrating: Bool = false
     @Environment(\.dismiss) private var dismiss
 
     @State private var showingNewLayerSheet = false
     @State private var pendingDeleteLayer: DrawingLayer? = nil
     @State private var editingLayer: DrawingLayer? = nil
-    @State private var tilingProgress: PDFTiler.Progress? = nil
-    @State private var tilingTask: Task<Void, Never>? = nil
-    @State private var tilingError: LocalizedMessage? = nil
+    /// the bake lives app wide, the sheet just shows it (D3-10)
+    @ObservedObject private var bake = PDFBakeController.shared
     @State private var layerDeleteError: LocalizedMessage? = nil
     @State private var layerMutationError: LocalizedMessage? = nil
     /// Persisted imported map that's not currently active, so user can
@@ -54,6 +56,10 @@ struct LayersSheet: View {
                 // Offer a "switch back" to a persisted imported map that isn't
                 // the current source.
                 refreshRetainedMap()
+            }
+            .onDisappear {
+                // an estimate / confirm belongs to this sheet, a running bake doesnt
+                if !bake.isRunning, bakeError == nil { bake.dismiss() }
             }
             .navigationTitle(Messages.layersScreenTitle())
             .navigationBarTitleDisplayMode(.inline)
@@ -97,12 +103,19 @@ struct LayersSheet: View {
                 let waypoints = waypointStore.waypoints.filter { $0.layerID == layer.id }.count
                 Text(L10n.text("%1$@ and %2$@ will move to Friendly before “%3$@” is removed.", L10n.quantity("drawing", drawings), L10n.quantity("waypoint", waypoints), layer.displayName))
             }
-            .alert(L10n.text("Offline tiles"),
-                   isPresented: Binding(get: { tilingError != nil },
-                                        set: { if !$0 { tilingError = nil } }),
-                   presenting: tilingError) { _ in
-                Button(Messages.acknowledge(), role: .cancel) { tilingError = nil }
-            } message: { msg in Text(msg.text) }
+            .alert(Messages.pdfBakeErrorTitle(),
+                   isPresented: Binding(get: { bakeError != nil },
+                                        set: { if !$0 { bake.dismiss() } })) {
+                Button(Messages.acknowledge(), role: .cancel) { bake.dismiss() }
+            } message: {
+                Text(bakeError?.text ?? "")
+            }
+            // J1: "Estimating size…" with Cancel, then the radio rows + Generate /
+            // Cancel, one modal that morphs so the two never fight over presenting
+            .nightSheet(isPresented: Binding(get: { bakeSheetShowing },
+                                             set: { if !$0, bakeSheetShowing { bake.cancel() } })) {
+                PDFBakeConfirmSheet(bake: bake)
+            }
             .alert(L10n.text("Layer change not saved"),
                    isPresented: Binding(get: { layerMutationError != nil },
                                         set: { if !$0 { layerMutationError = nil } }),
@@ -116,52 +129,24 @@ struct LayersSheet: View {
             } message: {
                 Text(L10n.text("This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone."))
             }
-            .background(
-                EmptyView()
-                    .alert(L10n.text("Map change not saved"),
-                           isPresented: Binding(
-                            get: { mapVM.mapSelectionPersistenceIssue != nil },
-                            set: { if !$0 { mapVM.dismissMapSelectionPersistenceIssue() } }
-                           ),
-                           presenting: mapVM.mapSelectionPersistenceIssue) { _ in
-                        Button(L10n.text("Retry")) {
-                            if mapVM.retryMapSelectionPersistence() {
-                                refreshRetainedMap()
-                            }
-                        }
-                        Button(L10n.text("Not Now"), role: .cancel) {
-                            mapVM.dismissMapSelectionPersistenceIssue()
-                        }
-                    } message: { issue in
-                        Text(issue.message)
-                    }
-            )
+            // the sheet hosts it while its up, ContentView stands down (OD3-R3-1)
+            .mapSelectionIssueAlert(mapVM: mapVM, isActive: true) { retried in
+                if retried { refreshRetainedMap() }
+            }
         }
     }
 
-    /// Bake the calibrated PDF into offline MBTiles off main thread,
-    /// then swap active source to the generated tiles.
-    private func generateTiles(from pdf: PDFMapSource) {
-        tilingProgress = PDFTiler.Progress(done: 0, total: 0)
-        tilingTask = Task.detached(priority: .userInitiated) {
-            let url = PDFTiler.generate(source: pdf) { p in
-                Task { @MainActor in tilingProgress = p }
-            }
-            let cancelled = Task.isCancelled
-            await MainActor.run {
-                tilingProgress = nil
-                tilingTask = nil
-                if cancelled { return } // user cancelled, bail out
-                if let url, let source = OfflineTileMapSource(url: url) {
-                    if mapVM.selectMapSource(source) {
-                        refreshRetainedMap()
-                        dismiss()
-                    }
-                } else {
-                    // don't fail silently, the bake didn't produce a usable set
-                    tilingError = Messages.displayCouldnTGenerateOfflineTilesCheckThatTheDeviceMessage()
-                }
-            }
+    private var bakeError: PDFBakeError? {
+        if case .failed(let e) = bake.state { return e }
+        return nil
+    }
+
+    /// estimating or confirming, for the map on screen
+    private var bakeSheetShowing: Bool {
+        guard let pdf = mapVM.mapSource as? PDFMapSource, bake.isFor(pdf) else { return false }
+        switch bake.state {
+        case .estimating, .confirming: return true
+        default: return false
         }
     }
 
@@ -174,20 +159,24 @@ struct LayersSheet: View {
         }
     }
 
+
     /// Pulled out b/c the outer body was hitting SwiftUI's type-checker
     /// complexity limit.
     @ViewBuilder
     private var importedMapSection: some View {
         Section(L10n.text("Imported Map")) {
             if let pdfSource = mapVM.mapSource as? PDFMapSource {
-                Toggle(isOn: $visibility.pdfOverlayVisible) {
+                Toggle(isOn: isCalibrating ? .constant(true) : $visibility.importedMapVisible) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(pdfSource.displayName).font(.callout)
+                        Text(Messages.importedMapShowToggle()).font(.callout)
+                        Text(pdfSource.displayName).font(.caption)
                         Text(georefLabel(pdfSource))
                             .font(.caption2)
                             .foregroundStyle(pdfSource.isUncalibrated ? Color.orange : Color.secondary)
                     }
                 }
+                .disabled(isCalibrating)
+                PDFRenderFailureRow(runtime: mapVM.pdfRuntime)
                 Button {
                     dismiss()
                     onCalibrate()
@@ -199,30 +188,7 @@ struct LayersSheet: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                if let p = tilingProgress {
-                    let progressValue: Double = p.total > 0
-                        ? Double(p.done) / Double(p.total)
-                        : 0
-                    VStack(alignment: .leading, spacing: 6) {
-                        ProgressView(value: progressValue)
-                        Text(p.total > 0 ? L10n.text("Generating offline tiles — %1$@/%2$@", p.done, p.total) : L10n.text("Preparing…"))
-                            .font(.caption2).foregroundStyle(.secondary)
-                        Button(role: .cancel) { tilingTask?.cancel() } label: {
-                            Label(L10n.text("Cancel"), systemImage: "xmark.circle")
-                        }
-                        .font(.caption)
-                    }
-                } else {
-                    Button {
-                        generateTiles(from: pdfSource)
-                    } label: {
-                        Label(L10n.text("Generate Offline Tiles…"), systemImage: "square.stack.3d.down.right")
-                    }
-                    // baking a guessed placement would pass it off as a real basemap
-                    .disabled(pdfSource.isUncalibrated)
-                    Text(L10n.text("Bakes this calibrated map into an offline tile set on-device — no desktop tools."))
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+                PDFBakeRows(pdf: pdfSource, bake: bake, runtime: mapVM.pdfRuntime)
                 Button {
                     if mapVM.selectMapSource(OnlineRasterBasemapSource.makeDefault()) {
                         refreshRetainedMap()
@@ -351,10 +317,10 @@ struct LayersSheet: View {
             ? mapVM.mapSource
             : restorableImportedMap
         guard let source else { return }
-        if mapVM.deleteRetainedImportedMap(source) {
-            restorableImportedMap = nil
-            refreshRetainedMap()
-        }
+        if mapVM.deleteRetainedImportedMap(source) { restorableImportedMap = nil }
+        // failed or not the map is no longer on screen, so show what the library
+        // really holds now (a kept entry stays deletable from here, OD3-R3-1)
+        refreshRetainedMap()
     }
 
     private func basemapIcon(_ style: BasemapStyle) -> String {
@@ -503,6 +469,143 @@ struct LayersSheet: View {
                 } label: {
                     Label(L10n.text("Delete layer"), systemImage: "trash")
                 }
+            }
+        }
+    }
+}
+
+/// G1 failed row with Try Again. Its own view so it follows the runtime live
+private struct PDFRenderFailureRow: View {
+    @ObservedObject var runtime: PDFMapRuntime
+
+    var body: some View {
+        if let failure = runtime.status.failure {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(Messages.pdfRenderFailedLabel(), systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(PDFRenderStatusColors.failed)
+                Text(failure.localizedMessage.text)
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button(Messages.pdfRenderTryAgain()) { runtime.retry() }
+                    .font(.caption)
+            }
+        }
+    }
+}
+
+/// Generate / progress / info for the PDF's offline tiles. The bake keeps the
+/// PDF and the PDF stays the active map (D5-05). Watches the bake controller
+/// and the runtime itself, so Remove (OD-F1) and a failed source (OD-F9)
+/// show up while the sheet is open
+private struct PDFBakeRows: View {
+    let pdf: PDFMapSource
+    @ObservedObject var bake: PDFBakeController
+    @ObservedObject var runtime: PDFMapRuntime
+
+    var body: some View {
+        // the revision is what tells SwiftUI pdf.bake moved, read it
+        let _ = bake.recordRevision
+        let mine = bake.subjectToken == nil || bake.isFor(pdf)
+        if mine, case .running(let done, let total) = bake.state {
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(value: total > 0 ? Double(done) / Double(total) : 0)
+                Text(Messages.pdfBakeRunning(PDFBakeFormat.tiles(done), PDFBakeFormat.tiles(total)))
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button(role: .cancel) { bake.cancel() } label: {
+                    Label(L10n.text("Cancel"), systemImage: "xmark.circle")
+                }
+                .font(.caption)
+            }
+        } else if let record = pdf.bake {
+            // J1: once a bake exists its just the info row and Remove, Generate
+            // comes back after the bake is removed
+            VStack(alignment: .leading, spacing: 4) {
+                Text(PDFBakeFormat.info(record))
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button(role: .destructive) {
+                    // R2-S2: removeBake deletes the file itself, the reconcile is just housekeeping
+                    if bake.removeBake(from: pdf, runtime: runtime) { _ = ActiveMapSelectionStore.reconcileManagedImportedMapFiles() }
+                } label: {
+                    Label(Messages.pdfBakeRemove(), systemImage: "square.stack.3d.down.right.fill")
+                }
+                .font(.caption)
+            }
+        } else {
+            Button {
+                bake.prepare(pdf: pdf, runtime: runtime)
+            } label: {
+                Label(Messages.pdfBakeGenerateButton(), systemImage: "square.stack.3d.down.right")
+            }
+            // baking a guessed placement would pass it off as a real basemap.
+            // OD-F9: a failed source cant bake either, Try Again on the failed row is the way out.
+            // R2-S4: nor a restored one still waiting on its hash check (.preparing)
+            .disabled(bake.isRunning || (mine && bake.state == .estimating)
+                      || PDFBakeController.generateBlocked(pdf: pdf, status: runtime.status))
+            Text(pdf.isUncalibrated ? Messages.pdfBakeDisabledCaption() : Messages.pdfBakeCaption())
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// J1, Android's flow: one radio row per kept option, Generate + Cancel.
+/// Rows that dont fit the free space are disabled with the suffix, the
+/// minutes follow the selected row. While estimating its a spinner + Cancel
+private struct PDFBakeConfirmSheet: View {
+    @ObservedObject var bake: PDFBakeController
+
+    private var proposal: PDFBakeProposal? {
+        if case .confirming(let p) = bake.state { return p }
+        return nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let p = proposal {
+                    confirm(p)
+                } else {
+                    VStack(spacing: 18) {
+                        ProgressView()
+                        Text(Messages.pdfBakeEstimating()).font(.callout).foregroundStyle(.secondary)
+                        Button(L10n.text("Cancel"), role: .cancel) { bake.cancel() }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            // OD-F7: same title while estimating ("Estimating size…" is the body), like Android
+            .navigationTitle(Messages.pdfBakeConfirmTitle())
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func confirm(_ p: PDFBakeProposal) -> some View {
+        let selected = bake.selectedMaxZoom.flatMap(p.option)
+        return Form {
+            // OD-F7: the message sits above the rows on both platforms
+            Section {
+                Text(Messages.pdfBakeConfirmMessage(p.pdfName, PDFBakeFormat.minutes(selected?.minutes ?? 1)))
+                    .font(.callout)
+            }
+            Section {
+                ForEach(p.options) { o in
+                    Button { bake.select(maxZoom: o.maxZoom) } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: o.maxZoom == selected?.maxZoom ? "largecircle.fill.circle" : "circle")
+                                .foregroundStyle(o.enoughSpace ? Color.accentColor : Color.secondary)
+                            Text(PDFBakeFormat.optionLabel(o))
+                                .font(.callout)
+                                .foregroundStyle(o.enoughSpace ? Color.primary : Color.secondary)
+                        }
+                    }
+                    .disabled(!o.enoughSpace)
+                    .accessibilityAddTraits(o.maxZoom == selected?.maxZoom ? .isSelected : [])
+                }
+            }
+            Section {
+                Button(Messages.pdfBakeGenerate()) { bake.generate() }
+                    .disabled(!bake.canGenerate)
+                Button(L10n.text("Cancel"), role: .cancel) { bake.dismiss() }
             }
         }
     }
@@ -664,5 +767,103 @@ private struct EditLayerSheet: View {
                 Button(Messages.acknowledge(), role: .cancel) { saveError = nil }
             } message: { message in Text(message.text) }
         }
+    }
+}
+
+/// The decisions behind MapSelectionIssueAlert, kept out of the view so tests
+/// can drive them
+enum MapSelectionIssueAlertGate {
+    /// what a host is waiting to show. either half changing cancels the pending show
+    struct Key: Equatable {
+        let issueID: UUID?
+        let isActive: Bool
+    }
+
+    /// settle time before showing, so it never lands in the same turn another
+    /// alert (the delete confirm) or a sheet goes away. swiftui drops that one
+    static let settleNanoseconds: UInt64 = 350_000_000
+
+    /// after the settle: the issue to put up, nil = nothing (host not on top,
+    /// no issue, or a newer one replaced it meanwhile)
+    static func issueToShow(for key: Key, current: MapSelectionPersistenceIssue?) -> MapSelectionPersistenceIssue? {
+        guard key.isActive, let current, current.id == key.issueID else { return nil }
+        return current
+    }
+
+    /// the root host only shows it with nothing presented on top of it. a
+    /// presentation from under a sheet knocks the sheet down and gets lost
+    static func rootHostIsActive(presentationsOnTop: [Bool]) -> Bool {
+        !presentationsOnTop.contains(true)
+    }
+
+    enum AlertEnd { case dismissedBySystem, notNow }
+
+    /// only an explicit Not Now (or a Retry, which replaces or clears it)
+    /// drops the issue. a dropped or pre-empted presentation just hides it,
+    /// it comes back next time a host takes over
+    static func clearsIssue(_ end: AlertEnd) -> Bool { end == .notNow }
+}
+
+/// "Map change not saved" for a failed map transition (delete, switch, restore).
+/// OD3-R3-1: ContentView and LayersSheet both bound the one issue. With the
+/// sheet up the root copy tried to present over it, knocked the sheet down and
+/// lost itself, and the binding then cleared the issue unseen, so a failed
+/// Delete Map looked like it worked. Now only the host on top shows it, a
+/// beat after it changes, and only Retry / Not Now ever clear it
+struct MapSelectionIssueAlert: ViewModifier {
+    typealias Gate = MapSelectionIssueAlertGate
+    @ObservedObject var mapVM: MapViewModel
+    let isActive: Bool
+    /// Retry tapped, true when it went through
+    let onRetry: (Bool) -> Void
+    @State private var shown: MapSelectionPersistenceIssue?
+
+    func body(content: Content) -> some View {
+        let key = Gate.Key(issueID: mapVM.mapSelectionPersistenceIssue?.id, isActive: isActive)
+        return content
+            .background(
+                EmptyView()
+                    .alert(L10n.text("Map change not saved"),
+                           isPresented: Binding(
+                            get: { shown != nil },
+                            set: { if !$0 { end(.dismissedBySystem) } }
+                           ),
+                           presenting: shown) { _ in
+                        Button(L10n.text("Retry")) {
+                            // a retry that fails again posts a new issue, shown in turn
+                            shown = nil
+                            onRetry(mapVM.retryMapSelectionPersistence())
+                        }
+                        Button(L10n.text("Not Now"), role: .cancel) { end(.notNow) }
+                    } message: { issue in
+                        Text(issue.message)
+                    }
+            )
+            .task(id: key) {
+                guard Gate.issueToShow(for: key, current: mapVM.mapSelectionPersistenceIssue) != nil else {
+                    // not ours to show right now, or gone. the issue itself stays put
+                    shown = nil
+                    return
+                }
+                if shown?.id == key.issueID { return }
+                // an older one still up comes down first, the new one follows the settle
+                shown = nil
+                try? await Task.sleep(nanoseconds: Gate.settleNanoseconds)
+                guard !Task.isCancelled,
+                      let issue = Gate.issueToShow(for: key, current: mapVM.mapSelectionPersistenceIssue) else { return }
+                shown = issue
+            }
+    }
+
+    private func end(_ how: Gate.AlertEnd) {
+        shown = nil
+        if Gate.clearsIssue(how) { mapVM.dismissMapSelectionPersistenceIssue() }
+    }
+}
+
+extension View {
+    func mapSelectionIssueAlert(mapVM: MapViewModel, isActive: Bool,
+                                onRetry: @escaping (Bool) -> Void = { _ in }) -> some View {
+        modifier(MapSelectionIssueAlert(mapVM: mapVM, isActive: isActive, onRetry: onRetry))
     }
 }

@@ -1990,21 +1990,24 @@
     "en": "No georeferencing — using map-centre fallback",
     "de": "Keine Georeferenzierung – Kartenmitte als Ersatz verwendet",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "ui_georeferenced_geopdf_lgidict_58ab999a": {
     "en": "Georeferenced (GeoPDF LGIDict)",
     "de": "Georeferenziert (GeoPDF LGIDict)",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "ui_manually_placed_bounds_93359c0d": {
     "en": "Manually placed bounds",
     "de": "Manuell gesetzte Grenzen",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "ui_calibrate_with_fiduciaries_ada4b6a2": {
@@ -2034,20 +2037,6 @@
     "platforms": [
       "ios",
       "android"
-    ]
-  },
-  "ui_generate_offline_tiles_d8b4f85a": {
-    "en": "Generate Offline Tiles…",
-    "de": "Offline-Kacheln erstellen …",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_bakes_this_calibrated_map_into_an_offline_tile_s_f73ad763": {
-    "en": "Bakes this calibrated map into an offline tile set on-device — no desktop tools.",
-    "de": "Erstellt aus dieser kalibrierten Karte direkt auf dem Gerät einen Offline-Kachelsatz – ohne Desktop-Werkzeuge.",
-    "platforms": [
-      "ios"
     ]
   },
   "ui_unload_pdf_a4b26582": {
@@ -2103,13 +2092,6 @@
   "ui_rename_layer_e78352dd": {
     "en": "Rename layer",
     "de": "Ebene umbenennen",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_offline_tiles_2c47000d": {
-    "en": "Offline tiles",
-    "de": "Offline-Kacheln",
     "platforms": [
       "ios"
     ]
@@ -5493,20 +5475,6 @@
       "android"
     ]
   },
-  "ui_generate_offline_tiles_f90a7f59": {
-    "en": "Generate Offline Tiles",
-    "de": "Offline-Kacheln erstellen",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_bakes_this_calibrated_map_into_an_offline_tile_s_3777d2f1": {
-    "en": "Bakes this calibrated map into an offline tile set on-device — no desktop tools needed.",
-    "de": "Erstellt aus dieser kalibrierten Karte direkt auf dem Gerät einen Offline-Kachelsatz – ohne Desktop-Werkzeuge.",
-    "platforms": [
-      "android"
-    ]
-  },
   "ui_unload_pdf_map_d974367c": {
     "en": "Unload PDF Map",
     "de": "PDF-Karte entladen",
@@ -5720,41 +5688,6 @@
   "ui_track_recording_cc9915b7": {
     "en": "Track recording",
     "de": "Trackaufzeichnung",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_generating_offline_tiles_ce54d27b": {
-    "en": "Generating offline tiles",
-    "de": "Offline-Kacheln werden erstellt",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_1_2_tiles_aa342dc7": {
-    "en": "{1} / {2} tiles",
-    "de": "{1} / {2} Kacheln",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_load_a_pdf_map_first_146b449e": {
-    "en": "Load a PDF map first",
-    "de": "Lade zuerst eine PDF-Karte",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_offline_tiles_ready_f8009183": {
-    "en": "Offline tiles ready",
-    "de": "Offline-Kacheln sind fertig",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_couldn_t_generate_tiles_calibrate_the_pdf_first__073989c2": {
-    "en": "Couldn't generate tiles — calibrate the PDF first (3+ fiduciaries).",
-    "de": "Kacheln konnten nicht erstellt werden – kalibriere zuerst das PDF (mindestens 3 Passpunkte).",
     "platforms": [
       "android"
     ]
@@ -6883,7 +6816,8 @@
     "en": "Not Now",
     "de": "Später",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "ui_switch_to_online_basemap_66adfcd3": {
@@ -17504,39 +17438,6 @@
     "accessor": "exportGpxEmpty",
     "parameters": []
   },
-  "layers_pdf_georeferenced": {
-    "en": "Georeferenced (GeoPDF LGIDict)",
-    "de": "Georeferenziert (GeoPDF LGIDict)",
-    "platforms": [
-      "android"
-    ],
-    "context": "Layers sheet, under the imported PDF's name: the PDF carries its own georeferencing (GeoPDF), so it is placed automatically. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersPdfGeoreferenced",
-    "parameters": []
-  },
-  "layers_pdf_manual_bounds": {
-    "en": "Manually placed bounds",
-    "de": "Manuell gesetzte Grenzen",
-    "platforms": [
-      "android"
-    ],
-    "context": "Layers sheet, under the imported PDF's name: the user placed the PDF by calibrating it with fiduciaries. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersPdfManualBounds",
-    "parameters": []
-  },
-  "layers_pdf_no_georeferencing": {
-    "en": "No georeferencing — using map-centre fallback",
-    "de": "Keine Georeferenzierung – Kartenmitte als Ersatz verwendet",
-    "platforms": [
-      "android"
-    ],
-    "context": "Layers sheet, under the imported PDF's name: the PDF has no georeferencing yet and is shown around the map centre where it was imported. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersPdfNoGeoreferencing",
-    "parameters": []
-  },
   "layers_pdf_fiduciary_count": {
     "en": "Currently calibrated with {1} fiduciaries",
     "de": "Derzeit mit {1} Passpunkten kalibriert",
@@ -17881,7 +17782,8 @@
     "en": "Georeferenced (GeoPDF)",
     "de": "Georeferenziert (GeoPDF)",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ],
     "legacy": false,
     "accessor": "pdfGeorefAdobeLabel",
@@ -17934,6 +17836,591 @@
     "legacy": false,
     "accessor": "pdfMapCalibrateNow",
     "context": "Alert button that starts fiduciary calibration. A plain PDF shown on a provisional, guessed placement until the user calibrates it with known points. Must make clear positions are not trustworthy.",
+    "parameters": []
+  },
+  "imported_map_show_toggle": {
+    "en": "Show Imported Map",
+    "de": "Importierte Karte anzeigen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "importedMapShowToggle",
+    "context": "Layers sheet toggle that shows or hides the imported PDF map. Hidden shows a plain dark background, never an online map.",
+    "parameters": []
+  },
+  "imported_map_hidden_notice": {
+    "en": "Imported map hidden",
+    "de": "Importierte Karte ausgeblendet",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "importedMapHiddenNotice",
+    "context": "Small capsule on the map while the user has switched the imported PDF map off in Layers.",
+    "parameters": []
+  },
+  "pdf_render_drawing_label": {
+    "en": "Drawing map…",
+    "de": "Karte wird gezeichnet…",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderDrawingLabel",
+    "context": "Short header badge while the imported PDF is still being drawn for the first time. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_failed_label": {
+    "en": "Map couldn't be drawn",
+    "de": "Karte konnte nicht gezeichnet werden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderFailedLabel",
+    "context": "Short header badge (red) when the imported PDF could not be drawn at all. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_failed_title": {
+    "en": "Couldn't draw “{1}”",
+    "de": "„{1}“ konnte nicht gezeichnet werden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderFailedTitle",
+    "context": "Alert title when an imported PDF map could not be drawn. {1} is the map's file name. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_render_reason_cannot_open": {
+    "en": "The PDF file is missing or can't be read.",
+    "de": "Die PDF-Datei fehlt oder kann nicht gelesen werden.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonCannotOpen",
+    "context": "Alert message: the imported PDF file can't be opened. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_password_protected": {
+    "en": "This PDF is password-protected. Remove the password and import it again.",
+    "de": "Diese PDF ist passwortgeschützt. Entferne das Passwort und importiere sie erneut.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonPasswordProtected",
+    "context": "Alert message: the imported PDF needs a password to open. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_page_missing": {
+    "en": "The georeferenced page is missing from this PDF.",
+    "de": "Die georeferenzierte Seite fehlt in dieser PDF.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonPageMissing",
+    "context": "Alert message: the page the map's georeference belongs to is not in the PDF. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_page_geometry": {
+    "en": "This PDF's page layout doesn't match its georeference.",
+    "de": "Das Seitenlayout dieser PDF passt nicht zu ihrer Georeferenz.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonPageGeometry",
+    "context": "Alert message: the page boxes and the georeferenced area don't overlap usefully. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_blank": {
+    "en": "Nothing on this PDF page could be drawn.",
+    "de": "Auf dieser PDF-Seite konnte nichts gezeichnet werden.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonBlank",
+    "context": "Alert message: the PDF page renders as an empty white page. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_out_of_memory": {
+    "en": "This PDF is too large to draw on this device.",
+    "de": "Diese PDF ist zu groß, um sie auf diesem Gerät zu zeichnen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonOutOfMemory",
+    "context": "Alert message: drawing the PDF ran out of memory. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_render_error": {
+    "en": "TacMap couldn't draw this PDF.",
+    "de": "TacMap konnte diese PDF nicht zeichnen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonRenderError",
+    "context": "Alert message: repeated drawing errors. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_try_again": {
+    "en": "Try Again",
+    "de": "Erneut versuchen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderTryAgain",
+    "context": "Button in the 'couldn't draw' alert and Layers row: draw the imported PDF again. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_use_online_map": {
+    "en": "Use Online Map",
+    "de": "Onlinekarte verwenden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderUseOnlineMap",
+    "context": "Button in the 'couldn't draw' alert: switch the basemap to the online map. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_guard_crash_title": {
+    "en": "TacMap closed while drawing “{1}”",
+    "de": "TacMap wurde beim Zeichnen von „{1}“ beendet",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardCrashTitle",
+    "context": "Launch alert: the app quit while drawing this imported map last time. {1} is the map's file name.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_guard_crash_message": {
+    "en": "The map wasn't opened automatically in case it causes the same problem. The online map is shown instead.",
+    "de": "Die Karte wurde nicht automatisch geöffnet, falls sie dasselbe Problem erneut verursacht. Stattdessen wird die Onlinekarte angezeigt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardCrashMessage",
+    "context": "Launch alert message after the app quit while drawing an imported map.",
+    "parameters": []
+  },
+  "pdf_guard_open_anyway": {
+    "en": "Open Anyway",
+    "de": "Trotzdem öffnen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardOpenAnyway",
+    "context": "Button in the launch crash alert: draw the imported map anyway.",
+    "parameters": []
+  },
+  "pdf_guard_delete_map": {
+    "en": "Delete Map…",
+    "de": "Karte löschen…",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardDeleteMap",
+    "context": "Button in the launch crash alert: go to the delete confirmation for this imported map.",
+    "parameters": []
+  },
+  "pdf_guard_import_interrupted_title": {
+    "en": "TacMap closed while preparing an imported map",
+    "de": "TacMap wurde beim Vorbereiten einer importierten Karte beendet",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardImportInterruptedTitle",
+    "context": "Launch alert: the app quit while checking a PDF being imported. No file name on purpose.",
+    "parameters": []
+  },
+  "pdf_guard_import_interrupted_message": {
+    "en": "The map wasn't imported. Try again, or print the PDF to a new file and import that copy.",
+    "de": "Die Karte wurde nicht importiert. Versuche es erneut oder drucke die PDF in eine neue Datei und importiere diese Kopie.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardImportInterruptedMessage",
+    "context": "Launch alert message after an interrupted PDF import.",
+    "parameters": []
+  },
+  "pdf_bake_interrupted_title": {
+    "en": "Offline tiles not finished",
+    "de": "Offline-Kacheln nicht fertig",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeInterruptedTitle",
+    "context": "Launch alert: the app quit while pre-rendering offline tiles for an imported PDF map.",
+    "parameters": []
+  },
+  "pdf_bake_interrupted_message": {
+    "en": "TacMap closed before the offline tiles were finished. Nothing was saved.",
+    "de": "TacMap wurde beendet, bevor die Offline-Kacheln fertig waren. Es wurde nichts gespeichert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeInterruptedMessage",
+    "context": "Launch alert message after an interrupted offline tile bake.",
+    "parameters": []
+  },
+  "pdf_bake_generate_button": {
+    "en": "Generate Offline Tiles…",
+    "de": "Offline-Kacheln erstellen …",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeGenerateButton",
+    "context": "Layers button: pre-render the imported PDF into offline map tiles. The PDF is kept.",
+    "parameters": []
+  },
+  "pdf_bake_caption": {
+    "en": "Pre-renders this map so it opens and zooms instantly. The PDF is kept.",
+    "de": "Rendert diese Karte vorab, damit sie sofort öffnet und zoomt. Die PDF bleibt erhalten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeCaption",
+    "context": "Caption under the Generate Offline Tiles button.",
+    "parameters": []
+  },
+  "pdf_bake_disabled_caption": {
+    "en": "Calibrate this map before generating offline tiles.",
+    "de": "Kalibriere diese Karte, bevor du Offline-Kacheln erstellst.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeDisabledCaption",
+    "context": "Caption under the disabled Generate Offline Tiles button for an uncalibrated PDF.",
+    "parameters": []
+  },
+  "pdf_bake_confirm_title": {
+    "en": "Generate offline tiles?",
+    "de": "Offline-Kacheln erstellen?",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeConfirmTitle",
+    "context": "Title of the confirmation that lists the zoom options for pre-rendering offline tiles.",
+    "parameters": []
+  },
+  "pdf_bake_option_row": {
+    "en": "Up to zoom {1} · {2} tiles · about {3}",
+    "de": "Bis Zoom {1} · {2} Kacheln · ca. {3}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeOptionRow",
+    "context": "One option in the offline tiles confirmation. {1} max zoom level, {2} tile count, {3} file size.",
+    "parameters": [
+      {
+        "name": "zoom",
+        "type": "string"
+      },
+      {
+        "name": "tiles",
+        "type": "string"
+      },
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_option_no_space": {
+    "en": " · not enough free space",
+    "de": " · nicht genug freier Speicher",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeOptionNoSpace",
+    "context": "Suffix appended to a disabled offline tiles option. Starts with a space and a middle dot.",
+    "parameters": []
+  },
+  "pdf_bake_confirm_message": {
+    "en": "“{1}” stays on this device and remains the active map. This takes about {2}.",
+    "de": "„{1}“ bleibt auf diesem Gerät und bleibt die aktive Karte. Das dauert ca. {2}.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeConfirmMessage",
+    "context": "Offline tiles confirmation message. {1} is the map's file name, {2} a duration like '3 min'.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_generate": {
+    "en": "Generate",
+    "de": "Erstellen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeGenerate",
+    "context": "Confirm button that starts pre-rendering offline tiles.",
+    "parameters": []
+  },
+  "pdf_bake_estimating": {
+    "en": "Estimating size…",
+    "de": "Größe wird geschätzt…",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeEstimating",
+    "context": "Shown while TacMap works out how big the offline tiles would be.",
+    "parameters": []
+  },
+  "pdf_bake_running": {
+    "en": "Generating offline tiles — {1}/{2}",
+    "de": "Offline-Kacheln werden erstellt – {1}/{2}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeRunning",
+    "context": "Progress line while pre-rendering offline tiles. {1} done, {2} total tiles.",
+    "parameters": [
+      {
+        "name": "done",
+        "type": "string"
+      },
+      {
+        "name": "total",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_chip": {
+    "en": "Offline tiles {1}%",
+    "de": "Offline-Kacheln {1} %",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeChip",
+    "context": "Small progress chip on the map while offline tiles are generated. {1} is a whole percentage.",
+    "parameters": [
+      {
+        "name": "percent",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_done": {
+    "en": "Offline tiles ready",
+    "de": "Offline-Kacheln bereit",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeDone",
+    "context": "Short message when offline tiles have been generated for the imported map.",
+    "parameters": []
+  },
+  "pdf_bake_info": {
+    "en": "Offline tiles: zoom {1}–{2} · {3}",
+    "de": "Offline-Kacheln: Zoom {1}–{2} · {3}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeInfo",
+    "context": "Layers info line for an imported map with offline tiles. {1}-{2} zoom range, {3} file size.",
+    "parameters": [
+      {
+        "name": "minZoom",
+        "type": "string"
+      },
+      {
+        "name": "maxZoom",
+        "type": "string"
+      },
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_remove": {
+    "en": "Remove Offline Tiles",
+    "de": "Offline-Kacheln entfernen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeRemove",
+    "context": "Layers button: delete the pre-rendered offline tiles. The PDF map stays.",
+    "parameters": []
+  },
+  "pdf_bake_minutes": {
+    "en": "{1} min",
+    "de": "{1} min",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeMinutes",
+    "context": "Rough duration in whole minutes, used as {2} in the offline tiles confirmation.",
+    "parameters": [
+      {
+        "name": "minutes",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_error_title": {
+    "en": "Offline tiles",
+    "de": "Offline-Kacheln",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorTitle",
+    "context": "Title of the alert when generating offline tiles fails.",
+    "parameters": []
+  },
+  "pdf_bake_error_no_space": {
+    "en": "Not enough free space. About {1} is needed.",
+    "de": "Nicht genug freier Speicher. Benötigt werden ca. {1}.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorNoSpace",
+    "context": "Offline tiles error: not enough storage. {1} is a file size.",
+    "parameters": [
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_error_write_failed": {
+    "en": "The offline tiles couldn't be saved. Nothing was changed.",
+    "de": "Die Offline-Kacheln konnten nicht gespeichert werden. Es wurde nichts geändert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorWriteFailed",
+    "context": "Offline tiles error: writing the file failed.",
+    "parameters": []
+  },
+  "pdf_bake_error_render_failed": {
+    "en": "Part of this map couldn't be drawn, so no offline tiles were saved.",
+    "de": "Ein Teil dieser Karte konnte nicht gezeichnet werden, daher wurden keine Offline-Kacheln gespeichert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorRenderFailed",
+    "context": "Offline tiles error: some tiles failed to draw.",
+    "parameters": []
+  },
+  "pdf_bake_error_source_changed": {
+    "en": "The map changed while tiles were being generated. Nothing was saved.",
+    "de": "Die Karte hat sich geändert, während die Kacheln erstellt wurden. Es wurde nichts gespeichert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorSourceChanged",
+    "context": "Offline tiles error: the map was recalibrated or replaced during the bake.",
+    "parameters": []
+  },
+  "pdf_bake_error_too_large": {
+    "en": "This map is too large to pre-render on this device.",
+    "de": "Diese Karte ist zu groß, um sie auf diesem Gerät vorab zu rendern.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorTooLarge",
+    "context": "Offline tiles error: the tile count would be too high.",
     "parameters": []
   }
 }

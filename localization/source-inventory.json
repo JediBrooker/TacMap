@@ -207,19 +207,7 @@
     "reviewStatus": "manual-review-needed"
   },
   {
-    "path": "ios/TacticalMaps/Calibration/PDFOverlay.swift",
-    "platform": "ios",
-    "area": "maps-calibration",
-    "reviewStatus": "manual-review-needed"
-  },
-  {
     "path": "ios/TacticalMaps/Calibration/PDFSessionStore.swift",
-    "platform": "ios",
-    "area": "maps-calibration",
-    "reviewStatus": "manual-review-needed"
-  },
-  {
-    "path": "ios/TacticalMaps/Calibration/PDFTiler.swift",
     "platform": "ios",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
@@ -238,6 +226,18 @@
   },
   {
     "path": "ios/TacticalMaps/Calibration/WebMercatorTiles.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/PDFBakeController.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/PDFBakeWorker.swift",
     "platform": "ios",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
@@ -569,6 +569,24 @@
   },
   {
     "path": "ios/TacticalMaps/Map/Renderer/WebMercator.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/TileDrawPlanner.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/TileImageCache.swift",
+    "platform": "ios",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/TileLayerCompositor.swift",
     "platform": "ios",
     "area": "map-navigation",
     "reviewStatus": "manual-review-needed"
@@ -1029,12 +1047,6 @@
   },
   {
     "path": "android/app/src/main/java/com/tacmap/calibration/PdfSessionStore.kt",
-    "platform": "android",
-    "area": "maps-calibration",
-    "reviewStatus": "manual-review-needed"
-  },
-  {
-    "path": "android/app/src/main/java/com/tacmap/calibration/PdfTiler.kt",
     "platform": "android",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
@@ -1993,6 +2005,18 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/App/DebugHooks.swift",
+    "platform": "ios",
+    "area": "shared-infrastructure",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/App/PDFRenderChrome.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/map/MapTourOverlay.kt",
     "platform": "android",
     "area": "navigation-settings",
@@ -2035,9 +2059,33 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/Map/PDFPageMarkersView.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/app/AppLockBiometric.kt",
     "platform": "android",
     "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/DebugLaunchHooks.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfBakeManager.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/PdfBaker.kt",
+    "platform": "android",
+    "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
   },
   {
@@ -2077,6 +2125,96 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/map/PdfMapRuntime.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/PdfRenderUi.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/TileBitmapCache.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/TileDrawPlanner.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfJobQueue.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfPageFrame.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfRenderExecutor.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfRenderGuard.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfRenderScheduling.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfRenderSession.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfRenderStatus.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfTileGeometry.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfTilePlanning.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfTileRenderer.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfTileSource.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/mgrs/MgrsGridBuildSpec.kt",
     "platform": "android",
     "area": "map-navigation",
@@ -2104,6 +2242,48 @@
     "path": "ios/TacticalMaps/MGRS/MGRSGridLabels.swift",
     "platform": "ios",
     "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/PDF/PDFMapRuntime.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/PDF/PDFRenderGuard.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/PDF/PDFRenderService.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/PDF/PDFRenderStatus.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/PDF/PDFTileGeometry.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/PDF/PDFTileRenderer.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Map/Renderer/PDF/PDFTileSource.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
   }
 ]

@@ -26,7 +26,7 @@ class OfflineTileMapSourceAndroid private constructor(
 
     /** Tile source for the custom (SDK-free) map view. */
     fun renderTileSource(): com.tacmap.map.render.TileSource =
-        com.tacmap.map.render.OfflineRasterTileSource(store, minZoom, maxZoom)
+        com.tacmap.map.render.OfflineRasterTileSource(store, minZoom, maxZoom, path)
 
     override fun close() {
         if (closed.compareAndSet(false, true)) store.close()

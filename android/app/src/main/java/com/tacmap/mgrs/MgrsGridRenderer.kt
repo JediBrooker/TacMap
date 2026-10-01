@@ -312,6 +312,12 @@ object MgrsGridRenderer {
         }
 
         if (withSquares && GridType.HUNDRED_KILOMETER in levels) {
+            // a square whose diagonal is under 40 dp even at the most zoomed in camera this
+            // build serves can't pass the square label size check at any heading, so don't
+            // build it (0.9 because the corner box ignores the edge bulge). same rule as iOS.
+            // without it z3 near 83.5N built ~67k squares
+            val minDiagonal = 0.9 * SQUARE_LABEL_MIN_DP / (TILE_SIZE_DP * 2.0.pow(densifyZoom))
+            val corner = DoubleArray(2)
             for (region in regions) {
                 checkCancelled()
                 val ext = DoubleArray(4) { if (it % 2 == 0) Double.MAX_VALUE else -Double.MAX_VALUE }
@@ -322,7 +328,9 @@ object MgrsGridRenderer {
                     if (e0 in 100_000 until 900_000) {
                         var n0 = floor(ext[2] / 100_000.0).toInt() * 100_000
                         while (n0 <= ext[3]) {
-                            if (!(c.south && n0 >= 10_000_000)) {
+                            if (!(c.south && n0 >= 10_000_000) &&
+                                squareDiagonal(c.zone, c.south, e0, n0, corner) >= minDiagonal
+                            ) {
                                 squares += squareRing(c, e0, n0, pxScale)
                             }
                             n0 += 100_000
@@ -592,6 +600,22 @@ object MgrsGridRenderer {
             }
         }
         flush()
+    }
+
+    /** merc (0..1) bbox diagonal of a 100 km square's four corners */
+    private fun squareDiagonal(zone: Int, south: Boolean, e0: Int, n0: Int, out: DoubleArray): Double {
+        var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE
+        var minY = Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
+        for (k in 0 until 4) {
+            val e = e0 + if (k == 1 || k == 2) 100_000.0 else 0.0
+            val n = n0 + if (k >= 2) 100_000.0 else 0.0
+            UtmProjection.inverse(zone, south, e, n, out)
+            val x = mercX(out[1])
+            val y = mercY(out[0])
+            minX = min(minX, x); maxX = max(maxX, x)
+            minY = min(minY, y); maxY = max(maxY, y)
+        }
+        return hypot(maxX - minX, maxY - minY)
     }
 
     private fun squareRing(cell: Cell, e0: Int, n0: Int, pxScale: Double): SquareRing {

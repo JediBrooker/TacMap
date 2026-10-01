@@ -61,6 +61,17 @@ private enum class ImportedMapDeletion { PDF, OFFLINE_TILES, SAVED }
 /** How an imported PDF is placed on the map, shown under its name in Layers. */
 internal enum class PdfGeoreferencing { GEOREFERENCED, MANUAL, NONE }
 
+/** the Layers subtitle under a PDF, by where its placement came from (L2, same as iOS georefLabel) */
+internal enum class PdfGeorefLabel { ADOBE_VP, LGI_DICT, MANUAL, PROVISIONAL }
+
+/** no placement at all reads as provisional, iOS always has one and it's .provisional there */
+internal fun pdfGeorefLabel(origin: com.tacmap.calibration.GeorefOrigin?): PdfGeorefLabel = when (origin) {
+    com.tacmap.calibration.GeorefOrigin.ADOBE_VP -> PdfGeorefLabel.ADOBE_VP
+    com.tacmap.calibration.GeorefOrigin.LGI_DICT -> PdfGeorefLabel.LGI_DICT
+    com.tacmap.calibration.GeorefOrigin.FIDUCIARIES -> PdfGeorefLabel.MANUAL
+    com.tacmap.calibration.GeorefOrigin.PROVISIONAL, null -> PdfGeorefLabel.PROVISIONAL
+}
+
 /**
  * iOS shows "Georeferenced" for a GeoPDF, "Manually placed" for a sheet the
  * user calibrated, and the map-centre fallback when there is no calibration.
@@ -122,6 +133,17 @@ fun LayersSheet(
     onRemoveUnavailableRetainedMap: () -> Unit,
     pdfMap: PdfMapSource?,
     hasOfflineTiles: Boolean,
+    /** Show Imported Map (WP2 contract H), forced on and locked while calibrating */
+    importedMapVisible: Boolean = true,
+    importedMapToggleEnabled: Boolean = true,
+    onImportedMapVisibleChange: (Boolean) -> Unit = {},
+    bakeState: com.tacmap.calibration.PdfBakeManager.State = com.tacmap.calibration.PdfBakeManager.State.Idle,
+    onCancelBake: () -> Unit = {},
+    onRemoveBake: () -> Unit = {},
+    renderFailed: Boolean = false,
+    /** the reason line under the failed label, same copy as the alert (OD2-R2-5) */
+    renderFailureReason: String? = null,
+    onRetryRender: () -> Unit = {},
     onCalibratePdf: () -> Unit,
     onGenerateTiles: () -> Unit,
     onUnloadPdf: () -> Unit,
@@ -228,10 +250,12 @@ fun LayersSheet(
                 if (pdfMap != null) {
                     Text(pdfMap.displayName, fontSize = 15.sp)
                     Text(
-                        when (pdfGeoreferencing(pdfMap.kind, pdfMap.calibration)) {
-                            PdfGeoreferencing.GEOREFERENCED -> Messages.layersPdfGeoreferenced()
-                            PdfGeoreferencing.MANUAL -> Messages.layersPdfManualBounds()
-                            PdfGeoreferencing.NONE -> Messages.layersPdfNoGeoreferencing()
+                        when (pdfGeorefLabel(pdfMap.placement?.origin)) {
+                            PdfGeorefLabel.ADOBE_VP -> Messages.pdfGeorefAdobeLabel()
+                            // the same catalogue entries iOS georefLabel uses (B6)
+                            PdfGeorefLabel.LGI_DICT -> L10n.text("Georeferenced (GeoPDF LGIDict)")
+                            PdfGeorefLabel.MANUAL -> L10n.text("Manually placed bounds")
+                            PdfGeorefLabel.PROVISIONAL -> L10n.text("No georeferencing — using map-centre fallback")
                         },
                         fontSize = 11.sp,
                         color = Color(0xFF8A938A)
@@ -243,19 +267,28 @@ fun LayersSheet(
                             color = Color(0xFF8A938A)
                         )
                     }
+                    ToggleRow(Messages.importedMapShowToggle(), importedMapVisible, onImportedMapVisibleChange, importedMapToggleEnabled)
+                    if (renderFailed) {
+                        Text(
+                            Messages.pdfRenderFailedLabel(),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFF5A5A),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        renderFailureReason?.let { reason ->
+                            Text(reason, fontSize = 11.sp, color = Color(0xFF8A938A))
+                        }
+                        OutlinedButton(
+                            onClick = onRetryRender,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        ) { Text(Messages.pdfRenderTryAgain()) }
+                    }
                     OutlinedButton(
                         onClick = onCalibratePdf,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                     ) { Text(L10n.text("Calibrate PDF Map")) }
-                    OutlinedButton(
-                        onClick = onGenerateTiles,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) { Text(L10n.text("Generate Offline Tiles")) }
-                    Text(
-                        L10n.text("Bakes this calibrated map into an offline tile set on-device — no desktop tools needed."),
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
+                    PdfBakeSection(pdfMap, bakeState, renderFailed, onGenerateTiles, onCancelBake, onRemoveBake)
                     DeleteMapButton(Messages.layersDeletePdfMap()) {
                         pendingDeletion = ImportedMapDeletion.PDF
                     }
@@ -350,7 +383,7 @@ private fun BasemapRow(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -360,8 +393,72 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
         Switch(
             checked = checked,
             onCheckedChange = onChange,
+            enabled = enabled,
             modifier = Modifier.semantics { contentDescription = label },
         )
+    }
+}
+
+/**
+ * Generate Offline Tiles… for the imported PDF: the button + caption, progress with
+ * Cancel while it runs, or what's baked + Remove once it's done (contract J).
+ */
+@Composable
+private fun PdfBakeSection(
+    pdfMap: PdfMapSource,
+    bakeState: com.tacmap.calibration.PdfBakeManager.State,
+    /** the PDF source is sticky failed (G1): Try Again is the way out, not a bake (OD-F9) */
+    renderFailed: Boolean,
+    onGenerate: () -> Unit,
+    onCancel: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val bake = pdfMap.render.bake
+    val calibrated = pdfMap.calibration != null
+    when {
+        // only under the PDF that's actually baking (C6)
+        bakeState is com.tacmap.calibration.PdfBakeManager.State.Running && bakeState.token == pdfMap.render.renderGuardToken -> {
+            Text(
+                Messages.pdfBakeRunning(pdfBakeTiles(bakeState.done), pdfBakeTiles(bakeState.total)),
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { if (bakeState.total > 0) bakeState.done.toFloat() / bakeState.total else 0f },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            )
+            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Text(L10n.text("Cancel"))
+            }
+        }
+        bake != null -> {
+            Text(
+                Messages.pdfBakeInfo(
+                    DisplayFormat.number(bake.minZoom.toDouble(), 0),
+                    DisplayFormat.number(bake.maxZoom.toDouble(), 0),
+                    pdfBakeSize(bake.bytes),
+                ),
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            OutlinedButton(onClick = onRemove, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Text(Messages.pdfBakeRemove())
+            }
+        }
+        else -> {
+            OutlinedButton(
+                onClick = onGenerate,
+                enabled = calibrated && !renderFailed &&
+                    bakeState !is com.tacmap.calibration.PdfBakeManager.State.Estimating &&
+                    bakeState !is com.tacmap.calibration.PdfBakeManager.State.Running,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text(Messages.pdfBakeGenerateButton()) }
+            Text(
+                if (calibrated) Messages.pdfBakeCaption() else Messages.pdfBakeDisabledCaption(),
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
     }
 }
 

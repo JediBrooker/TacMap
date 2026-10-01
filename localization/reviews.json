@@ -1785,20 +1785,6 @@
         "status": "reviewed"
       }
     },
-    "ui_generate_offline_tiles_d8b4f85a": {
-      "de": {
-        "source": "2423ecdac9e006ea93b468624d5cab525268f60b41264410f52bc9b387b1db40",
-        "translation": "0c63cca2464ff65fba30cbfbeedb67513d98cf5baf80b18674a0bda380fe5ae1",
-        "status": "reviewed"
-      }
-    },
-    "ui_bakes_this_calibrated_map_into_an_offline_tile_s_f73ad763": {
-      "de": {
-        "source": "9f54251f10487505373d21476b16f35b81076353233b69247c59eea2a881b48f",
-        "translation": "84c06490ec93408e660d6e7368bcbd0c8f42a1ff1b24f1a681ec6ea5e179fff9",
-        "status": "reviewed"
-      }
-    },
     "ui_unload_pdf_a4b26582": {
       "de": {
         "source": "b94cd682ca6428916ed955b5a95e23325b11986ec848d35e2d8dfb717559bdd1",
@@ -1852,13 +1838,6 @@
       "de": {
         "source": "a82c6104fd7366ef70d83cc69838e91bdf0cb58613b817af52aae75dcf7dc9e9",
         "translation": "302e0eee933b96df05d42896a5210ad752540d5d6baec241d1cbbd6f85509af4",
-        "status": "reviewed"
-      }
-    },
-    "ui_offline_tiles_2c47000d": {
-      "de": {
-        "source": "bdc432531441d713c1dc1fd18c42efadb6ce0d19c25c337c05dd72a95782ddf4",
-        "translation": "9908e783084fdb97fa92b9390c4963b63454932732135105daf8ace04b6ae81c",
         "status": "reviewed"
       }
     },
@@ -4753,20 +4732,6 @@
         "status": "reviewed"
       }
     },
-    "ui_generate_offline_tiles_f90a7f59": {
-      "de": {
-        "source": "e708dd3b1cbeec8f98c611599a6904599cde2cbd3a639b1bcb4bdc5012591e7a",
-        "translation": "6eca9a51330b12bf87c9005f8db061f74ba1691d67b4bb73bfe3d1febb30a6bd",
-        "status": "reviewed"
-      }
-    },
-    "ui_bakes_this_calibrated_map_into_an_offline_tile_s_3777d2f1": {
-      "de": {
-        "source": "63ec073ef12b3d14d65f7f3cda236b6b9715da4f7e7d7551f928841926d09655",
-        "translation": "84c06490ec93408e660d6e7368bcbd0c8f42a1ff1b24f1a681ec6ea5e179fff9",
-        "status": "reviewed"
-      }
-    },
     "ui_unload_pdf_map_d974367c": {
       "de": {
         "source": "1141c62fc083efc55a4f573dd6c780fdd74da50e10658c2855ae4b62f9c47be9",
@@ -4981,41 +4946,6 @@
       "de": {
         "source": "5ff2af782cb7eb5040ea7a37ffcb314583c4413289364beea0e41646d8acb2bc",
         "translation": "da2646a888ed6915cf371d4bbea752655313e30d0eb39e7d747d59e376d6c048",
-        "status": "reviewed"
-      }
-    },
-    "ui_generating_offline_tiles_ce54d27b": {
-      "de": {
-        "source": "9567dc582f969b7cfae93d248cfbfc3376884cce37b96a49f0e9b1e4a07e67b0",
-        "translation": "47ae66fcb45f38baa3b05f4d21011a668016dda6225342d77e27b065cb0db4ea",
-        "status": "reviewed"
-      }
-    },
-    "ui_1_2_tiles_aa342dc7": {
-      "de": {
-        "source": "89a579125e52d437e3387e4b2e8bd1f343f6e4280712b56f2b5967f709dea907",
-        "translation": "e188cd7f8541bc15f1a824e46ede277fc3ed652a2f666d022d3f9bc11633c0be",
-        "status": "reviewed"
-      }
-    },
-    "ui_load_a_pdf_map_first_146b449e": {
-      "de": {
-        "source": "e1dc85aedd29d41edd3694fad4f417ff477ca997d13bea634e966e68fde13116",
-        "translation": "2c388b69df54da29a0e8a5143cf1c2554fcf2b32835b01b0c18bf0dcc97d30f9",
-        "status": "reviewed"
-      }
-    },
-    "ui_offline_tiles_ready_f8009183": {
-      "de": {
-        "source": "d0c43f9d00024235665c7619e3640cfac9ee52bb11c6868420fa083c092873e0",
-        "translation": "1eafe62c8ce6b24e734566af35b2a1806fe877b14690b8daee2f7b748f54916e",
-        "status": "reviewed"
-      }
-    },
-    "ui_couldn_t_generate_tiles_calibrate_the_pdf_first__073989c2": {
-      "de": {
-        "source": "1305dd96e01a7b88fcfe2928d23378ad9a451c33c7e5720e28adf38c7dd1a241",
-        "translation": "71f6b6722fef206940fd0e20a26a176173e1157af0e8404d073c50124383a4bb",
         "status": "reviewed"
       }
     },
@@ -13398,27 +13328,6 @@
         "status": "reviewed"
       }
     },
-    "layers_pdf_georeferenced": {
-      "de": {
-        "source": "9d848dbd950c1d2a741a3c92d3f738cddf5b6d5983c0daa41ecfe7a4c424d1eb",
-        "translation": "dd3287ef358230a636ceb7402594ab829d8450369150f938b1efae05b6cbee76",
-        "status": "reviewed"
-      }
-    },
-    "layers_pdf_manual_bounds": {
-      "de": {
-        "source": "87f510f2527cbfad48fcb78df3ea6154837b6a4a5097d249b5539820252024bd",
-        "translation": "9845d45a718d8b97970d24ab96e5f1904d00c12c619c85ba744f93923b586d74",
-        "status": "reviewed"
-      }
-    },
-    "layers_pdf_no_georeferencing": {
-      "de": {
-        "source": "23a27597db20741c9e9cb612f527638ec659f6fe15907179873ca3311339b94d",
-        "translation": "a62fead304ea40e4e6a7adada4963afba9a0787518f2dc8e8527f35df176ed54",
-        "status": "reviewed"
-      }
-    },
     "layers_pdf_fiduciary_count": {
       "de": {
         "source": "02be6ca75251fb0aa63a1b152509d53c794e892da00cf073abf1c6bbc0409381",
@@ -13647,6 +13556,307 @@
       "de": {
         "source": "caa9cfecbe9b54e12fd5e264d1befe9d499ebf6808156de3f97294055959ebc2",
         "translation": "3bb3c77259e9feac268035e25d3e55926c0ab35d070f1d68bf2b1495534518a5",
+        "status": "reviewed"
+      }
+    },
+    "imported_map_show_toggle": {
+      "de": {
+        "source": "69bce9bc8947e50fc1b01fd3a49f90067efcca2a6b8705c59dcd43e96611b4c3",
+        "translation": "a3c6dd5d2e3885d4877f90891545b8e11649c65ecc3eeffda9bc24cefae8c231",
+        "status": "reviewed"
+      }
+    },
+    "imported_map_hidden_notice": {
+      "de": {
+        "source": "97fdd2b7cd71a2cc66cdc409b02b17f07209f6b6fadb46771617bdeb26f42602",
+        "translation": "b5f8232f0f22bdfdae980ec08128af9a8fe133870328733f4e8cef86daa8c0a0",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_drawing_label": {
+      "de": {
+        "source": "93f3062e5234c4ae24f143d3afae2599f9738c5aa805f996c84622d206ba48c2",
+        "translation": "f8d030350cd136aeaf0dd8c4e65b46c0c191e2b759bed9c2b851b388c361d757",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_failed_label": {
+      "de": {
+        "source": "9f7de620782e9385f951c3bb73cc621b079504c8e19e37f788203042e7ae2897",
+        "translation": "662ae73dcefb7884156658d20d5d4f8f6ece037e7c3c986e3b3b6554236ae954",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_failed_title": {
+      "de": {
+        "source": "df9ab4644bf5e39edfdb1be5e8cc51ed454126752a39cd9888afc47d1661cd52",
+        "translation": "aa1c9c5e64f76fadb5cdde6145983f7888c89d64947020a4400ea3452232bc2c",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_reason_cannot_open": {
+      "de": {
+        "source": "a3ff0c802550a9c3990fd3e49ca8c70ed6cf84969ec991543e0644dbd1b0474b",
+        "translation": "535372334aa47c6e9a56193cde0d3be2ed63e4a39bd0f2786ab97ac37b08b10b",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_reason_password_protected": {
+      "de": {
+        "source": "a000d7a742a91b5b40bf29466b9b75288ffb65dfcc993cf2aad46d291729d59e",
+        "translation": "290a411d85ed3c00e4b5601c0e0d59cceb082a283aa19961b6e363ae33754aad",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_reason_page_missing": {
+      "de": {
+        "source": "6fc7cafbce5ac1923d4036eb8d9bf4cc308a5a978eff876b1f489a21646176bd",
+        "translation": "94c368599265c88949ae1879d2c736ec01699f7a606bbbcc07d15db22c579436",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_reason_page_geometry": {
+      "de": {
+        "source": "9f0410834ef2b78f7d4913771c54ccccae41852a677c2e3db914ad0f47769150",
+        "translation": "b5e67b6c84dd9a0d3d268260108456a61ba78d72c86c5aaaf19150b4ccd0576e",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_reason_blank": {
+      "de": {
+        "source": "89f230fb83702e03ff20fdddf7346953108bae8c6f5a88addd530faaebb28124",
+        "translation": "00a882bd5e23a02d79e744d5be9225bfbc8ca85318ef7bf8956e50da72c0d140",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_reason_out_of_memory": {
+      "de": {
+        "source": "a8310c85346214b4503d1cfabd3dcffd02f1191f7774581db52d610975aaa90a",
+        "translation": "6919a5d6698144e4704bedebd7266a7c51cea4817ca4d24b8ecd1c67040a8d99",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_reason_render_error": {
+      "de": {
+        "source": "b70de38f3da8687b99daebe0f58d5d7cdcf8642e8b378296f482cb90950d13a5",
+        "translation": "887f3374bada1ec91cd9af8e6e506b9c28b628a8cd3e8cb37940466ec865bc9b",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_try_again": {
+      "de": {
+        "source": "7de62920a6005fdc33192be181094763d418d30043e69f387dc0b885b6eb2eae",
+        "translation": "6f817b78d98170251d9b4cb200de10b3fd3c3c2f806d74fc72b825e43c6aaf8c",
+        "status": "reviewed"
+      }
+    },
+    "pdf_render_use_online_map": {
+      "de": {
+        "source": "9a7c6bf7de21878be4357a5bbf60ea636297ae7338feb6cd6731b8508331d4f6",
+        "translation": "aad266f7c14ac865f594e3cb3fe905ad630c6dbfc8f0bb8c444f145b77d7beaf",
+        "status": "reviewed"
+      }
+    },
+    "pdf_guard_crash_title": {
+      "de": {
+        "source": "7410bff7d3e8eba4d554cc6c0663707054d11091b184a3d9cdfdc042044f94b5",
+        "translation": "ab0af37c9f07d5d9e6f2c447bf2cf390cde479d598e5f11c3e3753da24a7a7a8",
+        "status": "reviewed"
+      }
+    },
+    "pdf_guard_crash_message": {
+      "de": {
+        "source": "fe798c0f406b1e0ae336264d6dad04b361f0e549e05071e1a3450338916c27a1",
+        "translation": "f93825282308e3cefcafb716bc0e402265c37efd3671d9b65e6492aa566ba7f1",
+        "status": "reviewed"
+      }
+    },
+    "pdf_guard_open_anyway": {
+      "de": {
+        "source": "5e5b266b01e8548281c08970052c19eb6c92fba8b5a21eb4908cf8d61c4e3531",
+        "translation": "0a4a156ba2a33fb435e4bbe7109f6c9625d1b4ecfe50529019df06481f4a9f85",
+        "status": "reviewed"
+      }
+    },
+    "pdf_guard_delete_map": {
+      "de": {
+        "source": "d862f6a718d410d7100d12b88529353d40ceb34e7dac50e467f16c9073bfd53c",
+        "translation": "e99964411843b7c9b94034523f6335042eff30dd6ca916bd450456ab3e7b90bd",
+        "status": "reviewed"
+      }
+    },
+    "pdf_guard_import_interrupted_title": {
+      "de": {
+        "source": "6614d25893a58397ce52f2e8ae83057d12efc82c543b5fc08036c4cac48e9c7a",
+        "translation": "f4939fed575041cedd38a7fbe5eb228dfc0a40e3b1c75311dbbd448ba14d68e7",
+        "status": "reviewed"
+      }
+    },
+    "pdf_guard_import_interrupted_message": {
+      "de": {
+        "source": "c4024c0d0033b7aed2ddff50c9e6e7802b58127d0f1ea5c009ea83bedf8600d0",
+        "translation": "1bbe3c0b3b592ab8443e6d002ba6c51d3792aff672e2bcaeb1232b2ef944433e",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_interrupted_title": {
+      "de": {
+        "source": "b5da1c892c667bad32351392569e700e716ecd71c820cc798900f195f77f02e7",
+        "translation": "6a854de1cf4f092770919e8539f5952f4224016120d12d7d840ba98714efa29d",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_interrupted_message": {
+      "de": {
+        "source": "c73c33124ae7ff367b35764482d08a2b25e3cbdbc2bba348ce11112a7b175bcd",
+        "translation": "fe5dfb642276b9ec36c9bec839e40b0e7328d85547a6492ba6937e529ea26fd8",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_generate_button": {
+      "de": {
+        "source": "a52b230fbadeda94bdd27ab1f982ea6c1710f7878acb9571017937201121559c",
+        "translation": "0c63cca2464ff65fba30cbfbeedb67513d98cf5baf80b18674a0bda380fe5ae1",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_caption": {
+      "de": {
+        "source": "0a8b72365ec8fd690c9bf0d423cd32043b027bb0e2363bb18fe84ec82d788283",
+        "translation": "894e8b642fd618e369c5d6f0ed5a753fc78fa4b48dcaacbfdabc651a655b56f3",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_disabled_caption": {
+      "de": {
+        "source": "e678d3c43159a924d92db58d055038c137588650ed27d645ce137448d37e795f",
+        "translation": "813e76f9063bcbfaf3ac91a4058bf75d3a64c6500de29ff4c81c0f2c4754739f",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_confirm_title": {
+      "de": {
+        "source": "43cf9b0b100c4a989e079a9ba0b9d8315be1959629afbfcaad2d9a97d991e070",
+        "translation": "3d4d32485878f6deb40162ed471802fa2e547b3ff721e701ccd34c1667b21cb9",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_option_row": {
+      "de": {
+        "source": "2852c40498228b6c2e265179f98802f011dfd50c11dafa57fb46f2f80aa093b0",
+        "translation": "e446ccd8724f2d5cbe7ec93f856fc0e6d1801412ba9d9fbc96f8031d0a5e7c9c",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_option_no_space": {
+      "de": {
+        "source": "ce36510934c02d93e0433f342c9d3b4f189c32c57f12b4708a35f981e64b8495",
+        "translation": "2a5ff41b7b843969e3af77409aab4032c4eba29b140e684630428d7986719683",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_confirm_message": {
+      "de": {
+        "source": "c0cc1e33c882cb6def888b8ca6fb9289ed0488b0f0297bd8b4d13f2298cc8932",
+        "translation": "9eb61b94fa19e68686df1275d8dbc90df9f1e25e2ef1b147c731909bea885af1",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_generate": {
+      "de": {
+        "source": "ff5fa6110c0517f77090dbec2e0ae6959821a864df9ba4200d178f5150bcb2f5",
+        "translation": "01ec8a30316a47321735dfe1932adaf8edc443d7d79d15d6a85a486dc79b1ae6",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_estimating": {
+      "de": {
+        "source": "f0164acff7406207a805cec3428008c334768a5c34b558350064adba98835b86",
+        "translation": "a6bfe3087acfd7dcd81efc57d8f304fe2980b612c22bece0aaaf69d19c480436",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_running": {
+      "de": {
+        "source": "796878b21871f08cf7c3eae06ae7aee3eca7c8d9ee553da9f89395ec354615e4",
+        "translation": "0fa60e9b5b5ca6af87f10914e81dc0e1b7d24b0003e2e1829a3498b84ff12cb9",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_chip": {
+      "de": {
+        "source": "ea0b2ec0ec06ccb34b81a2514bc5a040a81e3cf2c52226ec32bab4145047d286",
+        "translation": "8a887a11c6a45e118d613fcd298cb83e247a0ce287f386db243f851161ec4856",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_done": {
+      "de": {
+        "source": "9f0884ef7be55b71d370221b66cfd2f84063fbf86219b4adbb6df6003902c157",
+        "translation": "6ca84a0e6b4aaee26b67b157befddf4a3803e72ee45d44356b9665d1fd84fcbf",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_info": {
+      "de": {
+        "source": "2493f7b63785365200acae3327ec6f420bb8922b841e54e7069292f7b6661e92",
+        "translation": "341a646636f714100eef9ff91d1c673230000f5c48abfe46bf99977985115df0",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_remove": {
+      "de": {
+        "source": "bb460f7b84c8ad6ed8826e7b44928d593e8362279eb40f80a562bd4c4533a8e7",
+        "translation": "c364883f7426073c69c74cdb53f89b6bf596d929e51b135dcccab8b71b7d8088",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_minutes": {
+      "de": {
+        "source": "889bbdf57f591ebc7f47804e79ea7d31464329ecf7594c81681e9db70d2afbe7",
+        "translation": "f2dd8424c20641c9018f4e183786ad7b691b76122e43c74b9a7439142129032c",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_error_title": {
+      "de": {
+        "source": "4f0434df1a8f6287ed8d702781f6a4e333250fa399e481b463023c97ee31f863",
+        "translation": "9908e783084fdb97fa92b9390c4963b63454932732135105daf8ace04b6ae81c",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_error_no_space": {
+      "de": {
+        "source": "aef0f4d2d1614780ee5df7863630549799b3b69589515f94c9a1b36117673db9",
+        "translation": "a20f0f0272a5c566e1428ee9810bed0dc0c7bfe1e0968aef992031fe76b13944",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_error_write_failed": {
+      "de": {
+        "source": "0c82307953760851241bccb1c40be187da36d5620bc3d7d5e8e32bfb51087794",
+        "translation": "55c4a715b8ad49bf8b35eaa17ad956be73885ca5a00739a232cf57361dee64d8",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_error_render_failed": {
+      "de": {
+        "source": "cbbbc3a6d412dff2dc9a05e57f0457c6758f5d817c83051b11537f6a0dcbdba3",
+        "translation": "57379594b97418fe36e8fdea6b5f3cda7bb7a77f1bb20159c7ddff5f747ef264",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_error_source_changed": {
+      "de": {
+        "source": "07f57f39c8152f5657c2fd654ac2309d974832760a9de2671befe82a2f6ba3f8",
+        "translation": "65fe07c7a5e8a6b457a7734a74f0f1b3b681cfc4108ef533b0acae678c717342",
+        "status": "reviewed"
+      }
+    },
+    "pdf_bake_error_too_large": {
+      "de": {
+        "source": "0e09923a2bc35e261dd21ab4f59d75e35300e2d7c5173934ae9f865c71ae6479",
+        "translation": "4bf2455b0371ff8dc00c2846555c8cb812be83b0a593ad771d5854d75fcb4ee5",
         "status": "reviewed"
       }
     }

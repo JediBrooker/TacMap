@@ -285,6 +285,7 @@ class ActiveMapSelectionStoreTest {
             store.reconcileManagedImportedMapFiles(
                 currentPdfFile = { current },
                 clearPdfSession = { clearCalls += 1; true },
+                currentPdfBakeFile = { null },
             )
         )
 
@@ -293,6 +294,42 @@ class ActiveMapSelectionStoreTest {
         assertFalse(staleImported.exists())
         assertFalse(staleGenerated.exists())
         assertEquals(0, clearCalls)
+    }
+
+    @Test
+    fun currentPdfKeepsItsBakeThroughTheRealReconcileAndReapsAStaleOne() {
+        // the deletion authority change from WP2: the keep set the store builds itself has
+        // to carry the session's bake, a hand built set in the lifecycle test can't catch that
+        val dir = tempDir()
+        val current = File(dir, "pdf_maps/current.pdf").apply { parentFile!!.mkdirs(); writeText("pdf") }
+        val bake = File(dir, "offline_tiles/tacmap-bake-new.mbtiles").apply { parentFile!!.mkdirs(); writeText("tiles") }
+        val staleBake = File(dir, "offline_tiles/tacmap-bake-old.mbtiles").apply { writeText("old georef") }
+        val running = File(dir, "pdf_bake_work/abc.mbtiles.partial").apply { parentFile!!.mkdirs(); writeText("half done") }
+        val store = ActiveMapSelectionStore.forTests(dir)
+        assertTrue(store.saveActiveAndRetainedPdf(BasemapStyle.OSM_TOPO))
+
+        assertTrue(
+            store.reconcileManagedImportedMapFiles(
+                currentPdfFile = { current },
+                clearPdfSession = { error("a PDF selection never clears its session") },
+                currentPdfBakeFile = { bake },
+            )
+        )
+        assertTrue(current.isFile)
+        assertTrue("the session's bake stays with its PDF", bake.isFile)
+        assertFalse("a bake the session no longer names is reaped", staleBake.exists())
+        assertTrue("the work dir isn't a reconcile root", running.isFile)
+
+        // Remove Offline Tiles: the session drops the bake, the next reconcile takes the file
+        assertTrue(
+            store.reconcileManagedImportedMapFiles(
+                currentPdfFile = { current },
+                clearPdfSession = { true },
+                currentPdfBakeFile = { null },
+            )
+        )
+        assertTrue(current.isFile)
+        assertFalse(bake.exists())
     }
 
     @Test
@@ -318,6 +355,7 @@ class ActiveMapSelectionStoreTest {
             store.reconcileManagedImportedMapFiles(
                 currentPdfFile = { stalePdf },
                 clearPdfSession = { clearCalls += 1; true },
+                currentPdfBakeFile = { null },
             )
         )
 
@@ -345,6 +383,7 @@ class ActiveMapSelectionStoreTest {
             store.reconcileManagedImportedMapFiles(
                 currentPdfFile = { stalePdf },
                 clearPdfSession = { false },
+                currentPdfBakeFile = { null },
             )
         )
 
@@ -374,6 +413,7 @@ class ActiveMapSelectionStoreTest {
                 store.reconcileManagedImportedMapFiles(
                     currentPdfFile = { orphan },
                     clearPdfSession = { true },
+                    currentPdfBakeFile = { null },
                 )
             )
             assertTrue(orphan.isFile)
@@ -396,6 +436,7 @@ class ActiveMapSelectionStoreTest {
             store.reconcileManagedImportedMapFiles(
                 currentPdfFile = { orphan },
                 clearPdfSession = { true },
+                currentPdfBakeFile = { null },
             )
         )
         assertTrue(orphan.isFile)
@@ -437,6 +478,7 @@ class ActiveMapSelectionStoreTest {
             relaunched.reconcileManagedImportedMapFiles(
                 currentPdfFile = { current },
                 clearPdfSession = { true },
+                currentPdfBakeFile = { null },
             )
         )
         listOf(current, stalePdf, staleImported, staleGenerated).forEach {
@@ -450,6 +492,7 @@ class ActiveMapSelectionStoreTest {
             relaunched.reconcileManagedImportedMapFiles(
                 currentPdfFile = { current },
                 clearPdfSession = { true },
+                currentPdfBakeFile = { null },
             )
         )
         assertTrue(current.isFile)

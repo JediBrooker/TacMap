@@ -73,6 +73,10 @@ enum ActiveMapSelectionStore {
         let schemaVersion: Int
         var active: PersistedSelection?
         var retained: PersistedSelection?
+        /// last online style the user picked, kept while an imported map is
+        /// active so "Use Online Map" and the crash guard go back to it (H1).
+        /// Optional, files from before it decode with nil
+        var preferredOnline: String? = nil
     }
 
     private struct DecodedState {
@@ -128,6 +132,10 @@ enum ActiveMapSelectionStore {
             return false
         }
 
+        if state.preferredOnline == nil, state.active?.kind == .online {
+            state.preferredOnline = state.active?.value
+        }
+        if selection.kind == .online { state.preferredOnline = selection.value }
         state.active = selection
         if clearRetained {
             state.retained = nil
@@ -185,6 +193,15 @@ enum ActiveMapSelectionStore {
         }
     }
 
+    /// the online style to fall back to, nil when none was ever stored (or the
+    /// file is locked). Keyed styles without a key are the caller's problem
+    static func preferredOnlineStyle() -> BasemapStyle? {
+        guard case .loaded(let decoded) = loadState() else { return nil }
+        let s = decoded.state
+        let raw = s.preferredOnline ?? (s.active?.kind == .online ? s.active?.value : nil)
+        return raw.flatMap(BasemapStyle.init(rawValue:))
+    }
+
     static func restore() -> RestoreResult {
         switch loadState() {
         case .empty:
@@ -226,46 +243,70 @@ enum ActiveMapSelectionStore {
         }
     }
 
+    /// F6: could the selector be pointing at a PDF, active or retained. nil =
+    /// it cant be read (locked or corrupt), so it might be. matches Android
+    static func mayHavePDF() -> Bool? {
+        switch loadState() {
+        case .empty:
+            // a corrupt selector was quarantined this launch: still unknown, not empty
+            if pendingUnavailableIssue?.path == storageURLProvider().standardizedFileURL.path { return nil }
+            return false
+        case .locked, .corrupt: return nil
+        case .loaded(let decoded):
+            return decoded.state.active?.kind == .pdf || decoded.state.retained?.kind == .pdf
+        }
+    }
+
     /// Remove plaintext PDF/GeoPDF/MBTiles copies that are no longer reachable
     /// from the authenticated v2 map-library snapshot. Missing, legacy, locked,
     /// corrupt, or internally inconsistent state performs no deletion: without
     /// durable authority we cannot know which operational map is recoverable.
     @discardableResult
     static func reconcileManagedImportedMapFiles() -> Bool {
+        // R2-S2: the keep set and the deletes happen under the same lock the bake
+        // publish and Remove take, so nobody lists offline_tiles in between
+        ManagedImportedMapFileLifecycle.withManagedFilesLock { reconcileManagedImportedMapFilesLocked() }
+    }
+
+    private static func reconcileManagedImportedMapFilesLocked() -> Bool {
         guard case .loaded(let decoded) = loadState(), !decoded.migrated else {
             return false
         }
         let active = decoded.state.active
         let retained = decoded.state.retained
-        let keep: URL?
+        let generated = applicationSupportDirectoryProvider()
+            .appendingPathComponent("offline_tiles", isDirectory: true)
+        var keep = Set<URL>()
         if retained?.kind == .pdf {
             guard active?.kind != .offlineTiles else { return false }
             guard let source = source(for: retained!) as? PDFMapSource else {
                 return false
             }
-            keep = source.url
+            keep.insert(source.url)
+            // the PDF's baked tiles ride along with it. no record = reaped
+            if let bake = source.bake, PDFSessionStore.validBake(bake) {
+                let file = generated.appendingPathComponent(bake.fileName)
+                if FileManager.default.fileExists(atPath: file.path) { keep.insert(file) }
+            }
         } else if retained?.kind == .offlineTiles {
             guard active?.kind != .pdf,
                   active?.kind != .offlineTiles || active == retained else { return false }
             guard let path = retained?.value,
                   let file = restoredOfflineFile(for: path) else { return false }
             guard PDFSessionStore.clear() else { return false }
-            keep = file
+            keep.insert(file)
         } else {
             // A current snapshot can only activate an imported map while
             // retaining that same map. Refuse cleanup rather than guessing
             // through a semantically inconsistent or future snapshot.
             guard active?.kind != .pdf, active?.kind != .offlineTiles else { return false }
             guard PDFSessionStore.clear() else { return false }
-            keep = nil
         }
 
         guard let imported = try? importedMapsDirectoryProvider() else { return false }
-        let generated = applicationSupportDirectoryProvider()
-            .appendingPathComponent("offline_tiles", isDirectory: true)
         return ManagedImportedMapFileLifecycle.reconcile(
             directories: [imported, generated],
-            keeping: keep.map { Set([$0]) } ?? []
+            keeping: keep
         )
     }
 
@@ -311,7 +352,14 @@ enum ActiveMapSelectionStore {
             ? PDFSessionStore.snapshotActiveSession()
             : nil
         if retained.kind == .pdf, !PDFSessionStore.clear() {
-            guard write(decoded.state) else {
+            // OD3-R3-1: clear() can drop our value and still read one back (a
+            // stale copy in a lower prefs domain did exactly that on the sim).
+            // put the exact session bytes back too, not just the selector, or
+            // the library ends up pointing at that stale session instead of
+            // the real file and Retry works on the wrong map
+            let pdfRestored = pdfSnapshot.map(PDFSessionStore.restoreActiveSession) ?? true
+            let selectorRestored = write(decoded.state)
+            guard pdfRestored, selectorRestored else {
                 throw RetainedMapRemovalError.rollbackFailed(CocoaError(.fileWriteUnknown))
             }
             throw RetainedMapRemovalError.persistenceFailed(CocoaError(.fileWriteUnknown))
@@ -342,7 +390,11 @@ enum ActiveMapSelectionStore {
     private static func backingFile(for selection: PersistedSelection) -> URL? {
         switch selection.kind {
         case .pdf:
-            return PDFSessionStore.load()?.url
+            // a kept session whose file is gone (OD-F4) has nothing to delete
+            guard let url = PDFSessionStore.load()?.url, FileManager.default.fileExists(atPath: url.path) else {
+                return nil
+            }
+            return url
         case .offlineTiles:
             guard let path = selection.value else { return nil }
             return restoredOfflineFile(for: path)

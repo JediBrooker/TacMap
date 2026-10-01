@@ -80,6 +80,8 @@ struct MapSelectionDependencies {
     var persistPDFSession: (PDFMapSource) -> Bool
     var restorePDFSession: (PDFSessionStore.ActiveSessionSnapshot) -> Bool
     var reconcileManagedMapFiles: () -> Bool = { false }
+    /// R3-2 bake only sweep, run on every active restore (launch, unlock)
+    var sweepOrphanBakes: () -> Bool = { false }
 
     static let live = MapSelectionDependencies(
         persistSelection: { ActiveMapSelectionStore.save($0, clearRetained: $1) },
@@ -89,7 +91,13 @@ struct MapSelectionDependencies {
         snapshotPDFSession: PDFSessionStore.snapshotActiveSession,
         persistPDFSession: PDFSessionStore.save,
         restorePDFSession: PDFSessionStore.restoreActiveSession,
-        reconcileManagedMapFiles: ActiveMapSelectionStore.reconcileManagedImportedMapFiles
+        reconcileManagedMapFiles: ActiveMapSelectionStore.reconcileManagedImportedMapFiles,
+        // same offline_tiles the reconcile and the bake use
+        sweepOrphanBakes: {
+            PDFBakeController.sweepUnreferencedBakes(
+                in: ActiveMapSelectionStore.applicationSupportDirectoryProvider()
+                    .appendingPathComponent("offline_tiles", isDirectory: true))
+        }
     )
 }
 
@@ -178,11 +186,40 @@ final class MapViewModel: ObservableObject {
         return max(0.1, min(raw, 20.0))
     }
 
+    // MARK: - Imported PDF rendering
+
+    /// live PDF tile source + render status for the header
+    let pdfRuntime = PDFMapRuntime()
+
+    /// launch decided not to auto-draw this map (it was being drawn when the
+    /// app died). The durable selection still points at it.
+    @Published var pdfCrashSuspect: PDFMapSource?
+
+    /// one shot launch notices from the crash guard. An interrupted import and
+    /// an interrupted bake can both fire on one launch (K1), they queue and show
+    /// one after the other, after the crash suspect alert if there is one
+    enum PDFLaunchNotice: Equatable { case importInterrupted, bakeInterrupted }
+    @Published private(set) var pdfLaunchNotice: PDFLaunchNotice?
+    private(set) var queuedLaunchNotices: [PDFLaunchNotice] = []
+
+    /// H1: the online style the suppress path and Use Online Map fall back to.
+    /// The one persisted with the selection, else the built in default
+    var preferredOnlineStyleProvider: () -> BasemapStyle? = { ActiveMapSelectionStore.preferredOnlineStyle() }
+    private var lastOnlineStyle: BasemapStyle?
+
+    /// the guard decides once per launch, on the first restore that knows
+    /// what map (if any) it restored
+    private var pdfGuardDecided = false
+    var pdfRenderGuard: PDFRenderGuard = .shared
+    private var pdfRuntimeSink: AnyCancellable?
+
     // MARK: - Camera signal channels
 
     let cameraRequests     = PassthroughSubject<MKCoordinateRegion, Never>()
     let resetNorthRequests = PassthroughSubject<Void, Never>()
     let headingRequests    = PassthroughSubject<CLLocationDirection, Never>()
+    /// exact centre/zoom/heading, for the debug camera hook (zoom still clamped by the view)
+    let exactCameraRequests = PassthroughSubject<(center: CLLocationCoordinate2D, zoom: Double, heading: Double), Never>()
 
     // MARK: - Dependencies
 
@@ -200,6 +237,8 @@ final class MapViewModel: ObservableObject {
          initialMapSource: MapSource = OnlineRasterBasemapSource.makeDefault()) {
         self.mapSelectionDependencies = mapSelectionDependencies
         self.mapSource = initialMapSource
+        // header label + the map container follow the PDF render status
+        pdfRuntimeSink = pdfRuntime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         // Debounce camera-centre changes, only hit the DEM once user
         // stops panning for 400ms. Skips no-op changes (<0.0001deg ~ 11m).
         let settledCamera = $cameraCentre
@@ -252,14 +291,28 @@ final class MapViewModel: ObservableObject {
     /// and exposes the same retry transition used by write failures.
     @discardableResult
     func restoreActiveMapSelection() -> MapSource? {
+        // doesnt need the PDF or the selection, only a readable sealed session.
+        // locked = it skips and the next restore after unlock gets it
+        _ = mapSelectionDependencies.sweepOrphanBakes()
         switch mapSelectionDependencies.restoreActive() {
         case .restored(let source):
-            mapSelectionCoordinator.publishRestored(source)
+            let pdf = source as? PDFMapSource
+            if decideLaunchGuard(restoredToken: pdf?.renderGuardToken), let pdf {
+                // crash loop breaker: online map in memory only, the durable
+                // selection and the PDF stay exactly as they are
+                pdfCrashSuspect = pdf
+                mapSelectionCoordinator.publishRestored(preferredOnlineBasemap())
+            } else {
+                mapSelectionCoordinator.publishRestored(source)
+            }
             pendingMapSelectionTransition = nil
             mapSelectionPersistenceIssue = nil
             _ = mapSelectionDependencies.reconcileManagedMapFiles()
+            showNextLaunchNotice()
             return source
         case .noSelection:
+            _ = decideLaunchGuard(restoredToken: nil)
+            showNextLaunchNotice()
             pendingMapSelectionTransition = nil
             _ = mapSelectionDependencies.reconcileManagedMapFiles()
             return nil
@@ -270,6 +323,74 @@ final class MapViewModel: ObservableObject {
             )
             return nil
         }
+    }
+
+    /// true = suppress the restored PDF
+    private func decideLaunchGuard(restoredToken: String?) -> Bool {
+        guard !pdfGuardDecided else {
+            // a later restore in the same launch (unlock, retry) still honours a standing suspect
+            return restoredToken != nil && pdfRenderGuard.suspect == restoredToken && pdfCrashSuspect != nil
+        }
+        pdfGuardDecided = true
+        let outcome = pdfRenderGuard.launchDecision(restoredToken: restoredToken)
+        // the decision's alert goes first, then "Offline tiles not finished"
+        if case .importInterrupted = outcome.decision { queuedLaunchNotices.append(.importInterrupted) }
+        if outcome.bakeInterrupted {
+            PDFBakeController.cleanWorkDirectory()
+            queuedLaunchNotices.append(.bakeInterrupted)
+        }
+        return outcome.decision == .suppress
+    }
+
+    /// next queued notice, once nothing else is up. SwiftUI drops an alert
+    /// presented in the same turn another one went away, hence the delay
+    private func showNextLaunchNotice(after delay: Double = 0) {
+        guard delay <= 0 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.showNextLaunchNotice() }
+            return
+        }
+        guard pdfLaunchNotice == nil, pdfCrashSuspect == nil, !queuedLaunchNotices.isEmpty else { return }
+        pdfLaunchNotice = queuedLaunchNotices.removeFirst()
+    }
+
+    /// OK on a launch notice
+    func dismissLaunchNotice() {
+        guard pdfLaunchNotice != nil else { return }
+        pdfLaunchNotice = nil
+        showNextLaunchNotice(after: 0.35)
+    }
+
+    /// H1: in memory only, the durable selection is left alone
+    func preferredOnlineBasemap() -> OnlineRasterBasemapSource {
+        let style = lastOnlineStyle ?? preferredOnlineStyleProvider() ?? OnlineRasterBasemapSource.defaultStyle
+        return OnlineRasterBasemapSource(style.requiresEsriKey && !EsriKey.isAvailable ? OnlineRasterBasemapSource.defaultStyle : style)
+    }
+
+    /// crash recovery alert: Open Anyway
+    func openCrashSuspectAnyway() {
+        guard let pdf = pdfCrashSuspect else { return }
+        pdfRenderGuard.resolveSuspect(.openAnyway)
+        pdfCrashSuspect = nil
+        mapSelectionCoordinator.publishRestored(pdf)
+        showNextLaunchNotice(after: 0.35)
+    }
+
+    /// crash recovery alert: Not Now. the suspect stays so next launch asks again
+    func dismissCrashSuspect() {
+        pdfRenderGuard.resolveSuspect(.notNow)
+        pdfCrashSuspect = nil
+        showNextLaunchNotice(after: 0.35)
+    }
+
+    /// crash recovery alert: Delete Map, through the normal delete flow
+    @discardableResult
+    func deleteCrashSuspect() -> Bool {
+        guard let pdf = pdfCrashSuspect else { return false }
+        guard deleteRetainedImportedMap(pdf) else { return false }
+        pdfRenderGuard.resolveSuspect(.deleted)
+        pdfCrashSuspect = nil
+        showNextLaunchNotice(after: 0.35)
+        return true
     }
 
     func restoreRetainedMapSelection() -> ActiveMapSelectionStore.RetainedRestoreResult {
@@ -325,6 +446,10 @@ final class MapViewModel: ObservableObject {
             return restoreActiveMapSelection() != nil
 
         case .deleteImported(let retainedSource, let onlineSource):
+            // a bake for this PDF has nowhere to go any more
+            if let pdf = retainedSource as? PDFMapSource {
+                PDFBakeController.shared.cancel(for: pdf)
+            }
             // If the imported source is visible, commit and publish online first
             // so its renderer releases the SQLite/PDF resource before deletion.
             if mapSource is PDFMapSource || mapSource is OfflineTileMapSource {
@@ -403,6 +528,8 @@ final class MapViewModel: ObservableObject {
         NSLog("[MapVM] map source changed -> kind=\(source.kind)")
         let previousSource = mapSource
         mapSource = source
+        if let online = source as? OnlineRasterBasemapSource { lastOnlineStyle = online.style }
+        if !(source is PDFMapSource) { pdfRuntime.reset() }
         if previousSource !== source {
             (previousSource as? OfflineTileMapSource)?.closeForDeletion()
         }

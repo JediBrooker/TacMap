@@ -75,6 +75,28 @@ class ScopedTileLoadCoordinatorTest {
         harness.close()
     }
 
+    @Test fun nullCouldntLoadPublishesNothingAndOnlyRetriesWhenAskedAgain() = runBlocking {
+        // a failed PDF source answers null (G1): no publish means no version bump, so the
+        // view never gets a reason to ask again by itself. no tight reload loop
+        val harness = Harness(this)
+        val source = Source("pdf")
+        harness.coordinator.reconcile(source, setOf(5), isLoaded = { false })
+        yield()
+        harness.complete(source, 5, null)
+        yield()
+        assertTrue(harness.published.isEmpty())
+        assertEquals(0, harness.pending())
+        // the same wanted set again (camera moved): one fresh attempt, not a stream of them
+        harness.coordinator.reconcile(source, setOf(5), isLoaded = { false })
+        yield()
+        assertEquals(1, harness.pending())
+        harness.complete(source, 5, null)
+        yield()
+        assertEquals(0, harness.pending())
+        assertTrue(harness.published.isEmpty())
+        harness.close()
+    }
+
     private class Source(val name: String)
 
     private class Harness(parent: CoroutineScope) {
@@ -97,7 +119,9 @@ class ScopedTileLoadCoordinatorTest {
             discard = { discarded += it },
         )
 
-        fun complete(source: Source, key: Int, value: String) {
+        fun pending(): Int = waiting.values.sumOf { it.size }
+
+        fun complete(source: Source, key: Int, value: String?) {
             val queue = checkNotNull(waiting[source to key])
             queue.removeFirst().resume(value)
             if (queue.isEmpty()) waiting.remove(source to key)

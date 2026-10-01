@@ -10,10 +10,13 @@ final class LayerVisibility: ObservableObject {
     @Published var waypointsVisible:     Bool = true  { didSet { d.set(waypointsVisible,     forKey: K.waypoints) } }
     @Published var drawingsVisible:      Bool = true  { didSet { d.set(drawingsVisible,      forKey: K.drawings) } }
     @Published var userLocationVisible:  Bool = true  { didSet { d.set(userLocationVisible,  forKey: K.userLocation) } }
-    /// PDF overlay (GeoPDF basemap). On by default, user can toggle off
-    /// to compare against satellite or hide a misaligned PDF without
-    /// unloading it.
-    @Published var pdfOverlayVisible:    Bool = true  { didSet { d.set(pdfOverlayVisible,    forKey: K.pdfOverlay) } }
+    /// Imported PDF map drawn or not. Off shows the dark background (never
+    /// an online map instead), keeps the tiles cached so on is instant.
+    /// New key on purpose: the old layers.pdfOverlayVisible toggle did
+    /// nothing, so a stale false there must not suddenly hide peoples maps.
+    @Published var importedMapVisible:   Bool = true  { didSet { d.set(importedMapVisible,   forKey: K.importedMap) } }
+
+    static let importedMapVisibleKey = K.importedMap
 
     /// Whether the name-label pill is rendered alongside each drawing.
     @Published var drawingLabelsVisible: Bool = false { didSet { d.set(drawingLabelsVisible, forKey: K.drawingLabels) } }
@@ -43,7 +46,7 @@ final class LayerVisibility: ObservableObject {
         static let waypoints     = "layers.waypointsVisible"
         static let drawings      = "layers.drawingsVisible"
         static let userLocation  = "layers.userLocationVisible"
-        static let pdfOverlay    = "layers.pdfOverlayVisible"
+        static let importedMap   = "layers.importedMapVisible"
         static let drawingLabels = "layers.drawingLabelsVisible"
         static let unitLabels    = "layers.unitLabelsVisible"
         static let unitAmplifiers = "layers.unitAmplifiersVisible"
@@ -61,7 +64,7 @@ final class LayerVisibility: ObservableObject {
         waypointsVisible     = restore(K.waypoints,     default: true)
         drawingsVisible      = restore(K.drawings,      default: true)
         userLocationVisible  = restore(K.userLocation,  default: true)
-        pdfOverlayVisible    = restore(K.pdfOverlay,    default: true)
+        importedMapVisible   = restore(K.importedMap,   default: true)
         drawingLabelsVisible = restore(K.drawingLabels, default: false)
         unitLabelsVisible    = restore(K.unitLabels,    default: false)
         unitAmplifiersVisible = restore(K.unitAmplifiers, default: true)

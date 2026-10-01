@@ -4,12 +4,16 @@ import PDFKit
 
 enum PDFMapImportError: LocalizedMessageError, LocalizedError, Equatable {
     case invalidPDF
+    /// the import probe couldnt draw it, the shared render failure copy says why
+    case cannotDraw(PDFRenderFailure)
 
     var errorDescription: String? { localizedMessage.text }
         var localizedMessage: LocalizedMessage {
         switch self {
         case .invalidPDF:
             return Messages.displayCouldnTImportThisFileAsAValidPdfMessage()
+        case .cannotDraw(let f):
+            return f.localizedMessage
         }
     }
 }

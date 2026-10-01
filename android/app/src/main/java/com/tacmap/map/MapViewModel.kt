@@ -14,6 +14,9 @@ import com.tacmap.calibration.ActiveMapSelection
 import com.tacmap.calibration.ActiveMapSelectionFailure
 import com.tacmap.calibration.ActiveMapSelectionLoadState
 import com.tacmap.calibration.ActiveMapSelectionStore
+import com.tacmap.calibration.reconcileWithPdfSession
+import com.tacmap.calibration.removeBake
+import com.tacmap.calibration.sweepOrphanBakes
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.MapSource
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
@@ -42,6 +45,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 // Online basemap choice is just BasemapStyle now (Esri Satellite/Topo, OSM
@@ -117,6 +121,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     val trackRecorder = (app as com.tacmap.app.TacticalApp).trackRecorder
 
+    /** the tile view's memory cache. lives here so a rotation keeps rendered tiles */
+    val tileCache: com.tacmap.map.render.TileBitmapCache = com.tacmap.map.render.TileBitmapCache.forDevice(app)
+
     // Camera centre published by MapScreen on every camera-idle event.
     private val _cameraLat = MutableStateFlow(0.0)
     val cameraLat: StateFlow<Double> = _cameraLat.asStateFlow()
@@ -140,6 +147,27 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private val pdfSessionStore = PdfSessionStore(app)
     private val activeMapSelectionStore = ActiveMapSelectionStore(app)
+
+    private val tacticalApp = app as com.tacmap.app.TacticalApp
+    private val pdfRenderGuard = tacticalApp.pdfRenderGuard
+
+    /** the live PDF tile source + render status. here so a rotation keeps the open page */
+    val pdfRuntime = PdfMapRuntime(app, viewModelScope, pdfRenderGuard) { pdfSessionStore.persistRenderMeta(it) }
+
+    /** Generate Offline Tiles, app scoped */
+    val bakeManager: com.tacmap.calibration.PdfBakeManager = tacticalApp.pdfBakeManager
+
+    private val _pdfRecovery = MutableStateFlow<PdfMapSource?>(null)
+    /** the PDF the crash guard held back this launch, waiting on Open Anyway / Delete Map / Not Now */
+    val pdfRecovery: StateFlow<PdfMapSource?> = _pdfRecovery.asStateFlow()
+
+    private val _pdfLaunchNotices = MutableStateFlow<List<com.tacmap.map.render.pdf.PdfLaunchNotice>>(emptyList())
+    /** import interrupted and/or bake interrupted from the last run, each shown once, in order */
+    val pdfLaunchNotices: StateFlow<List<com.tacmap.map.render.pdf.PdfLaunchNotice>> = _pdfLaunchNotices.asStateFlow()
+
+    private val trimListener: (Int) -> Unit = { level ->
+        viewModelScope.launch(Dispatchers.Main) { onTrimMemory(level) }
+    }
     private val savedMapSelectionState: ActiveMapSelectionLoadState =
         activeMapSelectionStore.loadState()
     private val canReconcileManagedMapsAtColdStart: Boolean =
@@ -266,6 +294,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun unloadPdfMap(): Boolean {
+        // deleting the PDF cancels its bake first, then the PDF and the bake go together
+        bakeManager.cancelFor((_mapSource.value as? PdfMapSource)?.uri?.path?.let { java.io.File(it) })
         val clearRetained = _retainedImportedMapSource.value is PdfMapSource
         val succeeded = executeMapSelectionTransition(
             PendingMapSelectionTransition.UnloadImported(
@@ -295,6 +325,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
      *  managed-file reconcile then removes its private copy. */
     fun deleteRetainedImportedMap(): Boolean {
         val retained = _retainedImportedMapSource.value ?: return false
+        bakeManager.cancelFor((retained as? PdfMapSource)?.uri?.path?.let { java.io.File(it) })
         val active = _mapSource.value as? OnlineRasterMapSourceAndroid ?: return false
         val succeeded = executeMapSelectionTransition(
             PendingMapSelectionTransition.UnloadImported(
@@ -327,6 +358,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     fun restoreRetainedImportedMap(): Boolean {
         val retained = _retainedImportedMapSource.value ?: return false
+        if (retained is PdfMapSource && _pdfRecovery.value != null) {
+            // picking it in Layers is an explicit open, same as Open Anyway
+            pdfRenderGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
+            _pdfRecovery.value = null
+        }
         return when (retained) {
             is PdfMapSource -> executeMapSelectionTransition(
                 PendingMapSelectionTransition.PersistedPdf(retained, preferredBaseMap)
@@ -358,12 +394,32 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     /** Last laid-out map viewport (dp), for fitting an imported map's extent. */
     private var lastViewportSize: Pair<Double, Double>? = null
 
+    /**
+     * The crash guard's launch step, once per process before anything restores. Only the
+     * active PDF's token can be suppressed; an interrupted import or bake just leaves a notice.
+     */
+    private val pdfLaunchDecision: com.tacmap.map.render.pdf.GuardLaunchDecision = run {
+        val token = if (savedMapSelection?.kind == ActiveMapKind.PDF) pdfSessionStore.storedRenderToken() else null
+        pdfRenderGuard.launchDecision(token)
+    }
+
+    /** the pending import that took the app down in its probe last run, replaying it would just loop */
+    val interruptedImportOperationKey: String? =
+        pdfLaunchDecision.operationKey.takeIf { pdfLaunchDecision.importInterrupted }
+
     init {
+        tacticalApp.memoryPressure += trimListener
+        val notices = com.tacmap.map.render.pdf.PdfLaunchNotice.from(pdfLaunchDecision)
+        if (notices.isNotEmpty() && pdfRenderGuard.takeNotice()) _pdfLaunchNotices.value = notices
+        viewModelScope.launch {
+            bakeManager.published.collect { onBakePublished(it) }
+        }
         restoreRetainedImportedSource()
         restoreActiveMapSource()
         if (canReconcileManagedMapsAtColdStart) {
             reconcileManagedImportedMapFiles()
         }
+        sweepOrphanBakesAtLaunch()
         viewModelScope.launch {
             locationService.lastLocation.collect { loc -> loc?.let(::onUserLocation) }
         }
@@ -391,6 +447,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                     whenPdfSessionMigrated { migrated ->
                         if (_mapSource.value !== placeholder) return@whenPdfSessionMigrated
                         if (migrated != null) {
+                            if (holdBackSuspectPdf(migrated)) return@whenPdfSessionMigrated
                             _mapSource.value = migrated
                             frameCameraFor(migrated)
                         } else {
@@ -400,6 +457,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                     return
                 }
                 if (restored != null) {
+                    if (restored is PdfMapSource && holdBackSuspectPdf(restored)) return
                     // This publication is already backed by the descriptor we
                     // just loaded; no second write is needed or useful.
                     _mapSource.value = restored
@@ -442,6 +500,110 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /**
+     * Crash guard said this PDF took the app down last time: show the online map in
+     * memory only (durable selection + PDF untouched) and ask. True when held back.
+     */
+    private fun holdBackSuspectPdf(pdf: PdfMapSource): Boolean {
+        if (!pdfLaunchDecision.suppress) return false
+        if (!pdfRenderGuard.launchDecision(pdf.render.renderGuardToken).suppress) return false
+        _mapSource.value = onlineBasemap()
+        _pdfRecovery.value = pdf
+        return true
+    }
+
+    /** Open Anyway */
+    fun openSuspectPdfAnyway() {
+        val pdf = _pdfRecovery.value ?: return
+        pdfRenderGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
+        _pdfRecovery.value = null
+        if (_mapSource.value is OnlineRasterMapSourceAndroid) {
+            _mapSource.value = pdf
+            frameCameraFor(pdf)
+        }
+    }
+
+    /** Not Now: keep the suspect so the next launch asks again */
+    fun dismissPdfRecovery() {
+        _pdfRecovery.value = null
+    }
+
+    /** Delete Map… (after the usual confirm) */
+    fun deleteSuspectPdf(): Boolean {
+        val pdf = _pdfRecovery.value
+        bakeManager.cancelFor(pdf?.uri?.path?.let { java.io.File(it) })
+        val ok = deleteRetainedImportedMap()
+        if (ok) {
+            pdfRenderGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.DELETED)
+            _pdfRecovery.value = null
+        }
+        return ok
+    }
+
+    /** OK on the notice showing now, the next one (if any) comes up after it */
+    fun consumePdfLaunchNotice() {
+        _pdfLaunchNotices.value = _pdfLaunchNotices.value.drop(1)
+    }
+
+    /** a bake for the PDF on screen landed: same map, now with tiles to read */
+    private fun onBakePublished(p: com.tacmap.calibration.PdfBakeManager.Published) {
+        fun upgrade(source: MapSource?): PdfMapSource? =
+            (source as? PdfMapSource)?.takeIf { it.render.renderGuardToken == p.renderGuardToken }
+                ?.let { it.withRender(it.render.copy(bake = p.bake)) }
+        upgrade(_mapSource.value)?.let {
+            _mapSource.value = it
+            pdfRuntime.onBakePublished(it)
+        }
+        upgrade(_retainedImportedMapSource.value)?.let { _retainedImportedMapSource.value = it }
+    }
+
+    /**
+     * Remove Offline Tiles: forget it in the session, stop reading it and delete the file there
+     * and then (R2-S2), even with the PDF missing, then the bake sweep. All of that is keystore
+     * + prefs commit + file deletes under the managed files lock, so it runs on IO (R3-4). The
+     * source update and the usual reconcile after it come back to main. True = started
+     */
+    fun removePdfBake(): Boolean {
+        val pdf = _mapSource.value as? PdfMapSource ?: return false
+        val name = pdf.uri.path?.let { java.io.File(it).name } ?: return false
+        val token = pdf.render.renderGuardToken
+        val bakeName = pdf.render.bake?.fileName
+        val filesDir = getApplication<Application>().filesDir
+        viewModelScope.launch(Dispatchers.Main) {
+            val deleted = withContext(Dispatchers.IO) {
+                pdfSessionStore.removeBake(filesDir, name, token, activeMapSelectionStore) { pdfRuntime.detachBake() }
+            } ?: return@launch
+            // the reconcile stays on main like every other one: off main it could land between a
+            // transition's session write and its selector write and reap the previous PDF
+            reconcileManagedImportedMapFiles()
+            if (!deleted) android.util.Log.w("MapViewModel", "bake file didn't go, the next launch sweep gets it")
+            // whatever is showing now, if it's still this PDF it loses the bake
+            fun strip(source: MapSource?): PdfMapSource? =
+                (source as? PdfMapSource)?.takeIf { it.render.renderGuardToken == token && it.render.bake?.fileName == bakeName }
+                    ?.let { it.withRender(it.render.copy(bake = null)) }
+            strip(_mapSource.value)?.let { _mapSource.value = it }
+            strip(_retainedImportedMapSource.value)?.let { _retainedImportedMapSource.value = it }
+        }
+        return true
+    }
+
+    /** launch half of the bake sweep (R3-2), off main. skipped when the record can't be read */
+    private fun sweepOrphanBakesAtLaunch() {
+        val filesDir = getApplication<Application>().filesDir
+        viewModelScope.launch(Dispatchers.IO) {
+            when (runCatching { pdfSessionStore.sweepOrphanBakes(filesDir, activeMapSelectionStore) }.getOrNull()) {
+                true -> Unit
+                false -> android.util.Log.w("MapViewModel", "bake sweep left something it wouldn't touch")
+                null -> android.util.Log.i("MapViewModel", "session record unreadable, bake sweep skipped")
+            }
+        }
+    }
+
+    private fun onTrimMemory(level: Int) {
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) tileCache.trimToInUse()
+        pdfRuntime.onTrimMemory(level)
     }
 
     private fun restoreRetainedImportedSource() {
@@ -615,12 +777,14 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun reconcileManagedImportedMapFiles(): Boolean =
-        activeMapSelectionStore.reconcileManagedImportedMapFiles(
-            // just the file, a session still waiting on migration keeps its PDF too
-            currentPdfFile = pdfSessionStore::activeFile,
-            clearPdfSession = pdfSessionStore::clear,
-        )
+    private fun reconcileManagedImportedMapFiles(): Boolean {
+        onReconcileForTests?.invoke()
+        return activeMapSelectionStore.reconcileWithPdfSession(pdfSessionStore)
+    }
+
+    /** instrumented tests only: sees each reconcile as it starts (which thread it's on) */
+    @androidx.annotation.VisibleForTesting
+    internal var onReconcileForTests: (() -> Unit)? = null
 
     private fun reportMapSelectionIssue(
         transition: PendingMapSelectionTransition,
@@ -689,6 +853,17 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun consumePendingCameraTarget() { _pendingCameraTarget.value = null }
+
+    private val _headingRequests = Channel<Double>(Channel.CONFLATED)
+    /** set the map heading outright (the debug camera hook) */
+    val headingRequests: Flow<Double> = _headingRequests.receiveAsFlow()
+
+    /** DEBUG launch hook (docs/DEBUG_HOOKS.md): camera straight to lat/lon/zoom[/heading] */
+    internal fun applyDebugCamera(camera: com.tacmap.app.DebugLaunchHooks.Camera) {
+        if (!com.tacmap.BuildConfig.DEBUG) return
+        flyTo(camera.latitude, camera.longitude, camera.zoom.toFloat())
+        camera.heading?.let { _headingRequests.trySend(it) }
+    }
 
     /** Compass HUD tapped - animate bearing back to 0 (north up).
      *  Channel w/ BUFFERED capacity so rapid taps don't drop. */
@@ -808,6 +983,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     override fun onCleared() {
+        tacticalApp.memoryPressure -= trimListener
+        pdfRuntime.release()
         headingService.stop()
         locationService.stop()
         closeSupersededOfflineSources(
