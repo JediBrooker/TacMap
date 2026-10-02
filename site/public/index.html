@@ -461,9 +461,11 @@
         <div class="fnum">C-05</div>
         <h3>Bring your own maps</h3>
         <p>Import PDF, GeoPDF, and MBTiles packs. TacMap reads embedded
-          georeferencing where available and calibrates ordinary map sheets
-          on-device when it is not. Mission objects come in from KML, KMZ or
-          GeoJSON and go back out the same way.</p>
+          georeferencing in the sheet's own projection and datum, so the MGRS
+          grid sits on the printed grid, and calibrates ordinary map sheets
+          on-device from four grid references when it is not. Sheets stay sharp
+          as you zoom and can be baked to offline tiles. Mission objects come in
+          from KML, KMZ or GeoJSON and go back out the same way.</p>
       </div>
       <div class="feat">
         <div class="fnum">C-06</div>
@@ -549,7 +551,7 @@
           APP-6, task, marker and custom symbols.</p>
       </div>
     </div>
-    <p class="also">Also in 2.2: sort the symbol list by newest, name, distance
+    <p class="also">Also in 3.0: sort the symbol list by newest, name, distance
       from the crosshair, affiliation or layer; an optional Keep screen on
       setting for a mounted map; and a guided tour on first run that you can
       replay from About &amp; Credits → Replay Tour.</p>
@@ -598,7 +600,7 @@
   <div class="wrap rv">
     <div class="gridref"><b>REF 04</b> Screens</div>
     <h2>Current store screens across both platforms.</h2>
-    <p class="sub">Captured from the real 2.2 app on iPhone and Android, the
+    <p class="sub">Captured from the real app on iPhone and Android, the
       same eight screens we ship to both stores. Scroll sideways or swipe on a
       phone.</p>
 

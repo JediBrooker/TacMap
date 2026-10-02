@@ -128,7 +128,7 @@ to whom.</li>
 <h2 id="3-trust-boundaries">3. Trust boundaries</h2>
 <p>TacMap treats the following as <strong>untrusted</strong> once data crosses into them:</p>
 <div class="tablewrap"><table><thead><tr><th>Boundary</th><th>Trusted?</th><th>Why it matters</th></tr></thead><tbody><tr><td>Imported symbol packs</td><td><strong>Untrusted</strong></td><td>User-selected bounded JSON and passive PNG artwork; labels and depicted meaning are not authenticated.</td></tr>
-<tr><td>Imported map files (PDF/GeoPDF/MBTiles)</td><td><strong>Untrusted</strong></td><td>Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7).</td></tr>
+<tr><td>Imported map files (PDF/GeoPDF/MBTiles)</td><td><strong>Untrusted</strong></td><td>Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF&#39;s cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs; it is size, depth and count bounded, never writes the file, and falls back to the plain file on anything unexpected. A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7).</td></tr>
 <tr><td>Your device</td><td>Trusted (see §7 caveats)</td><td>Holds the at-rest key, and can decrypt mission data.</td></tr>
 <tr><td>The sync relay</td><td><strong>Untrusted</strong></td><td>Routes encrypted traffic; can see metadata.</td></tr>
 <tr><td>Basemap / lookup providers</td><td><strong>Untrusted</strong></td><td>See the coordinates you request.</td></tr>
