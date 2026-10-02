@@ -1,0 +1,167 @@
+{
+  "size": [
+    886,
+    1920
+  ],
+  "output": "docs/store/ios/previews/iphone-6.9/01-tactical-sync.mp4",
+  "beats": [
+    {
+      "video": "ios/build/store-captures/iphone-mission.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/symbol-builder.png",
+      "duration": 2.5,
+      "caption": "APP-6 units + tactical markers",
+      "caption_y": 0.34,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-extras.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/drawing-route.png",
+      "duration": 2,
+      "caption": "Routes + drawing styles",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/iphone-6.9/drawing-area.png",
+      "video": "ios/build/store-captures/iphone-tools.mp4",
+      "caption": "Draw areas + fill styles",
+      "duration": 2,
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/iphone-6.9/drawing-free.png",
+      "video": "ios/build/store-captures/iphone-tools.mp4",
+      "caption": "Free-hand sketches",
+      "duration": 2,
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-more.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/range-rings.png",
+      "duration": 2,
+      "caption": "Range rings",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-team.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/sync-live.png",
+      "duration": 3,
+      "caption": "Encrypted team Sync",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-team.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/chat-live.png",
+      "duration": 3,
+      "caption": "Room + individual Chat",
+      "caption_y": 0.34,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-more.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/basemap-options.png",
+      "duration": 2,
+      "caption": "Basemaps, layers + labels",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-extras.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/exports-formats.png",
+      "duration": 3,
+      "caption": "GeoJSON, KML, KMZ + packs",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-extras.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/privacy.png",
+      "duration": 2,
+      "caption": "Language + coordinate settings",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-extras.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/app-lock.png",
+      "duration": 2.5,
+      "caption": "PIN + biometric app lock",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-extras.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/display-language.png",
+      "duration": 2,
+      "caption": "Privacy + background sharing",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/iphone-extras.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/about-tour.png",
+      "duration": 2,
+      "caption": "Guided tour + field help",
+      "caption_y": 0.2,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    }
+  ],
+  "source_commit": "4e406f5",
+  "version": "3.0.0 (73)"
+}

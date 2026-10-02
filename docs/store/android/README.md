@@ -3,6 +3,17 @@
 Generated for the Play Console "Main store listing" + "Store settings" pages.
 Location featured: **Shoalwater Bay Training Area, QLD** (Australian Army).
 
+**Current 3.0 assets (2 October 2026):** five screenshots each for phone and
+tablet cover GeoPDF, calibration, MGRS/datum entry, fit and retained maps.
+Upload selection: **10, 11, 12, 13, 07**. The complete marketing feature video is
+`video/tacmap-features-3.0.mp4` (120 seconds, landscape 1920 × 1080). It uses animated
+benefit copy, actual Android footage and an original soundtrack. Upload it to YouTube and add its
+URL in Play Console. See the [current media and upload guide](../FEATURE_VIDEO.md)
+and [completed coverage audit](../PDF_CALIBRATION_AUDIT.md).
+
+The remaining release notes below describe the historical 2.0 selection.
+Their approvals and build numbers do not apply to the new 3.0 files.
+
 ## Hi-res icon
 - `play-icon-512.png` — **512×512** (required). Renders the Android adaptive
   launcher icon (background + foreground vector) so it matches the on-device
@@ -12,39 +23,36 @@ Location featured: **Shoalwater Bay Training Area, QLD** (Australian Army).
 - `feature-graphic.png` — **1024×500** (required). Regenerate with
   `python3 scripts/generate_feature_graphic.py`.
 
-## 2.2 set: 8 slides, same order and text as iOS
+## Phone screenshots — `phone/` (1080×2100, portrait)
+Upload 2–8 under "Phone screenshots"; choose the strongest current subset from
+the ten source images rather than relying on this folder order as a console
+selection.
 
-Real captures from the debug build on the `TacMap_API_36` emulator (tablet via
-`wm size 1600x2560` + `wm density 320` on the same AVD), framed by
-`scripts/compose_store_set.py`, from the build that includes #46 and #47 (task
-graphics keep their ground size, profile is a bottom sheet). The hero uses the
-shared `docs/store/store_situation.geojson`, same as iOS.
+The approved 2.0 subset is **01 and 02**. Both were captured non-destructively
+from version 2.0.0 (64) on the existing release-test emulator. Screens 03–10
+still show pre-2.0 UI and must not be uploaded until recaptured from the final
+build; do not create another AVD.
 
-1. `01-hero.png` — the shared NATO situation with range rings on the enemy position
-2. `02-line-of-sight.png` — elevation profile and line of sight (real Copernicus DEM heights)
-3. `03-night-mode.png` — the same map with red night mode on
-4. `04-unit-sync.png` — Unit Sync connected with a second live unit (iOS) / TacMap Chat in a live room (Android)
-5. `05-sun-moon.png` — Sun & Moon sheet from the long-press point menu
-6. `06-pdfmap.png` — imported USGS GeoPDF with Search & Rescue markers
-7. `07-symbol-builder.png` — APP-6 symbol builder with live preview
-8. `08-export.png` — Import / Export with KML, KMZ with Symbols, GeoJSON and GPX
+1. `01-hero.png` — current field-tools menu, including TacMap Chat
+2. `02-unit-sync.png` — current Unit Sync setup and relay disclosure
+3. `03-symbols.png` — symbols and drawings
+4. `04-recording.png` — user-started GPX route recording
+5. `05-weather.png` — opt-in online weather/drone status
+6. `06-basemaps.png` — Esri/OpenTopoMap choices (online gate required)
+7. `07-import-export.png` — document interchange
+8. `08-symbol-builder.png` — APP-6 symbol builder
+9. `09-search.png` — local coordinate/mission search plus optional places
+10. `10-pdfmap.png` — imported PDF/GeoPDF map
 
-## Phone screenshots — `phone/` (1080×1920, 9:16 portrait)
-Upload all 8 (Play maximum). 9:16 at 1080 px or more keeps them eligible for
-Play's promotional placements.
-
-## Tablet screenshots — `tablet/` (1440×2560, 9:16 portrait)
-Play requires 9:16 or 16:9 for tablet screenshots, so the old 1600×2560 (10:16)
-set would have been rejected. Upload the same 8 under both 7-inch and 10-inch
-tablet sections.
-
-## Promo video — `video/play-promo-2.2.mp4` (1920×1080, ~33 s)
-Landscape cut of real Android screen recordings with captions. Upload it to
-YouTube (public or unlisted, ads off, embeddable) and paste the URL into the
-Play listing. Built by `scripts/build_preview_video.py` in `frame` mode.
+## Tablet screenshots — `tablet/` (1600×2560, portrait)
+Upload under the relevant tablet screenshot sections if tablet distribution is
+retained. The ten names match the phone set. None of the checked-in tablet
+screenshots is approved for 2.0; recapture any submitted images from the final
+build.
 
 ## Notes
-- Phone shots are 1080×1920 and tablet shots are 1440×2560, both 9:16.
+- Phone shots are 1080×2100 and tablet shots are 1600×2560. Validate current
+  Play Console size/count rules on upload.
 - Short/full descriptions: paste-ready copy lives in
   [`docs/STORE_LISTING.md`](../../STORE_LISTING.md) (leads with the
   pay-once / offline-anywhere / open-interop wedges).
@@ -58,5 +66,5 @@ Play listing. Built by `scripts/build_preview_video.py` in `frame` mode.
 - Signed release bundle: `android/app/build/outputs/bundle/release/app-release.aab`
   (rebuild and verify it with the commands in
   [`android/PLAY_STORE_PREP.md`](../../../android/PLAY_STORE_PREP.md)).
-  Check the versionCode in `android/app/build.gradle.kts` is newer than the last
-  upload before building.
+  The current source defaults to version code 64 / versionName 2.0.0. Inject a
+  newer unique code if this candidate has already been uploaded.

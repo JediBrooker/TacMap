@@ -1,0 +1,409 @@
+{
+  "size": [
+    1080,
+    2400
+  ],
+  "level": "4.2",
+  "bitrate": "8M",
+  "output": "docs/store/android/video/tacmap-features-3.0.mp4",
+  "beats": [
+    {
+      "shot": "ios/build/store-captures/android-phone/pdf-hero.png",
+      "video": "ios/build/store-captures/android-offline-good.mp4",
+      "duration": 4,
+      "caption": "GeoPDF maps, offline",
+      "caption_y": 0.17,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/import-export.png",
+      "video": "ios/build/store-captures/android-offline-good.mp4",
+      "duration": 3,
+      "caption": "PDFs + offline tiles",
+      "caption_y": 0.17,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/page-chooser.png",
+      "video": "ios/build/store-captures/android-pages.mp4",
+      "duration": 3,
+      "caption": "Choose a PDF page",
+      "caption_y": 0.17,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/calibration-datum.png",
+      "video": "ios/build/store-captures/android-offline-good.mp4",
+      "duration": 3,
+      "caption": "Choose the printed-map datum",
+      "caption_y": 0.23,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/calibration-entry.png",
+      "video": "ios/build/store-captures/android-offline-good.mp4",
+      "duration": 4,
+      "caption": "Enter known MGRS references",
+      "caption_y": 0.23,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/calibration-fit.png",
+      "video": "ios/build/store-captures/android-offline-good.mp4",
+      "duration": 4,
+      "caption": "Review the calibration fit",
+      "caption_y": 0.23,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/calibration-points.png",
+      "video": "ios/build/store-captures/android-offline-good.mp4",
+      "duration": 3,
+      "caption": "Inspect point residuals",
+      "caption_y": 0.23,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/map-library.png",
+      "video": "ios/build/store-captures/android-offline-good.mp4",
+      "duration": 3,
+      "caption": "Retain maps + calibrations",
+      "caption_y": 0.17,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/bake-options.png",
+      "video": "ios/build/store-captures/android-details-good.mp4",
+      "duration": 4,
+      "caption": "Generate offline map tiles",
+      "caption_y": 0.17,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/navigation-hud.png",
+      "video": "ios/build/store-captures/android-navigation2.mp4",
+      "duration": 4,
+      "caption": "Live coordinates + elevation",
+      "caption_y": 0.17,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/heading-up.png",
+      "video": "ios/build/store-captures/android-navigation2.mp4",
+      "duration": 3,
+      "caption": "Grid + north-reference compass",
+      "caption_y": 0.17,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/search.png",
+      "video": "ios/build/store-captures/android-navigation2.mp4",
+      "duration": 4,
+      "caption": "Coordinate + mission search",
+      "caption_y": 0.17,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/measure-line.png",
+      "video": "ios/build/store-captures/android-navigation2.mp4",
+      "duration": 4,
+      "caption": "Distance + bearing",
+      "caption_y": 0.17,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/measure-area.png",
+      "video": "ios/build/store-captures/android-navigation2.mp4",
+      "duration": 4,
+      "caption": "Measure areas",
+      "caption_y": 0.17,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/line-of-sight.png",
+      "video": "ios/build/store-captures/android-navigation2.mp4",
+      "duration": 4,
+      "caption": "Elevation + line of sight",
+      "caption_y": 0.17,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/recording-gps.png",
+      "video": "ios/build/store-captures/android-gps-final.mp4",
+      "duration": 4,
+      "caption": "Record routes for GPX",
+      "caption_y": 0.26,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/weather.png",
+      "video": "ios/build/store-captures/android-finish.mp4",
+      "duration": 4,
+      "caption": "Weather + UAV advice",
+      "caption_y": 0.9,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/sun-moon.png",
+      "video": "ios/build/store-captures/android-finish.mp4",
+      "duration": 4,
+      "caption": "Offline Sun + Moon times",
+      "caption_y": 0.9,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/night-mode.png",
+      "video": "ios/build/store-captures/android-finish.mp4",
+      "duration": 3,
+      "caption": "Night mode",
+      "caption_y": 0.17,
+      "accent": [
+        116,
+        227,
+        138
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/symbol-builder.png",
+      "video": "ios/build/store-captures/android-mission.mp4",
+      "duration": 4,
+      "caption": "Build APP-6 military symbols",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/symbols-list.png",
+      "video": "ios/build/store-captures/android-mission.mp4",
+      "duration": 3,
+      "caption": "Tactical tasks + markers",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/drawing-route.png",
+      "video": "ios/build/store-captures/android-finish.mp4",
+      "duration": 3,
+      "caption": "Routes + drawing styles",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/drawing-area.png",
+      "video": "ios/build/store-captures/android-details-good.mp4",
+      "duration": 3,
+      "caption": "Areas + fill styles",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/drawing-free.png",
+      "video": "ios/build/store-captures/android-details-good.mp4",
+      "duration": 3,
+      "caption": "Free-hand sketches",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/range-rings.png",
+      "video": "ios/build/store-captures/android-finish.mp4",
+      "duration": 4,
+      "caption": "Range rings",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/basemap-options.png",
+      "video": "ios/build/store-captures/android-details-good.mp4",
+      "duration": 4,
+      "caption": "Basemaps, layers + labels",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/sync-live.png",
+      "video": "ios/build/store-captures/android-team-success.mp4",
+      "duration": 5,
+      "caption": "Encrypted Unit Sync",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/chat-live.png",
+      "video": "ios/build/store-captures/android-team-success.mp4",
+      "duration": 5,
+      "caption": "Room + individual Chat",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/exports-formats.png",
+      "video": "ios/build/store-captures/android-mission.mp4",
+      "duration": 4,
+      "caption": "GeoJSON, KML, KMZ + packs",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/privacy.png",
+      "video": "ios/build/store-captures/android-settings.mp4",
+      "duration": 4,
+      "caption": "Language + coordinate choices",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/display-language.png",
+      "video": "ios/build/store-captures/android-settings.mp4",
+      "duration": 3,
+      "caption": "Display + privacy controls",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/app-lock.png",
+      "video": "ios/build/store-captures/android-settings.mp4",
+      "duration": 4,
+      "caption": "PIN + biometric app lock",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/android-phone/about-tour.png",
+      "video": "ios/build/store-captures/android-settings.mp4",
+      "duration": 2,
+      "caption": "Field help + guided tour",
+      "caption_y": 0.17,
+      "accent": [
+        79,
+        168,
+        255
+      ]
+    }
+  ],
+  "source_commit": "4e406f5",
+  "version": "3.0.0 (73)"
+}
