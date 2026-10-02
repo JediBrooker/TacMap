@@ -248,6 +248,69 @@ Layers sheet lets you unload it. iOS + Android.
 
 ---
 
+## Release history
+
+What's new in each store release, newest first. Add an entry here every time a
+version ships (the full store notes live in `docs/store/localizations/*.json`).
+
+### 3.0.0 (build 73), October 2026
+- GeoPDFs placed in the sheet's own projection and datum, so the MGRS grid sits on the printed grid; USGS US Topo sheets import again.
+- Calibrate a plain PDF or a photo of a paper map from grid references (MGRS, UTM or lat/long) with per-point accuracy; move, edit, undo and resume points.
+- Imported maps stay sharp at every zoom, can be saved as offline tiles, and you can keep several maps to switch between.
+- MGRS grid labels match their lines, 10/100 km lines follow the projection curve, tidy at zone edges.
+- Elevation profile and line of sight (dead ground greyed out), red night mode, KML/KMZ export with symbol images.
+- Long-press point menu, guided tour, range rings that follow their symbol.
+- Unit Sync steadier on poor connections, faster reconnects, lighter on battery; undo no longer reverts a teammate's edits.
+- Unlock price raised to US$9.99.
+
+### 2.1.0, September 2026
+- Range rings (up to 10) around any symbol; they sync, export and undo like drawings.
+- Offline sun and moon: twilight (BMNT/EENT, BMCT/EECT), rise/set times and moon illumination.
+- Sort the symbol list by newest, name, distance, affiliation or layer.
+- Optional Keep screen on.
+
+### 2.0.2, September 2026
+- Import custom symbol packs; better German translations.
+
+### 2.0.1, September 2026
+- German translation.
+
+### 2.0.0, August 2026
+- TacMap Chat: E2E encrypted text and reports to the room or one live unit.
+- Heading Up map rotation, clearer north reference and mils.
+- More reliable Unit Sync: faster reconnects, implausible-GPS rejection, optional screen-off presence.
+- Safer offline maps: stronger PDF/GeoPDF/MBTiles validation and fail-atomic imports.
+- Lots of Android lifecycle, recording and persistence fixes plus iOS hardening.
+
+### 1.2.4, August 2026
+- Enter MGRS manually to move a unit; callsign, parent unit and reinforced/reduced labels on units.
+
+### 1.2.3, August 2026
+- Better first-time setup and location permission guidance; online lookups on by default with OPSEC toggles.
+- Redesigned symbol editor, Move to Crosshair, better drawing styles and layers.
+- Offline search for MGRS, lat/long and mission objects; more reliable imports, exports, recording and Unit Sync.
+
+### 1.2.2, July 2026
+- Bug fixes and small updates.
+
+### 1.2.1, July 2026
+- Big security hardening: encrypted local data, optional device-auth key protection, replay/tamper defences for Unit Sync, safer file imports, stricter network defaults.
+
+### 1.2.0, July 2026
+- Live presence: see your team on the map with callsign, affiliation and heading, E2E encrypted.
+- Export All to a single GeoJSON; sync conflict alerts; authenticated sync relay; better data durability.
+
+### 1.1.0, June 2026
+- Unit Sync (E2E encrypted shared map), GPX recording with REC indicator.
+- Weather and UAV flight-safety, basemap selector with terrain heatmap.
+- UTM alongside MGRS, live elevation, KML/KMZ import, GeoPDF to offline tiles, optional PIN lock.
+
+### 1.0.4, June 2026
+- Fixed a trial-reset bug; promo codes redeemable from the unlock screen.
+
+### 1.0, May 2026
+- First release.
+
 ## Repository layout
 
 ```
