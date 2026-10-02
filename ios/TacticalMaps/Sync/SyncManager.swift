@@ -525,6 +525,8 @@ enum SyncRemoteModelApplier {
                       drawingStore: DrawingStore) throws {
         isApplying = true
         defer { isApplying = false }
+        let suspended = suspendUndoRegistration(waypointStore, drawingStore)
+        defer { suspended.forEach { $0.enableUndoRegistration() } }
         guard parsed.invalidSkipped == 0,
               parsed.waypoints.count + parsed.drawings.count == 1 else {
             throw SyncRemoteModelMutationError.invalidPayload
@@ -545,17 +547,17 @@ enum SyncRemoteModelApplier {
             // because only its own referenced layer participates in export.
             _ = try drawingStore.addLayersVerbatimDurably(parsed.newLayers)
             if let waypoint = parsed.waypoints.first {
-                if waypointStore.waypoints.contains(where: { $0.id == waypoint.id }) {
-                    _ = try waypointStore.commitEdit(waypoint, actionName: L10n.text("Apply Synced Waypoint"))
-                } else {
-                    _ = try waypointStore.addDurably(waypoint)
-                }
+                // only a write that changed something counts, a reconnect re-applying the
+                // same record mustnt cancel your pending undo
+                let changed = waypointStore.waypoints.contains(where: { $0.id == waypoint.id })
+                    ? try waypointStore.commitEdit(waypoint, actionName: L10n.text("Apply Synced Waypoint"))
+                    : try waypointStore.addDurably(waypoint)
+                if changed { waypointStore.notePeerWrite(waypoint.id) }
             } else if let shape = parsed.drawings.first {
-                if drawingStore.shapes.contains(where: { $0.id == shape.id }) {
-                    _ = try drawingStore.commitEdit(shape, actionName: L10n.text("Apply Synced Drawing"))
-                } else {
-                    _ = try drawingStore.addDurably(shape)
-                }
+                let changed = drawingStore.shapes.contains(where: { $0.id == shape.id })
+                    ? try drawingStore.commitEdit(shape, actionName: L10n.text("Apply Synced Drawing"))
+                    : try drawingStore.addDurably(shape)
+                if changed { drawingStore.notePeerWrite(shape.id) }
             }
         } catch let error as SyncRemoteModelMutationError {
             throw error
@@ -658,6 +660,8 @@ enum SyncRemoteModelApplier {
                        drawingStore: DrawingStore) throws {
         isApplying = true
         defer { isApplying = false }
+        let suspended = suspendUndoRegistration(waypointStore, drawingStore)
+        defer { suspended.forEach { $0.enableUndoRegistration() } }
         guard let uuid = UUID(uuidString: localID) else {
             throw SyncRemoteModelMutationError.invalidPayload
         }
@@ -667,11 +671,30 @@ enum SyncRemoteModelApplier {
             throw SyncRemoteModelMutationError.identityCollision(uuid)
         }
         do {
-            if let waypoint { _ = try waypointStore.deleteDurably(waypoint) }
-            if let drawing { _ = try drawingStore.deleteDurably(drawing) }
+            if let waypoint, try waypointStore.deleteDurably(waypoint) {
+                waypointStore.notePeerWrite(waypoint.id)
+            }
+            if let drawing, try drawingStore.deleteDurably(drawing) {
+                drawingStore.notePeerWrite(drawing.id)
+            }
         } catch {
             throw SyncRemoteModelMutationError.persistence(error)
         }
+    }
+
+    /// Peer writes arent ours to undo. Registering them (what we used to do) meant Undo reverted
+    /// a teammate's work, e.g. deleted the unit they just placed room wide, while your own last
+    /// action stayed put. Both stores normally share one UndoManager, dedupe so the disable /
+    /// enable calls stay balanced. Android gets the same result by folding peer writes into its
+    /// undo snapshots.
+    private static func suspendUndoRegistration(_ waypointStore: WaypointStore,
+                                                _ drawingStore: DrawingStore) -> [UndoManager] {
+        var seen = Set<ObjectIdentifier>()
+        let managers = [waypointStore.undoManager, drawingStore.undoManager]
+            .compactMap { $0 }
+            .filter { seen.insert(ObjectIdentifier($0)).inserted }
+        managers.forEach { $0.disableUndoRegistration() }
+        return managers
     }
 }
 

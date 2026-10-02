@@ -103,6 +103,13 @@ final class WaypointStore: ObservableObject {
     /// Set by ContentView from `@Environment(\.undoManager)` after the view appears.
     weak var undoManager: UndoManager?
 
+    /// Bumped per object each time a Unit Sync peer's write changes it (see
+    /// SyncRemoteModelApplier). Undoing a local edit checks it so the undo never
+    /// clobbers a newer peer version, their edit wins. Same as Android.
+    private var peerWriteMarks: [UUID: Int] = [:]
+
+    func notePeerWrite(_ id: UUID) { peerWriteMarks[id, default: 0] += 1 }
+
     typealias PersistenceWriter = (Data, URL, String) throws -> Void
 
     private static let defaultURL: URL = {
@@ -165,7 +172,9 @@ final class WaypointStore: ObservableObject {
         }
         waypoints = candidate
         if pendingLoadError?.id == "id.ui_could_not_save_waypoint_change_to_disk_1_9ef95837" { loadError = nil }
+        let peerMark = peerWriteMarks[waypoint.id, default: 0]
         undoManager?.registerUndo(withTarget: self) { store in
+            guard store.peerWriteMarks[waypoint.id, default: 0] == peerMark else { return }
             _ = try? store.commitEdit(old, actionName: actionName)
         }
         undoManager?.setActionName(actionName)
