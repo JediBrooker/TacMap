@@ -48,11 +48,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.Wgs84Bounds
 import com.tacmap.calibration.Wgs84Coordinate
-import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.mgrs.GridScreenFrame
 import com.tacmap.mgrs.MgrsGridBuildSpec
 import com.tacmap.mgrs.MgrsGridLabels
@@ -295,8 +293,9 @@ fun MgrsGridCanvas(camera: MapCamera, density: Float, modifier: Modifier = Modif
         val g = geometry ?: return@Canvas
         val frame = GridScreenFrame(camera)
         val ink = Color(MgrsGridRenderer.INK_COLOR)
-        // one path per level so the 85% ink doesn't double up at joins
-        for (level in lod.drawn) {
+        // one path per level so the 85% ink doesn't double up at joins. fine first, so the
+        // heavier lines end up on top where they cross (same order as iOS)
+        for (level in lod.drawn.asReversed()) {
             val path = Path()
             var any = false
             for (piece in g.pieces) {
@@ -405,57 +404,6 @@ fun UserLocationCanvas(
         drawCircle(Color(0x333B7BE0), 16f * density, c)   // soft glow
         drawCircle(Color.White, 11f * density, c)         // white halo
         drawCircle(Color(0xFF1E88E5), 7.5f * density, c)  // blue core
-    }
-}
-
-/**
- * Numbered orange pins for the PDF-calibration fiduciaries on the SDK-free
- * renderer. Each fiducial's geographic position (the grid the user typed for a
- * PDF point) projects to screen and the pin's tail tip sits on that point, so
- * you can see where you've placed each correspondence while calibrating.
- * Tactical orange to pop against satellite and PDF basemaps. Replaces the old
- * native CalibrationFiduciaryMarker.
- */
-@Composable
-fun CalibrationFiduciariesLayer(
-    fiduciaries: List<Fiduciary>,
-    camera: MapCamera, density: Float, modifier: Modifier = Modifier
-) {
-    if (fiduciaries.isEmpty()) return
-    val proj = remember(camera, density) { MapProjection(camera, density) }
-    Canvas(modifier.fillMaxSize()) {
-        val nc = drawContext.canvas.nativeCanvas
-        val disc = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFA63D.toInt() }
-        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFFFFFFF.toInt()
-            style = Paint.Style.STROKE
-            strokeWidth = 2f * density
-        }
-        val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFF1A1A1A.toInt()
-            textAlign = Paint.Align.CENTER
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textSize = 13f * density
-        }
-        val r = 13f * density
-        val tail = 9f * density
-        fiduciaries.forEachIndexed { i, fid ->
-            val p = proj.toScreen(fid.latitude, fid.longitude)
-            val cx = p.x
-            // disc centre sits above the point so the tail tip lands on it
-            val cy = p.y - tail - r
-            val path = android.graphics.Path().apply {
-                moveTo(cx - 5f * density, cy + r - 1f)
-                lineTo(cx + 5f * density, cy + r - 1f)
-                lineTo(cx, p.y)
-                close()
-            }
-            nc.drawPath(path, disc)
-            nc.drawCircle(cx, cy, r, disc)
-            nc.drawCircle(cx, cy, r, ring)
-            val fm = label.fontMetrics
-            nc.drawText("${i + 1}", cx, cy - (fm.ascent + fm.descent) / 2f, label)
-        }
     }
 }
 
@@ -882,80 +830,11 @@ fun PresenceLayer(peers: Map<String, PresencePeer>, camera: MapCamera, density: 
     }
 }
 
-/** Imported PDF/GeoPDF ground overlay on the SDK-free renderer: renders the page
- *  bitmap once and warps it to its geo corners with a poly matrix, so it rides
- *  pan/zoom/rotate. The bitmap corners are mapped back to raw page space through
- *  the page geometry (crop origin, /Rotate, pdfium's int size) and placed with
- *  the placement's best-fit lon/lat affine. That's a stopgap until the plan s2
- *  tile renderer: a couple of metres on a 1:25k UTM sheet, not the km the old
- *  fits could be off. Uncalibrated sheets ride their provisional placement. */
-@Composable
-fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val proj = remember(camera, density) { MapProjection(camera, density) }
-    val bitmapState = remember(source.uri) { mutableStateOf<Bitmap?>(null) }
-    var bmp by bitmapState
-    val active = remember(source.uri) { java.util.concurrent.atomic.AtomicBoolean(true) }
-    DisposableEffect(source.uri) {
-        active.set(true)
-        onDispose {
-            active.set(false)
-            bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle()
-            bitmapState.value = null
-        }
-    }
-    LaunchedEffect(source.uri) {
-        var rendered: Bitmap? = null
-        try {
-            rendered = withContext(Dispatchers.IO) {
-                PdfPageRenderer.renderFirstPage(context, source.uri).bitmap.also {
-                    // Preserve ownership if prompt cancellation wins the race
-                    // while dispatching the completed render back to Main.
-                    rendered = it
-                }
-            }
-            if (rendered != null && active.get()) {
-                bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle()
-                bitmapState.value = rendered
-                rendered = null
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            // The surrounding map remains usable if a corrupt PDF cannot render.
-        } finally {
-            rendered?.takeUnless(Bitmap::isRecycled)?.recycle()
-        }
-    }
-    val image = bmp ?: return
-    val display = source.placement?.bestFitLatLonAffine ?: return
-    // raw page points under the bitmap's TL, TR, BR, BL
-    val rawCorners = remember(source.geometry) { source.geometry.bitmapCornersRaw() }
-
-    Canvas(
-        modifier
-            .fillMaxSize()
-            .semantics { contentDescription = L10n.text("PDF map rendered: %1\$s", source.displayName) }
-    ) {
-        val corners: List<Pair<Double, Double>> = rawCorners.map { p ->
-            display.apply(p.x, p.y).let { it.latitude to it.longitude }
-        }
-        val dst = FloatArray(8)
-        corners.forEachIndexed { i, (lat, lon) ->
-            val s = proj.toScreen(lat, lon); dst[i * 2] = s.x; dst[i * 2 + 1] = s.y
-        }
-        val w = image.width.toFloat(); val h = image.height.toFloat()
-        val src = floatArrayOf(0f, 0f, w, 0f, w, h, 0f, h)
-        val m = Matrix().apply { setPolyToPoly(src, 0, dst, 0, 4) }
-        drawContext.canvas.nativeCanvas.drawBitmap(image, m, Paint(Paint.FILTER_BITMAP_FLAG))
-    }
-}
-
 /**
  * Terrain-heatmap ground overlay on the SDK-free renderer. Draws the coloured
  * DEM bitmap from [TerrainHeatmapService] stretched across its sampled [bounds],
- * projected through the camera - same Matrix.setPolyToPoly trick as
- * [PdfGroundLayer]. Bitmap origin is the NW corner (row 0 = north, col 0 = west).
+ * projected through the camera with a Matrix.setPolyToPoly. Bitmap origin is
+ * the NW corner (row 0 = north, col 0 = west).
  * Replaces the old GroundOverlay.
  */
 @Composable

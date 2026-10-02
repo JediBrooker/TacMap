@@ -163,7 +163,10 @@ enum GeoPDFReader {
     static func extractViewports(in parent: CGPDFDictionaryRef,
                                  budget: ReadBudget = ReadBudget()) -> Extracted<AdobeViewportInput>? {
         var arrRef: CGPDFArrayRef?
-        guard CGPDFDictionaryGetArray(parent, "VP", &arrRef), let arr = arrRef else { return nil }
+        guard CGPDFDictionaryGetArray(parent, "VP", &arrRef), let arr = arrRef else {
+            // /VP null or some other non-array is present junk, not "no /VP" (lgiRules.nullValues)
+            return has(parent, "VP") ? .malformed : nil
+        }
         let count = CGPDFArrayGetCount(arr)
         guard count > 0 else { return nil }
         guard count <= PdfGeorefBuilder.maximumEntries else { return .tooMany }
@@ -299,7 +302,9 @@ enum GeoPDFReader {
             return .text(str)
         case .integer:
             var n: CGPDFInteger = 0
-            return CGPDFObjectGetValue(obj, .integer, &n) ? .number(Double(n)) : .other
+            return CGPDFObjectGetValue(obj, .integer, &n) ? .integer(Int64(n)) : .other
+        case .null:
+            return .null
         case .real:
             var r: CGPDFReal = 0
             guard CGPDFObjectGetValue(obj, .real, &r) else { return .other }
@@ -352,7 +357,7 @@ enum GeoPDFReader {
             var s: CGPDFStringRef?
             guard CGPDFArrayGetString(arr, i, &s), let s,
                   let str = CGPDFStringCopyTextString(s) as String?,
-                  let v = Double(str.trimmingCharacters(in: .whitespacesAndNewlines)) else { return .malformed }
+                  let v = PdfNumericString.parse(str) else { return .malformed }
             if !v.isFinite || abs(v) >= coreGraphicsRealCeiling { overflow = true }
             out.append(v)
         }

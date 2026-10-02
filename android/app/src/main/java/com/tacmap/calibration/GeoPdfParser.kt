@@ -9,7 +9,9 @@ import com.tom_roush.pdfbox.cos.COSDictionary
 import com.tom_roush.pdfbox.cos.COSFloat
 import com.tom_roush.pdfbox.cos.COSInteger
 import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.cos.COSNull
 import com.tom_roush.pdfbox.cos.COSNumber
+import com.tom_roush.pdfbox.cos.COSObject
 import com.tom_roush.pdfbox.cos.COSString
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import java.io.File
@@ -40,7 +42,7 @@ object GeoPdfParser {
     @Volatile
     private var initialised = false
 
-    private fun ensureInit(context: Context) {
+    internal fun ensureInit(context: Context) {
         if (!initialised) {
             PDFBoxResourceLoader.init(context.applicationContext)
             initialised = true
@@ -62,7 +64,11 @@ object GeoPdfParser {
         }
     }
 
-    internal fun pageData(doc: PDDocument, pageIndex: Int): GeoPdfPageData? {
+    /**
+     * @param allowCatalogVp the catalog /VP is the document's, it only stands in for
+     *   page 0's (contract s9.5: pages 0-49 plus the catalog /VP)
+     */
+    internal fun pageData(doc: PDDocument, pageIndex: Int, allowCatalogVp: Boolean = true): GeoPdfPageData? {
         if (pageIndex !in 0 until doc.numberOfPages) return null
         val page = doc.getPage(pageIndex).cosObject
         val reader = Reader()
@@ -73,13 +79,18 @@ object GeoPdfParser {
             ?.takeIf { it.size == 4 && it.all { v -> v != null && v.isFinite() } }?.map { it!! }
         val rotate = (inherited(page, "Rotate") as? COSNumber)?.intValue() ?: 0
 
-        // page /VP when it has a GEO viewport, else the (non standard) catalog one. Same as iOS
-        val pageVp = page.getDictionaryObject(COSName.getPDFName("VP")) as? COSArray
-        val catalogVp = doc.documentCatalog.cosObject.getDictionaryObject(COSName.getPDFName("VP")) as? COSArray
+        // page /VP when it has a GEO viewport, else the (non standard) catalog one. Same as iOS.
+        // a page /VP that's there but isn't an array (null included) is declared junk, and
+        // then the catalog isn't asked (lgiRules.nullValues, iOS extractViewports)
+        val pageVpRaw = page.raw("VP")
+        val pageVpJunk = pageVpRaw != null && pageVpRaw !is COSArray
+        val pageVp = pageVpRaw as? COSArray
+        val catalogVp = if (!allowCatalogVp || pageVpJunk) null else
+            doc.documentCatalog.cosObject.raw("VP") as? COSArray
         val vpArray = pageVp?.takeIf { it.size() > MAX_METADATA_ENTRIES || hasGeoViewport(it) }
             ?: catalogVp?.takeIf { it.size() > MAX_METADATA_ENTRIES || hasGeoViewport(it) }
         // an oversized array is still declared, build() rejects it rather than calling it plain
-        var viewportsOversized = (vpArray?.size() ?: 0) > MAX_METADATA_ENTRIES
+        var viewportsOversized = pageVpJunk || (vpArray?.size() ?: 0) > MAX_METADATA_ENTRIES
         val viewports = if (vpArray == null || viewportsOversized) emptyList() else {
             // only GEO viewports are candidates, and the selected index counts just those
             (0 until vpArray.size()).mapNotNull { i ->
@@ -88,7 +99,8 @@ object GeoPdfParser {
         }
         if (reader.exhausted) viewportsOversized = true
 
-        val lgi = page.getDictionaryObject(COSName.getPDFName("LGIDict"))
+        // /LGIDict null is declared-but-junk too, PDFBox's getDictionaryObject would hide it
+        val lgi = page.raw("LGIDict")
         val lgiOversized = lgi is COSArray && lgi.size() > MAX_METADATA_ENTRIES
         // a dictionary or an array of them; other members are skipped, anything else is declared-but-junk
         val lgiDicts: List<COSDictionary> = when {
@@ -108,6 +120,24 @@ object GeoPdfParser {
             lgiEntries = lgiEntries,
             lgiOversized = lgiOversized || reader.exhausted,
         )
+    }
+
+    /**
+     * Just a page's boxes + /Rotate, for the pages past the georef scan (E12). Same
+     * inheritance and fallbacks as [pageData] so page 51 can't get away with a CropBox it
+     * only inherits. (mediaBox, cropBox or null, rotate)
+     */
+    internal fun pageBoxes(doc: PDDocument, pageIndex: Int): Triple<List<Double>, List<Double>?, Int>? {
+        if (pageIndex !in 0 until doc.numberOfPages) return null
+        val page = doc.getPage(pageIndex).cosObject
+        val reader = Reader()
+        val media = inherited(page, "MediaBox")?.let(reader::boxNumbers)
+            ?.takeIf { it.size == 4 && it.all { v -> v != null && v.isFinite() } }?.map { it!! }
+            ?: LETTER
+        val crop = inherited(page, "CropBox")?.let(reader::boxNumbers)
+            ?.takeIf { it.size == 4 && it.all { v -> v != null && v.isFinite() } }?.map { it!! }
+        val rotate = (inherited(page, "Rotate") as? COSNumber)?.intValue() ?: 0
+        return Triple(media, crop, rotate)
     }
 
     // MediaBox / CropBox / Rotate are inheritable from the page tree
@@ -160,15 +190,15 @@ object GeoPdfParser {
             var gcsMalformed = false
             var wkt: String? = null
             var epsg: Int? = null
-            when (val gcs = measure?.getDictionaryObject(COSName.getPDFName("GCS"))) {
+            when (val gcs = measure?.raw("GCS")) {
                 null -> Unit
                 is COSDictionary -> {
-                    when (val w = gcs.getDictionaryObject(COSName.getPDFName("WKT"))) {
+                    when (val w = gcs.raw("WKT")) {
                         null -> Unit
                         is COSString -> wkt = w.string
                         else -> gcsMalformed = true
                     }
-                    when (val e = gcs.getDictionaryObject(COSName.getPDFName("EPSG"))) {
+                    when (val e = gcs.raw("EPSG")) {
                         null -> Unit
                         // has to be a pdf integer, 32610.0 or (32610) don't count
                         is COSInteger -> e.longValue().takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
@@ -196,8 +226,10 @@ object GeoPdfParser {
             ctm = dict.numbersAt("CTM"),
             registration = registration(dict),
             neatline = dict.numbersAt("Neatline"),
-            projection = (dict.getDictionaryObject(COSName.getPDFName("Projection")) as? COSDictionary)?.let(::projection),
-            display = (dict.getDictionaryObject(COSName.getPDFName("Display")) as? COSDictionary)?.let(::projection),
+            // a null (or non dict) /Projection or /Display reads as not there: no /Projection is
+            // malformed anyway, /Display only gets looked at when /Projection lacks a zone
+            projection = (dict.raw("Projection") as? COSDictionary)?.let(::projection),
+            display = (dict.raw("Display") as? COSDictionary)?.let(::projection),
         )
 
         /**
@@ -206,7 +238,7 @@ object GeoPdfParser {
          * blew up to hundreds of MB from a 60 KB file. A bad row -> listOf(null), malformed.
          */
         private fun registration(dict: COSDictionary): List<List<Double?>?>? {
-            val reg = dict.getDictionaryObject(COSName.getPDFName("Registration")) ?: return null
+            val reg = dict.raw("Registration") ?: return null
             if (reg !is COSArray || reg.size() > MAX_REGISTRATION_ROWS) return listOf(null)
             val rows = ArrayList<List<Double?>?>(reg.size())
             for (i in 0 until reg.size()) {
@@ -223,17 +255,18 @@ object GeoPdfParser {
                 "CentralMeridian", "OriginLatitude", "FalseEasting", "FalseNorthing", "ScaleFactor",
                 "StandardParallelOne", "StandardParallelTwo",
             )) {
-                dict.getDictionaryObject(COSName.getPDFName(key))?.let { params[key] = it.realValue() }
+                // present but junk (null, a name, a bad string) stays in the map as null, that's malformed
+                dict.raw(key)?.let { params[key] = it.realValue() }
             }
-            val datum = when (val d = dict.getDictionaryObject(COSName.getPDFName("Datum"))) {
+            val datum = when (val d = dict.raw("Datum")) {
                 null -> null
                 is COSName -> LgiDatumData.Code(d.name)
                 is COSString -> LgiDatumData.Code(d.string)
                 // a bare integer reads as its digits (iOS does the same), it won't match a code
                 is COSInteger -> LgiDatumData.Code(d.longValue().toString())
                 is COSDictionary -> {
-                    val ellipsoid = d.getDictionaryObject(COSName.getPDFName("Ellipsoid")) as? COSDictionary
-                    val shift = when (val t = d.getDictionaryObject(COSName.getPDFName("ToWGS84"))) {
+                    val ellipsoid = d.raw("Ellipsoid") as? COSDictionary
+                    val shift = when (val t = d.raw("ToWGS84")) {
                         null -> null
                         is COSDictionary -> listOf(t.real("dx"), t.real("dy"), t.real("dz"))
                         else -> listOf(null)
@@ -247,21 +280,21 @@ object GeoPdfParser {
                 else -> LgiDatumData.Invalid
             }
             return GeoPdfLgiProjectionData(
-                projectionType = dict.text("ProjectionType"),
+                projectionType = dict.raw("ProjectionType")?.let(::textOf),
                 // lgiRules.valueTypes: a /Zone that's there but isn't a number (a name like /10,
-                // junk text) is NaN so it fails the zone check instead of falling back to /Display
-                zone = dict.getDictionaryObject(COSName.getPDFName("Zone"))?.let { it.realValue() ?: Double.NaN },
-                // present but not text still has to fail the unit / hemisphere check, not read as absent
-                hemisphere = dict.getDictionaryObject(COSName.getPDFName("Hemisphere"))?.let { textOf(it) ?: INVALID_TEXT },
+                // junk text, null) is NaN so it fails the zone check instead of falling back to /Display
+                zone = dict.raw("Zone")?.let { it.realValue() ?: Double.NaN },
+                // present but not text (null too) still has to fail the unit / hemisphere check, not read as absent
+                hemisphere = dict.raw("Hemisphere")?.let { textOf(it) ?: INVALID_TEXT },
                 datum = datum,
                 parameters = params,
-                units = dict.getDictionaryObject(COSName.getPDFName("Units"))?.let { textOf(it) ?: INVALID_TEXT },
+                units = dict.raw("Units")?.let { textOf(it) ?: INVALID_TEXT },
             )
         }
 
         /** absent -> null, present but not an array (or over budget) -> [null] so it reads as malformed */
         private fun COSDictionary.numbersAt(key: String): List<Double?>? =
-            when (val v = getDictionaryObject(COSName.getPDFName(key))) {
+            when (val v = raw(key)) {
                 null -> null
                 is COSArray -> numbers(v)
                 else -> listOf(null)
@@ -283,7 +316,17 @@ object GeoPdfParser {
 
     private fun COSDictionary.text(key: String): String? = getDictionaryObject(COSName.getPDFName(key))?.let(::textOf)
 
-    private fun COSDictionary.real(key: String): Double? = getDictionaryObject(COSName.getPDFName(key))?.realValue()
+    private fun COSDictionary.real(key: String): Double? = raw(key)?.realValue()
+
+    /**
+     * The value under [key] with a pdf null kept as COSNull. getDictionaryObject turns
+     * null into "no key", but lgiRules.nullValues says a null is PRESENT with the
+     * wrong type on every georef key. A ref to an object that isn't there is null too
+     */
+    private fun COSDictionary.raw(key: String): COSBase? {
+        val item = getItem(COSName.getPDFName(key)) ?: return null
+        return if (item is COSObject) item.getObject() ?: COSNull.NULL else item
+    }
 
     @Suppress("DEPRECATION") // COSFloat.doubleValue is the exact BigDecimal in pdfbox-android 2.0.x
     private fun COSBase.realValue(): Double? = when (this) {
@@ -296,8 +339,9 @@ object GeoPdfParser {
             else it.toDouble()
         }
         is COSNumber -> doubleValue()
-        // LGIDicts from ADF/AUSLIG tools write numbers as strings, (-122.6) etc
-        is COSString -> string.trim().toDoubleOrNull()
+        // LGIDicts from ADF/AUSLIG tools write numbers as strings, (-122.6) etc. Only the
+        // lgiRules.numericStrings grammar though, toDouble also takes 10d, hex, NaN...
+        is COSString -> PdfValueRules.numericString(string)
         else -> null
     }
 }

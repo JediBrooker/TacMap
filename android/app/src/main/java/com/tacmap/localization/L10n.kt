@@ -28,6 +28,25 @@ object L10n {
         }
     }
 
+    @Volatile private var systemLanguageMemo: Pair<String, String>? = null
+
+    /**
+     * "de" or "en", the language the copy really came out in with the device language
+     * (PAR-R2-1, like iOS preferredLocalizations). values-de is the only qualified set, so
+     * one string against its German resource tells us. Never the region. No app context
+     * (JVM tests): just the device language
+     */
+    fun systemUiLanguage(device: Locale = Locale.getDefault()): String {
+        val context = application ?: return if (device.language == "de") "de" else "en"
+        val tags = context.resources.configuration.locales.toLanguageTags()
+        systemLanguageMemo?.let { (k, v) -> if (k == tags) return v }
+        val id = localizedStringIds["id.pdf_render_failed_label"] ?: return if (device.language == "de") "de" else "en"
+        val german = android.content.res.Configuration(context.resources.configuration).apply { setLocale(Locale.GERMAN) }
+        val lang = if (context.getString(id) == context.createConfigurationContext(german).getString(id)) "de" else "en"
+        systemLanguageMemo = tags to lang
+        return lang
+    }
+
     fun text(key: String, vararg arguments: Any?): String {
         val context = application?.let(AppLanguage::localizedContext)
         val id = localizedStringIds[key]

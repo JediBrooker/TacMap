@@ -1,6 +1,38 @@
 import Foundation
 import CoreLocation
 import CoreGraphics
+import MapKit
+
+/// Camera centre + zoom that show all of a region (OD-IMPORT). Same maths as
+/// Android's fitExtent: Mercator spans, the tighter axis wins, zoom 2...19.
+/// The region carries its own padding (map coverage is the sheet box x1.2),
+/// so no extra margin by default
+enum MapExtentFit {
+    static let minZoom = 2.0
+    static let maxZoom = 19.0
+
+    static func fit(_ region: MKCoordinateRegion, viewport: CGSize,
+                    margin: Double = 0) -> (centre: CLLocationCoordinate2D, zoom: Double)? {
+        let w = Double(viewport.width), h = Double(viewport.height)
+        let c = region.center, s = region.span
+        guard w > 0, h > 0, c.latitude.isFinite, c.longitude.isFinite,
+              s.latitudeDelta.isFinite, s.longitudeDelta.isFinite else { return nil }
+        let north = CLLocationCoordinate2D(latitude: c.latitude + s.latitudeDelta / 2, longitude: c.longitude)
+        let south = CLLocationCoordinate2D(latitude: c.latitude - s.latitudeDelta / 2, longitude: c.longitude)
+        let yn = Double(WebMercator.worldPoint(north, zoom: 0).y), ys = Double(WebMercator.worldPoint(south, zoom: 0).y)
+        let spanX = min(abs(s.longitudeDelta), 360) / 360 * WebMercator.tileSize
+        let spanY = abs(ys - yn)
+        let fill = 1 - 2 * min(max(margin, 0), 0.45)
+        // an axis with no extent doesnt constrain anything
+        let sx = spanX > 0 ? w * fill / spanX : .infinity
+        let sy = spanY > 0 ? h * fill / spanY : .infinity
+        let raw = log2(min(sx, sy))
+        let zoom = raw.isFinite ? min(max(raw, minZoom), maxZoom) : maxZoom
+        // centre stays the region's own centre, a few mm off the Mercator
+        // midpoint at sheet sizes and its what everything else frames on
+        return (c, zoom)
+    }
+}
 
 /// Web Mercator (EPSG:3857) projection math for the custom map renderer.
 ///

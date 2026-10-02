@@ -11,15 +11,22 @@ import com.tacmap.calibration.GeoDatums
 import com.tacmap.calibration.GeoPdfGeorefResult
 import com.tacmap.calibration.GeorefOrigin
 import com.tacmap.calibration.GeorefRejectReason
+import com.tacmap.calibration.ImportError
+import com.tacmap.calibration.InspectionResult
 import com.tacmap.calibration.MapSourceKind
 import com.tacmap.calibration.PagePoint
 import com.tacmap.calibration.PdfBox
 import com.tacmap.calibration.PdfDocumentInspector
 import com.tacmap.calibration.PdfGeoreference
+import com.tacmap.calibration.PdfInspection
+import com.tacmap.calibration.PdfInspector
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.PdfPageGeometry
 import com.tacmap.calibration.PdfPageRenderer
-import com.tacmap.calibration.PdfTiler
+import com.tacmap.calibration.PdfBaker
+import com.tacmap.calibration.PdfBakeException
+import com.tacmap.calibration.PdfSessionStore
+import com.tacmap.calibration.canonicalJson
 import com.tacmap.calibration.PlaneAffine
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.cos.COSArray
@@ -48,19 +55,39 @@ import kotlinx.coroutines.runBlocking
 class PdfImportHardeningInstrumentedTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
+    /** WP5: the import reads the PDF once through PdfInspector (the old preflight is gone) */
+    private fun inspected(file: File): PdfInspection {
+        val r = PdfInspector.inspect(context, file)
+        assertTrue("inspect failed: $r", r is InspectionResult.Ok)
+        return (r as InspectionResult.Ok).inspection
+    }
+
+    private fun rendererSize(file: File): Pair<Int, Int> {
+        val g = requireNotNull(inspected(file).pages[0].geometry) { "no pdfium frame" }
+        return g.rendererWidth to g.rendererHeight
+    }
+
+    @org.junit.Before
+    fun foregroundPdfThread() {
+        // a previous activity test's onStop parks visible pdf work (WP2 contract E)
+        com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = true
+    }
+
     @Test
-    fun plainPdfPreflightsAndPreviewDoesNotUpscale() {
+    fun plainPdfPreflightsAndRendersThroughThePdfThread() {
         val file = createPdf("plain.pdf")
-        val (width, height) = preflightPdfImport(context, file)
-        val rendered = PdfPageRenderer.renderFirstPage(context, Uri.fromFile(file))
+        val (width, height) = rendererSize(file)
+        val geometry = PdfDocumentInspector.inspect(context, file).geometry
+        // the old whole page preview is gone (WP2), a raw window through the page frame stands in
+        val rendered = PdfPageRenderer.renderRawRegion(
+            context, Uri.fromFile(file), geometry, 0.0, 0.0, 100.0, 100.0, 200, 200,
+        )
         try {
             assertTrue(width > 0 && height > 0)
-            assertTrue(rendered.bitmap.width <= width)
-            assertTrue(rendered.bitmap.height <= height)
-            assertTrue(rendered.bitmap.allocationByteCount <= 32 * 1024 * 1024)
+            assertEquals(200, rendered.width)
             assertEquals(GeoPdfGeorefResult.NoGeoreference, PdfDocumentInspector.inspect(context, file).georeference())
         } finally {
-            rendered.bitmap.recycle()
+            rendered.recycle()
         }
     }
 
@@ -70,7 +97,8 @@ class PdfImportHardeningInstrumentedTest {
         // /Rotate, so a turned page is supported (it used to be refused here)
         listOf(90, 180, 270).forEach { rotation ->
             val file = createPdf("rotated-$rotation.pdf", rotation)
-            val (width, height) = preflightPdfImport(context, file)
+            val (width, height) = rendererSize(file)
+            assertEquals(rotation, inspected(file).pages[0].rotate)
             // pdfium reports the displayed (turned) size
             if (rotation % 180 == 0) assertEquals(600 to 400, width to height) else assertEquals(400 to 600, width to height)
             val geometry = PdfDocumentInspector.inspect(context, file).geometry
@@ -86,11 +114,42 @@ class PdfImportHardeningInstrumentedTest {
         }
         val protected = createPdf("protected.pdf", password = "secret")
 
-        listOf(invalid, protected).forEach { file ->
-            val result = runCatching { preflightPdfImport(context, file) }
-            assertTrue(result.exceptionOrNull() is PdfImportRejectedException)
-            assertTrue(result.exceptionOrNull()!!.message!!.contains("password-protected"))
+        // typed shared errors now (D5-20), the same message keys as iOS
+        mapOf(invalid to ImportError.INVALID_PDF, protected to ImportError.PASSWORD).forEach { (file, want) ->
+            val result = PdfInspector.inspect(context, file)
+            assertTrue("${file.name}: $result", result is InspectionResult.Failed)
+            assertEquals(want, (result as InspectionResult.Failed).failure.error)
         }
+    }
+
+    @Test
+    fun anInheritedCropBoxPastTheScannedPagesIsChecked() {
+        // E12: pages 51+ used to look only at their own dict, so a CropBox they inherit from
+        // the page tree slipped past the page size check
+        val file = File(context.cacheDir, "${System.nanoTime()}-inherited-crop.pdf")
+        PDDocument().use { document ->
+            repeat(55) { i ->
+                document.addPage(PDPage(PDRectangle(600f, 400f)).apply {
+                    // the scanned pages carry their own (fine) CropBox
+                    if (i < 50) cropBox = PDRectangle(600f, 400f)
+                })
+            }
+            // 10 x 10 pt is under the 36 pt minimum, only pages 50-54 inherit it
+            document.pages.cosObject.setItem(COSName.CROP_BOX, PDRectangle(10f, 10f).cosArray)
+            document.save(file)
+        }
+        val r = PdfInspector.inspect(context, file)
+        assertTrue("$r", r is InspectionResult.Failed)
+        assertEquals(ImportError.PAGE_SIZE, (r as InspectionResult.Failed).failure.error)
+
+        // and an inherited CropBox that's fine comes through on page 52 as that page's box
+        val ok = File(context.cacheDir, "${System.nanoTime()}-inherited-crop-ok.pdf")
+        PDDocument().use { document ->
+            repeat(55) { document.addPage(PDPage(PDRectangle(600f, 400f))) }
+            document.pages.cosObject.setItem(COSName.CROP_BOX, PDRectangle(500f, 300f).cosArray)
+            document.save(ok)
+        }
+        assertEquals(listOf(0.0, 0.0, 500.0, 300.0), inspected(ok).pages[51].cropBox)
     }
 
     private fun georef(file: File): GeoPdfGeorefResult = PdfDocumentInspector.inspect(context, file).georeference()
@@ -196,42 +255,85 @@ class PdfImportHardeningInstrumentedTest {
     }
 
     @Test
-    fun generatedMbtilesContainsEveryExpectedOnPageTile() = runBlocking {
-        val source = calibratedSource(createPdf("tiler-success.pdf"))
-        var finalProgress: PdfTiler.Progress? = null
-
-        val output = PdfTiler.generate(context, source) { finalProgress = it }
-
-        val path = requireNotNull(output)
-        try {
-            val db = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY)
-            val tileCount = try {
-                db.rawQuery("SELECT COUNT(*) FROM tiles", null).use { cursor ->
-                    assertTrue(cursor.moveToFirst())
-                    cursor.getInt(0)
+    fun bakeWritesEveryIntersectingTileAndAttachesToItsEntry() = runBlocking<Unit> {
+        // WP2: PdfBaker replaced PdfTiler. It publishes onto the PDF's library entry (the
+        // merge moved the record off the old session), the recorder stands in for the VM
+        val recorder = com.tacmap.calibration.RecordingBakeRecorder()
+        val pdfDir = File(context.filesDir, "pdf_maps").apply { mkdirs() }
+        // an empty page is now refused as blank (WP2 contract G), so give it some ink
+        val file = File(pdfDir, "bake-test-${System.nanoTime()}.pdf")
+        PDDocument().use { document ->
+            val page = PDPage(PDRectangle(600f, 400f))
+            document.addPage(page)
+            com.tom_roush.pdfbox.pdmodel.PDPageContentStream(document, page).use { ink ->
+                ink.setStrokingColor(0f, 0f, 0f)
+                ink.setLineWidth(2f)
+                for (k in 0..6) {
+                    ink.moveTo(k * 100f, 0f); ink.lineTo(k * 100f, 400f)
+                    ink.moveTo(0f, k * 66f); ink.lineTo(600f, k * 66f)
                 }
-            } finally {
-                db.close()
+                ink.stroke()
             }
-            val progress = requireNotNull(finalProgress)
-            assertEquals(progress.total, progress.done)
-            assertEquals(progress.total, tileCount)
-            assertTrue(tileCount > 0)
+            document.save(file)
+        }
+        val source = calibratedSource(file)
+        val bakeDir = File(context.filesDir, "offline_tiles")
+        try {
+            val tile = com.tacmap.map.createPdfTileSource(context.applicationContext as android.app.Application, source, 256, "test", null, { true }, forBake = true)
+            try {
+                val georefJson = source.placement!!.canonicalJson()
+                val key = com.tacmap.map.render.pdf.PdfBakePlan.bakeKey(georefJson, 256)
+                var last = 0 to 0
+                val bake = PdfBaker.bake(context, tile, source, 6, key, recorder) { d, t -> last = d to t }
+                val out = File(bakeDir, bake.fileName)
+                assertTrue(out.isFile)
+                assertEquals(last.second, last.first)
+                val expected = (0..6).sumOf { tile.footprint.count(it) }
+                assertEquals(expected, last.second)
+                val db = SQLiteDatabase.openDatabase(out.path, null, SQLiteDatabase.OPEN_READONLY)
+                try {
+                    db.rawQuery("SELECT COUNT(*) FROM tiles", null).use { c -> assertTrue(c.moveToFirst()); assertEquals(expected, c.getInt(0)) }
+                    db.rawQuery("SELECT value FROM metadata WHERE name='tacmap_bake_key'", null).use { c ->
+                        assertTrue(c.moveToFirst()); assertEquals(key, c.getString(0))
+                    }
+                    db.rawQuery("SELECT value FROM metadata WHERE name='format'", null).use { c ->
+                        assertTrue(c.moveToFirst()); assertEquals("webp", c.getString(0))
+                    }
+                } finally {
+                    db.close()
+                }
+                // the PDF is kept, its entry got the bake, nothing left in the work dir
+                assertTrue(file.isFile)
+                assertEquals(bake, recorder.attached)
+                assertTrue(File(context.filesDir, PdfBaker.WORK_DIR).list().isNullOrEmpty())
+                out.delete()
+            } finally {
+                com.tacmap.map.disposePdfTileSource(tile)
+            }
         } finally {
-            File(path).delete()
+            file.delete()
         }
     }
 
     @Test
-    fun tileRenderFailurePublishesNoMbtilesArtifact() = runBlocking {
+    fun bakeForAMissingPdfPublishesNothing() = runBlocking<Unit> {
         val offlineDirectory = File(context.filesDir, "offline_tiles").apply { mkdirs() }
         val before = offlineDirectory.list()?.toSet().orEmpty()
         val missing = File(context.cacheDir, "missing-${System.nanoTime()}.pdf")
-
-        val output = PdfTiler.generate(context, calibratedSource(missing)) { }
-
-        assertNull(output)
+        val source = calibratedSource(missing)
+        val tile = com.tacmap.map.createPdfTileSource(context.applicationContext as android.app.Application, source, 256, "test", null, { true }, forBake = true)
+        try {
+            val georefJson = source.placement!!.canonicalJson()
+            val key = com.tacmap.map.render.pdf.PdfBakePlan.bakeKey(georefJson, 256)
+            val recorder = com.tacmap.calibration.RecordingBakeRecorder()
+            val error = runCatching { PdfBaker.bake(context, tile, source, 4, key, recorder) { _, _ -> } }.exceptionOrNull()
+            assertEquals(null, recorder.attached)
+            assertTrue("$error", error is PdfBakeException)
+        } finally {
+            com.tacmap.map.disposePdfTileSource(tile)
+        }
         assertEquals(before, offlineDirectory.list()?.toSet().orEmpty())
+        assertTrue(File(context.filesDir, PdfBaker.WORK_DIR).list().isNullOrEmpty())
     }
 
     private enum class MetadataKind {

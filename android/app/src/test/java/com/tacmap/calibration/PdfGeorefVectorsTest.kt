@@ -179,6 +179,36 @@ class PdfGeorefVectorsTest {
         assertTrue("only ${cases.size} cases", cases.size >= 54)
         val reasons = root.obj("rejections").obj("reasons").keys
         GeorefRejectReason.entries.forEach { assertTrue(it.code, it.code in reasons) }
+        assertRejectionCases(cases)
+    }
+
+    @Test
+    fun valueTypeCasesNullsNumberStringsAndTrimmedText() {
+        // parity round 4 (lgiRules.nullValues / numericStrings / valueTypes), same shape as
+        // cases. count guarded so an emptied section can't pass by running nothing
+        val cases = root.obj("rejections").arr("valueTypeCases").map { it.jsonObject }
+        assertTrue("only ${cases.size} valueTypeCases", cases.size >= 34)
+        assertRejectionCases(cases)
+    }
+
+    @Test
+    fun numberStringsFollowTheSharedGrammarNotKotlinToDouble() {
+        val rules = root.obj("rejections").obj("lgiRules").obj("numericStrings")
+        assertTrue(rules.str("grammar").startsWith("^[+-]?"))
+        // in: padded, signs, exponents, a bare fraction
+        mapOf(" 10 " to 10.0, "+10" to 10.0, "10.0" to 10.0, "1e1" to 10.0, ".5" to 0.5, "-123.25" to -123.25, "5." to 5.0)
+            .forEach { (s, v) -> assertEquals(s, v, PdfValueRules.numericString(s)!!, 0.0) }
+        // out: everything the platform parsers take that a pdf number string isn't
+        listOf("10d", "10f", "0x1.4p3", "NaN", "Infinity", "10,0", "", " ", "1e", "e5", "--1", "1 0")
+            .forEach { assertNull(it, PdfValueRules.numericString(it)) }
+        // in the grammar but too big for a double: non finite, like an overflowing real
+        assertEquals(Double.POSITIVE_INFINITY, PdfValueRules.numericString("1e999")!!, 0.0)
+        // trimmed with the shared white space set (U+3000 ideographic space), both ends only
+        assertEquals(7.0, PdfValueRules.numericString("\u3000 7\u00A0")!!, 0.0)
+        assertNull(PdfValueRules.numericString("7\u3000 7"))
+    }
+
+    private fun assertRejectionCases(cases: List<JsonObject>) {
         for (c in cases) {
             val id = c.str("id")
             val page = PdfGeorefFixture.pageData(c, c.obj("input"))

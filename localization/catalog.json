@@ -344,13 +344,6 @@
       "ios"
     ]
   },
-  "ui_calibration_was_calculated_but_couldn_t_be_saved_8b052669": {
-    "en": "Calibration was calculated but couldn't be saved securely. ",
-    "de": "Die Kalibrierung wurde berechnet, konnte aber nicht sicher gespeichert werden. ",
-    "platforms": [
-      "ios"
-    ]
-  },
   "ui_check_device_storage_then_try_again_52122ca3": {
     "en": "Check device storage, then try again.",
     "de": "Prüfe den Gerätespeicher und versuche es erneut.",
@@ -1011,44 +1004,9 @@
       "ios"
     ]
   },
-  "ui_pdf_coord_1_2_57c1d145": {
-    "en": "PDF coord: ({1}, {2})",
-    "de": "PDF-Koordinate: ({1}, {2})",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_look_at_the_pdf_s_printed_grid_labels_or_local_k_d7e243ec": {
-    "en": "Look at the PDF's printed grid labels or local knowledge to find the MGRS of this feature.",
-    "de": "Bestimme die MGRS-Koordinate dieses Merkmals anhand der aufgedruckten Gitterbeschriftung oder deiner Ortskenntnis.",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_map_datum_f164aed6": {
-    "en": "Map datum",
-    "de": "Geodätisches Kartendatum",
-    "platforms": [
-      "ios"
-    ]
-  },
   "ui_datum_9135882d": {
     "en": "Datum",
     "de": "Geodätisches Datum",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_mgrs_you_enter_is_read_as_1_and_shifted_to_wgs84_575c853d": {
-    "en": "MGRS you enter is read as {1} and shifted to WGS84 (~1–2 m) so overlays line up.",
-    "de": "Die eingegebene MGRS-Koordinate wird als {1} interpretiert und nach WGS84 verschoben (ca. 1–2 m), damit die Überlagerungen übereinstimmen.",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_mgrs_grid_reference_231b65b2": {
-    "en": "MGRS grid reference",
-    "de": "MGRS-Gitterkoordinate",
     "platforms": [
       "ios"
     ]
@@ -1074,13 +1032,6 @@
       "ios"
     ]
   },
-  "ui_add_fiduciary_1_cc96a108": {
-    "en": "Add fiduciary #{1}",
-    "de": "Passpunkt Nr. {1} hinzufügen",
-    "platforms": [
-      "ios"
-    ]
-  },
   "ui_cancel_19766ed6": {
     "en": "Cancel",
     "de": "Abbrechen",
@@ -1097,59 +1048,12 @@
       "android"
     ]
   },
-  "ui_couldn_t_parse_mgrs_format_zone_band_square_east_7aed166b": {
-    "en": "Couldn't parse MGRS. Format: <zone><band><square> <easting> <northing>, e.g. 56HLH 12345 67890",
-    "de": "MGRS konnte nicht gelesen werden. Format: <Zone><Band><Quadrat> <Ostwert> <Nordwert>, z. B. 56HLH 12345 67890",
-    "platforms": [
-      "ios"
-    ],
-    "accessor": "displayCouldnTParseMgrsFormatZoneBandSquareEasting",
-    "deferred": true,
-    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
-    "parameters": []
-  },
-  "ui_calibrating_pdf_6dec5e65": {
-    "en": "Calibrating PDF",
-    "de": "PDF wird kalibriert",
-    "platforms": [
-      "ios",
-      "android"
-    ]
-  },
   "ui_finish_a6c7a84b": {
     "en": "Finish",
     "de": "Abschließen",
     "platforms": [
       "ios",
       "android"
-    ]
-  },
-  "ui_previous_fit_rms_1_m_add_more_fiduciaries_to_ref_235a9234": {
-    "en": "Previous fit RMS: {1}m - add more fiduciaries to refine",
-    "de": "Bisheriger RMS-Fehler: {1} m – weitere Passpunkte verbessern die Genauigkeit",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_tap_a_known_feature_on_the_pdf_to_drop_fiduciary_44519027": {
-    "en": "Tap a known feature on the PDF to drop fiduciary #1 (need 3+).",
-    "de": "Tippe auf ein bekanntes Merkmal im PDF, um Passpunkt Nr. 1 zu setzen (mindestens 3 erforderlich).",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_1_3_fiduciaries_placed_tap_another_known_feature_ffd6b084": {
-    "en": "{1}/3 fiduciaries placed. Tap another known feature.",
-    "de": "{1}/3 Passpunkte gesetzt. Tippe auf ein weiteres bekanntes Merkmal.",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_1_fiduciaries_placed_tap_finish_to_apply_or_add__456387ae": {
-    "en": "{1} fiduciaries placed. Tap Finish to apply, or add more for accuracy.",
-    "de": "{1} Passpunkte gesetzt. Tippe zum Anwenden auf „Abschließen“ oder füge weitere hinzu, um die Genauigkeit zu verbessern.",
-    "platforms": [
-      "ios"
     ]
   },
   "ui_satellite_esri_030a9d71": {
@@ -1990,35 +1894,24 @@
     "en": "No georeferencing — using map-centre fallback",
     "de": "Keine Georeferenzierung – Kartenmitte als Ersatz verwendet",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "ui_georeferenced_geopdf_lgidict_58ab999a": {
     "en": "Georeferenced (GeoPDF LGIDict)",
     "de": "Georeferenziert (GeoPDF LGIDict)",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "ui_manually_placed_bounds_93359c0d": {
     "en": "Manually placed bounds",
     "de": "Manuell gesetzte Grenzen",
     "platforms": [
-      "ios"
-    ]
-  },
-  "ui_calibrate_with_fiduciaries_ada4b6a2": {
-    "en": "Calibrate with fiduciaries…",
-    "de": "Mit Passpunkten kalibrieren …",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_currently_calibrated_with_1_fiduciaries_9b640901": {
-    "en": "Currently calibrated with {1} fiduciaries",
-    "de": "Derzeit mit {1} Passpunkten kalibriert",
-    "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "ui_generating_offline_tiles_1_2_22d4d971": {
@@ -2036,37 +1929,9 @@
       "android"
     ]
   },
-  "ui_generate_offline_tiles_d8b4f85a": {
-    "en": "Generate Offline Tiles…",
-    "de": "Offline-Kacheln erstellen …",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_bakes_this_calibrated_map_into_an_offline_tile_s_f73ad763": {
-    "en": "Bakes this calibrated map into an offline tile set on-device — no desktop tools.",
-    "de": "Erstellt aus dieser kalibrierten Karte direkt auf dem Gerät einen Offline-Kachelsatz – ohne Desktop-Werkzeuge.",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_unload_pdf_a4b26582": {
-    "en": "Unload PDF",
-    "de": "PDF entladen",
-    "platforms": [
-      "ios"
-    ]
-  },
   "ui_offline_mbtiles_raster_no_network_needed_a41cca28": {
     "en": "Offline MBTiles raster — no network needed",
     "de": "Offline-MBTiles-Raster – keine Netzwerkverbindung erforderlich",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_unload_offline_tiles_b550d13e": {
-    "en": "Unload offline tiles",
-    "de": "Offline-Kacheln entladen",
     "platforms": [
       "ios"
     ]
@@ -2103,13 +1968,6 @@
   "ui_rename_layer_e78352dd": {
     "en": "Rename layer",
     "de": "Ebene umbenennen",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_offline_tiles_2c47000d": {
-    "en": "Offline tiles",
-    "de": "Offline-Kacheln",
     "platforms": [
       "ios"
     ]
@@ -5486,41 +5344,6 @@
       "android"
     ]
   },
-  "ui_calibrate_pdf_map_ae38184f": {
-    "en": "Calibrate PDF Map",
-    "de": "PDF-Karte kalibrieren",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_generate_offline_tiles_f90a7f59": {
-    "en": "Generate Offline Tiles",
-    "de": "Offline-Kacheln erstellen",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_bakes_this_calibrated_map_into_an_offline_tile_s_3777d2f1": {
-    "en": "Bakes this calibrated map into an offline tile set on-device — no desktop tools needed.",
-    "de": "Erstellt aus dieser kalibrierten Karte direkt auf dem Gerät einen Offline-Kachelsatz – ohne Desktop-Werkzeuge.",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_unload_pdf_map_d974367c": {
-    "en": "Unload PDF Map",
-    "de": "PDF-Karte entladen",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_unload_offline_tiles_31edd2f3": {
-    "en": "Unload Offline Tiles",
-    "de": "Offline-Kacheln entladen",
-    "platforms": [
-      "android"
-    ]
-  },
   "ui_edit_drawing_name_c042bcfd": {
     "en": "Edit drawing name",
     "de": "Zeichnungsnamen bearbeiten",
@@ -5587,27 +5410,6 @@
   "ui_imported_1_waypoint_s_and_2_drawing_s_273dcc30": {
     "en": "Imported {1} waypoint(s) and {2} drawing(s)",
     "de": "Importierte Wegpunkte: {1}, Zeichnungen: {2}",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_calibration_needs_3_non_colinear_points_4781b4db": {
-    "en": "Calibration needs 3 non-colinear points.",
-    "de": "Die Kalibrierung benötigt 3 Punkte, die nicht auf einer Linie liegen.",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_calibration_rms_1_m_84b0c755": {
-    "en": "Calibration RMS {1}m",
-    "de": "RMS-Fehler der Kalibrierung: {1} m",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_tap_inside_the_pdf_map_afe1be84": {
-    "en": "Tap inside the PDF map.",
-    "de": "Tippe innerhalb der PDF-Karte.",
     "platforms": [
       "android"
     ]
@@ -5724,41 +5526,6 @@
       "android"
     ]
   },
-  "ui_generating_offline_tiles_ce54d27b": {
-    "en": "Generating offline tiles",
-    "de": "Offline-Kacheln werden erstellt",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_1_2_tiles_aa342dc7": {
-    "en": "{1} / {2} tiles",
-    "de": "{1} / {2} Kacheln",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_load_a_pdf_map_first_146b449e": {
-    "en": "Load a PDF map first",
-    "de": "Lade zuerst eine PDF-Karte",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_offline_tiles_ready_f8009183": {
-    "en": "Offline tiles ready",
-    "de": "Offline-Kacheln sind fertig",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_couldn_t_generate_tiles_calibrate_the_pdf_first__073989c2": {
-    "en": "Couldn't generate tiles — calibrate the PDF first (3+ fiduciaries).",
-    "de": "Kacheln konnten nicht erstellt werden – kalibriere zuerst das PDF (mindestens 3 Passpunkte).",
-    "platforms": [
-      "android"
-    ]
-  },
   "ui_reset_map_to_north_d27042e5": {
     "en": "Reset map to north",
     "de": "Karte nach Norden ausrichten",
@@ -5769,41 +5536,6 @@
   "ui_compass_1_mils_19ce9ed2": {
     "en": "Compass, {1} mils",
     "de": "Kompass, {1} Strich",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_tap_a_known_point_on_the_pdf_then_enter_its_mgrs_6d705e23": {
-    "en": "Tap a known point on the PDF, then enter its MGRS.",
-    "de": "Tippe auf einen bekannten Punkt im PDF und gib seine MGRS-Koordinate ein.",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_1_3_fiduciaries_placed_add_another_known_point_8972ef9b": {
-    "en": "{1}/3 fiduciaries placed. Add another known point.",
-    "de": "{1}/3 Passpunkte gesetzt. Füge einen weiteren bekannten Punkt hinzu.",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_1_fiduciaries_placed_finish_or_add_more_for_accu_774c9e36": {
-    "en": "{1} fiduciaries placed. Finish or add more for accuracy.",
-    "de": "{1} Passpunkte gesetzt. Schließe ab oder füge weitere hinzu, um die Genauigkeit zu verbessern.",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_fiduciary_1_9b52745d": {
-    "en": "Fiduciary #{1}",
-    "de": "Passpunkt Nr. {1}",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_pdf_point_1_2_4a0badf7": {
-    "en": "PDF point: {1}, {2}",
-    "de": "PDF-Punkt: {1}, {2}",
     "platforms": [
       "android"
     ]
@@ -5821,24 +5553,6 @@
     "platforms": [
       "android"
     ]
-  },
-  "ui_sheet_datum_3c50a4a3": {
-    "en": "Sheet datum",
-    "de": "Geodätisches Datum der Karte",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_couldn_t_parse_mgrs_try_a_full_grid_reference_edb73b8e": {
-    "en": "Couldn't parse MGRS. Try a full grid reference.",
-    "de": "MGRS konnte nicht gelesen werden. Versuche es mit einer vollständigen Gitterkoordinate.",
-    "platforms": [
-      "android"
-    ],
-    "accessor": "displayCouldnTParseMgrsTryAFullGridReference",
-    "deferred": true,
-    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
-    "parameters": []
   },
   "ui_point_1_c985066b": {
     "en": "Point {1}",
@@ -6851,27 +6565,6 @@
       "ios"
     ]
   },
-  "ui_delete_imported_map_from_this_device_873156bb": {
-    "en": "Delete imported map from this device?",
-    "de": "Importierte Karte von diesem Gerät löschen?",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_delete_map_05478ef3": {
-    "en": "Delete Map",
-    "de": "Karte löschen",
-    "platforms": [
-      "ios"
-    ]
-  },
-  "ui_this_deletes_the_app_private_pdf_or_mbtiles_copy_ca0a874e": {
-    "en": "This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.",
-    "de": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Einsatzobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
-    "platforms": [
-      "ios"
-    ]
-  },
   "ui_map_change_not_saved_d805e821": {
     "en": "Map change not saved",
     "de": "Kartenänderung nicht gespeichert",
@@ -6883,7 +6576,8 @@
     "en": "Not Now",
     "de": "Später",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "ui_switch_to_online_basemap_66adfcd3": {
@@ -11960,48 +11654,6 @@
       "android"
     ]
   },
-  "ui_this_pdf_s_first_page_is_rotated_1_tacmap_cannot_c7e9e51b": {
-    "en": "This PDF's first page is rotated {1}°. TacMap cannot safely ",
-    "de": "Die erste Seite dieser PDF ist um {1}° gedreht. TacMap kann ",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_georeference_rotated_pages_yet_flatten_the_page__afb06ef9": {
-    "en": "georeference rotated pages yet. Flatten the page rotation in a PDF editor or ",
-    "de": "gedrehte Seiten noch nicht sicher georeferenzieren. Entferne die Seitendrehung in einem PDF-Editor oder ",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_print_it_to_a_new_pdf_then_import_that_copy_c15831fb": {
-    "en": "print it to a new PDF, then import that copy.",
-    "de": "drucke sie in eine neue PDF-Datei und importiere diese Kopie.",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_this_pdf_is_larger_than_tacmap_s_256_mb_import_l_fb43bdf5": {
-    "en": "This PDF is larger than TacMap's 256 MB import limit.",
-    "de": "Diese PDF überschreitet TacMaps Importgrenze von 256 MB.",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_tacmap_could_not_read_the_first_page_the_pdf_may_71d32b6f": {
-    "en": "TacMap could not read the first page. The PDF may be invalid or password-protected.",
-    "de": "TacMap konnte die erste Seite nicht lesen. Die PDF ist möglicherweise ungültig oder passwortgeschützt.",
-    "platforms": [
-      "android"
-    ]
-  },
-  "ui_tacmap_could_not_safely_inspect_this_pdf_s_page__ccde244b": {
-    "en": "TacMap could not safely inspect this PDF's page rotation. Flatten or print it to a new PDF, then import that copy.",
-    "de": "TacMap konnte die Seitendrehung dieser PDF nicht sicher prüfen. Entferne die Drehung oder drucke sie in eine neue PDF-Datei und importiere diese Kopie.",
-    "platforms": [
-      "android"
-    ]
-  },
   "ui_the_document_import_journal_could_not_be_authent_baef41af": {
     "en": "The document-import journal could not be authenticated and was preserved.",
     "de": "Das Dokumentimport-Protokoll konnte nicht authentifiziert werden und blieb erhalten.",
@@ -12057,17 +11709,6 @@
     "platforms": [
       "android"
     ]
-  },
-  "ui_the_pdf_map_was_unloaded_but_its_private_session_f417400f": {
-    "en": "The PDF map was unloaded, but its private session metadata could not be removed. Retry cleanup.",
-    "de": "Die PDF-Karte wurde entladen, aber ihre privaten Sitzungsmetadaten konnten nicht entfernt werden. Versuche die Bereinigung erneut.",
-    "platforms": [
-      "android"
-    ],
-    "accessor": "displayThePdfMapWasUnloadedButItsPrivateSession",
-    "deferred": true,
-    "context": "Retained application failure or status. Resolve when displayed without changing persisted state, retry action, or diagnostic arguments.",
-    "parameters": []
   },
   "ui_the_saved_basemap_details_could_not_be_authentic_9e82a378": {
     "en": "The saved basemap details could not be authenticated. ",
@@ -14416,23 +14057,6 @@
     "deferred": true,
     "context": "Complete CustomMapScreen message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
     "parameters": []
-  },
-  "pdf_rotation_unsupported": {
-    "en": "This PDF's first page is rotated {1}°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy.",
-    "de": "Die erste Seite dieser PDF ist um {1}° gedreht. TacMap kann gedrehte Seiten noch nicht sicher georeferenzieren. Entferne die Seitendrehung in einem PDF-Editor oder drucke sie in eine neue PDF-Datei und importiere diese Kopie.",
-    "platforms": [
-      "android"
-    ],
-    "legacy": false,
-    "accessor": "pdfRotationUnsupported",
-    "deferred": true,
-    "context": "Complete MapScreenHelpers message. Arguments are formatted counts, selected interval text, a recovery filename or a separately localised import suffix; preserve security guarantees and user actions.",
-    "parameters": [
-      {
-        "name": "value",
-        "type": "string"
-      }
-    ]
   },
   "basemap_recovery_required": {
     "en": "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.",
@@ -17091,40 +16715,23 @@
     "accessor": "appLockUseBiometric",
     "parameters": []
   },
-  "calibration_collinear": {
-    "en": "Calibration needs 3 points that aren't in a straight line.",
-    "de": "Die Kalibrierung benötigt 3 Punkte, die nicht auf einer Linie liegen.",
-    "platforms": [
-      "ios"
-    ],
-    "context": "Short notice when the user taps Finish but the calibration points on the PDF lie in a line.",
-    "legacy": false,
-    "accessor": "calibrationCollinear",
-    "parameters": []
-  },
-  "calibration_failed": {
-    "en": "Calibration failed. Check the grid references and try again.",
-    "de": "Kalibrierung fehlgeschlagen. Prüfe die Gitterangaben und versuche es erneut.",
-    "platforms": [
-      "ios"
-    ],
-    "context": "Short notice when the calibration points cannot be fitted for another reason.",
-    "legacy": false,
-    "accessor": "calibrationFailed",
-    "parameters": []
-  },
   "calibration_done": {
-    "en": "Map calibrated · RMS error {1}",
-    "de": "Karte kalibriert · RMS-Fehler {1}",
+    "en": "Map calibrated · {1} · RMS {2}",
+    "de": "Karte kalibriert · {1} · RMS {2}",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ],
-    "context": "Short notice after a PDF map is calibrated. {1} is the fit's root-mean-square error with its unit, e.g. '12 m'.",
     "legacy": false,
     "accessor": "calibrationDone",
+    "context": "Calibration screen (WP4). Toast after finishing. {1} is a point count like '5 points', {2} the RMS error with unit.",
     "parameters": [
       {
-        "name": "error",
+        "name": "points",
+        "type": "string"
+      },
+      {
+        "name": "rms",
         "type": "string"
       }
     ]
@@ -17504,88 +17111,6 @@
     "accessor": "exportGpxEmpty",
     "parameters": []
   },
-  "layers_pdf_georeferenced": {
-    "en": "Georeferenced (GeoPDF LGIDict)",
-    "de": "Georeferenziert (GeoPDF LGIDict)",
-    "platforms": [
-      "android"
-    ],
-    "context": "Layers sheet, under the imported PDF's name: the PDF carries its own georeferencing (GeoPDF), so it is placed automatically. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersPdfGeoreferenced",
-    "parameters": []
-  },
-  "layers_pdf_manual_bounds": {
-    "en": "Manually placed bounds",
-    "de": "Manuell gesetzte Grenzen",
-    "platforms": [
-      "android"
-    ],
-    "context": "Layers sheet, under the imported PDF's name: the user placed the PDF by calibrating it with fiduciaries. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersPdfManualBounds",
-    "parameters": []
-  },
-  "layers_pdf_no_georeferencing": {
-    "en": "No georeferencing — using map-centre fallback",
-    "de": "Keine Georeferenzierung – Kartenmitte als Ersatz verwendet",
-    "platforms": [
-      "android"
-    ],
-    "context": "Layers sheet, under the imported PDF's name: the PDF has no georeferencing yet and is shown around the map centre where it was imported. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersPdfNoGeoreferencing",
-    "parameters": []
-  },
-  "layers_pdf_fiduciary_count": {
-    "en": "Currently calibrated with {1} fiduciaries",
-    "de": "Derzeit mit {1} Passpunkten kalibriert",
-    "platforms": [
-      "android"
-    ],
-    "context": "Layers sheet, under a manually calibrated PDF. {1} is the number of calibration points (always 3 or more). Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersPdfFiduciaryCount",
-    "parameters": [
-      {
-        "name": "count",
-        "type": "string"
-      }
-    ]
-  },
-  "layers_delete_imported_title": {
-    "en": "Delete imported map from this device?",
-    "de": "Importierte Karte von diesem Gerät löschen?",
-    "platforms": [
-      "android"
-    ],
-    "context": "Title of the confirmation before an imported PDF or offline tile map is deleted from the device. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersDeleteImportedTitle",
-    "parameters": []
-  },
-  "layers_delete_imported_message": {
-    "en": "This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.",
-    "de": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Einsatzobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
-    "platforms": [
-      "android"
-    ],
-    "context": "Body of the confirmation before an imported map is deleted. Symbols and drawings stay. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersDeleteImportedMessage",
-    "parameters": []
-  },
-  "layers_delete_imported_confirm": {
-    "en": "Delete Map",
-    "de": "Karte löschen",
-    "platforms": [
-      "android"
-    ],
-    "context": "Destructive button in the confirmation that deletes an imported map from the device. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "layersDeleteImportedConfirm",
-    "parameters": []
-  },
   "layers_delete_pdf_map": {
     "en": "Delete PDF Map…",
     "de": "PDF-Karte löschen …",
@@ -17652,22 +17177,6 @@
     "accessor": "savedImportedMapMissing",
     "parameters": [],
     "deferred": true
-  },
-  "calibration_use_current_location": {
-    "en": "Use my current location ({1})",
-    "de": "Meinen aktuellen Standort verwenden ({1})",
-    "platforms": [
-      "android"
-    ],
-    "context": "Button in the PDF calibration point dialog that fills the MGRS field from the last GPS fix. {1} is that MGRS grid reference. Same wording as iOS.",
-    "legacy": false,
-    "accessor": "calibrationUseCurrentLocation",
-    "parameters": [
-      {
-        "name": "mgrs",
-        "type": "string"
-      }
-    ]
   },
   "calibration_use_current_location_no_fix": {
     "en": "Use my current location",
@@ -17881,7 +17390,8 @@
     "en": "Georeferenced (GeoPDF)",
     "de": "Georeferenziert (GeoPDF)",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ],
     "legacy": false,
     "accessor": "pdfGeorefAdobeLabel",
@@ -17935,5 +17445,2583 @@
     "accessor": "pdfMapCalibrateNow",
     "context": "Alert button that starts fiduciary calibration. A plain PDF shown on a provisional, guessed placement until the user calibrates it with known points. Must make clear positions are not trustworthy.",
     "parameters": []
+  },
+  "imported_map_show_toggle": {
+    "en": "Show Imported Map",
+    "de": "Importierte Karte anzeigen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "importedMapShowToggle",
+    "context": "Layers sheet toggle that shows or hides the imported PDF map. Hidden shows a plain dark background, never an online map.",
+    "parameters": []
+  },
+  "imported_map_hidden_notice": {
+    "en": "Imported map hidden",
+    "de": "Importierte Karte ausgeblendet",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "importedMapHiddenNotice",
+    "context": "Small capsule on the map while the user has switched the imported PDF map off in Layers.",
+    "parameters": []
+  },
+  "pdf_render_drawing_label": {
+    "en": "Drawing map…",
+    "de": "Karte wird gezeichnet…",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderDrawingLabel",
+    "context": "Short header badge while the imported PDF is still being drawn for the first time. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_failed_label": {
+    "en": "Map couldn't be drawn",
+    "de": "Karte konnte nicht gezeichnet werden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderFailedLabel",
+    "context": "Short header badge (red) when the imported PDF could not be drawn at all. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_failed_title": {
+    "en": "Couldn't draw “{1}”",
+    "de": "„{1}“ konnte nicht gezeichnet werden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderFailedTitle",
+    "context": "Alert title when an imported PDF map could not be drawn. {1} is the map's file name. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_render_reason_cannot_open": {
+    "en": "The PDF file is missing or can't be read.",
+    "de": "Die PDF-Datei fehlt oder kann nicht gelesen werden.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonCannotOpen",
+    "context": "Alert message: the imported PDF file can't be opened. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_password_protected": {
+    "en": "This PDF is password-protected. Remove the password and import it again.",
+    "de": "Diese PDF ist passwortgeschützt. Entferne das Passwort und importiere sie erneut.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonPasswordProtected",
+    "context": "Alert message: the imported PDF needs a password to open. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_page_missing": {
+    "en": "The georeferenced page is missing from this PDF.",
+    "de": "Die georeferenzierte Seite fehlt in dieser PDF.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonPageMissing",
+    "context": "Alert message: the page the map's georeference belongs to is not in the PDF. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_page_geometry": {
+    "en": "This PDF's page layout doesn't match its georeference.",
+    "de": "Das Seitenlayout dieser PDF passt nicht zu ihrer Georeferenz.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonPageGeometry",
+    "context": "Alert message: the page boxes and the georeferenced area don't overlap usefully. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_blank": {
+    "en": "Nothing on this PDF page could be drawn.",
+    "de": "Auf dieser PDF-Seite konnte nichts gezeichnet werden.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonBlank",
+    "context": "Alert message: the PDF page renders as an empty white page. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_out_of_memory": {
+    "en": "This PDF is too large to draw on this device.",
+    "de": "Diese PDF ist zu groß, um sie auf diesem Gerät zu zeichnen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonOutOfMemory",
+    "context": "Alert message: drawing the PDF ran out of memory. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_reason_render_error": {
+    "en": "TacMap couldn't draw this PDF.",
+    "de": "TacMap konnte diese PDF nicht zeichnen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderReasonRenderError",
+    "context": "Alert message: repeated drawing errors. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_try_again": {
+    "en": "Try Again",
+    "de": "Erneut versuchen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderTryAgain",
+    "context": "Button in the 'couldn't draw' alert and Layers row: draw the imported PDF again. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_render_use_online_map": {
+    "en": "Use Online Map",
+    "de": "Onlinekarte verwenden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfRenderUseOnlineMap",
+    "context": "Button in the 'couldn't draw' alert: switch the basemap to the online map. Imported PDF map rendering (the PDF is drawn as map tiles on the device).",
+    "parameters": []
+  },
+  "pdf_guard_crash_title": {
+    "en": "TacMap closed while drawing “{1}”",
+    "de": "TacMap wurde beim Zeichnen von „{1}“ beendet",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardCrashTitle",
+    "context": "Launch alert: the app quit while drawing this imported map last time. {1} is the map's file name.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_guard_crash_message": {
+    "en": "The map wasn't opened automatically in case it causes the same problem. The online map is shown instead.",
+    "de": "Die Karte wurde nicht automatisch geöffnet, falls sie dasselbe Problem erneut verursacht. Stattdessen wird die Onlinekarte angezeigt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardCrashMessage",
+    "context": "Launch alert message after the app quit while drawing an imported map.",
+    "parameters": []
+  },
+  "pdf_guard_open_anyway": {
+    "en": "Open Anyway",
+    "de": "Trotzdem öffnen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardOpenAnyway",
+    "context": "Button in the launch crash alert: draw the imported map anyway.",
+    "parameters": []
+  },
+  "pdf_guard_delete_map": {
+    "en": "Delete Map…",
+    "de": "Karte löschen…",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardDeleteMap",
+    "context": "Button in the launch crash alert: go to the delete confirmation for this imported map.",
+    "parameters": []
+  },
+  "pdf_guard_import_interrupted_title": {
+    "en": "TacMap closed while preparing an imported map",
+    "de": "TacMap wurde beim Vorbereiten einer importierten Karte beendet",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardImportInterruptedTitle",
+    "context": "Launch alert: the app quit while checking a PDF being imported. No file name on purpose.",
+    "parameters": []
+  },
+  "pdf_guard_import_interrupted_message": {
+    "en": "The map wasn't imported. Try again, or print the PDF to a new file and import that copy.",
+    "de": "Die Karte wurde nicht importiert. Versuche es erneut oder drucke die PDF in eine neue Datei und importiere diese Kopie.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfGuardImportInterruptedMessage",
+    "context": "Launch alert message after an interrupted PDF import.",
+    "parameters": []
+  },
+  "pdf_bake_interrupted_title": {
+    "en": "Offline tiles not finished",
+    "de": "Offline-Kacheln nicht fertig",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeInterruptedTitle",
+    "context": "Launch alert: the app quit while pre-rendering offline tiles for an imported PDF map.",
+    "parameters": []
+  },
+  "pdf_bake_interrupted_message": {
+    "en": "TacMap closed before the offline tiles were finished. Nothing was saved.",
+    "de": "TacMap wurde beendet, bevor die Offline-Kacheln fertig waren. Es wurde nichts gespeichert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeInterruptedMessage",
+    "context": "Launch alert message after an interrupted offline tile bake.",
+    "parameters": []
+  },
+  "pdf_bake_generate_button": {
+    "en": "Generate Offline Tiles…",
+    "de": "Offline-Kacheln erstellen …",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeGenerateButton",
+    "context": "Layers button: pre-render the imported PDF into offline map tiles. The PDF is kept.",
+    "parameters": []
+  },
+  "pdf_bake_caption": {
+    "en": "Pre-renders this map so it opens and zooms instantly. The PDF is kept.",
+    "de": "Rendert diese Karte vorab, damit sie sofort öffnet und zoomt. Die PDF bleibt erhalten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeCaption",
+    "context": "Caption under the Generate Offline Tiles button.",
+    "parameters": []
+  },
+  "pdf_bake_disabled_caption": {
+    "en": "Calibrate this map before generating offline tiles.",
+    "de": "Kalibriere diese Karte, bevor du Offline-Kacheln erstellst.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeDisabledCaption",
+    "context": "Caption under the disabled Generate Offline Tiles button for an uncalibrated PDF.",
+    "parameters": []
+  },
+  "pdf_bake_confirm_title": {
+    "en": "Generate offline tiles?",
+    "de": "Offline-Kacheln erstellen?",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeConfirmTitle",
+    "context": "Title of the confirmation that lists the zoom options for pre-rendering offline tiles.",
+    "parameters": []
+  },
+  "pdf_bake_option_row": {
+    "en": "Up to zoom {1} · {2} tiles · about {3}",
+    "de": "Bis Zoom {1} · {2} Kacheln · ca. {3}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeOptionRow",
+    "context": "One option in the offline tiles confirmation. {1} max zoom level, {2} tile count, {3} file size.",
+    "parameters": [
+      {
+        "name": "zoom",
+        "type": "string"
+      },
+      {
+        "name": "tiles",
+        "type": "string"
+      },
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_option_no_space": {
+    "en": " · not enough free space",
+    "de": " · nicht genug freier Speicher",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeOptionNoSpace",
+    "context": "Suffix appended to a disabled offline tiles option. Starts with a space and a middle dot.",
+    "parameters": []
+  },
+  "pdf_bake_confirm_message": {
+    "en": "“{1}” stays on this device and remains the active map. This takes about {2}.",
+    "de": "„{1}“ bleibt auf diesem Gerät und bleibt die aktive Karte. Das dauert ca. {2}.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeConfirmMessage",
+    "context": "Offline tiles confirmation message. {1} is the map's file name, {2} a duration like '3 min'.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_confirm_message_inactive": {
+    "en": "“{1}” stays on this device and the map on screen doesn't change. This takes about {2}.",
+    "de": "„{1}“ bleibt auf diesem Gerät, die angezeigte Karte ändert sich nicht. Das dauert ca. {2}.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeConfirmMessageInactive",
+    "context": "Offline tiles confirmation message when started from the Layers row menu for a map that isn't the one on screen (OD-F9). {1} is the map's file name, {2} a duration like '3 min'.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_generate": {
+    "en": "Generate",
+    "de": "Erstellen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeGenerate",
+    "context": "Confirm button that starts pre-rendering offline tiles.",
+    "parameters": []
+  },
+  "pdf_bake_estimating": {
+    "en": "Estimating size…",
+    "de": "Größe wird geschätzt…",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeEstimating",
+    "context": "Shown while TacMap works out how big the offline tiles would be.",
+    "parameters": []
+  },
+  "pdf_bake_running": {
+    "en": "Generating offline tiles — {1}/{2}",
+    "de": "Offline-Kacheln werden erstellt – {1}/{2}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeRunning",
+    "context": "Progress line while pre-rendering offline tiles. {1} done, {2} total tiles.",
+    "parameters": [
+      {
+        "name": "done",
+        "type": "string"
+      },
+      {
+        "name": "total",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_chip": {
+    "en": "Offline tiles {1}%",
+    "de": "Offline-Kacheln {1} %",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeChip",
+    "context": "Small progress chip on the map while offline tiles are generated. {1} is a whole percentage.",
+    "parameters": [
+      {
+        "name": "percent",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_done": {
+    "en": "Offline tiles ready",
+    "de": "Offline-Kacheln bereit",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeDone",
+    "context": "Short message when offline tiles have been generated for the imported map.",
+    "parameters": []
+  },
+  "pdf_bake_info": {
+    "en": "Offline tiles: zoom {1}–{2} · {3}",
+    "de": "Offline-Kacheln: Zoom {1}–{2} · {3}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeInfo",
+    "context": "Layers info line for an imported map with offline tiles. {1}-{2} zoom range, {3} file size.",
+    "parameters": [
+      {
+        "name": "minZoom",
+        "type": "string"
+      },
+      {
+        "name": "maxZoom",
+        "type": "string"
+      },
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_remove": {
+    "en": "Remove Offline Tiles",
+    "de": "Offline-Kacheln entfernen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeRemove",
+    "context": "Layers button: delete the pre-rendered offline tiles. The PDF map stays.",
+    "parameters": []
+  },
+  "pdf_bake_minutes": {
+    "en": "{1} min",
+    "de": "{1} min",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeMinutes",
+    "context": "Rough duration in whole minutes, used as {2} in the offline tiles confirmation.",
+    "parameters": [
+      {
+        "name": "minutes",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_error_title": {
+    "en": "Offline tiles",
+    "de": "Offline-Kacheln",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorTitle",
+    "context": "Title of the alert when generating offline tiles fails.",
+    "parameters": []
+  },
+  "pdf_bake_error_no_space": {
+    "en": "Not enough free space. About {1} is needed.",
+    "de": "Nicht genug freier Speicher. Benötigt werden ca. {1}.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorNoSpace",
+    "context": "Offline tiles error: not enough storage. {1} is a file size.",
+    "parameters": [
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "pdf_bake_error_write_failed": {
+    "en": "The offline tiles couldn't be saved. Nothing was changed.",
+    "de": "Die Offline-Kacheln konnten nicht gespeichert werden. Es wurde nichts geändert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorWriteFailed",
+    "context": "Offline tiles error: writing the file failed.",
+    "parameters": []
+  },
+  "pdf_bake_error_render_failed": {
+    "en": "Part of this map couldn't be drawn, so no offline tiles were saved.",
+    "de": "Ein Teil dieser Karte konnte nicht gezeichnet werden, daher wurden keine Offline-Kacheln gespeichert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorRenderFailed",
+    "context": "Offline tiles error: some tiles failed to draw.",
+    "parameters": []
+  },
+  "pdf_bake_error_source_changed": {
+    "en": "The map changed while tiles were being generated. Nothing was saved.",
+    "de": "Die Karte hat sich geändert, während die Kacheln erstellt wurden. Es wurde nichts gespeichert.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorSourceChanged",
+    "context": "Offline tiles error: the map was recalibrated or replaced during the bake.",
+    "parameters": []
+  },
+  "pdf_bake_error_too_large": {
+    "en": "This map is too large to pre-render on this device.",
+    "de": "Diese Karte ist zu groß, um sie auf diesem Gerät vorab zu rendern.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "pdfBakeErrorTooLarge",
+    "context": "Offline tiles error: the tile count would be too high.",
+    "parameters": []
+  },
+  "calibration_header_label": {
+    "en": "Calibrating",
+    "de": "Kalibrierung läuft",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationHeaderLabel",
+    "context": "Calibration screen (WP4). Amber basemap label in the header while a PDF map is being calibrated.",
+    "parameters": []
+  },
+  "calibration_not_georeferenced": {
+    "en": "NOT GEOREFERENCED",
+    "de": "NICHT GEOREFERENZIERT",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationNotGeoreferenced",
+    "context": "Calibration screen (WP4). Shown instead of the crosshair coordinate while the PDF only has a provisional placement. All caps on purpose.",
+    "parameters": []
+  },
+  "calibration_preview_tag": {
+    "en": "PREVIEW",
+    "de": "VORSCHAU",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationPreviewTag",
+    "context": "Calibration screen (WP4). Small tag next to the crosshair coordinate when the map shows an unsaved calibration fit.",
+    "parameters": []
+  },
+  "calibration_intro": {
+    "en": "Place the crosshair on a known point, then tap Add point.",
+    "de": "Lege das Fadenkreuz auf einen bekannten Punkt. Tippe auf „Punkt hinzufügen“.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationIntro",
+    "context": "Calibration screen (WP4). Status line before any point is placed. 'Add point' is the button label calibration_add_point.",
+    "parameters": []
+  },
+  "calibration_add_point": {
+    "en": "Add point",
+    "de": "Punkt hinzufügen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationAddPoint",
+    "context": "Calibration screen (WP4). Primary button: adds a calibration point at the crosshair.",
+    "parameters": []
+  },
+  "calibration_points_button": {
+    "en": "Points",
+    "de": "Passpunkte",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationPointsButton",
+    "context": "Calibration screen (WP4). Button that opens the list of calibration points.",
+    "parameters": []
+  },
+  "calibration_grid_toggle": {
+    "en": "Grid",
+    "de": "Gitter",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationGridToggle",
+    "context": "Calibration screen (WP4). Toggle that shows the MGRS grid overlay while calibrating.",
+    "parameters": []
+  },
+  "calibration_zoom_in": {
+    "en": "Zoom in",
+    "de": "Hineinzoomen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationZoomIn",
+    "context": "Calibration screen (WP4). Accessibility label of the + zoom button.",
+    "parameters": []
+  },
+  "calibration_zoom_out": {
+    "en": "Zoom out",
+    "de": "Herauszoomen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationZoomOut",
+    "context": "Calibration screen (WP4). Accessibility label of the - zoom button.",
+    "parameters": []
+  },
+  "calibration_close": {
+    "en": "Leave calibration",
+    "de": "Kalibrierung verlassen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationClose",
+    "context": "Calibration screen (WP4). Accessibility label of the close (X) button.",
+    "parameters": []
+  },
+  "calibration_need_points": {
+    "en": "{1} of 3 points placed. Spread them across the sheet.",
+    "de": "{1} von 3 Passpunkten gesetzt. Verteile sie über das ganze Blatt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationNeedPoints",
+    "context": "Calibration screen (WP4). Status with fewer than 3 points. {1} is the number placed so far (0-2).",
+    "parameters": [
+      {
+        "name": "placed",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_next_corner_top_left": {
+    "en": "Next: add a point near the top-left corner.",
+    "de": "Als Nächstes: Setze einen Passpunkt nahe der Ecke oben links.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationNextCornerTopLeft",
+    "context": "Calibration screen (WP4). Hint naming the sheet corner (as viewed) where the next point helps most.",
+    "parameters": []
+  },
+  "calibration_next_corner_top_right": {
+    "en": "Next: add a point near the top-right corner.",
+    "de": "Als Nächstes: Setze einen Passpunkt nahe der Ecke oben rechts.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationNextCornerTopRight",
+    "context": "Calibration screen (WP4). Hint naming the sheet corner (as viewed) where the next point helps most.",
+    "parameters": []
+  },
+  "calibration_next_corner_bottom_right": {
+    "en": "Next: add a point near the bottom-right corner.",
+    "de": "Als Nächstes: Setze einen Passpunkt nahe der Ecke unten rechts.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationNextCornerBottomRight",
+    "context": "Calibration screen (WP4). Hint naming the sheet corner (as viewed) where the next point helps most.",
+    "parameters": []
+  },
+  "calibration_next_corner_bottom_left": {
+    "en": "Next: add a point near the bottom-left corner.",
+    "de": "Als Nächstes: Setze einen Passpunkt nahe der Ecke unten links.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationNextCornerBottomLeft",
+    "context": "Calibration screen (WP4). Hint naming the sheet corner (as viewed) where the next point helps most.",
+    "parameters": []
+  },
+  "calibration_off_sheet": {
+    "en": "The crosshair is off the map sheet.",
+    "de": "Das Fadenkreuz liegt außerhalb des Kartenblatts.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationOffSheet",
+    "context": "Calibration screen (WP4). Status when the crosshair isn't over the PDF page; Add point is disabled.",
+    "parameters": []
+  },
+  "calibration_zoom_hint": {
+    "en": "Zoom in to place the point precisely.",
+    "de": "Zoome hinein, um den Punkt genau zu setzen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationZoomHint",
+    "context": "Calibration screen (WP4). Secondary hint when the map is zoomed out too far for precise placement. Doesn't block.",
+    "parameters": []
+  },
+  "calibration_max_points": {
+    "en": "You've placed the maximum of {1} points.",
+    "de": "Du hast die Höchstzahl von {1} Passpunkten gesetzt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationMaxPoints",
+    "context": "Calibration screen (WP4). Status when the point limit is reached. {1} is the limit (50).",
+    "parameters": [
+      {
+        "name": "max",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_exact_fit": {
+    "en": "3 points: exact fit, not checked. Add a 4th point to check accuracy.",
+    "de": "3 Passpunkte: exakte Anpassung, ungeprüft. Füge einen 4. Passpunkt hinzu, um die Genauigkeit zu prüfen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationExactFit",
+    "context": "Calibration screen (WP4). Fit status with exactly 3 points (an exact fit can't reveal mistakes).",
+    "parameters": []
+  },
+  "calibration_fit_summary": {
+    "en": "{1} · RMS {2} · {3}",
+    "de": "{1} · RMS {2} · {3}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationFitSummary",
+    "context": "Calibration screen (WP4). Fit summary. {1} is a point count like '5 points', {2} the RMS error with unit like '4 m', {3} the grade word (Good/Fair/Poor).",
+    "parameters": [
+      {
+        "name": "points",
+        "type": "string"
+      },
+      {
+        "name": "rms",
+        "type": "string"
+      },
+      {
+        "name": "grade",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_grade_good": {
+    "en": "Good",
+    "de": "Gut",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationGradeGood",
+    "context": "Calibration screen (WP4). Fit grade word inserted into the fit summary.",
+    "parameters": []
+  },
+  "calibration_grade_fair": {
+    "en": "Fair",
+    "de": "Mäßig",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationGradeFair",
+    "context": "Calibration screen (WP4). Fit grade word inserted into the fit summary.",
+    "parameters": []
+  },
+  "calibration_grade_poor": {
+    "en": "Poor",
+    "de": "Schlecht",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationGradePoor",
+    "context": "Calibration screen (WP4). Fit grade word inserted into the fit summary.",
+    "parameters": []
+  },
+  "calibration_disagree_add_fifth": {
+    "en": "Points disagree by up to {1}. Add a 5th point so TacMap can find the wrong one.",
+    "de": "Die Passpunkte weichen um bis zu {1} ab. Füge einen 5. Passpunkt hinzu, damit TacMap den falschen findet.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDisagreeAddFifth",
+    "context": "Calibration screen (WP4). Four points that don't agree. {1} is the largest residual with unit.",
+    "parameters": [
+      {
+        "name": "distance",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_outlier": {
+    "en": "Point {1} doesn't match the others ({2} off). Check its figures, move it or delete it.",
+    "de": "Passpunkt {1} passt nicht zu den anderen ({2} Abweichung). Prüfe seine Ziffern, verschiebe oder lösche ihn.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationOutlier",
+    "context": "Calibration screen (WP4). One point is clearly wrong. {1} is its number, {2} how far off it is with unit.",
+    "parameters": [
+      {
+        "name": "number",
+        "type": "string"
+      },
+      {
+        "name": "distance",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_ambiguous": {
+    "en": "Point {1} or {2} is wrong. Add another point to find out which.",
+    "de": "Passpunkt {1} oder {2} ist falsch. Füge einen weiteren hinzu, um herauszufinden, welcher.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationAmbiguous",
+    "context": "Calibration screen (WP4). One of two points is wrong but the geometry can't tell which. {1} and {2} are point numbers.",
+    "parameters": [
+      {
+        "name": "first",
+        "type": "string"
+      },
+      {
+        "name": "second",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_disagree": {
+    "en": "Points disagree by up to {1}. Check the points with the largest error.",
+    "de": "Die Passpunkte weichen um bis zu {1} ab. Prüfe die Passpunkte mit der größten Abweichung.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDisagree",
+    "context": "Calibration screen (WP4). Several points disagree. {1} is the largest residual with unit.",
+    "parameters": [
+      {
+        "name": "distance",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_degenerate": {
+    "en": "The points are almost in a line or too close together. Add one well away from the others.",
+    "de": "Die Passpunkte liegen fast auf einer Linie oder zu dicht beieinander. Setze einen weit abseits der anderen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDegenerate",
+    "context": "Calibration screen (WP4). Finish blocked: the points can't define the map's position.",
+    "parameters": []
+  },
+  "calibration_spread_low": {
+    "en": "The points cover only a small part of the sheet.",
+    "de": "Die Passpunkte decken nur einen kleinen Teil des Blatts ab.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationSpreadLow",
+    "context": "Calibration screen (WP4). Warning that the points are bunched up on the sheet.",
+    "parameters": []
+  },
+  "calibration_implausible": {
+    "en": "These points can't all be right: the map would be stretched or scaled impossibly. Check each point's zone and square letters.",
+    "de": "Diese Passpunkte können nicht alle stimmen: Die Karte wäre unmöglich verzerrt oder skaliert. Prüfe bei jedem Passpunkt Zone und Quadratbuchstaben.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationImplausible",
+    "context": "Calibration screen (WP4). Finish blocked: the fit implies an impossible stretch or scale, usually a typo in a grid zone or 100 km square.",
+    "parameters": []
+  },
+  "calibration_invalid": {
+    "en": "These points put part of the sheet off the Earth. Check each coordinate, especially the grid zone.",
+    "de": "Mit diesen Passpunkten läge ein Teil des Blatts außerhalb der Erde. Prüfe jede Koordinate, besonders die Gitterzone.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationInvalid",
+    "context": "Calibration screen (WP4). Finish blocked: the fit maps part of the sheet off the Earth.",
+    "parameters": []
+  },
+  "calibration_draft_unsaved": {
+    "en": "Points not saved on this device yet. Unlock mission data to save them.",
+    "de": "Passpunkte noch nicht auf diesem Gerät gespeichert. Entsperre die Einsatzdaten, um sie zu speichern.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDraftUnsaved",
+    "context": "Calibration screen (WP4). Chip shown when the encrypted draft couldn't be written (data key locked).",
+    "parameters": []
+  },
+  "calibration_entry_title": {
+    "en": "Point {1}",
+    "de": "Passpunkt {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationEntryTitle",
+    "context": "Calibration screen (WP4). Title of the coordinate entry card. {1} is the point number.",
+    "parameters": [
+      {
+        "name": "number",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_entry_placeholder": {
+    "en": "MGRS, UTM or lat/long",
+    "de": "MGRS, UTM oder Breite/Länge",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationEntryPlaceholder",
+    "context": "Calibration screen (WP4). Placeholder of the coordinate entry field.",
+    "parameters": []
+  },
+  "calibration_kind_intersection": {
+    "en": "Grid intersection",
+    "de": "Gitterkreuz",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationKindIntersection",
+    "context": "Calibration screen (WP4). Segment: the point is on a grid line crossing (uses the square's corner).",
+    "parameters": []
+  },
+  "calibration_kind_feature": {
+    "en": "Feature",
+    "de": "Geländepunkt",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationKindFeature",
+    "context": "Calibration screen (WP4). Segment: the point is a feature inside the square (uses the square's centre).",
+    "parameters": []
+  },
+  "calibration_reads_as": {
+    "en": "Reads as {1}",
+    "de": "Gelesen als {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationReadsAs",
+    "context": "Calibration screen (WP4). Interpretation of the typed coordinate. {1} is the normalised coordinate text (not translated).",
+    "parameters": [
+      {
+        "name": "text",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_cell_intersection": {
+    "en": "corner of the {1} square",
+    "de": "Ecke des {1}-Quadrats",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationCellIntersection",
+    "context": "Calibration screen (WP4). Lower-case phrase after the interpretation. {1} is the grid square size with unit, e.g. '100 m'.",
+    "parameters": [
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_cell_feature": {
+    "en": "centre of the {1} square (±{2})",
+    "de": "Mitte des {1}-Quadrats (±{2})",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationCellFeature",
+    "context": "Calibration screen (WP4). Lower-case phrase after the interpretation. {1} square size, {2} half of it, both with unit.",
+    "parameters": [
+      {
+        "name": "size",
+        "type": "string"
+      },
+      {
+        "name": "half",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_completed_from": {
+    "en": "Zone and square from point {1}",
+    "de": "Zone und Quadrat aus Passpunkt {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationCompletedFrom",
+    "context": "Calibration screen (WP4). Short MGRS entry was completed from an earlier point. {1} is that point's number.",
+    "parameters": [
+      {
+        "name": "number",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_completed_from_map": {
+    "en": "Zone and square from the map",
+    "de": "Zone und Quadrat aus der Karte",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationCompletedFromMap",
+    "context": "Calibration screen (WP4). Short MGRS entry was completed from where the map currently is.",
+    "parameters": []
+  },
+  "calibration_err_unrecognised": {
+    "en": "Not a recognised MGRS, UTM or lat/long coordinate.",
+    "de": "Keine erkannte MGRS-, UTM- oder Breiten-/Längenangabe.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrUnrecognised",
+    "context": "Calibration screen (WP4). Entry error.",
+    "parameters": []
+  },
+  "calibration_err_too_coarse": {
+    "en": "Too coarse. Use at least 4 figures at a grid intersection (e.g. LH 34 52), or 6 for a feature.",
+    "de": "Zu ungenau. Gib an einem Gitterkreuz mindestens 4 Ziffern ein (z. B. LH 34 52), bei einem Geländepunkt mindestens 6.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrTooCoarse",
+    "context": "Calibration screen (WP4). Entry error.",
+    "parameters": []
+  },
+  "calibration_err_odd_digits": {
+    "en": "Enter the same number of easting and northing figures.",
+    "de": "Gib gleich viele Ziffern für Rechts- und Hochwert ein.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrOddDigits",
+    "context": "Calibration screen (WP4). Entry error.",
+    "parameters": []
+  },
+  "calibration_err_needs_full": {
+    "en": "For the first point, enter the full reference with zone and square, e.g. 56H LH 349 522.",
+    "de": "Gib für den ersten Passpunkt die vollständige Koordinate mit Zone und Quadrat ein, z. B. 56H LH 349 522.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrNeedsFull",
+    "context": "Calibration screen (WP4). Entry error.",
+    "parameters": []
+  },
+  "calibration_err_square": {
+    "en": "{1} isn't a valid 100 km square in zone {2}.",
+    "de": "{1} ist in Zone {2} kein gültiges 100-km-Quadrat.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrSquare",
+    "context": "Calibration screen (WP4). Entry error. {1} is the two square letters, {2} the zone number.",
+    "parameters": [
+      {
+        "name": "square",
+        "type": "string"
+      },
+      {
+        "name": "zone",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_err_band": {
+    "en": "The northing isn't in latitude band {1}. Check the band letter.",
+    "de": "Der Hochwert liegt nicht im Breitenband {1}. Prüfe den Bandbuchstaben.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrBand",
+    "context": "Calibration screen (WP4). Entry error. {1} is the latitude band letter.",
+    "parameters": [
+      {
+        "name": "band",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_err_polar": {
+    "en": "Polar (UPS) references aren't supported. Enter latitude/longitude.",
+    "de": "Polare (UPS-)Koordinaten werden nicht unterstützt. Gib Breite/Länge ein.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrPolar",
+    "context": "Calibration screen (WP4). Entry error.",
+    "parameters": []
+  },
+  "calibration_err_range": {
+    "en": "Latitude must be within ±90° and longitude within ±180°, with minutes and seconds under 60.",
+    "de": "Die Breite muss zwischen −90° und 90° und die Länge zwischen −180° und 180° liegen, Minuten und Sekunden unter 60.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrRange",
+    "context": "Calibration screen (WP4). Entry error.",
+    "parameters": []
+  },
+  "calibration_err_old_lettering": {
+    "en": "Sheets on {1} use the older MGRS lettering, which TacMap can't read yet. Enter UTM or latitude/longitude instead.",
+    "de": "Blätter im Datum {1} verwenden die ältere MGRS-Beschriftung, die TacMap noch nicht lesen kann. Gib stattdessen UTM oder Breite/Länge ein.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationErrOldLettering",
+    "context": "Calibration screen (WP4). Entry error. {1} is the datum name, e.g. NAD27.",
+    "parameters": [
+      {
+        "name": "datum",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_warn_far": {
+    "en": "This is {1} from where the map currently puts the crosshair. Check the figures.",
+    "de": "Das ist {1} von der Stelle entfernt, an der die Karte das Fadenkreuz derzeit verortet. Prüfe die Ziffern.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationWarnFar",
+    "context": "Calibration screen (WP4). Warning before saving a point that is far from where the current fit predicts. {1} is the distance with unit.",
+    "parameters": [
+      {
+        "name": "distance",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_save": {
+    "en": "Save point",
+    "de": "Punkt speichern",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationSave",
+    "context": "Calibration screen (WP4). Entry card button that saves the point.",
+    "parameters": []
+  },
+  "calibration_save_anyway": {
+    "en": "Save anyway",
+    "de": "Trotzdem speichern",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationSaveAnyway",
+    "context": "Calibration screen (WP4). Entry card button shown instead of Save point after the far warning.",
+    "parameters": []
+  },
+  "calibration_use_gps": {
+    "en": "Use my position (±{1})",
+    "de": "Meine Position verwenden (±{1})",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationUseGps",
+    "context": "Calibration screen (WP4). Button that fills in the GPS position. {1} is its accuracy with unit.",
+    "parameters": [
+      {
+        "name": "accuracy",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_gps_too_coarse": {
+    "en": "GPS accuracy is ±{1}. Wait for ±20 m or better.",
+    "de": "Die GPS-Genauigkeit beträgt ±{1}. Warte auf ±20 m oder besser.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationGpsTooCoarse",
+    "context": "Calibration screen (WP4). Shown while GPS accuracy is worse than 20 m. {1} is the accuracy with unit.",
+    "parameters": [
+      {
+        "name": "accuracy",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_move_to_crosshair": {
+    "en": "Move to crosshair",
+    "de": "Zum Fadenkreuz verschieben",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationMoveToCrosshair",
+    "context": "Calibration screen (WP4). Entry card button: re-place the pending point at the current crosshair.",
+    "parameters": []
+  },
+  "calibration_hide_keyboard": {
+    "en": "Hide keyboard",
+    "de": "Tastatur ausblenden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationHideKeyboard",
+    "context": "Calibration screen (WP4). Entry card button.",
+    "parameters": []
+  },
+  "calibration_label_placeholder": {
+    "en": "Label (optional)",
+    "de": "Bezeichnung (optional)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationLabelPlaceholder",
+    "context": "Calibration screen (WP4). Placeholder of the optional point label field.",
+    "parameters": []
+  },
+  "calibration_points_title": {
+    "en": "Calibration points",
+    "de": "Passpunkte",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationPointsTitle",
+    "context": "Calibration screen (WP4). Title of the points list sheet.",
+    "parameters": []
+  },
+  "calibration_row_residual": {
+    "en": "{1} off",
+    "de": "{1} Abweichung",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationRowResidual",
+    "context": "Calibration screen (WP4). Residual of one point in the list. {1} is a distance with unit.",
+    "parameters": [
+      {
+        "name": "distance",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_action_move": {
+    "en": "Move",
+    "de": "Verschieben",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationActionMove",
+    "context": "Calibration screen (WP4). Selected point action.",
+    "parameters": []
+  },
+  "calibration_action_edit": {
+    "en": "Edit coordinate",
+    "de": "Koordinate bearbeiten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationActionEdit",
+    "context": "Calibration screen (WP4). Selected point action.",
+    "parameters": []
+  },
+  "calibration_action_done": {
+    "en": "Done",
+    "de": "Fertig",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationActionDone",
+    "context": "Calibration screen (WP4). Selected point action: deselect.",
+    "parameters": []
+  },
+  "calibration_moving": {
+    "en": "Move point {1}: put the crosshair on the right spot, then tap Set here.",
+    "de": "Passpunkt {1} verschieben: Bringe das Fadenkreuz auf die richtige Stelle und tippe auf „Hier setzen“.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationMoving",
+    "context": "Calibration screen (WP4). Status while moving a point. {1} is its number; 'Set here' is calibration_set_here.",
+    "parameters": [
+      {
+        "name": "number",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_set_here": {
+    "en": "Set here",
+    "de": "Hier setzen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationSetHere",
+    "context": "Calibration screen (WP4). Button that moves the selected point to the crosshair.",
+    "parameters": []
+  },
+  "calibration_point_deleted": {
+    "en": "Point {1} deleted.",
+    "de": "Passpunkt {1} gelöscht.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationPointDeleted",
+    "context": "Calibration screen (WP4). Toast after deleting a point (undo is available). {1} is the point number.",
+    "parameters": [
+      {
+        "name": "number",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_datum_title": {
+    "en": "Datum printed on the map",
+    "de": "Kartendatum (auf der Karte angegeben)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDatumTitle",
+    "context": "Calibration screen (WP4). Title of the datum picker.",
+    "parameters": []
+  },
+  "calibration_datum_help": {
+    "en": "Choose the horizontal datum shown in the sheet's margin or legend. The wrong datum can shift the map by 200 m or more.",
+    "de": "Wähle das Lagedatum aus dem Kartenrand oder der Legende. Ein falsches Datum kann die Karte um 200 m oder mehr verschieben.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDatumHelp",
+    "context": "Calibration screen (WP4). Help text of the datum picker.",
+    "parameters": []
+  },
+  "calibration_datum_unsure": {
+    "en": "Not sure (use WGS84)",
+    "de": "Nicht sicher (WGS84 verwenden)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDatumUnsure",
+    "context": "Calibration screen (WP4). Last row of the datum picker.",
+    "parameters": []
+  },
+  "calibration_datum_national_grid_note": {
+    "en": "National grids such as the British National Grid can't be typed. Enter latitude/longitude instead.",
+    "de": "Landeskoordinatensysteme wie das britische National Grid können nicht eingegeben werden. Gib stattdessen Breite/Länge ein.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDatumNationalGridNote",
+    "context": "Calibration screen (WP4). Footnote of the datum picker.",
+    "parameters": []
+  },
+  "calibration_datum_changed": {
+    "en": "Datum changed to {1}. All points were re-read.",
+    "de": "Datum auf {1} geändert. Alle Passpunkte wurden neu gelesen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDatumChanged",
+    "context": "Calibration screen (WP4). Toast after changing the datum. {1} is the datum name.",
+    "parameters": [
+      {
+        "name": "datum",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_finish_confirm_title": {
+    "en": "Finish with warnings?",
+    "de": "Mit Warnungen abschließen?",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationFinishConfirmTitle",
+    "context": "Calibration screen (WP4). Title of the finish confirmation.",
+    "parameters": []
+  },
+  "calibration_finish_confirm_exact": {
+    "en": "With only 3 points a typing mistake can't be detected.",
+    "de": "Mit nur 3 Passpunkten lässt sich ein Tippfehler nicht erkennen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationFinishConfirmExact",
+    "context": "Calibration screen (WP4). Finish confirmation reason.",
+    "parameters": []
+  },
+  "calibration_finish_confirm_poor": {
+    "en": "The fit is poor (RMS {1}). Positions read from this map may be wrong.",
+    "de": "Die Anpassung ist schlecht (RMS {1}). Von dieser Karte abgelesene Positionen können falsch sein.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationFinishConfirmPoor",
+    "context": "Calibration screen (WP4). Finish confirmation reason. {1} is the RMS error with unit.",
+    "parameters": [
+      {
+        "name": "rms",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_finish_confirm_spread": {
+    "en": "The points cover only a small part of the sheet, so its edges may be off.",
+    "de": "Die Passpunkte decken nur einen kleinen Teil des Blatts ab, daher können die Ränder abweichen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationFinishConfirmSpread",
+    "context": "Calibration screen (WP4). Finish confirmation reason.",
+    "parameters": []
+  },
+  "calibration_finish_anyway": {
+    "en": "Finish anyway",
+    "de": "Trotzdem abschließen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationFinishAnyway",
+    "context": "Calibration screen (WP4). Finish confirmation button.",
+    "parameters": []
+  },
+  "calibration_add_more": {
+    "en": "Add more points",
+    "de": "Weitere Passpunkte setzen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationAddMore",
+    "context": "Calibration screen (WP4). Finish confirmation cancel button (default).",
+    "parameters": []
+  },
+  "calibration_save_failed": {
+    "en": "The calibration couldn't be saved securely. Your points are kept. Check storage, then tap Retry.",
+    "de": "Die Kalibrierung konnte nicht sicher gespeichert werden. Deine Passpunkte bleiben erhalten. Prüfe den Speicherplatz und tippe dann auf „Erneut versuchen“.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationSaveFailed",
+    "context": "Calibration screen (WP4). Alert when the finished calibration couldn't be written.",
+    "parameters": []
+  },
+  "calibration_done_exact": {
+    "en": "Map calibrated with 3 points (unchecked).",
+    "de": "Karte mit 3 Passpunkten kalibriert (ungeprüft).",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationDoneExact",
+    "context": "Calibration screen (WP4). Toast after finishing with exactly 3 points.",
+    "parameters": []
+  },
+  "calibration_leave_title": {
+    "en": "Leave calibration?",
+    "de": "Kalibrierung verlassen?",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationLeaveTitle",
+    "context": "Calibration screen (WP4). Title of the leave dialog.",
+    "parameters": []
+  },
+  "calibration_leave_message": {
+    "en": "You can keep your points on this device and finish later.",
+    "de": "Du kannst deine Passpunkte auf diesem Gerät behalten und später abschließen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationLeaveMessage",
+    "context": "Calibration screen (WP4). Message of the leave dialog.",
+    "parameters": []
+  },
+  "calibration_leave_keep": {
+    "en": "Keep points for later",
+    "de": "Passpunkte für später behalten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationLeaveKeep",
+    "context": "Calibration screen (WP4). Leave dialog button.",
+    "parameters": []
+  },
+  "calibration_leave_discard": {
+    "en": "Discard changes",
+    "de": "Änderungen verwerfen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationLeaveDiscard",
+    "context": "Calibration screen (WP4). Leave dialog button (destructive).",
+    "parameters": []
+  },
+  "calibration_leave_continue": {
+    "en": "Continue calibrating",
+    "de": "Weiter kalibrieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationLeaveContinue",
+    "context": "Calibration screen (WP4). Leave dialog cancel button.",
+    "parameters": []
+  },
+  "calibration_resume_title": {
+    "en": "Resume calibration?",
+    "de": "Kalibrierung fortsetzen?",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationResumeTitle",
+    "context": "Calibration screen (WP4). Title of the resume prompt.",
+    "parameters": []
+  },
+  "calibration_resume_message": {
+    "en": "An unfinished calibration of this map has {1}, last changed {2}.",
+    "de": "Eine unvollständige Kalibrierung dieser Karte hat {1}, zuletzt geändert {2}.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationResumeMessage",
+    "context": "Calibration screen (WP4). Resume prompt. {1} is a point count like '4 points', {2} a relative time like '3 days ago'.",
+    "parameters": [
+      {
+        "name": "points",
+        "type": "string"
+      },
+      {
+        "name": "age",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_resume": {
+    "en": "Resume",
+    "de": "Fortsetzen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationResume",
+    "context": "Calibration screen (WP4). Resume prompt button.",
+    "parameters": []
+  },
+  "calibration_start_over": {
+    "en": "Start over",
+    "de": "Neu beginnen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationStartOver",
+    "context": "Calibration screen (WP4). Resume prompt button: discards the unfinished points.",
+    "parameters": []
+  },
+  "calibration_resumed": {
+    "en": "Calibration resumed ({1}).",
+    "de": "Kalibrierung fortgesetzt ({1}).",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationResumed",
+    "context": "Calibration screen (WP4). Toast at launch when an unfinished calibration reopens. {1} is a point count like '4 points'.",
+    "parameters": [
+      {
+        "name": "points",
+        "type": "string"
+      }
+    ]
+  },
+  "calibration_paused": {
+    "en": "Calibration paused because the map changed. Your points are kept.",
+    "de": "Kalibrierung pausiert, weil die Karte gewechselt wurde. Deine Passpunkte bleiben erhalten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "calibrationPaused",
+    "context": "Calibration screen (WP4). Toast when calibration stops because another map became active.",
+    "parameters": []
+  },
+  "map_library_section": {
+    "en": "Imported maps",
+    "de": "Importierte Karten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapLibrarySection",
+    "context": "Imported-maps library (WP5). Layers section title.",
+    "parameters": []
+  },
+  "map_library_footer": {
+    "en": "{1} · {2} on this device. Imported maps stay on this device until you delete them and aren't included in backups.",
+    "de": "{1} · {2} auf diesem Gerät. Importierte Karten bleiben auf diesem Gerät, bis du sie löschst, und sind nicht in Backups enthalten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapLibraryFooter",
+    "context": "Imported-maps library (WP5). Section footer. {1} is a map count like '3 maps', {2} a storage size like '120 MB'.",
+    "parameters": [
+      {
+        "name": "maps",
+        "type": "string"
+      },
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "map_library_empty": {
+    "en": "No imported maps. Use Import to add a PDF, GeoPDF or MBTiles map.",
+    "de": "Keine importierten Karten. Füge über „Importieren“ eine PDF-, GeoPDF- oder MBTiles-Karte hinzu.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapLibraryEmpty",
+    "context": "Imported-maps library (WP5). Shown when the library has no maps.",
+    "parameters": []
+  },
+  "map_library_locked": {
+    "en": "Unlock mission data to see and change imported maps.",
+    "de": "Entsperre die Einsatzdaten, um importierte Karten zu sehen und zu ändern.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapLibraryLocked",
+    "context": "Imported-maps library (WP5). Shown when the encrypted library is locked.",
+    "parameters": []
+  },
+  "map_library_corrupt_message": {
+    "en": "The saved map library couldn't be read. A recovery copy was kept and no map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.",
+    "de": "Die gespeicherte Kartenbibliothek konnte nicht gelesen werden. Eine Wiederherstellungskopie blieb erhalten und keine Kartendatei wurde gelöscht. Tippe auf „Erneut versuchen“, um die Liste aus den Karten auf diesem Gerät neu aufzubauen. Namen und Kalibrierungen lassen sich nicht wiederherstellen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapLibraryCorruptMessage",
+    "deferred": true,
+    "context": "Library (WP4 r1, S2). Alert when the imported-map library can't be decrypted or decoded. Retry rebuilds the list from the map files still on the device; nothing is deleted.",
+    "parameters": []
+  },
+  "map_recovered_name": {
+    "en": "Recovered map {1}",
+    "de": "Wiederhergestellte Karte {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapRecoveredName",
+    "context": "Library (WP4 r1, S2). Name given to a map file re-adopted after the library couldn't be read, because its original name is lost. {1} is a running number.",
+    "parameters": [
+      {
+        "name": "number",
+        "type": "string"
+      }
+    ]
+  },
+  "map_state_geopdf": {
+    "en": "GeoPDF",
+    "de": "GeoPDF",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateGeopdf",
+    "context": "Imported-maps library (WP5). Row subtitle: map georeferenced by its own GeoPDF data.",
+    "parameters": []
+  },
+  "map_state_calibrated": {
+    "en": "Calibrated · {1} · RMS {2}",
+    "de": "Kalibriert · {1} · RMS {2}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateCalibrated",
+    "context": "Imported-maps library (WP5). Row subtitle. {1} is a point count like '5 points', {2} the RMS error with unit.",
+    "parameters": [
+      {
+        "name": "points",
+        "type": "string"
+      },
+      {
+        "name": "rms",
+        "type": "string"
+      }
+    ]
+  },
+  "map_state_calibrated_exact": {
+    "en": "Calibrated · {1} (unchecked)",
+    "de": "Kalibriert · {1} (ungeprüft)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateCalibratedExact",
+    "context": "Imported-maps library (WP5). Row subtitle for a 3-point calibration. {1} is a point count.",
+    "parameters": [
+      {
+        "name": "points",
+        "type": "string"
+      }
+    ]
+  },
+  "map_state_needs_calibration": {
+    "en": "Not georeferenced – tap to calibrate",
+    "de": "Nicht georeferenziert – zum Kalibrieren tippen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateNeedsCalibration",
+    "context": "Imported-maps library (WP5). Row subtitle for a plain PDF.",
+    "parameters": []
+  },
+  "map_state_rejected": {
+    "en": "Georeferencing unreadable – tap to calibrate",
+    "de": "Georeferenzierung nicht lesbar – zum Kalibrieren tippen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateRejected",
+    "context": "Imported-maps library (WP5). Row subtitle when the PDF's own georeferencing couldn't be used.",
+    "parameters": []
+  },
+  "map_state_draft": {
+    "en": "Calibration in progress · {1}",
+    "de": "Kalibrierung läuft · {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateDraft",
+    "context": "Imported-maps library (WP5). Row subtitle when an unfinished calibration exists. {1} is a point count.",
+    "parameters": [
+      {
+        "name": "points",
+        "type": "string"
+      }
+    ]
+  },
+  "map_state_offline_tiles": {
+    "en": "Offline tiles",
+    "de": "Offline-Kacheln",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateOfflineTiles",
+    "context": "Imported-maps library (WP5). Row subtitle for an MBTiles map.",
+    "parameters": []
+  },
+  "map_state_derived": {
+    "en": "Offline tiles from “{1}”",
+    "de": "Offline-Kacheln aus „{1}“",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateDerived",
+    "context": "Imported-maps library (WP5). Row subtitle for tiles generated from a PDF. {1} is that PDF's name.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "map_state_unavailable": {
+    "en": "File missing or changed – delete it and import again",
+    "de": "Datei fehlt oder wurde geändert – lösche sie und importiere sie erneut",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateUnavailable",
+    "context": "Imported-maps library (WP5). Row subtitle when the map file is gone or was modified.",
+    "parameters": []
+  },
+  "map_action_calibrate": {
+    "en": "Calibrate / refine…",
+    "de": "Kalibrieren / verfeinern …",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapActionCalibrate",
+    "context": "Imported-maps library (WP5). Row menu action.",
+    "parameters": []
+  },
+  "map_action_choose_page": {
+    "en": "Choose page…",
+    "de": "Seite wählen …",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapActionChoosePage",
+    "context": "Imported-maps library (WP5). Row menu action for multi-page PDFs.",
+    "parameters": []
+  },
+  "map_action_use_embedded": {
+    "en": "Use the PDF's own georeferencing",
+    "de": "Georeferenzierung des PDFs verwenden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapActionUseEmbedded",
+    "context": "Imported-maps library (WP5). Row menu action: drop the manual calibration.",
+    "parameters": []
+  },
+  "map_action_delete": {
+    "en": "Delete…",
+    "de": "Löschen …",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapActionDelete",
+    "context": "Imported-maps library (WP5). Row menu action.",
+    "parameters": []
+  },
+  "map_delete_title": {
+    "en": "Delete “{1}”?",
+    "de": "„{1}“ löschen?",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapDeleteTitle",
+    "context": "Imported-maps library (WP5). Delete confirmation title. {1} is the map name.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "map_delete_message": {
+    "en": "Removes the map file, its calibration and any offline tiles made from it from this device. Mission objects aren't affected. This can't be undone.",
+    "de": "Entfernt die Kartendatei, ihre Kalibrierung und daraus erstellte Offline-Kacheln von diesem Gerät. Einsatzobjekte bleiben erhalten. Das kann nicht rückgängig gemacht werden.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapDeleteMessage",
+    "context": "Imported-maps library (WP5). Delete confirmation message.",
+    "parameters": []
+  },
+  "map_delete_failed": {
+    "en": "The map couldn't be deleted: {1}",
+    "de": "Die Karte konnte nicht gelöscht werden: {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapDeleteFailed",
+    "context": "Imported-maps library (WP5). Error. {1} is a system error description.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
+  },
+  "map_change_page_confirm": {
+    "en": "Changing the page removes this map's calibration.",
+    "de": "Beim Seitenwechsel wird die Kalibrierung dieser Karte entfernt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapChangePageConfirm",
+    "context": "Imported-maps library (WP5). Confirmation before switching a calibrated PDF to another page.",
+    "parameters": []
+  },
+  "map_use_embedded_confirm": {
+    "en": "Remove your calibration and use the georeferencing stored in the PDF?",
+    "de": "Deine Kalibrierung entfernen und die im PDF gespeicherte Georeferenzierung verwenden?",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapUseEmbeddedConfirm",
+    "context": "Imported-maps library (WP5). Confirmation before dropping a manual calibration.",
+    "parameters": []
+  },
+  "map_migration_uncalibrated": {
+    "en": "“{1}” was never georeferenced, so it's no longer shown as a basemap. Calibrate it from Layers.",
+    "de": "„{1}“ war nie georeferenziert und wird daher nicht mehr als Grundkarte angezeigt. Kalibriere sie über „Ebenen“.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapMigrationUncalibrated",
+    "context": "Imported-maps library (WP5). One-time notice after the library upgrade. {1} is the map name.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_copying": {
+    "en": "Importing map… {1}",
+    "de": "Karte wird importiert … {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportCopying",
+    "context": "PDF/MBTiles import (WP5). Progress. {1} is a percentage like '42 %'.",
+    "parameters": [
+      {
+        "name": "percent",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_reading": {
+    "en": "Reading map… page {1} of {2}",
+    "de": "Karte wird gelesen … Seite {1} von {2}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportReading",
+    "context": "PDF/MBTiles import (WP5). Progress. {1} current page, {2} page count.",
+    "parameters": [
+      {
+        "name": "page",
+        "type": "string"
+      },
+      {
+        "name": "pages",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_saving": {
+    "en": "Saving map…",
+    "de": "Karte wird gespeichert …",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportSaving",
+    "context": "PDF/MBTiles import (WP5). Progress.",
+    "parameters": []
+  },
+  "map_import_cancelled": {
+    "en": "Import cancelled.",
+    "de": "Import abgebrochen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportCancelled",
+    "context": "PDF/MBTiles import (WP5). Toast.",
+    "parameters": []
+  },
+  "map_import_duplicate": {
+    "en": "Already in your maps as “{1}”. Opened it.",
+    "de": "Bereits als „{1}“ in deinen Karten. Sie wurde geöffnet.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportDuplicate",
+    "context": "PDF/MBTiles import (WP5). Toast when the same file was imported before. {1} is the existing map's name.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_page_used": {
+    "en": "Using page {1} of {2}, which has the map's georeferencing.",
+    "de": "Seite {1} von {2} wird verwendet, da sie die Georeferenzierung enthält.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportPageUsed",
+    "context": "PDF/MBTiles import (WP5). Toast. {1} page number, {2} page count.",
+    "parameters": [
+      {
+        "name": "page",
+        "type": "string"
+      },
+      {
+        "name": "pages",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_georef_rejected": {
+    "en": "This PDF has georeferencing TacMap can't use ({1}). You can calibrate it with known points.",
+    "de": "Dieses PDF enthält eine Georeferenzierung, die TacMap nicht verwenden kann ({1}). Du kannst es mit bekannten Punkten kalibrieren.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportGeorefRejected",
+    "context": "PDF/MBTiles import (WP5). Alert. {1} is a short lower-case reason clause.",
+    "parameters": [
+      {
+        "name": "reason",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_calibrate_now": {
+    "en": "Calibrate now",
+    "de": "Jetzt kalibrieren",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportCalibrateNow",
+    "context": "PDF/MBTiles import (WP5). Alert button.",
+    "parameters": []
+  },
+  "map_import_later": {
+    "en": "Later",
+    "de": "Später",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportLater",
+    "context": "PDF/MBTiles import (WP5). Alert button.",
+    "parameters": []
+  },
+  "map_import_choose_page_title": {
+    "en": "Choose the map page",
+    "de": "Kartenseite wählen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportChoosePageTitle",
+    "context": "PDF/MBTiles import (WP5). Page picker title.",
+    "parameters": []
+  },
+  "map_import_choose_page_message": {
+    "en": "This PDF has {1} pages and none has usable georeferencing. Choose the page with the map.",
+    "de": "Dieses PDF hat {1} Seiten, keine davon mit verwendbarer Georeferenzierung. Wähle die Seite mit der Karte.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportChoosePageMessage",
+    "context": "PDF/MBTiles import (WP5). Page picker message. {1} is the page count.",
+    "parameters": [
+      {
+        "name": "pages",
+        "type": "string"
+      }
+    ]
+  },
+  "map_choose_page_message": {
+    "en": "This PDF has {1} pages. Choose the page with the map.",
+    "de": "Dieses PDF hat {1} Seiten. Wähle die Seite mit der Karte.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapChoosePageMessage",
+    "context": "Layers > Imported maps > Choose page… (WP4 r1, E14). Page picker message for an existing map. {1} is the page count.",
+    "parameters": [
+      {
+        "name": "pages",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_page_label": {
+    "en": "Page {1}",
+    "de": "Seite {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportPageLabel",
+    "context": "PDF/MBTiles import (WP5). Page picker cell label. {1} is the page number.",
+    "parameters": [
+      {
+        "name": "page",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_page_badge_rejected": {
+    "en": "Unreadable map data",
+    "de": "Kartendaten nicht lesbar",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportPageBadgeRejected",
+    "context": "PDF/MBTiles import (WP5). Page picker badge on a page whose georeferencing couldn't be used.",
+    "parameters": []
+  },
+  "map_import_too_large": {
+    "en": "This file is larger than the {1} import limit.",
+    "de": "Diese Datei überschreitet die Importgrenze von {1}.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportTooLarge",
+    "context": "PDF/MBTiles import (WP5). Error. {1} is a size like '512 MB'.",
+    "parameters": [
+      {
+        "name": "limit",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_no_space": {
+    "en": "Not enough free storage to import this map ({1} needed).",
+    "de": "Nicht genug freier Speicher für diese Karte ({1} benötigt).",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportNoSpace",
+    "context": "PDF/MBTiles import (WP5). Error. {1} is a size like '600 MB'.",
+    "parameters": [
+      {
+        "name": "size",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_password": {
+    "en": "This PDF is password-protected. Remove the password, then import it again.",
+    "de": "Dieses PDF ist passwortgeschützt. Entferne das Passwort und importiere es erneut.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportPassword",
+    "context": "PDF/MBTiles import (WP5). Error.",
+    "parameters": []
+  },
+  "map_import_too_many_pages": {
+    "en": "This PDF has more than {1} pages. Import a single sheet instead.",
+    "de": "Dieses PDF hat mehr als {1} Seiten. Importiere stattdessen ein einzelnes Blatt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportTooManyPages",
+    "context": "PDF/MBTiles import (WP5). Error. {1} is the page limit.",
+    "parameters": [
+      {
+        "name": "limit",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_page_size": {
+    "en": "This PDF's page size is outside what TacMap can display.",
+    "de": "Die Seitengröße dieses PDFs liegt außerhalb dessen, was TacMap darstellen kann.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportPageSize",
+    "context": "PDF/MBTiles import (WP5). Error.",
+    "parameters": []
+  },
+  "map_import_too_complex": {
+    "en": "This PDF is too complex to read safely on this device.",
+    "de": "Dieses PDF ist zu komplex, um es auf diesem Gerät sicher zu lesen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportTooComplex",
+    "context": "PDF/MBTiles import (WP5). Error.",
+    "parameters": []
+  },
+  "map_import_invalid_pdf": {
+    "en": "This file isn't a readable PDF.",
+    "de": "Diese Datei ist kein lesbares PDF.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportInvalidPdf",
+    "context": "PDF/MBTiles import (WP5). Error.",
+    "parameters": []
+  },
+  "map_import_invalid_mbtiles": {
+    "en": "This file isn't a readable MBTiles map.",
+    "de": "Diese Datei ist keine lesbare MBTiles-Karte.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportInvalidMbtiles",
+    "context": "PDF/MBTiles import (WP5). Error.",
+    "parameters": []
+  },
+  "map_import_library_full": {
+    "en": "You have {1} imported maps. Delete one to import another.",
+    "de": "Du hast {1} importierte Karten. Lösche eine, um eine weitere zu importieren.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportLibraryFull",
+    "context": "PDF/MBTiles import (WP5). Error. {1} is the library limit (100).",
+    "parameters": [
+      {
+        "name": "limit",
+        "type": "string"
+      }
+    ]
+  },
+  "map_import_unlock_first": {
+    "en": "Unlock mission data before importing a map.",
+    "de": "Entsperre die Einsatzdaten, bevor du eine Karte importierst.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportUnlockFirst",
+    "context": "PDF/MBTiles import (WP5). Error.",
+    "parameters": []
+  },
+  "map_import_interrupted": {
+    "en": "The last map import didn't finish and was removed.",
+    "de": "Der letzte Kartenimport wurde nicht abgeschlossen und entfernt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportInterrupted",
+    "context": "PDF/MBTiles import (WP5). One-time notice at launch.",
+    "parameters": []
+  },
+  "map_import_read_failed": {
+    "en": "The map couldn't be imported: {1}",
+    "de": "Die Karte konnte nicht importiert werden: {1}",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapImportReadFailed",
+    "context": "PDF/MBTiles import (WP5). Error. {1} is a system error description.",
+    "parameters": [
+      {
+        "name": "detail",
+        "type": "string"
+      }
+    ]
   }
 }

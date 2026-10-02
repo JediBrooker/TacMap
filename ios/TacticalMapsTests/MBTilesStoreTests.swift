@@ -272,8 +272,11 @@ final class MBTilesStoreTests: XCTestCase {
         let secondDest = try ImportedMapFileCopier.copy(second, into: docs)
 
         XCTAssertNotEqual(firstDest, secondDest)
-        XCTAssertEqual(firstDest.lastPathComponent, "training.mbtiles")
-        XCTAssertEqual(secondDest.lastPathComponent, "training-1.mbtiles")
+        // D5-14: opaque names, the sheet name never reaches the file system
+        XCTAssertTrue(firstDest.lastPathComponent.hasPrefix("map-"))
+        XCTAssertTrue(secondDest.lastPathComponent.hasPrefix("map-"))
+        XCTAssertFalse(firstDest.lastPathComponent.contains("training"))
+        XCTAssertEqual(firstDest.pathExtension, "mbtiles")
         XCTAssertEqual(try Data(contentsOf: firstDest), Data("first".utf8))
         XCTAssertEqual(try Data(contentsOf: secondDest), Data("second".utf8))
     }
@@ -293,7 +296,8 @@ final class MBTilesStoreTests: XCTestCase {
             preferredExtension: "mbtiles"
         )
 
-        XCTAssertEqual(copied.lastPathComponent, "operational-map.mbtiles")
+        XCTAssertEqual(copied.pathExtension, "mbtiles")
+        XCTAssertFalse(copied.lastPathComponent.contains("operational"), "opaque name (D5-14)")
         XCTAssertEqual(try Data(contentsOf: copied), Data("map bytes".utf8))
     }
 
@@ -371,17 +375,29 @@ final class MBTilesStoreTests: XCTestCase {
         let source = try makeSampleMBTiles()
         defer { try? FileManager.default.removeItem(at: source) }
 
-        let payload = try await ImportedMapWorker.prepareMBTiles(url: source)
-        defer { try? FileManager.default.removeItem(at: payload.destination) }
+        // WP5 pipeline: copy + hash + validate off main into a temp App Support
+        let original = ImportedMapStorage.applicationSupportProvider
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("mbtiles-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        ImportedMapStorage.applicationSupportProvider = { root }
+        defer {
+            ImportedMapStorage.applicationSupportProvider = original
+            try? FileManager.default.removeItem(at: root)
+        }
+        let payload = try await MapImportPipeline.prepareMBTiles(url: source, entryCount: 0, libraryLoaded: true,
+                                                                 isCancelled: { false }, progress: { _ in })
         XCTAssertTrue(payload.performedWorkOffMainThread)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: payload.destination.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: payload.copy.url.path))
+        XCTAssertTrue(payload.copy.url.lastPathComponent.hasPrefix("map-"), "opaque name")
+        XCTAssertEqual(payload.copy.contentKey, PDFSessionStore.contentKey(for: payload.copy.url))
         XCTAssertEqual(payload.metadata.name, "Sample")
         XCTAssertEqual(payload.metadata.format, "png")
         XCTAssertEqual(payload.metadata.minZoom, 0)
         XCTAssertEqual(payload.metadata.maxZoom, 1)
+        XCTAssertEqual(payload.entry()?.kind, .mbtiles)
 
         let sourceMap = OfflineTileMapSource(
-            prevalidatedURL: payload.destination,
+            prevalidatedURL: payload.copy.url,
             metadata: payload.metadata
         )
         XCTAssertEqual(sourceMap.displayName, "Sample")

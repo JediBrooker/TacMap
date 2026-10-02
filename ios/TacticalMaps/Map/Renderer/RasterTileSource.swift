@@ -28,9 +28,56 @@ protocol RasterTileSource: AnyObject {
     var maxZoom: Int { get }
     /// Native tile pixel size (256 for XYZ / OpenTopoMap, 512 for Esri static).
     var tilePixelSize: Int { get }
-    /// Load a tile. `completion` is called on the main thread with the image or
-    /// nil (miss / cancelled / error). Returns a token the loader can cancel.
+    /// Load a tile. completion is called on the main thread, always async,
+    /// with the image, RasterTileSourceEmpty.image for "nothing here", or
+    /// nil (miss / cancelled / error, asked again later). Returns a token the
+    /// loader can cancel.
     func loadTile(_ tile: TileIndex, completion: @escaping (UIImage?) -> Void) -> RasterTileRequest?
+    /// false = known empty, the view treats it as loaded and never asks
+    func hasContent(_ tile: TileIndex) -> Bool
+    /// level whose ancestors get requested ahead of missing tiles so the
+    /// fallback always has something cheap to show. nil = none
+    func fallbackZoom(forTileZoom tz: Int) -> Int?
+    /// what the view wants right now, best first, plus where the viewport
+    /// centre is (z0 world units / 256, so 0..1). sources that queue work
+    /// reprioritise off this. Never called while the source is hidden or
+    /// underzoomed (contract E3), cancellation still happens then
+    func wantedTilesDidChange(_ ordered: [TileIndex], tileZoom: Int, centreUnit: CGPoint)
+}
+
+extension RasterTileSource {
+    func hasContent(_ tile: TileIndex) -> Bool { true }
+    func fallbackZoom(forTileZoom tz: Int) -> Int? { nil }
+    func wantedTilesDidChange(_ ordered: [TileIndex], tileZoom: Int, centreUnit: CGPoint) {}
+}
+
+/// "Loaded, nothing to draw". Compared by identity, never drawn.
+enum RasterTileSourceEmpty {
+    static let image: UIImage = {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).image { _ in }
+    }()
+}
+
+/// Decode now, off main, so the first frame that shows a tile doesnt pay
+/// for PNG/JPEG inflate on the main thread (D3-11)
+func decodedTileImage(_ data: Data) -> UIImage? {
+    guard let img = UIImage(data: data) else { return nil }
+    if let ready = img.preparingForDisplay() { return ready }
+    // B7: preparingForDisplay said no (seen with some JPEG 2000 tiles). handing
+    // back img would decode at the CA commit, on main. draw it ourselves here
+    guard let cg = img.cgImage,
+          let ctx = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: 0,
+                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                              bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+    ctx.setBlendMode(.copy)
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+    guard let drawn = ctx.makeImage() else { return nil }
+    NSLog("[RasterTile] preparingForDisplay failed, decoded through a bitmap context")
+    return UIImage(cgImage: drawn, scale: img.scale, orientation: img.imageOrientation)
 }
 
 /// Cancellable handle for an in-flight tile load.
@@ -82,7 +129,10 @@ final class OnlineRasterTileSource: RasterTileSource {
     }
 
     func loadTile(_ tile: TileIndex, completion: @escaping (UIImage?) -> Void) -> RasterTileRequest? {
-        guard let url = url(for: tile) else { completion(nil); return nil }
+        guard let url = url(for: tile) else {
+            DispatchQueue.main.async { completion(nil) }
+            return nil
+        }
         var request = URLRequest(url: url)
         request.cachePolicy = .useProtocolCachePolicy
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
@@ -125,7 +175,7 @@ final class OnlineRasterTileSource: RasterTileSource {
                 let (data, response) = try await boundedData(for: request, maximumBytes: 4 * 1024 * 1024)
                 guard data.count <= 4 * 1024 * 1024,
                       let http = response as? HTTPURLResponse else { return nil }
-                if (200...299).contains(http.statusCode), let image = UIImage(data: data) {
+                if (200...299).contains(http.statusCode), let image = decodedTileImage(data) {
                     await OnlineTileHealth.shared.succeeded()
                     return image
                 }
@@ -183,7 +233,13 @@ final class OfflineRasterTileSource: RasterTileSource {
         let req = Request()
         queue.async {
             if req.cancelled { DispatchQueue.main.async { completion(nil) }; return }
-            let image = self.store.tileData(z: tile.z, x: tile.x, y: tile.y).flatMap { UIImage(data: $0) }
+            let image: UIImage?
+            if let data = self.store.tileData(z: tile.z, x: tile.x, y: tile.y) {
+                image = decodedTileImage(data)
+            } else {
+                // no row: say so once instead of getting asked every frame
+                image = RasterTileSourceEmpty.image
+            }
             DispatchQueue.main.async { completion(req.cancelled ? nil : image) }
         }
         return req

@@ -7,36 +7,59 @@ import XCTest
 @testable import TacticalMaps
 
 final class PDFImportSmokeTests: XCTestCase {
-    func testRasterSizingDoesNotUpscaleSmallPagesAndBoundsHugeAllocations() throws {
-        XCTAssertEqual(
-            boundedPDFRasterSize(width: 612, height: 792),
-            PDFRasterSize(width: 612, height: 792)
-        )
-        let huge = try XCTUnwrap(boundedPDFRasterSize(width: 12_000, height: 6_000))
-        XCTAssertLessThanOrEqual(huge.width, 4096)
-        XCTAssertLessThanOrEqual(huge.height, 4096)
-        XCTAssertLessThanOrEqual(huge.byteCount, 32 * 1024 * 1024)
-        XCTAssertEqual(Double(huge.width) / Double(huge.height), 2, accuracy: 0.002)
-        XCTAssertNil(boundedPDFRasterSize(width: .infinity, height: 100))
+    // WP5: imports go through MapImportPipeline (copy + hash + inspect once, off
+    // main) into a temp Application Support so nothing lands in the real library
+
+    private var supportRoot: URL!
+    private var originalSupport: (() -> URL)!
+
+    override func setUp() {
+        super.setUp()
+        originalSupport = ImportedMapStorage.applicationSupportProvider
+        supportRoot = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-smoke-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: supportRoot, withIntermediateDirectories: true)
+        let root = supportRoot!
+        ImportedMapStorage.applicationSupportProvider = { root }
     }
 
-    func testGeneratedPDFImportsAndRendersAsMapSource() throws {
+    override func tearDown() {
+        ImportedMapStorage.applicationSupportProvider = originalSupport
+        try? FileManager.default.removeItem(at: supportRoot)
+        super.tearDown()
+    }
+
+    private func prepare(_ url: URL) async throws -> PreparedPDFImport {
+        try await MapImportPipeline.preparePDF(url: url, entryCount: 0, libraryLoaded: true,
+                                               isCancelled: { false }, progress: { _ in })
+    }
+
+    private func importedFiles() -> [String] {
+        let dir = supportRoot.appendingPathComponent("ImportedMaps")
+        return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".") }
+    }
+
+    func testGeneratedPDFImportsAndRendersAsMapSource() async throws {
         let fixture = FileManager.default.temporaryDirectory
             .appendingPathComponent("tacmap-pdf-smoke-\(UUID().uuidString).pdf")
         try makePDF(at: fixture)
         defer { try? FileManager.default.removeItem(at: fixture) }
 
-        let imported = try PDFMapImporter.copyAndValidate(fixture)
-        defer { try? FileManager.default.removeItem(at: imported) }
+        let prepared = try await prepare(fixture)
+        let entry = try XCTUnwrap(prepared.entry(pageIndex: 0))
+        XCTAssertEqual(ImportedMapStates.state(entry, file: .ok), .needsCalibration,
+                       "no georef means needsCalibration, never a trusted basemap")
+        XCTAssertEqual(entry.displayName, fixture.deletingPathExtension().lastPathComponent)
+        XCTAssertTrue(entry.fileName.hasPrefix("ImportedMaps/map-"), "opaque name: \(entry.fileName)")
 
         let camera = CLLocationCoordinate2D(latitude: -35.2809, longitude: 149.1300)
-        guard case .source(let source)? = PDFMapImporter.placement(for: imported, cameraCentre: camera) else {
-            return XCTFail("a plain PDF still gets a (provisional) placement for calibration")
-        }
-        XCTAssertTrue(source.isUncalibrated, "no georef means uncalibrated, never a trusted basemap")
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: source.url.path))
-        XCTAssertEqual(source.displayName, imported.deletingPathExtension().lastPathComponent)
+        let pb = try XCTUnwrap(entry.pdf?.pageBox)
+        let g = try XCTUnwrap(PdfGeoreference.provisional(
+            pageBox: CGRect(x: pb[0].x, y: pb[0].y, width: pb[1].x - pb[0].x, height: pb[2].y - pb[0].y),
+            rotation: 0, centredOn: camera))
+        let source = PDFMapSource(url: prepared.copy.url, georef: g, contentKey: entry.contentKey,
+                                  entryID: entry.id, displayName: entry.displayName)
+        XCTAssertTrue(source.isUncalibrated)
+        XCTAssertEqual(source.displayName, entry.displayName)
         XCTAssertNotNil(source.bounds)
         XCTAssertNotNil(source.coverage)
 
@@ -52,36 +75,42 @@ final class PDFImportSmokeTests: XCTestCase {
         XCTAssertEqual(frame.center.latitude, camera.latitude, accuracy: 0.001)
         XCTAssertEqual(frame.center.longitude, camera.longitude, accuracy: 0.001)
 
-        let image = try XCTUnwrap(source.renderedImage())
-        XCTAssertGreaterThan(image.size.width, 0)
-        XCTAssertGreaterThan(image.size.height, 0)
-        let raster = try XCTUnwrap(image.cgImage)
-        XCTAssertEqual(raster.width, 200, "small pages must not be device-scale upsampled")
-        XCTAssertEqual(raster.height, 300, "small pages must not be device-scale upsampled")
+        // drawn by the tile renderer now: base raster of the whole page,
+        // capped at 4x for a small page and inside the 6 Mpx budget
+        let raster = try renderPDFBaseRaster(source)
+        XCTAssertEqual(raster.levels[0].width, 800)
+        XCTAssertEqual(raster.levels[0].height, 1200)
+        XCTAssertLessThanOrEqual(raster.levels[0].width * raster.levels[0].height, PDFTileConstants.baseBudgetPx)
+        ImportedMapStorage.unlink(prepared.copy.url)
+        InFlightImportFiles.unregister(prepared.copy.url)
     }
 
-    func testInvalidPDFIsRejectedAndRemoved() throws {
+    func testInvalidPDFIsRejectedAndRemoved() async throws {
         let fixture = FileManager.default.temporaryDirectory
             .appendingPathComponent("tacmap-invalid-pdf-\(UUID().uuidString).pdf")
         try Data("not a pdf".utf8).write(to: fixture)
         defer { try? FileManager.default.removeItem(at: fixture) }
 
-        XCTAssertThrowsError(try PDFMapImporter.copyAndValidate(fixture)) { error in
-            XCTAssertEqual(error as? PDFMapImportError, .invalidPDF)
+        do {
+            _ = try await prepare(fixture)
+            XCTFail("junk must not import")
+        } catch {
+            XCTAssertEqual(error as? MapImportError, .invalidPdf)
         }
+        XCTAssertEqual(importedFiles(), [], "the copy (and its partial) is gone")
     }
 
-    func testValidPDFWithUntrustedSourceExtensionUsesManagedPDFExtension() throws {
+    func testValidPDFWithUntrustedSourceExtensionUsesManagedPDFExtension() async throws {
         let fixture = FileManager.default.temporaryDirectory
             .appendingPathComponent("tacmap-pdf-disguised-\(UUID().uuidString).payload")
         try makePDF(at: fixture)
         defer { try? FileManager.default.removeItem(at: fixture) }
 
-        let imported = try PDFMapImporter.copyAndValidate(fixture)
-        defer { try? FileManager.default.removeItem(at: imported) }
-
-        XCTAssertEqual(imported.pathExtension.lowercased(), "pdf")
-        XCTAssertNotNil(PDFDocument(url: imported))
+        let prepared = try await prepare(fixture)
+        defer { ImportedMapStorage.unlink(prepared.copy.url) }
+        XCTAssertEqual(prepared.copy.url.pathExtension.lowercased(), "pdf")
+        XCTAssertTrue(prepared.copy.url.lastPathComponent.hasPrefix("map-"))
+        XCTAssertNotNil(PDFDocument(url: prepared.copy.url))
     }
 
     func testProvisionalPlacementSanitisesInvalidPolarAndAntimeridianCameras() throws {
@@ -124,35 +153,44 @@ final class PDFImportSmokeTests: XCTestCase {
         XCTAssertEqual((up.latitude - centre.latitude) * metresPerDegLat, 1763.9, accuracy: 0.5)
     }
 
-    func testPasswordProtectedPDFIsRejectedBeforeMapSourceCreation() throws {
+    /// contract s9.5: a password protected PDF says so (map_import_password),
+    /// it used to come back as a generic invalid PDF
+    func testPasswordProtectedPDFIsRejectedBeforeMapSourceCreation() async throws {
         let fixture = FileManager.default.temporaryDirectory
             .appendingPathComponent("tacmap-protected-pdf-\(UUID().uuidString).pdf")
         try makePasswordProtectedPDF(at: fixture)
         defer { try? FileManager.default.removeItem(at: fixture) }
 
-        XCTAssertThrowsError(try PDFMapImporter.copyAndValidate(fixture)) { error in
-            XCTAssertEqual(error as? PDFMapImportError, .invalidPDF)
+        do {
+            _ = try await prepare(fixture)
+            XCTFail("a locked PDF must not import")
+        } catch {
+            XCTAssertEqual(error as? MapImportError, .password)
         }
+        XCTAssertEqual(importedFiles(), [])
     }
 
-    func testRightAnglePageRotationsImportAndRenderOnIOS() throws {
+    func testRightAnglePageRotationsImportAndRenderOnIOS() async throws {
         for rotation in [90, 180, 270] {
             let fixture = FileManager.default.temporaryDirectory
                 .appendingPathComponent("tacmap-rotated-\(rotation)-\(UUID().uuidString).pdf")
             try makeRawPDF(at: fixture, pageExtras: "/Rotate \(rotation)")
             defer { try? FileManager.default.removeItem(at: fixture) }
-            let imported = try PDFMapImporter.copyAndValidate(fixture)
-            defer { try? FileManager.default.removeItem(at: imported) }
-            guard case .source(let source)? = PDFMapImporter.placement(
-                for: imported,
-                cameraCentre: CLLocationCoordinate2D(latitude: -34, longitude: 150)
-            ) else { return XCTFail("rotated plain page should still import") }
+            let prepared = try await prepare(fixture)
+            defer { ImportedMapStorage.unlink(prepared.copy.url) }
+            let entry = try XCTUnwrap(prepared.entry(pageIndex: 0))
+            // /Rotate is recorded and accepted, not rejected (s9.5)
+            XCTAssertEqual(entry.pdf?.rotate, rotation)
+            let pb = try XCTUnwrap(entry.pdf?.pageBox)
+            let g = try XCTUnwrap(PdfGeoreference.provisional(
+                pageBox: CGRect(x: pb[0].x, y: pb[0].y, width: pb[1].x - pb[0].x, height: pb[2].y - pb[0].y),
+                rotation: rotation, centredOn: CLLocationCoordinate2D(latitude: -34, longitude: 150)))
+            let source = PDFMapSource(url: prepared.copy.url, georef: g)
 
-            let raster = try XCTUnwrap(source.renderedImage()?.cgImage)
+            let raster = try renderPDFBaseRaster(source).levels[0]
             XCTAssertGreaterThan(raster.width, 0)
             XCTAssertGreaterThan(raster.height, 0)
-            XCTAssertLessThanOrEqual(Int64(raster.width) * Int64(raster.height) * 4,
-                                     32 * 1024 * 1024)
+            XCTAssertLessThanOrEqual(raster.width * raster.height, PDFTileConstants.baseBudgetPx)
         }
     }
 
@@ -162,12 +200,15 @@ final class PDFImportSmokeTests: XCTestCase {
         try makePDF(at: fixture)
         defer { try? FileManager.default.removeItem(at: fixture) }
 
-        let payload = try await ImportedMapWorker.preparePDF(url: fixture)
-        defer { try? FileManager.default.removeItem(at: payload.destination) }
-        XCTAssertTrue(payload.performedWorkOffMainThread)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: payload.destination.path))
-        XCTAssertEqual(payload.mediaBox.width, 200, accuracy: 0.01)
-        XCTAssertEqual(payload.mediaBox.height, 300, accuracy: 0.01)
+        let prepared = try await prepare(fixture)
+        defer { ImportedMapStorage.unlink(prepared.copy.url) }
+        XCTAssertTrue(prepared.performedWorkOffMainThread)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: prepared.copy.url.path))
+        let media = try XCTUnwrap(prepared.inspection.page(0)?.geometry.mediaBox)
+        XCTAssertEqual(media.width, 200, accuracy: 0.01)
+        XCTAssertEqual(media.height, 300, accuracy: 0.01)
+        // the hash came out of the copy loop, same as a separate read would give
+        XCTAssertEqual(prepared.copy.contentKey, PDFSessionStore.contentKey(for: prepared.copy.url))
     }
 
     func testGeneratedAdobeViewportUsesLargestGeospatialMapBody() throws {

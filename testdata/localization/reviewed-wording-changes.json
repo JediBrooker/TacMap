@@ -14,13 +14,6 @@
     "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
   },
   {
-    "id": "ui_this_deletes_the_app_private_pdf_or_mbtiles_copy_ca0a874e",
-    "locale": "de",
-    "before": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Missionsobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
-    "after": "Die app-interne PDF- oder MBTiles-Kopie wird gelöscht und aus der Kartenbibliothek entfernt. Einsatzobjekte bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
-    "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
-  },
-  {
     "id": "ui_mission_drawings_are_locked_unlock_mission_data__7e1857f0",
     "locale": "de",
     "before": "Missionszeichnungen sind gesperrt. Entsperre die Missionsdaten und versuche es erneut.",

@@ -54,6 +54,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.sp
 import com.tacmap.export.MissionObjectExport
 import com.tacmap.models.TrackRecordingPhase
@@ -64,6 +65,8 @@ import com.tacmap.models.TrackRecordingPhase
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportExportSheet(
+    /** false while a map import runs (D5-09): PDF + Offline Tiles go grey, nothing gets silently cancelled */
+    importsEnabled: Boolean = true,
     onImportSymbolPack: () -> Unit,
     onImportPdf: () -> Unit,
     onImportTiles: () -> Unit,
@@ -87,8 +90,8 @@ fun ImportExportSheet(
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
             )
             SectionLabel(L10n.text("IMPORT"))
-            SheetRow(Icons.Default.PictureAsPdf, L10n.text("PDF Map"), onImportPdf)
-            SheetRow(Icons.Default.Map, L10n.text("Offline Tiles"), onImportTiles)
+            SheetRow(Icons.Default.PictureAsPdf, L10n.text("PDF Map"), onImportPdf, enabled = importsEnabled)
+            SheetRow(Icons.Default.Map, L10n.text("Offline Tiles"), onImportTiles, enabled = importsEnabled)
             SheetRow(Icons.Default.FileDownload, "GeoJSON", onImportGeoJson)
             SheetRow(Icons.Default.FileDownload, "KML / KMZ", onImportKml)
             SheetRow(Icons.Default.FileDownload, Messages.symbolsImportSymbolPack(), onImportSymbolPack)
@@ -123,11 +126,12 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean = true) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .alpha(if (enabled) 1f else 0.38f)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)

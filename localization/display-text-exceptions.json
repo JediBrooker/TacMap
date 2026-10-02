@@ -128,14 +128,6 @@
     "reason": "Internal persistence or encryption associated-data label, not display text; changing it can break data compatibility."
   },
   {
-    "id": "32ca0e33edd5347f",
-    "path": "ios/TacticalMaps/Calibration/CalibrationInputSheet.swift",
-    "sink": "TextField",
-    "literal": "\"56HLH 12345 67890\"",
-    "occurrences": 1,
-    "reason": "Valid example MGRS coordinate; retain canonical ASCII coordinate syntax."
-  },
-  {
     "id": "afc419e49c07fdeb",
     "path": "ios/TacticalMaps/Calibration/Datum.swift",
     "sink": "property.displayName",
@@ -328,22 +320,6 @@
     "reason": "North indicator is N in both shipped languages; review for each additional language."
   },
   {
-    "id": "36dfb2aa11b719f0",
-    "path": "android/app/src/main/java/com/tacmap/map/MapScreenChrome.kt",
-    "sink": "Text",
-    "literal": "\"MGRS\"",
-    "occurrences": 1,
-    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
-  },
-  {
-    "id": "fdaa39ec63748179",
-    "path": "android/app/src/main/java/com/tacmap/map/MapScreenChrome.kt",
-    "sink": "Text",
-    "literal": "\"56HLH 12345 67890\"",
-    "occurrences": 1,
-    "reason": "Valid example MGRS coordinate; retain canonical ASCII coordinate syntax."
-  },
-  {
     "id": "f4199838a4c9ce38",
     "path": "android/app/src/main/java/com/tacmap/map/SearchDialog.kt",
     "sink": "SearchResult.title",
@@ -430,5 +406,69 @@
     "literal": "\"com.tacmap.mgrs-grid\"",
     "occurrences": 1,
     "reason": "Dispatch queue label for the off-main MGRS grid build; never shown to users."
+  },
+  {
+    "id": "b6a36b9366a33d45",
+    "path": "ios/TacticalMaps/App/MapImportController.swift",
+    "sink": "DispatchQueue.label",
+    "literal": "\"com.tacmap.page-thumbnails\"",
+    "occurrences": 1,
+    "reason": "Dispatch queue identifier for the page picker thumbnail worker; never displayed."
+  },
+  {
+    "id": "90ea3cf8dad65c9a",
+    "path": "ios/TacticalMaps/Calibration/CalibrationDraftStore.swift",
+    "sink": "property.label",
+    "literal": "\"calibration/drafts_v1\"",
+    "occurrences": 1,
+    "reason": "Sealed-envelope storage label (authenticated data binding for the draft file); a storage key, not display text."
+  },
+  {
+    "id": "252e45ec2b70a585",
+    "path": "ios/TacticalMaps/Calibration/CalibrationFitReport.swift",
+    "sink": "property.message",
+    "literal": "\"calibration_warn_far\"",
+    "occurrences": 1,
+    "reason": "Stable catalogue message ID pinned by calibration_fit_report.json; resolved through Messages at display time."
+  },
+  {
+    "id": "8fe7d9111514166d",
+    "path": "ios/TacticalMaps/Calibration/CalibrationFitReport.swift",
+    "sink": "property.message",
+    "literal": "\"distance\"",
+    "occurrences": 1,
+    "reason": "Named message parameter of calibration_warn_far, matching the catalogue and fixture; not display text."
+  },
+  {
+    "id": "e8b011bcec58d575",
+    "path": "ios/TacticalMaps/Calibration/CalibrationPanel.swift",
+    "sink": "Text",
+    "literal": "\"WGS84\"",
+    "occurrences": 1,
+    "reason": "Datum identifier fallback passed to CalibrationDatumChoice.displayName; WGS84 is the standard datum name in every language."
+  },
+  {
+    "id": "119af7267d2801ec",
+    "path": "ios/TacticalMaps/Calibration/ImportLimits.swift",
+    "sink": "Alert.message",
+    "literal": "\"map_import_georef_rejected\"",
+    "occurrences": 1,
+    "reason": "Stable catalogue message ID pinned by import_limits.json decisions; resolved through Messages at display time."
+  },
+  {
+    "id": "05f3391651bf7aa9",
+    "path": "ios/TacticalMaps/Calibration/ImportLimits.swift",
+    "sink": "Alert.message",
+    "literal": "\"reason\"",
+    "occurrences": 1,
+    "reason": "Named message parameter of map_import_georef_rejected, matching the catalogue and fixture; not display text."
+  },
+  {
+    "id": "3583d7aa5ecdab76",
+    "path": "ios/TacticalMaps/Calibration/ImportedMapLibrary.swift",
+    "sink": "property.label",
+    "literal": "\"map_library/v1\"",
+    "occurrences": 1,
+    "reason": "Sealed-envelope storage label (authenticated data binding for the imported-map library file); a storage key, not display text."
   }
 ]

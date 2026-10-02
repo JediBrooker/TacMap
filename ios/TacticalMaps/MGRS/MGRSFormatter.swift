@@ -216,13 +216,17 @@ enum MGRSFormatter {
               let column = parts.prefix.dropFirst(parts.prefix.distance(from: parts.prefix.startIndex,
                                                                           to: zoneEnd) + 1).first
         else { return false }
-        let columns: String
-        switch zone % 3 {
-        case 1: columns = "ABCDEFGH"
-        case 2: columns = "JKLMNPQR"
-        default: columns = "STUVWXYZ"
+        return columnLetters(forZone: zone).contains(column) && MGRS.isMGRS(compact)
+    }
+
+    /// 100 km column letters a zone can use, repeating every 3 zones. The
+    /// calibration entry parser checks squares against this same table.
+    static func columnLetters(forZone zone: Int) -> String {
+        switch ((zone % 3) + 3) % 3 {
+        case 1: return "ABCDEFGH"
+        case 2: return "JKLMNPQR"
+        default: return "STUVWXYZ"
         }
-        return columns.contains(column) && MGRS.isMGRS(compact)
     }
 
     private static func isASCIIDigits(_ value: String) -> Bool {

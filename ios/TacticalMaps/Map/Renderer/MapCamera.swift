@@ -15,6 +15,10 @@ import CoreGraphics
 /// redraws. `screenPoint(for:)` and `coordinate(for:)` are exact inverses for
 /// any heading, which is the property the whole overlay stack depends on.
 struct MapCamera: Equatable {
+    /// Every source, every gesture, every programmatic move. Overzoom past a
+    /// source's maxZoom is fine, the tile view scales its last level up.
+    static let zoomLimits: ClosedRange<Double> = PDFTileConstants.cameraZoomMin...PDFTileConstants.cameraZoomMax
+
     var center: CLLocationCoordinate2D
     var zoom: Double
     var headingDegrees: Double

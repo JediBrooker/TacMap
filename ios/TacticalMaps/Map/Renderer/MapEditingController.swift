@@ -54,7 +54,7 @@ struct DrawingGesturePreview {
 /// The drawing / editing gesture layer for the MapKit-free renderer. Attaches
 /// tap + long-press + pan recognisers to a `TileMapView` and reproduces what the
 /// MKMapView coordinator's gestures did: tap to select / add a draw or measure
-/// vertex / insert a midpoint / place a calibration fiduciary / dismiss; long-press
+/// vertex / insert a midpoint / select a calibration point / dismiss; long-press
 /// to drag a whole shape or waypoint (or delete a vertex); pan to drag a vertex
 /// handle. All coordinate work goes through `view.camera`, and waypoint hit-tests
 /// read the same published screen positions the SwiftUI symbol overlay uses.
@@ -70,10 +70,8 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
     weak var handlesView: VertexHandlesOverlayView?
     weak var presenceView: PresenceOverlayView?
 
-    /// Screen tap -> PDF user point, for placing calibration fiduciaries.
-    var pdfScreenTapToPDFPoint: ((CGPoint) -> CGPoint?)?
-    /// Push fiduciary markers into the PDF overlay after a calibration tap.
-    var refreshCalibrationMarkers: (() -> Void)?
+    /// Calibration marker under a tap (24 pt radius), for selecting a point.
+    var calibrationMarkerHitTest: ((CGPoint) -> UUID?)?
     /// Renders a transient whole-drawing candidate without publishing it from
     /// the store. Passing nil restores the latest durable renderer snapshot.
     var showDrawingPreview: ((DrawingShape?) -> Void)?
@@ -141,12 +139,10 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
         guard let view else { return }
         let pt = tap.location(in: view)
 
-        // Calibration mode wins - user is placing fiduciaries on the PDF.
+        // Calibration wins: a tap only ever selects a point marker (or clears the
+        // selection). Points are placed with the crosshair + Add point, never by tap.
         if calibration?.isCalibrating == true {
-            if let pdfPoint = pdfScreenTapToPDFPoint?(pt) {
-                calibration?.recordTap(pdfPoint: pdfPoint, screenPoint: pt)
-                refreshCalibrationMarkers?()
-            }
+            calibration?.select(calibrationMarkerHitTest?(pt))
             return
         }
 

@@ -14,9 +14,9 @@ import org.junit.Test
 import kotlin.math.sqrt
 
 /**
- * The bridge from the new georef to the existing display code until the plan s2
- * tile renderer lands: the best-fit lon/lat affine for the live overlay, the
- * tiler's per-strip warps, and the provisional placement for plain PDFs.
+ * The bridge from the new georef to the display code: the best-fit lon/lat affine,
+ * the tile warp cells the WP2 renderer draws with, and the provisional placement
+ * for plain PDFs.
  */
 class PdfPlacementTest {
     private val sheets = PdfGeorefFixture.root.arr("sheets").map { it.jsonObject }.associateBy { it.str("id") }
@@ -87,52 +87,41 @@ class PdfPlacementTest {
     }
 
     @Test
-    fun tilerStripsPutEveryTileSampleOnItsPagePoint() {
+    fun tileWarpCellsPutEveryTileSampleOnItsPagePoint() {
+        // WP2 replaced the old strip tiler; the warp planner's cells have to land the WP1
+        // tileWarp samples on their pixels, tighter than the strips ever did
         val section = PdfGeorefFixture.root.obj("tileWarp")
         for (t in section.arr("tiles").map { it.jsonObject }) {
             val id = t.str("georef")
             val sheet = sheets.getValue(id)
             val media = PdfGeorefFixture.doubles(sheet["mediaBox"]!!)
             val g = georef(id)
-            val geometry = PdfPageGeometry(PdfBox.of(media)!!, null, 0, media[2].toInt(), media[3].toInt())
+            val box = PdfBox.of(media)!!
+            val footprint = com.tacmap.map.render.pdf.PdfFootprint.build(g, box)
             val z = t["z"]!!.jsonPrimitive.int
             val x = t["x"]!!.jsonPrimitive.int
             val y = t["y"]!!.jsonPrimitive.int
-            val strips = PdfTiler.buildStrips(g, geometry, z, x, y)
-            val box = geometry.visibleBox
+            val tileSize = (t["tileSize"] ?: section["tileSize"])?.jsonPrimitive?.int ?: 256
+            val plan = com.tacmap.map.render.pdf.PdfTileWarp.plan(
+                com.tacmap.map.render.pdf.TileJob.single(z, x, y), tileSize, footprint, g,
+            )
             for (s in t.arr("samples").map { it.jsonObject }) {
                 val px = PdfGeorefFixture.doubles(s["px"]!!)
                 val page = PdfGeorefFixture.point(s["page"]!!)
-                // tiles hanging off the sheet edge (the crop vertex anchors) only owe us on-page samples
                 if (page.x !in box.llx..box.urx || page.y !in box.lly..box.ury) continue
-                // the strip that owns this row maps the sample's page point back onto its pixel
-                val strip = strips.firstOrNull { px[1] >= it.destTop && px[1] <= it.destBottom }
-                assertNotNull("$id z$z px $px has a strip", strip)
-                strip!!
-                val m = strip.rawToDest
-                val u = m[0] * page.x + m[1] * page.y + m[2]
-                val v = m[3] * page.x + m[4] * page.y + m[5]
+                val cell = plan.leaves.firstOrNull {
+                    px[0] >= it.left && px[0] <= it.right && px[1] >= it.top && px[1] <= it.bottom
+                } ?: continue
+                val u = cell.pageToPx.mapX(page.x, page.y)
+                val v = cell.pageToPx.mapY(page.x, page.y)
                 assertEquals("$id z$z px $px", px[0], u, 0.25)
                 assertEquals("$id z$z px $px", px[1], v, 0.25)
             }
         }
         // a tile on the far side of the planet has nothing to draw
         val g = georef("sf_iso")
-        val geometry = PdfPageGeometry(PdfBox(0.0, 0.0, 824.3149606, 1051.0866142), null, 0, 824, 1051)
-        assertTrue(PdfTiler.buildStrips(g, geometry, 15, 100, 100).isEmpty())
-    }
-
-    @Test
-    fun stripAffinePinsItsThreeCorners() {
-        val q0 = PagePoint(100.0, 900.0)
-        val q1 = PagePoint(160.0, 905.0)
-        val q2 = PagePoint(95.0, 850.0)
-        val m = requireNotNull(PdfTiler.pageToStripPixels(q0, q1, q2, 64, 128))
-        fun at(p: PagePoint) = (m[0] * p.x + m[1] * p.y + m[2]) to (m[3] * p.x + m[4] * p.y + m[5])
-        assertEquals(0.0, at(q0).first, 1e-9); assertEquals(64.0, at(q0).second, 1e-9)
-        assertEquals(256.0, at(q1).first, 1e-9); assertEquals(64.0, at(q1).second, 1e-9)
-        assertEquals(0.0, at(q2).first, 1e-9); assertEquals(128.0, at(q2).second, 1e-9)
-        assertNull(PdfTiler.pageToStripPixels(q0, q0, q2, 0, 10))
+        val fp = com.tacmap.map.render.pdf.PdfFootprint.build(g, PdfBox(0.0, 0.0, 824.3149606, 1051.0866142))
+        assertTrue(com.tacmap.map.render.pdf.PdfTileWarp.plan(com.tacmap.map.render.pdf.TileJob.single(15, 100, 100), 256, fp, g).cells.isEmpty())
     }
 
     @Test

@@ -38,16 +38,16 @@ enum FiduciaryReference: Hashable {
         return mgrs(upper.replacingOccurrences(of: " ", with: ""), ellipsoid: ellipsoid)
     }
 
-    /// Every Unicode White_Space char (NBSP, thin space, tabs, U+3000 ...) plus
-    /// the U+001C-001F separators Kotlin counts -> a plain space, then trimmed.
-    /// Copy-pasted coords off web pages and PDFs are full of NBSP. ICU and Java
-    /// can't agree what \s is, so the patterns below only ever see ascii spaces
-    /// and [0-9] (fiduciaryFits.parseRules)
+    /// fiduciaryFits.whiteSpaceCodePoints (NBSP, thin space, tabs, U+3000, the
+    /// U+001C-001F separators Kotlin counts ...) -> a plain space, then trimmed.
+    /// Copy-pasted coords off web pages and PDFs are full of NBSP. The list is
+    /// spelled out (same table as Android's isReferenceSpace) instead of asking
+    /// the OS's Unicode tables, which move between releases. The patterns below
+    /// only ever see ascii spaces and [0-9] (fiduciaryFits.parseRules)
     static func normalisedWhitespace(_ raw: String) -> String {
         var scalars = String.UnicodeScalarView()
         for u in raw.unicodeScalars {
-            let space = u.properties.isWhitespace || (0x1C...0x1F).contains(u.value)
-            scalars.append(space ? " " : u)
+            scalars.append(CoordinateInputParser.whiteSpaceCodePoints.contains(u.value) ? " " : u)
         }
         return String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: " "))
     }

@@ -72,13 +72,26 @@ final class PdfGeorefIntegrationTests: XCTestCase {
 
     // MARK: - raw user space in the raster paths (D1-04, D3-06)
 
-    func testRasteriserDrawsRawUserSpaceForOffsetBoxesAndRotatedPages() throws {
+    /// a georef whose crop is the whole box, just to drive the renderer
+    private func boxGeoref(_ box: CGRect, crop: [PdfPagePoint]? = nil) throws -> PdfGeoreference {
+        var g = try XCTUnwrap(PdfGeoreference.provisional(pageBox: box, rotation: 0,
+                                                          centredOn: CLLocationCoordinate2D(latitude: 37.77, longitude: -122.42)))
+        if let crop { g.crop = crop }
+        return g
+    }
+
+    func testRendererDrawsRawUserSpaceForOffsetBoxesAndRotatedPages() throws {
+        PDFTileRenderer.assertsOffMainThread = false
+        defer { PDFTileRenderer.assertsOffMainThread = true }
         // black 20 pt square at raw (200..220, 300..320) whatever the boxes/rotate say
         let square = "0 0 0 rg 200 300 20 20 re f"
         for extras in ["", "/Rotate 90", "/Rotate 270", "/Rotate 180 /CropBox [120 170 480 630]"] {
             let url = try writePDF(media: "100 150 500 650", extras: extras, content: square)
-            let crop = CGRect(x: 100, y: 150, width: 400, height: 500)
-            let image = try XCTUnwrap(PDFRasteriser.render(url: url, cropRect: crop)?.cgImage, extras)
+            let (_, page) = try PDFTileRenderer.openPage(url: url, pageIndex: 0)
+            let region = CGRect(x: 100, y: 150, width: 400, height: 500)
+            let fp = try PDFFootprint(georef: try boxGeoref(region), pageBox: PDFTileRenderer.pageBox(page))
+            let image = try XCTUnwrap(try PDFTileRenderer.renderRegion(page: page, region: region, width: 400, height: 500,
+                                                                         footprint: fp).makeImage(), extras)
             XCTAssertEqual(image.width, 400)
             let box = try XCTUnwrap(darkBox(image), extras)
             // pixel x = raw x - 100, pixel row (from top) = 650 - raw y
@@ -89,11 +102,16 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         }
     }
 
-    func testRasteriserLeavesEverythingOutsideTheCropPolygonClear() throws {
+    func testRendererLeavesEverythingOutsideTheCropPolygonClear() throws {
+        PDFTileRenderer.assertsOffMainThread = false
+        defer { PDFTileRenderer.assertsOffMainThread = true }
         let url = try writePDF(media: "0 0 400 400", content: "0 0 0 rg 0 0 400 400 re f")
+        let (_, page) = try PDFTileRenderer.openPage(url: url, pageIndex: 0)
         let triangle = [PdfPagePoint(x: 0, y: 0), PdfPagePoint(x: 400, y: 0), PdfPagePoint(x: 0, y: 400)]
-        let image = try XCTUnwrap(PDFRasteriser.render(url: url, cropRect: CGRect(x: 0, y: 0, width: 400, height: 400),
-                                                       cropPolygon: triangle)?.cgImage)
+        let region = CGRect(x: 0, y: 0, width: 400, height: 400)
+        let fp = try PDFFootprint(georef: try boxGeoref(region, crop: triangle), pageBox: PDFTileRenderer.pageBox(page))
+        let image = try XCTUnwrap(try PDFTileRenderer.renderRegion(page: page, region: region, width: 400, height: 400,
+                                                                     footprint: fp).makeImage())
         let box = try XCTUnwrap(darkBox(image))
         XCTAssertEqual(box.width, 400, accuracy: 1)
         // top-right corner pixel is outside the neatline triangle
@@ -106,26 +124,23 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         XCTAssertEqual(p[0 * 1600 + 395 * 4 + 3], 0, "outside the crop polygon must stay transparent")
     }
 
-    func testTilerDrawsThePageWhereTheGeorefPutsIt() throws {
+    func testTileWarpDrawsThePageWhereTheGeorefPutsIt() throws {
+        PDFTileRenderer.assertsOffMainThread = false
+        defer { PDFTileRenderer.assertsOffMainThread = true }
         let square = "0 0 0 rg 200 300 20 20 re f"
         for extras in ["", "/Rotate 90"] {
             let url = try writePDF(media: "100 150 500 650", extras: extras, content: square)
-            let doc = try XCTUnwrap(CGPDFDocument(url as CFURL))
-            let page = try XCTUnwrap(doc.page(at: 1))
-            let georef = try XCTUnwrap(PdfGeoreference.provisional(
-                pageBox: CGRect(x: 100, y: 150, width: 400, height: 500), rotation: 0,
-                centredOn: CLLocationCoordinate2D(latitude: 37.77, longitude: -122.42)))
-            // tile holding the square's centre at z16 (~2.4 m/px, square is ~350 m)
+            let (_, page) = try PDFTileRenderer.openPage(url: url, pageIndex: 0)
+            let georef = try boxGeoref(CGRect(x: 100, y: 150, width: 400, height: 500))
+            let fp = try PDFFootprint(georef: georef, pageBox: PDFTileRenderer.pageBox(page))
             let centre = try XCTUnwrap(georef.toWGS84(x: 210, y: 310))
             let z = 14
             let tx = Int(WebMercatorTiles.lonToTileX(centre.longitude, z))
             let ty = Int(WebMercatorTiles.latToTileY(centre.latitude, z))
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1
-            format.opaque = true
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256), format: format)
-            let png = try XCTUnwrap(PDFTiler.renderTile(renderer, page: page, georef: georef, z: z, x: tx, y: ty))
-            let tile = try XCTUnwrap(UIImage(data: png)?.cgImage)
+            let job = TileJob(z: z, x0: tx, y0: ty, cols: 1, rows: 1)
+            let plan = PDFTileWarp.plan(job: job, tilePx: 256, footprint: fp, georef: georef)
+            let out = try PDFTileRenderer.renderJob(job, tilePx: 256, plan: plan, footprint: fp, source: .vector(page))
+            guard case .image(let tile)? = out[TileIndex(z: z, x: tx, y: ty)] else { return XCTFail("\(extras) no tile") }
             let box = try XCTUnwrap(darkBox(tile), extras)
             // where the square's centre should be in tile pixels (y down)
             let fx = WebMercatorTiles.lonToTileX(centre.longitude, z) - Double(tx)
@@ -135,55 +150,65 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         }
     }
 
-    func testTilerPageToPixelSolvesThreeCorners() throws {
-        let m = try XCTUnwrap(PDFTiler.pageToPixel(CGPoint(x: 10, y: 20), CGPoint(x: 110, y: 30), CGPoint(x: 0, y: -80),
-                                                   CGPoint(x: 0, y: 0), CGPoint(x: 256, y: 0), CGPoint(x: 0, y: 256)))
-        for (p, q) in [(CGPoint(x: 10, y: 20), CGPoint(x: 0, y: 0)), (CGPoint(x: 110, y: 30), CGPoint(x: 256, y: 0)),
-                       (CGPoint(x: 0, y: -80), CGPoint(x: 0, y: 256))] {
-            let r = p.applying(m)
-            XCTAssertEqual(r.x, q.x, accuracy: 1e-9)
-            XCTAssertEqual(r.y, q.y, accuracy: 1e-9)
-        }
-        XCTAssertNil(PDFTiler.pageToPixel(.zero, CGPoint(x: 1, y: 1), CGPoint(x: 2, y: 2), .zero, .zero, .zero))
-    }
-
-    func testTilerRefusesToBakeAnUncalibratedPlacement() throws {
+    func testBakeRefusesAnUncalibratedPlacement() throws {
         let url = try writePDF(media: "0 0 400 400")
         let georef = try XCTUnwrap(PdfGeoreference.provisional(pageBox: CGRect(x: 0, y: 0, width: 400, height: 400),
                                                                rotation: 0, centredOn: CLLocationCoordinate2D(latitude: -35, longitude: 149)))
         let source = PDFMapSource(url: url, georef: georef)
         XCTAssertTrue(source.isUncalibrated)
-        XCTAssertNil(PDFTiler.generate(source: source) { _ in })
+        let bake = PDFBakeController()
+        bake.prepare(pdf: source, runtime: nil)
+        XCTAssertEqual(bake.state, .failed(.notCalibrated))
     }
 
     // MARK: - import outcomes (no silent camera box)
 
+    /// WP5: the import pipeline inspects the PDF once and ImportDecision keeps
+    /// georeferenced, plain and declared-but-refused apart (no camera box)
     func testImportWorkerKeepsGeorefPlainAndRejectedApart() async throws {
-        let geo = try await ImportedMapWorker.preparePDF(url: try testdata("geopdf/tacmap_grid_sf_iso.pdf"))
-        scratch.append(geo.destination)
-        guard case .georeferenced(let g) = geo.outcome else { return XCTFail("\(geo.outcome)") }
+        let original = ImportedMapStorage.applicationSupportProvider
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("georef-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        ImportedMapStorage.applicationSupportProvider = { root }
+        scratch.append(root)
+        defer { ImportedMapStorage.applicationSupportProvider = original }
+        func prepare(_ url: URL) async throws -> PreparedPDFImport {
+            try await MapImportPipeline.preparePDF(url: url, entryCount: 0, libraryLoaded: true,
+                                                   isCancelled: { false }, progress: { _ in })
+        }
+        func decide(_ p: PreparedPDFImport) -> ImportDecision.Outcome {
+            ImportDecision.decide(pageCount: p.inspection.pageCount, pages: p.inspection.scanned.map(\.decisionState),
+                                  duplicate: nil)
+        }
+
+        let geo = try await prepare(try testdata("geopdf/tacmap_grid_sf_iso.pdf"))
+        let g = try XCTUnwrap(geo.inspection.page(0)?.georef)
         XCTAssertEqual(g.origin, .adobeVP)
         XCTAssertEqual(g.crs.utmZone?.zone, 10)
+        XCTAssertEqual(decide(geo).action, .addAndActivate)
+        XCTAssertEqual(ImportedMapStates.state(try XCTUnwrap(geo.entry(pageIndex: 0)), file: .ok), .geoPDF)
 
-        let plain = try await ImportedMapWorker.preparePDF(url: try testdata("geopdf/tacmap_grid_sf_plain.pdf"))
-        scratch.append(plain.destination)
-        XCTAssertEqual(plain.outcome, .notGeoreferenced)
+        let plain = try await prepare(try testdata("geopdf/tacmap_grid_sf_plain.pdf"))
+        XCTAssertNil(plain.inspection.page(0)?.georef)
+        XCTAssertNil(plain.inspection.page(0)?.issue)
+        XCTAssertEqual(decide(plain).action, .addAndCalibrate)
 
-        // the real USGS LPTS pattern with one value pushed to 1.6: declared, refused, explained
+        // the real USGS LPTS pattern with one value pushed to 1.6: declared, refused, explained.
+        // something on the page, a blank page now fails the import probe first
         let refused = try writePDF(media: "0 0 1728 2088", extras: """
         /VP [<< /Type /Viewport /BBox [0 2088 1727.95998 56.69373] /Measure << /Type /Measure /Subtype /GEO
         /GPTS [37.73318 -122.52121 37.88898 -122.52021 37.88818 -122.35264 37.73238 -122.354]
         /LPTS [-0.00708 1 0 -0.00514 1.6 0 1 1.00514] >> >>]
-        """)
-        let rejected = try await ImportedMapWorker.preparePDF(url: refused)
-        scratch.append(rejected.destination)
-        XCTAssertEqual(rejected.outcome, .rejected(.lptsOutOfRange))
-        guard case .rejected(let reason)? = PDFMapImporter.placement(
-            for: rejected.destination, cameraCentre: CLLocationCoordinate2D(latitude: -35, longitude: 149)) else {
-            return XCTFail("a refused georef must not turn into a camera-centred placement")
-        }
-        XCTAssertEqual(reason, .lptsOutOfRange)
-        XCTAssertFalse(reason.displayReason.isEmpty)
+        """, content: "0 0 0 rg 100 100 400 400 re f")
+        let rejected = try await prepare(refused)
+        XCTAssertEqual(rejected.inspection.page(0)?.issue, .lptsOutOfRange)
+        let outcome = decide(rejected)
+        XCTAssertEqual(outcome.action, .addRejected, "a refused georef must not turn into a camera-centred placement")
+        let entry = try XCTUnwrap(rejected.entry(pageIndex: 0))
+        XCTAssertEqual(ImportedMapStates.state(entry, file: .ok), .rejected)
+        XCTAssertNil(entry.pdf?.embedded)
+        XCTAssertFalse(PdfGeorefRejectReason.lptsOutOfRange.displayReason.isEmpty)
+        XCTAssertFalse(try XCTUnwrap(outcome.alert).message.text.isEmpty)
     }
 
     func testRotatedGeoPDFImportsAndPlacesInRawPageSpace() throws {
@@ -194,7 +219,7 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         XCTAssertEqual(corner.longitude, -122.47797518349, accuracy: 1e-7)
         let source = PDFMapSource(url: try testdata("geopdf/tacmap_grid_rot90_iso.pdf"), georef: g)
         XCTAssertEqual(source.pdfRenderRect, g.cropBoundingRect)
-        XCTAssertNotNil(source.renderedImage())
+        XCTAssertFalse(try renderPDFBaseRaster(source).blank)
     }
 
     func testLgiDescriptionMatchesAsNameOrString() throws {
@@ -249,6 +274,9 @@ final class PdfGeorefIntegrationTests: XCTestCase {
 
     // MARK: - calibration
 
+    /// The crosshair flow end to end on the sf plain sheet: each ring target
+    /// captured through the displayed georef (provisional first, then the live
+    /// fit), typed as MGRS, fitted in UTM of the first point.
     func testCalibrationFinishFitsInUTMOfTheFirstPoint() throws {
         let url = try testdata("geopdf/tacmap_grid_sf_plain.pdf")
         let readout = try XCTUnwrap(GeoPDFReader.read(url: url))
@@ -256,34 +284,47 @@ final class PdfGeorefIntegrationTests: XCTestCase {
         let provisional = try XCTUnwrap(PdfGeoreference.provisional(
             pageBox: readout.page.cropBox, rotation: readout.page.rotation,
             centredOn: CLLocationCoordinate2D(latitude: -35, longitude: 149)))
-        let source = PDFMapSource(url: url, georef: provisional)
-        let session = CalibrationSession()
-        session.start(for: source)
+        let target = CalibrationTarget(entryID: UUID(), contentKey: try XCTUnwrap(PDFSessionStore.contentKey(for: url)),
+                                       pageIndex: 0, pageBox: CalibrationTarget.box(readout.page.cropBox),
+                                       rotate: readout.page.rotation)
+        let session = CalibrationSession(drafts: InMemoryCalibrationDraftStore())
+        session.start(target: target, entryName: "sf", base: provisional, seed: CalibrationState(),
+                      embeddedDatumID: nil, wasPreview: true)
+        XCTAssertEqual(session.phase, .datumSheet, "plain PDF, no datum yet")
+        session.chooseDatum("WGS84")
         // the sheet's ring targets (testdata/pdf_georef.json sf_plain truth)
-        let targets: [(CGPoint, String)] = [
-            (CGPoint(x: 185.3858268, y: 185.3858268), "10SEG 47000 77000"),
-            (CGPoint(x: 638.9291339, y: 185.3858268), "10SEG 51000 77000"),
-            (CGPoint(x: 638.9291339, y: 865.7007874), "10SEG 51000 83000"),
-            (CGPoint(x: 185.3858268, y: 865.7007874), "10SEG 47000 83000"),
+        let targets: [(PdfPagePoint, String)] = [
+            (PdfPagePoint(x: 185.3858268, y: 185.3858268), "10SEG 47000 77000"),
+            (PdfPagePoint(x: 638.9291339, y: 185.3858268), "10SEG 51000 77000"),
+            (PdfPagePoint(x: 638.9291339, y: 865.7007874), "10SEG 51000 83000"),
+            (PdfPagePoint(x: 185.3858268, y: 865.7007874), "10SEG 47000 83000"),
         ]
         for (page, ref) in targets {
-            session.recordTap(pdfPoint: page, screenPoint: .zero)
-            XCTAssertTrue(session.confirmFiduciary(mgrs: ref))
+            // put the camera right on the target through whatever is displayed now
+            let d = try XCTUnwrap(session.display)
+            let centre = try XCTUnwrap(d.georef.toWGS84(x: page.x, y: page.y))
+            let camera = MapCamera(center: centre, zoom: 17, headingDegrees: 0, viewportSize: CGSize(width: 390, height: 844))
+            let capture = CalibrationCapture.capture(georef: d.georef, pageBox: target.pageBox, camera: camera,
+                                                     generation: d.generation)
+            XCTAssertEqual(session.beginAdd(capture: capture), .ok)
+            session.entryText = ref
+            XCTAssertTrue(session.commitEntry(), ref)
         }
-        let result = try XCTUnwrap(session.finish())
-        XCTAssertEqual(result.georef.origin, .fiduciaries)
-        XCTAssertEqual(result.georef.crs.utmZone?.zone, 10)
-        XCTAssertEqual(result.georef.crs.utmZone?.south, false)
-        XCTAssertTrue(result.crossValidated)
-        XCTAssertLessThan(result.rmsMetres, 0.01)
+        let manual = try XCTUnwrap(session.finishTapped(), "4 good points spread over the sheet are ready")
+        let g = manual.georef
+        XCTAssertEqual(g.origin, .fiduciaries)
+        XCTAssertEqual(g.crs.utmZone?.zone, 10)
+        XCTAssertEqual(g.crs.utmZone?.south, false)
+        XCTAssertEqual(g.fit?.crossValidated, true)
+        XCTAssertLessThan(try XCTUnwrap(manual.rmsM), 0.01)
+        XCTAssertEqual(manual.grade, .good)
         // a printed grid intersection the user never touched: 548000E 4180000N
-        let w = try XCTUnwrap(result.georef.toWGS84(x: 298.7716535, y: 525.5433071))
+        let w = try XCTUnwrap(g.toWGS84(x: 298.7716535, y: 525.5433071))
         XCTAssertEqual(w.latitude, 37.76606703301, accuracy: 2e-7)
         XCTAssertEqual(w.longitude, -122.45501505078, accuracy: 2e-7)
 
-        source.applyCalibration(transform: result.transform, fiduciaries: session.fiduciaries)
+        let source = PDFMapSource(url: url, georef: g)
         XCTAssertFalse(source.isUncalibrated)
-        XCTAssertEqual(source.georef, result.georef)
         XCTAssertEqual(source.kind, .calibratedPDF)
     }
 

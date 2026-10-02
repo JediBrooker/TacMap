@@ -254,6 +254,22 @@ class ActiveMapSelectionStore private constructor(
      */
     internal fun legacyPdfMigrationPending(): Boolean = !migrationMarker.isFile
 
+    /** anything for the library migration to read at all */
+    internal fun hasLegacyState(): Boolean = file.exists() || retainedFile.exists()
+
+    /**
+     * After the imported-map library has durably taken over (contract s8.2), the
+     * old selector files go. The marker stays so an even older code path can never
+     * resurrect a PDF from a missing selector.
+     */
+    @Synchronized
+    internal fun clearAfterLibraryMigration(): Boolean {
+        if (!migrationMarker.isFile) migrationMarkerWriter(migrationMarker)
+        val a = !file.exists() || file.delete()
+        val b = !retainedFile.exists() || retainedFile.delete()
+        return a && b
+    }
+
     /**
      * Whether cold-start orphan cleanup has an authenticated current-schema
      * selector as its authority. Missing, legacy, locked, and corrupt state
@@ -274,6 +290,17 @@ class ActiveMapSelectionStore private constructor(
     internal fun reconcileManagedImportedMapFiles(
         currentPdfFile: () -> File?,
         clearPdfSession: () -> Boolean,
+        /**
+         * The PDF's Generate Offline Tiles output, lives in offline_tiles next to imported
+         * packs. No default on purpose: a caller that forgets it reaps the bake (D3)
+         */
+        currentPdfBakeFile: () -> File?,
+    ): Boolean = withManagedFilesLock { reconcileLocked(currentPdfFile, clearPdfSession, currentPdfBakeFile) }
+
+    private fun reconcileLocked(
+        currentPdfFile: () -> File?,
+        clearPdfSession: () -> Boolean,
+        currentPdfBakeFile: () -> File?,
     ): Boolean {
         val container = loadActiveContainer() as? ActiveMapSelectionContainerLoad.Loaded
             ?: return false
@@ -283,7 +310,8 @@ class ActiveMapSelectionStore private constructor(
         val keep = when (retained?.kind) {
             ActiveMapKind.PDF -> {
                 if (active?.kind == ActiveMapKind.OFFLINE_TILES) return false
-                setOf(currentPdfFile() ?: return false)
+                // the bake goes with the PDF. an in-progress bake sits in pdf_bake_work, never listed here
+                setOfNotNull(currentPdfFile() ?: return false, currentPdfBakeFile())
             }
             ActiveMapKind.OFFLINE_TILES -> {
                 if (active?.kind == ActiveMapKind.PDF ||
@@ -404,6 +432,13 @@ class ActiveMapSelectionStore private constructor(
     }
 
     internal companion object {
+        // process wide, not per instance: the bake publisher (app scope) and the view model's
+        // reconcile each have their own store object but have to take turns on the same files
+        private val MANAGED_FILES_LOCK = Any()
+
+        /** run [block] while no reconcile can list or delete managed map files */
+        fun <T> withManagedFilesLock(block: () -> T): T = synchronized(MANAGED_FILES_LOCK) { block() }
+
         private const val FILE_NAME = "active_map_source.json"
         private const val LABEL = "active_map_source.json"
         private const val RETAINED_FILE_NAME = "retained_imported_map_source.json"
@@ -479,3 +514,40 @@ internal enum class ActiveMapKind {
     PDF,
     OFFLINE_TILES
 }
+
+/**
+ * Remove Offline Tiles (R2-S2): drop the bake record, then delete the file + sidecars in
+ * offline_tiles right away, all under the managed files lock. Doesn't wait on the reconcile,
+ * that one refuses to run while the PDF is missing and the plaintext tiles would just sit
+ * there. [takeRecord] clears it and names the file ("" none, null = not cleared, delete
+ * nothing). [onCleared] runs before the delete, it's where the live reader lets go. A name
+ * without the tacmap-bake- prefix isn't ours and never gets deleted (R3-5). Returns null when
+ * nothing was cleared, else whether the file is gone
+ */
+internal fun removePdfBakeFile(filesDir: File, takeRecord: () -> String?, onCleared: () -> Unit = {}): Boolean? =
+    ActiveMapSelectionStore.withManagedFilesLock {
+        val name = takeRecord() ?: return@withManagedFilesLock null
+        onCleared()
+        name.isEmpty() || ManagedImportedMapFileLifecycle.isGeneratedBakeName(name) &&
+            ManagedImportedMapFileLifecycle.deleteMBTiles(File(filesDir, "offline_tiles"), name)
+    }
+
+/**
+ * Bake-only sweep (R3-2), at launch and after Remove: tacmap-bake-*.mbtiles + sidecars in
+ * offline_tiles that no sealed record names (the library: every PDF entry's bake). Record
+ * read and sweep under the managed files lock, so a publish can't land a file in between,
+ * and a bake that's moved in but not attached yet is in flight and left alone. Unreadable record = skip, null back; never
+ * delete on a guess. Fine with the PDF missing, a bake can always be made again
+ */
+internal fun sweepOrphanPdfBakes(
+    filesDir: File,
+    inFlight: () -> Set<File> = { emptySet() },
+    readRecord: () -> PdfBakeRecordRead,
+): Boolean? =
+    ActiveMapSelectionStore.withManagedFilesLock {
+        val keep = when (val r = readRecord()) {
+            is PdfBakeRecordRead.Read -> r.fileNames
+            PdfBakeRecordRead.Unreadable -> return@withManagedFilesLock null
+        }
+        ManagedImportedMapFileLifecycle.sweepBakes(File(filesDir, "offline_tiles"), keep, inFlight())
+    }

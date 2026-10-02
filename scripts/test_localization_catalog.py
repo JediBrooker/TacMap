@@ -154,7 +154,10 @@ class CatalogueTests(unittest.TestCase):
             legacy = {native(entry['en'], 'android'): strings[key] for key,entry in data['catalog'].items() if 'android' in entry['platforms'] and entry.get('legacy',True)}
             self.assertEqual(fingerprint(legacy), golden['messages']['android_' + tag])
             ios_plurals = plistlib.loads(generated[ROOT / f'ios/TacticalMaps/Resources/{tag}.lproj/Localizable.stringsdict'].encode())
-            forms = {noun:{category:ios_plurals['count.'+noun]['count'][category] for category in ('one','other')} for noun in data['plurals']}
+            # only the families that existed at the baseline; new ones (WP4's
+            # calibration_point, imported_map) are new copy, not changed copy
+            nouns = golden.get('pluralNouns', list(data['plurals']))
+            forms = {noun:{category:ios_plurals['count.'+noun]['count'][category] for category in ('one','other')} for noun in nouns}
             self.assertEqual(fingerprint(forms), golden['plurals'][tag])
 
 

@@ -30,6 +30,25 @@ Both platforms must behave the same for the user: same states, numbers, threshol
 - Parent-tile fallback.
 - WP2 owns the bake. A bake adds a derived MBTiles library entry and never deletes the PDF.
 
+**Amendment 2026-10-02 (WP2 merge): decisions binding on both platforms.**
+- M1 A bake is a record on the PDF's library entry (same JSON keys on both), not a derived MBTiles entry. `derivedFromId` / `derived` stay only to read legacy migrated data; no app path creates a derived entry.
+- M2 The WP2 crash-guard token (`renderGuardToken`) lives on the library entry, minted at import or migration; an entry without one falls back to its (random, sealed) entry id.
+- M3 Bake attach requires the same entry, content key, token and bakeKey(current georef, tilePx), else `sourceChanged`; invalid record or failed library write is `writeFailed`. Any georef change (commit calibration, revert to embedded, change page) drops the bake; reconcile and sweep delete the file.
+- M4 The bake-only sweep keeps every entry's bake name and runs only on a trustworthy library read (loaded, or empty with no legacy stores left); skipped when locked, corrupt or a migration is pending. Runs on every restore, after Remove and after Delete, except when `recoveryPreservesOrphans` is true.
+- M5 Delete Map is one library write: a failed write deletes nothing and offers Retry. Delete stops a running bake/estimate first and deletes the bake file + sidecars directly.
+- M6 For the active PDF, WP2 OD-F4 wins over "unavailable, go online": a missing or changed file keeps the selection and fails as cannotOpen with Try Again (background hash mismatch included). The Layers row still says `map_state_unavailable` until a Try Again verifies the bytes. MBTiles entries keep the s-original behaviour.
+- M7 The WP2 import probe runs inside the import pipeline after the page decision and before the library write (picked pages included); a probe failure is `MapImportError.cannotDraw(reason)` with WP2's reason copy and commits nothing. Duplicates and Choose page skip it.
+- M8 Calibration draws through the WP2 tile source with the s7.2 "without prefetch" fallback (plain swap, brief placeholder); each refit gets a new tile source without the bake, sharing the document's base raster; source + anchored camera swap in one main-thread step.
+- M9 Layers: Imported maps section plus WP2's block for the on-screen PDF (toggle on+disabled while calibrating, failed row, bake rows). The row menu's Generate offline tiles starts WP2's flow for that entry without switching maps, hidden once it has a bake; Remove only in the on-screen block.
+- M10 Header order: calibrating, then failed, then drawing. Use Online Map and the crash-guard fallback use the library's preferred online style; picking the suspect map in Layers counts as Open Anyway; calibration auto-resume at launch is skipped while a crash suspect is pending.
+- Known gap: on the single migrating launch Android can't suppress a crash suspect (no library yet); iOS can. Accepted.
+
+**Amendment 2026-10-02 (r1): WP2 glue, binding on both.**
+- D9 (M3 order) `attachBake` checks, in order: entry + pdf exist, then contentKey and renderGuardToken match (else `sourceChanged`), then the record is valid, i.e. a plain `tacmap-bake-<id>.mbtiles` name (else `invalidBake`, shown as `writeFailed`), then `bakeKey(effective georef, tilePx)` matches (else `sourceChanged`), then the write (`writeFailed`). `removeBake` with no entry or a record whose fileName isn't the entry's is `sourceChanged` and writes nothing (both). `bakeFileNames` = the valid records' names that match the generated bake form.
+- F1 (M4/M8/M13) A calibration display never attaches or draws a bake. A bake published while calibrating only updates the library record; the runtime attaches a bake to a tile source only when that source was built from the entry's effective georef and no calibration session is up.
+- OD-F10 The WP2 block's subtitle for a PDF with `pdf.manual` is the s10 state label (`map_state_calibrated` / `map_state_calibrated_exact`). "Manually placed bounds" is only for the legacy manual-bounds origin.
+- OD-F9 Generate offline tiles from the row menu for an entry that isn't the on-screen map confirms with `pdf_bake_confirm_message_inactive`; the on-screen map keeps `pdf_bake_confirm_message`.
+
 **Change requested of WP1's fixture.** The outlier proposal in `pdf_georef.json` (`fiduciaryFits.rules.outliers` and `flaggedOutliers`) is replaced by rule 6.4 below. WP1 regenerates that field with rule 6.4, or deletes it.
 - Evidence (scratchpad `design/judge/rule_sim.py`): the WP1 proposal, `max(5 m, 5*looRms)` with no set-level gate, falsely names an outlier on **45-83% of clean 5-6 point fits** (1:25k/1:50k, 0.5 pt placement, 3 m reading, 10 m scan warp).
 - Rule 6.4 falsely names an outlier on 0%, and never named the wrong point in any run.
@@ -61,10 +80,18 @@ Both platforms must behave the same for the user: same states, numbers, threshol
 
 **E3. Auto-resume at launch.** If a draft with `active == true` exists and its entry exists, calibration re-enters that entry after the library restore, and shows the toast `calibration_resumed`.
 
+**Amendment 2026-10-02 (r1), E3** (pinned by `import_limits.json` `lifecycle.autoResume`):
+- Runs once, after the first Loaded restore (launch, or the unlock / Retry that makes a Locked library Loaded, F3). Skipped while any crash suspect is pending (M10, C2); the draft stays `active` for the next launch.
+- C8: while a non-durable calibration preview draws, the WP2 guard is armed with the previewed entry's token, so a crash there makes that entry the suspect and E3 skips it.
+- OD-F1: frames the sheet exactly like an E1/E2 start; `calibration_off_sheet` still wins the status line (s10).
+- C6: reopens the entry card on `draft.pending`; rewrites the draft `active = true` at once; the `calibration_resumed` toast only when the draft has at least 1 point.
+
 ### 2.2 Start preconditions
 - The library is Loaded (not locked or corrupt).
 - The entry's file is present.
 - Not already calibrating.
+
+**Amendment 2026-10-02 (r1), C2:** starting calibration (E1/E2) on the pending crash suspect resolves the guard as Open Anyway first, then starts and publishes (same as picking it in Layers). Starting on any other entry while a suspect is pending leaves the recovery dialog as it is.
 
 ### 2.3 On start (both platforms, in this order)
 1. End measure, drawing and free-draw.
@@ -165,12 +192,18 @@ On leaving, either way:
 - **Preview**: restore the previous durable source, published without reframing.
 - **Georeferenced entry**: rendering returns to its effective georef.
 
+**Amendment 2026-10-02 (r1), C1:** "not dirty" still rewrites an existing draft with `active = false` before ending (add + Cancel, or add + undo, leaves a draft behind). No draft, nothing written. Pinned by `lifecycle.draftActive`.
+
 ### 2.8 Suspend
 If the active map source changes to a different entry mid-session (for example a Retry of an older persistence alert):
 - end the session and keep the draft (`active = false`);
 - show the toast `calibration_paused`.
 
 Commit re-checks that `entryId`, `contentKey` and `pageIndex` all match the target. On mismatch nothing is written (D5-10).
+
+**Amendment 2026-10-02 (r1):**
+- C1: suspend rewrites an existing draft `active = false` whether or not the state is dirty.
+- C3: an unlock / Retry restore whose durable selection is unchanged does not republish while a calibration display (preview or refit) is up, so it is not a suspend. Only a real change of the durable selection suspends.
 
 ## 3. Constants (from `testdata/import_limits.json`; both platforms read it in tests)
 
@@ -216,6 +249,8 @@ Scale denominator = `sqrt(|det L|) / 0.00035277778` (metres per page pt ÷ metre
 | progressHudDelay | 300 ms |
 | thumbnail | 120 pt/dp wide |
 | thumbnail cache | LRU 24 |
+
+**Amendment 2026-10-02 (r1), OD-F6:** byte values shown to the user (`map_import_too_large {limit}`, `map_import_no_space {size}`, the `map_library_footer {size}`) use the WP2 `bakeFormat` size rule (`pdf_tile_render.json`): 512 MiB reads "537 MB", 4 GiB "4.3 GB" (de "4,3 GB"). Pinned by `import_limits.json` `sizeDisplay` and `prechecks[].expect.argText`.
 
 ## 4. Coordinate entry (`CoordinateInputParser`; pure; the same cases pass on both platforms)
 
@@ -315,6 +350,7 @@ Search behaviour does NOT change in this package: `search_contract.json` must pa
 - the grid zone, if that point was typed as grid;
 - otherwise `floor((lon+180)/6)+1` and the sign of lat.
 - There are no Norway/Svalbard exceptions (same rule as WP1).
+- **Amendment 2026-10-02 (r1), A2/B1:** the zone is clamped to 1..60, so lon exactly 180 is zone 60 and -180 is zone 1 (`GeoCrs.standardUtmZone` on Android, `FiduciaryFitter.standardZone` on iOS). Never null, never 61. Pinned by `first_point_lon_180_zone_60` / `first_point_lon_minus_180_zone_1`.
 
 **Residual and RMS.**
 - Residual = plane distance in metres between `affine(page_i)` and `plane_i`.
@@ -349,6 +385,8 @@ Simulated at 0.5 pt placement, 3 m reading, 10 m scan warp: 100% of clean fits g
 
 For n < 3 the state is `needMore(3−n)`.
 
+**Amendment 2026-10-02 (r1), B3:** the order is `degenerate`, then `invalid`, then `implausible`. `invalid` can't be evaluated without the fit WP1 refuses for a degenerate set (`d2_10_collar_zone_typo_still_degenerate`).
+
 ### 6.4 Outliers (n ≥ 5 and RMS > τ only)
 - Let S = { i : looRms_i ≤ τ } (the points whose removal makes the rest Good).
 - |S| = 1: `outlier(number, loo_i)`, where loo_i is point i's distance to the (n−1) fit. Message `calibration_outlier`.
@@ -372,6 +410,7 @@ Simulated results:
   - Inset the corners 10%.
   - Pick the corner that maximises the minimum page distance to the existing points. Ties go in the order top-left, top-right, bottom-right, bottom-left.
   - Messages `calibration_next_corner_{top_left|top_right|bottom_right|bottom_left}`.
+- **Amendment 2026-10-02 (r1), B2/OD-F8:** the next-corner hint is the secondary line whenever `nextCorner` is set, n = 0 included (`expect.secondaryHint`). The zoom hint replaces it only while the crosshair is on the sheet; off the sheet there is no zoom hint.
 
 ### 6.6 Finishability
 - `blocked(reason)`, from 6.3 or `needMore`.
@@ -457,6 +496,7 @@ If any step returns nil, the camera is left unchanged. The page point under the 
 - The basemap label is `calibration_header_label`, in amber.
 - **Provisional**: the coordinate block is replaced by `calibration_not_georeferenced` in amber. Distance, elevation and grid-magnetic are hidden, and drop-pin is disabled.
 - **Otherwise**: the crosshair coordinate, plus the tag `calibration_preview_tag` whenever the displayed georef differs from the entry's saved effective georef.
+- **Amendment 2026-10-02 (r1), OD-F15:** while provisional the hidden coordinate is hidden from VoiceOver/TalkBack too; the header reads `calibration_not_georeferenced` only.
 
 ### 7.9 Overlays while calibrating (effective visibility; persisted settings untouched)
 - Hidden: symbology, drawings, all labels, presence peers, terrain heat-map, measure.
@@ -499,6 +539,11 @@ The compass and the night-mode toggle stay.
   - entry delete
   - reconcile, if its `contentKey` is not in the library
 - Maximum 16 drafts, evicted by LRU.
+
+**Amendment 2026-10-02 (r1), active flag** (C1, C5, C6; every step pinned by `lifecycle.draftActive`):
+- `true` from `beginAdd` and every mutation, `cancelEntry`, `undo`, a Resume (prompt or E3, written at once), and through process death.
+- `false` on Keep points for later, on any leave that ends the session with a draft present (dirty or not), and on suspend.
+- The datum chosen on the s2.3 step 12 sheet at 0 points is part of the start seed: not dirty, no draft.
 
 ### 8.2 Library (`ImportedMapLibrary`; the ONE authority for active selection and entries)
 
@@ -599,6 +644,18 @@ A crash at any step only leaves orphans, which the next reconcile removes. There
 - **Locked or corrupt legacy stores**: no migration, no deletion. The existing "saved basemap locked/unreadable" issue is shown.
 - **Downgrade**: an older build sees no v2 selector and shows its recovery message. Nothing is deleted.
 
+**Amendment 2026-10-02 (r1), library load and recovery** (pinned by `import_limits.json` `libraryLoad`):
+- S1/D1 Load status. **Corrupt**: the file is present but won't decrypt, decode or has a newer schema (it is quarantined to `.corrupt-<epoch>`); or the file is absent while an `imported-map-library.json.corrupt-*` / `imported_map_library.json.corrupt-*` sibling exists; or the file is absent while the platform's sealed-store record says this path was written before (iOS `SealedMigrationPolicy.requiresSealed`; Android the same check if its sealed store keeps one). A vanished-after-written or quarantined library is Corrupt, never Empty. **Empty** only when none was ever written. The legacy stores follow the same rule: a quarantined legacy selector (iOS `ActiveMapSelectionStore.legacySnapshot` / `legacyPresent`) blocks migration, it never reads as "no legacy left".
+- No reconcile, bake sweep or draft prune ever runs from a synthesized or reset state: only from a state read back as Loaded, a genuine first-launch Empty, or the result of a library write made from one of those. A `LibraryState()` standing in for Locked, Corrupt or a blocked migration drives nothing.
+- S2 Retry on Corrupt rebuilds, it never deletes a user file. Every opaque map file in the import directories that no in-flight import owns (bake files `tacmap-bake-*` excluded) is re-adopted: contentKey re-hashed, `displayName = map_recovered_name {n}` (n in mtime order), PDFs re-inspected with s9.5 (marker + watchdog) and placed by the s9.6 first-valid-page rule without a picker; a PDF that fails inspection is adopted with `pageCount 0`, which is always `unavailable` (Delete only). MBTiles are validated, a failure is adopted as `unavailable` too. `active = online(default style)`. One library write; if it fails nothing changes and the alert stays. The sealed optional `recoveryPreservesOrphans` flag is set true on rebuild and retained by all later transitions; older libraries omit it (false). It disables reconcile, bake sweep and draft prune on recovery, cold launches, and later writes because lost ownership cannot authorize deletion. All drafts, generated bakes and map files beyond the recovery entry cap survive. Explicit Delete Map and Remove Offline Tiles still remove their known owned files; the `.corrupt-*` copy is kept. Alert copy `map_library_corrupt_message` with [Retry] [Not now]; import stays unavailable until Loaded.
+- S3 Migration is fail-closed: a legacy PDF that is present but can't be read or converted (session/prefs won't open, hash IO fails, link/copy fails, document or page won't open, no relative path) blocks the migration. Nothing is written, cleared or deleted; the locked/unreadable issue with Retry shows. A legacy PDF whose file is gone is dropped (D5-19), that isn't a failure.
+- S4 An authenticated legacy read that names nothing that still exists writes an empty library and clears the legacy stores (then it is Loaded). Locked forever is not an outcome.
+- D8 Legacy stores still present at any Loaded restore are cleared, after the library write is durable; drafts are saved after the library write.
+- 2026-10-02 handoff acceptance amendment: the S2 preservation rule above supersedes the earlier permission to sweep derived bakes after rebuilding. A successful recovery write does not prove ownership of unmatched files or drafts.
+- F3 Locked at launch shows the `map_library_locked` issue with Retry; Retry and mission-data unlock re-run migration + restore (sweep included, both apps). The WP2 crash-guard launch decision is taken lazily at the first Loaded restore (as iOS); an in-progress marker is never cleared before a token is known.
+- OD-F13 After the migrating launch the camera frames the migrated active map once (as iOS).
+- D10 Downgrading to a pre-2.2 build loses imported maps (its own cleanup doesn't know the opaque files); they must be re-imported. Release notes + THREAT_MODEL say so; no code.
+
 ## 9. Import lifecycle
 
 ### 9.1 Stages and progress
@@ -606,6 +663,11 @@ A crash at any step only leaves orphans, which the next reconcile removes. There
 - The progress card appears after 300 ms and has [Cancel].
 - Import menu items are disabled while an import runs (D5-09). They are unreachable during calibration.
 - **Cancel** stops within 1 MiB of copy or at the next page, removes partials, and shows the toast `map_import_cancelled`.
+
+**Amendment 2026-10-02 (r1), stages** (pinned by `lifecycle.importPipeline`):
+- E5 Order: pre-checks, copy + hash, dedupe (s9.4), inspect (s9.5), decision (s9.6), probe (M7), write. A duplicate skips inspect, decision and probe.
+- E2 [Cancel] shows in `copying` and `reading` only, hidden in `saving` on both. The cancel flag is re-checked after the copy, after the inspection and after the probe; if set the copy is discarded, nothing is written and `map_import_cancelled` shows.
+- OD-F5 Every s9.2 / s9.5 / M7 failure is an alert with [OK] on both (iOS style), never a toast. Cancelled and duplicate stay toasts. `map_import_page_used` shows after the write (E7).
 
 ### 9.2 Pre-checks
 - Library Loaded; otherwise `map_import_unlock_first`.
@@ -623,6 +685,7 @@ If the `contentKey` already exists in the library:
 - delete the copy;
 - if the existing entry has a georef, activate it; otherwise start calibration on it;
 - show the toast `map_import_duplicate {name}`.
+- **Amendment 2026-10-02 (r1), E9:** if the existing entry is `unavailable`, the new copy has its exact contentKey, so it is kept: one write re-links the entry (fileName, byteCount, fileModifiedAtMs), then the old file goes; calibration and bake record stay, then the rule above (`decisions[].outcome.relink`).
 
 ### 9.5 Inspect the PDF (opened once, off the main thread)
 - Watchdog: 30 s; on expiry `map_import_too_complex`. The worker is abandoned, because CGPDF and PDFBox cannot be interrupted.
@@ -728,6 +791,12 @@ The page picker holds the prepared copy in memory and in-flight. If the process 
 - Footer `map_library_footer`.
 - If there are no entries, `map_library_empty`. If the library is locked, `map_library_locked`.
 
+**Amendment 2026-10-02 (r1), panel and Layers:**
+- A1/OD-F11 Datum names (chip, sheet rows, interpretation line, `calibration_datum_changed`, `calibration_err_old_lettering`) come from one table, `calibration_input.json` `display.datumDisplayNames`, not localised. Cell sizes in `calibration_cell_*` use `display.cellSizeText` ("1 km", "100 m"; never "1.00 km").
+- OD-F4 Line 1 primary status fits 2 lines on a compact phone in both languages (de intro shortened).
+- E1 Choose page asks `map_change_page_confirm` first when `pdf.manual` exists; picking the current page is a no-op. E4 if the picked page has a valid georef the entry is activated (framed); otherwise calibration starts on it, and if it was the active entry the change-page write also sets `active = online(preferredOnlineStyle)`. E14 that picker's message is `map_choose_page_message {pages}`; `map_import_choose_page_message` is for the import picker only. Pinned by `lifecycle.choosePage`.
+- OD-F14 The footer `{size}` counts every entry's file plus its bake file.
+
 ## 11. Copy (localization/catalog.json)
 
 Every key below has:
@@ -744,11 +813,19 @@ German uses informal "du", German quotes „…“, and the glossary term Passpu
 
 **Reused existing keys**: Finish, Undo, Cancel, Delete, Retry, Not Now, OK. Distances are formatted with `DisplayFormat.distance`.
 
+**Amendment 2026-10-02 (r1), formats and new keys:**
+- OD-F12 `{rms}` (in `calibration_fit_summary`, `calibration_done`, `calibration_finish_confirm_poor`, `map_state_calibrated`): one decimal below 9.95 m ("0.4 m", de "0,4 m"), else `DisplayFormat.distance` ("26 m"). Pinned by `calibration_fit_report.json` `rmsDisplay`.
+- `map_library_corrupt_message` — The saved map library couldn't be read. A recovery copy was kept and no map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored. | Die gespeicherte Kartenbibliothek konnte nicht gelesen werden. Eine Wiederherstellungskopie blieb erhalten und keine Kartendatei wurde gelöscht. Tippe auf „Erneut versuchen“, um die Liste aus den Karten auf diesem Gerät neu aufzubauen. Namen und Kalibrierungen lassen sich nicht wiederherstellen.
+- `map_recovered_name {number}` — Recovered map {number} | Wiederhergestellte Karte {number}
+- `map_choose_page_message {pages}` — This PDF has {pages} pages. Choose the page with the map. | Dieses PDF hat {pages} Seiten. Wähle die Seite mit der Karte.
+- `pdf_bake_confirm_message_inactive {name}{duration}` — “{name}” stays on this device and the map on screen doesn't change. This takes about {duration}. | „{name}“ bleibt auf diesem Gerät, die angezeigte Karte ändert sich nicht. Das dauert ca. {duration}.
+- de `calibration_intro` is now: Lege das Fadenkreuz auf einen bekannten Punkt. Tippe auf „Punkt hinzufügen“.
+
 ### Calibration
 - `calibration_header_label` — Calibrating | Kalibrierung läuft
 - `calibration_not_georeferenced` — NOT GEOREFERENCED | NICHT GEOREFERENZIERT
 - `calibration_preview_tag` — PREVIEW | VORSCHAU
-- `calibration_intro` — Pan and zoom until the crosshair is exactly on a grid intersection or a point you can identify, then tap Add point. | Verschiebe und zoome die Karte, bis das Fadenkreuz genau auf einem Gitterkreuz oder einem eindeutigen Punkt liegt, und tippe dann auf „Punkt hinzufügen“.
+- `calibration_intro` — Place the crosshair on a known point, then tap Add point. | Verschiebe und zoome die Karte, bis das Fadenkreuz genau auf einem Gitterkreuz oder einem eindeutigen Punkt liegt, und tippe dann auf „Punkt hinzufügen“.
 - `calibration_add_point` — Add point | Punkt hinzufügen
 - `calibration_points_button` — Points | Passpunkte
 - `calibration_grid_toggle` — Grid | Gitter
@@ -896,6 +973,7 @@ German uses informal "du", German quotes „…“, and the glossary term Passpu
 - iOS calibration overlay and input-sheet strings: "Add fiduciary #{1}", "Tap a known feature…", "{1}/3 fiduciaries placed…", "Previous fit RMS…", "Calibrate with fiduciaries…", "Currently calibrated with {1} fiduciaries".
 - Android: "Calibrate PDF Map", "Calibration RMS {1}m", "Fiduciary #{1}", "{1}/3 fiduciaries placed…", "Need at least 3 fiduciaries", "Tap inside the PDF map.", "Unload PDF Map", "Unload Offline Tiles", "This PDF is larger than TacMap's 256 MB import limit.", "TacMap could not read the first page…", "TacMap could not safely inspect this PDF's page rotation…".
 - `pdf_rotation_unsupported`, once WP1 and WP2 support `/Rotate`.
+- **Amendment 2026-10-02 (r1), L1:** done for every entry above that no code references (checked on both platforms), plus the old iOS input-sheet and Layers retained-map strings and the Android `layers_delete_imported_*` / `layers_pdf_fiduciary_count` / `calibration_use_current_location` / `calibration_collinear` / `calibration_failed` the merge left. The Android `AffineTransform2D` errors ("Need at least 3 fiduciaries" and its two siblings) are still referenced and stay. Legacy hash golden updated after proving no surviving legacy text changed.
 
 ## 12. Shared fixtures (generated, never hand-edited)
 
@@ -941,6 +1019,11 @@ Generator: `scripts/gen_calibration_fixtures.py` (pyproj + the `mgrs` package + 
 - Every constant in section 3.
 - `errors: {tooLarge, noSpace, password, tooManyPages, pageSize, tooComplex, invalidPdf, invalidMbtiles, libraryFull, locked, interrupted, cancelled, failed}`, each mapped to its message key.
 - `decisions[]`: pure `ImportDecision` vectors of the form `{pageCount, pages:[{valid|rejected|none}], duplicate} → outcome`.
+
+**Amendment 2026-10-02 (r1), new fixture sections** (both suites load and assert them):
+- `calibration_input.json`: `display` {datumDisplayNames, cellSizeText, interpretationCells}; cases `utm_leading_zero_figures`, `dd_lon_exactly_180`, `dd_lon_exactly_minus_180`.
+- `calibration_fit_report.json`: `rmsDisplay`; `cases[].expect.secondaryHint`; cases `first_point_lon_180_zone_60`, `first_point_lon_minus_180_zone_1`.
+- `import_limits.json`: `lifecycle.draftActive`, `lifecycle.autoResume`, `lifecycle.suspectStart`, `lifecycle.choosePage`, `lifecycle.importPipeline`, `libraryLoad`, `sizeDisplay`; `prechecks[].expect.argText`; `decisions[].outcome.relink` + `duplicate_of_unavailable_entry`; entry state `recovered_uninspectable_pdf`.
 
 ### `testdata/pdf_georef.json` (WP1)
 - The `fiduciaryFits` outlier field is aligned to rule 6.4.

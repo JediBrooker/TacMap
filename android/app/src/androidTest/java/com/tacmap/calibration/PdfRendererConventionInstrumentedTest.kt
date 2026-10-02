@@ -105,35 +105,20 @@ class PdfRendererConventionInstrumentedTest {
     }
 
     @Test
-    fun wholePageBitmapCornersAreWhereTheGeometrySays() {
-        // the live overlay stretches the whole displayed page onto a bitmap and pins
-        // its corners through bitmapCornersRaw; check interior points land too
-        val cases = listOf("sf_iso" to null, "offset_iso" to null, "rot90_iso" to null, "sf_iso" to 270)
-        for ((id, rotate) in cases) {
-            val file = copy(id, rotate)
-            val geometry = PdfDocumentInspector.inspect(context, file).geometry
-            val page = PdfPageRenderer.renderFirstPage(context, Uri.fromFile(file))
-            try {
-                assertEquals(geometry.rendererWidth, page.rendererWidth)
-                assertEquals(geometry.rendererHeight, page.rendererHeight)
-                val sx = page.bitmap.width.toDouble() / page.rendererWidth
-                val sy = page.bitmap.height.toDouble() / page.rendererHeight
-                for (p in gridPoints(id, 2)) {
-                    val (u, v) = geometry.rawToRenderer(p.x, p.y)
-                    val bx = (u * sx).toInt()
-                    val by = (v * sy).toInt()
-                    val window = Bitmap.createBitmap(page.bitmap, bx - 12, by - 12, 24, 24)
-                    try {
-                        val (cx, cy) = redCross(window)
-                        assertEquals("$id/$rotate $p x", u * sx - (bx - 12), cx, 1.0)
-                        assertEquals("$id/$rotate $p y", v * sy - (by - 12), cy, 1.0)
-                    } finally {
-                        window.recycle()
-                    }
-                }
-            } finally {
-                page.bitmap.recycle()
-            }
+    fun displaySizeProbeMatchesThePinnedConvention() {
+        // WP2 replaced the whole page overlay with tiles drawn through PdfPageFrame. The frame
+        // picks FLOAT/TRUNCATED from a runtime probe; assertRawWindows above already renders
+        // through it, here we just make sure the probe agrees with WP1's pinned int sizing
+        val file = copy("offset_iso")
+        val geometry = PdfDocumentInspector.inspect(context, file).geometry
+        val mode = com.tacmap.map.render.pdf.PdfDisplaySizeProbe.mode(context.cacheDir)
+        val frame = com.tacmap.map.render.pdf.PdfPageFrame(geometry, geometry.rendererWidth, geometry.rendererHeight, mode)
+        for (p in gridPoints("offset_iso", 2)) {
+            val (u, v) = geometry.rawToRenderer(p.x, p.y)
+            // TRUNCATED is the convention WP1 measured; FLOAT may only differ by the int size slack
+            val tol = if (mode == com.tacmap.map.render.pdf.DisplaySizeMode.TRUNCATED) 1e-6 else 1.0
+            assertEquals("probe $mode u", u, frame.userToRenderer.mapX(p.x, p.y), tol)
+            assertEquals("probe $mode v", v, frame.userToRenderer.mapY(p.x, p.y), tol)
         }
     }
 

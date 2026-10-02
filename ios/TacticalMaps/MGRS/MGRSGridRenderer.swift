@@ -371,11 +371,31 @@ enum MGRSGridRenderer {
               densifyZoom: request.densifyZoom, pxPerDp: request.pxPerDp)
     }
 
+    /// thread safe flag the container flips when a newer build makes this one pointless
+    final class CancelToken {
+        private let lock = NSLock()
+        private var flag = false
+        var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return flag }
+        func cancel() { lock.lock(); flag = true; lock.unlock() }
+    }
+
+    /// same build, bails out between zones once cancelled (nil = cancelled)
+    static func build(_ request: BuildRequest, isCancelled: () -> Bool) -> Grid? {
+        build(box: request.coverage, lod: request.lod, densifyZoom: request.densifyZoom,
+              pxPerDp: request.pxPerDp, isCancelled: isCancelled)
+    }
+
     /// Every drawn line (and, when 100 km is labelled, every 100 km square)
     /// for the box. Lines are densified so the chord sagitta is <= 0.25 px at
     /// densifyZoom and pxPerDp, then clipped to each cell (half-open on the
     /// north and east edges) and to the box.
     static func build(box: GeoBox, lod: LOD, densifyZoom: Double, pxPerDp: Double) -> Grid {
+        build(box: box, lod: lod, densifyZoom: densifyZoom, pxPerDp: pxPerDp, isCancelled: { false })
+            ?? Grid(lod: lod, pieces: [], squares: [])
+    }
+
+    static func build(box: GeoBox, lod: LOD, densifyZoom: Double, pxPerDp: Double,
+                      isCancelled: () -> Bool) -> Grid? {
         guard !lod.drawn.isEmpty else { return Grid(lod: lod, pieces: [], squares: []) }
         let clamped = GeoBox(south: max(box.south, gridLatMin), west: max(box.west, -180),
                              north: min(box.north, gridLatMax), east: min(box.east, 180))
@@ -404,6 +424,7 @@ enum MGRSGridRenderer {
         var pieces: [Piece] = []
         var squares: [Square] = []
         for key in order {
+            if isCancelled() { return nil }
             guard let regions = groups[key] else { continue }
             buildLines(zone: key.zone, south: key.south, regions: regions, lod: lod, tol: tol, into: &pieces)
             if lod.labelsSquares {
@@ -411,6 +432,7 @@ enum MGRSGridRenderer {
                              minDiagonal: minSquareDiagonal, into: &squares)
             }
         }
+        if isCancelled() { return nil }
         return Grid(lod: lod, pieces: pieces, squares: squares)
     }
 

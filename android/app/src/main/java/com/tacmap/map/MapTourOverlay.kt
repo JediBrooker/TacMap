@@ -87,6 +87,15 @@ private class TourSpot(val rect: Rect, val cornerRadius: Float) {
 }
 
 /**
+ * The spotlight's corner radius. A hidden target (calibration hides a few) or the spring
+ * overshooting can leave the hole with a negative side, and coerceIn throws when max < min
+ */
+internal fun tourCornerRadius(radius: Float, holeWidth: Float, holeHeight: Float): Float {
+    val max = (min(holeWidth, holeHeight) / 2).takeIf { it.isFinite() }?.coerceAtLeast(0f) ?: 0f
+    return if (radius.isFinite()) radius.coerceIn(0f, max) else 0f
+}
+
+/**
  * The guided tour drawn over the map. Everything is dimmed except the control
  * the current step is about, which gets a pulsing ring, and a card with an
  * arrow explains it. It draws in the activity window, so night mode turns it
@@ -146,7 +155,7 @@ internal fun MapTourOverlay(targets: TourTargets, onFinish: () -> Unit) {
         )
 
         Canvas(Modifier.fillMaxSize()) {
-            val corner = radius.coerceIn(0f, min(hole.width, hole.height) / 2)
+            val corner = tourCornerRadius(radius, hole.width, hole.height)
             val scrim = Path().apply {
                 fillType = PathFillType.EvenOdd
                 addRect(Rect(Offset.Zero, size))

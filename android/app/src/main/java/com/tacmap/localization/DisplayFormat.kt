@@ -20,6 +20,19 @@ object DisplayFormat {
         AppLanguage.selection.takeUnless { it == SupportedLanguage.SYSTEM }?.tag
     )
 
+    /**
+     * The app's UI language, "en" or "de", nothing regional. For numbers that have to match
+     * iOS whatever the device region is, the bake rows say (PAR-R2-1)
+     */
+    fun uiLanguage(
+        selection: SupportedLanguage = AppLanguage.selection,
+        system: () -> String = { L10n.systemUiLanguage() },
+    ): String = when (selection) {
+        SupportedLanguage.GERMAN -> "de"
+        SupportedLanguage.ENGLISH -> "en"
+        SupportedLanguage.SYSTEM -> system()
+    }
+
     fun number(value: Double, decimals: Int, locale: Locale = currentLocale): String {
         if (!value.isFinite()) return "—"
         return NumberFormat.getNumberInstance(locale).apply {

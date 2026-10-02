@@ -51,4 +51,13 @@ data class MapCamera(
         val r = degrees * PI / 180
         return (dx * cos(r) - dy * sin(r)) to (dx * sin(r) + dy * cos(r))
     }
+
+    companion object {
+        /** camera zoom limits for every source (WP2 contract A). sources overzoom past their own max */
+        const val MIN_ZOOM = 2.0
+        const val MAX_ZOOM = 22.0
+
+        fun clampZoom(zoom: Double): Double =
+            if (zoom.isNaN()) MIN_ZOOM else zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
+    }
 }

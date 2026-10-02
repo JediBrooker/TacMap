@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -116,15 +117,25 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.tacmap.calibration.Calibration
-import com.tacmap.calibration.Fiduciary
-import com.tacmap.calibration.Datum
-import com.tacmap.calibration.FiduciaryFitter
+import com.tacmap.calibration.EntryMenuAction
+import com.tacmap.calibration.EntryRowTap
+import com.tacmap.calibration.ImportError
+import com.tacmap.calibration.ImportFailure
+import com.tacmap.calibration.ImportOutcome
+import com.tacmap.calibration.ImportedMapEntry
+import com.tacmap.calibration.InFlightImportFiles
+import com.tacmap.calibration.InspectionResult
+import com.tacmap.calibration.LibraryEntryRules
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
+import com.tacmap.calibration.fiducial.CalibrationCameraAnchor
+import com.tacmap.calibration.fiducial.CalibrationCapture
+import com.tacmap.calibration.fiducial.resolved
+import com.tacmap.map.render.CalibrationMarker
+import com.tacmap.map.render.CalibrationMarkerModel
+import androidx.activity.compose.BackHandler
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
-import com.tacmap.calibration.PdfPageRenderer
 import com.tacmap.calibration.Wgs84Coordinate
 import com.tacmap.app.DocumentImportKind
 import com.tacmap.app.AppLock
@@ -220,9 +231,18 @@ internal fun MapScreen(
     val trackPersistMessage by vm.trackRecorder.persistError.collectAsState()
     val trackPersistError = trackPersistMessage?.text
     val mapSource by vm.mapSource.collectAsState()
-    val retainedImportedMap by vm.retainedImportedMapSource.collectAsState()
-    val retainedImportedMapIssue by vm.retainedImportedMapIssue.collectAsState()
     val mapSelectionPersistenceIssue by vm.mapSelectionPersistenceIssue.collectAsState()
+    val calibrationUi by vm.calibration.state.collectAsState()
+    val calibrating = calibrationUi != null
+    val calibrationBridge = remember { CalibrationMapBridge() }
+    val libraryState by vm.libraryState.collectAsState()
+    val libraryStatus by vm.libraryStatus.collectAsState()
+    val draftCounts by vm.draftCounts.collectAsState()
+    val hashMismatch by vm.hashMismatch.collectAsState()
+    val launchAlert by vm.launchAlert.collectAsState()
+    val importProgress by vm.importProgress.collectAsState()
+    val pagePicker by vm.pagePicker.collectAsState()
+    val rejectedPrompt by vm.rejectedPrompt.collectAsState()
 
     /// Is anything on screen actually pulling tiles off the internet right now?
     /// Only the online raster styles (Esri/OSM) do; offline packs and PDFs don't.
@@ -236,15 +256,30 @@ internal fun MapScreen(
     /// A PDF with no real georef sits on a made up placement; say so every time it's
     /// on screen so nobody reads a grid off it (plan 02 s1, D2-06 / D5-02).
     val uncalibratedPdf = (mapSource as? com.tacmap.calibration.PdfMapSource)?.isGeoreferenced == false
+    // WP2 contract G: a PDF that failed to draw or is still drawing says so, never a green
+    // "Offline basemap" over a blank map (D5-16)
+    val pdfRenderStatus by vm.pdfRuntime.status.collectAsState()
+    val pdfPreparingShown by vm.pdfRuntime.showPreparingLabel.collectAsState()
+    val pdfShown = mapSource is com.tacmap.calibration.PdfMapSource
+    val pdfRenderFailed = pdfShown && pdfRenderStatus is com.tacmap.map.render.pdf.PdfRenderStatus.Failed
+    val pdfDrawing = pdfShown && pdfPreparingShown &&
+        pdfRenderStatus == com.tacmap.map.render.pdf.PdfRenderStatus.Preparing
     val basemapLabel: String? = when {
+        // calibration owns the header (s7.8), the failure alert still comes up over it
+        calibrating -> Messages.calibrationHeaderLabel()
+        pdfRenderFailed -> Messages.pdfRenderFailedLabel()
+        pdfDrawing -> Messages.pdfRenderDrawingLabel()
         uncalibratedPdf -> Messages.pdfMapUncalibratedLabel()
         importedMapLoaded -> L10n.text("Offline basemap")
         onlineTilesActive -> L10n.text("Online basemap")
         else -> null
     }
     val basemapColor = when {
+        calibrating -> Color(0xFFFFB300)
+        pdfRenderFailed -> Color(com.tacmap.map.render.pdf.PdfRenderRules.FAILED_COLOR)
+        pdfDrawing -> Color(com.tacmap.map.render.pdf.PdfRenderRules.PREPARING_COLOR)
         uncalibratedPdf -> Color(0xFFFFB300)
-        importedMapLoaded -> Color(0xFF74E38A)
+        importedMapLoaded -> Color(com.tacmap.map.render.pdf.PdfRenderRules.READY_COLOR)
         else -> Color(0xFFFF5A5A)
     }
     val waypointStore = remember(unitSyncForegroundEpoch) { WaypointStore(context) }
@@ -390,11 +425,14 @@ internal fun MapScreen(
         }
     }
 
-    /// (done, total) while baking PDF into offline tiles, null when idle
-    var tilingProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    /// the running bake, so the progress dialog's Cancel can stop it
-    var tilingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    var tilingCancelling by remember { mutableStateOf(false) }
+    /// Generate Offline Tiles lives at app scope, this screen just shows it
+    val bakeState by vm.bakeManager.state.collectAsState()
+    val pdfRecovery by vm.pdfRecovery.collectAsState()
+    val pdfLaunchNotices by vm.pdfLaunchNotices.collectAsState()
+    /// the render failure the user already said Not Now to, so the alert doesn't nag
+    var dismissedRenderFailure by remember { mutableStateOf<String?>(null) }
+    var confirmDeleteSuspect by remember { mutableStateOf(false) }
+    var pdfRetryTick by remember { mutableIntStateOf(0) }
     /// lock toggle - when true no graphic can be moved. Extra guard
     /// against accidental drags in the field.
     var graphicsLocked by remember { mutableStateOf(false) }
@@ -408,28 +446,22 @@ internal fun MapScreen(
     var drawingLabelsVisible by rememberPersistedBoolean("drawingLabels", false)
     var symbologyVisible by rememberPersistedBoolean("symbologyVisible", true)
     var drawingsVisible by rememberPersistedBoolean("drawingsVisible", true)
-    var mgrsGridVisible by rememberPersistedBoolean("mgrsGrid", false)
+    var mgrsGridVisible by rememberPersistedBoolean(MGRS_GRID_VISIBLE_KEY, false)
     var terrainHeatmapVisible by rememberPersistedBoolean("terrainHeatmap", false)
     var userLocationVisible by rememberPersistedBoolean("userLocation", true)
+    var importedMapVisible by rememberPersistedBoolean(IMPORTED_MAP_VISIBLE_KEY, true)
     var activeDrawTool by remember { mutableStateOf<DrawingGeometry?>(null) }
     var isFreeDrawMode by remember { mutableStateOf(false) }
     var draftGeometry by remember { mutableStateOf<DrawingGeometry?>(null) }
     var draftPoints by remember { mutableStateOf<List<DrawingPoint>>(emptyList()) }
     var selectedDrawingId by remember { mutableStateOf<String?>(null) }
-    var isCalibratingPdf by remember { mutableStateOf(false) }
-    var calibrationFiduciaries by remember { mutableStateOf<List<Fiduciary>>(emptyList()) }
-    var pendingCalibrationTap by remember { mutableStateOf<PendingCalibrationTap?>(null) }
-    // Datum the sheet's MGRS is in; fiduciaries are shifted to WGS84 on save.
-    var calibrationDatum by remember { mutableStateOf(Datum.WGS84) }
-    // a refused GeoPDF waits here until they pick Calibrate Manually or Cancel. Nothing
-    // goes on the map in between, never a quiet camera box (same flow + strings as iOS)
-    var pendingGeorefRejection by remember { mutableStateOf<PendingGeorefRejection?>(null) }
-    // relaunched into a PDF that still isn't calibrated: one generic prompt, like iOS restoreActiveBasemap
-    var promptUncalibratedPdf by remember { mutableStateOf(false) }
-    val restoredSourceId = remember { mapSource.id }
-    // plain PDF import starts calibrating as soon as the new source is live
-    var pendingCalibrationStartFor by remember { mutableStateOf<String?>(null) }
-    val uncalibratedPromptShownFor = remember { mutableSetOf<String>() }
+    /// the running document import (copy / inspect), so the progress card can cancel it
+    var importJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var importCancelRequested by remember { mutableStateOf(false) }
+    /// "Choose page..." on a calibrated map: the picked page waits on the confirm (E1)
+    var pendingChangePage by remember { mutableStateOf<Pair<PreparedPdfImport, Int>?>(null) }
+    /// OD-F5: an import that failed says why in an alert with OK, not a toast that truncates
+    var importAlert by rememberSaveable { mutableStateOf<String?>(null) }
     var activeDrawingName by remember { mutableStateOf("") }
     var activeStrokeColor by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_COLOR) }
     var activeStrokeStyle by remember { mutableStateOf(DrawingStrokeStyle.SOLID) }
@@ -472,189 +504,6 @@ internal fun MapScreen(
 
     val hasPreciseLocation = liveMapLocationState == LiveMapLocationState.Precise
     val liveLocationControl = LiveMapLocationPermissionPolicy.controlFor(liveMapLocationState)
-
-    suspend fun importSelectedPdf(uri: Uri, operationKey: String) {
-        val imported = runCatching {
-            withContext(Dispatchers.IO) {
-                importPdfMapSource(
-                    context = context,
-                    sourceUri = uri,
-                    cameraLat = cameraLat,
-                    cameraLng = cameraLng,
-                    operationKey = operationKey,
-                    copyJournal = documentCopyJournal,
-                )
-            }
-        }.onFailure {
-            Toast.makeText(context, pdfImportUserMessage(it), Toast.LENGTH_LONG).show()
-        }.getOrNull()
-
-        imported?.let { result ->
-            val source = result.source
-            val outcome = result.outcome
-            if (outcome is PdfImportOutcome.Rejected) {
-                // loud: say why and offer a manual calibration, nothing is placed until they choose
-                pendingGeorefRejection = PendingGeorefRejection(source, outcome.reason)
-                return@let
-            }
-            // plain PDFs go straight into calibration on their labelled provisional placement
-            if (outcome == PdfImportOutcome.NoGeoreference) uncalibratedPromptShownFor += source.id
-            if (!vm.setMapSource(source)) return@let
-            when (outcome) {
-                is PdfImportOutcome.Georeferenced, PdfImportOutcome.RestoredCalibration ->
-                    Toast.makeText(context, L10n.text("Imported %1\$s", source.displayName), Toast.LENGTH_SHORT).show()
-                PdfImportOutcome.NoGeoreference -> pendingCalibrationStartFor = source.id
-                is PdfImportOutcome.Rejected -> Unit
-            }
-        }
-    }
-
-    suspend fun importExternalObjects(uri: Uri, kind: DocumentImportKind) {
-        val fallback = drawingDocument.layers
-            .firstOrNull { it.id == activeDrawingLayerId }?.id
-            ?: drawingDocument.layers.firstOrNull()?.id
-            ?: DrawingDocument.DEFAULT_LAYER_ID
-        val existingLayers = drawingDocument.layers.toList()
-        val occupied = waypoints.map {
-            com.tacmap.export.OccupiedExternalImportIdentity(
-                com.tacmap.export.ExternalImportObjectKind.WAYPOINT,
-                it.id,
-            )
-        } + drawingDocument.features.map {
-            com.tacmap.export.OccupiedExternalImportIdentity(
-                com.tacmap.export.ExternalImportObjectKind.DRAWING,
-                it.id,
-            )
-        }
-        val initiallyResolved = withContext(Dispatchers.IO) {
-            val bytes = readBoundedExternalImport(context.contentResolver.openInputStream(uri))
-            val parsed = when (kind) {
-                DocumentImportKind.GEO_JSON -> com.tacmap.export.GeoJsonImporter.parseStream(
-                    input = ByteArrayInputStream(bytes),
-                    existingLayers = existingLayers,
-                    fallbackLayerId = fallback,
-                    density = context.resources.displayMetrics.density,
-                )
-                DocumentImportKind.KML -> com.tacmap.export.KmlImporter.parseStream(
-                    input = ByteArrayInputStream(bytes),
-                    existingLayers = existingLayers,
-                    fallbackLayerId = fallback,
-                    density = context.resources.displayMetrics.density,
-                )
-                else -> error("$kind is not an object import")
-            }
-            val batchKey = com.tacmap.export.ExternalImportIdentityJournal.batchKey(
-                kind.savedValue,
-                bytes,
-            )
-            batchKey to importIdentityJournal.resolveAndPersist(
-                batchKey = batchKey,
-                parsed = parsed,
-                occupied = occupied,
-            )
-        }
-        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
-            "External import commit reconciliation must run on the main thread"
-        }
-        val (batchKey, preliminary) = initiallyResolved
-        val liveWaypoints = waypointStore.committedWaypoints.value
-        val liveDrawings = drawingStore.committedDocument.value.features
-        val reconciled = importIdentityJournal.reconcileAndPersist(
-            batchKey = batchKey,
-            resolved = preliminary,
-            liveWaypoints = liveWaypoints,
-            liveDrawings = liveDrawings,
-        )
-        val commit = com.tacmap.export.commitExternalImport(
-            imported = reconciled.result,
-            commitWaypoints = { incoming ->
-                val before = waypointStore.committedWaypoints.value
-                    .mapTo(HashSet()) { it.id.lowercase() }
-                val saved = waypointStore.addAll(incoming)
-                com.tacmap.export.ExternalImportStoreCommit(
-                    succeeded = saved,
-                    insertedCount = if (saved) incoming.count { it.id.lowercase() !in before } else 0,
-                )
-            },
-            commitDrawings = { layers, incoming ->
-                val before = drawingStore.committedDocument.value.features
-                    .mapTo(HashSet()) { it.id.lowercase() }
-                val saved = drawingStore.addImported(layers, incoming)
-                com.tacmap.export.ExternalImportStoreCommit(
-                    succeeded = saved,
-                    insertedCount = if (saved) incoming.count { it.id.lowercase() !in before } else 0,
-                )
-            },
-        )
-        val collisions = reconciled.identities.consumedRemintIds.size
-        val resultMessage = if (collisions > 0) Messages.importCollisionSummaryMessage("", DisplayFormat.number(collisions.toDouble(), 0))
-            .withArgument(0, commit.pendingMessage) else commit.pendingMessage
-        Toast.makeText(
-            context,
-            resultMessage.text,
-            if (commit.succeeded) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
-        ).show()
-    }
-
-    suspend fun processDocumentImport(pending: PendingDocumentImport) {
-        val uri = Uri.parse(pending.uri)
-        when (pending.kind) {
-            DocumentImportKind.SYMBOL_PACK -> {
-                val pack = withContext(Dispatchers.IO) {
-                    requireNotNull(context.contentResolver.openInputStream(uri)).use {
-                        com.tacmap.waypoints.CustomSymbolStore.preparePack(it)
-                    }
-                }
-                // Commit only after the live, unlocked composition resumes on Main.
-                com.tacmap.waypoints.CustomSymbolStore.installPack(pack)
-                Toast.makeText(context, Messages.symbolsPackImported(pack.name), Toast.LENGTH_LONG).show()
-            }
-            DocumentImportKind.PDF -> importSelectedPdf(uri, "pdf:${pending.token}")
-            DocumentImportKind.MBTILES -> {
-                val source = withContext(Dispatchers.IO) {
-                    importMBTilesMapSource(
-                        context,
-                        uri,
-                        "mbtiles:${pending.token}",
-                        documentCopyJournal,
-                    )
-                }
-                    ?: throw IllegalArgumentException(L10n.text("The selected file is not a readable MBTiles database"))
-                if (vm.setMapSource(source)) {
-                    Toast.makeText(
-                        context,
-                        L10n.text("Loaded offline tiles: %1\$s", source.displayName),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            }
-            DocumentImportKind.GEO_JSON, DocumentImportKind.KML ->
-                importExternalObjects(uri, pending.kind)
-        }
-    }
-
-    // The Activity owns and persists picker results. Claim exactly once while
-    // this composition is alive; cancellation abandons the claim for the next
-    // rebuilt MapScreen, while every terminal result releases the URI grant.
-    LaunchedEffect(pendingDocumentImport?.token) {
-        val pending = pendingDocumentImport ?: return@LaunchedEffect
-        if (!onClaimDocumentImport(pending.token)) return@LaunchedEffect
-        var terminal = false
-        try {
-            processDocumentImport(pending)
-            terminal = true
-        } catch (cancelled: CancellationException) {
-            onAbandonDocumentImport(pending.token)
-            throw cancelled
-        } catch (failure: Throwable) {
-            terminal = true
-            val detail = if (pending.kind == DocumentImportKind.SYMBOL_PACK) Messages.symbolsSymbolPackError() else failure.message?.takeIf { it.isNotBlank() }
-                ?: L10n.text("The selected document could not be imported")
-            Toast.makeText(context, Messages.importFailed(detail), Toast.LENGTH_LONG).show()
-        } finally {
-            if (terminal) onCompleteDocumentImport(pending.token)
-        }
-    }
 
     DisposableEffect(lifecycleOwner, hasPreciseLocation) {
         val observer = LifecycleEventObserver { _, event ->
@@ -750,20 +599,9 @@ internal fun MapScreen(
         }
     }
 
+    // the PDF went away (online, MBTiles): the runtime lets go of its page + tiles
     LaunchedEffect(mapSource.id) {
-        if (mapSource !is PdfMapSource) {
-            isCalibratingPdf = false
-            calibrationFiduciaries = emptyList()
-            pendingCalibrationTap = null
-        }
-        // the map we came back up on still isn't calibrated (plain, refused GeoPDF or an old
-        // camera-box session): ask once. Fresh imports already went into calibration
-        val pdf = mapSource as? PdfMapSource
-        if (pdf != null && pdf.id == restoredSourceId && !pdf.isGeoreferenced && !isCalibratingPdf &&
-            uncalibratedPromptShownFor.add(pdf.id)
-        ) {
-            promptUncalibratedPdf = true
-        }
+        if (mapSource !is PdfMapSource) vm.pdfRuntime.release()
     }
 
     val selected = waypoints.firstOrNull { it.id == selectedWaypointId }
@@ -777,7 +615,7 @@ internal fun MapScreen(
         ?.id
         ?: drawingDocument.layers.firstOrNull { it.isVisible }?.id
         ?: safeActiveLayerId
-    val quickAddAllowed = !isCalibratingPdf &&
+    val quickAddAllowed = !calibrating &&
         !measureSession.isActive &&
         activeDrawTool == null &&
         !graphicsLocked &&
@@ -884,52 +722,470 @@ internal fun MapScreen(
         }
     }
 
-    fun startPdfCalibration() {
-        val source = pdfSource ?: return
+    /**
+     * Contract s2.3 steps 1-3 here (end measure/draw, clear selection, close menus),
+     * the rest (heading-up pause, browse mode, preview publish, seed) in the VM.
+     */
+    fun beginCalibration(entryId: String): Boolean {
+        stopDrawing()
+        measureSession.cancel()
         vm.selectWaypoint(null)
+        if (selectedDrawingId != null) drawingStore.revertPreview()
         selectedDrawingId = null
-        activeDrawTool = null
-        draftGeometry = null
-        draftPoints = emptyList()
-        calibrationFiduciaries = (source.calibration as? Calibration.Fiduciaries)?.fids
-            ?: source.pendingFiduciaries
-        pendingCalibrationTap = null
-        isCalibratingPdf = true
+        mapPressPoint = null
+        quickAddMenuOpen = false
+        quickAddEditorMode = null
+        quickAddTarget = null
+        hamburgerOpen = false
+        showLayersSheet = false
+        return vm.startCalibration(entryId)
     }
 
-    LaunchedEffect(mapSource.id, pendingCalibrationStartFor) {
-        if (pendingCalibrationStartFor != null && pendingCalibrationStartFor == mapSource.id) {
-            pendingCalibrationStartFor = null
-            startPdfCalibration()
-        }
+    // the live camera through the bridge; the VM's copy of the camera if the map isn't up
+    fun captureNow(): CalibrationCapture? = calibrationUi?.let { ui ->
+        calibrationBridge.capture(ui.state.sheet)
+            ?: cameraViewportState?.toCamera()?.let { CalibrationCameraAnchor.capture(ui.display.georef, ui.state.sheet, it) }
     }
 
-    fun finishPdfCalibration() {
-        val source = pdfSource ?: return
-        // plan 02 s1: fit in the UTM zone of the first point, refuse collinear/clustered sets
-        val crop = source.calibrationCrop
-        val fit = FiduciaryFitter.refitStored(calibrationFiduciaries, crop)
-        val georef = fit?.georeference(crop)
-        if (fit == null || georef == null) {
-            val message = if (fit?.degenerate == true) {
-                L10n.text("Fiduciaries are colinear or coincident")
-            } else {
-                L10n.text("Calibration needs 3 non-colinear points.")
+    fun leaveCalibration() {
+        if (vm.calibration.leaveTapped()) vm.endCalibrationPreview()
+    }
+
+    // Android Back = the ✕ (s2.7)
+    BackHandler(enabled = calibrating) { leaveCalibration() }
+
+    // a pause can't lose points: drafts write synchronously, but a write that failed
+    // because the key was locked gets another go once we're back
+    LaunchedEffect(calibrationUi?.draftUnsaved) {
+        if (calibrationUi?.draftUnsaved == true) vm.calibration.retryDraftWrite()
+    }
+    // this screen only exists with the mission key unlocked, so being (re)composed is the
+    // unlock: a library that was locked gets restored now (F3)
+    LaunchedEffect(Unit) { vm.onMissionDataUnlocked() }
+    LaunchedEffect(Unit) {
+        vm.calibration.events.collect { e ->
+            val text = when (e) {
+                is CalibrationEvent.PointDeleted -> Messages.calibrationPointDeleted(e.number.toString())
+                is CalibrationEvent.DatumChanged -> Messages.calibrationDatumChanged(CalibrationText.datumName(e.datumId))
+                is CalibrationEvent.Resumed -> Messages.calibrationResumed(Messages.calibrationPointCount(e.points))
+                CalibrationEvent.Paused -> {
+                    vm.endCalibrationPreview()
+                    Messages.calibrationPaused()
+                }
+                is CalibrationEvent.Done -> Messages.calibrationDone(Messages.calibrationPointCount(e.points), CalibrationText.rmsText(e.rmsM))
+                CalibrationEvent.DoneExact -> Messages.calibrationDoneExact()
+                CalibrationEvent.MaxPoints -> Messages.calibrationMaxPoints(com.tacmap.calibration.fiducial.CalibrationState.MAX_POINTS.toString())
             }
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-            return
+            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
         }
-        val calibrated = source.calibrated(calibrationFiduciaries, georef)
-        if (calibrated === source || !vm.setMapSource(calibrated)) return
-        isCalibratingPdf = false
-        pendingCalibrationTap = null
-        Toast.makeText(context, L10n.text("Calibration RMS %1\$sm", fit.rmsMetres.toInt()), Toast.LENGTH_SHORT).show()
     }
 
-    fun cancelPdfCalibration() {
-        isCalibratingPdf = false
-        calibrationFiduciaries = emptyList()
-        pendingCalibrationTap = null
+    val importPipeline = remember(documentCopyJournal) { MapImportPipeline(context.applicationContext, documentCopyJournal) }
+
+    fun fileSize(bytes: Long): String = android.text.format.Formatter.formatShortFileSize(context, bytes)
+
+    // OD-F6: limits and needed space go through the shared size rule, "537 MB" on both apps
+    fun importFailureText(f: ImportFailure): String = CalibrationText.importFailure(f) { ImportUiRules.byteText(it) }
+
+    fun librarySnapshot(): LibrarySnapshot {
+        val st = vm.libraryState.value
+        return LibrarySnapshot(
+            loaded = vm.libraryStatus.value == LibraryStatus.LOADED && st != null,
+            entryCount = st?.entries?.size ?: 0,
+            byContentKey = { key -> st?.byContentKey(key) },
+            isUnavailable = { e -> vm.fileStatus(e) != com.tacmap.calibration.EntryFileStatus.OK },
+        )
+    }
+
+    fun showImportNotice(n: ImportNotice) {
+        when (n) {
+            is ImportNotice.Toast -> Toast.makeText(context, CalibrationText.text(n.message), Toast.LENGTH_LONG).show()
+            is ImportNotice.Alert -> importAlert = n.text
+        }
+    }
+
+    /**
+     * P1 "Choose page...": read the entry's own file again (off main, watchdog, the
+     * progress card + Cancel), then the same page picker an import uses
+     */
+    fun choosePageFor(id: String) {
+        val entry = vm.libraryState.value?.entry(id) ?: return
+        val file = vm.fileOf(entry) ?: return
+        val key = entry.contentKey ?: return
+        if (importJob != null || importProgress != null) return
+        importCancelRequested = false
+        val job = scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { importPipeline.reinspect(file) { vm.setImportProgress(it) } }
+                when (result) {
+                    is InspectionResult.Ok -> vm.showPagePicker(
+                        PreparedPdfImport(
+                            file = file,
+                            contentKey = key,
+                            displayName = entry.displayName,
+                            inspection = result.inspection,
+                            outcome = ImportOutcome.PagePicker(MapImportPipeline.rejectedBadges(result.inspection)),
+                            existingEntryId = id,
+                        )
+                    )
+                    is InspectionResult.Failed -> importAlert = importFailureText(result.failure)
+                    null -> importAlert = Messages.mapImportTooComplex()
+                }
+            } catch (cancelled: CancellationException) {
+                if (importCancelRequested) Toast.makeText(context, Messages.mapImportCancelled(), Toast.LENGTH_SHORT).show()
+                throw cancelled
+            } finally {
+                vm.setImportProgress(null)
+                importJob = null
+                importCancelRequested = false
+            }
+        }
+        importJob = job
+    }
+
+    /** the picked page's write, after any confirm: manual, bake + old draft go (s8.2 change page) */
+    fun writeChosenPage(prepared: PreparedPdfImport, page: Int) {
+        val id = prepared.existingEntryId ?: return
+        scope.launch {
+            val inspected = prepared.inspection.page(page) ?: return@launch
+            val geometry = inspected.geometry ?: withContext(Dispatchers.IO) {
+                com.tacmap.calibration.PdfInspector.geometryFor(prepared.file, inspected)?.first
+            }
+            val info = MapImportPipeline.pdfInfo(prepared.inspection.pageCount, inspected, geometry) ?: return@launch
+            val changed = vm.changeImportedMapPage(id, info.pageIndex, info.rotate, info.pageBox, info.embedded, info.embeddedIssue, info.geometry)
+            if (!changed) return@launch
+            // E4: a page with its own georef is activated (framed), unless the write kept it active already
+            if (info.embedded != null) {
+                if (vm.libraryState.value?.active?.entryId != id) vm.activateImportedMap(id)
+            } else {
+                beginCalibration(id)
+            }
+        }
+    }
+
+    /** Layers Choose page: same page is a no-op, a hand calibration asks first (E1, lifecycle.choosePage) */
+    fun applyChosenPage(prepared: PreparedPdfImport, page: Int) {
+        val id = prepared.existingEntryId ?: return
+        vm.dismissPagePicker(keepFile = true)
+        val st = vm.libraryState.value ?: return
+        val entry = st.entry(id) ?: return
+        val decision = ChoosePageRules.decide(
+            currentPage = entry.pdf?.pageIndex ?: 0,
+            pickedPage = page,
+            hasManual = entry.pdf?.manual != null,
+            pickedHasValidGeoref = prepared.inspection.page(page)?.georef is com.tacmap.calibration.GeoPdfGeorefResult.Georeferenced,
+            entryIsActive = st.active.entryId == id,
+        )
+        if (!decision.write) return
+        if (decision.confirm != null) pendingChangePage = prepared to page else writeChosenPage(prepared, page)
+    }
+
+    /** WP2 import probe (M12) on the page about to be committed, before the library write */
+    fun importProbeStep(operationKey: String) = ImportProbeStep(
+        sourceFor = vm::probeSourceFor,
+        probe = { probeImportedPdf(context, it, operationKey, vm.pdfRuntime.guard) },
+        deleteCopy = { f -> withContext(Dispatchers.IO) { runCatching { f.delete() } } },
+        fallbackReason = { Messages.pdfRenderReasonRenderError() },
+    )
+
+    // built per commit on purpose: beginCalibration closes over this composition's state
+    fun importCommitTarget(): ImportCommitTarget =
+        object : ImportCommitTarget {
+            override fun addEntry(entry: ImportedMapEntry, activate: Boolean) = vm.addImportedEntry(entry, activate)
+            override fun activate(id: String) = vm.activateImportedMap(id)
+            override fun relink(id: String, file: java.io.File) = vm.relinkImportedMap(id, file)
+            override fun showRejectedPrompt(id: String, reason: com.tacmap.calibration.GeorefRejectReason) = vm.showRejectedPrompt(id, reason)
+            override fun showPagePicker(prepared: PreparedPdfImport) = vm.showPagePicker(prepared)
+            override fun calibrate(id: String) { beginCalibration(id) }
+        }
+
+    fun importCommitter(operationKey: String) = PdfImportCommitter(
+        target = importCommitTarget(),
+        probe = importProbeStep(operationKey),
+        newEntry = { prepared, page -> MapImportPipeline.pdfEntry(prepared, page, page.geometry, context.filesDir, System.currentTimeMillis()) },
+        notify = ::showImportNotice,
+    )
+
+    /** a prepared PDF lands in the library (main thread), s9.6 */
+    suspend fun commitPreparedPdf(prepared: PreparedPdfImport, operationKey: String) {
+        importCommitter(operationKey).commit(prepared)
+    }
+
+    suspend fun runMapImport(uri: Uri, kind: DocumentImportKind, operationKey: String) {
+        val snapshot = librarySnapshot()
+        val outcome = withContext(Dispatchers.IO) {
+            if (kind == DocumentImportKind.PDF) {
+                importPipeline.runPdf(uri, operationKey, snapshot) { vm.setImportProgress(it) }
+            } else {
+                importPipeline.runMbtiles(uri, operationKey, snapshot) { vm.setImportProgress(it) }
+            }
+        }
+        vm.setImportProgress(ImportProgress.Saving)
+        try {
+            when (outcome) {
+                is PreparedOutcome.Failed -> {
+                    // the launch sweep already said so in a dialog, once is enough
+                    val alreadyTold = outcome.failure.error == ImportError.INTERRUPTED &&
+                        vm.launchAlert.value == MapLaunchAlert.ImportInterrupted
+                    if (!alreadyTold) importAlert = importFailureText(outcome.failure)
+                }
+                is PreparedOutcome.Pdf -> commitPreparedPdf(outcome.prepared, operationKey)
+                is PreparedOutcome.Mbtiles -> {
+                    val prepared = outcome.prepared
+                    val existing = prepared.duplicate
+                    if (existing != null) {
+                        // E9: an unavailable pack takes the new (identical) copy first
+                        if (!prepared.relink || vm.relinkImportedMap(existing.id, prepared.file)) {
+                            vm.activateImportedMap(existing.id)
+                            Toast.makeText(context, Messages.mapImportDuplicate(existing.displayName), Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        MapImportPipeline.mbtilesEntry(prepared, context.filesDir, System.currentTimeMillis())
+                            ?.let { vm.addImportedEntry(it, activate = true) }
+                    }
+                    InFlightImportFiles.release(prepared.file)
+                }
+            }
+        } finally {
+            vm.setImportProgress(null)
+        }
+    }
+
+    suspend fun importExternalObjects(uri: Uri, kind: DocumentImportKind) {
+        val fallback = drawingDocument.layers
+            .firstOrNull { it.id == activeDrawingLayerId }?.id
+            ?: drawingDocument.layers.firstOrNull()?.id
+            ?: DrawingDocument.DEFAULT_LAYER_ID
+        val existingLayers = drawingDocument.layers.toList()
+        val occupied = waypoints.map {
+            com.tacmap.export.OccupiedExternalImportIdentity(
+                com.tacmap.export.ExternalImportObjectKind.WAYPOINT,
+                it.id,
+            )
+        } + drawingDocument.features.map {
+            com.tacmap.export.OccupiedExternalImportIdentity(
+                com.tacmap.export.ExternalImportObjectKind.DRAWING,
+                it.id,
+            )
+        }
+        val initiallyResolved = withContext(Dispatchers.IO) {
+            val bytes = readBoundedExternalImport(context.contentResolver.openInputStream(uri))
+            val parsed = when (kind) {
+                DocumentImportKind.GEO_JSON -> com.tacmap.export.GeoJsonImporter.parseStream(
+                    input = ByteArrayInputStream(bytes),
+                    existingLayers = existingLayers,
+                    fallbackLayerId = fallback,
+                    density = context.resources.displayMetrics.density,
+                )
+                DocumentImportKind.KML -> com.tacmap.export.KmlImporter.parseStream(
+                    input = ByteArrayInputStream(bytes),
+                    existingLayers = existingLayers,
+                    fallbackLayerId = fallback,
+                    density = context.resources.displayMetrics.density,
+                )
+                else -> error("$kind is not an object import")
+            }
+            val batchKey = com.tacmap.export.ExternalImportIdentityJournal.batchKey(
+                kind.savedValue,
+                bytes,
+            )
+            batchKey to importIdentityJournal.resolveAndPersist(
+                batchKey = batchKey,
+                parsed = parsed,
+                occupied = occupied,
+            )
+        }
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            "External import commit reconciliation must run on the main thread"
+        }
+        val (batchKey, preliminary) = initiallyResolved
+        val liveWaypoints = waypointStore.committedWaypoints.value
+        val liveDrawings = drawingStore.committedDocument.value.features
+        val reconciled = importIdentityJournal.reconcileAndPersist(
+            batchKey = batchKey,
+            resolved = preliminary,
+            liveWaypoints = liveWaypoints,
+            liveDrawings = liveDrawings,
+        )
+        val commit = com.tacmap.export.commitExternalImport(
+            imported = reconciled.result,
+            commitWaypoints = { incoming ->
+                val before = waypointStore.committedWaypoints.value
+                    .mapTo(HashSet()) { it.id.lowercase() }
+                val saved = waypointStore.addAll(incoming)
+                com.tacmap.export.ExternalImportStoreCommit(
+                    succeeded = saved,
+                    insertedCount = if (saved) incoming.count { it.id.lowercase() !in before } else 0,
+                )
+            },
+            commitDrawings = { layers, incoming ->
+                val before = drawingStore.committedDocument.value.features
+                    .mapTo(HashSet()) { it.id.lowercase() }
+                val saved = drawingStore.addImported(layers, incoming)
+                com.tacmap.export.ExternalImportStoreCommit(
+                    succeeded = saved,
+                    insertedCount = if (saved) incoming.count { it.id.lowercase() !in before } else 0,
+                )
+            },
+        )
+        val collisions = reconciled.identities.consumedRemintIds.size
+        val resultMessage = if (collisions > 0) Messages.importCollisionSummaryMessage("", DisplayFormat.number(collisions.toDouble(), 0))
+            .withArgument(0, commit.pendingMessage) else commit.pendingMessage
+        Toast.makeText(
+            context,
+            resultMessage.text,
+            if (commit.succeeded) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    suspend fun processDocumentImport(pending: PendingDocumentImport) {
+        val uri = Uri.parse(pending.uri)
+        when (pending.kind) {
+            DocumentImportKind.SYMBOL_PACK -> {
+                val pack = withContext(Dispatchers.IO) {
+                    requireNotNull(context.contentResolver.openInputStream(uri)).use {
+                        com.tacmap.waypoints.CustomSymbolStore.preparePack(it)
+                    }
+                }
+                // Commit only after the live, unlocked composition resumes on Main.
+                com.tacmap.waypoints.CustomSymbolStore.installPack(pack)
+                Toast.makeText(context, Messages.symbolsPackImported(pack.name), Toast.LENGTH_LONG).show()
+            }
+            DocumentImportKind.PDF -> runMapImport(uri, pending.kind, "pdf:${pending.token}")
+            DocumentImportKind.MBTILES -> runMapImport(uri, pending.kind, "mbtiles:${pending.token}")
+            DocumentImportKind.GEO_JSON, DocumentImportKind.KML ->
+                importExternalObjects(uri, pending.kind)
+        }
+    }
+
+    // The Activity owns and persists picker results. Claim exactly once while
+    // this composition is alive; cancellation abandons the claim for the next
+    // rebuilt MapScreen, while every terminal result releases the URI grant.
+    LaunchedEffect(pendingDocumentImport?.token) {
+        val pending = pendingDocumentImport ?: return@LaunchedEffect
+        if (!onClaimDocumentImport(pending.token)) return@LaunchedEffect
+        val interrupted = vm.interruptedImportOperationKey
+        if (pending.kind == DocumentImportKind.PDF && interrupted == "pdf:${pending.token}") {
+            // this exact import took the app down during its probe, replaying it would loop.
+            // drop it, the launch notice says what happened
+            onCompleteDocumentImport(pending.token)
+            return@LaunchedEffect
+        }
+        var terminal = false
+        importCancelRequested = false
+        // a child job so the progress card's Cancel can stop just this import; a pause
+        // tearing MapScreen down cancels it too, that one abandons and retries on resume
+        val job = launch {
+            try {
+                processDocumentImport(pending)
+                terminal = true
+            } catch (cancelled: CancellationException) {
+                if (importCancelRequested) {
+                    terminal = true
+                    Toast.makeText(context, Messages.mapImportCancelled(), Toast.LENGTH_SHORT).show()
+                }
+                throw cancelled
+            } catch (failure: Exception) {
+                // Exception only: an OOM / StackOverflow is caught at the inspector boundary
+                // and nowhere else (D5-15), never turned into "imported" or a toast here
+                terminal = true
+                val mapImport = pending.kind == DocumentImportKind.PDF || pending.kind == DocumentImportKind.MBTILES
+                val message = when {
+                    pending.kind == DocumentImportKind.SYMBOL_PACK -> Messages.importFailed(Messages.symbolsSymbolPackError())
+                    mapImport && pending.kind == DocumentImportKind.MBTILES && failure is IllegalStateException ->
+                        Messages.mapImportInvalidMbtiles()
+                    // never the raw exception text for a map: it can carry the picked file's path
+                    mapImport -> Messages.mapImportReadFailed(failure.javaClass.simpleName)
+                    else -> Messages.importFailed(
+                        failure.message?.takeIf { it.isNotBlank() } ?: L10n.text("The selected document could not be imported")
+                    )
+                }
+                // OD-F5: a map import that failed gets the alert, the other imports keep their toast
+                if (mapImport) importAlert = message else Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        }
+        importJob = job
+        try {
+            job.join()
+        } finally {
+            importJob = null
+            vm.setImportProgress(null)
+            if (terminal) onCompleteDocumentImport(pending.token) else onAbandonDocumentImport(pending.token)
+            importCancelRequested = false
+        }
+    }
+
+    // DEBUG launch hook: the camera goes where the verification script asked, after any
+    // hook import has landed and framed itself (docs/DEBUG_HOOKS.md)
+    LaunchedEffect(pendingDocumentImport == null, mapSource.id) {
+        if (!com.tacmap.BuildConfig.DEBUG || pendingDocumentImport != null) return@LaunchedEffect
+        val cam = com.tacmap.app.DebugLaunchHooks.takeCamera() ?: return@LaunchedEffect
+        delay(600)
+        vm.applyDebugCamera(cam)
+    }
+
+    val calibrationMarkerModel: CalibrationMarkerModel? = calibrationUi?.let { ui ->
+        val datum = ui.state.datum
+        CalibrationMarkerModel(
+            markers = ui.state.sortedPoints.map { p ->
+                CalibrationMarker(
+                    id = p.id,
+                    number = p.number,
+                    page = p.pagePoint,
+                    typed = p.resolved(datum)?.let { r -> datum.toWGS84(r.latitude, r.longitude) }
+                        ?.let { com.tacmap.calibration.Wgs84Coordinate(it.latitude, it.longitude) },
+                    flagged = p.number in ui.report.flagged,
+                )
+            },
+            selectedId = ui.selectedId,
+            pendingPage = ui.pendingPage,
+            movingId = (ui.phase as? CalibrationPhase.Moving)?.id,
+            showResiduals = ui.report.n >= 3 && ui.display.isFit,
+        )
+    }
+
+    /** Layers rows off the library (contract s10 + import_limits.json entryStates) */
+    fun importedMapsUi(): ImportedMapsUi {
+        val st = libraryState
+        if (st == null || libraryStatus != LibraryStatus.LOADED) return ImportedMapsUi(emptyList(), null, locked = libraryStatus != LibraryStatus.LOADING)
+        val activeId = st.active.entryId
+        val byId = st.entries.associateBy { it.id }
+        // parents first, their baked tiles indented right under them
+        val ordered = st.entries.filter { it.derivedFromId == null || it.derivedFromId !in byId } .flatMap { parent ->
+            listOf(parent) + st.entries.filter { it.derivedFromId == parent.id }
+        }
+        val rows = ordered.map { e ->
+            val file = if (e.id in hashMismatch) com.tacmap.calibration.EntryFileStatus.MISMATCH else vm.fileStatus(e)
+            val drafts = e.contentKey?.let { key -> e.pdf?.let { draftCounts[com.tacmap.calibration.fiducial.CalibrationTarget.draftKey(key, it.pageIndex)] } }
+            val facts = LibraryEntryRules.facts(e, e.derivedFromId?.let { byId[it]?.displayName })
+            val pres = LibraryEntryRules.present(facts, file, drafts)
+            ImportedMapRowUi(
+                id = e.id,
+                name = e.displayName,
+                subtitle = CalibrationText.text(pres.subtitle),
+                sizeText = fileSize(e.byteCount),
+                active = e.id == activeId,
+                indented = e.derivedFromId != null && e.derivedFromId in byId,
+                state = pres.state,
+                rowTap = pres.rowTap,
+                // J1: once a PDF has its bake only Remove is offered (in the Imported Map block),
+                // Generate comes back after that. the pure table still matches the fixture
+                menu = if (e.pdf?.validBake != null) pres.menu - EntryMenuAction.GENERATE_TILES else pres.menu,
+                generate = ImportUiRules.generateMenu(
+                    bakeBusy = bakeState is com.tacmap.calibration.PdfBakeManager.State.Running ||
+                        bakeState is com.tacmap.calibration.PdfBakeManager.State.Estimating ||
+                        bakeState is com.tacmap.calibration.PdfBakeManager.State.Confirming,
+                    bakeRunningForEntry = (bakeState as? com.tacmap.calibration.PdfBakeManager.State.Running)?.token == e.renderGuardToken,
+                    onScreenAndFailed = pdfRenderFailed && (mapSource as? PdfMapSource)?.entryId == e.id,
+                ),
+            )
+        }
+        // OD-F14 + OD-F6: bake files count, the shared size rule
+        return ImportedMapsUi(
+            rows = rows,
+            footer = Messages.mapLibraryFooter(Messages.importedMapCount(st.entries.size), ImportUiRules.byteText(ImportUiRules.footerBytes(st))),
+            locked = false,
+        )
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -937,6 +1193,14 @@ internal fun MapScreen(
                 modifier = Modifier.fillMaxSize(),
                 waypoints = waypoints,
                 mapSource = mapSource,
+                tileCache = vm.tileCache,
+                pdfTileSourceFor = (mapSource as? PdfMapSource)?.let { pdf ->
+                    { georef: com.tacmap.calibration.PdfGeoreference? -> vm.pdfTileSourceFor(pdf, georef, rendererDensity) }
+                },
+                pdfRetryKey = pdfRetryTick,
+                // forced on while calibrating, you can't place points on a hidden sheet
+                importedMapHidden = !(importedMapVisible || calibrating),
+                pdfRenderReady = pdfRenderStatus == com.tacmap.map.render.pdf.PdfRenderStatus.Ready,
                 onlineBasemapsEnabled = onlineBasemapsEnabled,
                 onlineLookupsEnabled = onlineLookupsEnabled,
                 drawings = drawingDocument.features,
@@ -956,8 +1220,24 @@ internal fun MapScreen(
                 onFreeDrawEnd = {
                     finishDraft()
                 },
-                calibrationInputEnabled = isCalibratingPdf,
-                calibrationFiduciaries = if (isCalibratingPdf) calibrationFiduciaries else emptyList(),
+                calibrationActive = calibrating,
+                calibrationDisplay = calibrationUi?.display,
+                calibrationMarkers = calibrationMarkerModel,
+                calibrationBridge = calibrationBridge,
+                onCalibrationMarkerTap = { id ->
+                    // a tap never places a point, it only (de)selects one (s7.5), and
+                    // selecting flies there at the same zoom + heading (s7.7)
+                    vm.calibration.select(id)
+                    calibrationUi?.let { ui ->
+                        id?.let(ui.state::point)?.let { p -> ui.display.georef.toWGS84(p.pagePoint.x, p.pagePoint.y) }
+                            ?.let { w -> vm.requestCentre(w.latitude, w.longitude) }
+                    }
+                },
+                zoomStepRequests = vm.zoomStepRequests,
+                centreRequests = vm.centreRequests,
+                overlaysHidden = calibrating,
+                userLocationHidden = calibrationUi?.display?.provisional == true,
+                gridOverride = calibrationUi?.let { it.gridOn && !it.display.provisional },
                 mgrsGridVisible = mgrsGridVisible,
                 terrainHeatmapVisible = terrainHeatmapVisible,
                 unitLabelsVisible = unitLabelsVisible,
@@ -971,7 +1251,9 @@ internal fun MapScreen(
                 initialCameraState = cameraViewportState,
                 pendingTarget = pendingTarget,
                 resetNorthRequests = vm.resetNorthRequests,
-                headingUpEnabled = mapOrientationMode == MapOrientationMode.HEADING_UP,
+                headingRequests = vm.headingRequests,
+                // s2.3: heading-up pauses (device heading ignored, rotate gesture on), setting untouched
+                headingUpEnabled = mapOrientationMode == MapOrientationMode.HEADING_UP && !calibrating,
                 deviceHeadingDegrees = vm.headingService.headingDegrees,
                 onConsumePendingTarget = vm::consumePendingCameraTarget,
                 onCameraIdle = vm::onCameraIdle,
@@ -990,14 +1272,6 @@ internal fun MapScreen(
                     }
                 },
                 onDrawingTap = ::handleDrawingTap,
-                onCalibrationTap = { lat, lng ->
-                    val tap = pdfSource?.pdfPointFor(lat, lng)
-                    if (tap != null) {
-                        pendingCalibrationTap = tap
-                    } else {
-                        Toast.makeText(context, L10n.text("Tap inside the PDF map."), Toast.LENGTH_SHORT).show()
-                    }
-                },
                 onDrawingFeatureTap = { featureId ->
                     vm.selectWaypoint(null)
                     selectedDrawingId = featureId
@@ -1063,7 +1337,7 @@ internal fun MapScreen(
                     mapPressPoint = MapPressPoint.at(lat, lng, screen, primaryCoordinateType)
                 },
             )
-            mapPressPoint?.let { point ->
+            mapPressPoint?.takeUnless { calibrating }?.let { point ->
                 MapPointMenu(
                     point = point,
                     canEdit = quickAddAllowed,
@@ -1144,6 +1418,9 @@ internal fun MapScreen(
                 .padding(top = 8.dp)
                 .fillMaxWidth(),
             highlightModifier = Modifier.tourTarget(tourTargets, TourTarget.HEADER),
+            calibrationReadout = calibrationUi?.let { ui ->
+                if (ui.display.provisional) CalibrationReadout.NotGeoreferenced else CalibrationReadout.Preview(ui.showsPreview)
+            },
             onDropPin = {
                 val (lat, lng) = vm.headerCoordinate
                 val activeLayerId = drawingDocument.layers
@@ -1166,7 +1443,7 @@ internal fun MapScreen(
         // with the Centre pill at the bottom now.
         }
 
-        if (onlineTilesActive && onlineTilesUnavailable) {
+        if (onlineTilesActive && onlineTilesUnavailable && !calibrating) {
             Text(
                 L10n.text("Online basemap temporarily unavailable"),
                 color = Color.White,
@@ -1212,7 +1489,9 @@ internal fun MapScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.tourTarget(tourTargets, TourTarget.MENU)) {
+            // calibrating: the ✕ takes the hamburger's corner, as far from Finish as it gets
+            if (calibrating) CalibrationLeaveButton(onLeave = ::leaveCalibration)
+            if (!calibrating) Box(Modifier.tourTarget(tourTargets, TourTarget.MENU)) {
                 CircleHudButton(Icons.Default.Menu, L10n.text("Menu")) { hamburgerOpen = true }
                 DropdownMenu(
                     expanded = hamburgerOpen,
@@ -1378,7 +1657,7 @@ internal fun MapScreen(
                     )
                 }
             }
-            if (tacMapChatHudVisible(syncRoom)) {
+            if (tacMapChatHudVisible(syncRoom) && !calibrating) {
                 TacMapChatHudButton(unreadCount = unreadChatMessageCount) {
                     chatTarget = com.tacmap.sync.TacMapChatTarget.EntireRoom
                 }
@@ -1430,7 +1709,7 @@ internal fun MapScreen(
                     }
                 }
             }
-            Box(Modifier.tourTarget(tourTargets, TourTarget.LABELS)) {
+            if (!calibrating) Box(Modifier.tourTarget(tourTargets, TourTarget.LABELS)) {
                 UnitLabelsToggle(active = unitLabelsVisible) { unitLabelsVisible = !unitLabelsVisible }
             }
             Box(Modifier.tourTarget(tourTargets, TourTarget.NIGHT)) {
@@ -1451,7 +1730,7 @@ internal fun MapScreen(
                         },
                     )
                 }
-                UndoRedoButtons(
+                if (!calibrating) UndoRedoButtons(
                     canUndo = canUndo,
                     canRedo = canRedo,
                     onUndo = {
@@ -1475,7 +1754,7 @@ internal fun MapScreen(
                         }
                     }
                 )
-                Box(Modifier.tourTarget(tourTargets, TourTarget.LOCK)) {
+                if (!calibrating) Box(Modifier.tourTarget(tourTargets, TourTarget.LOCK)) {
                     LockButton(
                         locked = graphicsLocked,
                         onToggle = {
@@ -1493,17 +1772,15 @@ internal fun MapScreen(
             }
         }
 
-        if (isCalibratingPdf) {
-            CalibrationBar(
-                fiduciaryCount = calibrationFiduciaries.size,
-                canFinish = calibrationFiduciaries.size >= 3,
-                onFinish = ::finishPdfCalibration,
-                onCancel = ::cancelPdfCalibration,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 16.dp)
-                    .fillMaxWidth()
+        val ui = calibrationUi
+        if (ui != null) {
+            CalibrationScreenLayer(
+                vm = vm,
+                ui = ui,
+                camera = cameraViewportState?.toCamera(),
+                captureNow = ::captureNow,
+                lastLocation = lastLocation,
+                hasPreciseLocation = hasPreciseLocation,
             )
         } else if (measureSession.isActive) {
             MeasureToolbar(
@@ -1662,6 +1939,15 @@ internal fun MapScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 80.dp)
+        )
+
+        // Generate Offline Tiles progress, stays up after the Layers sheet closes
+        PdfBakeChip(
+            state = bakeState,
+            onCancel = { vm.bakeManager.cancel() },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 140.dp),
         )
 
         if (showTips) {
@@ -1909,43 +2195,95 @@ internal fun MapScreen(
         )
     }
 
-    pendingGeorefRejection?.let { pending ->
-        // Cancel (or backing out) drops the private copy, it never made it to the map or library
-        fun discard() {
-            pendingGeorefRejection = null
-            scope.launch(Dispatchers.IO) { discardRejectedPdfImport(pending.source) }
-        }
+    // calibration sheets + dialogs (s2, s10)
+    calibrationUi?.let { ui -> CalibrationSheetsAndDialogs(vm, ui) }
+
+    // s9.6 rejected georef on a single page: added (not active), offer calibration
+    rejectedPrompt?.let { prompt ->
         AlertDialog(
-            onDismissRequest = ::discard,
+            onDismissRequest = { vm.dismissRejectedPrompt() },
             title = { Text(Messages.pdfGeorefRejectedTitle()) },
-            text = { Text(Messages.pdfGeorefRejectedMessage(pdfGeorefRejectionReason(pending.reason))) },
+            text = { Text(Messages.mapImportGeorefRejected(pdfGeorefRejectionReason(prompt.reason))) },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingGeorefRejection = null
-                        uncalibratedPromptShownFor += pending.source.id
-                        if (vm.setMapSource(pending.source)) pendingCalibrationStartFor = pending.source.id
-                    },
-                ) { Text(Messages.pdfGeorefCalibrateManually()) }
+                TextButton(onClick = {
+                    vm.dismissRejectedPrompt()
+                    beginCalibration(prompt.entryId)
+                }) { Text(Messages.mapImportCalibrateNow()) }
             },
-            dismissButton = { TextButton(onClick = ::discard) { Text(L10n.text("Cancel")) } },
+            dismissButton = { TextButton(onClick = { vm.dismissRejectedPrompt() }) { Text(Messages.mapImportLater()) } },
         )
     }
 
-    if (promptUncalibratedPdf) {
+    pendingChangePage?.let { (prepared, page) ->
         AlertDialog(
-            onDismissRequest = { promptUncalibratedPdf = false },
-            title = { Text(Messages.pdfMapUncalibratedTitle()) },
-            text = { Text(Messages.pdfMapUncalibratedMessage()) },
+            onDismissRequest = { pendingChangePage = null },
+            text = { Text(Messages.mapChangePageConfirm()) },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        promptUncalibratedPdf = false
-                        if (!isCalibratingPdf) startPdfCalibration()
-                    },
-                ) { Text(Messages.pdfMapCalibrateNow()) }
+                TextButton(onClick = {
+                    pendingChangePage = null
+                    writeChosenPage(prepared, page)
+                }) { Text(Messages.mapActionChoosePage()) }
             },
-            dismissButton = { TextButton(onClick = { promptUncalibratedPdf = false }) { Text(L10n.text("Not now")) } },
+            dismissButton = { TextButton(onClick = { pendingChangePage = null }) { Text(L10n.text("Cancel")) } },
+        )
+    }
+
+    importAlert?.let { text ->
+        AlertDialog(
+            onDismissRequest = { importAlert = null },
+            text = { Text(text) },
+            confirmButton = { TextButton(onClick = { importAlert = null }) { Text(Messages.acknowledge()) } },
+        )
+    }
+
+    pagePicker?.let { prepared ->
+        PdfPagePickerDialog(
+            prepared = prepared,
+            onPick = { page ->
+                if (prepared.existingEntryId != null) {
+                    applyChosenPage(prepared, page)
+                    return@PdfPagePickerDialog
+                }
+                scope.launch {
+                    val inspected = prepared.inspection.page(page) ?: return@launch
+                    // a picked page past the first one needs its own pdfium frame
+                    val geometry = inspected.geometry ?: withContext(Dispatchers.IO) {
+                        com.tacmap.calibration.PdfInspector.geometryFor(prepared.file, inspected)?.first
+                    }
+                    vm.dismissPagePicker(keepFile = true)
+                    importCommitter("pdf:picked:${java.util.UUID.randomUUID()}")
+                        .commitPicked(prepared, inspected.copy(geometry = geometry))
+                }
+            },
+            // an existing entry's file is never dropped, dismissPagePicker knows that too
+            onCancel = { vm.dismissPagePicker(keepFile = prepared.existingEntryId != null) },
+        )
+    }
+
+    launchAlert?.let { alert ->
+        AlertDialog(
+            onDismissRequest = { vm.dismissLaunchAlert() },
+            text = {
+                Text(
+                    when (alert) {
+                        is MapLaunchAlert.MigrationUncalibrated -> Messages.mapMigrationUncalibrated(alert.name)
+                        MapLaunchAlert.ImportInterrupted -> Messages.mapImportInterrupted()
+                        MapLaunchAlert.ActiveFileChanged -> Messages.mapStateUnavailable()
+                    }
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.dismissLaunchAlert() }) { Text(Messages.acknowledge()) } },
+        )
+    }
+
+    importProgress?.let { progress ->
+        ImportProgressCard(
+            progress = progress,
+            cancelling = importCancelRequested,
+            onCancel = {
+                importCancelRequested = true
+                importJob?.cancel()
+            },
         )
     }
 
@@ -2081,36 +2419,22 @@ internal fun MapScreen(
         )
     }
 
-    tilingProgress?.let { (done, total) ->
-        AlertDialog(
-            // Only the Cancel button stops the bake; a stray tap outside doesn't.
-            onDismissRequest = {},
-            confirmButton = {
-                // The dialog closes once the bake has stopped and cleaned up.
-                TextButton(
-                    onClick = {
-                        tilingCancelling = true
-                        tilingJob?.cancel()
-                    },
-                    enabled = !tilingCancelling,
-                ) { Text(L10n.text("Cancel")) }
-            },
-            title = { Text(L10n.text("Generating offline tiles")) },
-            text = {
-                Column {
-                    @Suppress("DEPRECATION")
-                    LinearProgressIndicator(
-                        progress = if (total > 0) done.toFloat() / total else 0f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        if (total > 0) L10n.text("%1\$s / %2\$s tiles", done, total) else L10n.text("Preparing…"),
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-        )
-    }
+    PdfRenderDialogs(
+        vm = vm,
+        mapSource = mapSource,
+        pdfRenderStatus = pdfRenderStatus,
+        dismissedRenderFailure = dismissedRenderFailure,
+        onDismissRenderFailure = { dismissedRenderFailure = it },
+        onRetry = {
+            vm.pdfRuntime.retry()
+            pdfRetryTick++
+        },
+        pdfRecovery = pdfRecovery,
+        confirmDeleteSuspect = confirmDeleteSuspect,
+        onConfirmDeleteSuspect = { confirmDeleteSuspect = it },
+        pdfLaunchNotice = pdfLaunchNotices.firstOrNull(),
+        bakeState = bakeState,
+    )
 
     if (showLayersSheet) {
         LayersSheet(
@@ -2141,65 +2465,73 @@ internal fun MapScreen(
             },
             activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
-            retainedImportedMapName = retainedImportedMap?.displayName,
-            retainedImportedMapIssue = retainedImportedMapIssue?.text,
-            importedMapActive = importedMapLoaded,
-            onReturnToImportedMap = {
-                vm.restoreRetainedImportedMap()
-                showLayersSheet = false
+            importedMaps = importedMapsUi(),
+            onImportedMapTap = { row ->
+                when (row.rowTap) {
+                    EntryRowTap.ACTIVATE -> {
+                        if (vm.activateImportedMap(row.id)) showLayersSheet = false
+                    }
+                    EntryRowTap.CALIBRATE -> {
+                        showLayersSheet = false
+                        beginCalibration(row.id)
+                    }
+                    EntryRowTap.NONE -> Unit
+                }
             },
-            onDeleteRetainedImportedMap = { vm.deleteRetainedImportedMap() },
-            onRemoveUnavailableRetainedMap = { vm.removeUnavailableRetainedMapEntry() },
-            pdfMap = pdfSource,
-            hasOfflineTiles = mapSource is OfflineTileMapSourceAndroid,
-            onCalibratePdf = {
-                showLayersSheet = false
-                startPdfCalibration()
-            },
-            onGenerateTiles = {
-                val pdf = pdfSource
-                showLayersSheet = false
-                if (pdf == null) {
-                    Toast.makeText(context, L10n.text("Load a PDF map first"), Toast.LENGTH_SHORT).show()
-                } else {
-                    tilingJob = scope.launch {
-                        tilingCancelling = false
-                        tilingProgress = 0 to 0
-                        // Cancel stops PdfTiler at the next tile; it deletes its
-                        // partial output before the cancellation reaches here.
-                        val path = try {
-                            com.tacmap.calibration.PdfTiler.generate(context, pdf) { p ->
-                                tilingProgress = p.done to p.total
-                            }
-                        } finally {
-                            tilingProgress = null
-                            tilingJob = null
-                        }
-                        if (path != null) {
-                            val activated = com.tacmap.calibration.OfflineTileMapSourceAndroid.open(path)
-                                ?.let { vm.setMapSource(it) }
-                                ?: false
-                            if (activated) {
-                                Toast.makeText(context, L10n.text("Offline tiles ready"), Toast.LENGTH_SHORT).show()
-                            }
+            onImportedMapAction = { row, action ->
+                when (action) {
+                    EntryMenuAction.CALIBRATE -> {
+                        showLayersSheet = false
+                        beginCalibration(row.id)
+                    }
+                    EntryMenuAction.DELETE -> {
+                        // E10: the detail is why, never the map's own name. a failed write
+                        // already has its Retry alert up, that says it
+                        if (vm.libraryStatus.value != LibraryStatus.LOADED) {
+                            importAlert = Messages.mapDeleteFailed(Messages.mapLibraryLocked())
                         } else {
-                            Toast.makeText(
-                                context,
-                                L10n.text("Couldn't generate tiles — calibrate the PDF first (3+ fiduciaries)."),
-                                Toast.LENGTH_LONG
-                            ).show()
+                            vm.deleteImportedMap(row.id)
+                        }
+                    }
+                    EntryMenuAction.USE_EMBEDDED -> vm.useEmbeddedGeoref(row.id)
+                    EntryMenuAction.CHOOSE_PAGE -> {
+                        // the confirm comes after the pick, picking the same page asks nothing (E1)
+                        showLayersSheet = false
+                        choosePageFor(row.id)
+                    }
+                    EntryMenuAction.GENERATE_TILES -> if (row.generate == ImportUiRules.GenerateMenu.CANCEL) {
+                        vm.bakeManager.cancel()
+                    } else if (row.generate == ImportUiRules.GenerateMenu.ENABLED) {
+                        // WP2's bake (M1/M15): estimate, then the confirm with the zoom options.
+                        // app scoped so closing the sheet or rotating doesn't stop it. the PDF
+                        // stays, its entry gets the bake record, the active map never changes
+                        val entry = vm.libraryState.value?.entry(row.id)
+                        val pdf = entry?.let { e -> vm.effectiveGeoref(e)?.let { g -> vm.pdfSourceFor(e, g) } }
+                        if (entry == null || pdf == null) {
+                            Toast.makeText(context, Messages.mapStateNeedsCalibration(), Toast.LENGTH_SHORT).show()
+                        } else {
+                            vm.bakeManager.prepare(pdf, rendererDensity)
                         }
                     }
                 }
             },
-            onUnloadPdf = {
-                showLayersSheet = false
-                cancelPdfCalibration()
-                vm.unloadPdfMap()
-            },
-            onUnloadOfflineTiles = {
-                showLayersSheet = false
-                vm.unloadOfflineTiles()
+            pdfMap = pdfSource,
+            pdfMapCalibratedLabel = pdfSource?.entryId?.let { libraryState?.entry(it) }
+                ?.let { ImportUiRules.calibratedBlockLabel(it.pdf?.manual) }?.let(CalibrationText::text),
+            importedMapVisible = importedMapVisible || calibrating,
+            importedMapToggleEnabled = !calibrating,
+            onImportedMapVisibleChange = { importedMapVisible = it },
+            bakeState = bakeState,
+            onGenerateTiles = { pdfSource?.let { vm.bakeManager.prepare(it, rendererDensity) } },
+            onCancelBake = { vm.bakeManager.cancel() },
+            onRemoveBake = { vm.removePdfBake() },
+            renderFailed = pdfRenderFailed,
+            renderFailureReason = (pdfRenderStatus as? com.tacmap.map.render.pdf.PdfRenderStatus.Failed)
+                ?.takeIf { pdfRenderFailed }?.reason?.let(::pdfRenderFailureMessage),
+            onRetryRender = {
+                vm.pdfRuntime.retry()
+                pdfRetryTick++
+                dismissedRenderFailure = null
             },
             onDismiss = { showLayersSheet = false }
         )
@@ -2207,6 +2539,8 @@ internal fun MapScreen(
 
     if (showImportExportSheet) {
         ImportExportSheet(
+            // D5-09: one map import at a time, the rows are off while one runs
+            importsEnabled = importProgress == null && importJob == null,
             onImportSymbolPack = {
                 showImportExportSheet = false
                 onRequestDocumentImport(DocumentImportKind.SYMBOL_PACK)
@@ -2292,36 +2626,6 @@ internal fun MapScreen(
             onDismiss = { exportPreview = null },
         )
         null -> Unit
-    }
-
-    pendingCalibrationTap?.let { tap ->
-        CalibrationInputDialog(
-            point = tap,
-            fiduciaryNumber = calibrationFiduciaries.size + 1,
-            currentLocationMgrs = lastLocation?.let { calibrationMgrsForFix(it.latitude, it.longitude) },
-            datum = calibrationDatum,
-            onDatumChange = { calibrationDatum = it },
-            onDismiss = { pendingCalibrationTap = null },
-            onSave = { mgrs, label ->
-                val parsed = MgrsFormatter.parse(mgrs)
-                if (parsed == null) {
-                    false
-                } else {
-                    // MGRS is in the sheet's datum; shift to WGS84 before storing.
-                    val (lat, lng) = calibrationDatum.toWgs84(parsed.first, parsed.second)
-                    calibrationFiduciaries = calibrationFiduciaries + Fiduciary(
-                        pdfX = tap.pdfX,
-                        pdfY = tap.pdfY,
-                        mgrs = mgrs.trim().uppercase(),
-                        latitude = lat,
-                        longitude = lng,
-                        label = label.trim().ifBlank { null }
-                    )
-                    pendingCalibrationTap = null
-                    true
-                }
-            }
-        )
     }
 }
 

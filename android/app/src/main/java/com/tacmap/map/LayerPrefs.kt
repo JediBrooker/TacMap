@@ -10,7 +10,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.flow.drop
 
-private const val LAYER_PREFS = "layer_prefs"
+internal const val LAYER_PREFS = "layer_prefs"
+
+/** Layers > Show Imported Map (WP2 contract H). default on, forced on while calibrating */
+const val IMPORTED_MAP_VISIBLE_KEY = "importedMapVisible"
+/** the MGRS grid toggle's key, the debug launch hook flips it too */
+const val MGRS_GRID_VISIBLE_KEY = "mgrsGrid"
 
 /**
  * A boolean Compose state backed by SharedPreferences so map layer toggles
