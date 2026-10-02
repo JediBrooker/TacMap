@@ -241,20 +241,62 @@ final class PDFBakeWorker {
 
     // MARK: encode
 
-    /// fully opaque -> JPEG 2000 q0.9, anything with alpha (sheet edge) -> PNG.
+    /// fully opaque -> JPEG 2000, anything with alpha (sheet edge) -> PNG.
     /// J3: plain JPEG tops out around 32 dB on USGS and 26 dB on dense red
     /// hairlines whatever the quality (ImageIO always subsamples chroma), so it
-    /// cant make the 35 dB gate. JP2 at 0.9 measured 37 / 49 dB for about the
-    /// same bytes, PNG passes but is ~3x bigger. ImageIO has no WebP encoder
+    /// cant make the 35 dB gate. ImageIO has no WebP encoder either.
+    /// ImageIO's JP2 quality is really a byte budget (q0.9 is ~320 KB a 768 px
+    /// tile whatever's in it), so linework sails past the gate but grainy stuff
+    /// like the USGS orthoimage or a photo of a paper map lands at 27-33 dB. so
+    /// every tile gets checked: q0.9, then q0.99, then lossless JP2, then PNG
     static func encode(_ img: CGImage) -> Data? {
-        let opaque = isOpaque(img)
+        guard isOpaque(img) else { return write(img, type: UTType.png.identifier, quality: nil) }
+        let jp2 = PDFTileConstants.bakeOpaqueTypeIdentifier
+        for q in [PDFTileConstants.bakeJpeg2000Quality, PDFTileConstants.bakeJpeg2000RetryQuality, 1.0] {
+            guard let data = write(img, type: jp2, quality: q) else { return nil }
+            if clearsGate(data, live: img) { return data }
+        }
+        // lossless JP2 should never miss, but if the codec ever disagrees dont ship a soft tile
+        return write(img, type: UTType.png.identifier, quality: nil)
+    }
+
+    private static func write(_ img: CGImage, type: String, quality: Double?) -> Data? {
         let data = NSMutableData()
-        let type = (opaque ? PDFTileConstants.bakeOpaqueTypeIdentifier : UTType.png.identifier) as CFString
-        guard let dest = CGImageDestinationCreateWithData(data, type, 1, nil) else { return nil }
-        let props: [CFString: Any] = opaque ? [kCGImageDestinationLossyCompressionQuality: PDFTileConstants.bakeJpeg2000Quality] : [:]
+        guard let dest = CGImageDestinationCreateWithData(data, type as CFString, 1, nil) else { return nil }
+        let props: [CFString: Any] = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] } ?? [:]
         CGImageDestinationAddImage(dest, img, props as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { return nil }
         return data as Data
+    }
+
+    /// decode what we're about to store and hold it to the J3 gate against the live render
+    static func clearsGate(_ data: Data, live: CGImage) -> Bool {
+        let opts = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let back = CGImageSourceCreateImageAtIndex(src, 0, opts) else { return false }
+        return psnr(back, live: live) >= PDFTileConstants.bakePsnrGateDb
+    }
+
+    /// J3 PSNR: RGB, 8 bit, peak 255, over the pixels that are opaque in live
+    static func psnr(_ a: CGImage, live b: CGImage) -> Double {
+        guard a.width == b.width, a.height == b.height,
+              let pa = PDFTileRenderer.pixels(a), let pb = PDFTileRenderer.pixels(b) else { return 0 }
+        var se = 0.0, n = 0.0
+        for y in 0..<a.height {
+            let ra = y * pa.bytesPerRow, rb = y * pb.bytesPerRow
+            for x in 0..<a.width {
+                let i = ra + x * 4, j = rb + x * 4
+                guard pb.data[j + 3] == 255 else { continue }
+                for c in 0..<3 {
+                    let d = Double(pa.data[i + c]) - Double(pb.data[j + c])
+                    se += d * d
+                }
+                n += 3
+            }
+        }
+        guard n > 0 else { return 0 }
+        let mse = se / n
+        return mse == 0 ? 99 : 10 * log10(255 * 255 / mse)
     }
 
     /// our own tiles are BGRA premultiplied, read the alpha bytes straight off

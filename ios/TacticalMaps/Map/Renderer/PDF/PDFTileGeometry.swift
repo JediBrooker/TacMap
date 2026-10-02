@@ -76,6 +76,8 @@ enum PDFTileConstants {
     /// J3: iOS bakes opaque tiles as JPEG 2000 (edge tiles PNG). device local
     /// files, so the MBTiles format value is ours to pick
     static let bakeJpeg2000Quality = 0.9
+    /// second rung when q0.9 misses the gate (grainy/photo tiles), before going lossless
+    static let bakeJpeg2000RetryQuality = 0.99
     static let bakeOpaqueTypeIdentifier = "public.jpeg-2000"
     static let bakeMbtilesFormat = "jp2"
     /// J3 gate, baked vs live, the PSNR test reads this not a literal

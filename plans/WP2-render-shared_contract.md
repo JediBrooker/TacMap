@@ -403,7 +403,7 @@ The file is still `"v":1`. A reader treats a missing `bakeInProgress` as null.
   - An option is disabled when free space < 2 × its estimate.
   - Time = jobs × job EWMA + tiles × sampled encode time, shown as "about N min" (minimum 1).
 - **Encoding (formats differ; files are device-local):**
-  - iOS: JPEG 2000 q0.9 for fully opaque tiles, otherwise PNG, see the J3 table. It was JPEG q0.85 until the 2026-10-02 J3 measurement.
+  - iOS: JPEG 2000 for fully opaque tiles, otherwise PNG, see the J3 table. It was JPEG q0.85 until the 2026-10-02 J3 measurement. Each opaque tile is decoded and checked against the 35 dB gate before it is written: q0.9, then q0.99, then lossless JP2, then PNG (amendment 2026-10-02, adaptive J3).
   - Android: WebP lossless (effort 100, raised from 85 in r2 for OD-F3), see the J3 table. It was WebP lossy q85 until the 2026-10-02 J3 measurement.
   - MBTiles metadata: `name`, `format`, `minzoom=0`, `maxzoom`, `bounds` (footprint bbox), `tacmap_bake_key`, `tacmap_tile_px`, `tacmap_renderer=1`.
 - **Writing and publishing:**
@@ -524,6 +524,8 @@ The file is still `"v":1`. A reader treats a missing `bakeInProgress` as null.
 - Android's mean (142855) is over the old 20000 fallback, so `BAKE_FALLBACK_TILE_BYTES` is now 150000 in the generator and the fixture was regenerated. Both platforms' fallback constants have to say 150000. Effort 100 only bought 0.7% (141862 mean) for 1.3x the encode time, so effort stays at 85.
 - iOS's mean (248349) is over 150000 too, so `BAKE_FALLBACK_TILE_BYTES` is now **250000** and the fixture was regenerated again. Both platforms' fallback constants have to say 250000. `constants.bake` carries `iosJpeg2000Quality` 0.9 and `iosMbtilesFormat` "jp2" (replacing `iosJpegQuality`).
 - iOS JPEG 2000 decodes at about 35-40 ms per 768 px tile on the simulator, against about 4 ms for JPEG. That is still well under a live vector draw of the same tile.
+
+**Amendment 2026-10-02 (adaptive J3, iOS).** ImageIO's JPEG 2000 quality behaves as a byte budget (q0.9 is about 320 KB per 768 px tile whatever the content), so grainy content (the USGS orthoimage, a photographed paper map) measured 27-33 dB at q0.9 and an on-device real-USGS live/bake comparison measured 28.7 dB. iOS now holds every opaque baked tile to the gate itself: encode at q0.9, decode, compute the J3 PSNR against the live render; if under 35 dB retry at q0.99, then lossless JP2, then PNG. Android is lossless and unaffected. Re-measured on `USGS_SF_North.pdf` (the same 13 tiles as the table): mean 244585 / max 316493 B per tile, min PSNR 40.08 dB, so the shared fallback `tileBytes` (250000) is unchanged. Linework sheets stay on the first rung (rot5 min 62.6 dB, dense min 50.8 dB). Pinned by iOS `testPhotographicTilesStillClearThePsnrGate` and `testLineworkTilesStayOnTheCheapRung`.
 
 **Amendment 2026-10-02 (r1): gate inputs and wording (D1, D4, D8, D9; pinned by fixture `psnr`).**
 - D9: the shared fallback is 250000; the J3 raise rule above said 20000 before r1. The two USGS rows are over different tiles: iOS took the 3 J2 samples plus 10 INSIDE tiles spread evenly over the row-major INSIDE list (step `floor(n/10)`, from `step/2`, samples excluded); Android took the 13 INSIDE tiles nearest the centre by J2 `d2` (the 3 samples plus the next 10).

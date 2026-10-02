@@ -902,6 +902,68 @@ final class PDFBakeTests: XCTestCase {
         }
     }
 
+    /// J3 on grainy content: JP2 at a fixed quality is a byte budget, so an
+    /// orthoimage / photographed paper map came out ~28 dB. the encoder has to
+    /// notice and step up until the tile clears the gate
+    func testPhotographicTilesStillClearThePsnrGate() throws {
+        let live = try XCTUnwrap(Self.grainyTile(px: 768))
+        XCTAssertTrue(PDFBakeWorker.isOpaque(live))
+        let data = try XCTUnwrap(PDFBakeWorker.encode(live))
+        let baked = try XCTUnwrap(UIImage(data: data)?.cgImage)
+        XCTAssertGreaterThanOrEqual(psnr(baked, live), PDFTileConstants.bakePsnrGateDb)
+    }
+
+    func testLineworkTilesStayOnTheCheapRung() throws {
+        let ctx = try XCTUnwrap(PDFTileRenderer.makeContext(width: 768, height: 768))
+        ctx.setFillColor(UIColor.white.cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: 768, height: 768))
+        ctx.setStrokeColor(UIColor.red.cgColor)
+        ctx.setLineWidth(1)
+        for i in stride(from: 0, to: 768, by: 24) {
+            ctx.move(to: CGPoint(x: i, y: 0)); ctx.addLine(to: CGPoint(x: i, y: 768))
+            ctx.move(to: CGPoint(x: 0, y: i)); ctx.addLine(to: CGPoint(x: 768, y: i))
+        }
+        ctx.strokePath()
+        let live = try XCTUnwrap(ctx.makeImage())
+        let data = try XCTUnwrap(PDFBakeWorker.encode(live))
+        // q0.9 is ~320 KB a tile here, lossless JP2 is ~3x that
+        XCTAssertLessThan(data.count, 400_000, "linework should not need the retry rungs")
+        let baked = try XCTUnwrap(UIImage(data: data)?.cgImage)
+        XCTAssertGreaterThanOrEqual(psnr(baked, live), PDFTileConstants.bakePsnrGateDb)
+    }
+
+    /// deterministic photo-ish texture: value noise octaves per channel plus per pixel grain
+    static func grainyTile(px: Int) -> CGImage? {
+        guard let ctx = PDFTileRenderer.makeContext(width: px, height: px), let base = ctx.data else { return nil }
+        let p = base.assumingMemoryBound(to: UInt8.self)
+        let bpr = ctx.bytesPerRow
+        func h(_ x: Int, _ y: Int, _ s: Int) -> Double {
+            var v = UInt64(truncatingIfNeeded: x &* 374761393 &+ y &* 668265263 &+ s &* 2147483647)
+            v = (v ^ (v >> 13)) &* 1274126177
+            v ^= v >> 16
+            return Double(v & 0xffff) / 65535.0
+        }
+        func noise(_ x: Double, _ y: Double, _ s: Int) -> Double {
+            let x0 = Int(floor(x)), y0 = Int(floor(y))
+            let fx = x - floor(x), fy = y - floor(y)
+            let a = h(x0, y0, s), b = h(x0 + 1, y0, s), c = h(x0, y0 + 1, s), d = h(x0 + 1, y0 + 1, s)
+            return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy
+        }
+        for y in 0..<px {
+            for x in 0..<px {
+                // BGRA premultiplied, opaque so premultiplied == straight
+                for (ch, off) in [(0, 2), (1, 1), (2, 0)] {
+                    var v = 0.0, amp = 0.5, f = 1.0 / 48.0
+                    for o in 0..<6 { v += amp * noise(Double(x) * f, Double(y) * f, ch * 7 + o); amp *= 0.55; f *= 2.1 }
+                    v += 0.16 * (h(x, y, ch + 99) - 0.5)
+                    p[y * bpr + x * 4 + off] = UInt8(max(0, min(255, v * 300)))
+                }
+                p[y * bpr + x * 4 + 3] = 255
+            }
+        }
+        return ctx.makeImage()
+    }
+
     static func sampleURL(_ name: String) -> URL? {
         var d = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
