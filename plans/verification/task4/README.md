@@ -42,7 +42,7 @@ the synthetic envelope.
 
 Portable coverage/results accompany the final review report. Large immutable
 native images, actual camera/source proof, absolute-host manifests and full
-logs stay in scratch and are linked from `plans/resume/TASK4_DEVICE_REVIEW.md`.
+logs stay in scratch and are linked from the TASK4 device review (removed after 3.0 shipped, see git history).
 Reported FAIL, BORDERLINE and UNMEASURABLE cells are retained. Completing
 capture coverage does not establish universal <=1px numerical acceptance.
 
