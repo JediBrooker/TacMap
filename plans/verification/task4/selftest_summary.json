@@ -1,0 +1,34 @@
+{
+  "baseCases": 18,
+  "noInkCases": 3,
+  "pairedCases": 36,
+  "overzoom": {
+    "edges": {
+      "cases": 120,
+      "knownShiftErrorAbsMaxPx": 0.756372549019602,
+      "knownShiftErrorAbsP99Px": 0.5397498254015545,
+      "bySamplingFactorMaxErrorPx": {
+        "1": 0.1458310829057552,
+        "4": 0.12379679144387978,
+        "8": 0.32555542765048817,
+        "16": 0.756372549019602,
+        "32": 0.5282309660908482
+      }
+    },
+    "centroid": {
+      "cases": 120,
+      "knownShiftErrorAbsMaxPx": 1.1202336362662606,
+      "knownShiftErrorAbsP99Px": 0.5081214446222998,
+      "bySamplingFactorMaxErrorPx": {
+        "1": 0.25538120876273074,
+        "4": 0.32170941420695276,
+        "8": 0.5702872552913618,
+        "16": 1.1202336362662606,
+        "32": 0.6929510426669765
+      }
+    }
+  },
+  "interiorGoldOcclusionCases": 3,
+  "cropCases": 4,
+  "status": "PASS"
+}

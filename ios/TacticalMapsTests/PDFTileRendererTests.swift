@@ -50,7 +50,7 @@ final class PDFTileRendererTests: XCTestCase {
         switch path {
         case .live:
             if t.z <= s.policy.baseMaxZoom(plan: s.basePlan, tilePx: tilePx) { kind = .raster(s.base) }
-            else if plan.cells.count == 1 { kind = .vector(s.page) }
+            else if plan.cells.count <= PDFTileConstants.vectorMaxCells { kind = .vector(s.page) }
             else { kind = .staged(s.page) }
         case .raster: kind = .raster(s.base)
         case .direct: kind = .vector(s.page)
@@ -101,6 +101,116 @@ final class PDFTileRendererTests: XCTestCase {
     static func redness(_ p: (r: Int, g: Int, b: Int, a: Int)) -> Double {
         let v = Double(p.r - max(p.g, p.b)) / 255 * Double(p.a) / 255
         return v > 0.2 ? v : 0
+    }
+
+    func testCanberraVectorAndStagedComparisonWhenExportRequested() throws {
+        guard let path = ProcessInfo.processInfo.environment["TACMAP_DEVICE_BITMAP_OUTPUT"] else {
+            throw XCTSkip("Opt-in native diagnostic requires a bitmap evidence directory")
+        }
+        let directory = URL(fileURLWithPath: path)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let sheet = try openSheet("geopdf/tacmap_grid_cbr50k_iso.pdf")
+        let job = TileJob(z: 15, x0: 29954, y0: 19823, cols: 1, rows: 1)
+        let plan = PDFTileWarp.plan(job: job, tilePx: 768, footprint: sheet.footprint, georef: sheet.georef)
+        let staged = try XCTUnwrap(PDFTileRenderer.stagedPlan(plan: plan, footprint: sheet.footprint, jobPixels: 768 * 768))
+        var times: [String: Double] = [:]
+        for (name, source) in [("vector", PDFRenderSourceKind.vector(sheet.page)), ("staged", .staged(sheet.page))] {
+            let start = CFAbsoluteTimeGetCurrent()
+            let output = try PDFTileRenderer.renderJob(job, tilePx: 768, plan: plan, footprint: sheet.footprint, source: source)
+            times[name] = (CFAbsoluteTimeGetCurrent() - start) * 1000
+            guard case .image(let image)? = output[job.tiles[0]] else { return XCTFail("Actual diagnostic bitmap missing") }
+            XCTAssertEqual(image.width, 768); XCTAssertEqual(image.height, 768)
+            try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: directory.appendingPathComponent(name + ".png"))
+        }
+        let metadata: [String: Any] = [
+            "job": [15, 29954, 19823, 1, 1], "tilePx": 768, "cellCount": plan.cells.count,
+            "maxErrorPx": plan.maxErrorPx, "requiredPxPerPt": plan.requiredPxPerPt,
+            "stagedRegion": [staged.region.minX, staged.region.minY, staged.region.maxX, staged.region.maxY],
+            "stagedWidth": staged.width, "stagedHeight": staged.height,
+            "stagedPixels": staged.width * staged.height, "stagedPixelCap": 2 * 768 * 768,
+            "timingMs": times,
+            "cells": plan.cells.map { ["rect": [$0.l, $0.t, $0.r, $0.b], "pageToPx": $0.pageToPx,
+                                       "errorPx": $0.errorPx, "quad": $0.quad.map { [$0.x, $0.y] }] }
+        ]
+        try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys])
+            .write(to: directory.appendingPathComponent("native-render-comparison.json"))
+        XCTAssertLessThanOrEqual(staged.width * staged.height, 2 * 768 * 768)
+    }
+
+    func testAutomaticCanberraRenderingRetainsIndependentPrintedLineCentroid() throws {
+        let reference = try XCTUnwrap((F.fx["rasterSamplingReference"] as? [[String: Any]])?.first)
+        let expected = F.dbls(reference["expectedPx"])
+        XCTAssertEqual(expected.count, 2)
+        let row = F.int(reference["scanlinePixelIndex"])
+        let pixelCenter = F.dbl(reference["pixelCenterOffset"])
+        let threshold = F.dbl(reference["contrastThreshold"])
+        let padding = F.int(reference["centroidPaddingPx"])
+        let physicalScale = F.dbl(reference["physicalScale"])
+        let maxPhysicalError = F.dbl(reference["maxPhysicalError"])
+        let sheetID = try XCTUnwrap(reference["sheet"] as? String)
+        let fields = try XCTUnwrap(reference["job"] as? [String: Any])
+        let tilePx = F.int(reference["tilePx"])
+        let sheet = try openSheet("geopdf/tacmap_grid_\(sheetID).pdf")
+        let job = TileJob(z: F.int(fields["z"]), x0: F.int(fields["x0"]), y0: F.int(fields["y0"]),
+                          cols: F.int(fields["cols"]), rows: F.int(fields["rows"]))
+        let context = try PDFRenderContext(url: sheet.url,
+            identity: PDFDocumentIdentity(contentKey: "sha256:canberra-native-regression", pageIndex: 0),
+            georef: sheet.georef, pageBox: PDFTileRenderer.pageBox(sheet.page), tilePx: tilePx,
+            guardToken: UUID().uuidString, baseBudgetPx: PDFTileConstants.baseBudgetPx)
+        XCTAssertEqual(PDFTileWarp.plan(job: job, tilePx: tilePx, footprint: sheet.footprint,
+                                       georef: sheet.georef).cells.count, 4)
+        let lanes = PDFRenderLanes(count: 1)
+        // Both live and bake use the actual production lane's automatic source choice.
+        for work in [PDFLaneWork.tiles(job, context), .bake(job, context)] {
+            let completed = expectation(description: "Actual automatic native render")
+            var result: Result<PDFLaneOutput, Error>?
+            lanes.run(lane: 0, work: work) { value in result = value; completed.fulfill() }
+            wait(for: [completed], timeout: 10)
+            let output = try XCTUnwrap(result).get()
+            guard case .tiles(let tiles, let renderMs) = output,
+                  case .image(let image)? = tiles[job.tiles[0]] else {
+                return XCTFail("The actual lane must deliver its bitmap")
+            }
+            let px = try pixels(image)
+            // Independent PROJ projection of the printed easting line at bitmap y=635.5.
+            // This clean cross-section is outside the small device crop; no expected image
+            // or app georeference is used to synthesize its reference location.
+            let expectedX = expected[0]
+            XCTAssertEqual(Double(row) + pixelCenter, expected[1], accuracy: 1e-8)
+            func contrast(_ x: Int) -> Double {
+                let p = px.at(x, row)
+                return max(0, Double(p.r - max(p.g, p.b))) / 255 * Double(p.a) / 255
+            }
+            let nearby = (Int(expectedX) - 8)...(Int(expectedX) + 8)
+            let candidates = nearby.filter { contrast($0) > threshold }
+            let seed = try XCTUnwrap(candidates.min { abs(Double($0) + pixelCenter - expectedX) < abs(Double($1) + pixelCenter - expectedX) })
+            var left = seed, right = seed
+            while left > 0 && contrast(left - 1) > threshold { left -= 1 }
+            while right + 1 < px.w && contrast(right + 1) > threshold { right += 1 }
+            var weightedX = 0.0, total = 0.0
+            for x in max(0, left - padding)...min(px.w - 1, right + padding) {
+                let weight = contrast(x)
+                weightedX += (Double(x) + pixelCenter) * weight; total += weight
+            }
+            XCTAssertGreaterThan(total, 0)
+            let measuredX = weightedX / total
+            XCTAssertTrue(measuredX.isFinite)
+            let physicalError = abs(measuredX - expectedX) * physicalScale
+            print("CANBERRA_AUTOMATIC_LINE centroid=\(measuredX) physicalError=\(physicalError)")
+            XCTAssertLessThanOrEqual(physicalError, maxPhysicalError, "Automatic rendering must preserve this independent printed-line location")
+            if let path = ProcessInfo.processInfo.environment["TACMAP_DEVICE_BITMAP_OUTPUT"] {
+                let directory = URL(fileURLWithPath: path)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let name: String
+                if case .bake = work { name = "automatic-bake" } else { name = "automatic-live" }
+                try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: directory.appendingPathComponent(name + ".png"))
+                let observed: [String: Any] = ["centroidX": measuredX, "physicalError": physicalError,
+                                               "renderMs": renderMs, "expectedX": expectedX,
+                                               "row": row, "tilePx": tilePx]
+                try JSONSerialization.data(withJSONObject: observed, options: [.prettyPrinted, .sortedKeys])
+                    .write(to: directory.appendingPathComponent(name + ".json"))
+            }
+        }
     }
 
     // MARKS: markers sheet
@@ -331,7 +441,7 @@ final class PDFTileRendererTests: XCTestCase {
         let job = TileJob(z: z, x0: tx - 1, y0: ty, cols: 3, rows: 2)
         let plan = PDFTileWarp.plan(job: job, tilePx: tp, footprint: s.footprint, georef: s.georef)
         let out = try PDFTileRenderer.renderJob(job, tilePx: tp, plan: plan, footprint: s.footprint,
-                                                source: plan.cells.count == 1 ? .vector(s.page) : .staged(s.page))
+                                                source: plan.cells.count <= PDFTileConstants.vectorMaxCells ? .vector(s.page) : .staged(s.page))
         XCTAssertEqual(out.count, 6)
         for t in job.tiles {
             guard case .image(let big)? = out[t] else { return XCTFail("\(t) not rendered") }

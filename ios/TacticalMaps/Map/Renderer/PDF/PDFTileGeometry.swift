@@ -42,8 +42,10 @@ enum PDFTileConstants {
     static let stagedShrinkFactor = 0.99
     /// pad = padPx / required pt, a couple of px of slack round the cells
     static let stagedPadPx = 2.0
+    /// Avoid an extra raster sampling phase for small amended warp plans.
+    static let vectorMaxCells = 4
 
-    static let warpMaxErrorPx = 0.25
+    static let warpMaxErrorPx = 0.0625
     static let warpBaseDepth = 4
     static let warpMinCellPx = 32
     static let warpRootPadPx = 2
@@ -69,7 +71,7 @@ enum PDFTileConstants {
     static let bakeBytesSafety = 1.2
     static let bakeSampleTiles = 3
     static let bakeCommitEvery = 64
-    static let rendererVersion = 1
+    static let rendererVersion = 2
     static let bakeKeyPrefix = "tacmap-bake-v1|"
     /// J3: iOS bakes opaque tiles as JPEG 2000 (edge tiles PNG). device local
     /// files, so the MBTiles format value is ours to pick
@@ -490,7 +492,7 @@ struct TileJob: Hashable {
 }
 
 /// One warp cell: an integer rect in job pixels plus the page -> job px affine
-/// that holds inside it to 0.25 px.
+/// that holds inside it to the shared warp bound.
 struct PDFWarpCell: Equatable {
     /// [l, t, r, b), job px, y down
     let l: Int, t: Int, r: Int, b: Int
@@ -517,7 +519,7 @@ struct PDFWarpPlan {
 
     var cells: [PDFWarpCell] { leaves.filter { $0.coverage != .outside } }
     var maxErrorPx: Double { cells.map(\.errorPx).max() ?? 0 }
-    /// false when a split limit left a drawn cell over 0.25 px
+    /// false when a split limit left a drawn cell over the shared bound
     var errorBoundMet: Bool { cells.allSatisfy { $0.errorPx <= PDFTileConstants.warpMaxErrorPx } }
 
     /// max column norm of the linear part over the drawn cells, px per pt

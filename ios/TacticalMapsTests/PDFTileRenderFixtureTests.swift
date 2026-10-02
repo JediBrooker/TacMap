@@ -134,6 +134,7 @@ final class PDFTileRenderFixtureTests: XCTestCase {
         XCTAssertEqual(Self.dbl(staged["maxPixelsFactor"]), PDFTileConstants.stagedMaxPixelsFactor)
         XCTAssertEqual(Self.dbl(staged["shrinkFactor"]), PDFTileConstants.stagedShrinkFactor)
         XCTAssertEqual(Self.dbl(staged["padPx"]), PDFTileConstants.stagedPadPx)
+        XCTAssertEqual(Self.int(c["vectorMaxCells"]), PDFTileConstants.vectorMaxCells)
         let warp = try XCTUnwrap(c["warp"] as? [String: Any])
         XCTAssertEqual(Self.dbl(warp["maxErrorPx"]), PDFTileConstants.warpMaxErrorPx)
         XCTAssertEqual(Self.int(warp["baseDepth"]), PDFTileConstants.warpBaseDepth)
@@ -299,6 +300,32 @@ final class PDFTileRenderFixtureTests: XCTestCase {
 
     // MARK: - warp planner
 
+    func testCanberraWarpStaysWithinOnePhysicalPixelAtAuditedOverzoom() throws {
+        let references = try XCTUnwrap(Self.fx["overzoomWarpReference"] as? [[String: Any]])
+        XCTAssertFalse(references.isEmpty)
+        for reference in references {
+            let (georef, footprint) = try Self.footprint(sheet: try XCTUnwrap(reference["sheet"] as? String))
+            let jobFields = try XCTUnwrap(reference["job"] as? [String: Any])
+            let job = TileJob(z: Self.int(jobFields["z"]), x0: Self.int(jobFields["x0"]), y0: Self.int(jobFields["y0"]),
+                              cols: Self.int(jobFields["cols"]), rows: Self.int(jobFields["rows"]))
+            let plan = PDFTileWarp.plan(job: job, tilePx: Self.int(reference["tilePx"]), footprint: footprint, georef: georef)
+            // Independent PROJ truth, not the planner's inverse.
+            let page = Self.dbls(reference["page"]), expected = Self.dbls(reference["expectedPx"])
+            XCTAssertEqual(page.count, 2); XCTAssertEqual(expected.count, 2)
+            let cell = try XCTUnwrap(plan.cells.first {
+                expected[0] >= Double($0.l) && expected[0] < Double($0.r) &&
+                expected[1] >= Double($0.t) && expected[1] < Double($0.b)
+            }, "The independent point must belong to a real drawn cell")
+            let m = cell.pageToPx
+            let u = m[0] * page[0] + m[1] * page[1] + m[2]
+            let v = m[3] * page[0] + m[4] * page[1] + m[5]
+            let physicalError = hypot(u - expected[0], v - expected[1]) * Self.dbl(reference["physicalScale"])
+            XCTAssertTrue(physicalError.isFinite)
+            XCTAssertLessThanOrEqual(physicalError, Self.dbl(reference["maxPhysicalError"]),
+                                     "Audited Canberra cell: \(physicalError) physical px")
+        }
+    }
+
     func testWarpPlans() throws {
         let entries = try XCTUnwrap(Self.fx["warp"] as? [[String: Any]])
         XCTAssertGreaterThan(entries.count, 100)
@@ -356,13 +383,20 @@ final class PDFTileRenderFixtureTests: XCTestCase {
     }
 
     func testWarpCountsMatchContractTable() throws {
-        // contract D: z>=14 -> 1 cell, z12-13 -> 4 on sheets this size, 1x1 at 768
         let entries = try XCTUnwrap(Self.fx["warp"] as? [[String: Any]])
-        for e in entries where (e["kind"] as? String) == "inside" && Self.int(e["tilePx"]) == 768 {
-            let j = e["job"] as! [String: Any]
-            guard Self.int(j["cols"]) == 1, (e["sheet"] as? String) != "wide_tm_1m" else { continue }
-            if Self.int(j["z"]) >= 14 { XCTAssertEqual(Self.int(e["cellCount"]), 1, "\(e["sheet"]!) z\(j["z"]!)") }
+        var checked = 0
+        for entry in entries where entry["kind"] as? String == "inside" && Self.int(entry["tilePx"]) == 768 {
+            let jobFields = try XCTUnwrap(entry["job"] as? [String: Any])
+            guard Self.int(jobFields["cols"]) == 1 else { continue }
+            let (georef, footprint) = try Self.footprint(sheet: try XCTUnwrap(entry["sheet"] as? String))
+            let job = TileJob(z: Self.int(jobFields["z"]), x0: Self.int(jobFields["x0"]), y0: Self.int(jobFields["y0"]),
+                              cols: 1, rows: Self.int(jobFields["rows"]))
+            let plan = PDFTileWarp.plan(job: job, tilePx: 768, footprint: footprint, georef: georef)
+            // Counts follow the amended shared table, including tighter-bound splits at high zoom.
+            XCTAssertEqual(plan.cells.count, Self.int(entry["cellCount"]), "\(entry["sheet"]!) z\(job.z)")
+            checked += 1
         }
+        XCTAssertGreaterThan(checked, 20)
     }
 
     // MARK: - job formation

@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "completeMultiChunkRecordVerified": true,
+  "malformedOrIncompleteCasesRejected": [
+    "missing",
+    "duplicate",
+    "inconsistent-total",
+    "inconsistent-size",
+    "bad-base64",
+    "wrong-size",
+    "nonfinite",
+    "invalid-utf8",
+    "omitted"
+  ],
+  "staleProcessExcluded": true
+}

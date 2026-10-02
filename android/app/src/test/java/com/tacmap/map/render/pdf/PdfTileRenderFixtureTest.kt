@@ -69,11 +69,20 @@ class PdfTileRenderFixtureTest {
     private fun JsonObject.b(k: String): Boolean = this[k]!!.jsonPrimitive.boolean
     private fun JsonObject.dbl(k: String): DoubleArray = PdfGeorefFixture.doubles(this[k]!!).toDoubleArray()
 
+    @Test fun automaticPathBoundariesUseSharedContract() {
+        for (row in fx.arr("renderPath").map { it.jsonObject }) {
+            val above = row["aboveBaseMaxZoom"]!!.jsonPrimitive.booleanOrNull!!
+            val path = if (!above) "raster" else if (PdfTileRenderer.usesStaging(row.i("cellCount"))) "staged" else "vector"
+            assertEquals(row.str("expected"), path)
+        }
+    }
+
     // ---------------------------------------------------------------- constants
 
     @Test
     fun constants() {
         val c = fx.obj("constants")
+        assertEquals(c.i("vectorMaxCells"), PdfTileRenderer.VECTOR_MAX_CELLS)
         assertEquals(com.tacmap.map.render.WebMercator.TILE_SIZE, c.d("tileLogicalSize"), 0.0)
         assertEquals(PdfZoomPolicy.DENSITY_CAP, c.obj("tilePx").d("densityCap"), 0.0)
         assertEquals(PdfZoomPolicy.TILE_PX_QUANTUM, c.obj("tilePx").i("quantum"))
@@ -397,7 +406,7 @@ class PdfTileRenderFixtureTest {
         assertEquals("wide_tm_1m", wide.str("id"))
         val sheet = PdfTileRenderFixture.sheetById("wide_tm_1m")
         assertEquals(4, sheet.footprint.clip.size)
-        // the big jobs it exists for really do get 64-256 cells
+        // Wide jobs exercise the regenerated 64–1024-cell corpus; every row is checked above.
         val counts = fx.arr("warp").map { it.jsonObject }.filter { it.str("sheet") == "wide_tm_1m" }.map { it.i("cellCount") }
         assertTrue(counts.contains(256))
         assertTrue(counts.contains(64))

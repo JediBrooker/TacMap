@@ -372,7 +372,14 @@ final class PDFTileSource: RasterTileSource {
                     guard let self, !ticket.isCancelled else { return }
                     guard self.status.failure == nil else { return completion(nil) }
                     if let img {
+                        #if DEBUG
+                        self.deliver(.image(img)) { image in
+                            if let image { self.observeDeviceAuditDelivery(image, origin: "decoded-bake") }
+                            completion(image)
+                        }
+                        #else
                         self.deliver(.image(img), completion)
+                        #endif
                     } else {
                         // missing row for an intersecting tile: draw it live
                         self.loadLive(t, ctx, ticket, completion)
@@ -442,6 +449,9 @@ final class PDFTileSource: RasterTileSource {
                     let plan = PDFTileWarp.plan(job: job, tilePx: ctx.tilePx, footprint: ctx.footprint, georef: ctx.georef)
                     let out = try PDFTileRenderer.renderJob(job, tilePx: ctx.tilePx, plan: plan, footprint: ctx.footprint,
                                                             source: .raster(raster))
+                    #if DEBUG
+                    PDFDeviceAudit.completed(job: job, context: ctx, plan: plan, kind: "raster")
+                    #endif
                     return out[t] ?? .empty
                 }
             }
@@ -466,13 +476,42 @@ final class PDFTileSource: RasterTileSource {
         Self.rasterQueue.addOperation(op)
     }
 
+    #if DEBUG
+    final class DeviceAuditDeliveredImage {
+        weak var image: CGImage?
+        let origin: String
+        init(image: CGImage, origin: String) { self.image = image; self.origin = origin }
+    }
+    private var deviceAuditDeliveredImages: [DeviceAuditDeliveredImage] = []
+
+    /// Main-owned weak provenance; missing or evicted images stay unproved.
+    func deviceAuditOrigin(imageID: String) -> String? {
+        guard ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1" else { return nil }
+        return deviceAuditDeliveredImages.reversed().first {
+            guard let image = $0.image else { return false }
+            return String(describing: ObjectIdentifier(image)) == imageID
+        }?.origin
+    }
+
+    private func observeDeviceAuditDelivery(_ image: UIImage, origin: String) {
+        guard ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1", let bitmap = image.cgImage else { return }
+        deviceAuditDeliveredImages.removeAll { $0.image == nil || $0.image === bitmap }
+        if deviceAuditDeliveredImages.count >= 128 { deviceAuditDeliveredImages.removeFirst() }
+        deviceAuditDeliveredImages.append(DeviceAuditDeliveredImage(image: bitmap, origin: origin))
+    }
+    #endif
+
     private func deliver(_ e: TileCacheEntry, _ completion: (UIImage?) -> Void) {
         switch e {
         case .empty:
             completion(RasterTileSourceEmpty.image)
         case .image(let img):
             if status == .preparing { status = .ready }
-            completion(UIImage(cgImage: img))
+            let image = UIImage(cgImage: img)
+            #if DEBUG
+            observeDeviceAuditDelivery(image, origin: "live")
+            #endif
+            completion(image)
         }
     }
 

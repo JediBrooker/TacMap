@@ -1,0 +1,185 @@
+{
+  "state": "Final .0625/renderer2/vectorMaxCells4 actual camera/source-bound raw pixels; historical-envelope interval not universal confidence.",
+  "results": [
+    {
+      "estimator": "edges",
+      "axis": "x",
+      "cropPhysicalPx": [
+        10,
+        1780,
+        1190,
+        2330
+      ],
+      "metric": {
+        "status": "MEASURED",
+        "tracks": [
+          {
+            "status": "MEASURED",
+            "samples": 137,
+            "bands": [
+              2.3818713450291966,
+              2.1445727482678762,
+              1.6571558768039267,
+              0.8489678899082378,
+              -0.23472222222221717,
+              -1.4678899082568932,
+              -2.1946100917431295,
+              -2.7452599388379326
+            ],
+            "coverage": 0.9890909090909091,
+            "matchedFraction": 1.0,
+            "rejectedFraction": 0.0,
+            "printedPositionMedian": 484.7875,
+            "median_px": 0.30066016073476476,
+            "curve_max_px": 3.5191663183396145,
+            "sample_abs_max_px": 2.8539518900343523,
+            "sample_abs_p90_px": 2.604707903780093,
+            "residual_mad_px": 0.2529932534899919,
+            "raster_uncertainty_px": 1.13,
+            "max_px": 3.5191663183396145,
+            "raw_target_status": "FAIL",
+            "acceptance": "FAIL"
+          }
+        ],
+        "max_px": 3.5191663183396145,
+        "median_px": 0.30066016073476476,
+        "acceptance": "FAIL"
+      }
+    },
+    {
+      "estimator": "edges",
+      "axis": "y",
+      "cropPhysicalPx": [
+        860,
+        470,
+        1190,
+        2330
+      ],
+      "metric": {
+        "status": "MEASURED",
+        "tracks": [
+          {
+            "status": "MEASURED",
+            "samples": 82,
+            "bands": [
+              -1.5166165708850485,
+              -1.8110528145966782,
+              -2.10801660113583,
+              -2.3241755354684415,
+              -2.567196531791865,
+              -2.7324274565294218,
+              -2.872363178946671,
+              -2.931998565528602
+            ],
+            "coverage": 0.9818181818181818,
+            "matchedFraction": 1.0,
+            "rejectedFraction": 0.0,
+            "printedPositionMedian": 957.6964285714286,
+            "median_px": -2.46696697506826,
+            "curve_max_px": 2.977157098638501,
+            "sample_abs_max_px": 2.9990241998438023,
+            "sample_abs_p90_px": 2.9231166650903107,
+            "residual_mad_px": 0.020212283751440907,
+            "raster_uncertainty_px": 1.13,
+            "max_px": 2.9990241998438023,
+            "raw_target_status": "FAIL",
+            "acceptance": "FAIL"
+          }
+        ],
+        "max_px": 2.9990241998438023,
+        "median_px": -2.46696697506826,
+        "acceptance": "FAIL"
+      }
+    },
+    {
+      "estimator": "centroid",
+      "axis": "x",
+      "cropPhysicalPx": [
+        10,
+        1780,
+        1190,
+        2330
+      ],
+      "metric": {
+        "status": "MEASURED",
+        "tracks": [
+          {
+            "status": "MEASURED",
+            "samples": 137,
+            "bands": [
+              0.3362407716925304,
+              0.32144255496535834,
+              0.307981716938599,
+              0.32044548069376333,
+              0.30115467665899587,
+              0.30600395614465015,
+              0.30520515734912124,
+              0.29348367162970135
+            ],
+            "coverage": 0.9890909090909091,
+            "matchedFraction": 1.0,
+            "rejectedFraction": 0.0,
+            "printedPositionMedian": 484.79100175715223,
+            "median_px": 0.3056638947820147,
+            "curve_max_px": 0.36305520919081485,
+            "sample_abs_max_px": 0.7646531848234872,
+            "sample_abs_p90_px": 0.3528490661402657,
+            "residual_mad_px": 0.01659454895538154,
+            "raster_uncertainty_px": 1.13,
+            "max_px": 0.7646531848234872,
+            "raw_target_status": "PASS",
+            "acceptance": "BORDERLINE"
+          }
+        ],
+        "max_px": 0.7646531848234872,
+        "median_px": 0.3056638947820147,
+        "acceptance": "BORDERLINE"
+      }
+    },
+    {
+      "estimator": "centroid",
+      "axis": "y",
+      "cropPhysicalPx": [
+        860,
+        470,
+        1190,
+        2330
+      ],
+      "metric": {
+        "status": "MEASURED",
+        "tracks": [
+          {
+            "status": "MEASURED",
+            "samples": 82,
+            "bands": [
+              -0.8920567295451747,
+              -0.8614337069578824,
+              -0.8282825122851136,
+              -0.8330057268992732,
+              -0.8402670914804276,
+              -0.8302566003158063,
+              -0.8439859549819175,
+              -0.8229231315327752
+            ],
+            "coverage": 0.9818181818181818,
+            "matchedFraction": 1.0,
+            "rejectedFraction": 0.0,
+            "printedPositionMedian": 956.0776934293931,
+            "median_px": -0.8406840505738842,
+            "curve_max_px": 0.8802089819365553,
+            "sample_abs_max_px": 0.9301323067600151,
+            "sample_abs_p90_px": 0.8861876258804159,
+            "residual_mad_px": 0.014218783504955368,
+            "raster_uncertainty_px": 1.13,
+            "max_px": 0.9301323067600151,
+            "raw_target_status": "PASS",
+            "acceptance": "BORDERLINE"
+          }
+        ],
+        "max_px": 0.9301323067600151,
+        "median_px": -0.8406840505738842,
+        "acceptance": "BORDERLINE"
+      }
+    }
+  ]
+}

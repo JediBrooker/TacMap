@@ -1,0 +1,19 @@
+{
+  "screenshotWidth": 1206,
+  "screenshotHeight": 2622,
+  "density": 3.0,
+  "sourceId": "verified-fixture-cbr50k_iso",
+  "contentKey": "sha256:ac05c01ff4c8691a099f3033b54de8ff0497a76cf63a230f45dbd5db14af2001",
+  "actualCamera": {
+    "latitude": -35.31513369009902,
+    "longitude": 149.0900991912884,
+    "zoom": 20,
+    "heading": 0
+  },
+  "measurementBounds": [
+    240,
+    470,
+    960,
+    2330
+  ]
+}

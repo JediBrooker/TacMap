@@ -217,6 +217,7 @@ internal fun createPdfTileSource(
         guard = hooks,
         cacheKey = cacheKey,
         forBake = forBake,
+        auditSourceId = pdf.id,
     )
 }
 

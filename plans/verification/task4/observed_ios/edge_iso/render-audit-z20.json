@@ -1,0 +1,21 @@
+{
+  "screenshotWidth": 1206,
+  "screenshotHeight": 2622,
+  "density": 3.0,
+  "sourceId": "verified-fixture-edge_iso",
+  "contentKey": "sha256:46d1389e833d1c37faac647eb2a11d11001efa51d17aabe65a917895fd6506f9",
+  "actualCamera": {
+    "latitude": 49.65738171542689,
+    "longitude": 17.688177463840717,
+    "zoom": 20,
+    "heading": 0
+  },
+  "measurementBounds": [
+    240,
+    470,
+    960,
+    2330
+  ],
+  "rendererVersionAtCapture": 1,
+  "canonicalWarpBoundAtCapture": 0.25
+}

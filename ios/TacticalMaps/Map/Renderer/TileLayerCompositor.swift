@@ -19,6 +19,11 @@ final class TileLayerCompositor {
     private var live: [Key: CALayer] = [:]
     private var pool: [CALayer] = []
 
+    #if DEBUG
+    private(set) var deviceAuditPaintedItems: [[String: Any]] = []
+    private(set) var deviceAuditPaintedCount = 0
+    #endif
+
     init() {
         tileRoot.masksToBounds = false
         tileRoot.actions = Self.noActions
@@ -48,6 +53,11 @@ final class TileLayerCompositor {
     func apply(items: [TileDrawItem], grid: TileGrid, image: (TileIndex) -> CGImage?) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        #if DEBUG
+        let auditing = ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1"
+        deviceAuditPaintedItems = []
+        deviceAuditPaintedCount = 0
+        #endif
         var next: [Key: CALayer] = [:]
         next.reserveCapacity(items.count)
         for item in items {
@@ -66,6 +76,22 @@ final class TileLayerCompositor {
             layer.zPosition = CGFloat(item.order)
             if layer.superlayer == nil { tileRoot.addSublayer(layer) }
             next[key] = layer
+            #if DEBUG
+            if auditing {
+                deviceAuditPaintedCount += 1
+                if deviceAuditPaintedItems.count < 64 {
+                    deviceAuditPaintedItems.append([
+                        "quality": String(describing: item.kind),
+                        "sourceTile": [item.source.z, item.source.x, item.source.y],
+                        "destination": [item.dest.col, item.dest.row],
+                        "frame": [Double(layer.frame.minX), Double(layer.frame.minY), Double(layer.frame.width), Double(layer.frame.height)],
+                        "contentsRect": [Double(layer.contentsRect.minX), Double(layer.contentsRect.minY), Double(layer.contentsRect.width), Double(layer.contentsRect.height)],
+                        "bitmap": [img.width, img.height], "order": item.order,
+                        "imageID": String(describing: ObjectIdentifier(img))
+                    ])
+                }
+            }
+            #endif
         }
         for (_, layer) in live { recycle(layer) }
         live = next
@@ -73,6 +99,10 @@ final class TileLayerCompositor {
     }
 
     func removeAll() {
+        #if DEBUG
+        deviceAuditPaintedItems = []
+        deviceAuditPaintedCount = 0
+        #endif
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for (_, layer) in live { recycle(layer) }

@@ -2669,5 +2669,11 @@
     "platform": "android",
     "area": "import-export",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfDeviceAudit.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
   }
 ]

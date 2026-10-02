@@ -1,0 +1,149 @@
+{
+  "label": "render-audit-z20",
+  "sourceFile": "tacmap_grid_cbr50k_iso.pdf",
+  "density": 2.625,
+  "screenshotWidth": 1080,
+  "screenshotHeight": 2400,
+  "renderStatus": "Ready",
+  "calibrating": false,
+  "bakeState": "Idle",
+  "expectedImportOutcome": "addAndActivate",
+  "activeEntryId": "384e8aef-8e79-45ad-9a0d-4f66328da55a",
+  "importedEntry": {
+    "id": "384e8aef-8e79-45ad-9a0d-4f66328da55a",
+    "contentKey": "sha256:ac05c01ff4c8691a099f3033b54de8ff0497a76cf63a230f45dbd5db14af2001",
+    "embeddedIssue": null,
+    "manualPointCount": 0
+  },
+  "mapBoundsPixels": [
+    0,
+    0,
+    1080,
+    2400
+  ],
+  "actualCamera": {
+    "latitude": -35.31513369009902,
+    "longitude": 149.0900991912884,
+    "zoom": 20.0,
+    "heading": 0.0
+  },
+  "sourceId": "6866a9f6-2ede-4e6c-b50e-81bfc0b4c5d9",
+  "modelSourceId": "d55bdf17-e62e-4920-870c-a40cc1388889",
+  "renderSourceId": "d5fd0d00-7bfc-438a-bc0c-33de6c3e9056",
+  "renderGeoref": {
+    "crs": {
+      "kind": "transverseMercator",
+      "lat0": 0.0,
+      "lon0": 147.0,
+      "k0": 0.9996,
+      "fe": 500000.0,
+      "fn": 10000000.0
+    },
+    "datum": {
+      "id": "WGS84"
+    },
+    "affine": [
+      17.638888888891916,
+      1.1139929551131056e-11,
+      678729.9999999898,
+      -1.3963667708908976e-11,
+      17.638888888901207,
+      6078730.000000026
+    ],
+    "crop": [
+      [
+        72.0,
+        72.0
+      ],
+      [
+        72.0,
+        1205.858268
+      ],
+      [
+        1205.858268,
+        1205.858268
+      ],
+      [
+        1205.858268,
+        72.0
+      ]
+    ],
+    "origin": "adobeVP",
+    "fit": {
+      "rmsMetres": 3.464113908395785e-08,
+      "maxResidualMetres": 3.4887517987947826e-08,
+      "perPointMetres": [
+        3.439299525643036e-08,
+        3.4887517987947826e-08,
+        3.439299525643036e-08,
+        3.4887517987947826e-08
+      ],
+      "crossValidated": true
+    }
+  },
+  "renderEwmaMs": 1.0,
+  "renderHeavy": false,
+  "renderTilePx": 672,
+  "renderBaseMaxZoom": 12,
+  "renderDetailZoom": 15,
+  "runtimeBakeMaxZoom": null,
+  "entryId": "384e8aef-8e79-45ad-9a0d-4f66328da55a",
+  "contentKey": "sha256:ac05c01ff4c8691a099f3033b54de8ff0497a76cf63a230f45dbd5db14af2001",
+  "page": 0,
+  "kind": "GEO_PDF",
+  "baked": false,
+  "georef": {
+    "crs": {
+      "kind": "transverseMercator",
+      "lat0": 0.0,
+      "lon0": 147.0,
+      "k0": 0.9996,
+      "fe": 500000.0,
+      "fn": 10000000.0
+    },
+    "datum": {
+      "id": "WGS84"
+    },
+    "affine": [
+      17.638888888891916,
+      1.1139929551131056e-11,
+      678729.9999999898,
+      -1.3963667708908976e-11,
+      17.638888888901207,
+      6078730.000000026
+    ],
+    "crop": [
+      [
+        72.0,
+        72.0
+      ],
+      [
+        72.0,
+        1205.858268
+      ],
+      [
+        1205.858268,
+        1205.858268
+      ],
+      [
+        1205.858268,
+        72.0
+      ]
+    ],
+    "origin": "adobeVP",
+    "fit": {
+      "rmsMetres": 3.464113908395785e-08,
+      "maxResidualMetres": 3.4887517987947826e-08,
+      "perPointMetres": [
+        3.439299525643036e-08,
+        3.4887517987947826e-08,
+        3.439299525643036e-08,
+        3.4887517987947826e-08
+      ],
+      "crossValidated": true
+    }
+  },
+  "rendererVersionAtCapture": 2,
+  "warpErrorBoundAtCapture": 0.0625,
+  "vectorMaxCellsAtCapture": 4
+}

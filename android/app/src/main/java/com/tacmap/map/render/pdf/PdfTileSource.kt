@@ -92,7 +92,10 @@ internal class PdfTileSource(
     override val cacheKey: String,
     /** the bake's own source: everything at the bake band, and it keeps going in the background */
     private val forBake: Boolean = false,
+    val auditSourceId: String? = null,
 ) : TileSource {
+    val auditInstanceId: String? = if (com.tacmap.BuildConfig.DEBUG && com.tacmap.app.DebugLaunchHooks.deviceAudit) java.util.UUID.randomUUID().toString() else null
+
     override val minZoom: Int = 0
     override val maxZoom: Int = policy.detailZoom
     override val tileSizePx: Int = tilePx
@@ -116,6 +119,8 @@ internal class PdfTileSource(
 
     private val _replan = MutableStateFlow(0)
     override val replanTicks: StateFlow<Int> = _replan.asStateFlow()
+
+    private var completedAuditPlan: PdfWarpPlan? = null
 
     private val queue = PdfJobQueue(::renderOnPdfThread, ::onJobFinished, { it === TileSource.EMPTY }, session.timer)
 
@@ -304,11 +309,16 @@ internal class PdfTileSource(
     private fun renderRasterTile(tile: TileIndex, base: PdfBaseRaster): Bitmap {
         val job = TileJob.single(tile.z, tile.x, tile.y)
         val plan = PdfTileWarp.plan(job, tilePx, footprint, georef)
-        return PdfTileRenderer.renderJob(job, tilePx, plan, footprint, PdfRenderSourceKind.Raster(base)).getValue(tile)
+        val out = PdfTileRenderer.renderJob(job, tilePx, plan, footprint, PdfRenderSourceKind.Raster(base))
+        if (com.tacmap.BuildConfig.DEBUG && com.tacmap.app.DebugLaunchHooks.deviceAudit) {
+            PdfDeviceAudit.completed(auditSourceId, plan, policy.detailZoom, baseMaxZoom, "raster-live", auditInstanceId)
+        }
+        return out.getValue(tile)
     }
 
     /** pdfium thread: a live or bake vector job */
     private fun renderOnPdfThread(job: TileJob, band: PdfRenderExecutor.Band): Map<TileIndex, Bitmap> {
+        if (com.tacmap.BuildConfig.DEBUG && com.tacmap.app.DebugLaunchHooks.deviceAudit) completedAuditPlan = null
         val plan = PdfTileWarp.plan(job, tilePx, footprint, georef)
         if (plan.cells.isEmpty()) return job.tiles().associate { TileIndex(it[0], it[1], it[2]) to TileSource.EMPTY }
         val armedVector = band != PdfRenderExecutor.Band.BAKE && guard?.armIfNeeded(GuardKind.VECTOR) == true
@@ -319,8 +329,10 @@ internal class PdfTileSource(
                 PdfJobTiming.markDrawStart()
                 PdfTileRenderer.renderJob(
                     job, tilePx, plan, footprint,
-                    PdfRenderSourceKind.Vector(page, frame, staged = plan.cells.size > 1),
-                )
+                    PdfRenderSourceKind.Vector(page, frame, staged = PdfTileRenderer.usesStaging(plan.cells.size)),
+                ).also {
+                    if (com.tacmap.BuildConfig.DEBUG && com.tacmap.app.DebugLaunchHooks.deviceAudit) completedAuditPlan = plan
+                }
             }
         } finally {
             if (armedVector) guard?.complete(GuardKind.VECTOR)
@@ -329,6 +341,11 @@ internal class PdfTileSource(
 
     /** pdfium thread, live jobs only: bake + estimate jobs report to the bake instead (G2) */
     private fun onJobFinished(job: TileJob, band: PdfRenderExecutor.Band, error: Throwable?) {
+        if (com.tacmap.BuildConfig.DEBUG && com.tacmap.app.DebugLaunchHooks.deviceAudit) {
+            val plan = completedAuditPlan
+            completedAuditPlan = null
+            if (error == null && plan != null) PdfDeviceAudit.completed(auditSourceId, plan, policy.detailZoom, baseMaxZoom, "vector-${band.name}", auditInstanceId)
+        }
         if (forBake || band == PdfRenderExecutor.Band.BAKE) return
         when (error) {
             null -> failures.jobOk()
@@ -356,7 +373,11 @@ internal class PdfTileSource(
                 val t0 = android.os.SystemClock.elapsedRealtimeNanos()
                 val plan = PdfTileWarp.plan(job, tilePx, footprint, georef)
                 val out = PdfTileRenderer.renderJob(job, tilePx, plan, footprint, PdfRenderSourceKind.Raster(raster))
-                PdfJobQueue.Timed(out, (android.os.SystemClock.elapsedRealtimeNanos() - t0) / 1e6)
+                val drawMs = (android.os.SystemClock.elapsedRealtimeNanos() - t0) / 1e6
+                if (com.tacmap.BuildConfig.DEBUG && com.tacmap.app.DebugLaunchHooks.deviceAudit) {
+                    PdfDeviceAudit.completed(auditSourceId, plan, policy.detailZoom, baseMaxZoom, "raster-bake", auditInstanceId)
+                }
+                PdfJobQueue.Timed(out, drawMs)
             }
         } else {
             queue.bakeTimed(job)

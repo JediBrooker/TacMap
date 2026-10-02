@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "sha256": "0bca7e20089d68d37ee440c8a92a886ec4f2fc4df0b91a05e9b61925c06defa0",
+  "bytes": 60251408,
+  "allLiteralMarkersAbsent": {
+    "TACMAP_DEBUG_DEVICE_AUDIT": true,
+    "TASK4_CAMERA": true,
+    "TASK4_JOB": true,
+    "TASK4_FRAME": true,
+    "TASK4_CHUNK": true,
+    "TASK4_OMITTED": true,
+    "recordDeviceAuditCamera": true,
+    "recordDeviceAuditFrame": true,
+    "lastDeviceAuditCamera": true,
+    "lastDeviceAuditFrame": true,
+    "deviceAuditFrames": true,
+    "PDFDeviceAudit": true,
+    "deviceAuditPaintedItems": true,
+    "deviceAuditPaintedCount": true
+  },
+  "observerSymbolsAbsent": {
+    "PDFDeviceAudit": true,
+    "recordDeviceAuditFrame": true,
+    "recordDeviceAuditCamera": true,
+    "deviceAuditPaintedItems": true,
+    "deviceAuditPaintedCount": true
+  }
+}

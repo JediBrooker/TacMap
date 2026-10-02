@@ -1,0 +1,30 @@
+[
+  {
+    "proposedCanonicalErrorBoundPx": 0.25,
+    "emittedCells": 1,
+    "maxCellPlannerCanonicalErrorPx": 0.0848909869727586,
+    "maxDenseWholeJobPhysicalErrorPxAt32x": 2.716511583128275,
+    "problems": []
+  },
+  {
+    "proposedCanonicalErrorBoundPx": 0.0625,
+    "emittedCells": 4,
+    "maxCellPlannerCanonicalErrorPx": 0.021224579772481298,
+    "maxDenseWholeJobPhysicalErrorPxAt32x": 0.6791865527194015,
+    "problems": []
+  },
+  {
+    "proposedCanonicalErrorBoundPx": 0.03125,
+    "emittedCells": 4,
+    "maxCellPlannerCanonicalErrorPx": 0.021224579772481298,
+    "maxDenseWholeJobPhysicalErrorPxAt32x": 0.6791865527194015,
+    "problems": []
+  },
+  {
+    "proposedCanonicalErrorBoundPx": 0.015625,
+    "emittedCells": 16,
+    "maxCellPlannerCanonicalErrorPx": 0.005306374040652234,
+    "maxDenseWholeJobPhysicalErrorPxAt32x": 0.1698039693008715,
+    "problems": []
+  }
+]

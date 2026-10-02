@@ -84,7 +84,7 @@ object PdfBakePlan {
     const val BYTES_SAFETY = 1.2
     const val SAMPLE_TILES = 3
     const val COMMIT_EVERY = 64
-    const val RENDERER_VERSION = 1
+    const val RENDERER_VERSION = 2
     const val KEY_PREFIX = "tacmap-bake-v1|"
     /**
      * lossless effort when [WEBP_LOSSLESS], the lossy quality otherwise (J3). 100 since r2:

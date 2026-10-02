@@ -39,9 +39,9 @@ final class PDFPageRaster {
 extension PDFPageRaster: @unchecked Sendable {}
 
 enum PDFRenderSourceKind {
-    /// one cell: draw the page straight through the cell affine
+    /// Small plans: draw the page straight through each cell affine.
     case vector(CGPDFPage)
-    /// many cells: draw the page once into a page aligned bitmap, warp that
+    /// Larger plans: draw the page once into a page aligned bitmap, warp that.
     case staged(CGPDFPage)
     /// z <= baseMaxZoom: sample the base raster
     case raster(PDFPageRaster)

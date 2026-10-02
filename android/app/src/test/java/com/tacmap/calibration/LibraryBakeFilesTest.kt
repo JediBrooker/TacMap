@@ -142,6 +142,21 @@ class LibraryBakeFilesTest {
     }
 
     @Test
+    fun rendererOneBakeCannotAttachAfterPrecisionUpgradeAndSourcePdfSurvives() {
+        val pdf = pdfFile("a")
+        val bakeFile = plantBake()[0]
+        val oldInput = PdfBakePlan.KEY_PREFIX + georef.canonicalJson() + "|256|1"
+        val oldKey = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(oldInput.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        val legacy = record(bakeFile).copy(bakeKey = oldKey)
+        assertEquals(LibraryReduction.Rejected(LibraryTransitionError.SOURCE_CHANGED),
+            attach(state(entry("a")), "a", legacy))
+        assertTrue("rejecting stale rendered tiles preserves the source PDF", pdf.isFile)
+        assertTrue("existing file ownership is left to the normal lifecycle", bakeFile.isFile)
+        assertTrue("current renderer bake still attaches", attach(state(entry("a")), "a", record(bakeFile)) is LibraryReduction.Ok)
+    }
+
+    @Test
     fun aGeorefChangeDropsTheBake() {
         // M4: commit calibration, revert to embedded and change page all clear it
         val bakeFile = plantBake()[0]

@@ -1,0 +1,15 @@
+{
+  "apkSHA256": "af670c8120feba330f9d00482e698972d5510dfd775088ed27f77be7fbc76512",
+  "dexFiles": 1,
+  "markerCounts": {
+    "PdfDeviceAudit": 0,
+    "TACMAP_DEBUG_DEVICE_AUDIT": 0,
+    "frameObservationErrors": 0,
+    "failedRecords": 0,
+    "omittedDraws": 0,
+    "renderSourceId": 0
+  },
+  "mappingObserverAbsent": true,
+  "usageObserverRemoved": true,
+  "independentStatus": "PASS"
+}

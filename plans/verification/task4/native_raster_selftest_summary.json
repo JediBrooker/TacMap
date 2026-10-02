@@ -1,0 +1,15 @@
+{
+  "analyticCoverageCases": 270,
+  "maxCanonicalErrorPx": {
+    "edges": 0.0857801418439692,
+    "centroid": 1.4210854715202004e-14
+  },
+  "physicalScale32MaxErrorPx": {
+    "edges": 2.7449645390070145,
+    "centroid": 4.547473508864641e-13
+  },
+  "negativeCases": 5,
+  "associationDoesNotMoveMeasuredCenter": true,
+  "status": "PASS",
+  "scope": "Integrated rectangular stroke, known offsets and slopes; estimator validation only. Native antialiasing and overzoom uncertainty remains separate."
+}

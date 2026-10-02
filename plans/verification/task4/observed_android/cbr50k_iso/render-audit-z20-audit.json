@@ -1,0 +1,113 @@
+{
+  "enabled": true,
+  "completed": {
+    "records": [
+      {
+        "sourceId": "53c0326b-8f95-4cc7-b75f-20d7d928039e",
+        "renderSourceId": "60dd652d-c8a2-430d-8ab2-08b3025dad09",
+        "path": "vector-VISIBLE",
+        "detailZoom": 15,
+        "baseMaxZoom": 12,
+        "job": {
+          "z": 15,
+          "x": 29954,
+          "y": 19823,
+          "cols": 1,
+          "rows": 1
+        },
+        "tilePx": 672,
+        "dropped": 0,
+        "maxDepth": 4,
+        "root": [
+          0,
+          0,
+          672,
+          672
+        ],
+        "cells": [
+          {
+            "rect": [
+              0,
+              0,
+              672,
+              672
+            ],
+            "pageToPx": [
+              11.860327127753648,
+              -0.2495297715204213,
+              -7077.638697101508,
+              -0.25129711530034615,
+              -11.914224114786778,
+              8280.990305063893
+            ],
+            "errorPx": 0.07427961351004865,
+            "coverage": "INSIDE",
+            "depth": 0,
+            "quad": [
+              [
+                611.1010402543143,
+                682.1612803475784
+              ],
+              [
+                667.7353909604855,
+                680.9667376881278
+              ],
+              [
+                666.5429893565511,
+                624.5884548878904
+              ],
+              [
+                609.9148986763345,
+                625.7831293600152
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "retainedCells": 29,
+    "evictedRecords": 0,
+    "omittedRecords": 0,
+    "failedRecords": 0,
+    "maxRecords": 64,
+    "maxCells": 8192
+  },
+  "frame": {
+    "sourceId": "53c0326b-8f95-4cc7-b75f-20d7d928039e",
+    "renderSourceId": "60dd652d-c8a2-430d-8ab2-08b3025dad09",
+    "tileZoom": 15,
+    "density": 2.625,
+    "latitude": -35.31513369009902,
+    "longitude": 149.0900991912884,
+    "zoom": 20.0,
+    "heading": 0.0,
+    "viewportWidth": 411.42857142857144,
+    "viewportHeight": 914.2857142857143,
+    "draws": [
+      {
+        "source": [
+          15,
+          29954,
+          19823
+        ],
+        "kind": "OWN",
+        "bitmapWidth": 672,
+        "bitmapHeight": 672,
+        "unitRect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "physicalRect": [
+          -10473.053,
+          -14948.389,
+          11030.947,
+          6555.612
+        ]
+      }
+    ],
+    "omittedDraws": 0
+  },
+  "frameObservationErrors": 0
+}

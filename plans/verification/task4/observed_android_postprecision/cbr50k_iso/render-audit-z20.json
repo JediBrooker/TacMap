@@ -1,0 +1,15 @@
+{
+  "screenshotWidth": 1080,
+  "screenshotHeight": 2400,
+  "density": 2.625,
+  "sourceId": "6889b6c0-f776-4542-9ae9-b1dc51515ccf",
+  "contentKey": "sha256:ac05c01ff4c8691a099f3033b54de8ff0497a76cf63a230f45dbd5db14af2001",
+  "actualCamera": {
+    "latitude": -35.31513369009902,
+    "longitude": 149.0900991912884,
+    "zoom": 20.0,
+    "heading": 0.0
+  },
+  "rendererVersionAtCapture": 2,
+  "canonicalWarpBoundAtCapture": 0.0625
+}

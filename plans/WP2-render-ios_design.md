@@ -162,7 +162,7 @@ final class PDFTileSource: RasterTileSource {
 3. Take from the orphan cache.
 4. Bake read on rasterQueue when `z` is in the bake range. A missing row for an intersecting tile falls through to a live render.
 5. If `z ≤ baseMaxZoom`: await the base raster, then sample it on rasterQueue.
-6. Otherwise: `service.request(band:.visible)` with the vector path (1 cell) or the staged path (>1 cell).
+6. Otherwise: `service.request(band:.visible)` with the vector path (≤4 emitted cells) or the staged path (>4 cells), as amended by Task 4.
 
 Status is reported `.preparing` until the base raster is ready or the first non-empty tile is delivered, then `.ready`. `.failed(reason)` is sticky. Three consecutive job failures give `.renderError`. `CGContext` nil gives `.outOfMemory`. Open failure gives `.cannotOpen`. Encrypted after `unlockWithPassword("")` gives `.passwordProtected`. A missing page gives `.pageMissing`. A blank base raster gives `.blank`.
 
@@ -361,7 +361,7 @@ Status is reported `.preparing` until the base raster is ready or the first non-
 ### Unit tests (XCTest)
 - **`PDFTileRenderFixtureTests`**: loads `testdata/pdf_tile_render.json` and `pdf_georef.json`, and asserts every shared section with the fixture tolerances:
   - tilePx, zoomPolicy, basePlan and baseMaxZoom
-  - warp: exact counts, max error ≤ 0.25, exact rects for unclipped cases
+  - warp: exact counts, max error ≤ 0.0625 canonical job pixels, exact rects for unclipped cases
   - coverage, bakeOptions, jobFormation, drawPlan, crashGuard, cameraZoom
 - **`PDFTileRendererTests`**, on `testdata/geopdf/tacmap_render_markers.pdf` and WP1's rot5_iso, offset_iso and rot90_iso:
   - marker centroids land within 0.5 px of the fixture tile px at 768 and 512 (D3-05, D3-06, rotate, offset)

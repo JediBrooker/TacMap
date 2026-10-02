@@ -62,6 +62,60 @@ final class TileMapView: UIView {
     /// what shows through gaps and a hidden imported map (contract H, iosWhite)
     static let backgroundWhite: CGFloat = 0.07
 
+    #if DEBUG
+    private var lastDeviceAuditCamera: Data?
+    private var lastDeviceAuditFrame: Data?
+    private var deviceAuditFrames = 0
+
+    /// Read-only identity for explicitly opted-in device screenshot verification.
+    /// No PDF title/path/content or key material is included; Release omits this.
+    private func recordDeviceAuditCamera() {
+        guard ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1" else { return }
+        let contextID: Any = (source as? PDFTileSource)?.context.map { $0.id as Any } ?? NSNull()
+        let object: [String: Any] = [
+            "latitude": camera.center.latitude, "longitude": camera.center.longitude,
+            "zoom": camera.zoom, "heading": camera.headingDegrees,
+            "viewportWidth": camera.viewportSize.width, "viewportHeight": camera.viewportSize.height,
+            "sourceID": source.map { String(describing: ObjectIdentifier($0)) } ?? "none",
+            "renderContextID": contextID,
+            "sourceType": source.map { String(reflecting: type(of: $0)) } ?? "none"
+        ]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              encoded != lastDeviceAuditCamera,
+              let text = String(data: encoded, encoding: .utf8) else { return }
+        lastDeviceAuditCamera = encoded
+        NSLog("TASK4_CAMERA %@", text)
+    }
+
+    /// The compositor and this snapshot share the view's main-thread ownership.
+    private func recordDeviceAuditFrame() {
+        guard ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1", deviceAuditFrames < 64,
+              let tileZoom = lastTileZoom else { return }
+        let contextID: Any = (source as? PDFTileSource)?.context.map { $0.id as Any } ?? NSNull()
+        let object: [String: Any] = [
+            "latitude": camera.center.latitude, "longitude": camera.center.longitude,
+            "zoom": camera.zoom, "heading": camera.headingDegrees,
+            "viewportWidth": camera.viewportSize.width, "viewportHeight": camera.viewportSize.height,
+            "sourceID": source.map { String(describing: ObjectIdentifier($0)) } ?? "none",
+            "renderContextID": contextID, "sourceGeneration": sourceGeneration,
+            "tileZoom": tileZoom,
+            "paintedCount": compositor.deviceAuditPaintedCount,
+            "complete": compositor.deviceAuditPaintedCount <= 64,
+            "painted": compositor.deviceAuditPaintedItems.map { item in
+                var observation = item
+                let origin = (item["imageID"] as? String).flatMap { (source as? PDFTileSource)?.deviceAuditOrigin(imageID: $0) }
+                observation["origin"] = origin ?? "unproved"
+                return observation
+            }
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              data != lastDeviceAuditFrame else { return }
+        lastDeviceAuditFrame = data
+        deviceAuditFrames += 1
+        PDFDeviceAudit.emit(data: data, kind: "FRAME")
+    }
+    #endif
+
     // MARK: tiles
 
     private let compositor = TileLayerCompositor()
@@ -119,6 +173,9 @@ final class TileMapView: UIView {
     /// Plan, composite, request. Cheap enough for every camera tick: no
     /// decode, no rendering, just bookkeeping on main.
     func layoutTiles() {
+        #if DEBUG
+        recordDeviceAuditCamera()
+        #endif
         compositor.layoutRoot(bounds: bounds, headingDegrees: camera.headingDegrees)
         guard let source, !tilesHidden, camera.viewportSize.width > 0, camera.viewportSize.height > 0 else {
             compositor.removeAll()
@@ -153,6 +210,9 @@ final class TileMapView: UIView {
         }
         lastPlan = plan
         lastPlanSources = Set(plan.items.map(\.source))
+        #if DEBUG
+        recordDeviceAuditFrame()
+        #endif
 
         let wanted = Set(plan.requests)
         for (t, req) in inFlight where !wanted.contains(t) {

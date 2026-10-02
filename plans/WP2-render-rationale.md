@@ -2,7 +2,7 @@
 **Where both lenses agreed, the design adopts it unchanged on both platforms:**
 - one render function serves both the live view and the bake;
 - the PDF is shown as a normal raster tile source;
-- the per-cell 3-corner affine uses a 0.25 px bound and depth 4;
+- the per-cell 3-corner affine uses a 0.0625 canonical job-pixel bound (Task 4 accuracy amendment; previously 0.25) and depth 4;
 - tiles are 256 logical units at `min(density, 3)`;
 - a base raster serves the low zooms;
 - parent and child fallback applies to every source;
@@ -23,8 +23,8 @@
 
 3. **Base-raster threshold.** The lenses proposed 1.0 (iOS), 1.1 (Android perf) and 1.5 (Android robust). I unified on 1.0 plus a staged path.
    - Staged means one page draw per job, then a warp. It was taken from iOS robust and iOS perf's "local raster".
-   - This keeps every zoom above baseMaxZoom crisp while bounding the cost to one PDF call per job, where per-cell vector draws would cost 4-16 calls.
-   - The Android lenses' per-cell `page.render` would issue 16 pdfium calls per z11 tile on small-scale sheets.
+   - The original policy bounded non-single-cell jobs to one PDF call, followed by bitmap resampling. Task 4 showed a real four-cell sampling regression; the binding policy now uses direct per-cell vector draws for up to four emitted cells, and stages larger jobs. Direct output still has source artwork and deliberate-overzoom precision limits.
+   - Larger plans continue staging to avoid up to 16 or more per-cell PDF calls. The four-cell direct exception preserves existing pixel/lane/bake budgets, but complex-page performance must be measured.
 
 4. **Coalescing.** Both perf lenses showed that per-call floors dominate heavy sheets. Fixed aligned 2x2 blocks overdraw 1.5-2x on phone viewports, so I adopted iOS perf's greedy growth over pending visible tiles.
    - It is capped at 6 tiles and 3 per side, which bounds scratch memory.

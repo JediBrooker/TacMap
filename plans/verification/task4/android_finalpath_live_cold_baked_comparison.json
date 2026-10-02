@@ -1,0 +1,89 @@
+[
+  {
+    "platform": "android",
+    "fixture": "real_usgs_sf_north",
+    "live": "live-z16.png",
+    "baked": "cold-baked-z16.png",
+    "cropPhysicalPx": [
+      200,
+      360,
+      870,
+      2080
+    ],
+    "imageSha256": [
+      "6cf0a39ec858e4350721e40b290c6b09ba220ceac9984731c552d6f45b147ffd",
+      "a721675ceb230a6c7de831b800fa4775882bc0a93b508ab63b6444c42f806049"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 140998,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE"
+  },
+  {
+    "platform": "android",
+    "fixture": "real_usgs_sf_north",
+    "live": "live-z18.png",
+    "baked": "cold-baked-z18.png",
+    "cropPhysicalPx": [
+      200,
+      360,
+      870,
+      2080
+    ],
+    "imageSha256": [
+      "996ffa526384c35d2e561514c700829e5b5f73593a568064ffc5c4df0bcc33de",
+      "816236e7c8f03d9c19d359168b39b17d6d374728cdb2cf1d79ba39ad4eb93cdb"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": false,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 63556,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "OVERZOOM_NOT_IN_COMPLETED_BAKE_RANGE"
+  },
+  {
+    "platform": "android",
+    "fixture": "real_usgs_sf_north",
+    "live": "live-z20.png",
+    "baked": "cold-baked-z20.png",
+    "cropPhysicalPx": [
+      200,
+      360,
+      870,
+      2080
+    ],
+    "imageSha256": [
+      "872d0fff39051480b6075877196f4f06feeb5c3e22f4d15f336b755918620c32",
+      "7a47aafa4bd6ac3c79487725dadc2693d953687dc1441dff5cdae1f78d872e0e"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": false,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 152813,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "OVERZOOM_NOT_IN_COMPLETED_BAKE_RANGE"
+  }
+]

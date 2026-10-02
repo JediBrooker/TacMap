@@ -201,6 +201,9 @@ fun TileMapView(
         val grid = frame.grid ?: return@Canvas
         val cam = frame.camera
         cache.markInUse(frame.inUse)
+        val auditSource = if (com.tacmap.BuildConfig.DEBUG && com.tacmap.app.DebugLaunchHooks.deviceAudit) source as? com.tacmap.map.render.pdf.PdfTileSource else null
+        val auditDraws = auditSource?.let { ArrayList<kotlinx.serialization.json.JsonObject>() }
+        var omittedAuditDraws = 0
         // Tiles are laid out heading-flat, then the whole layer rotates by the
         // camera heading around the viewport centre.
         rotate(-cam.headingDegrees.toFloat(), pivot = Offset(size.width / 2, size.height / 2)) {
@@ -219,6 +222,12 @@ fun TileMapView(
                 val r = ((f[0] + (d.x + d.w) * w) * density).toFloat()
                 val b = ((f[1] + (d.y + d.h) * h) * density).toFloat()
                 paints.dst.set(l, t, r, b)
+                if (auditDraws != null) {
+                    if (auditDraws.size < com.tacmap.map.render.pdf.PdfDeviceAudit.MAX_FRAME_DRAWS) {
+                        runCatching { auditDraws.add(com.tacmap.map.render.pdf.PdfDeviceAudit.draw(item, bmp.width, bmp.height, l, t, r, b)) }
+                            .onFailure { omittedAuditDraws++ }
+                    } else omittedAuditDraws++
+                }
                 if (item.unitRect == UnitRect.FULL) {
                     nc.drawBitmap(bmp, null, paints.dst, paints.tile)
                 } else {
@@ -236,6 +245,9 @@ fun TileMapView(
                     paints.shaded.shader = null
                 }
             }
+        }
+        if (auditSource != null && auditDraws != null) {
+            com.tacmap.map.render.pdf.PdfDeviceAudit.frame(auditSource.auditSourceId, cam, frame.tileZoom, density, auditDraws, omittedAuditDraws, auditSource.auditInstanceId)
         }
     }
 }

@@ -8,6 +8,30 @@ import MapKit
 final class PDFTileSourceTests: XCTestCase {
     typealias F = PDFTileRenderFixtureTests
 
+    #if DEBUG
+    func testDeviceAuditWeakBitmapFollowsCacheLifetimeWithoutRetainingIt() throws {
+        var retainedBitmap: CGImage?
+        weak var temporaryWrapper: UIImage?
+        var observation: PDFTileSource.DeviceAuditDeliveredImage?
+        try autoreleasepool {
+            let context = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8,
+                                                 bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let image = try XCTUnwrap(context.makeImage())
+            let wrapper = UIImage(cgImage: image)
+            temporaryWrapper = wrapper
+            retainedBitmap = wrapper.cgImage
+            observation = PDFTileSource.DeviceAuditDeliveredImage(image: image, origin: "decoded-bake")
+        }
+        XCTAssertNil(temporaryWrapper, "The delivery wrapper may expire while its cached bitmap remains")
+        XCTAssertNotNil(observation?.image)
+        XCTAssertTrue(observation?.image === retainedBitmap)
+        XCTAssertEqual(observation?.origin, "decoded-bake")
+        retainedBitmap = nil
+        XCTAssertNil(observation?.image, "Audit metadata must not keep bitmap contents alive")
+    }
+    #endif
+
     func waitFor(_ what: String, timeout: Double = 20, _ cond: () -> Bool) {
         let end = Date().addingTimeInterval(timeout)
         while !cond(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }

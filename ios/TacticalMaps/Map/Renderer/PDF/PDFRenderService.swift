@@ -62,6 +62,57 @@ final class PDFRenderContext {
     var detailZoom: Int { policy.detailZoom }
 }
 
+#if DEBUG
+/// Opt-in geometry observations, capped per process. No PDF content or identity keys.
+enum PDFDeviceAudit {
+    private static let lock = NSLock()
+    private static var jobs = 0
+    private static var cells = 0
+
+    /// Unified logging truncates long messages. Reassemble only a complete UUID group.
+    static func emit(data: Data, kind: String) {
+        guard ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1" else { return }
+        let chunkBytes = 600
+        let total = (data.count + chunkBytes - 1) / chunkBytes
+        let recordID = UUID().uuidString
+        guard data.count <= 2 * 1024 * 1024, total > 0, total <= 4096 else {
+            NSLog("TASK4_OMITTED %@ %@ bytes=%d chunks=%d", kind, recordID, data.count, total)
+            return
+        }
+        for index in 0..<total {
+            let lower = index * chunkBytes
+            let encoded = data.subdata(in: lower..<min(lower + chunkBytes, data.count)).base64EncodedString()
+            NSLog("TASK4_CHUNK %@ %@ %d %d %d %@", kind, recordID, index, total, data.count, encoded)
+        }
+    }
+
+    static func completed(job: TileJob, context: PDFRenderContext, plan: PDFWarpPlan, kind: String) {
+        guard ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1" else { return }
+        let drawn = plan.cells
+        lock.lock()
+        guard jobs < 64, drawn.count <= 8192 - cells else { lock.unlock(); return }
+        jobs += 1
+        cells += drawn.count
+        lock.unlock()
+        let geometry: [[String: Any]] = drawn.map { cell in
+            ["rect": [cell.l, cell.t, cell.r, cell.b], "pageToPx": cell.pageToPx,
+             "errorPx": cell.errorPx, "depth": cell.depth, "coverage": cell.coverage.rawValue,
+             "pageQuad": cell.quad.map { [$0.x, $0.y] }]
+        }
+        let object: [String: Any] = [
+            "renderContextID": context.id, "kind": kind,
+            "job": [job.z, job.x0, job.y0, job.cols, job.rows], "tilePx": context.tilePx,
+            "jobWidth": job.cols * context.tilePx, "jobHeight": job.rows * context.tilePx,
+            "baseMaxZoom": context.baseMaxZoom, "detailZoom": context.detailZoom,
+            "cells": geometry, "cellCount": drawn.count, "dropped": plan.dropped,
+            "maxErrorPx": plan.maxErrorPx, "errorBoundMet": plan.errorBoundMet
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return }
+        emit(data: data, kind: "JOB")
+    }
+}
+#endif
+
 /// Cancellable handle. Main thread only.
 final class PDFRenderTicket: RasterTileRequest {
     private var handlers: [() -> Void] = []
@@ -553,9 +604,14 @@ final class PDFRenderLanes {
                 let page = try page(for: ctx, lane: lane)
                 let t0 = CACurrentMediaTime()
                 let plan = PDFTileWarp.plan(job: job, tilePx: ctx.tilePx, footprint: ctx.footprint, georef: ctx.georef)
-                let kind: PDFRenderSourceKind = plan.cells.count <= 1 ? .vector(page) : .staged(page)
+                let direct = plan.cells.count <= PDFTileConstants.vectorMaxCells
+                let kind: PDFRenderSourceKind = direct ? .vector(page) : .staged(page)
                 let out = try PDFTileRenderer.renderJob(job, tilePx: ctx.tilePx, plan: plan, footprint: ctx.footprint, source: kind)
-                return .tiles(out, ms: (CACurrentMediaTime() - t0) * 1000)
+                let ms = (CACurrentMediaTime() - t0) * 1000
+                #if DEBUG
+                PDFDeviceAudit.completed(job: job, context: ctx, plan: plan, kind: direct ? "vector" : "staged")
+                #endif
+                return .tiles(out, ms: ms)
             }
         case .base(let ctx):
             // its own short lived document, so the full page caches go away after

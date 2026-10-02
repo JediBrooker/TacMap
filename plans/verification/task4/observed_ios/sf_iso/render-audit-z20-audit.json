@@ -1,0 +1,232 @@
+{
+  "enabled": true,
+  "frame": {
+    "viewportWidth": 402,
+    "viewportHeight": 874,
+    "density": 3.0,
+    "sourceId": "verified-fixture-sf_iso",
+    "renderSourceId": "observed-ios-sf_iso",
+    "draws": [
+      {
+        "source": [
+          16,
+          10477,
+          25333
+        ],
+        "physicalRect": [
+          -9574.730262346566,
+          499.4717775732279,
+          2713.2697376534343,
+          12787.471777573228
+        ],
+        "bitmapWidth": 768,
+        "bitmapHeight": 768,
+        "unitRect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "quality": "own"
+      },
+      {
+        "source": [
+          16,
+          10477,
+          25332
+        ],
+        "physicalRect": [
+          -9574.730262346566,
+          -11788.528222426772,
+          2713.2697376534343,
+          499.4717775732279
+        ],
+        "bitmapWidth": 768,
+        "bitmapHeight": 768,
+        "unitRect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "quality": "own"
+      }
+    ],
+    "omittedDraws": 0,
+    "latitude": 37.76608565506427,
+    "longitude": -122.4435703172107,
+    "zoom": 20,
+    "heading": 0
+  },
+  "frameObservationErrors": [],
+  "completed": {
+    "records": [
+      {
+        "renderSourceId": "observed-ios-sf_iso",
+        "sourceId": "verified-fixture-sf_iso",
+        "job": {
+          "z": 16,
+          "x": 10477,
+          "y": 25333,
+          "cols": 1,
+          "rows": 1
+        },
+        "cells": [
+          {
+            "coverage": "inside",
+            "depth": 0,
+            "errorPx": 0.04490973686375897,
+            "pageQuad": [
+              [
+                367.60612459029755,
+                529.7890033567537
+              ],
+              [
+                422.4640989794513,
+                530.1142383090046
+              ],
+              [
+                422.78956742189956,
+                475.4847446724845
+              ],
+              [
+                367.9283851172055,
+                475.1595225216569
+              ]
+            ],
+            "pageToPx": [
+              13.999298186680944,
+              0.08258217250131351,
+              -5189.978880254268,
+              0.08334439587728427,
+              -14.057851724955151,
+              7417.057344326243
+            ],
+            "rect": [
+              0,
+              0,
+              768,
+              768
+            ]
+          }
+        ],
+        "tilePx": 768,
+        "detailZoom": 16,
+        "path": "vector",
+        "maxErrorPx": 0.04490973686375897
+      },
+      {
+        "renderSourceId": "observed-ios-sf_iso",
+        "sourceId": "verified-fixture-sf_iso",
+        "job": {
+          "z": 16,
+          "x": 10477,
+          "y": 25332,
+          "cols": 1,
+          "rows": 1
+        },
+        "cells": [
+          {
+            "coverage": "inside",
+            "depth": 0,
+            "errorPx": 0.04491415117742966,
+            "pageQuad": [
+              [
+                367.283851224096,
+                584.4153165758144
+              ],
+              [
+                422.13861756996135,
+                584.7405643212517
+              ],
+              [
+                422.4640989794513,
+                530.1142383090046
+              ],
+              [
+                367.60612459029755,
+                529.7890033567537
+              ]
+            ],
+            "pageToPx": [
+              14.000116804689979,
+              0.08259508108791994,
+              -5190.286648075322,
+              0.08335738142027048,
+              -14.058666801407433,
+              8185.4843893024245
+            ],
+            "rect": [
+              0,
+              0,
+              768,
+              768
+            ]
+          }
+        ],
+        "tilePx": 768,
+        "detailZoom": 16,
+        "path": "vector",
+        "maxErrorPx": 0.04491415117742966
+      }
+    ],
+    "omittedRecords": 0,
+    "failedRecords": 0
+  },
+  "captureBinding": [
+    {
+      "quality": "own",
+      "sourceTile": [
+        16,
+        10477,
+        25333
+      ],
+      "frameRecordID": "F65502C1-3670-4CE8-BD4C-B52BA8AF3076",
+      "jobRecordID": "BC86C209-F9CF-4281-AFC5-BF6A0DF81548",
+      "job": [
+        16,
+        10477,
+        25333,
+        1,
+        1
+      ],
+      "logicalFrame": [
+        -3191.576754115522,
+        166.4905925244093,
+        4096,
+        4096
+      ],
+      "physicalMagnification": 16.0,
+      "cellErrorCanonicalPx": 0.04490973686375897,
+      "sameProcessContextSourceCamera": true,
+      "completedBeforePaintedBeforeScreenshot": true
+    },
+    {
+      "quality": "own",
+      "sourceTile": [
+        16,
+        10477,
+        25332
+      ],
+      "frameRecordID": "F65502C1-3670-4CE8-BD4C-B52BA8AF3076",
+      "jobRecordID": "81845C6B-E22C-4541-A988-37E8B75EBFE7",
+      "job": [
+        16,
+        10477,
+        25332,
+        1,
+        1
+      ],
+      "logicalFrame": [
+        -3191.576754115522,
+        -3929.5094074755907,
+        4096,
+        4096
+      ],
+      "physicalMagnification": 16.0,
+      "cellErrorCanonicalPx": 0.04491415117742966,
+      "sameProcessContextSourceCamera": true,
+      "completedBeforePaintedBeforeScreenshot": true
+    }
+  ]
+}

@@ -25,7 +25,7 @@ internal class PdfBaseRaster(
 /** where a job's pixels come from */
 internal sealed class PdfRenderSourceKind {
     class Raster(val base: PdfBaseRaster) : PdfRenderSourceKind()
-    /** live page on the pdfium thread. [staged] = draw the bbox once then warp it (callers pick it when there's more than one cell) */
+    /** live page on the pdfium thread. [staged] = draw the bbox once then warp it (automatic jobs use it above VECTOR_MAX_CELLS) */
     class Vector(val page: PdfRenderer.Page, val frame: PdfPageFrame, val staged: Boolean) : PdfRenderSourceKind()
 }
 
@@ -38,6 +38,9 @@ internal sealed class PdfRenderSourceKind {
  */
 internal object PdfTileRenderer {
     const val RENDERER_VERSION = PdfBakePlan.RENDERER_VERSION
+    /** Avoid the staged raster phase for small refined jobs; shared path contract. */
+    const val VECTOR_MAX_CELLS = 4
+    fun usesStaging(cellCount: Int): Boolean = cellCount > VECTOR_MAX_CELLS
 
     private val filterPaint = ThreadLocal.withInitial {
         Paint(Paint.FILTER_BITMAP_FLAG).apply { isAntiAlias = false }

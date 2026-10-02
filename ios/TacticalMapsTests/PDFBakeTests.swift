@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import SQLite3
+import CryptoKit
 @testable import TacticalMaps
 
 /// "Generate Offline Tiles" end to end on sf_iso: same renderer as live,
@@ -114,6 +115,36 @@ final class PDFBakeTests: XCTestCase {
                        .noSpace(neededBytes: 5))
         XCTAssertEqual(PDFBakeError.fromWrite(NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES)), neededBytes: 5), .writeFailed)
         XCTAssertEqual(PDFBakeError.fromWrite(PDFBakeError.renderFailed, neededBytes: 5), .renderFailed)
+    }
+
+    func testRendererOneBakeCannotBeReusedAfterAccuracyRevision() throws {
+        pdf = try makePDF()
+        let tilePx = 768
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let georefJSON = String(data: try encoder.encode(pdf.georef), encoding: .utf8)!
+        let oldInput = PDFTileConstants.bakeKeyPrefix + georefJSON + "|\(tilePx)|1"
+        let oldKey = SHA256.hash(data: Data(oldInput.utf8)).map { String(format: "%02x", $0) }.joined()
+        let file = dir.appendingPathComponent("renderer-one.mbtiles")
+        let writer = try XCTUnwrap(MBTilesWriter(path: file.path))
+        writer.writeMetadata(name: PDFTileConstants.bakeMbtilesName, minZoom: 0, maxZoom: 15,
+                             minLon: -180, minLat: -85, maxLon: 180, maxLat: 85,
+                             extra: ["tacmap_bake_key": oldKey, "tacmap_tile_px": String(tilePx), "tacmap_renderer": "1"])
+        let pixels = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        let png = try XCTUnwrap(pixels.pngData())
+        writer.putTile(z: 0, x: 0, y: 0, data: png)
+        writer.putTile(z: 15, x: 0, y: 0, data: png)
+        XCTAssertFalse(writer.hadError)
+        writer.close()
+        let oldReader = try XCTUnwrap(PDFBakeReader(url: file, expectedKey: oldKey, tilePx: tilePx))
+        XCTAssertNotNil(oldReader.tileImage(TileIndex(z: 15, x: 0, y: 0)))
+        oldReader.close()
+        let currentKey = PDFRenderContext.bakeKey(georef: pdf.georef, tilePx: tilePx)
+        XCTAssertNotEqual(currentKey, oldKey, "The accuracy revision must invalidate renderer-one geometry")
+        XCTAssertNil(PDFBakeReader(url: file, expectedKey: currentKey, tilePx: tilePx), "Old bakes must fall back to live rendering")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.url.path), "The original PDF stays available")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), "Reader rejection does not delete an old bake")
     }
 
     func testBakeKeepsThePdfAndWritesAValidPyramid() throws {

@@ -845,7 +845,29 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   a raw page coordinate; point capture, coordinate entry, fitting and persistence
   still use the normal UI. The Android screenshot switch never touches the stored OPSEC
   setting and ends with the process. They exist for on-device screenshot/alignment tests; see
-  `docs/DEBUG_HOOKS.md`.
+  `docs/DEBUG_HOOKS.md`. iOS `TACMAP_DEBUG_DEVICE_AUDIT=1` additionally opts
+  into read-only actual camera/viewport and opaque source identity/type/context
+  log telemetry in `TileMapView`, plus existing completed PDF job/cell geometry
+  from render workers. A lock bounds the latter to 64 jobs/8192 drawn cells per
+  process; vector timing is captured before observation, so EWMA samples exclude
+  audit overhead. It includes no PDF title/path/content, content hash or key
+  material, changes no camera/import/calibration/render behavior or tolerance,
+  and all observer code, calls and state are excluded from Release. The same
+  exact opt-in additionally observes actual compositor-applied image-backed tile
+  geometry, bitmap dimensions and own/ancestor/child quality on its existing main
+  owner; at most 64 items and 64 changed frames are recorded per view, with an
+  explicit incomplete flag above that item bound. Actual camera, opaque
+  source/context ID and runtime generation bind these records; no pixels are
+  read and render inputs/output/tolerance remain unchanged.
+  Android's same explicit debug intent opt-in enables a bounded in-memory observer
+  of completed PDF job/cell geometry and actually painted tile bounds. It is off
+  by default, writes no log/file and makes no network call. Instrumentation may
+  explicitly save its local snapshot. Records include viewed-area geometry and
+  opaque source IDs, but no title/path/PDF content, content hashes or key material;
+  64 jobs / 8192 cells plus 64 frame items are the limits, with omissions reported.
+  It changes no render input, warp tolerance, cache or OPSEC preference. Vector
+  observations run after EWMA sampling and raster bake observations after draw
+  timing. `BuildConfig.DEBUG` and R8 remove the observer/call sites from Release.
 - Imported-PDF crash-loop guard: `pdf_render_guard.json` in app support (Android:
   `noBackupFilesDir`), outside backups, holds only random UUIDs (no file names or paths, which would reveal the
   AO). Rendered PDF tiles are memory-only; the explicit "Generate Offline Tiles"
@@ -857,3 +879,11 @@ Issues and disclosures welcome via the repository.
 
 *This is maintained release documentation. Revalidate it against every candidate
 build; planned work and unverified device-specific behaviour are not guarantees.*
+
+The iOS DEBUG audit transports admitted job/frame JSON as `TASK4_CHUNK` records: opaque UUID, kind, zero-based index, total chunk count, total byte count and base64 of at most 600 bytes (approximately 800 logged characters). Each record is capped at 2 MiB and 4096 chunks; an oversized record emits only `TASK4_OMITTED`. Consumers must reject missing, duplicate/conflicting or invalid chunks and decode only a complete group. Existing job/cell/frame admission caps remain unchanged. This transport is release-excluded, exact opt-in and contains only the already admitted geometry; prior truncated unified-log JSON remains unusable evidence.
+
+The Task 4 accuracy repair separately tightens the shared PDF warp split bound from 0.25 to 0.0625 job pixels. Existing maximum depth, minimum cell size, render job/base/staged pixel budgets, cancellation and tile limits remain unchanged; the generated comparison corpus rises from 703 to 2731 drawn cells. This can increase bounded planning/staging work but does not permit larger inputs or render allocations. Both platforms advance rendererVersion to 2 in the existing bake key, so renderer-one bakes fail the existing current-key checks and fall back to live PDF rendering. Reader rejection preserves the original PDF and old bake file; removal/regeneration continues through the normal library lifecycle. This cache revision is separate from app release build numbers and does not waive raw physical-pixel measurement limits at overzoom.
+
+Both iOS and Android automatic native live/bake choosers now draw plans of at most four cells directly through their affines, avoiding the extra staged-image sampling phase exposed by the tightened bound. Larger plans keep the existing staged path and its fixed allocation cap. This changes neither accepted documents nor calibration, georeferencing, cancellation, job limits or EWMA accounting; the measured lane time still includes the actual selected render. Intermediate renderer-two bakes were test-created and are explicitly removed/regenerated through normal UI before final-path evidence.
+
+The exact-opt-in iOS DEBUG frame also joins actual painted CGImage opaque identity to at most 128 weak CGImage delivery observations per source, owned on Main. Only an already decoded baked image is labelled `decoded-bake`; other delivered images are `live`. The weak reference follows the bitmap actually retained by cache/layers, not a temporary UIImage wrapper; no bitmap is retained strongly by this audit. Missing/deallocated/evicted provenance is `unproved`, not a baked-path assertion. Existing cache, render, fallback and delivery behavior is unchanged; all origin observation state and calls are Release-excluded.

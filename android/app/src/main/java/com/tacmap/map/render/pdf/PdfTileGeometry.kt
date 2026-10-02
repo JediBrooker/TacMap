@@ -651,11 +651,11 @@ class PdfWarpPlan(
 
 /**
  * Adaptive warp planner (contract D): split the job rect until a 3 corner affine
- * px -> page is within 0.25 px at the 4th corner and the centre. Port of the
+ * px -> page is within 0.0625 px at the 4th corner and the centre. Port of the
  * generator's plan_warp, cells come out in the same order.
  */
 object PdfTileWarp {
-    const val MAX_ERROR_PX = 0.25
+    const val MAX_ERROR_PX = 0.0625
     const val BASE_DEPTH = 4
     const val MIN_CELL_PX = 32
     const val ROOT_PAD_PX = 2

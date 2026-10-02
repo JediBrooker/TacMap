@@ -83,7 +83,7 @@ Page space is WP1's raw user space: y up, box origins included, /Rotate ignored.
 
 **Render path per job at zoom z:**
 - `z ≤ baseMaxZoom`: sample the base raster. No PDF work. Use the smallest mip level whose density is at least the required density.
-- Otherwise, if the warp plan has exactly 1 cell: direct vector draw.
+- Otherwise, if the emitted warp plan has at most 4 cells: direct vector draw per cell (`vectorMaxCells = 4`).
 - Otherwise: staged. Draw the page bbox of the non-OUTSIDE cells, intersected with the clip bbox, once at `min(1.25 × required, cap)`, where staged pixels ≤ 2 × job pixels. Then warp it per cell like a raster.
 - `required` = the maximum over cells of the column norms of the pageToPx linear part.
 
@@ -114,10 +114,35 @@ Page space is WP1's raw user space: y up, box origins included, /Rotate ignored.
 2. Build the affine px→page from TL, TR, BL: `P_TL + (P_TR - P_TL)(u - l)/w + (P_BL - P_TL)(v - t)/h`. Its inverse is `pageToPx`.
 3. `err = max(|pageToPx(P_BR) - BR|, |pageToPx(P_C) - C|)` in output pixels.
 4. Split into 4 at `mx = l + floor(w/2)`, `my = t + floor(h/2)` (order TL, TR, BL, BR) only while all of these hold:
-   - `err > 0.25`
+   - `err > 0.0625`
    - `depth < maxDepth`
    - `w ≥ 32` and `h ≥ 32`
 5. A non-finite sample or a singular affine forces a split. At the limit, the cell is dropped and left transparent.
+
+**Task 4 accuracy amendment (2026-10-02):** The canonical job-pixel bound is
+0.0625, tightened from 0.25 after the actually painted Canberra tile
+`15/29954/19823` at 32 physical pixels per bitmap pixel exceeded 1 physical
+pixel against independent PROJ truth. `overzoomWarpReference` pins the shared
+point, expected job pixel and physical scale. Both planners and the independent
+fixture generator use the same bound; depth, minimum cell size and drop rules
+remain unchanged. Renderer version 2 changes the existing bake/cache key so
+old renderer-1 bakes cannot reuse the prior geometry. Mismatched baked metadata
+continues to follow the existing typed rejection and cleanup lifecycle; no old
+bake is promoted or moved into the new session. This is a canonical geometry bound, not a guarantee that
+source artwork, antialiasing or deliberate overzoom stays within 1 physical
+pixel. Existing raw source/raster failures remain visible.
+
+The independent corpus's 88 emitted cell sets grow from 703 to 2731 cells
+(maximum 256 to 1024); the actual Canberra job grows from one to four cells.
+The extra subdivision increases warp work for vector, staged and raster paths.
+The following path amendment keeps the demonstrated four-cell job direct. Job pixel
+budgets, staged-pixel cap, cancellation, memory limits, timing samples and bake
+estimation rules remain binding. Native render and bake evidence must assess
+the resulting cost rather than assuming unchanged performance.
+
+**Task 4 raster-path amendment (2026-10-02):** Above `baseMaxZoom`, direct vector rendering handles up to four emitted cells; larger plans retain staging. The same four-cell Canberra native job showed staged source-only printed-ridge centroid displacement of 6.00 physical pixels at an independently projected clean cross-section, versus 0.124 for direct rendering. Geometry was held identical. The extra bounded staging resampling phase caused this regression; the smaller direct path avoids that phase without moving georeferencing or printed artwork. `rasterSamplingReference` pins the independent point and centroid measurement, and `renderPath` pins automatic selection around the four-cell boundary. These are narrow regressions, not universal source/raster acceptance.
+
+Direct rendering may draw the page up to four times per job; complex pages can cost more than staging. Existing job buffers, staged cap, vector-lane bounds, cancellation, timing/EWMA, heavy fallback and bake budget remain unchanged. The measured simple Canberra four-cell diagnostic was 1.61 ms direct versus 9.01 ms staged; it does not predict all-page cost. Renderer version remains 2 because intermediate version-2 output was local and unreleased. Verification must remove and freshly regenerate those candidate bakes under the final chooser; intermediate version-2 tiles are not final-path evidence.
 
 **Emitted cells:**
 - Each cell is classified by its page quad against the clip polygon.
@@ -133,7 +158,7 @@ Page space is WP1's raw user space: y up, box origins included, /Rotate ignored.
 - The neatline must lie within 0.5 px of the projected clip polygon.
 - Tiles classified OUTSIDE become EMPTY.
 
-**Expected cell counts** (768 px, 1×1 jobs, all sheet types): z≥14 → 1; z12-13 → 4; z10-11 → 16; ≤ z9 → up to 64-256. The fixture pins the exact counts.
+**Expected cell counts:** the regenerated fixture pins each exact sheet/job count; the amended corpus ranges through 1024 cells. Counts depend on projection, job bounds and the tighter error bound, so no universal zoom-to-count shortcut is binding.
 
 ## E. Render scheduling (identical rules; platform lanes differ)
 
@@ -210,7 +235,7 @@ Load order:
 **Amendment 2026-10-02 (G1): step 1.** `failed` means no request is started and nothing is delivered. The result is never EMPTY: iOS returns a nil request, and Android returns `null` ("couldn't load"), not `TileSource.EMPTY`. The tile therefore stays missing and its fallback keeps drawing (B). Android must make sure this doesn't turn into a tight reload loop.
 
 **Bake validity:**
-- `tacmap_bake_key` equals the session `bakeKey`, where `bakeKey = sha256("tacmap-bake-v1|" + canonical georef JSON + "|" + tilePx + "|" + rendererVersion)`, and `rendererVersion = 1`.
+- `tacmap_bake_key` equals the session `bakeKey`, where `bakeKey = sha256("tacmap-bake-v1|" + canonical georef JSON + "|" + tilePx + "|" + rendererVersion)`, and `rendererVersion = 2`.
 - `tacmap_tile_px` equals the current tilePx.
 - The key is compared on-device only.
 
@@ -647,9 +672,12 @@ Both platforms ship it or neither does:
 | `constants` | every number above |
 | `tilePx` | density → px |
 | `zoomPolicy[]` | per sheet id (sf_iso, rot5_iso, offset_iso, rot90_iso, cbr50k_iso, lcc_lgile, geog_iso, usgs_sf_north): clipPolygon, mercMetresPerPoint (1e-6 rel), detailZoomRaw (1e-6), detailZoom (exact), pxPerPt at z10..18 for tilePx 512/672/768 (1e-9 rel), basePlan normal/lowRam (region, W, H exact), baseMaxZoom per tilePx (exact) |
-| `warp[]` | sheet, job (z, x0, y0, cols, rows), tilePx → cellCount (exact), maxErrorPx (≤ 0.25 asserted), cells (rect exact, pageToPx 1e-6 rel) for jobs fully inside the footprint; counts only for clipped jobs |
+| `renderPath[]` | aboveBaseMaxZoom, emitted cellCount → raster/vector/staged automatic path; `vectorMaxCells = 4` |
+| `rasterSamplingReference[]` | independent printed source page point → expected job pixel and source-only centroid cross-section; narrow native quality regression |
+| `warp[]` | sheet, job (z, x0, y0, cols, rows), tilePx → cellCount (exact), maxErrorPx (≤ 0.0625 asserted), cells (rect exact, pageToPx 1e-6 rel) for jobs fully inside the footprint; counts only for clipped jobs |
 | `coverage[]` | sheet, z → count plus the sorted tile list (z ≤ 14) or sha256 of the list |
 | `bakeOptions[]` | sheet → D, options (maxZoom, tiles), default |
+| `overzoomWarpReference[]` | independent construction/PROJ page → canonical job pixel at the recorded physical scale; emitted native warp must keep physical error ≤ 1 px |
 | `jobFormation[]` | seed, pending set, heavy → job rect |
 | `drawPlan[]` | visible tiles, cache states, fallbackZoom → items (source, dest, unitRect, order) and requests |
 | `crashGuard[]` | event sequences → persisted state and launch decision |

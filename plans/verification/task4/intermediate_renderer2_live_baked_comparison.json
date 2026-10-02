@@ -1,0 +1,179 @@
+{
+  "state": "Intermediate renderer2 prior automatic <=4 vector amendment; candidate bakes must be removed/freshly regenerated. Not final-path acceptance.",
+  "comparisons": [
+    {
+      "platform": "ios",
+      "fixture": "rot5_iso",
+      "live": "rot5_iso__live_z14.png",
+      "baked": "rot5_iso__baked_z14_reopen.png",
+      "cropPhysicalPx": [
+        240,
+        470,
+        960,
+        2330
+      ],
+      "imageSha256": [
+        "2db1063c44ef3b71a91dd7f54b674ef9b2d157cbeab18fa1b91f328d0bfdae38",
+        "5dd28e8d78ba06e3f961ca5b3011c22af0be653b1da49fee55579ee19a9948fe"
+      ],
+      "sameActualCameraAndSource": true,
+      "withinCompletedBakeRange": true,
+      "fullCropPSNRdB": 68.71950332781684,
+      "exactCropPixelsMatch": false,
+      "inkFeatureRMS255": 0.25922170504687453,
+      "inkPixelCount": 38043,
+      "diagnosticBestIntegerTranslationPx": [
+        0,
+        0
+      ],
+      "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+      "rawFullCrop35dBStatus": "PASS",
+      "status": "COMPARED_IN_BAKE_RANGE"
+    },
+    {
+      "platform": "ios",
+      "fixture": "render_dense",
+      "live": "render_dense__live_z14.png",
+      "baked": "render_dense__baked_z14_reopen.png",
+      "cropPhysicalPx": [
+        240,
+        470,
+        960,
+        2330
+      ],
+      "imageSha256": [
+        "a330e6ccb958261cf1c7cfc12ffc0847fd5ca438f80899aaebee706c5cc579fe",
+        "00614dcc6650a0fe79763542598b044734a3cb95bb007e17d62991e41691497e"
+      ],
+      "sameActualCameraAndSource": true,
+      "withinCompletedBakeRange": true,
+      "fullCropPSNRdB": 58.59580759338803,
+      "exactCropPixelsMatch": false,
+      "inkFeatureRMS255": 0.4445976002151592,
+      "inkPixelCount": 260583,
+      "diagnosticBestIntegerTranslationPx": [
+        0,
+        0
+      ],
+      "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+      "rawFullCrop35dBStatus": "PASS",
+      "status": "COMPARED_IN_BAKE_RANGE"
+    },
+    {
+      "platform": "ios",
+      "fixture": "real_usgs_sf_north",
+      "live": "real_usgs_sf_north__live_z14.png",
+      "baked": "real_usgs_sf_north__baked_z14_reopen.png",
+      "cropPhysicalPx": [
+        240,
+        470,
+        960,
+        2330
+      ],
+      "imageSha256": [
+        "a0366318e71cc994c6fe054dc09f797fb80dad0c89cbcdfbef850a6bf8b4271d",
+        "d06649ffd76ebbfc81cc0246ea9f2c58c833ef62f7db9ccdbd1ccfe43c1872af"
+      ],
+      "sameActualCameraAndSource": true,
+      "withinCompletedBakeRange": true,
+      "fullCropPSNRdB": 28.90936814532917,
+      "exactCropPixelsMatch": false,
+      "inkFeatureRMS255": 9.200541013775247,
+      "inkPixelCount": 1295857,
+      "diagnosticBestIntegerTranslationPx": [
+        0,
+        0
+      ],
+      "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+      "rawFullCrop35dBStatus": "FAIL",
+      "status": "COMPARED_IN_BAKE_RANGE"
+    },
+    {
+      "platform": "android",
+      "fixture": "real_usgs_sf_north",
+      "live": "live-z16.png",
+      "baked": "cold-baked-z16.png",
+      "cropPhysicalPx": [
+        200,
+        360,
+        870,
+        2080
+      ],
+      "imageSha256": [
+        "7321a66d0f672adf3de513d863aef0e7a12e9ebdef9edbae9a1ab19c9f64ec9e",
+        "f122d5e94f91488128a35cf79853c740b4e5102ceed4c52f8ab77aace964c15a"
+      ],
+      "sameActualCameraAndSource": true,
+      "withinCompletedBakeRange": true,
+      "fullCropPSNRdB": null,
+      "exactCropPixelsMatch": true,
+      "inkFeatureRMS255": 0.0,
+      "inkPixelCount": 140998,
+      "diagnosticBestIntegerTranslationPx": [
+        0,
+        0
+      ],
+      "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+      "rawFullCrop35dBStatus": "PASS",
+      "status": "COMPARED_IN_BAKE_RANGE"
+    },
+    {
+      "platform": "android",
+      "fixture": "real_usgs_sf_north",
+      "live": "live-z18.png",
+      "baked": "cold-baked-z18.png",
+      "cropPhysicalPx": [
+        200,
+        360,
+        870,
+        2080
+      ],
+      "imageSha256": [
+        "b1943bdbb5d2b069ed98d2008bd246afc078430c41d9ae31c1c0129f591f1184",
+        "cad276d4f7123dddda75aa93c27fc325be57856d8a38c1e911ea5d8a01585209"
+      ],
+      "sameActualCameraAndSource": true,
+      "withinCompletedBakeRange": false,
+      "fullCropPSNRdB": null,
+      "exactCropPixelsMatch": true,
+      "inkFeatureRMS255": 0.0,
+      "inkPixelCount": 63556,
+      "diagnosticBestIntegerTranslationPx": [
+        0,
+        0
+      ],
+      "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+      "rawFullCrop35dBStatus": "PASS",
+      "status": "OVERZOOM_NOT_IN_COMPLETED_BAKE_RANGE"
+    },
+    {
+      "platform": "android",
+      "fixture": "real_usgs_sf_north",
+      "live": "live-z20.png",
+      "baked": "cold-baked-z20.png",
+      "cropPhysicalPx": [
+        200,
+        360,
+        870,
+        2080
+      ],
+      "imageSha256": [
+        "89de6e621e4b474c3982ebc719bd00dc41be79d59726e088edc902068a6a45ae",
+        "132458ea40a5d191e6c400389d088a6bb922c50771b21196721c769223d0b4a4"
+      ],
+      "sameActualCameraAndSource": true,
+      "withinCompletedBakeRange": false,
+      "fullCropPSNRdB": null,
+      "exactCropPixelsMatch": true,
+      "inkFeatureRMS255": 0.0,
+      "inkPixelCount": 152813,
+      "diagnosticBestIntegerTranslationPx": [
+        0,
+        0
+      ],
+      "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+      "rawFullCrop35dBStatus": "PASS",
+      "status": "OVERZOOM_NOT_IN_COMPLETED_BAKE_RANGE"
+    }
+  ]
+}

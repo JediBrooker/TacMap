@@ -1,0 +1,232 @@
+{
+  "enabled": true,
+  "frame": {
+    "viewportWidth": 402,
+    "viewportHeight": 874,
+    "density": 3.0,
+    "sourceId": "verified-fixture-edge_iso",
+    "renderSourceId": "observed-ios-edge_iso",
+    "draws": [
+      {
+        "source": [
+          16,
+          35988,
+          22322
+        ],
+        "physicalRect": [
+          179.80570828914642,
+          -9522.474027246237,
+          12467.805708289146,
+          2765.525972753763
+        ],
+        "bitmapWidth": 768,
+        "bitmapHeight": 768,
+        "unitRect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "quality": "own"
+      },
+      {
+        "source": [
+          16,
+          35987,
+          22322
+        ],
+        "physicalRect": [
+          -12108.194291710854,
+          -9522.474027246237,
+          179.80570828914642,
+          2765.525972753763
+        ],
+        "bitmapWidth": 768,
+        "bitmapHeight": 768,
+        "unitRect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "quality": "own"
+      }
+    ],
+    "omittedDraws": 0,
+    "latitude": 49.65738171542689,
+    "longitude": 17.688177463840717,
+    "zoom": 20,
+    "heading": 0
+  },
+  "frameObservationErrors": [],
+  "completed": {
+    "records": [
+      {
+        "renderSourceId": "observed-ios-edge_iso",
+        "sourceId": "verified-fixture-edge_iso",
+        "job": {
+          "z": 16,
+          "x": 35988,
+          "y": 22322,
+          "cols": 1,
+          "rows": 1
+        },
+        "cells": [
+          {
+            "coverage": "inside",
+            "depth": 0,
+            "errorPx": 0.05603681884088085,
+            "pageQuad": [
+              [
+                523.4885122533234,
+                565.9079468898802
+              ],
+              [
+                568.4316626504302,
+                567.5179031822813
+              ],
+              [
+                570.0387418481711,
+                522.6997027923336
+              ],
+              [
+                525.0923102603851,
+                521.0897138242909
+              ]
+            ],
+            "pageToPx": [
+              17.066377722989596,
+              0.6107117730374976,
+              -9279.659329382213,
+              0.613056792386499,
+              -17.113945112821895,
+              9363.989353809937
+            ],
+            "rect": [
+              0,
+              0,
+              768,
+              768
+            ]
+          }
+        ],
+        "tilePx": 768,
+        "detailZoom": 16,
+        "path": "vector",
+        "maxErrorPx": 0.05603681884088085
+      },
+      {
+        "renderSourceId": "observed-ios-edge_iso",
+        "sourceId": "verified-fixture-edge_iso",
+        "job": {
+          "z": 16,
+          "x": 35987,
+          "y": 22322,
+          "cols": 1,
+          "rows": 1
+        },
+        "cells": [
+          {
+            "coverage": "inside",
+            "depth": 0,
+            "errorPx": 0.0560365294057176,
+            "pageQuad": [
+              [
+                478.5453291111569,
+                564.3012810095321
+              ],
+              [
+                523.4885122533234,
+                565.9079468898802
+              ],
+              [
+                525.0923102603851,
+                521.0897138242909
+              ],
+              [
+                480.1458459499794,
+                519.4830153363065
+              ]
+            ],
+            "pageToPx": [
+              17.06645458420221,
+              0.609464635248774,
+              -8510.993800158549,
+              0.6118061434788995,
+              -17.11402220598386,
+              9364.687681778933
+            ],
+            "rect": [
+              0,
+              0,
+              768,
+              768
+            ]
+          }
+        ],
+        "tilePx": 768,
+        "detailZoom": 16,
+        "path": "vector",
+        "maxErrorPx": 0.0560365294057176
+      }
+    ],
+    "omittedRecords": 0,
+    "failedRecords": 0
+  },
+  "captureBinding": [
+    {
+      "quality": "own",
+      "sourceTile": [
+        16,
+        35988,
+        22322
+      ],
+      "frameRecordID": "A2B68AB9-7A26-46AA-BF41-464372C211B7",
+      "jobRecordID": "345B1D4A-391F-46AA-85B2-76EAF209A3D7",
+      "job": [
+        16,
+        35988,
+        22322,
+        1,
+        1
+      ],
+      "logicalFrame": [
+        59.93523609638214,
+        -3174.158009082079,
+        4096,
+        4096
+      ],
+      "physicalMagnification": 16.0,
+      "cellErrorCanonicalPx": 0.05603681884088085,
+      "sameProcessContextSourceCamera": true,
+      "completedBeforePaintedBeforeScreenshot": true
+    },
+    {
+      "quality": "own",
+      "sourceTile": [
+        16,
+        35987,
+        22322
+      ],
+      "frameRecordID": "A2B68AB9-7A26-46AA-BF41-464372C211B7",
+      "jobRecordID": "AF1EBBBD-4794-416E-877C-2BEA984A3AC5",
+      "job": [
+        16,
+        35987,
+        22322,
+        1,
+        1
+      ],
+      "logicalFrame": [
+        -4036.064763903618,
+        -3174.158009082079,
+        4096,
+        4096
+      ],
+      "physicalMagnification": 16.0,
+      "cellErrorCanonicalPx": 0.0560365294057176,
+      "sameProcessContextSourceCamera": true,
+      "completedBeforePaintedBeforeScreenshot": true
+    }
+  ]
+}

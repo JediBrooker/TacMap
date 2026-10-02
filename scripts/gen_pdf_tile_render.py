@@ -19,7 +19,7 @@ built here from scratch. The rest is plain python geometry. Needs pyproj + numpy
 
 Deterministic: no dates, PDFs uncompressed with fixed decimal numbers, json floats
 rounded so a PROJ patch bump doesnt churn the file. Every borderline decision (a
-tile that nearly touches the footprint, a split error sitting on 0.25 px, a ceil
+tile that nearly touches the footprint, a split error sitting on the canonical warp bound, a ceil
 right on an integer) is measured and the script refuses to write if one is too close
 to call, so the platforms can match exactly.
 """
@@ -63,9 +63,10 @@ BASE_MAX_SIDE = 4096
 BASE_MAX_SCALE = 4.0
 MIP_STOP = 256
 UPSAMPLE_TOL = 1.0
+VECTOR_MAX_CELLS = 4
 STAGED_OVERSAMPLE = 1.25
 STAGED_MAX_FACTOR = 2.0
-WARP_MAX_ERR = 0.25
+WARP_MAX_ERR = 0.0625
 WARP_BASE_DEPTH = 4
 WARP_MIN_CELL = 32
 WARP_ROOT_PAD = 2
@@ -85,7 +86,7 @@ BAKE_SPACE_FACTOR = 2.0
 BAKE_BYTES_SAFETY = 1.2
 BAKE_SAMPLE_TILES = 3
 BAKE_COMMIT_EVERY = 64
-RENDERER_VERSION = 1
+RENDERER_VERSION = 2
 GUARD_MAX_TOKENS = 16
 # bake estimate fallbacks when no sample tile came back (amendment 2026-10-02, J2). these were
 # androids numbers, now shared. raise FALLBACK_TILE_BYTES here (never in the json) if a platform
@@ -119,7 +120,7 @@ TILEPX_BASEMAX = [256, 384, 512, 672, 704, 768]  # baseMaxZoom rows, cheap so do
 # so even a platform sitting right on that gate classifies every pinned tile the same way
 EPS_WORLD = 1e-7      # z0 world units, footprint vs tile edges
 EPS_PAGE = 1e-3       # page points (WP1's toPage gate), warp cell quad vs clip polygon
-EPS_ERR = 1e-4        # px, warp split error vs the 0.25 bound
+EPS_ERR = 1e-4        # px, warp split error vs the 0.0625 bound
 EPS_CEIL = 1e-7       # base raster ceil inputs: plain double math on parsed numbers, ulps are ~1e-12 here
 EPS_ROOT = 1e-3       # px, warp root floor/ceil. iOS measured ~6e-5 px off PROJ at z16, usgs z9 sits at 5e-3
 EPS_REL = 1e-7        # relative, baseMaxZoom pxPerPt vs base density
@@ -606,7 +607,7 @@ def plan_warp(g, fp, job, tile_px, problems, tag):
                 dropped[0] += 1
             return
         if can_split and abs(err - WARP_MAX_ERR) < EPS_ERR:
-            problems.append("%s: split error %r at rect %r is on the 0.25 bound" % (tag, err, (l, t, r, b)))
+            problems.append("%s: split error %r at rect %r is on the 0.0625 bound" % (tag, err, (l, t, r, b)))
         if err > WARP_MAX_ERR and can_split:
             split(l, t, r, b, depth)
             return
@@ -641,7 +642,7 @@ def warp_entry(sid, g, fp, job, tile_px, kind_hint, problems):
     root, max_depth, leaves, dropped = plan_warp(g, fp, job, tile_px, problems, tag)
     emitted = [lf for lf in leaves if lf["coverage"] != "outside"]
     max_err = max((lf["errorPx"] for lf in emitted), default=0.0)
-    # at a split limit a leaf can keep err > 0.25, record it instead of pretending
+    # at a split limit a leaf can keep err > WARP_MAX_ERR, record it instead of pretending
     bound_met = all(lf["errorPx"] <= WARP_MAX_ERR for lf in emitted)
     required = 0.0
     for lf in emitted:
@@ -1581,7 +1582,8 @@ def staged_region_section(sheets, wide, problems):
                   "cols": cols, "rows": rows, "tilePx": tile_px, "jobPixels": jp, "expected": exp})
         out.append(e)
 
-    # real staged jobs off the warp section (z > baseMaxZoom, more than one cell) + the wide sheet
+    # Explicit staged-region algorithm vectors, including jobs the automatic
+    # chooser may now render directly. These pin staging itself, not selection. + wide sheet
     real = [("sf_iso", (14, 2618, 6333, 3, 2), 768), ("sf_iso", (15, 5237, 12666, 3, 2), 768),
             ("rot5_iso", (14, 2618, 6333, 3, 2), 768), ("cbr50k_iso", (13, 7488, 4955, 1, 1), 768),
             ("cbr50k_iso", (14, 14971, 9916, 3, 2), 768), ("usgs_sf_north", (13, 1310, 3165, 1, 1), 768),
@@ -1593,7 +1595,7 @@ def staged_region_section(sheets, wide, problems):
         _, _, leaves, _ = plan_warp(g, fp, job, tp, problems, tag)
         emitted = [lf for lf in leaves if lf["coverage"] != "outside"]
         if len(emitted) < 2:
-            problems.append("%s: not a staged job any more" % tag)
+            problems.append("%s: explicit staging reference has fewer than two cells" % tag)
             continue
         xs = [p[0] for lf in emitted for p in lf["quad"]]
         ys = [p[1] for lf in emitted for p in lf["quad"]]
@@ -1919,6 +1921,7 @@ def constants():
         "baseRaster": {"budgetPx": BUDGET_NORMAL, "lowRamBudgetPx": BUDGET_LOW, "lowRamBelowBytes": int(3.5 * GIB),
                        "maxSide": BASE_MAX_SIDE, "maxScale": BASE_MAX_SCALE, "mipStopSide": MIP_STOP,
                        "upsampleTolerance": UPSAMPLE_TOL},
+        "vectorMaxCells": VECTOR_MAX_CELLS,
         "staged": {"oversample": STAGED_OVERSAMPLE, "maxPixelsFactor": STAGED_MAX_FACTOR,
                    "shrinkFactor": STAGED_SHRINK, "padPx": 2.0},
         "warp": {"maxErrorPx": WARP_MAX_ERR, "baseDepth": WARP_BASE_DEPTH, "minCellPx": WARP_MIN_CELL,
@@ -2404,6 +2407,51 @@ def dumps(o, ind=0):
 
 # ----------------------------------------------------------------------------
 
+def overzoom_warp_reference(gref, datums, problems):
+    """Independent PROJ truth for the actual Task 4 Canberra 32x view.
+    The input page point was obtained by independently projecting the native
+    camera/screenshot location. Expected job pixels are recomputed from the
+    construction affine through PROJ, never copied from a native warp cell.
+    """
+    sid = "cbr50k_iso"
+    raw = next(s for s in gref["sheets"] if s["id"] == sid)
+    truth, expected = raw["truth"], raw["expected"]
+    g = Georef(sid, truth["plane"], {"id": truth["datum"]},
+               truth["pageToPlane"], expected["crop"], datums)
+    page = [639.985902112019, 636.8576900839744]
+    job, tile_px = (15, 29954, 19823, 1, 1), 768
+    lat, lon = g.to_wgs84(*page)
+    X, Y = merc_world0(lat, lon)
+    px = [(X * 2 ** job[0] / 256 - job[1]) * tile_px,
+          (Y * 2 ** job[0] / 256 - job[2]) * tile_px]
+    return [{"sheet": sid, "job": {"z": job[0], "x0": job[1], "y0": job[2],
+             "cols": job[3], "rows": job[4]}, "tilePx": tile_px,
+             "page": page, "expectedPx": px, "physicalScale": 32.0,
+             "maxPhysicalError": 1.0,
+             "reference": "Construction affine + independent PROJ -> spherical Web Mercator; actual Task 4 camera point, no app transform."}]
+
+
+def raster_sampling_reference(gref, datums):
+    """Source-only printed cross-section truth, independently projected.
+    This is a narrow raster-quality regression, not whole-image pixel acceptance.
+    """
+    raw = next(s for s in gref["sheets"] if s["id"] == "cbr50k_iso")
+    truth, expected = raw["truth"], raw["expected"]
+    g = Georef("cbr50k_iso", truth["plane"], {"id": truth["datum"]},
+               truth["pageToPlane"], expected["crop"], datums)
+    page = [638.9291338587345, 634.9024047600408]
+    lat, lon = g.to_wgs84(*page)
+    X, Y = merc_world0(lat, lon)
+    tile_px = 768
+    px = [(X * 2 ** 15 / 256 - 29954) * tile_px,
+          (Y * 2 ** 15 / 256 - 19823) * tile_px]
+    return [{"sheet": "cbr50k_iso", "job": {"z": 15, "x0": 29954, "y0": 19823, "cols": 1, "rows": 1},
+             "tilePx": tile_px, "page": page, "expectedPx": px, "axis": "x",
+             "scanlinePixelIndex": 635, "contrastThreshold": 0.08, "centroidPaddingPx": 2,
+             "pixelCenterOffset": 0.5, "physicalScale": 32.0, "maxPhysicalError": 1.0,
+             "reference": "Original UTM printed easting690000 construction affine through independent PROJ. Source-only actual automatic native bitmap; clean cross-section outside printed intersection. Narrow regression, not universal raster acceptance."}]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", default=os.path.join(REPO, "testdata"), help="testdata dir to write into")
@@ -2511,7 +2559,7 @@ def main():
         "margins": {
             "note": "the generator refuses to write if any discrete decision is closer than these, so a correct "
                     "platform implementation can't legitimately land on the other side",
-            "footprintVsTileWorld": EPS_WORLD, "cellQuadVsClipPt": EPS_PAGE, "splitErrorVs025Px": EPS_ERR,
+            "footprintVsTileWorld": EPS_WORLD, "cellQuadVsClipPt": EPS_PAGE, "splitErrorVsBoundPx": EPS_ERR,
             "baseRasterCeilInputs": EPS_CEIL, "warpRootFloorCeilPx": EPS_ROOT, "baseMaxZoomRel": EPS_REL},
         "constants": constants(),
         "tilePx": [{"density": d, "tilePx": tile_px(d)} for d in
@@ -2522,6 +2570,11 @@ def main():
         "warpSyntheticGeorefs": [dict(WIDE, note="not a PDF. build the georef straight from these numbers "
                                                  "(crs, datum, affine, crop) and use mediaBox as the page box")],
         "warp": warp,
+        "overzoomWarpReference": overzoom_warp_reference(gref, datums, problems),
+        "rasterSamplingReference": raster_sampling_reference(gref, datums),
+        "renderPath": [{"aboveBaseMaxZoom": above, "cellCount": count,
+                        "expected": "raster" if not above else "vector" if count <= VECTOR_MAX_CELLS else "staged"}
+                       for above in (False, True) for count in (1, 2, 4, 5, 16, 1024)],
         "jobFormation": job_formation_section(),
         "drawPlan": draw_plan_section(),
         "crashGuard": crash_guard_section(),

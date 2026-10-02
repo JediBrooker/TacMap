@@ -15,6 +15,7 @@ internal object DebugLaunchHooks {
     const val EXTRA_IMPORT_PDF = "TACMAP_DEBUG_IMPORT_PDF"
     const val EXTRA_CAMERA = "TACMAP_DEBUG_CAMERA"
     const val EXTRA_GRID = "TACMAP_DEBUG_GRID"
+    const val EXTRA_DEVICE_AUDIT = "TACMAP_DEBUG_DEVICE_AUDIT"
     const val EXTRA_ALLOW_SCREENSHOTS = "TACMAP_DEBUG_OPSEC_ALLOW_SCREENSHOTS"
 
     data class Camera(val latitude: Double, val longitude: Double, val zoom: Double, val heading: Double?)
@@ -24,8 +25,9 @@ internal object DebugLaunchHooks {
         val camera: Camera?,
         val grid: Boolean,
         val allowScreenshots: Boolean,
+        val deviceAudit: Boolean = false,
     ) {
-        val isEmpty: Boolean get() = importPdfPath == null && camera == null && !grid && !allowScreenshots
+        val isEmpty: Boolean get() = importPdfPath == null && camera == null && !grid && !allowScreenshots && !deviceAudit
     }
 
     /** [extra] reads a string extra by name. null when there's nothing debug in there */
@@ -36,6 +38,7 @@ internal object DebugLaunchHooks {
             camera = extra(EXTRA_CAMERA)?.let(::parseCamera),
             grid = isOn(extra(EXTRA_GRID)),
             allowScreenshots = isOn(extra(EXTRA_ALLOW_SCREENSHOTS)),
+            deviceAudit = isOn(extra(EXTRA_DEVICE_AUDIT)),
         )
         return r.takeUnless { it.isEmpty }
     }
@@ -60,9 +63,13 @@ internal object DebugLaunchHooks {
     @Volatile var allowScreenshots: Boolean = false
         private set
 
+    @Volatile var deviceAudit: Boolean = false
+        private set
+
     fun apply(request: Request) {
         request.camera?.let { pendingCamera = it }
         if (request.allowScreenshots) allowScreenshots = true
+        if (request.deviceAudit) deviceAudit = true
     }
 
     fun takeCamera(): Camera? {

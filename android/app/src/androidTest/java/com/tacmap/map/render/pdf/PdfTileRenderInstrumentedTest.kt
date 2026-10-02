@@ -96,6 +96,81 @@ class PdfTileRenderInstrumentedTest {
         }
     }
 
+    /** Real production automatic chooser: compare its bitmap against both native paths. */
+    @Test fun automaticFourCellCanberraPreservesDirectVectorPixels() = runBlocking {
+        val s = sheet("geopdf/tacmap_grid_cbr50k_iso.pdf")
+        val job = TileJob.single(15, 29954, 19823)
+        val tile = TileIndex(15, 29954, 19823)
+        val output = File(context.filesDir, "task4/path-diagnostic").apply { mkdirs() }
+        var allDirect = true
+        val rows = kotlinx.serialization.json.buildJsonArray {
+            for (tilePx in listOf(672, 768)) {
+                val plan = PdfTileWarp.plan(job, tilePx, s.footprint, s.georef)
+                assertEquals("The proven actual job stays four cells", 4, plan.cells.size)
+                val session = PdfRenderSessions.acquire(s.file, s.georef.page)
+                val automatic = PdfTileSource(session, s.georef, s.geometry, s.footprint, s.policy,
+                    tilePx, PdfZoomPolicy.BUDGET_PX, null, "automatic-four-cell-$tilePx", forBake = true)
+                try {
+                    assertTrue("Production bake/live route must be vector", job.z > automatic.baseMaxZoom)
+                    val timed = automatic.renderForBakeTimed(job)
+                    val auto = timed.tiles.getValue(tile)
+                    val directStart = android.os.SystemClock.elapsedRealtimeNanos()
+                    val direct = render(s, tile, tilePx, Path.DIRECT)
+                    val directMs = (android.os.SystemClock.elapsedRealtimeNanos() - directStart) / 1e6
+                    val stagedStart = android.os.SystemClock.elapsedRealtimeNanos()
+                    val staged = render(s, tile, tilePx, Path.STAGED)
+                    val stagedMs = (android.os.SystemClock.elapsedRealtimeNanos() - stagedStart) / 1e6
+                    try {
+                        for ((label, bmp) in listOf("automatic" to auto, "direct" to direct, "staged" to staged)) {
+                            File(output, "canberra-$tilePx-$label.png").outputStream().use {
+                                assertTrue(bmp.compress(Bitmap.CompressFormat.PNG, 100, it))
+                            }
+                        }
+                        var referenceError: Double? = null
+                        if (tilePx == 768) {
+                            val reference = fx.arr("rasterSamplingReference").single().jsonObject
+                            val expected = PdfGeorefFixture.doubles(reference["expectedPx"]!!)[0]
+                            val scanline = reference["scanlinePixelIndex"]!!.jsonPrimitive.int
+                            val threshold = reference["contrastThreshold"]!!.jsonPrimitive.content.toDouble()
+                            val padding = reference["centroidPaddingPx"]!!.jsonPrimitive.int
+                            fun contrast(x: Int): Double {
+                                val color = auto.getPixel(x, scanline)
+                                return ((Color.red(color) - maxOf(Color.green(color), Color.blue(color))) / 255.0).coerceAtLeast(0.0)
+                            }
+                            var left = expected.toInt(); var right = left
+                            assertTrue("Independent reference must hit the connected printed band", contrast(left) > threshold)
+                            while (left > 0 && contrast(left - 1) > threshold) left--
+                            while (right < auto.width - 1 && contrast(right + 1) > threshold) right++
+                            left = (left - padding).coerceAtLeast(0); right = (right + padding).coerceAtMost(auto.width - 1)
+                            var total = 0.0; var moment = 0.0
+                            val offset = reference["pixelCenterOffset"]!!.jsonPrimitive.content.toDouble()
+                            for (x in left..right) { val weight = contrast(x); total += weight; moment += (x + offset) * weight }
+                            referenceError = abs(moment / total - expected) * reference["physicalScale"]!!.jsonPrimitive.content.toDouble()
+                            assertTrue("Automatic native bitmap source-only physical residual $referenceError", referenceError.isFinite() &&
+                                referenceError <= reference["maxPhysicalError"]!!.jsonPrimitive.content.toDouble())
+                        }
+                        val sameDirect = auto.sameAs(direct)
+                        val sameStaged = auto.sameAs(staged)
+                        assertTrue("The diagnostic must distinguish actual raster paths", !direct.sameAs(staged))
+                        allDirect = allDirect && sameDirect
+                        add(kotlinx.serialization.json.buildJsonObject {
+                            put("tilePx", kotlinx.serialization.json.JsonPrimitive(tilePx))
+                            put("cells", kotlinx.serialization.json.JsonPrimitive(plan.cells.size))
+                            put("automaticSameDirect", kotlinx.serialization.json.JsonPrimitive(sameDirect))
+                            put("automaticSameStaged", kotlinx.serialization.json.JsonPrimitive(sameStaged))
+                            referenceError?.let { put("independentSourcePhysicalError", kotlinx.serialization.json.JsonPrimitive(it)) }
+                            put("automaticDrawMs", kotlinx.serialization.json.JsonPrimitive(timed.drawMs))
+                            put("directAcquireAndRenderMs", kotlinx.serialization.json.JsonPrimitive(directMs))
+                            put("stagedAcquireAndRenderMs", kotlinx.serialization.json.JsonPrimitive(stagedMs))
+                        })
+                    } finally { auto.recycle(); direct.recycle(); staged.recycle() }
+                } finally { automatic.dispose(); PdfRenderSessions.release(session) }
+            }
+        }
+        File(output, "chooser-result.json").writeText(rows.toString())
+        assertTrue("Actual automatic four-cell bitmap must retain native direct-vector pixels", allDirect)
+    }
+
     /** centroid of pixels matching [hit] in a (2r+1)² window around (cx, cy), null if none */
     private fun centroid(b: Bitmap, cx: Double, cy: Double, r: Int, hit: (Int) -> Double): Pair<Double, Double>? {
         var sw = 0.0; var sx = 0.0; var sy = 0.0
