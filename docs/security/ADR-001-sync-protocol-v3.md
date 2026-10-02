@@ -14,7 +14,7 @@ v2 weaknesses this ADR closes:
 
 | Problem | v2 behavior | v3 fix |
 |---|---|---|
-| Cross-room device correlation | UUID reused across rooms | Room-scoped actorId derived from pubkey + room |
+| Actor identifier reuse across rooms | UUID reused across rooms | ActorId is room-scoped, but the advertised per-device public key still permits cross-room device correlation |
 | Object correlation across rotated rooms | Local UUID visible to relay | Wire object ID = HMAC(metadataKey, localUUID) |
 | Impersonation via replay | In-memory TOFU cleared on leave | Durable per-room actor pins |
 | Replay after local deletion | Versions cleared on disconnect | Durable per-object stamp + tombstone state |
@@ -58,6 +58,8 @@ actorId = base64url-no-pad(
 Properties:
 - Self-certifying: anyone with roomIdRaw + pubkey can recompute the actorId.
 - Room-scoped: same device key in different rooms produces different actorIds.
+  The public key itself is advertised unchanged, so this does not provide
+  cross-room device unlinkability to a relay or observer of those envelopes.
 - 43-character base64url string (256-bit hash).
 - The relay recomputes this value for every v3 actor announcement from the room path and raw public key. It durably pins `actorId -> pubkey` only after a valid signed `hello` proof. A socket cannot send v3 mutations or presence until that proof succeeds.
 
@@ -799,6 +801,12 @@ is required for compatibility: shipped clients resend every own tombstone that
 a snapshot does not confirm, so compacting a live author's tombstone would only
 make it come back on the next reconnect, in a burst that can trip the rate
 window. Compaction decrements the counters exactly and advances `seq`.
+Eligibility is rechecked inside each bounded 64-record transaction: current
+open authors, durable pin reads, room activity and the conservative dropped-pin
+bound belong to that batch. Author lookups may be cached within that transaction,
+never across batches; a valid hello accepted between transactions must protect
+its remaining tombstones. This is the existing current-author condition, not a
+new retention or wire policy.
 
 How the author's last hello is known:
 

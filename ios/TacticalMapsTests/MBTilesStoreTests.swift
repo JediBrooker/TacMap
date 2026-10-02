@@ -34,15 +34,15 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertNil(MBTilesStore(url: url), file: file, line: line)
     }
 
-    private func makeSampleMBTiles() throws -> URL {
+    private func makeSampleMBTiles(metadataValueType: String = "TEXT", tileZoomType: String = "INTEGER") throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("sample-\(UUID().uuidString).mbtiles")
         var db: OpaquePointer?
         XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
         defer { sqlite3_close(db) }
         let ddl = """
-        CREATE TABLE metadata (name TEXT, value TEXT);
-        CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB);
+        CREATE TABLE metadata (name TEXT, value \(metadataValueType));
+        CREATE TABLE tiles (zoom_level \(tileZoomType), tile_column INTEGER, tile_row INTEGER, tile_data BLOB);
         INSERT INTO metadata VALUES ('name','Sample'),('format','png'),('minzoom','0'),('maxzoom','1'),('bounds','-1.0,-2.0,3.0,4.0');
         """
         XCTAssertEqual(sqlite3_exec(db, ddl, nil, nil, nil), SQLITE_OK)
@@ -214,6 +214,172 @@ final class MBTilesStoreTests: XCTestCase {
         let store = try XCTUnwrap(MBTilesStore(url: url))
         XCTAssertEqual(store.metadata.name, String(repeating: "N", count: 128))
         XCTAssertEqual(store.metadata.format, String(repeating: "p", count: 32))
+    }
+
+    func testMetadataRowAdmissionAccepts64AndRejects65() throws {
+        let url = try makeSampleMBTiles()
+        defer { try? FileManager.default.removeItem(at: url) }
+        // Five standard rows plus 59 extension rows are exactly the existing
+        // reader admission boundary; a 65th must fail before publication.
+        try execute("""
+            WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<59)
+            INSERT INTO metadata SELECT 'extension_' || i, 'ignored' FROM n;
+            """, on: url)
+        let accepted = try XCTUnwrap(MBTilesStore(url: url))
+        XCTAssertEqual(accepted.metadata.name, "Sample")
+        XCTAssertEqual(accepted.tileData(z: 1, x: 0, y: 1), Data([0xDE, 0xAD, 0xBE, 0xEF]))
+        accepted.closeForDeletion()
+        try execute("INSERT INTO metadata VALUES ('extension_60','ignored')", on: url)
+        XCTAssertNil(MBTilesStore(url: url))
+    }
+
+    func testUnknownHugeMetadataIsIgnoredWhileKnownValuesRemainBounded() throws {
+        let url = try makeSampleMBTiles()
+        defer { try? FileManager.default.removeItem(at: url) }
+        // SQLite stores a large unknown value without constructing it in Swift.
+        // The reader only classifies the key and never requests its payload.
+        try execute("INSERT INTO metadata VALUES ('vendor_extension', CAST(zeroblob(16777216) AS TEXT))", on: url)
+        let store = try XCTUnwrap(MBTilesStore(url: url))
+        XCTAssertEqual(store.metadata.name, "Sample")
+        XCTAssertEqual(store.metadata.minZoom, 0)
+        XCTAssertEqual(store.metadata.maxZoom, 1)
+        XCTAssertNotNil(store.tileData(z: 1, x: 0, y: 1))
+    }
+
+    private func sqliteScalarText(_ query: String, on url: URL) throws -> String {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_prepare_v2(db, query, -1, &statement, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        return String(cString: try XCTUnwrap(sqlite3_column_text(statement, 0)))
+    }
+
+    private func metadataAdmissionFixture() throws -> [String: Any] {
+        let url = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("import_limits.json"))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        return try XCTUnwrap(json["mbtilesMetadataAdmission"] as? [String: Any])
+    }
+
+    private func sqlText(_ bytes: Data) -> String {
+        "CAST(X'" + bytes.map { String(format: "%02x", $0) }.joined() + "' AS TEXT)"
+    }
+
+    func testSharedMetadataAdmissionCasesUseActualSQLiteReader() throws {
+        let fixture = try metadataAdmissionFixture()
+        XCTAssertEqual(fixture["maxRows"] as? Int, 64)
+        let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 12)
+        for vector in cases {
+            let id = try XCTUnwrap(vector["id"] as? String)
+            let url = try makeSampleMBTiles(metadataValueType: "")
+            defer { try? FileManager.default.removeItem(at: url) }
+            try execute("DELETE FROM metadata", on: url)
+            if let count = vector["unknownRows"] as? Int {
+                try execute("""
+                    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<\(count))
+                    INSERT INTO metadata SELECT 'extension_' || i, 'ignored' FROM n;
+                    """, on: url)
+            }
+            for row in try XCTUnwrap(vector["rows"] as? [[String: Any]]) {
+                let key = try XCTUnwrap(row["key"] as? String)
+                let value: String
+                if let integer = row["integerValue"] as? Int { value = String(integer) }
+                else if let hex = row["textBytesHex"] as? String { value = "CAST(X'" + hex + "' AS TEXT)" }
+                else if let repeated = row["valueRepeat"] as? [Any] {
+                    let char = try XCTUnwrap(repeated.first as? String)
+                    let count = try XCTUnwrap(repeated.last as? Int)
+                    value = sqlText(Data(String(repeating: char, count: count).utf8))
+                } else { value = sqlText(Data(try XCTUnwrap(row["value"] as? String).utf8)) }
+                try execute("INSERT INTO metadata VALUES (\(sqlText(Data(key.utf8))),\(value))", on: url)
+                XCTAssertEqual(try sqliteScalarText("SELECT typeof(value) FROM metadata ORDER BY rowid DESC LIMIT 1", on: url),
+                    row["integerValue"] == nil ? "text" : "integer", id)
+            }
+            let store = MBTilesStore(url: url)
+            XCTAssertEqual(store != nil, try XCTUnwrap(vector["accepted"] as? Bool), id)
+            if let name = vector["name"] as? String { XCTAssertEqual(store?.metadata.name, name, id) }
+            if let format = vector["format"] as? String { XCTAssertEqual(store?.metadata.format, format, id) }
+        }
+    }
+
+    func testSharedTileZoomStorageClassesUseActualSQLiteAggregate() throws {
+        let fixture = try metadataAdmissionFixture()
+        XCTAssertEqual(fixture["tileZoomMin"] as? Int, 0)
+        XCTAssertEqual(fixture["tileZoomMax"] as? Int, MBTilesStore.maximumZoom)
+        let cases = try XCTUnwrap(fixture["tileZoomCases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 7)
+        for vector in cases {
+            let id = try XCTUnwrap(vector["id"] as? String)
+            let url = try makeSampleMBTiles(tileZoomType: "")
+            defer { try? FileManager.default.removeItem(at: url) }
+            let type = try XCTUnwrap(vector["storageType"] as? String)
+            let expression: String
+            if type == "integer" { expression = String(try XCTUnwrap(vector["value"] as? Int)) }
+            else if type == "real" { expression = "CAST(0 AS REAL)" }
+            else if let repeated = vector["valueRepeat"] as? [Any] {
+                expression = sqlText(Data(String(repeating: try XCTUnwrap(repeated.first as? String),
+                    count: try XCTUnwrap(repeated.last as? Int)).utf8))
+            } else { expression = sqlText(Data(try XCTUnwrap(vector["value"] as? String).utf8)) }
+            try execute("DELETE FROM metadata; UPDATE tiles SET zoom_level=\(expression),tile_column=0,tile_row=0", on: url)
+            XCTAssertEqual(try sqliteScalarText("SELECT typeof(zoom_level) FROM tiles LIMIT 1", on: url), type, id)
+            let store = MBTilesStore(url: url)
+            let accepted = try XCTUnwrap(vector["accepted"] as? Bool)
+            XCTAssertEqual(store != nil, accepted, id)
+            if accepted {
+                XCTAssertEqual(store?.metadata.minZoom, vector["value"] as? Int, id)
+                XCTAssertEqual(store?.metadata.maxZoom, vector["value"] as? Int, id)
+            }
+        }
+    }
+
+    func testConsumedBakeExtensionsRejectNulTailAndDuplicatesWithoutRejectingMap() throws {
+        let expectedKey = String(repeating: "a", count: 64)
+        for hostile in ["nulTail", "duplicate"] {
+            let url = try makeSampleMBTiles()
+            defer { try? FileManager.default.removeItem(at: url) }
+            try execute("INSERT INTO metadata VALUES ('tacmap_bake_key',\(sqlText(Data(expectedKey.utf8)))),('tacmap_tile_px','768')", on: url)
+            if hostile == "nulTail" {
+                let prefix = sqlText(Data((expectedKey + "\0").utf8))
+                try execute("UPDATE metadata SET value=\(prefix) || replace(hex(zeroblob(1048576)),'00','j') WHERE name='tacmap_bake_key'", on: url)
+            } else {
+                try execute("INSERT INTO metadata VALUES ('tacmap_bake_key',\(sqlText(Data(expectedKey.utf8))))", on: url)
+            }
+            let ordinary = try XCTUnwrap(MBTilesStore(url: url), hostile)
+            XCTAssertEqual(ordinary.metadata.name, "Sample", hostile)
+            XCTAssertNil(ordinary.extensionMetadata("tacmap_bake_key"), hostile)
+            XCTAssertNil(PDFBakeReader(url: url, expectedKey: expectedKey, tilePx: 768), hostile)
+        }
+    }
+
+    func testSharedConsumedExtensionCasesUseActualLazyReader() throws {
+        let fixture = try metadataAdmissionFixture()
+        let cases = try XCTUnwrap(fixture["extensionCases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 9)
+        for vector in cases {
+            let id = try XCTUnwrap(vector["id"] as? String)
+            let url = try makeSampleMBTiles(metadataValueType: "")
+            defer { try? FileManager.default.removeItem(at: url) }
+            try execute("DELETE FROM metadata", on: url)
+            for row in try XCTUnwrap(vector["rows"] as? [[String: Any]]) {
+                let key = try XCTUnwrap(row["key"] as? String)
+                let value: String
+                if let integer = row["integerValue"] as? Int { value = String(integer) }
+                else if let hex = row["textBytesHex"] as? String { value = "CAST(X'" + hex + "' AS TEXT)" }
+                else if let repeated = row["valueRepeat"] as? [Any] {
+                    value = sqlText(Data(String(repeating: try XCTUnwrap(repeated.first as? String),
+                        count: try XCTUnwrap(repeated.last as? Int)).utf8))
+                } else { value = sqlText(Data(try XCTUnwrap(row["value"] as? String).utf8)) }
+                try execute("INSERT INTO metadata VALUES (\(sqlText(Data(key.utf8))),\(value))", on: url)
+                XCTAssertEqual(try sqliteScalarText("SELECT typeof(value) FROM metadata ORDER BY rowid DESC LIMIT 1", on: url),
+                    row["integerValue"] == nil ? "text" : "integer", id)
+            }
+            let store = MBTilesStore(url: url)
+            XCTAssertEqual(store != nil, try XCTUnwrap(vector["mapAccepted"] as? Bool), id)
+            XCTAssertEqual(store?.extensionMetadata(try XCTUnwrap(vector["requestedKey"] as? String)),
+                vector["expected"] as? String, id)
+        }
     }
 
     func testAbsentZoomMetadataUsesValidatedTileRange() throws {

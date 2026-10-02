@@ -1360,12 +1360,6 @@ export class SyncRoom {
       // legacy ones, whose pins and activity predate any of this tracking
       const indexedAt = (await this.state.storage.get<number>("meta:tombIndexAt")) ?? now
       // no recorded activity at all: treat everyone as just seen, never as gone
-      const roomSeen = Math.max((await this.state.storage.get<number>("meta:lastActivity")) ?? now, indexedAt)
-      let unpinnedSeen = roomSeen
-      if (protocol === 3) {
-        const droppedSeen = await this.state.storage.get<number>("meta:droppedPinsSeen")
-        if (typeof droppedSeen === "number") unpinnedSeen = Math.min(unpinnedSeen, droppedSeen)
-      }
       let nextDue: number | null = null
       const later = (at: number): void => { nextDue = nextDue === null ? at : Math.min(nextDue, at) }
       const due: string[] = []
@@ -1374,16 +1368,25 @@ export class SyncRoom {
         if (deletedAt > cutoff) later(deletedAt + TOMBSTONE_TTL_MS)
         else due.push(key.slice(TOMB_PREFIX.length))
       }
-      // lastSeen only moves on a hello, so an author sitting on one socket for
-      // the whole TTL would look gone. anyone bound right now is seen now
-      const authorSeen = new Map<string, number>()
-      for (const ws of this.openSockets()) {
-        const by = (ws.deserializeAttachment() as SocketState | null)?.hello?.by
-        if (by) authorSeen.set(by, now)
-      }
       for (let index = 0; index < due.length; index += 64) {
         const ids = due.slice(index, index + 64)
         await this.state.storage.transaction(async txn => {
+          // Eligibility belongs to this transaction, not the entire scan. A
+          // valid hello can refresh a pin between batches. Cache author reads
+          // only within one batch and refresh the conservative unpinned bound.
+          const roomSeen = Math.max((await txn.get<number>("meta:lastActivity")) ?? now, indexedAt)
+          let unpinnedSeen = roomSeen
+          if (protocol === 3) {
+            const droppedSeen = await txn.get<number>("meta:droppedPinsSeen")
+            if (typeof droppedSeen === "number") unpinnedSeen = Math.min(unpinnedSeen, droppedSeen)
+          }
+          // A continuously bound author is current even when its last durable
+          // hello is older than the TTL.
+          const authorSeen = new Map<string, number>()
+          for (const ws of this.openSockets()) {
+            const by = (ws.deserializeAttachment() as SocketState | null)?.hello?.by
+            if (by) authorSeen.set(by, now)
+          }
           const doomed: string[] = []
           let removed = 0
           let removedBytes = 0

@@ -1,6 +1,6 @@
 # TacMap — Privacy Policy
 
-*Last updated: 28 August 2026*
+*Last updated: 2 October 2026*
 
 *Applies to the iOS and Android editions of TacMap*
 
@@ -48,6 +48,13 @@ iOS Keychain or Android Keystore. Imported map bytes and local crash reports
 are the documented exceptions. Device compromise, an unlocked device, exports,
 and optional network services remain separate risks; see the published threat
 model for those limits.
+
+An already started recording may retain a private copy of the mission key to
+append encrypted fixes after the general mission interface locks. The copy is
+the general key, not a cryptographically separate track-only key. Locking also
+does not promise erasure of every already decrypted in-memory object or tile;
+process termination ends the live recording session. See the threat model and
+ADR-002 for the access-policy and device-compromise limits.
 
 Deleting the App normally removes its app-private files under the platform’s
 rules. Exported copies, files you shared to another app, store transaction
@@ -110,7 +117,8 @@ The relay and its hosting/network providers can still observe or process:
   during the WebSocket handshake (the relay retains a hash of that token);
 - clear outer object/version/kind, request, acknowledgement, and deletion fields;
 - room co-membership, connection and session identifiers, public actor keys,
-  and signed actor/session announcements;
+  and signed actor/session announcements (the same device signing public key
+  can correlate that device across rooms even though actor IDs are room-scoped);
 - Chat sender/session/key ID, whether the scope is Entire room or Selected unit,
   and, for Selected unit, the exact recipient actor/session/key ID;
 - connection times, message timing, frequency, and sizes; and

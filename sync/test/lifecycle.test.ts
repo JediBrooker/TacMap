@@ -661,6 +661,59 @@ describe("SP1 item 2b: bounded retention, the 90 day idle purge", () => {
 })
 
 describe("SP1 item 3: tombstone compaction", () => {
+  it("rechecks a returning author's authenticated durable hello between compaction batches", async () => {
+    const stub = room("threat-compaction-returning-author")
+    const client = await openV3Socket(stub); await drainSnapshot(client)
+    try {
+      await runInDurableObject(stub, async (instance, state) => {
+        const relay = instance as any
+        const now = Date.now()
+        const entries: Array<[string, unknown]> = [[`actor:${A.actor_id}`, {
+          pubkey: A.pubkey_base64url, firstSeen: now - 60 * DAY, lastSeen: now - 40 * DAY,
+          helloEpoch: "0000000000000001",
+        }]]
+        for (let index = 0; index < 65; index += 1) {
+          const id = await wireIdFor(`returning-author-${index}`)
+          entries.push([`obj:${id}`, {
+            id, vs: stamp(index + 1), by: A.actor_id, kind: "del", ct: sealed(),
+            deleted: true, pub: A.pubkey_base64url, sd: SD,
+          }], [`tomb:${id}`, now - 35 * DAY])
+        }
+        await putBatched(state, entries)
+        const exact = await recomputeAccounting(state)
+        await state.storage.put({ "meta:totalRecords": exact.total, "meta:bytes": exact.bytes })
+        const socket = state.getWebSockets()[0]
+        const returningHello = await signedHello(A, base64urlBytes(SD_2), 2)
+        const transaction = state.storage.transaction.bind(state.storage)
+        let returnAfterFirstBatch = true
+        ;(state.storage as any).transaction = async (callback: any) => {
+          const result = await transaction(callback)
+          if (returnAfterFirstBatch) {
+            returnAfterFirstBatch = false
+            // A real signature, actor recomputation, pin transaction and socket
+            // binding complete after batch one, before batch two is admitted.
+            expect(await relay.handleHello(socket, returningHello)).toBe(true)
+          }
+          return result
+        }
+        let nextDue: number | null
+        try { nextDue = await relay.compactTombstones(now) }
+        finally { delete (state.storage as any).transaction }
+        expect(socket.deserializeAttachment().hello).toEqual(returningHello)
+        const pin = await state.storage.get<any>(`actor:${A.actor_id}`)
+        expect(pin.helloEpoch).toBe("0000000000000002")
+        expect(pin.lastSeen).toBeGreaterThan(now - DAY)
+        expect((await state.storage.list({ prefix: "obj:" })).size).toBe(1)
+        expect((await state.storage.list({ prefix: "tomb:" })).size).toBe(1)
+        const remaining = await recomputeAccounting(state)
+        expect(await state.storage.get("meta:totalRecords")).toBe(remaining.total)
+        expect(await state.storage.get("meta:bytes")).toBe(remaining.bytes)
+        expect(await state.storage.get("meta:horizonSeq")).toBe(await state.storage.get("meta:seq"))
+        expect(nextDue!).toBeGreaterThan(now + 29 * DAY)
+      })
+    } finally { client.close() }
+  })
+
   it("keeps compaction time in relay-only rows, never in the snapshotted record", async () => {
     const stub = room("sp1-tomb-rows")
     const a = await openV3Socket(stub); await drainSnapshot(a)

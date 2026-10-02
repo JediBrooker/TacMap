@@ -94,7 +94,7 @@
 </header>
 <main>
 <h1 id="tacmap-privacy-policy">TacMap — Privacy Policy</h1>
-<p><em>Last updated: 28 August 2026</em></p>
+<p><em>Last updated: 2 October 2026</em></p>
 <p><em>Applies to the iOS and Android editions of TacMap</em></p>
 <p>This policy explains how the TacMap mobile application (the “App”), published
 by Christian Brooker, handles information. TacMap has no developer-operated
@@ -133,6 +133,12 @@ iOS Keychain or Android Keystore. Imported map bytes and local crash reports
 are the documented exceptions. Device compromise, an unlocked device, exports,
 and optional network services remain separate risks; see the published threat
 model for those limits.</p>
+<p>An already started recording may retain a private copy of the mission key to
+append encrypted fixes after the general mission interface locks. The copy is
+the general key, not a cryptographically separate track-only key. Locking also
+does not promise erasure of every already decrypted in-memory object or tile;
+process termination ends the live recording session. See the threat model and
+ADR-002 for the access-policy and device-compromise limits.</p>
 <p>Deleting the App normally removes its app-private files under the platform’s
 rules. Exported copies, files you shared to another app, store transaction
 records, and data retained by a service provider are controlled separately.</p>
@@ -183,14 +189,35 @@ mission-payload ciphertext.</p>
 during the WebSocket handshake (the relay retains a hash of that token);</li>
 <li>clear outer object/version/kind, request, acknowledgement, and deletion fields;</li>
 <li>room co-membership, connection and session identifiers, public actor keys,
-and signed actor/session announcements;</li>
+and signed actor/session announcements (the same device signing public key
+can correlate that device across rooms even though actor IDs are room-scoped);</li>
 <li>Chat sender/session/key ID, whether the scope is Entire room or Selected unit,
 and, for Selected unit, the exact recipient actor/session/key ID;</li>
 <li>connection times, message timing, frequency, and sizes; and</li>
 <li>encrypted mission objects and tombstones held for synchronisation.</li>
 </ul>
 <p>Encrypted mission objects and actor records can remain at the relay until the
-room has been idle for seven days. Live location presence is forwarded to
+room has been idle for seven days. Encrypted deletion records (tombstones) are
+kept after that. In current rooms a tombstone is removed once it is 30 days old
+and the device that made it is not connected and has not started a session in
+the last 30 days; if the room was idle
+for seven days in the meantime, the relay no longer knows each device&#39;s last
+connection and counts instead from the last connection of any device before that
+idle period, which can be later. In legacy rooms (join codes starting <code>2:</code>) a
+tombstone is removed once it is 30 days old and nobody has used the room for 30
+days. After a room goes idle the relay also keeps the token hash and a few
+counters and timestamps (room sequence and version high-water, record totals,
+last-activity time, time of the last idle clean-up, the latest device
+connection hour before the idle period, the hour each kept deletion record
+was made, and for rooms created before this retention scheme the hour the
+relay started tracking their deletion records) with no mission content, so
+returning devices resume cleanly. Once a room has been idle for 90 days in a
+row the relay deletes everything it holds for it, including these values and
+any deletion records still kept; any use of the room before then restarts that
+period. A room in which nothing was ever stored is deleted entirely after
+seven idle days. A device that comes back to a room after it was deleted finds
+it empty and shows a rollback warning; start a new room with a new join code
+instead. Live location presence is forwarded to
 connected peers and held only as current in-memory session state. TacMap Chat
 key adverts and ciphertext are forwarded only to currently connected,
 Chat-capable sessions and are not written to the relay&#39;s room storage. There is

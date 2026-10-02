@@ -47,6 +47,194 @@
     "thumbnailCacheEntries": 24,
     "cancelCopyGranularityBytes": 1048576
   },
+  "mbtilesMetadataAdmission": {
+    "maxRows": 64,
+    "maxKeyCharacters": 32,
+    "utf8PrefixBytesPerCharacter": 4,
+    "knownValueMaxCharacters": {"name": 128, "format": 32, "minzoom": 16, "maxzoom": 16, "bounds": 256},
+    "truncateFields": ["key", "name", "format"],
+    "consumedBakeExtensionMaxCharacters": 128,
+    "extensionCases": [
+      {
+        "id": "validBakeKey",
+        "requestedKey": "tacmap_bake_key",
+        "rows": [
+          {"key": "tacmap_bake_key", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        ],
+        "mapAccepted": true,
+        "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "id": "mixedCaseBakeKey",
+        "requestedKey": "tacmap_bake_key",
+        "rows": [
+          {"key": "TACMAP_BAKE_KEY", "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+        ],
+        "mapAccepted": true,
+        "expected": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "id": "caseVariantDuplicate",
+        "requestedKey": "tacmap_bake_key",
+        "rows": [
+          {"key": "tacmap_bake_key", "value": "first"},
+          {"key": "TACMAP_BAKE_KEY", "value": "second"}
+        ],
+        "mapAccepted": true,
+        "expected": null
+      },
+      {
+        "id": "validTilePixels",
+        "requestedKey": "tacmap_tile_px",
+        "rows": [
+          {"key": "tacmap_tile_px", "value": "768"}
+        ],
+        "mapAccepted": true,
+        "expected": "768"
+      },
+      {
+        "id": "bakeKeyNul",
+        "requestedKey": "tacmap_bake_key",
+        "rows": [
+          {"key": "tacmap_bake_key", "value": "a\u0000hidden"}
+        ],
+        "mapAccepted": true,
+        "expected": null
+      },
+      {
+        "id": "duplicateBakeKey",
+        "requestedKey": "tacmap_bake_key",
+        "rows": [
+          {"key": "tacmap_bake_key", "value": "first"},
+          {"key": "tacmap_bake_key", "value": "second"}
+        ],
+        "mapAccepted": true,
+        "expected": null
+      },
+      {
+        "id": "oversizedBakeKey",
+        "requestedKey": "tacmap_bake_key",
+        "rows": [
+          {"key": "tacmap_bake_key", "valueRepeat": ["x", 1048576]}
+        ],
+        "mapAccepted": true,
+        "expected": null
+      },
+      {
+        "id": "nonTextBakeKey",
+        "requestedKey": "tacmap_bake_key",
+        "rows": [
+          {"key": "tacmap_bake_key", "integerValue": 7}
+        ],
+        "mapAccepted": true,
+        "expected": null
+      },
+      {
+        "id": "invalidUtf8BakeKey",
+        "requestedKey": "tacmap_bake_key",
+        "rows": [
+          {"key": "tacmap_bake_key", "textBytesHex": "ff"}
+        ],
+        "mapAccepted": true,
+        "expected": null
+      }
+    ],
+    "tileZoomMin": 0,
+    "tileZoomMax": 30,
+    "tileZoomCases": [
+      {"id": "integerZero", "storageType": "integer", "value": 0, "accepted": true},
+      {"id": "integerThirty", "storageType": "integer", "value": 30, "accepted": true},
+      {"id": "negativeInteger", "storageType": "integer", "value": -1, "accepted": false},
+      {"id": "integerThirtyOne", "storageType": "integer", "value": 31, "accepted": false},
+      {"id": "numericText", "storageType": "text", "value": "0", "accepted": false},
+      {"id": "hugeText", "storageType": "text", "valueRepeat": ["9", 1048576], "accepted": false},
+      {"id": "realZero", "storageType": "real", "value": 0.0, "accepted": false}
+    ],
+    "rules": "Read LIMIT 65 scalar descriptors before text. Copy only bounded UTF-8 BLOB prefixes; skip unknown values. Known duplicate keys/non-text values, non-text keys, invalid UTF-8 or NUL in copied prefixes fail closed. Numeric/bounds overflow fails closed. ASCII vectors below are portable; platform Unicode character segmentation may differ. Only tacmap_bake_key/tacmap_tile_px are consumed lazily, with strict UTF-8/NUL/type/128-character/duplicate checks; invalid extension reads are missing and ordinary maps remain admissible.",
+    "cases": [
+      {"id": "descriptors64", "unknownRows": 64, "rows": [], "accepted": true},
+      {"id": "descriptors65", "unknownRows": 65, "rows": [], "accepted": false},
+      {
+        "id": "unknownLargeValue",
+        "rows": [
+          {"key": "vendor", "valueRepeat": ["x", 1048576]}
+        ],
+        "accepted": true
+      },
+      {
+        "id": "nameTruncated",
+        "rows": [
+          {"key": "name", "value": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"}
+        ],
+        "accepted": true,
+        "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+      },
+      {
+        "id": "formatTruncated",
+        "rows": [
+          {"key": "format", "value": "fffffffffffffffffffffffffffffffff"}
+        ],
+        "accepted": true,
+        "format": "ffffffffffffffffffffffffffffffff"
+      },
+      {
+        "id": "duplicateKnown",
+        "rows": [
+          {"key": "name", "value": "first"},
+          {"key": "NAME", "value": "second"}
+        ],
+        "accepted": false
+      },
+      {
+        "id": "knownNonText",
+        "rows": [
+          {"key": "minzoom", "integerValue": 0}
+        ],
+        "accepted": false
+      },
+      {
+        "id": "zoomOverflow",
+        "rows": [
+          {"key": "minzoom", "value": "00000000000000000"}
+        ],
+        "accepted": false
+      },
+      {
+        "id": "boundsOverflow",
+        "rows": [
+          {
+            "key": "bounds",
+            "value": "                                                                                                                                                                                                                                                                 "
+          }
+        ],
+        "accepted": false
+      },
+      {
+        "id": "nameNul",
+        "rows": [
+          {"key": "name", "value": "a\u0000b"}
+        ],
+        "accepted": false
+      },
+      {
+        "id": "invalidUtf8",
+        "rows": [
+          {"key": "name", "textBytesHex": "ff"}
+        ],
+        "accepted": false
+      },
+      {
+        "id": "unknownLargeKey",
+        "rows": [
+          {
+            "key": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+            "value": "ignored"
+          }
+        ],
+        "accepted": true
+      }
+    ]
+  },
   "errors": {
     "tooLarge": {"key": "map_import_too_large", "args": ["limit"]},
     "noSpace": {"key": "map_import_no_space", "args": ["size"]},

@@ -435,25 +435,41 @@ final class MBTilesStore: @unchecked Sendable {
         return readTilePayload(z: z, x: x, tmsRow: tmsRow, expectedLength: length)
     }
 
-    /// One of our own extension keys (tacmap_bake_key, tacmap_tile_px).
-    /// Text only and length bounded, anything else reads as missing.
+    /// Only the two values the bake reader consumes. Ordinary map admission
+    /// ignores unused extensions; consumption independently fails closed.
     func extensionMetadata(_ key: String, maximumCharacters: Int = 128) -> String? {
+        guard ["tacmap_bake_key", "tacmap_tile_px"].contains(key),
+              (1...128).contains(maximumCharacters) else { return nil }
         lock.lock()
         defer { lock.unlock() }
         guard openDatabaseIfNeeded() else { return nil }
         var stmt: OpaquePointer?
-        defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT CASE WHEN typeof(value)='text' AND length(value) <= ?2 THEN value END " +
-            "FROM metadata WHERE name = ?1 LIMIT 1",
+            "SELECT rowid, typeof(value) FROM metadata WHERE lower(name) = ?1 LIMIT 2",
             -1, &stmt, nil
-        ) == SQLITE_OK else { return nil }
+        ) == SQLITE_OK else {
+            sqlite3_finalize(stmt)
+            return nil
+        }
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         sqlite3_bind_text(stmt, 1, key, -1, transient)
-        sqlite3_bind_int(stmt, 2, Int32(maximumCharacters))
-        guard sqlite3_step(stmt) == SQLITE_ROW, let text = sqlite3_column_text(stmt, 0) else { return nil }
-        return String(cString: text)
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              sqlite3_column_type(stmt, 0) == SQLITE_INTEGER,
+              let type = sqlite3_column_text(stmt, 1),
+              String(cString: type) == "text" else {
+            sqlite3_finalize(stmt)
+            return nil
+        }
+        let rowID = sqlite3_column_int64(stmt, 0)
+        let unique = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        guard unique,
+              case let .value(value) = readMetadataText(
+                rowID: rowID, column: "value", maximumCharacters: maximumCharacters,
+                truncateOversized: false
+              ) else { return nil }
+        return value
     }
 
     /// Permanently retires this reader before its app-managed backing file is

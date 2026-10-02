@@ -106,6 +106,8 @@ ciphertext.
   acknowledgements, and delete/control message types around encrypted payloads.
 - Public actor keys, actor/session identifiers, signatures, and the signed
   session announcements used by clients to display relay-reported membership.
+  The same persistent device signing public key is advertised across rooms;
+  room-scoped actor IDs do not prevent cross-room device correlation.
 - TacMap Chat's clear sender/session/key ID and whether a frame is **Entire
   room** or **Selected unit**. For a selected-unit frame it also sees the exact
   recipient actor/session/key ID. It sees ephemeral X25519 public keys and
@@ -213,8 +215,9 @@ sees every routing ID, that ID is a free offline **confirmation oracle**: guess
 codes, derive their routing IDs, match them against observed rooms, and any hit
 hands over the encryption key (read) and the write token (write). PBKDF2 at
 210,000 iterations makes each guess cost real work, but a short or memorable
-code - a couple of dictionary words like `bravo-tonight` - still falls to a GPU
-rig in minutes. **So sync is only private if your join code has real entropy.**
+code - a couple of dictionary words like `bravo-tonight` - remains vulnerable
+to offline dictionary attacks; this app makes no benchmark-based cracking-time
+guarantee. **So sync is only private if your join code has real entropy.**
 The app generates a strong ~78-bit code for you and refuses codes under 14
 characters; use the generator and pass the code out-of-band. A code you invent
 yourself, especially a memorable one, is guessable and is not covered by the
@@ -258,8 +261,11 @@ create an `MKMapView`, so Apple's `geod` daemon is not asked for basemap tiles
 app entirely (§6). Apple's `MKLocalSearch` remains an opt-in place-search path
 and is listed separately above.
 
-**Read this table as the whole story.** If an endpoint is not listed here, the
-app does not contact it. *We* add no analytics SDK, remote crash telemetry, or
+**This table inventories app-initiated service requests.** User-opened links
+can hand a URL to the system browser; document providers may download a selected
+cloud file, and share destinations follow the user's choice. Those explicit
+user/OS actions and ambient platform traffic are outside TacMap's HTTP gates.
+*We* add no analytics SDK, remote crash telemetry, or
 ad network; our own crash reports are written to local storage only and shared
 by you manually. Neither platform instantiates a third-party basemap engine.
 iOS links Apple frameworks for coordinate types and opt-in place search, not
@@ -463,10 +469,33 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
     Android, removing your device lockscreen can invalidate the key and make the
     data unreadable.
 
-  A note against overclaiming: on iOS the key is a raw AES key, so it is **not**
-  "in the Secure Enclave" — the SEP only holds P-256 keys. It is in the Keychain,
-  whose class keys the SEP wraps and holds. That is a genuine hardware guarantee,
-  and it is a different sentence.
+  On iOS TacMap stores the raw AES key as a Keychain generic-password item;
+  it does not create or hold that key through a Secure Enclave API. DEVICE mode
+  uses `AfterFirstUnlockThisDeviceOnly`; AUTH mode uses
+  `WhenUnlockedThisDeviceOnly` with user presence. Protection depends on iOS
+  Keychain/data-protection enforcement and the selected access policy. TacMap
+  does not attest hardware enforcement or promise protection from a compromised
+  OS or secure-hardware exploit.
+
+  **Locking is an access/lifecycle gate, not memory erasure.** An explicitly
+  started track recording retains a private copy of the same general 256-bit
+  mission DEK so it can append to that already prepared encrypted log after the
+  general key locks. This is software ownership and lifetime scope, not a
+  cryptographically restricted track-only key: disclosure of that copy could
+  open other DEK-sealed stores. Stop, discard, recording failure, permission loss
+  and process death end its intended lifetime. Android zero-fills its retained
+  array; iOS releases its `Data` value. Neither implementation proves erasure of
+  every runtime/allocator copy. Process death does not restart recording; AUTH
+  recovery needs authentication. See
+  [ADR-002](https://github.com/JediBrooker/TacMap/blob/main/docs/security/ADR-002-key-lifetime-and-rotation.md).
+
+  Android detaches mission stores and clears its general-key cache on Activity
+  pause. iOS keeps the map view mounted to preserve authorized recording:
+  previously decrypted mission/library objects, track points and rendered tiles
+  may remain beneath the opaque lock overlay. AUTH mode clears the general key
+  cache; DEVICE mode may retain it under the accepted lifecycle policy. UI and
+  inbound Sync gates prevent ordinary locked-state access/processing, but do not
+  defend retained memory against code executing inside a compromised process.
 
   The optional in-app PIN lock remains a **UI deterrent for a borrowed device,
   not encryption**, and is independent of all of the above.
@@ -492,8 +521,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   page, embedded or hand-made georeference and calibration points, its offline-tile
   bake record and its crash-guard token) and any calibration still in progress are
   sealed under the mission-data key, so deleting a map deletes its calibration with
-  it. Every PDF entry, and every MBTiles pack imported by a 2.2 or later build, is bound
-  to its file's SHA-256 (taken in the same pass that copied it in). An MBTiles pack carried
+  it. Every PDF entry, and every newly imported MBTiles pack in the current
+  imported-map library implementation, is bound to its file's SHA-256 (taken in the same pass that copied it in). An MBTiles pack carried
   over by the one-time migration from an older build has no recorded hash: it is only
   checked by size and modification time, and the background re-check skips it. At launch the active map is
   shown after a size and modification-time check only; its content hash is re-checked
@@ -584,8 +613,26 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   is migrated, and a document that will not open never gets a fabricated page count.
   If a legacy store is locked or damaged, or a legacy PDF is present but
   can't be read or converted, nothing is written, cleared or deleted and Retry is
-  offered. Downgrading to a build older than 2.2 loses the imported maps (that build's
-  own cleanup doesn't know the new opaque files); they have to be imported again.
+  offered. Downgrading to an implementation that knows only one retained map is
+  unsupported: its cleanup can delete additional library files it does not
+  recognize as retained, requiring re-import. This is a library-format/lifecycle
+  boundary, not a marketing-version boundary.
+- **Untrusted MBTiles metadata.** Both readers reject more than 64 metadata
+  rows using bounded row/type descriptors before copying text. Keys are bounded
+  to 32 characters; known name/format/min-max zoom/bounds fields to
+  128/32/16/256. Copied UTF-8 prefixes are at most four bytes per allowed
+  character, and unknown values are not copied. Descriptive fields may truncate;
+  invalid types, duplicate known keys, invalid UTF-8/NUL in copied prefixes and
+  oversized strict numeric/bounds values fail closed. This bounds app-level
+  copies, including Android CursorWindow projections, rather than every native
+  SQLite allocation or hostile-file CPU cost. Complex Unicode label truncation
+  can differ between platforms; the byte bounds still apply. Tile zoom
+  aggregation rejects non-integer or out-of-range (0...30) rows before projecting
+  scalar extrema. Native SQLite/image decoders remain in-process dependencies.
+  Only the two bake-key/tile-size extensions are read on demand, through bounded
+  row/type and strict UTF-8/NUL/duplicate/128-character checks. Invalid extensions
+  read as missing for bake validation while an ordinary map remains admissible.
+  No new image-format whitelist is implied.
 - **Untrusted PDF parsing.** An imported PDF is copied once (hashed in the same
   pass) and parsed once, off the main thread, under the same limits on both apps:
   512 MiB per PDF (4 GiB per MBTiles pack), at most 500 pages, page boxes of
@@ -606,6 +653,14 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   A declared georeference that can't be verified is refused with a reason and the sheet
   can be calibrated by hand instead; it is never quietly placed around the current
   camera.
+  The shared warp split bound is 0.0625 canonical render-job pixels, with
+  unchanged depth, minimum-cell, pixel/allocation, cancellation and tile caps.
+  Both native live/bake paths draw up to four cells directly; larger plans use
+  bounded staging. This accuracy bound does not guarantee one physical screen
+  pixel at deliberate overzoom or correct intrinsic PDF artwork registration.
+  Renderer version 2 is part of the bake key: older-geometry bakes fail current
+  key checks and fall back to live rendering, preserving the source and old
+  bake file until normal removal/regeneration.
 - **Custom symbol packs.** Pack import is an explicit local document-picker action.
   The app does not fetch GitHub releases, follow artwork URLs, execute SVG/scripts,
   or contact a pack author. A cloud-backed system document provider may download
@@ -701,23 +756,29 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   largest valid counter, so a crash cannot make an already exposed position
   acceptable again. Clean points write exact counters; a failed clean point
   keeps the preceding safe floor (ADR-001 section 8).
-- **A joined room survives a pause (iOS and Android).** A lifecycle change ends
-  the Unit Sync socket only when it locks the mission-data key, engages App
-  Lock, or detaches the mission stores. Leaving the Activity on Android always
-  does all of that, so the socket closes (without a signed leave) and the
-  stores go, but the joined room is kept, v2 or v3, with or without location
-  sharing: the derived room keys, the device signing seed and the replay-state
+- **A joined room survives a pause (iOS and Android).** Backgrounding pauses
+  mission processing even when the mission-data key stays available. Key lock,
+  App Lock or detached stores also close the ordinary session; an explicitly
+  eligible v3 background-presence bridge is the separate exception above.
+  Android Activity pause detaches mission stores and clears the general key
+  cache. Without the eligible presence bridge, the socket closes without a
+  signed leave; with it, only presence continues. The joined room is kept,
+  v2 or v3, with or without location sharing: the derived room keys, the device signing seed and the replay-state
   object stay **in memory only**, and the app reconnects by itself once the
   key is unlocked and fresh stores are attached. On iOS a transient
   `.inactive` scene phase (Control Center, a notification banner) keeps the
   socket, chat key and inbound processing when the key stays unlocked
   (device-bound mode) and no App Lock overlay is shown; in auth-bound mode the
   key locks on `.inactive` and the session ends as before. That in-memory
-  material is what iOS already kept across backgrounding; it is cleared on
-  leave, on a join-code change and at process death. No mission store and no
-  DataKey stays available, and a foreground return still needs a fresh
-  connection and a verified snapshot.
-- **Peer identity: established devices are signed; brand-new ones are not.** Each
+  material is cleared on leave, on a join-code change and at process death.
+  Android detaches the mission stores and clears the general-key cache;
+  iOS gates inbound processing and the mounted UI without erasing every already
+  decrypted model or tile. The authorized recording-key exception and DEVICE
+  cache policy above still apply. A background return needs a fresh connection
+  and verified snapshot before mission frames are adopted. The background
+  presence bridge has no recorder-key access and does not decrypt/adopt mission
+  frames; its bounded structural snapshot drain is scratch only.
+- **Peer device keys are authenticated; human identity remains out-of-band.** Each
   device holds a per-device Ed25519 key and signs every **presence** update *and*
   every **object write/delete**, chat-key advert, and chat frame; the first time you see a client id you pin its
   public key (trust-on-first-use), and every later message from that id - presence
@@ -786,7 +847,7 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   stack. Android rejects oversized declared frames before payload allocation,
   caps every fragmented aggregate and its fragment count, rate-limits every raw
   data/control frame, and applies reader-thread backpressure until the
-  serialized protocol consumer has handled the current message. WebSocket
+  bounded inbound queue has admitted the message, waiting when that queue is full. WebSocket
   compression and redirects are not enabled for Unit Sync.
 - Background Unit Sync location off until you explicitly enable it in OPSEC.
 
@@ -868,6 +929,19 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   It changes no render input, warp tolerance, cache or OPSEC preference. Vector
   observations run after EWMA sampling and raster bake observations after draw
   timing. `BuildConfig.DEBUG` and R8 remove the observer/call sites from Release.
+  iOS transports admitted job/frame JSON in bounded `TASK4_CHUNK` groups:
+  opaque UUID, kind, index/count/total bytes and at most 600 raw bytes per chunk.
+  Each record is capped at 2 MiB/4096 chunks; oversize emits `TASK4_OMITTED`.
+  Missing, conflicting or invalid chunks make evidence incomplete. Its frame
+  observer joins opaque painted CGImage identity to at most 128 weak delivery
+  observations per source on Main. Only an actual baked decode is labelled
+  `decoded-bake`; other deliveries are `live`, and absent/deallocated provenance
+  is `unproved`. These observations retain no bitmap strongly and change no
+  delivery, cache, fallback or rendering behavior. All code/state/calls are
+  Release-excluded.
+  iOS screenshot inputs `TACMAP_UITEST_ONLINE`, `TACMAP_UITEST_OFFLINE_BASEMAP` and
+  `TACMAP_UITEST_NIGHT_MODE` are also compiled only in Debug, apply transiently,
+  and do not alter saved choices. Release uses saved/default OPSEC settings.
 - Imported-PDF crash-loop guard: `pdf_render_guard.json` in app support (Android:
   `noBackupFilesDir`), outside backups, holds only random UUIDs (no file names or paths, which would reveal the
   AO). Rendered PDF tiles are memory-only; the explicit "Generate Offline Tiles"
@@ -879,11 +953,3 @@ Issues and disclosures welcome via the repository.
 
 *This is maintained release documentation. Revalidate it against every candidate
 build; planned work and unverified device-specific behaviour are not guarantees.*
-
-The iOS DEBUG audit transports admitted job/frame JSON as `TASK4_CHUNK` records: opaque UUID, kind, zero-based index, total chunk count, total byte count and base64 of at most 600 bytes (approximately 800 logged characters). Each record is capped at 2 MiB and 4096 chunks; an oversized record emits only `TASK4_OMITTED`. Consumers must reject missing, duplicate/conflicting or invalid chunks and decode only a complete group. Existing job/cell/frame admission caps remain unchanged. This transport is release-excluded, exact opt-in and contains only the already admitted geometry; prior truncated unified-log JSON remains unusable evidence.
-
-The Task 4 accuracy repair separately tightens the shared PDF warp split bound from 0.25 to 0.0625 job pixels. Existing maximum depth, minimum cell size, render job/base/staged pixel budgets, cancellation and tile limits remain unchanged; the generated comparison corpus rises from 703 to 2731 drawn cells. This can increase bounded planning/staging work but does not permit larger inputs or render allocations. Both platforms advance rendererVersion to 2 in the existing bake key, so renderer-one bakes fail the existing current-key checks and fall back to live PDF rendering. Reader rejection preserves the original PDF and old bake file; removal/regeneration continues through the normal library lifecycle. This cache revision is separate from app release build numbers and does not waive raw physical-pixel measurement limits at overzoom.
-
-Both iOS and Android automatic native live/bake choosers now draw plans of at most four cells directly through their affines, avoiding the extra staged-image sampling phase exposed by the tightened bound. Larger plans keep the existing staged path and its fixed allocation cap. This changes neither accepted documents nor calibration, georeferencing, cancellation, job limits or EWMA accounting; the measured lane time still includes the actual selected render. Intermediate renderer-two bakes were test-created and are explicitly removed/regenerated through normal UI before final-path evidence.
-
-The exact-opt-in iOS DEBUG frame also joins actual painted CGImage opaque identity to at most 128 weak CGImage delivery observations per source, owned on Main. Only an already decoded baked image is labelled `decoded-bake`; other delivered images are `live`. The weak reference follows the bitmap actually retained by cache/layers, not a temporary UIImage wrapper; no bitmap is retained strongly by this audit. Missing/deallocated/evicted provenance is `unproved`, not a baked-path assertion. Existing cache, render, fallback and delivery behavior is unchanged; all origin observation state and calls are Release-excluded.

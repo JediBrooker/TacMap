@@ -1,6 +1,6 @@
 # TacMap — Datenschutzerklärung
 
-*Stand der englischen Erklärung: 28. August 2026. Deutsche Übersetzung: 17. September 2026.*
+*Stand der englischen Erklärung und deutschen Übersetzung: 2. Oktober 2026.*
 
 *Gilt für TacMap unter iOS und Android.*
 
@@ -35,6 +35,8 @@ Apple und Google können Entwicklern freiwillig freigegebene Absturzdiagnosen de
 
 TacMap verschlüsselt gespeicherte Einsatzdateien mit AES-256-GCM. Der Datenschlüssel wird durch den iOS-Schlüsselbund bzw. Android Keystore geschützt. Importierte Kartendateien und lokale Absturzberichte sind die beschriebenen Ausnahmen. Ein kompromittiertes oder entsperrtes Gerät, Exporte und optionale Netzwerkdienste bleiben gesonderte Risiken. Die Grenzen erläutert das veröffentlichte Bedrohungsmodell.
 
+Eine bereits gestartete Aufzeichnung darf eine private Kopie des Einsatzdatenschlüssels behalten, um nach dem Sperren der allgemeinen Bedienoberfläche weitere verschlüsselte Positionsdaten anzuhängen. Diese Kopie ist der allgemeine Schlüssel, kein kryptografisch getrennter Schlüssel nur für Tracks. Das Sperren verspricht auch keine Löschung sämtlicher bereits entschlüsselter Objekte oder Kartenkacheln im Arbeitsspeicher. Das Beenden des Prozesses beendet die aktive Aufzeichnung. Das Bedrohungsmodell und ADR-002 erläutern die Grenzen bei Geräteschutz und Zugriffskontrolle.
+
 Das Löschen der App entfernt ihre privaten Dateien normalerweise nach den Regeln der jeweiligen Plattform. Exportierte Kopien, an andere Apps weitergegebene Dateien, Store-Transaktionsdaten und bei Dienstanbietern gespeicherte Daten werden gesondert verwaltet.
 
 ## 3. Netzwerkanfragen
@@ -67,7 +69,7 @@ Der Relay und seine Hosting- und Netzwerkanbieter können weiterhin Folgendes se
 
 - deine IP-Adresse, die Routing-Raumkennung und das beim WebSocket-Verbindungsaufbau übermittelte Autorisierungstoken; der Relay speichert dessen Hash;
 - unverschlüsselte äußere Objekt-, Versions-, Typ-, Anfrage-, Bestätigungs- und Löschfelder;
-- gemeinsame Raummitgliedschaften, Verbindungs- und Sitzungskennungen, öffentliche Akteursschlüssel sowie signierte Akteurs- und Sitzungsankündigungen;
+- gemeinsame Raummitgliedschaften, Verbindungs- und Sitzungskennungen, öffentliche Akteursschlüssel sowie signierte Akteurs- und Sitzungsankündigungen; derselbe öffentliche Signaturschlüssel kann ein Gerät über mehrere Räume hinweg zuordnen, obwohl die Akteurskennung raumbezogen ist;
 - Chat-Absender, Sitzung und Schlüsselkennung, den Empfängerkreis sowie bei einer ausgewählten Einheit deren genaue Akteurs-, Sitzungs- und Schlüsselkennung;
 - Verbindungszeiten sowie Zeitpunkt, Häufigkeit und Umfang von Nachrichten;
 - für die Synchronisierung gespeicherte verschlüsselte Einsatzobjekte und Löschmarkierungen.

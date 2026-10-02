@@ -184,7 +184,7 @@ final class PDFBakeTests: XCTestCase {
         XCTAssertNil(PDFBakeReader(url: file, expectedKey: ctx.bakeKey, tilePx: tilePx + 16))
         XCTAssertEqual(reader.maxZoom, z)
         let store = try XCTUnwrap(MBTilesStore(url: file))
-        XCTAssertEqual(store.extensionMetadata("tacmap_renderer"), String(PDFTileRenderer.version))
+        XCTAssertEqual(Self.metadataValue(file, "tacmap_renderer"), String(PDFTileRenderer.version))
         // F2: the plaintext file never names the sheet
         XCTAssertEqual(Self.metadataValue(file, "name"), PDFTileConstants.bakeMbtilesName)
         XCTAssertNotEqual(Self.metadataValue(file, "name"), pdf.displayName)

@@ -252,6 +252,36 @@ Scale denominator = `sqrt(|det L|) / 0.00035277778` (metres per page pt ÷ metre
 
 **Amendment 2026-10-02 (r1), OD-F6:** byte values shown to the user (`map_import_too_large {limit}`, `map_import_no_space {size}`, the `map_library_footer {size}`) use the WP2 `bakeFormat` size rule (`pdf_tile_render.json`): 512 MiB reads "537 MB", 4 GiB "4.3 GB" (de "4,3 GB"). Pinned by `import_limits.json` `sizeDisplay` and `prechecks[].expect.argText`.
 
+### 3.1 MBTiles metadata admission (amendment 2026-10-02)
+
+Both readers admit at most 64 metadata rows, checking `LIMIT 65` scalar
+row/type descriptors before copying text. Keys use a 32-character bound;
+known values use name 128, format 32, min/max zoom 16 and bounds 256.
+Application copies are bounded UTF-8 BLOB prefixes of at most four bytes per
+allowed character; unknown values are not copied. Descriptive key/name/format
+prefixes may truncate; strict numeric/bounds values may not. Duplicate known
+keys, non-text keys/known values, invalid UTF-8 or NUL in a copied prefix fail
+closed. A split UTF-8 suffix may be removed only when truncating a larger value.
+This bounds application/CursorWindow projections, not every native SQLite
+allocation or hostile-file CPU cost. Existing file/tile budgets remain unchanged. Tile zoom aggregation validates
+SQLite integer storage class and range 0...30 before selecting MIN/MAX scalar
+results; invalid/text/real rows fail closed without projecting attacker text.
+
+`import_limits.json` `mbtilesMetadataAdmission` pins the admission constants and
+independent ASCII SQLite vectors. Arbitrary Unicode display truncation is not
+claimed byte-identical across Swift grapheme and Android character handling.
+The bake reader consumes only `tacmap_bake_key` and `tacmap_tile_px`, lazily
+after ordinary metadata admission. Whitelist matching is ASCII case-insensitive
+(`lower(name)`); a case-variant duplicate also reads as missing. Each accessor
+checks at most two scalar
+row/type descriptors and a strict 128-character/512-byte UTF-8 BLOB prefix.
+Non-text, duplicate, NUL, invalid UTF-8 or oversized values read as missing,
+so the actual current-key/tile-size bake checks fail closed. Invalid unused
+extensions do not reject an otherwise valid ordinary map. Generated
+`extensionCases` exercise this actual consumption boundary. Native SQLite
+name scans and internal allocations are outside the application-copy bound. Format metadata is descriptive; this
+amendment introduces no image-format whitelist.
+
 ## 4. Coordinate entry (`CoordinateInputParser`; pure; the same cases pass on both platforms)
 
 ### 4.1 Normalisation

@@ -15,10 +15,12 @@ nothing there. They're listed in `docs/THREAT_MODEL.md` §9 for auditors.
 | `TACMAP_DEBUG_CAMERA` | `lat,lon,zoom[,heading]` | Sets the camera once the app is up (after the import above has framed its sheet). Zoom is still clamped to 2...22. Malformed values are ignored. |
 | `TACMAP_DEBUG_CALIBRATION_POINT` | `rawPageX,rawPageY` | iOS only: centres the normal camera on this point of the current calibration display at z18 (or DEBUG_CAMERA zoom). It changes no points or calibration state; Add point still uses the real crosshair capture and entry UI. |
 | `TACMAP_DEBUG_DEVICE_AUDIT` | `1` | Opt-in read-only observations. iOS: actual camera/viewport and opaque source identity/type/context (`TASK4_CAMERA` log), plus completed PDF job/cell geometry (`TASK4_JOB`, at most 64 jobs/8192 drawn cells per process) and bounded actual compositor-painted tile geometry/quality (`TASK4_FRAME`). Android: bounded in-memory completed PDF jobs/cells and actually painted tile geometry; instrumentation may save a snapshot. No title/path/content, content hashes or keys; render inputs and calibration behavior are untouched. |
+| `TACMAP_UITEST_ONLINE` / `TACMAP_UITEST_OFFLINE_BASEMAP` | `1` | iOS Debug screenshot harness only: transiently enables both online gates or disables online basemaps. Saved OPSEC choices are unchanged; Release ignores these inputs. |
+| `TACMAP_UITEST_NIGHT_MODE` | `1` | iOS Debug screenshot harness only: transient night mode; saved choice unchanged and Release ignores it. |
 | `TACMAP_DEBUG_GRID` | `1` | Turns the MGRS grid overlay on. |
 | `TACMAP_DEBUG_OPSEC_ALLOW_SCREENSHOTS` | `1` | Android only: lifts `FLAG_SECURE` for this session so `screencap` works. The persisted OPSEC setting is untouched. |
 
-While any hook is set, a debug build also skips the first-launch location
+While a `DebugHooks` input is set, a debug build also skips the first-launch location
 permission prompt and the first-run tour, so nothing sits on top of the map in a
 screenshot.
 
